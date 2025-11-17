@@ -1,6 +1,9 @@
 """Authentication routes."""
+import csv
+import io
 from typing import List
 from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.core.security import verify_password, create_access_token, get_password_hash
@@ -219,3 +222,45 @@ def provision_entra_user(
     db.refresh(user)
 
     return user
+
+
+@router.get("/users/export/csv")
+def export_users_csv(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Export all users to CSV."""
+    users = db.query(User).all()
+
+    # Create CSV in memory
+    output = io.StringIO()
+    writer = csv.writer(output)
+
+    # Write header
+    writer.writerow([
+        "User ID",
+        "Email",
+        "Full Name",
+        "Role"
+    ])
+
+    # Write data rows
+    for user in users:
+        writer.writerow([
+            user.user_id,
+            user.email,
+            user.full_name,
+            user.role
+        ])
+
+    # Reset stream position
+    output.seek(0)
+
+    # Return as streaming response
+    return StreamingResponse(
+        iter([output.getvalue()]),
+        media_type="text/csv",
+        headers={
+            "Content-Disposition": "attachment; filename=users_export.csv"
+        }
+    )

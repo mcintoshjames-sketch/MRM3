@@ -1,7 +1,10 @@
 """Taxonomy routes."""
+import csv
+import io
 from typing import List
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.orm import Session
+from fastapi.responses import StreamingResponse
+from sqlalchemy.orm import Session, joinedload
 from app.core.database import get_db
 from app.core.deps import get_current_user
 from app.models.user import User
@@ -226,3 +229,53 @@ def delete_taxonomy_value(
     db.delete(value)
     db.commit()
     return None
+
+
+@router.get("/export/csv")
+def export_taxonomies_csv(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Export all taxonomy values to CSV."""
+    values = db.query(TaxonomyValue).options(
+        joinedload(TaxonomyValue.taxonomy)
+    ).order_by(TaxonomyValue.taxonomy_id, TaxonomyValue.sort_order).all()
+
+    # Create CSV in memory
+    output = io.StringIO()
+    writer = csv.writer(output)
+
+    # Write header
+    writer.writerow([
+        "Taxonomy",
+        "Code",
+        "Label",
+        "Description",
+        "Sort Order",
+        "Active",
+        "Created At"
+    ])
+
+    # Write data rows
+    for value in values:
+        writer.writerow([
+            value.taxonomy.name if value.taxonomy else "",
+            value.code,
+            value.label,
+            value.description or "",
+            value.sort_order,
+            "Yes" if value.is_active else "No",
+            value.created_at.isoformat() if value.created_at else ""
+        ])
+
+    # Reset stream position
+    output.seek(0)
+
+    # Return as streaming response
+    return StreamingResponse(
+        iter([output.getvalue()]),
+        media_type="text/csv",
+        headers={
+            "Content-Disposition": "attachment; filename=taxonomies_export.csv"
+        }
+    )
