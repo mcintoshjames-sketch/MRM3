@@ -1,0 +1,43 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+*.egg
+*.egg-info/
+.Python
+pythonenv*
+.venv/
+venv/
+ENV/
+
+# Environment
+.env
+*.env
+.env.*
+
+# IDE/editor
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+
+# Node
+node_modules/
+web/node_modules/
+web/dist/
+
+# Coverage / test outputs
+htmlcov/
+.tox/
+.coverage*
+.pytest_cache/
+web/coverage/
+
+# Build artifacts
+build/
+dist/
+.eggs/
+*.log

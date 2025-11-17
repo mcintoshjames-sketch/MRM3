@@ -1,0 +1,228 @@
+"""Taxonomy routes."""
+from typing import List
+from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy.orm import Session
+from app.core.database import get_db
+from app.core.deps import get_current_user
+from app.models.user import User
+from app.models.taxonomy import Taxonomy, TaxonomyValue
+from app.schemas.taxonomy import (
+    TaxonomyResponse,
+    TaxonomyListResponse,
+    TaxonomyCreate,
+    TaxonomyUpdate,
+    TaxonomyValueResponse,
+    TaxonomyValueCreate,
+    TaxonomyValueUpdate,
+)
+
+router = APIRouter()
+
+
+@router.get("/", response_model=List[TaxonomyListResponse])
+def list_taxonomies(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """List all taxonomies."""
+    taxonomies = db.query(Taxonomy).order_by(Taxonomy.name).all()
+    return taxonomies
+
+
+@router.get("/{taxonomy_id}", response_model=TaxonomyResponse)
+def get_taxonomy(
+    taxonomy_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Get a taxonomy with its values."""
+    taxonomy = db.query(Taxonomy).filter(Taxonomy.taxonomy_id == taxonomy_id).first()
+    if not taxonomy:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Taxonomy not found"
+        )
+    return taxonomy
+
+
+@router.post("/", response_model=TaxonomyResponse, status_code=status.HTTP_201_CREATED)
+def create_taxonomy(
+    taxonomy_data: TaxonomyCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Create a new taxonomy."""
+    # Check if name already exists
+    existing = db.query(Taxonomy).filter(Taxonomy.name == taxonomy_data.name).first()
+    if existing:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Taxonomy with this name already exists"
+        )
+
+    taxonomy = Taxonomy(
+        name=taxonomy_data.name,
+        description=taxonomy_data.description,
+        is_system=False
+    )
+    db.add(taxonomy)
+    db.commit()
+    db.refresh(taxonomy)
+    return taxonomy
+
+
+@router.patch("/{taxonomy_id}", response_model=TaxonomyResponse)
+def update_taxonomy(
+    taxonomy_id: int,
+    taxonomy_data: TaxonomyUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Update a taxonomy."""
+    taxonomy = db.query(Taxonomy).filter(Taxonomy.taxonomy_id == taxonomy_id).first()
+    if not taxonomy:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Taxonomy not found"
+        )
+
+    update_data = taxonomy_data.model_dump(exclude_unset=True)
+
+    # Check for name uniqueness if name is being updated
+    if 'name' in update_data and update_data['name'] != taxonomy.name:
+        existing = db.query(Taxonomy).filter(Taxonomy.name == update_data['name']).first()
+        if existing:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Taxonomy with this name already exists"
+            )
+
+    for field, value in update_data.items():
+        setattr(taxonomy, field, value)
+
+    db.commit()
+    db.refresh(taxonomy)
+    return taxonomy
+
+
+@router.delete("/{taxonomy_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_taxonomy(
+    taxonomy_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Delete a taxonomy."""
+    taxonomy = db.query(Taxonomy).filter(Taxonomy.taxonomy_id == taxonomy_id).first()
+    if not taxonomy:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Taxonomy not found"
+        )
+
+    if taxonomy.is_system:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cannot delete system taxonomy"
+        )
+
+    db.delete(taxonomy)
+    db.commit()
+    return None
+
+
+# Taxonomy Value endpoints
+
+@router.post("/{taxonomy_id}/values", response_model=TaxonomyValueResponse, status_code=status.HTTP_201_CREATED)
+def create_taxonomy_value(
+    taxonomy_id: int,
+    value_data: TaxonomyValueCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Add a value to a taxonomy."""
+    taxonomy = db.query(Taxonomy).filter(Taxonomy.taxonomy_id == taxonomy_id).first()
+    if not taxonomy:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Taxonomy not found"
+        )
+
+    # Check for duplicate code in this taxonomy
+    existing = db.query(TaxonomyValue).filter(
+        TaxonomyValue.taxonomy_id == taxonomy_id,
+        TaxonomyValue.code == value_data.code
+    ).first()
+    if existing:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Value with this code already exists in this taxonomy"
+        )
+
+    value = TaxonomyValue(
+        taxonomy_id=taxonomy_id,
+        code=value_data.code,
+        label=value_data.label,
+        description=value_data.description,
+        sort_order=value_data.sort_order,
+        is_active=value_data.is_active
+    )
+    db.add(value)
+    db.commit()
+    db.refresh(value)
+    return value
+
+
+@router.patch("/values/{value_id}", response_model=TaxonomyValueResponse)
+def update_taxonomy_value(
+    value_id: int,
+    value_data: TaxonomyValueUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Update a taxonomy value."""
+    value = db.query(TaxonomyValue).filter(TaxonomyValue.value_id == value_id).first()
+    if not value:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Taxonomy value not found"
+        )
+
+    update_data = value_data.model_dump(exclude_unset=True)
+
+    # Check for code uniqueness if code is being updated
+    if 'code' in update_data and update_data['code'] != value.code:
+        existing = db.query(TaxonomyValue).filter(
+            TaxonomyValue.taxonomy_id == value.taxonomy_id,
+            TaxonomyValue.code == update_data['code']
+        ).first()
+        if existing:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Value with this code already exists in this taxonomy"
+            )
+
+    for field, val in update_data.items():
+        setattr(value, field, val)
+
+    db.commit()
+    db.refresh(value)
+    return value
+
+
+@router.delete("/values/{value_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_taxonomy_value(
+    value_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Delete a taxonomy value."""
+    value = db.query(TaxonomyValue).filter(TaxonomyValue.value_id == value_id).first()
+    if not value:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Taxonomy value not found"
+        )
+
+    db.delete(value)
+    db.commit()
+    return None
