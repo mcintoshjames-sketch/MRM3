@@ -8,7 +8,7 @@ This document tracks the regression testing strategy and test coverage for itera
 # Run all backend tests (129 tests passing)
 cd api && python -m pytest
 
-# Run all frontend tests (59 tests passing)
+# Run all frontend tests (129 tests passing)
 cd web && pnpm test:run
 
 # Run with coverage
@@ -233,6 +233,87 @@ cd web && pnpm test:coverage
 - [x] Displays table headers correctly
 - [x] Hides create button for regular User role
 
+#### Model Details Page (`ModelDetailsPage.test.tsx`)
+- [x] Displays loading state initially
+- [x] Displays model name after loading
+- [x] Displays model details tab content
+- [x] Displays owner and developer information
+- [x] Displays model description
+- [x] Displays model users
+- [x] Displays risk tier badge
+- [x] Displays back to models button
+- [x] Displays edit and delete buttons
+- [x] Displays tabs for details and validation history
+- [x] Shows validation count in tab
+- [x] Switches to validation history tab when clicked
+- [x] Displays validation records in history tab
+- [x] Displays empty state when no validations
+- [x] Displays new validation button in history tab
+- [x] Opens edit form when edit button clicked
+- [x] Closes edit form when cancel clicked
+- [x] Displays model not found when model fetch fails
+- [x] Displays model data even when validations fetch fails (bug fix regression test)
+- [x] Shows empty validation history when validations fetch fails
+- [x] Displays third-party model with vendor
+- [x] Displays no users message when model has no users
+- [x] Displays timestamps for model
+
+### Integration Tests (web/src/) - ROUTING & NAVIGATION
+
+**Note**: These tests verify route configuration and prevent missing route issues.
+
+#### App Routing (`App.test.tsx`)
+
+##### Unauthenticated Routes
+- [x] Redirects to login when accessing protected route
+- [x] Shows login page at /login
+- [x] Redirects root to login when not authenticated
+- [x] Redirects /validations to login
+- [x] Redirects /validations/new to login
+- [x] Redirects /dashboard to login
+
+##### Authenticated User Routes
+- [x] Renders models page at /models
+- [x] Renders model details page at /models/:id
+- [x] Renders validations page at /validations
+- [x] Renders validations page at /validations/new (bug fix regression test)
+- [x] Renders validations page with query params at /validations/new?model_id=1
+- [x] Renders vendors page at /vendors
+- [x] Renders vendor details page at /vendors/:id
+- [x] Renders users page at /users
+- [x] Renders user details page at /users/:id
+- [x] Renders taxonomy page at /taxonomy
+- [x] Renders audit page at /audit
+- [x] Redirects regular user from /dashboard to /models
+- [x] Redirects root to /models for regular user
+- [x] Redirects /login to /models when already authenticated
+
+##### Admin User Routes
+- [x] Renders admin dashboard at /dashboard
+- [x] Redirects root to /dashboard for admin user
+- [x] Redirects /login to /dashboard when already authenticated as admin
+- [x] Can access all user routes
+
+##### Loading State
+- [x] Shows loading indicator when auth is loading
+
+##### Route Coverage
+- [x] All expected routes are accessible (parameterized tests)
+
+##### Link Targets Validation
+- [x] /models is accessible
+- [x] /models/:id is accessible
+- [x] /validations is accessible
+- [x] /validations/new is accessible
+- [x] /vendors is accessible
+- [x] /vendors/:id is accessible
+- [x] /users is accessible
+- [x] /users/:id is accessible
+- [x] /taxonomy is accessible
+- [x] /audit is accessible
+- [x] /dashboard is accessible
+- [x] /login is accessible
+
 ## Regression Testing Workflow
 
 ### Before Adding New Features
@@ -337,11 +418,13 @@ describe('NewPage', () => {
 |---------|--------------|----------------|------------|
 | JWT Authentication | ✅ test_auth.py (11 tests) | ✅ LoginPage.test.tsx (9 tests) | Initial |
 | Models CRUD | ✅ test_models.py (17 tests) | ✅ ModelsPage.test.tsx (16 tests) | Initial |
+| Model Details View | N/A | ✅ ModelDetailsPage.test.tsx (23 tests) | 2025-11-16 |
 | Vendors CRUD | ✅ test_vendors.py (20 tests) | N/A | 2025-11-16 |
 | Model Enhancements | ✅ test_model_enhancements.py (21 tests) | ✅ Form + table updated | 2025-11-16 |
 | Authorization & Audit | ✅ test_authorization_audit.py (11 tests) | N/A | 2025-11-16 |
 | Audit Logs API | ✅ test_audit_logs.py (14 tests) | N/A | 2025-11-16 |
 | Model Validation Management | ✅ test_validations.py (35 tests) | ✅ AdminDashboardPage (18) + ValidationsPage (16) | 2025-11-16 |
+| Routing & Navigation | N/A | ✅ App.test.tsx (47 tests) | 2025-11-16 |
 
 **Features Added:**
 - Development type (In-House / Third-Party)
@@ -355,8 +438,10 @@ describe('NewPage', () => {
 - Model Validation Management (validation tracking, policies, role-based access)
 - Admin Dashboard (overdue validations, pass-with-findings alerts)
 - Validator role (independent review capability)
+- Model Details Page with validation history tab
+- Integration tests for routing (prevents missing route bugs)
 
-**Total: 188 tests (129 backend + 59 frontend)**
+**Total: 258 tests (129 backend + 129 frontend)**
 
 ---
 

@@ -58,6 +58,18 @@ interface Model {
     regulatory_categories: TaxonomyValue[];
 }
 
+interface Validation {
+    validation_id: number;
+    model_id: number;
+    model_name: string;
+    validation_date: string;
+    validator_name: string;
+    validation_type: string;
+    outcome: string;
+    scope: string;
+    created_at: string;
+}
+
 export default function ModelDetailsPage() {
     const { id } = useParams<{ id: string }>();
     const navigate = useNavigate();
@@ -65,8 +77,10 @@ export default function ModelDetailsPage() {
     const [users, setUsers] = useState<User[]>([]);
     const [vendors, setVendors] = useState<Vendor[]>([]);
     const [taxonomies, setTaxonomies] = useState<Taxonomy[]>([]);
+    const [validations, setValidations] = useState<Validation[]>([]);
     const [loading, setLoading] = useState(true);
     const [editing, setEditing] = useState(false);
+    const [activeTab, setActiveTab] = useState<'details' | 'validations'>('details');
     const [userSearchTerm, setUserSearchTerm] = useState('');
     const [showUserDropdown, setShowUserDropdown] = useState(false);
     const [formData, setFormData] = useState({
@@ -90,6 +104,7 @@ export default function ModelDetailsPage() {
 
     const fetchData = async () => {
         try {
+            // Fetch critical model data first - these are required
             const [modelRes, usersRes, vendorsRes, taxonomiesRes] = await Promise.all([
                 api.get(`/models/${id}`),
                 api.get('/auth/users'),
@@ -121,6 +136,16 @@ export default function ModelDetailsPage() {
                 user_ids: modelData.users.map((u: User) => u.user_id),
                 regulatory_category_ids: modelData.regulatory_categories.map((c: TaxonomyValue) => c.value_id)
             });
+
+            // Fetch validations separately - this is optional and shouldn't break the page
+            try {
+                const validationsRes = await api.get(`/validations/?model_id=${id}`);
+                setValidations(validationsRes.data);
+            } catch (validationError) {
+                console.error('Failed to fetch validations:', validationError);
+                // Keep validations as empty array - don't break the page
+                setValidations([]);
+            }
         } catch (error) {
             console.error('Failed to fetch model:', error);
         } finally {
@@ -247,6 +272,34 @@ export default function ModelDetailsPage() {
                     )}
                 </div>
             </div>
+
+            {/* Tabs */}
+            {!editing && (
+                <div className="border-b border-gray-200 mb-6">
+                    <nav className="-mb-px flex space-x-8">
+                        <button
+                            onClick={() => setActiveTab('details')}
+                            className={`py-2 px-1 border-b-2 font-medium text-sm ${
+                                activeTab === 'details'
+                                    ? 'border-blue-500 text-blue-600'
+                                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                            }`}
+                        >
+                            Model Details
+                        </button>
+                        <button
+                            onClick={() => setActiveTab('validations')}
+                            className={`py-2 px-1 border-b-2 font-medium text-sm ${
+                                activeTab === 'validations'
+                                    ? 'border-blue-500 text-blue-600'
+                                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                            }`}
+                        >
+                            Validation History ({validations.length})
+                        </button>
+                    </nav>
+                </div>
+            )}
 
             {editing ? (
                 <div className="bg-white p-6 rounded-lg shadow-md">
@@ -559,7 +612,7 @@ export default function ModelDetailsPage() {
                         </div>
                     </form>
                 </div>
-            ) : (
+            ) : activeTab === 'details' ? (
                 <div className="bg-white p-6 rounded-lg shadow-md">
                     <div className="grid grid-cols-2 gap-6">
                         <div>
@@ -682,6 +735,89 @@ export default function ModelDetailsPage() {
                             <p className="text-sm">{new Date(model.updated_at).toLocaleString()}</p>
                         </div>
                     </div>
+                </div>
+            ) : (
+                <div className="bg-white rounded-lg shadow-md overflow-hidden">
+                    <div className="p-4 border-b bg-gray-50 flex justify-between items-center">
+                        <h3 className="text-lg font-bold">Validation History</h3>
+                        <Link
+                            to={`/validations/new?model_id=${model.model_id}`}
+                            className="btn-primary text-sm"
+                        >
+                            + New Validation
+                        </Link>
+                    </div>
+                    {validations.length === 0 ? (
+                        <div className="p-6 text-center text-gray-500">
+                            No validation records found for this model.
+                        </div>
+                    ) : (
+                        <table className="min-w-full divide-y divide-gray-200">
+                            <thead className="bg-gray-50">
+                                <tr>
+                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                                        Date
+                                    </th>
+                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                                        Validator
+                                    </th>
+                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                                        Type
+                                    </th>
+                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                                        Outcome
+                                    </th>
+                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                                        Scope
+                                    </th>
+                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                                        Actions
+                                    </th>
+                                </tr>
+                            </thead>
+                            <tbody className="bg-white divide-y divide-gray-200">
+                                {validations.map((validation) => (
+                                    <tr key={validation.validation_id} className="hover:bg-gray-50">
+                                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                                            {validation.validation_date}
+                                        </td>
+                                        <td className="px-6 py-4 whitespace-nowrap text-sm">
+                                            {validation.validator_name}
+                                        </td>
+                                        <td className="px-6 py-4 whitespace-nowrap">
+                                            <span className="px-2 py-1 text-xs rounded bg-blue-100 text-blue-800">
+                                                {validation.validation_type}
+                                            </span>
+                                        </td>
+                                        <td className="px-6 py-4 whitespace-nowrap">
+                                            <span className={`px-2 py-1 text-xs rounded ${
+                                                validation.outcome === 'Pass'
+                                                    ? 'bg-green-100 text-green-800'
+                                                    : validation.outcome === 'Pass with Findings'
+                                                        ? 'bg-orange-100 text-orange-800'
+                                                        : 'bg-red-100 text-red-800'
+                                            }`}>
+                                                {validation.outcome}
+                                            </span>
+                                        </td>
+                                        <td className="px-6 py-4 whitespace-nowrap">
+                                            <span className="px-2 py-1 text-xs rounded bg-purple-100 text-purple-800">
+                                                {validation.scope}
+                                            </span>
+                                        </td>
+                                        <td className="px-6 py-4 whitespace-nowrap">
+                                            <Link
+                                                to={`/validations/${validation.validation_id}`}
+                                                className="text-blue-600 hover:text-blue-800 text-sm"
+                                            >
+                                                View Details
+                                            </Link>
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    )}
                 </div>
             )}
         </Layout>

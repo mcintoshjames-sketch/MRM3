@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
+import { Link, useSearchParams, useLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import api from '../api/client';
 import Layout from '../components/Layout';
@@ -37,6 +37,7 @@ interface Validation {
 export default function ValidationsPage() {
     const { user } = useAuth();
     const [searchParams] = useSearchParams();
+    const location = useLocation();
     const [validations, setValidations] = useState<Validation[]>([]);
     const [models, setModels] = useState<Model[]>([]);
     const [users, setUsers] = useState<User[]>([]);
@@ -44,7 +45,7 @@ export default function ValidationsPage() {
     const [outcomes, setOutcomes] = useState<TaxonomyValue[]>([]);
     const [scopes, setScopes] = useState<TaxonomyValue[]>([]);
     const [loading, setLoading] = useState(true);
-    const [showForm, setShowForm] = useState(false);
+    const [showForm, setShowForm] = useState(location.pathname === '/validations/new');
 
     const preselectedModelId = searchParams.get('model_id');
 
