@@ -121,6 +121,34 @@ export default function ModelsPage() {
         }));
     };
 
+    const handleExportCSV = async () => {
+        try {
+            const response = await api.get('/models/export/csv', {
+                responseType: 'blob'
+            });
+
+            // Create a download link
+            const url = window.URL.createObjectURL(new Blob([response.data]));
+            const link = document.createElement('a');
+            link.href = url;
+
+            // Generate filename with current date
+            const date = new Date().toISOString().split('T')[0];
+            link.setAttribute('download', `models_${date}.csv`);
+
+            // Trigger download
+            document.body.appendChild(link);
+            link.click();
+
+            // Cleanup
+            link.parentNode?.removeChild(link);
+            window.URL.revokeObjectURL(url);
+        } catch (error) {
+            console.error('Failed to export CSV:', error);
+            alert('Failed to export CSV. Please try again.');
+        }
+    };
+
     if (loading) {
         return (
             <Layout>
@@ -133,9 +161,14 @@ export default function ModelsPage() {
         <Layout>
             <div className="flex justify-between items-center mb-6">
                 <h2 className="text-2xl font-bold">Models</h2>
-                <button onClick={() => setShowForm(true)} className="btn-primary">
-                    + Add Model
-                </button>
+                <div className="flex gap-2">
+                    <button onClick={handleExportCSV} className="btn-secondary">
+                        Export CSV
+                    </button>
+                    <button onClick={() => setShowForm(true)} className="btn-primary">
+                        + Add Model
+                    </button>
+                </div>
             </div>
 
                 {showForm && (

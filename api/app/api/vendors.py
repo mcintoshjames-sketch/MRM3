@@ -1,6 +1,9 @@
 """Vendors routes."""
+import csv
+import io
 from typing import List
 from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.core.deps import get_current_user
@@ -109,3 +112,45 @@ def delete_vendor(
     db.delete(vendor)
     db.commit()
     return None
+
+
+@router.get("/export/csv")
+def export_vendors_csv(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Export all vendors to CSV."""
+    vendors = db.query(Vendor).all()
+
+    # Create CSV in memory
+    output = io.StringIO()
+    writer = csv.writer(output)
+
+    # Write header
+    writer.writerow([
+        "Vendor ID",
+        "Name",
+        "Contact Info",
+        "Created At"
+    ])
+
+    # Write data rows
+    for vendor in vendors:
+        writer.writerow([
+            vendor.vendor_id,
+            vendor.name,
+            vendor.contact_info or "",
+            vendor.created_at.isoformat() if vendor.created_at else ""
+        ])
+
+    # Reset stream position
+    output.seek(0)
+
+    # Return as streaming response
+    return StreamingResponse(
+        iter([output.getvalue()]),
+        media_type="text/csv",
+        headers={
+            "Content-Disposition": "attachment; filename=vendors_export.csv"
+        }
+    )

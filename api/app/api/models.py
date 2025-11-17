@@ -1,6 +1,9 @@
 """Models routes."""
+import csv
+import io
 from typing import List
 from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session, joinedload
 from app.core.database import get_db
 from app.core.deps import get_current_user
@@ -291,3 +294,77 @@ def delete_model(
     db.delete(model)
     db.commit()
     return None
+
+
+@router.get("/export/csv")
+def export_models_csv(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Export all models to CSV."""
+    models = db.query(Model).options(
+        joinedload(Model.owner),
+        joinedload(Model.developer),
+        joinedload(Model.vendor),
+        joinedload(Model.risk_tier),
+        joinedload(Model.validation_type),
+        joinedload(Model.users)
+    ).all()
+
+    # Create CSV in memory
+    output = io.StringIO()
+    writer = csv.writer(output)
+
+    # Write header
+    writer.writerow([
+        "Model ID",
+        "Model Name",
+        "Description",
+        "Development Type",
+        "Status",
+        "Owner",
+        "Owner Email",
+        "Developer",
+        "Developer Email",
+        "Vendor",
+        "Risk Tier",
+        "Validation Type",
+        "Model Users",
+        "Created At",
+        "Updated At"
+    ])
+
+    # Write data rows
+    for model in models:
+        # Format model users as comma-separated list
+        model_users = ", ".join([u.full_name for u in model.users]) if model.users else ""
+
+        writer.writerow([
+            model.model_id,
+            model.model_name,
+            model.description or "",
+            model.development_type,
+            model.status,
+            model.owner.full_name if model.owner else "",
+            model.owner.email if model.owner else "",
+            model.developer.full_name if model.developer else "",
+            model.developer.email if model.developer else "",
+            model.vendor.name if model.vendor else "",
+            model.risk_tier.label if model.risk_tier else "",
+            model.validation_type.label if model.validation_type else "",
+            model_users,
+            model.created_at.isoformat() if model.created_at else "",
+            model.updated_at.isoformat() if model.updated_at else ""
+        ])
+
+    # Reset stream position
+    output.seek(0)
+
+    # Return as streaming response
+    return StreamingResponse(
+        iter([output.getvalue()]),
+        media_type="text/csv",
+        headers={
+            "Content-Disposition": "attachment; filename=models_export.csv"
+        }
+    )
