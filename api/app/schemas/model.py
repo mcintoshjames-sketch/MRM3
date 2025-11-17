@@ -20,7 +20,9 @@ class ModelCreate(ModelBase):
     vendor_id: Optional[int] = None
     risk_tier_id: Optional[int] = None
     validation_type_id: Optional[int] = None
+    model_type_id: Optional[int] = None
     user_ids: Optional[List[int]] = None
+    regulatory_category_ids: Optional[List[int]] = None
 
     @field_validator('vendor_id')
     @classmethod
@@ -39,8 +41,10 @@ class ModelUpdate(BaseModel):
     vendor_id: Optional[int] = None
     risk_tier_id: Optional[int] = None
     validation_type_id: Optional[int] = None
+    model_type_id: Optional[int] = None
     status: Optional[str] = None
     user_ids: Optional[List[int]] = None
+    regulatory_category_ids: Optional[List[int]] = None
 
 
 class ModelResponse(ModelBase):
@@ -50,6 +54,7 @@ class ModelResponse(ModelBase):
     vendor_id: Optional[int] = None
     risk_tier_id: Optional[int] = None
     validation_type_id: Optional[int] = None
+    model_type_id: Optional[int] = None
     created_at: datetime
     updated_at: datetime
 
@@ -64,7 +69,9 @@ class ModelDetailResponse(ModelResponse):
     vendor: Optional[VendorResponse] = None
     risk_tier: Optional[TaxonomyValueResponse] = None
     validation_type: Optional[TaxonomyValueResponse] = None
+    model_type: Optional[TaxonomyValueResponse] = None
     users: List[UserResponse] = []
+    regulatory_categories: List[TaxonomyValueResponse] = []
 
     class Config:
         from_attributes = True

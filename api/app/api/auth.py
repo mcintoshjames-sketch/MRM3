@@ -4,14 +4,17 @@ import io
 from typing import List
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import StreamingResponse
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
+from sqlalchemy import or_
 from app.core.database import get_db
 from app.core.security import verify_password, create_access_token, get_password_hash
 from app.core.deps import get_current_user
 from app.models.user import User
+from app.models.model import Model
 from app.models.entra_user import EntraUser
 from app.schemas.user import LoginRequest, Token, UserResponse, UserCreate, UserUpdate
 from app.schemas.entra_user import EntraUserResponse, EntraUserProvisionRequest
+from app.schemas.model import ModelDetailResponse
 
 router = APIRouter()
 
@@ -45,6 +48,55 @@ def list_users(
     """List all users."""
     users = db.query(User).all()
     return users
+
+
+@router.get("/users/{user_id}", response_model=UserResponse)
+def get_user(
+    user_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Get a specific user by ID."""
+    user = db.query(User).filter(User.user_id == user_id).first()
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found"
+        )
+    return user
+
+
+@router.get("/users/{user_id}/models", response_model=List[ModelDetailResponse])
+def get_user_models(
+    user_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Get all models where user is owner or developer."""
+    user = db.query(User).filter(User.user_id == user_id).first()
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found"
+        )
+
+    models = db.query(Model).options(
+        joinedload(Model.owner),
+        joinedload(Model.developer),
+        joinedload(Model.vendor),
+        joinedload(Model.users),
+        joinedload(Model.risk_tier),
+        joinedload(Model.validation_type),
+        joinedload(Model.model_type),
+        joinedload(Model.regulatory_categories)
+    ).filter(
+        or_(
+            Model.owner_id == user_id,
+            Model.developer_id == user_id
+        )
+    ).all()
+
+    return models
 
 
 @router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)

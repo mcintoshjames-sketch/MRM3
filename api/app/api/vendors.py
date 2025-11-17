@@ -4,12 +4,14 @@ import io
 from typing import List
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import StreamingResponse
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from app.core.database import get_db
 from app.core.deps import get_current_user
 from app.models.user import User
 from app.models.vendor import Vendor
+from app.models.model import Model
 from app.schemas.vendor import VendorCreate, VendorUpdate, VendorResponse
+from app.schemas.model import ModelDetailResponse
 
 router = APIRouter()
 
@@ -60,6 +62,34 @@ def get_vendor(
             detail="Vendor not found"
         )
     return vendor
+
+
+@router.get("/{vendor_id}/models", response_model=List[ModelDetailResponse])
+def get_vendor_models(
+    vendor_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Get all models for a specific vendor."""
+    vendor = db.query(Vendor).filter(Vendor.vendor_id == vendor_id).first()
+    if not vendor:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Vendor not found"
+        )
+
+    models = db.query(Model).options(
+        joinedload(Model.owner),
+        joinedload(Model.developer),
+        joinedload(Model.vendor),
+        joinedload(Model.users),
+        joinedload(Model.risk_tier),
+        joinedload(Model.validation_type),
+        joinedload(Model.model_type),
+        joinedload(Model.regulatory_categories)
+    ).filter(Model.vendor_id == vendor_id).all()
+
+    return models
 
 
 @router.patch("/{vendor_id}", response_model=VendorResponse)

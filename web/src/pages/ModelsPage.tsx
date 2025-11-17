@@ -52,6 +52,7 @@ export default function ModelsPage() {
         status: 'In Development',
         user_ids: [] as number[]
     });
+    const [userSearchTerm, setUserSearchTerm] = useState('');
 
     useEffect(() => {
         fetchData();
@@ -112,13 +113,30 @@ export default function ModelsPage() {
         }
     };
 
-    const handleUserToggle = (userId: number) => {
+    const addUserToModel = (userId: number) => {
+        if (!formData.user_ids.includes(userId)) {
+            setFormData(prev => ({
+                ...prev,
+                user_ids: [...prev.user_ids, userId]
+            }));
+        }
+        setUserSearchTerm('');
+    };
+
+    const removeUserFromModel = (userId: number) => {
         setFormData(prev => ({
             ...prev,
-            user_ids: prev.user_ids.includes(userId)
-                ? prev.user_ids.filter(id => id !== userId)
-                : [...prev.user_ids, userId]
+            user_ids: prev.user_ids.filter(id => id !== userId)
         }));
+    };
+
+    const getFilteredUsers = () => {
+        if (!userSearchTerm) return [];
+        return users.filter(u =>
+            !formData.user_ids.includes(u.user_id) &&
+            (u.full_name.toLowerCase().includes(userSearchTerm.toLowerCase()) ||
+             u.email.toLowerCase().includes(userSearchTerm.toLowerCase()))
+        );
     };
 
     const handleExportCSV = async () => {
@@ -287,19 +305,51 @@ export default function ModelsPage() {
                             </div>
 
                             <div className="mb-4">
-                                <label className="block text-sm font-medium mb-2">Model Users (Multi-select)</label>
-                                <div className="border rounded p-2 max-h-40 overflow-y-auto">
-                                    {users.map(u => (
-                                        <label key={u.user_id} className="flex items-center gap-2 py-1">
-                                            <input
-                                                type="checkbox"
-                                                checked={formData.user_ids.includes(u.user_id)}
-                                                onChange={() => handleUserToggle(u.user_id)}
-                                            />
-                                            <span>{u.full_name} ({u.email})</span>
-                                        </label>
-                                    ))}
+                                <label className="block text-sm font-medium mb-2">
+                                    Model Users ({formData.user_ids.length} selected)
+                                </label>
+                                <div className="relative">
+                                    <input
+                                        type="text"
+                                        className="input-field"
+                                        placeholder="Search users by name or email..."
+                                        value={userSearchTerm}
+                                        onChange={(e) => setUserSearchTerm(e.target.value)}
+                                    />
+                                    {userSearchTerm && getFilteredUsers().length > 0 && (
+                                        <div className="absolute z-10 w-full bg-white border rounded shadow-lg max-h-40 overflow-y-auto">
+                                            {getFilteredUsers().map(u => (
+                                                <button
+                                                    key={u.user_id}
+                                                    type="button"
+                                                    className="w-full text-left px-3 py-2 hover:bg-gray-100"
+                                                    onClick={() => addUserToModel(u.user_id)}
+                                                >
+                                                    {u.full_name} ({u.email})
+                                                </button>
+                                            ))}
+                                        </div>
+                                    )}
                                 </div>
+                                {formData.user_ids.length > 0 && (
+                                    <div className="mt-2 flex flex-wrap gap-2">
+                                        {formData.user_ids.map(uid => {
+                                            const selectedUser = users.find(u => u.user_id === uid);
+                                            return selectedUser ? (
+                                                <div key={uid} className="bg-blue-100 text-blue-800 px-2 py-1 rounded flex items-center gap-1">
+                                                    <span className="text-sm">{selectedUser.full_name}</span>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => removeUserFromModel(uid)}
+                                                        className="text-blue-600 hover:text-blue-800 font-bold"
+                                                    >
+                                                        ×
+                                                    </button>
+                                                </div>
+                                            ) : null;
+                                        })}
+                                    </div>
+                                )}
                             </div>
 
                             <div className="flex gap-2">

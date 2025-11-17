@@ -50,7 +50,7 @@ Database is automatically seeded via `python -m app.seed` when docker-compose st
 **Backend (pytest):**
 ```bash
 cd api
-python -m pytest                    # Run all tests (69 tests)
+python -m pytest                    # Run all tests (94 tests)
 python -m pytest tests/test_auth.py # Run specific test file
 python -m pytest -x                 # Stop on first failure
 python -m pytest --cov=app          # With coverage
@@ -64,7 +64,7 @@ pnpm test:run            # Single run (25 tests)
 pnpm test:coverage       # With coverage
 ```
 
-**Full Regression Suite (94 tests total):**
+**Full Regression Suite (119 tests total):**
 ```bash
 cd api && python -m pytest && cd ../web && pnpm test:run
 ```
@@ -93,17 +93,20 @@ cd api && python -m pytest && cd ../web && pnpm test:run
 - **ORM**: SQLAlchemy 2.x with async-compatible patterns
 - **Auth**: JWT tokens via python-jose, passwords hashed with passlib/bcrypt
 - **Structure**:
-  - `app/api/` - Route handlers (auth.py, models.py, vendors.py, taxonomies.py)
+  - `app/api/` - Route handlers (auth.py, models.py, vendors.py, taxonomies.py, audit_logs.py)
   - `app/core/` - Config, database setup, security utilities, dependencies
-  - `app/models/` - SQLAlchemy ORM models (User, Model, Vendor, EntraUser, Taxonomy, TaxonomyValue)
+  - `app/models/` - SQLAlchemy ORM models (User, Model, Vendor, EntraUser, Taxonomy, TaxonomyValue, AuditLog)
   - `app/schemas/` - Pydantic request/response schemas
   - `alembic/` - Database migrations
 - **Key API Endpoints**:
   - `/auth/` - Login, register, get current user, list/update/delete users
+  - `/auth/users/{id}` - Get specific user details
+  - `/auth/users/{id}/models` - Get models where user is owner or developer
   - `/auth/entra/` - Microsoft Entra directory search and user provisioning
   - `/models/` - CRUD with owner/developer/vendor relationships
   - `/vendors/` - CRUD for third-party model vendors
   - `/taxonomies/` - CRUD for configurable taxonomy values
+  - `/audit-logs/` - Search and filter audit logs with pagination
 - **Model Features**:
   - Development type: In-House or Third-Party
   - Owner (required), Developer (optional) - user lookups
@@ -116,14 +119,31 @@ cd api && python -m pytest && cd ../web && pnpm test:run
 - **Routing**: react-router-dom v6
 - **HTTP Client**: Axios with centralized client in `src/api/client.ts`
 - **State**: React Context for auth (`src/contexts/AuthContext.tsx`)
-- **Layout**: Side panel navigation with Models, Vendors, Users, Taxonomy
+- **Layout**: Side panel navigation with Models, Vendors, Users, Taxonomy, Audit Logs
+- **Standard Table Features**: All table views must include:
+  - **CSV Export**: Button to export displayed data as CSV file
+  - Implementation: `utils/csvExport.ts` helper or inline generation
+  - Filename format: `{entity_name}_{YYYY-MM-DD}.csv`
+  - Export current filtered/sorted view (not full dataset)
 - **Pages**:
   - `/login` - Authentication
-  - `/models` - Model list with CRUD
+  - `/models` - Model list with CRUD + CSV export
   - `/models/:id` - Model details with edit functionality (includes taxonomy dropdowns)
-  - `/vendors` - Vendor management CRUD
-  - `/users` - User management CRUD with Entra directory lookup
-  - `/taxonomy` - Taxonomy management (add/edit/delete taxonomy values)
+  - `/vendors` - Vendor management CRUD + CSV export
+  - `/vendors/:id` - Vendor details with related models list
+  - `/users` - User management CRUD with Entra directory lookup + CSV export
+  - `/users/:id` - User details with Models Owned and Models Developed
+  - `/taxonomy` - Taxonomy management (add/edit/delete taxonomy values) + CSV export
+  - `/audit` - Audit logs with search/filter by entity type, entity ID, action, and user
+- **Cross-Reference Navigation Pattern**:
+  - Related records should be clickable links, not static text
+  - Example: Vendor name in Model details links to `/vendors/{id}`
+  - Example: Model names in Vendor details link to `/models/{id}`
+  - Example: User names in Users list link to `/users/{id}` showing related models
+  - Use React Router `<Link>` with consistent styling: `text-blue-600 hover:text-blue-800 hover:underline`
+  - Detail pages should show related records in tables with View/navigation links
+  - API should provide endpoints like `/vendors/{id}/models` to fetch related data
+  - This pattern improves UX by enabling seamless navigation between related entities
 
 ### Taxonomy System
 - **Purpose**: Configurable classification values for models

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, Link } from 'react-router-dom';
 import api from '../api/client';
 import Layout from '../components/Layout';
 
@@ -44,6 +44,7 @@ interface Model {
     vendor_id: number | null;
     risk_tier_id: number | null;
     validation_type_id: number | null;
+    model_type_id: number | null;
     status: string;
     created_at: string;
     updated_at: string;
@@ -52,7 +53,9 @@ interface Model {
     vendor: Vendor | null;
     risk_tier: TaxonomyValue | null;
     validation_type: TaxonomyValue | null;
+    model_type: TaxonomyValue | null;
     users: User[];
+    regulatory_categories: TaxonomyValue[];
 }
 
 export default function ModelDetailsPage() {
@@ -75,8 +78,10 @@ export default function ModelDetailsPage() {
         vendor_id: null as number | null,
         risk_tier_id: null as number | null,
         validation_type_id: null as number | null,
+        model_type_id: null as number | null,
         status: 'In Development',
-        user_ids: [] as number[]
+        user_ids: [] as number[],
+        regulatory_category_ids: [] as number[]
     });
 
     useEffect(() => {
@@ -111,8 +116,10 @@ export default function ModelDetailsPage() {
                 vendor_id: modelData.vendor_id,
                 risk_tier_id: modelData.risk_tier_id,
                 validation_type_id: modelData.validation_type_id,
+                model_type_id: modelData.model_type_id,
                 status: modelData.status,
-                user_ids: modelData.users.map((u: User) => u.user_id)
+                user_ids: modelData.users.map((u: User) => u.user_id),
+                regulatory_category_ids: modelData.regulatory_categories.map((c: TaxonomyValue) => c.value_id)
             });
         } catch (error) {
             console.error('Failed to fetch model:', error);
@@ -130,7 +137,9 @@ export default function ModelDetailsPage() {
                 vendor_id: formData.vendor_id || null,
                 risk_tier_id: formData.risk_tier_id || null,
                 validation_type_id: formData.validation_type_id || null,
-                user_ids: formData.user_ids.length > 0 ? formData.user_ids : []
+                model_type_id: formData.model_type_id || null,
+                user_ids: formData.user_ids.length > 0 ? formData.user_ids : [],
+                regulatory_category_ids: formData.regulatory_category_ids.length > 0 ? formData.regulatory_category_ids : []
             };
             await api.patch(`/models/${id}`, payload);
             setEditing(false);
@@ -142,6 +151,19 @@ export default function ModelDetailsPage() {
 
     const getRiskTierTaxonomy = () => taxonomies.find(t => t.name === 'Model Risk Tier');
     const getValidationTypeTaxonomy = () => taxonomies.find(t => t.name === 'Validation Type');
+    const getModelTypeTaxonomy = () => taxonomies.find(t => t.name === 'Model Type');
+    const getRegulatoryCategoryTaxonomy = () => taxonomies.find(t => t.name === 'Regulatory Category');
+
+    const toggleRegulatoryCategory = (valueId: number) => {
+        setFormData(prev => {
+            const ids = prev.regulatory_category_ids;
+            if (ids.includes(valueId)) {
+                return { ...prev, regulatory_category_ids: ids.filter(id => id !== valueId) };
+            } else {
+                return { ...prev, regulatory_category_ids: [...ids, valueId] };
+            }
+        });
+    };
 
     const addUserToModel = (userId: number) => {
         if (!formData.user_ids.includes(userId)) {
@@ -390,6 +412,31 @@ export default function ModelDetailsPage() {
                                     </select>
                                 </div>
                             )}
+
+                            {getModelTypeTaxonomy() && (
+                                <div className="mb-4">
+                                    <label htmlFor="model_type_id" className="block text-sm font-medium mb-2">
+                                        Model Type
+                                    </label>
+                                    <select
+                                        id="model_type_id"
+                                        className="input-field"
+                                        value={formData.model_type_id || ''}
+                                        onChange={(e) => setFormData({
+                                            ...formData,
+                                            model_type_id: e.target.value ? parseInt(e.target.value) : null
+                                        })}
+                                    >
+                                        <option value="">Select Model Type</option>
+                                        {getModelTypeTaxonomy()?.values
+                                            .filter(v => v.is_active)
+                                            .sort((a, b) => a.sort_order - b.sort_order)
+                                            .map(v => (
+                                                <option key={v.value_id} value={v.value_id}>{v.label}</option>
+                                            ))}
+                                    </select>
+                                </div>
+                            )}
                         </div>
 
                         <div className="mb-4">
@@ -478,6 +525,32 @@ export default function ModelDetailsPage() {
                             </div>
                         </div>
 
+                        {getRegulatoryCategoryTaxonomy() && (
+                            <div className="mb-4">
+                                <label className="block text-sm font-medium mb-2">
+                                    Regulatory Categories ({formData.regulatory_category_ids.length} selected)
+                                </label>
+                                <div className="border rounded bg-gray-50 p-3 max-h-48 overflow-y-auto">
+                                    <div className="space-y-1">
+                                        {getRegulatoryCategoryTaxonomy()?.values
+                                            .filter(v => v.is_active)
+                                            .sort((a, b) => a.sort_order - b.sort_order)
+                                            .map(v => (
+                                                <label key={v.value_id} className="flex items-start gap-2 cursor-pointer hover:bg-white p-1 rounded">
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={formData.regulatory_category_ids.includes(v.value_id)}
+                                                        onChange={() => toggleRegulatoryCategory(v.value_id)}
+                                                        className="mt-1"
+                                                    />
+                                                    <span className="text-sm">{v.label}</span>
+                                                </label>
+                                            ))}
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
                         <div className="flex gap-2">
                             <button type="submit" className="btn-primary">Save Changes</button>
                             <button type="button" onClick={() => setEditing(false)} className="btn-secondary">
@@ -511,7 +584,16 @@ export default function ModelDetailsPage() {
                         </div>
                         <div>
                             <h4 className="text-sm font-medium text-gray-500 mb-1">Vendor</h4>
-                            <p className="text-lg">{model.vendor?.name || '-'}</p>
+                            {model.vendor ? (
+                                <Link
+                                    to={`/vendors/${model.vendor.vendor_id}`}
+                                    className="text-lg text-blue-600 hover:text-blue-800 hover:underline"
+                                >
+                                    {model.vendor.name}
+                                </Link>
+                            ) : (
+                                <p className="text-lg">-</p>
+                            )}
                         </div>
                         <div>
                             <h4 className="text-sm font-medium text-gray-500 mb-1">Risk Tier</h4>
@@ -528,6 +610,16 @@ export default function ModelDetailsPage() {
                             {model.validation_type ? (
                                 <span className="px-2 py-1 text-sm rounded bg-indigo-100 text-indigo-800">
                                     {model.validation_type.label}
+                                </span>
+                            ) : (
+                                <p className="text-lg">-</p>
+                            )}
+                        </div>
+                        <div>
+                            <h4 className="text-sm font-medium text-gray-500 mb-1">Model Type</h4>
+                            {model.model_type ? (
+                                <span className="px-2 py-1 text-sm rounded bg-teal-100 text-teal-800">
+                                    {model.model_type.label}
                                 </span>
                             ) : (
                                 <p className="text-lg">-</p>
@@ -565,6 +657,20 @@ export default function ModelDetailsPage() {
                                 </div>
                             ) : (
                                 <p className="text-gray-500">No users assigned</p>
+                            )}
+                        </div>
+                        <div className="col-span-2">
+                            <h4 className="text-sm font-medium text-gray-500 mb-1">Regulatory Categories</h4>
+                            {model.regulatory_categories.length > 0 ? (
+                                <div className="flex flex-wrap gap-2">
+                                    {model.regulatory_categories.map(c => (
+                                        <span key={c.value_id} className="px-3 py-1 bg-yellow-100 text-yellow-800 rounded text-sm">
+                                            {c.label}
+                                        </span>
+                                    ))}
+                                </div>
+                            ) : (
+                                <p className="text-gray-500">No regulatory categories assigned</p>
                             )}
                         </div>
                         <div>

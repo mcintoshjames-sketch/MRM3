@@ -11,6 +11,7 @@ from app.models.user import User
 from app.models.model import Model
 from app.models.vendor import Vendor
 from app.models.audit_log import AuditLog
+from app.models.taxonomy import TaxonomyValue
 from app.schemas.model import ModelCreate, ModelUpdate, ModelDetailResponse
 
 router = APIRouter()
@@ -39,7 +40,11 @@ def list_models(
         joinedload(Model.owner),
         joinedload(Model.developer),
         joinedload(Model.vendor),
-        joinedload(Model.users)
+        joinedload(Model.users),
+        joinedload(Model.risk_tier),
+        joinedload(Model.validation_type),
+        joinedload(Model.model_type),
+        joinedload(Model.regulatory_categories)
     ).all()
     return models
 
@@ -84,9 +89,10 @@ def create_model(
                 detail="Developer user not found"
             )
 
-    # Extract user_ids before creating model
+    # Extract user_ids and regulatory_category_ids before creating model
     user_ids = model_data.user_ids or []
-    model_dict = model_data.model_dump(exclude={'user_ids'})
+    regulatory_category_ids = model_data.regulatory_category_ids or []
+    model_dict = model_data.model_dump(exclude={'user_ids', 'regulatory_category_ids'})
 
     model = Model(**model_dict)
 
@@ -99,6 +105,16 @@ def create_model(
                 detail="One or more model users not found"
             )
         model.users = users
+
+    # Add regulatory categories
+    if regulatory_category_ids:
+        categories = db.query(TaxonomyValue).filter(TaxonomyValue.value_id.in_(regulatory_category_ids)).all()
+        if len(categories) != len(regulatory_category_ids):
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="One or more regulatory categories not found"
+            )
+        model.regulatory_categories = categories
 
     db.add(model)
     db.commit()
@@ -120,7 +136,11 @@ def create_model(
         joinedload(Model.owner),
         joinedload(Model.developer),
         joinedload(Model.vendor),
-        joinedload(Model.users)
+        joinedload(Model.users),
+        joinedload(Model.risk_tier),
+        joinedload(Model.validation_type),
+        joinedload(Model.model_type),
+        joinedload(Model.regulatory_categories)
     ).filter(Model.model_id == model.model_id).first()
 
     return model
@@ -137,7 +157,11 @@ def get_model(
         joinedload(Model.owner),
         joinedload(Model.developer),
         joinedload(Model.vendor),
-        joinedload(Model.users)
+        joinedload(Model.users),
+        joinedload(Model.risk_tier),
+        joinedload(Model.validation_type),
+        joinedload(Model.model_type),
+        joinedload(Model.regulatory_categories)
     ).filter(Model.model_id == model_id).first()
 
     if not model:
@@ -223,6 +247,20 @@ def update_model(
             model.users = users
             user_ids_changed = True
 
+    # Handle regulatory_category_ids separately
+    regulatory_categories_changed = False
+    if 'regulatory_category_ids' in update_data:
+        category_ids = update_data.pop('regulatory_category_ids')
+        if category_ids is not None:
+            categories = db.query(TaxonomyValue).filter(TaxonomyValue.value_id.in_(category_ids)).all()
+            if len(categories) != len(category_ids):
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="One or more regulatory categories not found"
+                )
+            model.regulatory_categories = categories
+            regulatory_categories_changed = True
+
     # Track changes for audit log
     changes_made = {}
     for field, value in update_data.items():
@@ -233,6 +271,9 @@ def update_model(
 
     if user_ids_changed:
         changes_made["user_ids"] = "modified"
+
+    if regulatory_categories_changed:
+        changes_made["regulatory_category_ids"] = "modified"
 
     # Audit log for model update
     if changes_made:
@@ -253,7 +294,11 @@ def update_model(
         joinedload(Model.owner),
         joinedload(Model.developer),
         joinedload(Model.vendor),
-        joinedload(Model.users)
+        joinedload(Model.users),
+        joinedload(Model.risk_tier),
+        joinedload(Model.validation_type),
+        joinedload(Model.model_type),
+        joinedload(Model.regulatory_categories)
     ).filter(Model.model_id == model.model_id).first()
 
     return model
@@ -308,7 +353,9 @@ def export_models_csv(
         joinedload(Model.vendor),
         joinedload(Model.risk_tier),
         joinedload(Model.validation_type),
-        joinedload(Model.users)
+        joinedload(Model.model_type),
+        joinedload(Model.users),
+        joinedload(Model.regulatory_categories)
     ).all()
 
     # Create CSV in memory
@@ -321,6 +368,7 @@ def export_models_csv(
         "Model Name",
         "Description",
         "Development Type",
+        "Model Type",
         "Status",
         "Owner",
         "Owner Email",
@@ -329,6 +377,7 @@ def export_models_csv(
         "Vendor",
         "Risk Tier",
         "Validation Type",
+        "Regulatory Categories",
         "Model Users",
         "Created At",
         "Updated At"
@@ -337,13 +386,16 @@ def export_models_csv(
     # Write data rows
     for model in models:
         # Format model users as comma-separated list
-        model_users = ", ".join([u.full_name for u in model.users]) if model.users else ""
+        model_users_str = ", ".join([u.full_name for u in model.users]) if model.users else ""
+        # Format regulatory categories as comma-separated list
+        reg_categories_str = ", ".join([c.label for c in model.regulatory_categories]) if model.regulatory_categories else ""
 
         writer.writerow([
             model.model_id,
             model.model_name,
             model.description or "",
             model.development_type,
+            model.model_type.label if model.model_type else "",
             model.status,
             model.owner.full_name if model.owner else "",
             model.owner.email if model.owner else "",
@@ -352,7 +404,8 @@ def export_models_csv(
             model.vendor.name if model.vendor else "",
             model.risk_tier.label if model.risk_tier else "",
             model.validation_type.label if model.validation_type else "",
-            model_users,
+            reg_categories_str,
+            model_users_str,
             model.created_at.isoformat() if model.created_at else "",
             model.updated_at.isoformat() if model.updated_at else ""
         ])

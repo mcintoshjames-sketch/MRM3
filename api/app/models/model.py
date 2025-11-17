@@ -28,6 +28,14 @@ model_users = Table(
     Column("user_id", Integer, ForeignKey("users.user_id", ondelete="CASCADE"), primary_key=True),
 )
 
+# Association table for model regulatory categories (many-to-many)
+model_regulatory_categories = Table(
+    "model_regulatory_categories",
+    Base.metadata,
+    Column("model_id", Integer, ForeignKey("models.model_id", ondelete="CASCADE"), primary_key=True),
+    Column("value_id", Integer, ForeignKey("taxonomy_values.value_id", ondelete="CASCADE"), primary_key=True),
+)
+
 
 class Model(Base):
     """Model table - minimal schema."""
@@ -50,6 +58,8 @@ class Model(Base):
         Integer, ForeignKey("taxonomy_values.value_id"), nullable=True)
     validation_type_id: Mapped[Optional[int]] = mapped_column(
         Integer, ForeignKey("taxonomy_values.value_id"), nullable=True)
+    model_type_id: Mapped[Optional[int]] = mapped_column(
+        Integer, ForeignKey("taxonomy_values.value_id"), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
@@ -62,3 +72,6 @@ class Model(Base):
     users: Mapped[List["User"]] = relationship("User", secondary=model_users, backref="models_used")
     risk_tier: Mapped[Optional["TaxonomyValue"]] = relationship("TaxonomyValue", foreign_keys=[risk_tier_id])
     validation_type: Mapped[Optional["TaxonomyValue"]] = relationship("TaxonomyValue", foreign_keys=[validation_type_id])
+    model_type: Mapped[Optional["TaxonomyValue"]] = relationship("TaxonomyValue", foreign_keys=[model_type_id])
+    regulatory_categories: Mapped[List["TaxonomyValue"]] = relationship(
+        "TaxonomyValue", secondary=model_regulatory_categories)

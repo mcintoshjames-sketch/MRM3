@@ -5,7 +5,7 @@ This document tracks the regression testing strategy and test coverage for itera
 ## Quick Reference
 
 ```bash
-# Run all backend tests (80 tests passing)
+# Run all backend tests (94 tests passing)
 cd api && python -m pytest
 
 # Run all frontend tests (25 tests passing)
@@ -109,6 +109,22 @@ cd web && pnpm test:coverage
 - [x] Delete model creates audit log with model name
 - [x] Update with no changes creates no audit log
 - [x] Audit log tracks user_ids modification
+
+#### Audit Logs API (`test_audit_logs.py`)
+- [x] List audit logs when empty
+- [x] List audit logs with data (ordered by most recent first)
+- [x] Filter by entity type
+- [x] Filter by entity ID
+- [x] Filter by action
+- [x] Filter by user ID
+- [x] Combined filters (multiple filters at once)
+- [x] Pagination limit
+- [x] Pagination offset
+- [x] Audit log includes user details (full_name, email)
+- [x] Audit log changes field returns JSON diff
+- [x] Get unique entity types endpoint
+- [x] Get unique actions endpoint
+- [x] Unauthenticated access returns 403
 
 ### Frontend Component Tests (web/src/) - ✅ FULLY OPERATIONAL
 
@@ -249,6 +265,7 @@ describe('NewPage', () => {
 | Vendors CRUD | ✅ test_vendors.py (20 tests) | N/A | 2025-11-16 |
 | Model Enhancements | ✅ test_model_enhancements.py (21 tests) | ✅ Form + table updated | 2025-11-16 |
 | Authorization & Audit | ✅ test_authorization_audit.py (11 tests) | N/A | 2025-11-16 |
+| Audit Logs API | ✅ test_audit_logs.py (14 tests) | N/A | 2025-11-16 |
 
 **Features Added:**
 - Development type (In-House / Third-Party)
@@ -258,8 +275,9 @@ describe('NewPage', () => {
 - Model users (many-to-many relationship)
 - Authorization (only owner/admin can update/delete models)
 - Audit logging (track CREATE, UPDATE, DELETE with user and changes)
+- Audit log viewer with search/filter by entity type, entity ID, action, user
 
-**Total: 105 tests (80 backend + 25 frontend)**
+**Total: 119 tests (94 backend + 25 frontend)**
 
 ---
 

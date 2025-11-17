@@ -79,6 +79,20 @@ export default function Layout({ children }: LayoutProps) {
                                 Taxonomy
                             </NavLink>
                         </li>
+                        <li>
+                            <NavLink
+                                to="/audit"
+                                className={({ isActive }) =>
+                                    `block px-4 py-2 rounded transition-colors ${
+                                        isActive
+                                            ? 'bg-blue-600 text-white'
+                                            : 'text-gray-700 hover:bg-gray-100'
+                                    }`
+                                }
+                            >
+                                Audit Logs
+                            </NavLink>
+                        </li>
                     </ul>
                 </nav>
                 <div className="p-4 border-t">

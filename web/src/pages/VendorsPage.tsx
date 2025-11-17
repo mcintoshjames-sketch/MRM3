@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import api from '../api/client';
 import Layout from '../components/Layout';
 
@@ -173,7 +174,12 @@ export default function VendorsPage() {
                                         {vendor.vendor_id}
                                     </td>
                                     <td className="px-6 py-4 whitespace-nowrap font-medium">
-                                        {vendor.name}
+                                        <Link
+                                            to={`/vendors/${vendor.vendor_id}`}
+                                            className="text-blue-600 hover:text-blue-800 hover:underline"
+                                        >
+                                            {vendor.name}
+                                        </Link>
                                     </td>
                                     <td className="px-6 py-4 whitespace-nowrap text-sm">
                                         {vendor.contact_info || '-'}
@@ -182,6 +188,12 @@ export default function VendorsPage() {
                                         {new Date(vendor.created_at).toLocaleDateString()}
                                     </td>
                                     <td className="px-6 py-4 whitespace-nowrap">
+                                        <Link
+                                            to={`/vendors/${vendor.vendor_id}`}
+                                            className="text-blue-600 hover:text-blue-800 text-sm mr-3"
+                                        >
+                                            View
+                                        </Link>
                                         <button
                                             onClick={() => handleEdit(vendor)}
                                             className="text-blue-600 hover:text-blue-800 text-sm mr-3"

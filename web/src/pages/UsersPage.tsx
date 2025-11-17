@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import api from '../api/client';
 import Layout from '../components/Layout';
@@ -288,7 +289,12 @@ export default function UsersPage() {
                                         {user.user_id}
                                     </td>
                                     <td className="px-6 py-4 whitespace-nowrap font-medium">
-                                        {user.full_name}
+                                        <Link
+                                            to={`/users/${user.user_id}`}
+                                            className="text-blue-600 hover:text-blue-800"
+                                        >
+                                            {user.full_name}
+                                        </Link>
                                         {user.user_id === currentUser?.user_id && (
                                             <span className="ml-2 text-xs text-blue-600">(You)</span>
                                         )}
@@ -306,6 +312,12 @@ export default function UsersPage() {
                                         </span>
                                     </td>
                                     <td className="px-6 py-4 whitespace-nowrap">
+                                        <Link
+                                            to={`/users/${user.user_id}`}
+                                            className="text-blue-600 hover:text-blue-800 text-sm mr-3"
+                                        >
+                                            View
+                                        </Link>
                                         <button
                                             onClick={() => handleEdit(user)}
                                             className="text-blue-600 hover:text-blue-800 text-sm mr-3"
