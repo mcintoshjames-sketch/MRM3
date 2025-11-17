@@ -23,6 +23,22 @@ export default function Layout({ children }: LayoutProps) {
                 </div>
                 <nav className="flex-1 p-4">
                     <ul className="space-y-2">
+                        {user?.role === 'Admin' && (
+                            <li>
+                                <NavLink
+                                    to="/dashboard"
+                                    className={({ isActive }) =>
+                                        `block px-4 py-2 rounded transition-colors ${
+                                            isActive
+                                                ? 'bg-blue-600 text-white'
+                                                : 'text-gray-700 hover:bg-gray-100'
+                                        }`
+                                    }
+                                >
+                                    Dashboard
+                                </NavLink>
+                            </li>
+                        )}
                         <li>
                             <NavLink
                                 to="/models"
@@ -35,6 +51,20 @@ export default function Layout({ children }: LayoutProps) {
                                 }
                             >
                                 Models
+                            </NavLink>
+                        </li>
+                        <li>
+                            <NavLink
+                                to="/validations"
+                                className={({ isActive }) =>
+                                    `block px-4 py-2 rounded transition-colors ${
+                                        isActive
+                                            ? 'bg-blue-600 text-white'
+                                            : 'text-gray-700 hover:bg-gray-100'
+                                    }`
+                                }
+                            >
+                                Validations
                             </NavLink>
                         </li>
                         <li>

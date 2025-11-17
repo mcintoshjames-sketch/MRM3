@@ -43,7 +43,7 @@ Database is automatically seeded via `python -m app.seed` when docker-compose st
 - Default admin: `admin@example.com` / `admin123`
 - Sample vendors: Bloomberg, Moody's Analytics, MSCI, S&P Global, FactSet
 - Mock Microsoft Entra directory with 8 sample employees (for SSO simulation)
-- Taxonomies: Model Risk Tier (3 values) and Validation Type (5 values)
+- Taxonomies: Model Risk Tier (3), Validation Type (5), Validation Outcome (3), Validation Scope (5)
 
 ### Testing
 
@@ -93,11 +93,15 @@ cd api && python -m pytest && cd ../web && pnpm test:run
 - **ORM**: SQLAlchemy 2.x with async-compatible patterns
 - **Auth**: JWT tokens via python-jose, passwords hashed with passlib/bcrypt
 - **Structure**:
-  - `app/api/` - Route handlers (auth.py, models.py, vendors.py, taxonomies.py, audit_logs.py)
+  - `app/api/` - Route handlers (auth.py, models.py, vendors.py, taxonomies.py, audit_logs.py, validations.py)
   - `app/core/` - Config, database setup, security utilities, dependencies
-  - `app/models/` - SQLAlchemy ORM models (User, Model, Vendor, EntraUser, Taxonomy, TaxonomyValue, AuditLog)
+  - `app/models/` - SQLAlchemy ORM models (User, Model, Vendor, EntraUser, Taxonomy, TaxonomyValue, AuditLog, Validation, ValidationPolicy)
   - `app/schemas/` - Pydantic request/response schemas
   - `alembic/` - Database migrations
+- **User Roles**: Admin, Validator, User
+  - **Admin**: Full access, can configure validation policies, view dashboard
+  - **Validator**: Can create/edit validations (independent review)
+  - **User**: Basic access to view models and data
 - **Key API Endpoints**:
   - `/auth/` - Login, register, get current user, list/update/delete users
   - `/auth/users/{id}` - Get specific user details
@@ -107,6 +111,10 @@ cd api && python -m pytest && cd ../web && pnpm test:run
   - `/vendors/` - CRUD for third-party model vendors
   - `/taxonomies/` - CRUD for configurable taxonomy values
   - `/audit-logs/` - Search and filter audit logs with pagination
+  - `/validations/` - CRUD for model validation records (role-based access)
+  - `/validations/policies/` - Admin-only validation policy configuration
+  - `/validations/dashboard/overdue` - Models overdue for validation
+  - `/validations/dashboard/pass-with-findings` - Validations needing recommendations
 - **Model Features**:
   - Development type: In-House or Third-Party
   - Owner (required), Developer (optional) - user lookups
@@ -119,7 +127,7 @@ cd api && python -m pytest && cd ../web && pnpm test:run
 - **Routing**: react-router-dom v6
 - **HTTP Client**: Axios with centralized client in `src/api/client.ts`
 - **State**: React Context for auth (`src/contexts/AuthContext.tsx`)
-- **Layout**: Side panel navigation with Models, Vendors, Users, Taxonomy, Audit Logs
+- **Layout**: Side panel navigation with Dashboard (Admin), Models, Validations, Vendors, Users, Taxonomy, Audit Logs
 - **Standard Table Features**: All table views must include:
   - **CSV Export**: Button to export displayed data as CSV file
   - Implementation: `utils/csvExport.ts` helper or inline generation
@@ -127,8 +135,10 @@ cd api && python -m pytest && cd ../web && pnpm test:run
   - Export current filtered/sorted view (not full dataset)
 - **Pages**:
   - `/login` - Authentication
+  - `/dashboard` - Admin dashboard (overdue validations, pass-with-findings alerts)
   - `/models` - Model list with CRUD + CSV export
   - `/models/:id` - Model details with edit functionality (includes taxonomy dropdowns)
+  - `/validations` - Validation records list with create form (Validator/Admin only)
   - `/vendors` - Vendor management CRUD + CSV export
   - `/vendors/:id` - Vendor details with related models list
   - `/users` - User management CRUD with Entra directory lookup + CSV export
@@ -153,6 +163,8 @@ cd api && python -m pytest && cd ../web && pnpm test:run
 - **Pre-seeded Taxonomies**:
   - **Model Risk Tier**: Tier 1 (High), Tier 2 (Medium), Tier 3 (Low)
   - **Validation Type**: Initial, Annual Review, Comprehensive, Targeted Review, Ongoing Monitoring
+  - **Validation Outcome**: Pass, Pass with Findings, Fail
+  - **Validation Scope**: Full Scope, Conceptual Soundness, Data Quality, Implementation Testing, Performance Monitoring
 - **Features**:
   - System taxonomies (is_system=True) cannot be deleted
   - Values can be deactivated without deletion
@@ -163,6 +175,30 @@ cd api && python -m pytest && cd ../web && pnpm test:run
   - Add new taxonomies and values
   - Edit code, label, description, sort order, active status
   - Models edit form includes taxonomy dropdowns
+
+### Model Validation Management
+- **Purpose**: Track independent model validations for regulatory compliance
+- **Core Components**:
+  - **Validation**: Records of model reviews with date, validator, type, outcome, scope, findings
+  - **ValidationPolicy**: Admin-configurable re-validation frequency by risk tier
+- **User Roles for Validation**:
+  - **Admin/Validator**: Can create, edit, delete validation records
+  - **User**: View-only access to validation records
+- **Database Models**:
+  - `Validation` - validation_id, model_id, validation_date, validator_id, validation_type_id, outcome_id, scope_id, findings_summary, report_reference
+  - `ValidationPolicy` - policy_id, risk_tier_id, frequency_months, description
+- **Admin Dashboard**:
+  - Default landing page for Admin users
+  - Shows models overdue for validation (based on policy frequency)
+  - Shows validations with "Pass with Findings" needing issue recommendations (placeholder for future Issue Management)
+  - Quick action links to validation list and policy configuration
+- **Validation Workflow**:
+  1. Admin configures validation frequency per risk tier (e.g., Tier 1 = 6 months)
+  2. Validator performs model review
+  3. Validator records validation with outcome (Pass/Pass with Findings/Fail)
+  4. System calculates next due date based on policy
+  5. Dashboard alerts for overdue models and findings requiring attention
+- **Future Enhancement**: Issue Management for tracking findings and recommendations
 
 ### Mock Microsoft Entra Integration
 - **Purpose**: Simulates SSO integration with Microsoft Entra ID (Azure AD)

@@ -149,3 +149,64 @@ def second_user_headers(second_user):
     """Get authorization headers for second user."""
     token = create_access_token(data={"sub": second_user.email})
     return {"Authorization": f"Bearer {token}"}
+
+
+@pytest.fixture
+def validator_user(db_session):
+    """Create a validator user."""
+    user = User(
+        email="validator@example.com",
+        full_name="Validator User",
+        password_hash=get_password_hash("validator123"),
+        role="Validator"
+    )
+    db_session.add(user)
+    db_session.commit()
+    db_session.refresh(user)
+    return user
+
+
+@pytest.fixture
+def validator_headers(validator_user):
+    """Get authorization headers for validator user."""
+    token = create_access_token(data={"sub": validator_user.email})
+    return {"Authorization": f"Bearer {token}"}
+
+
+@pytest.fixture
+def taxonomy_values(db_session):
+    """Create taxonomy values for validation testing."""
+    from app.models.taxonomy import Taxonomy, TaxonomyValue
+
+    # Create taxonomies
+    risk_tier_tax = Taxonomy(name="Model Risk Tier", is_system=True)
+    val_type_tax = Taxonomy(name="Validation Type", is_system=True)
+    outcome_tax = Taxonomy(name="Validation Outcome", is_system=True)
+    scope_tax = Taxonomy(name="Validation Scope", is_system=True)
+
+    db_session.add_all([risk_tier_tax, val_type_tax, outcome_tax, scope_tax])
+    db_session.flush()
+
+    # Create values
+    tier1 = TaxonomyValue(taxonomy_id=risk_tier_tax.taxonomy_id, code="TIER_1", label="Tier 1", sort_order=1)
+    tier2 = TaxonomyValue(taxonomy_id=risk_tier_tax.taxonomy_id, code="TIER_2", label="Tier 2", sort_order=2)
+    initial = TaxonomyValue(taxonomy_id=val_type_tax.taxonomy_id, code="INITIAL", label="Initial", sort_order=1)
+    annual = TaxonomyValue(taxonomy_id=val_type_tax.taxonomy_id, code="ANNUAL", label="Annual Review", sort_order=2)
+    pass_outcome = TaxonomyValue(taxonomy_id=outcome_tax.taxonomy_id, code="PASS", label="Pass", sort_order=1)
+    pass_findings = TaxonomyValue(taxonomy_id=outcome_tax.taxonomy_id, code="PASS_WITH_FINDINGS", label="Pass with Findings", sort_order=2)
+    fail_outcome = TaxonomyValue(taxonomy_id=outcome_tax.taxonomy_id, code="FAIL", label="Fail", sort_order=3)
+    full_scope = TaxonomyValue(taxonomy_id=scope_tax.taxonomy_id, code="FULL_SCOPE", label="Full Scope", sort_order=1)
+
+    db_session.add_all([tier1, tier2, initial, annual, pass_outcome, pass_findings, fail_outcome, full_scope])
+    db_session.commit()
+
+    return {
+        "tier1": tier1,
+        "tier2": tier2,
+        "initial": initial,
+        "annual": annual,
+        "pass": pass_outcome,
+        "pass_with_findings": pass_findings,
+        "fail": fail_outcome,
+        "full_scope": full_scope
+    }

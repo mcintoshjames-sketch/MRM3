@@ -460,6 +460,68 @@ def seed_database():
                         "sort_order": 5
                     },
                 ]
+            },
+            {
+                "name": "Validation Outcome",
+                "description": "Results of model validation activities",
+                "is_system": True,
+                "values": [
+                    {
+                        "code": "PASS",
+                        "label": "Pass",
+                        "description": "Model validation passed with no material findings",
+                        "sort_order": 1
+                    },
+                    {
+                        "code": "PASS_WITH_FINDINGS",
+                        "label": "Pass with Findings",
+                        "description": "Model validation passed but with findings that require remediation",
+                        "sort_order": 2
+                    },
+                    {
+                        "code": "FAIL",
+                        "label": "Fail",
+                        "description": "Model validation failed and requires significant remediation",
+                        "sort_order": 3
+                    },
+                ]
+            },
+            {
+                "name": "Validation Scope",
+                "description": "Scope and methodology of model validation",
+                "is_system": True,
+                "values": [
+                    {
+                        "code": "FULL_SCOPE",
+                        "label": "Full Scope",
+                        "description": "Comprehensive validation covering all aspects of the model",
+                        "sort_order": 1
+                    },
+                    {
+                        "code": "CONCEPTUAL_SOUNDNESS",
+                        "label": "Conceptual Soundness",
+                        "description": "Review of model theory, assumptions, and mathematical formulation",
+                        "sort_order": 2
+                    },
+                    {
+                        "code": "DATA_QUALITY",
+                        "label": "Data Quality",
+                        "description": "Assessment of input data quality, completeness, and appropriateness",
+                        "sort_order": 3
+                    },
+                    {
+                        "code": "IMPLEMENTATION_TESTING",
+                        "label": "Implementation Testing",
+                        "description": "Verification of model implementation and code correctness",
+                        "sort_order": 4
+                    },
+                    {
+                        "code": "PERFORMANCE_MONITORING",
+                        "label": "Performance Monitoring",
+                        "description": "Ongoing monitoring of model performance and stability",
+                        "sort_order": 5
+                    },
+                ]
             }
         ]
 

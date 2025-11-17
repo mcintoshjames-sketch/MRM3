@@ -238,6 +238,7 @@ export default function UsersPage() {
                                     onChange={(e) => setFormData({ ...formData, role: e.target.value })}
                                 >
                                     <option value="User">User</option>
+                                    <option value="Validator">Validator</option>
                                     <option value="Admin">Admin</option>
                                 </select>
                             </div>
@@ -306,7 +307,9 @@ export default function UsersPage() {
                                         <span className={`px-2 py-1 text-xs rounded ${
                                             user.role === 'Admin'
                                                 ? 'bg-purple-100 text-purple-800'
-                                                : 'bg-gray-100 text-gray-800'
+                                                : user.role === 'Validator'
+                                                    ? 'bg-green-100 text-green-800'
+                                                    : 'bg-gray-100 text-gray-800'
                                         }`}>
                                             {user.role}
                                         </span>

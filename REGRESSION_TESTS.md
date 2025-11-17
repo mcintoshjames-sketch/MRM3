@@ -5,10 +5,10 @@ This document tracks the regression testing strategy and test coverage for itera
 ## Quick Reference
 
 ```bash
-# Run all backend tests (94 tests passing)
+# Run all backend tests (129 tests passing)
 cd api && python -m pytest
 
-# Run all frontend tests (25 tests passing)
+# Run all frontend tests (59 tests passing)
 cd web && pnpm test:run
 
 # Run with coverage
@@ -126,6 +126,43 @@ cd web && pnpm test:coverage
 - [x] Get unique actions endpoint
 - [x] Unauthenticated access returns 403
 
+#### Model Validation Management (`test_validations.py`)
+- [x] List validations when empty
+- [x] List validations without auth returns 403
+- [x] Create validation as Validator role succeeds
+- [x] Create validation as Admin role succeeds
+- [x] Create validation as regular User role fails (403)
+- [x] Create validation with invalid model fails (404)
+- [x] Create validation with invalid validator fails (404)
+- [x] Create validation with invalid taxonomy fails (404)
+- [x] Get validation by ID
+- [x] Get non-existent validation returns 404
+- [x] Update validation as Validator role succeeds
+- [x] Update validation as regular User role fails (403)
+- [x] Delete validation as Admin succeeds
+- [x] Delete validation as Validator fails (403) - Admin only
+- [x] Delete non-existent validation returns 404
+- [x] Filter validations by model ID
+- [x] Filter validations by outcome ID
+- [x] Filter validations by date range
+- [x] Pagination with limit and offset
+- [x] List validation policies when empty
+- [x] Create validation policy as Admin succeeds
+- [x] Create validation policy as Validator fails (403)
+- [x] Create duplicate policy for same risk tier fails (400)
+- [x] Create policy with invalid risk tier fails (404)
+- [x] Update validation policy as Admin succeeds
+- [x] Update validation policy as Validator fails (403)
+- [x] Delete validation policy as Admin succeeds
+- [x] Delete non-existent policy returns 404
+- [x] Create validation creates audit log
+- [x] Update validation creates audit log with changes
+- [x] Delete validation creates audit log
+- [x] Overdue models endpoint requires Admin role
+- [x] Overdue models returns empty when no policies
+- [x] Pass-with-findings endpoint requires Admin role
+- [x] Pass-with-findings returns correct validations
+
 ### Frontend Component Tests (web/src/) - ✅ FULLY OPERATIONAL
 
 **Note**: All tests pass using happy-dom environment with direct module mocking (no MSW).
@@ -157,6 +194,44 @@ cd web && pnpm test:coverage
 - [x] Displays table headers correctly (Name, Type, Owner, Developer, Vendor, Users, Status, Actions)
 - [x] Calls logout when button clicked
 - [x] Displays owner and developer names in table
+
+#### Admin Dashboard Page (`AdminDashboardPage.test.tsx`)
+- [x] Displays loading state initially
+- [x] Displays welcome message with user name
+- [x] Displays dashboard title
+- [x] Displays overdue validations count
+- [x] Displays pass with findings count
+- [x] Displays quick action links
+- [x] Displays overdue models table
+- [x] Displays risk tier badges
+- [x] Displays owner names in overdue table
+- [x] Displays overdue status with days
+- [x] Displays create validation links
+- [x] Displays pass with findings table
+- [x] Displays validation date and validator name
+- [x] Displays findings summary
+- [x] Displays no recommendations badge
+- [x] Displays empty state for no overdue models
+- [x] Displays empty state for no pass with findings
+- [x] Displays zero counts when no data
+
+#### Validations Page (`ValidationsPage.test.tsx`)
+- [x] Displays loading state initially
+- [x] Displays page title
+- [x] Displays new validation button for Validator role
+- [x] Displays validations table
+- [x] Displays validation dates
+- [x] Displays validator names
+- [x] Displays validation types
+- [x] Displays outcomes with proper styling
+- [x] Displays scopes
+- [x] Displays empty state when no validations
+- [x] Opens create form when button clicked
+- [x] Displays form fields when create form opened
+- [x] Closes form when cancel clicked
+- [x] Creates new validation when form submitted
+- [x] Displays table headers correctly
+- [x] Hides create button for regular User role
 
 ## Regression Testing Workflow
 
@@ -266,6 +341,7 @@ describe('NewPage', () => {
 | Model Enhancements | ✅ test_model_enhancements.py (21 tests) | ✅ Form + table updated | 2025-11-16 |
 | Authorization & Audit | ✅ test_authorization_audit.py (11 tests) | N/A | 2025-11-16 |
 | Audit Logs API | ✅ test_audit_logs.py (14 tests) | N/A | 2025-11-16 |
+| Model Validation Management | ✅ test_validations.py (35 tests) | ✅ AdminDashboardPage (18) + ValidationsPage (16) | 2025-11-16 |
 
 **Features Added:**
 - Development type (In-House / Third-Party)
@@ -276,8 +352,11 @@ describe('NewPage', () => {
 - Authorization (only owner/admin can update/delete models)
 - Audit logging (track CREATE, UPDATE, DELETE with user and changes)
 - Audit log viewer with search/filter by entity type, entity ID, action, user
+- Model Validation Management (validation tracking, policies, role-based access)
+- Admin Dashboard (overdue validations, pass-with-findings alerts)
+- Validator role (independent review capability)
 
-**Total: 119 tests (94 backend + 25 frontend)**
+**Total: 188 tests (129 backend + 59 frontend)**
 
 ---
 
