@@ -4,7 +4,7 @@ from datetime import datetime
 from typing import Dict, List
 from app.core.database import SessionLocal
 from app.core.security import get_password_hash
-from app.models import User, UserRole, Vendor, EntraUser, Taxonomy, TaxonomyValue, ValidationWorkflowSLA
+from app.models import User, UserRole, Vendor, EntraUser, Taxonomy, TaxonomyValue, ValidationWorkflowSLA, Region
 
 
 REGULATORY_CATEGORY_VALUES = [
@@ -296,6 +296,26 @@ def seed_database():
                 print(f"✓ Created vendor: {vendor_data['name']}")
             else:
                 print(f"✓ Vendor already exists: {vendor_data['name']}")
+
+        db.commit()
+
+        # Create default regions
+        default_regions = [
+            {"code": "US", "name": "United States"},
+            {"code": "UK", "name": "United Kingdom"},
+            {"code": "EU", "name": "European Union"},
+            {"code": "APAC", "name": "Asia Pacific"},
+        ]
+
+        for region_data in default_regions:
+            existing = db.query(Region).filter(
+                Region.code == region_data["code"]).first()
+            if not existing:
+                region = Region(**region_data)
+                db.add(region)
+                print(f"✓ Created region: {region_data['name']} ({region_data['code']})")
+            else:
+                print(f"✓ Region already exists: {region_data['name']}")
 
         db.commit()
 
@@ -755,6 +775,31 @@ def seed_database():
                         "code": "NOT_FIT_FOR_PURPOSE",
                         "label": "Not Fit for Purpose",
                         "description": "Model is not suitable for its intended use and requires significant remediation",
+                        "sort_order": 3
+                    },
+                ]
+            },
+            {
+                "name": "Model Ownership Type",
+                "description": "Ownership model defining regional scope and responsibility",
+                "is_system": True,
+                "values": [
+                    {
+                        "code": "GLOBAL",
+                        "label": "Global",
+                        "description": "Models with no regional specificity - single global implementation",
+                        "sort_order": 1
+                    },
+                    {
+                        "code": "REGIONALLY_OWNED",
+                        "label": "Regionally Owned",
+                        "description": "Models owned and maintained by a specific region",
+                        "sort_order": 2
+                    },
+                    {
+                        "code": "GLOBAL_WITH_REGIONAL_IMPACT",
+                        "label": "Global with Regional Impact",
+                        "description": "Global models with region-specific implementations or adaptations",
                         "sort_order": 3
                     },
                 ]

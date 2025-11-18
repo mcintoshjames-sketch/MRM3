@@ -21,6 +21,7 @@ class ModelCreate(ModelBase):
     risk_tier_id: Optional[int] = None
     validation_type_id: Optional[int] = None
     model_type_id: Optional[int] = None
+    ownership_type_id: Optional[int] = None
     user_ids: Optional[List[int]] = None
     regulatory_category_ids: Optional[List[int]] = None
 
@@ -42,6 +43,7 @@ class ModelUpdate(BaseModel):
     risk_tier_id: Optional[int] = None
     validation_type_id: Optional[int] = None
     model_type_id: Optional[int] = None
+    ownership_type_id: Optional[int] = None
     status: Optional[str] = None
     user_ids: Optional[List[int]] = None
     regulatory_category_ids: Optional[List[int]] = None
@@ -55,6 +57,7 @@ class ModelResponse(ModelBase):
     risk_tier_id: Optional[int] = None
     validation_type_id: Optional[int] = None
     model_type_id: Optional[int] = None
+    ownership_type_id: Optional[int] = None
     created_at: datetime
     updated_at: datetime
 
@@ -70,6 +73,7 @@ class ModelDetailResponse(ModelResponse):
     risk_tier: Optional[TaxonomyValueResponse] = None
     validation_type: Optional[TaxonomyValueResponse] = None
     model_type: Optional[TaxonomyValueResponse] = None
+    ownership_type: Optional[TaxonomyValueResponse] = None
     users: List[UserResponse] = []
     regulatory_categories: List[TaxonomyValueResponse] = []
 

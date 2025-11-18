@@ -65,6 +65,7 @@ class UserSummary(BaseModel):
 class ValidationRequestBase(BaseModel):
     """Base schema for validation request."""
     model_id: int
+    regional_model_implementation_id: Optional[int] = None
     validation_type_id: int
     priority_id: int
     target_completion_date: date
@@ -287,6 +288,7 @@ class ValidationRequestResponse(BaseModel):
     """Response schema for validation request with basic relationships."""
     request_id: int
     model: ModelSummary
+    regional_model_implementation_id: Optional[int] = None
     request_date: date
     requestor: UserSummary
     validation_type: TaxonomyValueResponse

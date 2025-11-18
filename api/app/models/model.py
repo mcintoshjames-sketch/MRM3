@@ -60,6 +60,8 @@ class Model(Base):
         Integer, ForeignKey("taxonomy_values.value_id"), nullable=True)
     model_type_id: Mapped[Optional[int]] = mapped_column(
         Integer, ForeignKey("taxonomy_values.value_id"), nullable=True)
+    ownership_type_id: Mapped[Optional[int]] = mapped_column(
+        Integer, ForeignKey("taxonomy_values.value_id"), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
@@ -73,6 +75,7 @@ class Model(Base):
     risk_tier: Mapped[Optional["TaxonomyValue"]] = relationship("TaxonomyValue", foreign_keys=[risk_tier_id])
     validation_type: Mapped[Optional["TaxonomyValue"]] = relationship("TaxonomyValue", foreign_keys=[validation_type_id])
     model_type: Mapped[Optional["TaxonomyValue"]] = relationship("TaxonomyValue", foreign_keys=[model_type_id])
+    ownership_type: Mapped[Optional["TaxonomyValue"]] = relationship("TaxonomyValue", foreign_keys=[ownership_type_id])
     regulatory_categories: Mapped[List["TaxonomyValue"]] = relationship(
         "TaxonomyValue", secondary=model_regulatory_categories)
     # Legacy validations - kept for backwards compatibility
@@ -82,4 +85,8 @@ class Model(Base):
     # New workflow-based validation requests
     validation_requests: Mapped[List["ValidationRequest"]] = relationship(
         "ValidationRequest", back_populates="model", cascade="all, delete-orphan", order_by="desc(ValidationRequest.request_date)"
+    )
+    # Regional implementations
+    regional_implementations: Mapped[List["RegionalModelImplementation"]] = relationship(
+        "RegionalModelImplementation", back_populates="model", cascade="all, delete-orphan"
     )

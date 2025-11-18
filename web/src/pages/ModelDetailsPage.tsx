@@ -45,6 +45,7 @@ interface Model {
     risk_tier_id: number | null;
     validation_type_id: number | null;
     model_type_id: number | null;
+    ownership_type_id: number | null;
     status: string;
     created_at: string;
     updated_at: string;
@@ -54,6 +55,7 @@ interface Model {
     risk_tier: TaxonomyValue | null;
     validation_type: TaxonomyValue | null;
     model_type: TaxonomyValue | null;
+    ownership_type: TaxonomyValue | null;
     users: User[];
     regulatory_categories: TaxonomyValue[];
 }

@@ -54,6 +54,9 @@ class ValidationRequest(Base):
     model_id: Mapped[int] = mapped_column(
         Integer, ForeignKey("models.model_id", ondelete="CASCADE"), nullable=False
     )
+    regional_model_implementation_id: Mapped[Optional[int]] = mapped_column(
+        Integer, ForeignKey("regional_model_implementations.regional_model_impl_id", ondelete="CASCADE"), nullable=True
+    )
     request_date: Mapped[date] = mapped_column(Date, nullable=False, default=date.today)
     requestor_id: Mapped[int] = mapped_column(
         Integer, ForeignKey("users.user_id"), nullable=False
@@ -79,6 +82,7 @@ class ValidationRequest(Base):
 
     # Relationships
     model = relationship("Model", back_populates="validation_requests")
+    regional_model_implementation = relationship("RegionalModelImplementation", foreign_keys=[regional_model_implementation_id])
     requestor = relationship("User", foreign_keys=[requestor_id])
     validation_type = relationship("TaxonomyValue", foreign_keys=[validation_type_id])
     priority = relationship("TaxonomyValue", foreign_keys=[priority_id])
