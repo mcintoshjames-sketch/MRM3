@@ -38,11 +38,26 @@ interface SLAViolation {
     timestamp: string;
 }
 
+interface OutOfOrderValidation {
+    request_id: number;
+    model_name: string;
+    version_number: string;
+    validation_type: string;
+    target_completion_date: string;
+    production_date: string;
+    days_gap: number;
+    current_status: string;
+    priority: string;
+    severity: string;
+    is_interim: boolean;
+}
+
 export default function AdminDashboardPage() {
     const { user } = useAuth();
     const [overdueModels, setOverdueModels] = useState<OverdueModel[]>([]);
     const [passWithFindings, setPassWithFindings] = useState<PassWithFindingsValidation[]>([]);
     const [slaViolations, setSlaViolations] = useState<SLAViolation[]>([]);
+    const [outOfOrder, setOutOfOrder] = useState<OutOfOrderValidation[]>([]);
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
@@ -51,14 +66,16 @@ export default function AdminDashboardPage() {
 
     const fetchDashboardData = async () => {
         try {
-            const [overdueRes, findingsRes, violationsRes] = await Promise.all([
+            const [overdueRes, findingsRes, violationsRes, outOfOrderRes] = await Promise.all([
                 api.get('/validations/dashboard/overdue'),
                 api.get('/validations/dashboard/pass-with-findings'),
-                api.get('/validation-workflow/dashboard/sla-violations')
+                api.get('/validation-workflow/dashboard/sla-violations'),
+                api.get('/validation-workflow/dashboard/out-of-order')
             ]);
             setOverdueModels(overdueRes.data);
             setPassWithFindings(findingsRes.data);
             setSlaViolations(violationsRes.data);
+            setOutOfOrder(outOfOrderRes.data);
         } catch (error) {
             console.error('Failed to fetch dashboard data:', error);
         } finally {
@@ -95,11 +112,16 @@ export default function AdminDashboardPage() {
             </div>
 
             {/* Summary Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+            <div className="grid grid-cols-1 md:grid-cols-5 gap-4 mb-6">
                 <div className="bg-white p-4 rounded-lg shadow-md">
                     <h3 className="text-xs font-medium text-gray-500 uppercase">SLA Violations</h3>
                     <p className="text-3xl font-bold text-red-600 mt-2">{slaViolations.length}</p>
                     <p className="text-xs text-gray-600 mt-1">Active workflow delays</p>
+                </div>
+                <div className="bg-white p-4 rounded-lg shadow-md">
+                    <h3 className="text-xs font-medium text-gray-500 uppercase">Out of Order</h3>
+                    <p className="text-3xl font-bold text-purple-600 mt-2">{outOfOrder.length}</p>
+                    <p className="text-xs text-gray-600 mt-1">Validation after production</p>
                 </div>
                 <div className="bg-white p-4 rounded-lg shadow-md">
                     <h3 className="text-xs font-medium text-gray-500 uppercase">Overdue Validations</h3>
@@ -181,6 +203,76 @@ export default function AdminDashboardPage() {
                                 className="text-xs text-blue-600 hover:text-blue-800"
                             >
                                 View all {slaViolations.length} violations &rarr;
+                            </Link>
+                        </div>
+                    )}
+                </div>
+            )}
+
+            {/* Out-of-Order Validations Feed */}
+            {outOfOrder.length > 0 && (
+                <div className="bg-white p-4 rounded-lg shadow mb-6">
+                    <div className="flex items-center gap-2 mb-3 pb-2 border-b">
+                        <svg className="w-4 h-4 text-purple-500" fill="currentColor" viewBox="0 0 20 20">
+                            <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clipRule="evenodd" />
+                        </svg>
+                        <h3 className="text-sm font-semibold text-gray-700">Out-of-Order Validation Alerts</h3>
+                        <span className="text-xs text-gray-500 ml-auto">{outOfOrder.length} active</span>
+                    </div>
+                    <div className="space-y-2 max-h-64 overflow-y-auto">
+                        {outOfOrder.slice(0, 5).map((item, index) => (
+                            <div
+                                key={`${item.request_id}-${index}`}
+                                className="border-l-3 pl-3 py-2 hover:bg-gray-50 rounded-r"
+                                style={{
+                                    borderLeftWidth: '3px',
+                                    borderLeftColor: item.severity === 'critical' ? '#9333ea' :
+                                                    item.severity === 'high' ? '#a855f7' : '#c084fc'
+                                }}
+                            >
+                                <div className="flex items-start justify-between gap-2">
+                                    <div className="flex-1 min-w-0">
+                                        <div className="flex items-center gap-2 mb-1">
+                                            <span className={`px-1.5 py-0.5 text-xs font-medium rounded ${
+                                                item.severity === 'critical' ? 'bg-purple-100 text-purple-700' :
+                                                item.severity === 'high' ? 'bg-purple-50 text-purple-600' :
+                                                'bg-purple-50 text-purple-500'
+                                            }`}>
+                                                {item.severity}
+                                            </span>
+                                            {item.is_interim && (
+                                                <span className="px-1.5 py-0.5 text-xs font-medium rounded bg-yellow-100 text-yellow-800">
+                                                    INTERIM
+                                                </span>
+                                            )}
+                                        </div>
+                                        <Link
+                                            to={`/validation-workflow/${item.request_id}`}
+                                            className="text-sm font-medium text-gray-800 hover:text-blue-600 truncate block"
+                                        >
+                                            {item.model_name} - v{item.version_number}
+                                        </Link>
+                                        <p className="text-xs text-gray-600 mt-0.5">
+                                            Target completion: {new Date(item.target_completion_date).toLocaleDateString()}
+                                            <span className="text-red-600 font-medium ml-1">
+                                                ({item.days_gap}d after production)
+                                            </span>
+                                        </p>
+                                        <p className="text-xs text-gray-500">
+                                            Production date: {new Date(item.production_date).toLocaleDateString()}
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                    {outOfOrder.length > 5 && (
+                        <div className="mt-3 pt-2 border-t text-center">
+                            <Link
+                                to="/validation-workflow"
+                                className="text-xs text-blue-600 hover:text-blue-800"
+                            >
+                                View all {outOfOrder.length} out-of-order validations &rarr;
                             </Link>
                         </div>
                     )}

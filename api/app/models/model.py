@@ -90,3 +90,11 @@ class Model(Base):
     model_regions: Mapped[List["ModelRegion"]] = relationship(
         "ModelRegion", back_populates="model", cascade="all, delete-orphan"
     )
+    # Model versions
+    versions: Mapped[List["ModelVersion"]] = relationship(
+        "ModelVersion", back_populates="model", cascade="all, delete-orphan", order_by="desc(ModelVersion.created_at)"
+    )
+    # Model delegates
+    delegates: Mapped[List["ModelDelegate"]] = relationship(
+        "ModelDelegate", back_populates="model", cascade="all, delete-orphan"
+    )

@@ -1244,3 +1244,59 @@ def get_sla_violations(
 
     # Sort by days overdue (most overdue first)
     return sorted(violations, key=lambda x: x["days_overdue"], reverse=True)
+
+
+@router.get("/dashboard/out-of-order")
+def get_out_of_order_validations(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Get validation requests where target completion date exceeds model change production date (Admin only)."""
+    check_admin(current_user)
+
+    from app.models.model_version import ModelVersion
+
+    # Get all validation requests with linked model versions
+    requests = db.query(ValidationRequest).options(
+        joinedload(ValidationRequest.model),
+        joinedload(ValidationRequest.validation_type),
+        joinedload(ValidationRequest.current_status),
+        joinedload(ValidationRequest.priority)
+    ).filter(
+        ValidationRequest.current_status.has(TaxonomyValue.code.notin_(["APPROVED", "CANCELLED"]))
+    ).all()
+
+    out_of_order = []
+
+    for req in requests:
+        # Find model versions linked to this validation request
+        versions = db.query(ModelVersion).filter(
+            ModelVersion.validation_request_id == req.request_id,
+            ModelVersion.production_date.isnot(None)
+        ).all()
+
+        for version in versions:
+            # Check if target completion date is after production date
+            target_date = req.target_completion_date
+            prod_date = version.production_date
+
+            if target_date > prod_date:
+                days_gap = (target_date - prod_date).days
+                severity = "critical" if days_gap > 30 else "high" if days_gap > 14 else "medium"
+
+                out_of_order.append({
+                    "request_id": req.request_id,
+                    "model_name": req.model.model_name if req.model else "Unknown",
+                    "version_number": version.version_number,
+                    "validation_type": req.validation_type.label if req.validation_type else "Unknown",
+                    "target_completion_date": target_date.isoformat(),
+                    "production_date": prod_date.isoformat(),
+                    "days_gap": days_gap,
+                    "current_status": req.current_status.label if req.current_status else "Unknown",
+                    "priority": req.priority.label if req.priority else "Unknown",
+                    "severity": severity,
+                    "is_interim": req.validation_type.code == "INTERIM" if req.validation_type else False
+                })
+
+    # Sort by days gap (worst first)
+    return sorted(out_of_order, key=lambda x: x["days_gap"], reverse=True)

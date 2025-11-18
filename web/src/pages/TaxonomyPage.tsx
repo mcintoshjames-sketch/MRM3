@@ -139,6 +139,12 @@ export default function TaxonomyPage() {
         }
     };
 
+    const isSystemProtectedValue = (value: TaxonomyValue): boolean => {
+        // TARGETED validation type is used by the system for auto-generated validation requests
+        // and should not be deleted
+        return selectedTaxonomy?.name === 'Validation Type' && value.code === 'TARGETED';
+    };
+
     const handleDeleteTaxonomy = async (taxonomyId: number) => {
         if (!confirm('Are you sure you want to delete this taxonomy and all its values?')) return;
 
@@ -415,12 +421,21 @@ export default function TaxonomyPage() {
                                                                 >
                                                                     Edit
                                                                 </button>
-                                                                <button
-                                                                    onClick={() => handleDeleteValue(value.value_id)}
-                                                                    className="text-red-600 hover:text-red-800 text-sm"
-                                                                >
-                                                                    Delete
-                                                                </button>
+                                                                {isSystemProtectedValue(value) ? (
+                                                                    <span
+                                                                        className="text-gray-400 text-sm cursor-not-allowed"
+                                                                        title="This value is used by the system for auto-generated validation requests and cannot be deleted"
+                                                                    >
+                                                                        Delete
+                                                                    </span>
+                                                                ) : (
+                                                                    <button
+                                                                        onClick={() => handleDeleteValue(value.value_id)}
+                                                                        className="text-red-600 hover:text-red-800 text-sm"
+                                                                    >
+                                                                        Delete
+                                                                    </button>
+                                                                )}
                                                             </td>
                                                         </tr>
                                                     ))}

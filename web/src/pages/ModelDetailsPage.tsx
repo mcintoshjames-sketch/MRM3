@@ -3,6 +3,12 @@ import { useParams, useNavigate, Link } from 'react-router-dom';
 import api from '../api/client';
 import Layout from '../components/Layout';
 import ModelRegionsSection from '../components/ModelRegionsSection';
+import SubmitChangeModal from '../components/SubmitChangeModal';
+import VersionsList from '../components/VersionsList';
+import VersionDetailModal from '../components/VersionDetailModal';
+import DelegatesSection from '../components/DelegatesSection';
+import { useAuth } from '../contexts/AuthContext';
+import { ModelVersion } from '../api/versions';
 
 interface User {
     user_id: number;
@@ -89,6 +95,7 @@ interface ValidationRequest {
 export default function ModelDetailsPage() {
     const { id } = useParams<{ id: string }>();
     const navigate = useNavigate();
+    const { user } = useAuth();
     const [model, setModel] = useState<Model | null>(null);
     const [users, setUsers] = useState<User[]>([]);
     const [vendors, setVendors] = useState<Vendor[]>([]);
@@ -97,7 +104,10 @@ export default function ModelDetailsPage() {
     const [validationRequests, setValidationRequests] = useState<ValidationRequest[]>([]);
     const [loading, setLoading] = useState(true);
     const [editing, setEditing] = useState(false);
-    const [activeTab, setActiveTab] = useState<'details' | 'validations'>('details');
+    const [activeTab, setActiveTab] = useState<'details' | 'versions' | 'delegates' | 'validations'>('details');
+    const [showSubmitChangeModal, setShowSubmitChangeModal] = useState(false);
+    const [selectedVersion, setSelectedVersion] = useState<ModelVersion | null>(null);
+    const [versionsRefreshTrigger, setVersionsRefreshTrigger] = useState(0);
     const [userSearchTerm, setUserSearchTerm] = useState('');
     const [showUserDropdown, setShowUserDropdown] = useState(false);
     const [formData, setFormData] = useState({
@@ -284,6 +294,9 @@ export default function ModelDetailsPage() {
                 <div className="flex gap-2">
                     {!editing && (
                         <>
+                            <button onClick={() => setShowSubmitChangeModal(true)} className="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700">
+                                Submit Change
+                            </button>
                             <button onClick={() => setEditing(true)} className="btn-primary">
                                 Edit Model
                             </button>
@@ -308,6 +321,26 @@ export default function ModelDetailsPage() {
                             }`}
                         >
                             Model Details
+                        </button>
+                        <button
+                            onClick={() => setActiveTab('versions')}
+                            className={`py-2 px-1 border-b-2 font-medium text-sm ${
+                                activeTab === 'versions'
+                                    ? 'border-blue-500 text-blue-600'
+                                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                            }`}
+                        >
+                            Versions
+                        </button>
+                        <button
+                            onClick={() => setActiveTab('delegates')}
+                            className={`py-2 px-1 border-b-2 font-medium text-sm ${
+                                activeTab === 'delegates'
+                                    ? 'border-blue-500 text-blue-600'
+                                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                            }`}
+                        >
+                            Delegates
                         </button>
                         <button
                             onClick={() => setActiveTab('validations')}
@@ -759,10 +792,25 @@ export default function ModelDetailsPage() {
                     </div>
 
                     {/* Model-Region Management Section */}
-                    <div className="bg-white p-6 rounded-lg shadow-md">
+                    <div className="mt-6">
                         <ModelRegionsSection modelId={model.model_id} />
                     </div>
                 </div>
+            ) : activeTab === 'versions' ? (
+                <div className="bg-white p-6 rounded-lg shadow-md">
+                    <h3 className="text-lg font-semibold mb-4">Model Versions</h3>
+                    <VersionsList
+                        modelId={model.model_id}
+                        refreshTrigger={versionsRefreshTrigger}
+                        onVersionClick={(version) => setSelectedVersion(version)}
+                    />
+                </div>
+            ) : activeTab === 'delegates' ? (
+                <DelegatesSection
+                    modelId={model.model_id}
+                    modelOwnerId={model.owner_id}
+                    currentUserId={user?.user_id || 0}
+                />
             ) : (
                 <div className="space-y-6">
                     {/* Active Validation Projects */}
@@ -960,6 +1008,29 @@ export default function ModelDetailsPage() {
                         )}
                     </div>
                 </div>
+            )}
+
+            {/* Submit Change Modal */}
+            {showSubmitChangeModal && model && (
+                <SubmitChangeModal
+                    modelId={model.model_id}
+                    onClose={() => setShowSubmitChangeModal(false)}
+                    onSuccess={() => {
+                        setVersionsRefreshTrigger(prev => prev + 1);
+                        setActiveTab('versions');
+                    }}
+                />
+            )}
+
+            {selectedVersion && (
+                <VersionDetailModal
+                    version={selectedVersion}
+                    onClose={() => setSelectedVersion(null)}
+                    onSuccess={() => {
+                        setVersionsRefreshTrigger(prev => prev + 1);
+                        setSelectedVersion(null);
+                    }}
+                />
             )}
         </Layout>
     );

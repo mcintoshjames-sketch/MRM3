@@ -84,6 +84,17 @@ interface AuditLog {
     user: UserSummary;
 }
 
+interface ModelVersion {
+    version_id: number;
+    version_number: string;
+    change_type: string;
+    change_description: string;
+    production_date: string | null;
+    status: string;
+    created_at: string;
+    created_by_name: string;
+}
+
 interface ValidationRequestDetail {
     request_id: number;
     model: ModelSummary;
@@ -110,6 +121,7 @@ export default function ValidationRequestDetailPage() {
     const navigate = useNavigate();
     const { user } = useAuth();
     const [request, setRequest] = useState<ValidationRequestDetail | null>(null);
+    const [relatedVersions, setRelatedVersions] = useState<ModelVersion[]>([]);
     const [assignmentAuditLogs, setAssignmentAuditLogs] = useState<AuditLog[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -175,6 +187,17 @@ export default function ValidationRequestDetailPage() {
             setRequest(requestRes.data);
             setUsers(usersRes.data);
             setAssignmentAuditLogs(auditLogsRes.data);
+
+            // Fetch model versions that link to this validation request
+            if (requestRes.data.model.model_id && id) {
+                try {
+                    const versionsRes = await api.get(`/models/${requestRes.data.model.model_id}/versions`);
+                    const linkedVersions = versionsRes.data.filter((v: any) => v.validation_request_id === parseInt(id));
+                    setRelatedVersions(linkedVersions);
+                } catch (err) {
+                    console.error('Failed to fetch related versions:', err);
+                }
+            }
 
             // Fetch taxonomy values
             const taxDetails = await Promise.all(
@@ -638,7 +661,47 @@ export default function ValidationRequestDetailPage() {
                             {request.trigger_reason && (
                                 <div className="col-span-2">
                                     <h4 className="text-sm font-medium text-gray-500 mb-1">Trigger Reason</h4>
-                                    <p className="text-gray-700">{request.trigger_reason}</p>
+                                    <p className="text-gray-700 bg-gray-50 p-3 rounded">{request.trigger_reason}</p>
+                                </div>
+                            )}
+                            {relatedVersions.length > 0 && (
+                                <div className="col-span-2">
+                                    <h4 className="text-sm font-medium text-gray-500 mb-2">Related Model Change(s)</h4>
+                                    <div className="space-y-2">
+                                        {relatedVersions.map(version => (
+                                            <div key={version.version_id} className="bg-blue-50 border border-blue-200 rounded p-3">
+                                                <div className="flex justify-between items-start mb-2">
+                                                    <div>
+                                                        <span className="font-medium text-gray-900">Version {version.version_number}</span>
+                                                        <span className={`ml-2 px-2 py-0.5 rounded text-xs font-semibold ${
+                                                            version.change_type === 'MAJOR'
+                                                                ? 'bg-orange-200 text-orange-800'
+                                                                : 'bg-blue-200 text-blue-800'
+                                                        }`}>
+                                                            {version.change_type}
+                                                        </span>
+                                                        <span className={`ml-2 px-2 py-0.5 rounded text-xs font-semibold ${
+                                                            version.status === 'ACTIVE' ? 'bg-green-600 text-white' :
+                                                            version.status === 'APPROVED' ? 'bg-green-200 text-green-800' :
+                                                            version.status === 'IN_VALIDATION' ? 'bg-blue-200 text-blue-800' :
+                                                            'bg-gray-200 text-gray-800'
+                                                        }`}>
+                                                            {version.status}
+                                                        </span>
+                                                    </div>
+                                                    {version.production_date && (
+                                                        <div className="text-sm text-gray-600">
+                                                            Production: {new Date(version.production_date).toLocaleDateString()}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                                <p className="text-sm text-gray-700 mb-1">{version.change_description}</p>
+                                                <div className="text-xs text-gray-500">
+                                                    Created by {version.created_by_name} on {new Date(version.created_at).toLocaleDateString()}
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
                                 </div>
                             )}
                             <div>

@@ -12,6 +12,7 @@ from app.models.model import Model
 from app.models.vendor import Vendor
 from app.models.audit_log import AuditLog
 from app.models.taxonomy import TaxonomyValue
+from app.models.model_version import ModelVersion
 from app.schemas.model import ModelCreate, ModelUpdate, ModelDetailResponse
 
 router = APIRouter()
@@ -120,6 +121,21 @@ def create_model(
     db.commit()
     db.refresh(model)
 
+    # Create initial version 1.0 with change_type_id = 1 (New Model Development)
+    initial_version = ModelVersion(
+        model_id=model.model_id,
+        version_number="1.0",
+        change_type="MAJOR",  # New models are MAJOR changes
+        change_type_id=1,  # Code 1 = "New Model Development"
+        change_description="Initial model version",
+        created_by_id=current_user.user_id,
+        production_date=None,  # Not in production yet
+        status="DRAFT"  # New models start as DRAFT
+    )
+    db.add(initial_version)
+    db.commit()
+    db.refresh(initial_version)
+
     # Audit log for model creation
     create_audit_log(
         db=db,
@@ -128,6 +144,16 @@ def create_model(
         action="CREATE",
         user_id=current_user.user_id,
         changes={"model_name": model.model_name, "status": model.status, "development_type": model.development_type}
+    )
+
+    # Audit log for initial version
+    create_audit_log(
+        db=db,
+        entity_type="ModelVersion",
+        entity_id=initial_version.version_id,
+        action="CREATE",
+        user_id=current_user.user_id,
+        changes={"version_number": "1.0", "change_type_id": 1, "auto_created": True}
     )
     db.commit()
 

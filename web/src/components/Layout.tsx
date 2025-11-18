@@ -124,20 +124,36 @@ export default function Layout({ children }: LayoutProps) {
                             </NavLink>
                         </li>
                         {user?.role === 'Admin' && (
-                            <li>
-                                <NavLink
-                                    to="/workflow-config"
-                                    className={({ isActive }) =>
-                                        `block px-4 py-2 rounded transition-colors ${
-                                            isActive
-                                                ? 'bg-blue-600 text-white'
-                                                : 'text-gray-700 hover:bg-gray-100'
-                                        }`
-                                    }
-                                >
-                                    Workflow Config
-                                </NavLink>
-                            </li>
+                            <>
+                                <li>
+                                    <NavLink
+                                        to="/workflow-config"
+                                        className={({ isActive }) =>
+                                            `block px-4 py-2 rounded transition-colors ${
+                                                isActive
+                                                    ? 'bg-blue-600 text-white'
+                                                    : 'text-gray-700 hover:bg-gray-100'
+                                            }`
+                                        }
+                                    >
+                                        Workflow Config
+                                    </NavLink>
+                                </li>
+                                <li>
+                                    <NavLink
+                                        to="/batch-delegates"
+                                        className={({ isActive }) =>
+                                            `block px-4 py-2 rounded transition-colors ${
+                                                isActive
+                                                    ? 'bg-blue-600 text-white'
+                                                    : 'text-gray-700 hover:bg-gray-100'
+                                            }`
+                                        }
+                                    >
+                                        Batch Delegates
+                                    </NavLink>
+                                </li>
+                            </>
                         )}
                     </ul>
                 </nav>

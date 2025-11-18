@@ -17,7 +17,8 @@ class ModelRegion(Base):
         Integer, ForeignKey("regions.region_id", ondelete="CASCADE"), nullable=False, index=True)
     shared_model_owner_id: Mapped[Optional[int]] = mapped_column(
         Integer, ForeignKey("users.user_id", ondelete="SET NULL"), nullable=True)
-    regional_risk_level: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
+    version_id: Mapped[Optional[int]] = mapped_column(
+        Integer, ForeignKey("model_versions.version_id", ondelete="SET NULL"), nullable=True)
     notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow, nullable=False)
@@ -33,3 +34,4 @@ class ModelRegion(Base):
     model: Mapped["Model"] = relationship("Model", back_populates="model_regions")
     region: Mapped["Region"] = relationship("Region")
     shared_model_owner: Mapped[Optional["User"]] = relationship("User")
+    version: Mapped[Optional["ModelVersion"]] = relationship("ModelVersion")

@@ -38,6 +38,10 @@ class ValidationWorkflowSLA(Base):
     begin_work_days: Mapped[int] = mapped_column(Integer, nullable=False, default=5)
     complete_work_days: Mapped[int] = mapped_column(Integer, nullable=False, default=80)
     approval_days: Mapped[int] = mapped_column(Integer, nullable=False, default=10)
+    model_change_lead_time_days: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=90,
+        comment="Lead time in days before model change implementation date to trigger interim validation"
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime, nullable=False, default=datetime.utcnow
     )

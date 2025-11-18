@@ -6,7 +6,7 @@ from typing import Optional
 
 class ModelRegionBase(BaseModel):
     """Base model-region schema."""
-    regional_risk_level: Optional[str] = Field(None, max_length=20, description="Regional risk level (HIGH, MEDIUM, LOW)")
+    version_id: Optional[int] = Field(None, description="Regional version (NULL = same as global)")
     notes: Optional[str] = Field(None, description="Regional context notes")
 
 
@@ -20,7 +20,7 @@ class ModelRegionCreate(ModelRegionBase):
 class ModelRegionUpdate(BaseModel):
     """Schema for updating a model-region link."""
     shared_model_owner_id: Optional[int] = None
-    regional_risk_level: Optional[str] = Field(None, max_length=20)
+    version_id: Optional[int] = None
     notes: Optional[str] = None
 
 

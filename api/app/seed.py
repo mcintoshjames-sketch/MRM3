@@ -511,6 +511,12 @@ def seed_database():
                         "description": "Continuous monitoring of model performance metrics",
                         "sort_order": 5
                     },
+                    {
+                        "code": "INTERIM",
+                        "label": "Interim Model Change Review",
+                        "description": "Auto-generated validation for model changes with imminent implementation dates. Expedited review to validate changes before production deployment.",
+                        "sort_order": 6
+                    },
                 ]
             },
             {
