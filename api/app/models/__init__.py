@@ -5,6 +5,8 @@ from app.models.vendor import Vendor
 from app.models.entra_user import EntraUser
 from app.models.taxonomy import Taxonomy, TaxonomyValue
 from app.models.audit_log import AuditLog
+from app.models.region import Region
+from app.models.model_region import ModelRegion
 from app.models.validation import (
     Validation,
     ValidationPolicy,
@@ -24,6 +26,8 @@ __all__ = [
     "EntraUser",
     "Taxonomy", "TaxonomyValue",
     "AuditLog",
+    "Region",
+    "ModelRegion",
     # Legacy validation
     "Validation",
     # Validation policy

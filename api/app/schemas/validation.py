@@ -4,6 +4,7 @@ from datetime import datetime, date
 from typing import Optional, List
 from app.schemas.user import UserResponse
 from app.schemas.taxonomy import TaxonomyValueResponse
+from app.schemas.region import Region
 
 
 # ==================== VALIDATION POLICY SCHEMAS ====================
@@ -70,6 +71,7 @@ class ValidationRequestBase(BaseModel):
     target_completion_date: date
     trigger_reason: Optional[str] = None
     business_justification: str
+    region_id: Optional[int] = None
 
 
 class ValidationRequestCreate(ValidationRequestBase):
@@ -84,6 +86,7 @@ class ValidationRequestUpdate(BaseModel):
     target_completion_date: Optional[date] = None
     trigger_reason: Optional[str] = None
     business_justification: Optional[str] = None
+    region_id: Optional[int] = None
 
 
 class ValidationRequestStatusUpdate(BaseModel):
@@ -295,6 +298,7 @@ class ValidationRequestResponse(BaseModel):
     trigger_reason: Optional[str] = None
     business_justification: str
     current_status: TaxonomyValueResponse
+    region: Optional[Region] = None
     created_at: datetime
     updated_at: datetime
 
@@ -343,6 +347,7 @@ class ValidationBase(BaseModel):
     validation_type_id: int
     outcome_id: int
     scope_id: Optional[int] = None
+    region_id: Optional[int] = None
     findings_summary: Optional[str] = None
     report_reference: Optional[str] = None
 
@@ -359,6 +364,7 @@ class ValidationUpdate(BaseModel):
     validation_type_id: Optional[int] = None
     outcome_id: Optional[int] = None
     scope_id: Optional[int] = None
+    region_id: Optional[int] = None
     findings_summary: Optional[str] = None
     report_reference: Optional[str] = None
 
@@ -371,6 +377,7 @@ class ValidationResponse(ValidationBase):
     validation_type: TaxonomyValueResponse
     outcome: TaxonomyValueResponse
     scope: Optional[TaxonomyValueResponse] = None
+    region: Optional[Region] = None
     created_at: datetime
     updated_at: datetime
 

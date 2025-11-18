@@ -70,6 +70,9 @@ class ValidationRequest(Base):
     current_status_id: Mapped[int] = mapped_column(
         Integer, ForeignKey("taxonomy_values.value_id"), nullable=False
     )
+    region_id: Mapped[Optional[int]] = mapped_column(
+        Integer, ForeignKey("regions.region_id", ondelete="SET NULL"), nullable=True, index=True
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime, nullable=False, default=datetime.utcnow
     )
@@ -79,6 +82,7 @@ class ValidationRequest(Base):
 
     # Relationships
     model = relationship("Model", back_populates="validation_requests")
+    region = relationship("Region")
     requestor = relationship("User", foreign_keys=[requestor_id])
     validation_type = relationship("TaxonomyValue", foreign_keys=[validation_type_id])
     priority = relationship("TaxonomyValue", foreign_keys=[priority_id])
@@ -265,6 +269,9 @@ class Validation(Base):
     scope_id: Mapped[Optional[int]] = mapped_column(
         Integer, ForeignKey("taxonomy_values.value_id"), nullable=True
     )
+    region_id: Mapped[Optional[int]] = mapped_column(
+        Integer, ForeignKey("regions.region_id", ondelete="SET NULL"), nullable=True, index=True
+    )
     findings_summary: Mapped[str] = mapped_column(Text, nullable=True)
     report_reference: Mapped[str] = mapped_column(String(500), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
@@ -277,6 +284,7 @@ class Validation(Base):
     # Relationships
     model = relationship("Model", back_populates="validations")
     validator = relationship("User", foreign_keys=[validator_id])
+    region = relationship("Region")
     validation_type = relationship(
         "TaxonomyValue", foreign_keys=[validation_type_id])
     outcome = relationship("TaxonomyValue", foreign_keys=[outcome_id])

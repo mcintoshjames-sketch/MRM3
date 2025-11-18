@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import api from '../api/client';
+import { regionsApi, Region } from '../api/regions';
 import Layout from '../components/Layout';
 
 interface ValidationRequest {
@@ -16,6 +17,7 @@ interface ValidationRequest {
     current_status: string;
     days_in_status: number;
     primary_validator: string | null;
+    region?: Region | null;
     created_at: string;
 }
 
@@ -36,6 +38,7 @@ export default function ValidationWorkflowPage() {
     const [models, setModels] = useState<Model[]>([]);
     const [validationTypes, setValidationTypes] = useState<TaxonomyValue[]>([]);
     const [priorities, setPriorities] = useState<TaxonomyValue[]>([]);
+    const [regions, setRegions] = useState<Region[]>([]);
     const [loading, setLoading] = useState(true);
     const [showForm, setShowForm] = useState(false);
     const [error, setError] = useState<string | null>(null);
@@ -46,7 +49,8 @@ export default function ValidationWorkflowPage() {
         priority_id: 0,
         target_completion_date: '',
         trigger_reason: '',
-        business_justification: ''
+        business_justification: '',
+        region_id: undefined as number | undefined
     });
 
     useEffect(() => {
@@ -85,6 +89,10 @@ export default function ValidationWorkflowPage() {
             if (priority) {
                 setPriorities(priority.values || []);
             }
+
+            // Fetch regions
+            const regionsData = await regionsApi.getRegions();
+            setRegions(regionsData);
         } catch (err: any) {
             console.error('Failed to fetch data:', err);
             setError(err.response?.data?.detail || 'Failed to load validation requests');
@@ -103,7 +111,12 @@ export default function ValidationWorkflowPage() {
         }
 
         try {
-            await api.post('/validation-workflow/requests/', formData);
+            // Only send region_id if it's set (not 0 or undefined)
+            const payload = {
+                ...formData,
+                region_id: formData.region_id || undefined
+            };
+            await api.post('/validation-workflow/requests/', payload);
             setShowForm(false);
             setFormData({
                 model_id: 0,
@@ -111,7 +124,8 @@ export default function ValidationWorkflowPage() {
                 priority_id: 0,
                 target_completion_date: '',
                 trigger_reason: '',
-                business_justification: ''
+                business_justification: '',
+                region_id: undefined
             });
             fetchData();
         } catch (err: any) {
@@ -247,6 +261,24 @@ export default function ValidationWorkflowPage() {
                                     required
                                 />
                             </div>
+
+                            <div className="mb-4">
+                                <label htmlFor="region_id" className="block text-sm font-medium mb-2">
+                                    Region (Optional)
+                                    <span className="text-xs text-gray-500 ml-2">Leave empty for global validation</span>
+                                </label>
+                                <select
+                                    id="region_id"
+                                    className="input-field"
+                                    value={formData.region_id || ''}
+                                    onChange={(e) => setFormData({ ...formData, region_id: e.target.value ? parseInt(e.target.value) : undefined })}
+                                >
+                                    <option value="">Global (No Region)</option>
+                                    {regions.map(r => (
+                                        <option key={r.region_id} value={r.region_id}>{r.name} ({r.code})</option>
+                                    ))}
+                                </select>
+                            </div>
                         </div>
 
                         <div className="mb-4">
@@ -295,6 +327,7 @@ export default function ValidationWorkflowPage() {
                             <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">ID</th>
                             <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Model</th>
                             <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Type</th>
+                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Region</th>
                             <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Priority</th>
                             <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
                             <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Days in Status</th>
@@ -306,7 +339,7 @@ export default function ValidationWorkflowPage() {
                     <tbody className="bg-white divide-y divide-gray-200">
                         {requests.length === 0 ? (
                             <tr>
-                                <td colSpan={9} className="px-6 py-4 text-center text-gray-500">
+                                <td colSpan={10} className="px-6 py-4 text-center text-gray-500">
                                     No validation requests found. Click "New Validation Request" to create one.
                                 </td>
                             </tr>
@@ -326,6 +359,15 @@ export default function ValidationWorkflowPage() {
                                     </td>
                                     <td className="px-6 py-4 whitespace-nowrap text-sm">
                                         {req.validation_type}
+                                    </td>
+                                    <td className="px-6 py-4 whitespace-nowrap text-sm">
+                                        {req.region ? (
+                                            <span className="px-2 py-1 text-xs rounded bg-blue-100 text-blue-800">
+                                                {req.region.code}
+                                            </span>
+                                        ) : (
+                                            <span className="text-gray-400 text-xs">Global</span>
+                                        )}
                                     </td>
                                     <td className="px-6 py-4 whitespace-nowrap">
                                         <span className={`px-2 py-1 text-xs rounded ${getPriorityColor(req.priority)}`}>

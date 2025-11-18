@@ -46,6 +46,8 @@ def list_validations(
     model_id: Optional[int] = Query(None),
     outcome_id: Optional[int] = Query(None),
     validator_id: Optional[int] = Query(None),
+    region_id: Optional[int] = Query(None),
+    scope: Optional[str] = Query(None, description="Filter by scope: 'global' (region_id IS NULL) or 'regional' (region_id IS NOT NULL)"),
     from_date: Optional[date] = Query(None),
     to_date: Optional[date] = Query(None),
     limit: int = Query(100, ge=1, le=1000),
@@ -59,7 +61,8 @@ def list_validations(
         joinedload(Validation.validator),
         joinedload(Validation.validation_type),
         joinedload(Validation.outcome),
-        joinedload(Validation.scope)
+        joinedload(Validation.scope),
+        joinedload(Validation.region)
     )
 
     if model_id is not None:
@@ -68,6 +71,15 @@ def list_validations(
         query = query.filter(Validation.outcome_id == outcome_id)
     if validator_id is not None:
         query = query.filter(Validation.validator_id == validator_id)
+    if region_id is not None:
+        query = query.filter(Validation.region_id == region_id)
+    if scope:
+        if scope.lower() == "global":
+            query = query.filter(Validation.region_id.is_(None))
+        elif scope.lower() == "regional":
+            query = query.filter(Validation.region_id.isnot(None))
+        else:
+            raise HTTPException(status_code=400, detail="Invalid scope. Must be 'global' or 'regional'")
     if from_date is not None:
         query = query.filter(Validation.validation_date >= from_date)
     if to_date is not None:
@@ -140,6 +152,13 @@ def create_validation(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Scope not found")
 
+    # Verify region if provided
+    if validation_data.region_id:
+        from app.models import Region
+        region = db.query(Region).filter(Region.region_id == validation_data.region_id).first()
+        if not region:
+            raise HTTPException(status_code=404, detail="Region not found")
+
     validation = Validation(**validation_data.model_dump())
     db.add(validation)
     db.flush()
@@ -166,7 +185,8 @@ def create_validation(
         joinedload(Validation.validator),
         joinedload(Validation.validation_type),
         joinedload(Validation.outcome),
-        joinedload(Validation.scope)
+        joinedload(Validation.scope),
+        joinedload(Validation.region)
     ).filter(Validation.validation_id == validation.validation_id).first()
 
     return validation
@@ -184,7 +204,8 @@ def get_validation(
         joinedload(Validation.validator),
         joinedload(Validation.validation_type),
         joinedload(Validation.outcome),
-        joinedload(Validation.scope)
+        joinedload(Validation.scope),
+        joinedload(Validation.region)
     ).filter(Validation.validation_id == validation_id).first()
 
     if not validation:
@@ -247,7 +268,8 @@ def update_validation(
         joinedload(Validation.validator),
         joinedload(Validation.validation_type),
         joinedload(Validation.outcome),
-        joinedload(Validation.scope)
+        joinedload(Validation.scope),
+        joinedload(Validation.region)
     ).filter(Validation.validation_id == validation_id).first()
 
     return validation

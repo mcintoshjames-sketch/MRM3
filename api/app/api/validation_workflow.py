@@ -161,6 +161,13 @@ def create_validation_request(
     # Get initial status (INTAKE)
     intake_status = get_taxonomy_value_by_code(db, "Validation Request Status", "INTAKE")
 
+    # Verify region if provided
+    if request_data.region_id:
+        from app.models import Region
+        region = db.query(Region).filter(Region.region_id == request_data.region_id).first()
+        if not region:
+            raise HTTPException(status_code=404, detail="Region not found")
+
     # Create the request
     validation_request = ValidationRequest(
         model_id=request_data.model_id,
@@ -172,6 +179,7 @@ def create_validation_request(
         trigger_reason=request_data.trigger_reason,
         business_justification=request_data.business_justification,
         current_status_id=intake_status.value_id,
+        region_id=request_data.region_id,
         created_at=datetime.utcnow(),
         updated_at=datetime.utcnow()
     )
@@ -212,6 +220,8 @@ def list_validation_requests(
     status_id: Optional[int] = None,
     priority_id: Optional[int] = None,
     requestor_id: Optional[int] = None,
+    region_id: Optional[int] = None,
+    scope: Optional[str] = Query(None, description="Filter by scope: 'global' (region_id IS NULL) or 'regional' (region_id IS NOT NULL)"),
     limit: int = 100,
     offset: int = 0,
     db: Session = Depends(get_db),
@@ -224,6 +234,7 @@ def list_validation_requests(
         joinedload(ValidationRequest.validation_type),
         joinedload(ValidationRequest.priority),
         joinedload(ValidationRequest.current_status),
+        joinedload(ValidationRequest.region),
         joinedload(ValidationRequest.assignments).joinedload(ValidationAssignment.validator)
     )
 
@@ -235,6 +246,15 @@ def list_validation_requests(
         query = query.filter(ValidationRequest.priority_id == priority_id)
     if requestor_id:
         query = query.filter(ValidationRequest.requestor_id == requestor_id)
+    if region_id:
+        query = query.filter(ValidationRequest.region_id == region_id)
+    if scope:
+        if scope.lower() == "global":
+            query = query.filter(ValidationRequest.region_id.is_(None))
+        elif scope.lower() == "regional":
+            query = query.filter(ValidationRequest.region_id.isnot(None))
+        else:
+            raise HTTPException(status_code=400, detail="Invalid scope. Must be 'global' or 'regional'")
 
     requests = query.order_by(desc(ValidationRequest.request_date)).offset(offset).limit(limit).all()
 
@@ -276,6 +296,7 @@ def get_validation_request(
         joinedload(ValidationRequest.validation_type),
         joinedload(ValidationRequest.priority),
         joinedload(ValidationRequest.current_status),
+        joinedload(ValidationRequest.region),
         joinedload(ValidationRequest.assignments).joinedload(ValidationAssignment.validator),
         joinedload(ValidationRequest.status_history).joinedload(ValidationStatusHistory.old_status),
         joinedload(ValidationRequest.status_history).joinedload(ValidationStatusHistory.new_status),

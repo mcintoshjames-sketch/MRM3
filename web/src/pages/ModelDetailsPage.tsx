@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import api from '../api/client';
 import Layout from '../components/Layout';
+import ModelRegionsSection from '../components/ModelRegionsSection';
 
 interface User {
     user_id: number;
@@ -755,6 +756,11 @@ export default function ModelDetailsPage() {
                             <h4 className="text-sm font-medium text-gray-500 mb-1">Last Updated</h4>
                             <p className="text-sm">{new Date(model.updated_at).toLocaleString()}</p>
                         </div>
+                    </div>
+
+                    {/* Model-Region Management Section */}
+                    <div className="bg-white p-6 rounded-lg shadow-md">
+                        <ModelRegionsSection modelId={model.model_id} />
                     </div>
                 </div>
             ) : (
