@@ -73,7 +73,8 @@ def list_validations(
     if to_date is not None:
         query = query.filter(Validation.validation_date <= to_date)
 
-    validations = query.order_by(Validation.validation_date.desc()).offset(offset).limit(limit).all()
+    validations = query.order_by(Validation.validation_date.desc()).offset(
+        offset).limit(limit).all()
 
     # Transform to list response
     result = []
@@ -86,7 +87,7 @@ def list_validations(
             validator_name=v.validator.full_name,
             validation_type=v.validation_type.label,
             outcome=v.outcome.label,
-            scope=v.scope.label,
+            scope=v.scope.label if v.scope else None,
             created_at=v.created_at
         ))
 
@@ -103,7 +104,8 @@ def create_validation(
     check_validator_or_admin(current_user)
 
     # Verify model exists
-    model = db.query(Model).filter(Model.model_id == validation_data.model_id).first()
+    model = db.query(Model).filter(Model.model_id ==
+                                   validation_data.model_id).first()
     if not model:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -111,7 +113,8 @@ def create_validation(
         )
 
     # Verify validator user exists
-    validator = db.query(User).filter(User.user_id == validation_data.validator_id).first()
+    validator = db.query(User).filter(
+        User.user_id == validation_data.validator_id).first()
     if not validator:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -119,17 +122,23 @@ def create_validation(
         )
 
     # Verify taxonomy values exist
-    validation_type = db.query(TaxonomyValue).filter(TaxonomyValue.value_id == validation_data.validation_type_id).first()
+    validation_type = db.query(TaxonomyValue).filter(
+        TaxonomyValue.value_id == validation_data.validation_type_id).first()
     if not validation_type:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Validation type not found")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,
+                            detail="Validation type not found")
 
-    outcome = db.query(TaxonomyValue).filter(TaxonomyValue.value_id == validation_data.outcome_id).first()
+    outcome = db.query(TaxonomyValue).filter(
+        TaxonomyValue.value_id == validation_data.outcome_id).first()
     if not outcome:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Outcome not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Outcome not found")
 
-    scope = db.query(TaxonomyValue).filter(TaxonomyValue.value_id == validation_data.scope_id).first()
+    scope = db.query(TaxonomyValue).filter(
+        TaxonomyValue.value_id == validation_data.scope_id).first()
     if not scope:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Scope not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Scope not found")
 
     validation = Validation(**validation_data.model_dump())
     db.add(validation)
@@ -197,7 +206,8 @@ def update_validation(
     """Update a validation record. Only Validators or Admins can update."""
     check_validator_or_admin(current_user)
 
-    validation = db.query(Validation).filter(Validation.validation_id == validation_id).first()
+    validation = db.query(Validation).filter(
+        Validation.validation_id == validation_id).first()
     if not validation:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -211,13 +221,15 @@ def update_validation(
     for field, value in update_data.items():
         old_value = getattr(validation, field)
         if old_value != value:
-            old_values[field] = str(old_value) if old_value is not None else None
+            old_values[field] = str(
+                old_value) if old_value is not None else None
             new_values[field] = str(value) if value is not None else None
             setattr(validation, field, value)
 
     if old_values:
         # Create audit log
-        changes = {field: {"old": old_values[field], "new": new_values[field]} for field in old_values}
+        changes = {field: {
+            "old": old_values[field], "new": new_values[field]} for field in old_values}
         audit_log = AuditLog(
             entity_type="Validation",
             entity_id=validation.validation_id,
@@ -300,7 +312,8 @@ def create_policy(
     check_admin(current_user)
 
     # Verify risk tier exists
-    risk_tier = db.query(TaxonomyValue).filter(TaxonomyValue.value_id == policy_data.risk_tier_id).first()
+    risk_tier = db.query(TaxonomyValue).filter(
+        TaxonomyValue.value_id == policy_data.risk_tier_id).first()
     if not risk_tier:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -308,7 +321,8 @@ def create_policy(
         )
 
     # Check for duplicate
-    existing = db.query(ValidationPolicy).filter(ValidationPolicy.risk_tier_id == policy_data.risk_tier_id).first()
+    existing = db.query(ValidationPolicy).filter(
+        ValidationPolicy.risk_tier_id == policy_data.risk_tier_id).first()
     if existing:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -336,7 +350,8 @@ def update_policy(
     """Update a validation policy. Only Admins can update."""
     check_admin(current_user)
 
-    policy = db.query(ValidationPolicy).filter(ValidationPolicy.policy_id == policy_id).first()
+    policy = db.query(ValidationPolicy).filter(
+        ValidationPolicy.policy_id == policy_id).first()
     if not policy:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -365,7 +380,8 @@ def delete_policy(
     """Delete a validation policy. Only Admins can delete."""
     check_admin(current_user)
 
-    policy = db.query(ValidationPolicy).filter(ValidationPolicy.policy_id == policy_id).first()
+    policy = db.query(ValidationPolicy).filter(
+        ValidationPolicy.policy_id == policy_id).first()
     if not policy:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -386,7 +402,8 @@ def get_overdue_models(
     check_admin(current_user)
 
     # Get all policies
-    policies = {p.risk_tier_id: p.frequency_months for p in db.query(ValidationPolicy).all()}
+    policies = {p.risk_tier_id: p.frequency_months for p in db.query(
+        ValidationPolicy).all()}
 
     if not policies:
         return []
@@ -424,7 +441,8 @@ def get_overdue_models(
                 "status": "Never Validated"
             })
         else:
-            next_due = last_validation.validation_date + timedelta(days=frequency_months * 30)
+            next_due = last_validation.validation_date + \
+                timedelta(days=frequency_months * 30)
             if next_due < today:
                 days_overdue = (today - next_due).days
                 overdue.append({

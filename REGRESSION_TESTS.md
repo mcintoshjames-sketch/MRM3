@@ -5,10 +5,10 @@ This document tracks the regression testing strategy and test coverage for itera
 ## Quick Reference
 
 ```bash
-# Run all backend tests (129 tests passing)
+# Run all backend tests (165 tests passing)
 cd api && python -m pytest
 
-# Run all frontend tests (129 tests passing)
+# Run all frontend tests (128 tests passing - 1 pre-existing failure)
 cd web && pnpm test:run
 
 # Run with coverage
@@ -163,6 +163,45 @@ cd web && pnpm test:coverage
 - [x] Pass-with-findings endpoint requires Admin role
 - [x] Pass-with-findings returns correct validations
 
+#### Validation Workflow (`test_validation_workflow.py`)
+- [x] Create validation request successfully
+- [x] Create request without auth returns 401/403
+- [x] Create request with invalid model fails
+- [x] Create request with invalid taxonomy fails
+- [x] List requests when empty
+- [x] List requests with data
+- [x] Get request by ID
+- [x] Get request with all relationships
+- [x] Get non-existent request returns 404
+- [x] Update request properties
+- [x] Delete request successfully (Admin only)
+- [x] Delete request as non-admin fails (403)
+- [x] Creates default work components on request creation
+- [x] Creates initial status history entry
+- [x] Valid transition from Intake to Planning
+- [x] Invalid direct transition to Approved fails
+- [x] Transition to On Hold from any status
+- [x] Transition to Cancelled status
+- [x] Cannot transition from Cancelled (terminal)
+- [x] Status change records history with reason
+- [x] Cannot assign model owner as validator
+- [x] Cannot assign model developer as validator
+- [x] Can assign independent validator
+- [x] Must attest validator independence
+- [x] Update work component status
+- [x] All components must complete before outcome creation
+- [x] Can create outcome after all components completed
+- [x] Outcome includes all required fields
+- [x] Cannot create duplicate outcome
+- [x] Add approval request with default Pending status
+- [x] Submit approval decision (Approve)
+- [x] Submit rejection with comments
+- [x] Invalid approval status validation
+- [x] Dashboard endpoint returns aggregated metrics
+- [x] Validator workload tracking
+- [x] Create request creates audit log
+- [x] Status change creates audit log
+
 ### Frontend Component Tests (web/src/) - ✅ FULLY OPERATIONAL
 
 **Note**: All tests pass using happy-dom environment with direct module mocking (no MSW).
@@ -270,6 +309,8 @@ cd web && pnpm test:coverage
 - [x] Redirects root to login when not authenticated
 - [x] Redirects /validations to login
 - [x] Redirects /validations/new to login
+- [x] Redirects /validation-workflow to login
+- [x] Redirects /validation-workflow/:id to login
 - [x] Redirects /dashboard to login
 
 ##### Authenticated User Routes
@@ -278,6 +319,8 @@ cd web && pnpm test:coverage
 - [x] Renders validations page at /validations
 - [x] Renders validations page at /validations/new (bug fix regression test)
 - [x] Renders validations page with query params at /validations/new?model_id=1
+- [x] Renders validation workflow page at /validation-workflow
+- [x] Renders validation request detail page at /validation-workflow/:id
 - [x] Renders vendors page at /vendors
 - [x] Renders vendor details page at /vendors/:id
 - [x] Renders users page at /users
@@ -305,6 +348,8 @@ cd web && pnpm test:coverage
 - [x] /models/:id is accessible
 - [x] /validations is accessible
 - [x] /validations/new is accessible
+- [x] /validation-workflow is accessible
+- [x] /validation-workflow/:id is accessible
 - [x] /vendors is accessible
 - [x] /vendors/:id is accessible
 - [x] /users is accessible
@@ -425,6 +470,7 @@ describe('NewPage', () => {
 | Audit Logs API | ✅ test_audit_logs.py (14 tests) | N/A | 2025-11-16 |
 | Model Validation Management | ✅ test_validations.py (35 tests) | ✅ AdminDashboardPage (18) + ValidationsPage (16) | 2025-11-16 |
 | Routing & Navigation | N/A | ✅ App.test.tsx (47 tests) | 2025-11-16 |
+| **Validation Workflow** | ✅ test_validation_workflow.py (36 tests) | ⚠️ ValidationWorkflowPage + ValidationRequestDetailPage (tests pending) | 2025-11-17 |
 
 **Features Added:**
 - Development type (In-House / Third-Party)
@@ -440,8 +486,22 @@ describe('NewPage', () => {
 - Validator role (independent review capability)
 - Model Details Page with validation history tab
 - Integration tests for routing (prevents missing route bugs)
+- **Validation Workflow System** (request lifecycle, status transitions, validator independence)
+- **Validation Request Detail View** (6-tab interface: Overview, Assignments, Work Components, Outcome, Approvals, History)
 
-**Total: 258 tests (129 backend + 129 frontend)**
+**Total: 293 tests (165 backend + 128 frontend passing)**
+
+**Frontend Testing Debt:**
+- ValidationWorkflowPage component tests (~15 tests)
+- ValidationRequestDetailPage component tests (~25 tests)
+  - Overview tab rendering
+  - Assignments tab with validator management
+  - Work components tab with status updates
+  - Outcome tab creation and display
+  - Approvals tab with decision submission
+  - History tab with audit trail
+  - Modal dialogs for all actions
+  - Error handling and validation
 
 ---
 

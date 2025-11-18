@@ -176,29 +176,70 @@ cd api && python -m pytest && cd ../web && pnpm test:run
   - Edit code, label, description, sort order, active status
   - Models edit form includes taxonomy dropdowns
 
-### Model Validation Management
-- **Purpose**: Track independent model validations for regulatory compliance
-- **Core Components**:
-  - **Validation**: Records of model reviews with date, validator, type, outcome, scope, findings
+### Model Validation Workflow Management
+- **Purpose**: Full lifecycle management of model validation requests with proper workflow states
+- **Core Architecture**:
+  - **ValidationRequest**: Main workflow entity tracking validation lifecycle
+  - **ValidationStatusHistory**: Complete audit trail of status changes
+  - **ValidationAssignment**: Validator assignments with independence checks
+  - **ValidationWorkComponent**: Track individual work areas (conceptual soundness, data quality, etc.)
+  - **ValidationOutcome**: Final outcome - ONLY created after work is complete
+  - **ValidationApproval**: Multi-stakeholder approval workflow
   - **ValidationPolicy**: Admin-configurable re-validation frequency by risk tier
-- **User Roles for Validation**:
-  - **Admin/Validator**: Can create, edit, delete validation records
-  - **User**: View-only access to validation records
-- **Database Models**:
-  - `Validation` - validation_id, model_id, validation_date, validator_id, validation_type_id, outcome_id, scope_id, findings_summary, report_reference
-  - `ValidationPolicy` - policy_id, risk_tier_id, frequency_months, description
-- **Admin Dashboard**:
-  - Default landing page for Admin users
-  - Shows models overdue for validation (based on policy frequency)
-  - Shows validations with "Pass with Findings" needing issue recommendations (placeholder for future Issue Management)
-  - Quick action links to validation list and policy configuration
-- **Validation Workflow**:
-  1. Admin configures validation frequency per risk tier (e.g., Tier 1 = 6 months)
-  2. Validator performs model review
-  3. Validator records validation with outcome (Pass/Pass with Findings/Fail)
-  4. System calculates next due date based on policy
-  5. Dashboard alerts for overdue models and findings requiring attention
-- **Future Enhancement**: Issue Management for tracking findings and recommendations
+
+- **Workflow States**:
+  1. **Intake** - Initial request submission
+  2. **Planning** - Scoping and resource allocation
+  3. **In Progress** - Active validation work
+  4. **Review** - Internal QA and compilation
+  5. **Pending Approval** - Awaiting stakeholder sign-offs
+  6. **Approved** - Validation complete with all approvals
+  7. **On Hold** - Temporarily paused (with reason tracking)
+  8. **Cancelled** - Terminated before completion (with justification)
+
+- **Business Rules**:
+  - Status transitions enforce valid state machine (cannot skip stages)
+  - Validator independence enforced (cannot be model owner/developer)
+  - Outcome entry only allowed when all work components are completed AND status >= Review
+  - Request locked from editing once in Pending Approval or Approved status
+  - Complete audit trail for compliance
+
+- **New Taxonomy Values**:
+  - **Validation Priority**: Critical, High, Medium, Low
+  - **Validation Request Status**: All 8 workflow states
+  - **Work Component Type**: Conceptual Soundness, Data Quality, Implementation Testing, Performance Testing, Documentation Review
+  - **Work Component Status**: Not Started, In Progress, Completed
+  - **Overall Rating**: Fit for Purpose, Fit with Conditions, Not Fit for Purpose
+
+- **API Endpoints** (prefix: `/validation-workflow`):
+  - `POST /requests/` - Create new validation request (NO outcome required!)
+  - `GET /requests/` - List requests with filters
+  - `GET /requests/{id}` - Get detailed request with all relationships
+  - `PATCH /requests/{id}` - Update request details
+  - `PATCH /requests/{id}/status` - Update status with workflow validation
+  - `POST /requests/{id}/assignments` - Assign validators with independence check
+  - `PATCH /components/{id}` - Update work component status/notes
+  - `POST /requests/{id}/outcome` - Create outcome (only when work complete)
+  - `POST /requests/{id}/approvals` - Add approval requirements
+  - `PATCH /approvals/{id}` - Submit approval/rejection
+  - `GET /dashboard/aging` - Aging report by status
+  - `GET /dashboard/workload` - Validator workload report
+
+- **Frontend Routes**:
+  - `/validation-workflow` - Main validation request list with workflow management
+  - Navigation updated to use new workflow page
+
+- **Legacy Support**:
+  - Old `/validations` endpoints still available (tagged as legacy)
+  - Old validation model and schemas retained for backwards compatibility
+  - Old frontend page accessible at `/validations` route
+
+- **Future Enhancements** (separate phases):
+  - Detailed Findings and Issues tracking module
+  - Validation request detail page with full workflow UI
+  - Kanban board view for status management
+  - Email notifications for status changes
+  - Bulk operations for periodic validation scheduling
 
 ### Mock Microsoft Entra Integration
 - **Purpose**: Simulates SSO integration with Microsoft Entra ID (Azure AD)

@@ -34,11 +34,30 @@ interface Model {
     model_type: TaxonomyValue | null;
 }
 
+interface ValidationAssignment {
+    assignment_id: number;
+    request_id: number;
+    model_id: number;
+    model_name: string;
+    validation_type: string;
+    priority: string;
+    current_status: string;
+    is_primary: boolean;
+    is_reviewer: boolean;
+    assignment_date: string;
+    estimated_hours: number | null;
+    actual_hours: number | null;
+    reviewer_signed_off: boolean;
+    target_completion_date: string;
+    created_at: string;
+}
+
 export default function UserDetailsPage() {
     const { id } = useParams<{ id: string }>();
     const navigate = useNavigate();
     const [user, setUser] = useState<User | null>(null);
     const [models, setModels] = useState<Model[]>([]);
+    const [validationAssignments, setValidationAssignments] = useState<ValidationAssignment[]>([]);
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
@@ -47,12 +66,20 @@ export default function UserDetailsPage() {
 
     const fetchData = async () => {
         try {
-            const [userRes, modelsRes] = await Promise.all([
-                api.get(`/auth/users/${id}`),
-                api.get(`/auth/users/${id}/models`)
-            ]);
+            // Fetch user first
+            const userRes = await api.get(`/auth/users/${id}`);
             setUser(userRes.data);
-            setModels(modelsRes.data);
+
+            // Fetch different data based on role
+            if (userRes.data.role === 'Validator') {
+                // Fetch validation assignments for validators
+                const assignmentsRes = await api.get(`/validation-workflow/validators/${id}/assignments`);
+                setValidationAssignments(assignmentsRes.data);
+            } else {
+                // Fetch models for non-validators
+                const modelsRes = await api.get(`/auth/users/${id}/models`);
+                setModels(modelsRes.data);
+            }
         } catch (error) {
             console.error('Failed to fetch user:', error);
         } finally {
@@ -155,6 +182,8 @@ export default function UserDetailsPage() {
                         <span className={`px-2 py-1 text-sm rounded ${
                             user.role === 'Admin'
                                 ? 'bg-purple-100 text-purple-800'
+                                : user.role === 'Validator'
+                                ? 'bg-green-100 text-green-800'
                                 : 'bg-blue-100 text-blue-800'
                         }`}>
                             {user.role}
@@ -164,186 +193,315 @@ export default function UserDetailsPage() {
                         <h4 className="text-sm font-medium text-gray-500 mb-1">Created</h4>
                         <p className="text-sm">{new Date(user.created_at).toLocaleString()}</p>
                     </div>
-                    <div>
-                        <h4 className="text-sm font-medium text-gray-500 mb-1">Models Owned</h4>
-                        <p className="text-lg font-semibold">{getOwnedModels().length}</p>
-                    </div>
-                    <div>
-                        <h4 className="text-sm font-medium text-gray-500 mb-1">Models Developed</h4>
-                        <p className="text-lg font-semibold">{getDevelopedModels().length}</p>
-                    </div>
-                </div>
-            </div>
-
-            {/* Related Models - Tabbed View */}
-            <div className="bg-white p-6 rounded-lg shadow-md">
-                <div className="flex justify-between items-center mb-4">
-                    <h3 className="text-lg font-bold">
-                        Related Models ({models.length} total)
-                    </h3>
-                    {models.length > 0 && (
-                        <button
-                            onClick={handleExportCSV}
-                            className="btn-secondary"
-                        >
-                            Export CSV
-                        </button>
+                    {user.role === 'Validator' ? (
+                        <>
+                            <div>
+                                <h4 className="text-sm font-medium text-gray-500 mb-1">Total Assignments</h4>
+                                <p className="text-lg font-semibold">{validationAssignments.length}</p>
+                            </div>
+                            <div>
+                                <h4 className="text-sm font-medium text-gray-500 mb-1">Primary Validator</h4>
+                                <p className="text-lg font-semibold">
+                                    {validationAssignments.filter(a => a.is_primary).length}
+                                </p>
+                            </div>
+                            <div>
+                                <h4 className="text-sm font-medium text-gray-500 mb-1">Reviewer Role</h4>
+                                <p className="text-lg font-semibold">
+                                    {validationAssignments.filter(a => a.is_reviewer).length}
+                                </p>
+                            </div>
+                            <div>
+                                <h4 className="text-sm font-medium text-gray-500 mb-1">Active Assignments</h4>
+                                <p className="text-lg font-semibold">
+                                    {validationAssignments.filter(a =>
+                                        a.current_status !== 'Approved' && a.current_status !== 'Cancelled'
+                                    ).length}
+                                </p>
+                            </div>
+                        </>
+                    ) : (
+                        <>
+                            <div>
+                                <h4 className="text-sm font-medium text-gray-500 mb-1">Models Owned</h4>
+                                <p className="text-lg font-semibold">{getOwnedModels().length}</p>
+                            </div>
+                            <div>
+                                <h4 className="text-sm font-medium text-gray-500 mb-1">Models Developed</h4>
+                                <p className="text-lg font-semibold">{getDevelopedModels().length}</p>
+                            </div>
+                        </>
                     )}
                 </div>
-
-                {models.length === 0 ? (
-                    <p className="text-gray-500">This user is not the owner or developer of any models.</p>
-                ) : (
-                    <div className="space-y-6">
-                        {/* Models Owned Section */}
-                        <div>
-                            <h4 className="text-md font-semibold mb-3 text-gray-700">
-                                Models Owned ({getOwnedModels().length})
-                            </h4>
-                            {getOwnedModels().length === 0 ? (
-                                <p className="text-gray-500 text-sm">No models owned.</p>
-                            ) : (
-                                <div className="overflow-x-auto">
-                                    <table className="min-w-full divide-y divide-gray-200">
-                                        <thead className="bg-gray-50">
-                                            <tr>
-                                                <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">
-                                                    Model Name
-                                                </th>
-                                                <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">
-                                                    Type
-                                                </th>
-                                                <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">
-                                                    Risk Tier
-                                                </th>
-                                                <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">
-                                                    Status
-                                                </th>
-                                                <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">
-                                                    Actions
-                                                </th>
-                                            </tr>
-                                        </thead>
-                                        <tbody className="bg-white divide-y divide-gray-200">
-                                            {getOwnedModels().map((model) => (
-                                                <tr key={model.model_id}>
-                                                    <td className="px-4 py-3 whitespace-nowrap">
-                                                        <div className="font-medium">{model.model_name}</div>
-                                                        {model.description && (
-                                                            <div className="text-sm text-gray-500 truncate max-w-xs">
-                                                                {model.description}
-                                                            </div>
-                                                        )}
-                                                    </td>
-                                                    <td className="px-4 py-3 whitespace-nowrap">
-                                                        <span className={`px-2 py-1 text-xs rounded ${
-                                                            model.development_type === 'In-House'
-                                                                ? 'bg-green-100 text-green-800'
-                                                                : 'bg-purple-100 text-purple-800'
-                                                        }`}>
-                                                            {model.development_type}
-                                                        </span>
-                                                    </td>
-                                                    <td className="px-4 py-3 whitespace-nowrap">
-                                                        {model.risk_tier ? (
-                                                            <span className="px-2 py-1 text-xs rounded bg-orange-100 text-orange-800">
-                                                                {model.risk_tier.label}
-                                                            </span>
-                                                        ) : (
-                                                            <span className="text-gray-400">-</span>
-                                                        )}
-                                                    </td>
-                                                    <td className="px-4 py-3 whitespace-nowrap">
-                                                        <span className="px-2 py-1 text-xs rounded bg-blue-100 text-blue-800">
-                                                            {model.status}
-                                                        </span>
-                                                    </td>
-                                                    <td className="px-4 py-3 whitespace-nowrap">
-                                                        <Link
-                                                            to={`/models/${model.model_id}`}
-                                                            className="text-blue-600 hover:text-blue-800"
-                                                        >
-                                                            View
-                                                        </Link>
-                                                    </td>
-                                                </tr>
-                                            ))}
-                                        </tbody>
-                                    </table>
-                                </div>
-                            )}
-                        </div>
-
-                        {/* Models Developed Section */}
-                        <div>
-                            <h4 className="text-md font-semibold mb-3 text-gray-700">
-                                Models Developed ({getDevelopedModels().length})
-                            </h4>
-                            {getDevelopedModels().length === 0 ? (
-                                <p className="text-gray-500 text-sm">No models developed.</p>
-                            ) : (
-                                <div className="overflow-x-auto">
-                                    <table className="min-w-full divide-y divide-gray-200">
-                                        <thead className="bg-gray-50">
-                                            <tr>
-                                                <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">
-                                                    Model Name
-                                                </th>
-                                                <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">
-                                                    Owner
-                                                </th>
-                                                <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">
-                                                    Type
-                                                </th>
-                                                <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">
-                                                    Status
-                                                </th>
-                                                <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">
-                                                    Actions
-                                                </th>
-                                            </tr>
-                                        </thead>
-                                        <tbody className="bg-white divide-y divide-gray-200">
-                                            {getDevelopedModels().map((model) => (
-                                                <tr key={model.model_id}>
-                                                    <td className="px-4 py-3 whitespace-nowrap">
-                                                        <div className="font-medium">{model.model_name}</div>
-                                                    </td>
-                                                    <td className="px-4 py-3 whitespace-nowrap">
-                                                        <div className="text-sm">{model.owner.full_name}</div>
-                                                    </td>
-                                                    <td className="px-4 py-3 whitespace-nowrap">
-                                                        <span className={`px-2 py-1 text-xs rounded ${
-                                                            model.development_type === 'In-House'
-                                                                ? 'bg-green-100 text-green-800'
-                                                                : 'bg-purple-100 text-purple-800'
-                                                        }`}>
-                                                            {model.development_type}
-                                                        </span>
-                                                    </td>
-                                                    <td className="px-4 py-3 whitespace-nowrap">
-                                                        <span className="px-2 py-1 text-xs rounded bg-blue-100 text-blue-800">
-                                                            {model.status}
-                                                        </span>
-                                                    </td>
-                                                    <td className="px-4 py-3 whitespace-nowrap">
-                                                        <Link
-                                                            to={`/models/${model.model_id}`}
-                                                            className="text-blue-600 hover:text-blue-800"
-                                                        >
-                                                            View
-                                                        </Link>
-                                                    </td>
-                                                </tr>
-                                            ))}
-                                        </tbody>
-                                    </table>
-                                </div>
-                            )}
-                        </div>
-                    </div>
-                )}
             </div>
+
+            {/* Validation Assignments for Validators OR Related Models for Others */}
+            {user.role === 'Validator' ? (
+                <div className="bg-white p-6 rounded-lg shadow-md">
+                    <div className="flex justify-between items-center mb-4">
+                        <h3 className="text-lg font-bold">
+                            Validation Assignments ({validationAssignments.length} total)
+                        </h3>
+                    </div>
+
+                    {validationAssignments.length === 0 ? (
+                        <p className="text-gray-500">This validator has no validation assignments.</p>
+                    ) : (
+                        <div className="overflow-x-auto">
+                            <table className="min-w-full divide-y divide-gray-200">
+                                <thead className="bg-gray-50">
+                                    <tr>
+                                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">
+                                            Model
+                                        </th>
+                                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">
+                                            Validation Type
+                                        </th>
+                                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">
+                                            Role
+                                        </th>
+                                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">
+                                            Status
+                                        </th>
+                                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">
+                                            Assignment Date
+                                        </th>
+                                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">
+                                            Hours (Actual / Est)
+                                        </th>
+                                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">
+                                            Actions
+                                        </th>
+                                    </tr>
+                                </thead>
+                                <tbody className="bg-white divide-y divide-gray-200">
+                                    {validationAssignments.map((assignment) => {
+                                        const roles = [];
+                                        if (assignment.is_primary) roles.push('Primary');
+                                        if (assignment.is_reviewer) roles.push('Reviewer');
+                                        const roleText = roles.length > 0 ? roles.join(' & ') : 'Supporting';
+
+                                        return (
+                                            <tr key={assignment.assignment_id}>
+                                                <td className="px-4 py-3 whitespace-nowrap">
+                                                    <Link
+                                                        to={`/models/${assignment.model_id}`}
+                                                        className="text-blue-600 hover:text-blue-800 font-medium"
+                                                    >
+                                                        {assignment.model_name}
+                                                    </Link>
+                                                </td>
+                                                <td className="px-4 py-3 whitespace-nowrap text-sm">
+                                                    {assignment.validation_type}
+                                                </td>
+                                                <td className="px-4 py-3 whitespace-nowrap">
+                                                    <span className={`px-2 py-1 text-xs rounded ${
+                                                        assignment.is_primary
+                                                            ? 'bg-blue-100 text-blue-800'
+                                                            : assignment.is_reviewer
+                                                            ? 'bg-purple-100 text-purple-800'
+                                                            : 'bg-gray-100 text-gray-800'
+                                                    }`}>
+                                                        {roleText}
+                                                    </span>
+                                                </td>
+                                                <td className="px-4 py-3 whitespace-nowrap">
+                                                    <span className="px-2 py-1 text-xs rounded bg-green-100 text-green-800">
+                                                        {assignment.current_status}
+                                                    </span>
+                                                </td>
+                                                <td className="px-4 py-3 whitespace-nowrap text-sm">
+                                                    {new Date(assignment.assignment_date).toLocaleDateString()}
+                                                </td>
+                                                <td className="px-4 py-3 whitespace-nowrap text-sm">
+                                                    {assignment.actual_hours || 0} / {assignment.estimated_hours || '-'}
+                                                </td>
+                                                <td className="px-4 py-3 whitespace-nowrap">
+                                                    <Link
+                                                        to={`/validation-workflow/${assignment.request_id}`}
+                                                        className="text-blue-600 hover:text-blue-800"
+                                                    >
+                                                        View
+                                                    </Link>
+                                                </td>
+                                            </tr>
+                                        );
+                                    })}
+                                </tbody>
+                            </table>
+                        </div>
+                    )}
+                </div>
+            ) : (
+                <div className="bg-white p-6 rounded-lg shadow-md">
+                    <div className="flex justify-between items-center mb-4">
+                        <h3 className="text-lg font-bold">
+                            Related Models ({models.length} total)
+                        </h3>
+                        {models.length > 0 && (
+                            <button
+                                onClick={handleExportCSV}
+                                className="btn-secondary"
+                            >
+                                Export CSV
+                            </button>
+                        )}
+                    </div>
+
+                    {models.length === 0 ? (
+                        <p className="text-gray-500">This user is not the owner or developer of any models.</p>
+                    ) : (
+                        <div className="space-y-6">
+                            {/* Models Owned Section */}
+                            <div>
+                                <h4 className="text-md font-semibold mb-3 text-gray-700">
+                                    Models Owned ({getOwnedModels().length})
+                                </h4>
+                                {getOwnedModels().length === 0 ? (
+                                    <p className="text-gray-500 text-sm">No models owned.</p>
+                                ) : (
+                                    <div className="overflow-x-auto">
+                                        <table className="min-w-full divide-y divide-gray-200">
+                                            <thead className="bg-gray-50">
+                                                <tr>
+                                                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">
+                                                        Model Name
+                                                    </th>
+                                                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">
+                                                        Type
+                                                    </th>
+                                                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">
+                                                        Risk Tier
+                                                    </th>
+                                                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">
+                                                        Status
+                                                    </th>
+                                                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">
+                                                        Actions
+                                                    </th>
+                                                </tr>
+                                            </thead>
+                                            <tbody className="bg-white divide-y divide-gray-200">
+                                                {getOwnedModels().map((model) => (
+                                                    <tr key={model.model_id}>
+                                                        <td className="px-4 py-3 whitespace-nowrap">
+                                                            <div className="font-medium">{model.model_name}</div>
+                                                            {model.description && (
+                                                                <div className="text-sm text-gray-500 truncate max-w-xs">
+                                                                    {model.description}
+                                                                </div>
+                                                            )}
+                                                        </td>
+                                                        <td className="px-4 py-3 whitespace-nowrap">
+                                                            <span className={`px-2 py-1 text-xs rounded ${
+                                                                model.development_type === 'In-House'
+                                                                    ? 'bg-green-100 text-green-800'
+                                                                    : 'bg-purple-100 text-purple-800'
+                                                            }`}>
+                                                                {model.development_type}
+                                                            </span>
+                                                        </td>
+                                                        <td className="px-4 py-3 whitespace-nowrap">
+                                                            {model.risk_tier ? (
+                                                                <span className="px-2 py-1 text-xs rounded bg-orange-100 text-orange-800">
+                                                                    {model.risk_tier.label}
+                                                                </span>
+                                                            ) : (
+                                                                <span className="text-gray-400">-</span>
+                                                            )}
+                                                        </td>
+                                                        <td className="px-4 py-3 whitespace-nowrap">
+                                                            <span className="px-2 py-1 text-xs rounded bg-blue-100 text-blue-800">
+                                                                {model.status}
+                                                            </span>
+                                                        </td>
+                                                        <td className="px-4 py-3 whitespace-nowrap">
+                                                            <Link
+                                                                to={`/models/${model.model_id}`}
+                                                                className="text-blue-600 hover:text-blue-800"
+                                                            >
+                                                                View
+                                                            </Link>
+                                                        </td>
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                )}
+                            </div>
+
+                            {/* Models Developed Section */}
+                            <div>
+                                <h4 className="text-md font-semibold mb-3 text-gray-700">
+                                    Models Developed ({getDevelopedModels().length})
+                                </h4>
+                                {getDevelopedModels().length === 0 ? (
+                                    <p className="text-gray-500 text-sm">No models developed.</p>
+                                ) : (
+                                    <div className="overflow-x-auto">
+                                        <table className="min-w-full divide-y divide-gray-200">
+                                            <thead className="bg-gray-50">
+                                                <tr>
+                                                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">
+                                                        Model Name
+                                                    </th>
+                                                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">
+                                                        Owner
+                                                    </th>
+                                                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">
+                                                        Type
+                                                    </th>
+                                                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">
+                                                        Status
+                                                    </th>
+                                                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">
+                                                        Actions
+                                                    </th>
+                                                </tr>
+                                            </thead>
+                                            <tbody className="bg-white divide-y divide-gray-200">
+                                                {getDevelopedModels().map((model) => (
+                                                    <tr key={model.model_id}>
+                                                        <td className="px-4 py-3 whitespace-nowrap">
+                                                            <div className="font-medium">{model.model_name}</div>
+                                                        </td>
+                                                        <td className="px-4 py-3 whitespace-nowrap">
+                                                            <div className="text-sm">{model.owner.full_name}</div>
+                                                        </td>
+                                                        <td className="px-4 py-3 whitespace-nowrap">
+                                                            <span className={`px-2 py-1 text-xs rounded ${
+                                                                model.development_type === 'In-House'
+                                                                    ? 'bg-green-100 text-green-800'
+                                                                    : 'bg-purple-100 text-purple-800'
+                                                            }`}>
+                                                                {model.development_type}
+                                                            </span>
+                                                        </td>
+                                                        <td className="px-4 py-3 whitespace-nowrap">
+                                                            <span className="px-2 py-1 text-xs rounded bg-blue-100 text-blue-800">
+                                                                {model.status}
+                                                            </span>
+                                                        </td>
+                                                        <td className="px-4 py-3 whitespace-nowrap">
+                                                            <Link
+                                                                to={`/models/${model.model_id}`}
+                                                                className="text-blue-600 hover:text-blue-800"
+                                                            >
+                                                                View
+                                                            </Link>
+                                                        </td>
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    )}
+                </div>
+            )}
         </Layout>
     );
 }

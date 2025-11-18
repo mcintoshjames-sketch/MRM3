@@ -60,7 +60,9 @@ export default function LoginPage() {
                 </form>
 
                 <div className="mt-4 text-sm text-gray-600 text-center">
-                    Default: admin@example.com / admin123
+                    <div>Admin: admin@example.com / admin123</div>
+                    <div>Validator: validator@example.com / validator123</div>
+                    <div>Validator: david.brown@contoso.com / validator123</div>
                 </div>
             </div>
         </div>

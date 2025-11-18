@@ -25,10 +25,24 @@ interface PassWithFindingsValidation {
     has_recommendations: boolean;
 }
 
+interface SLAViolation {
+    request_id: number;
+    model_name: string;
+    violation_type: string;
+    sla_days: number;
+    actual_days: number;
+    days_overdue: number;
+    current_status: string;
+    priority: string;
+    severity: string;
+    timestamp: string;
+}
+
 export default function AdminDashboardPage() {
     const { user } = useAuth();
     const [overdueModels, setOverdueModels] = useState<OverdueModel[]>([]);
     const [passWithFindings, setPassWithFindings] = useState<PassWithFindingsValidation[]>([]);
+    const [slaViolations, setSlaViolations] = useState<SLAViolation[]>([]);
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
@@ -37,17 +51,32 @@ export default function AdminDashboardPage() {
 
     const fetchDashboardData = async () => {
         try {
-            const [overdueRes, findingsRes] = await Promise.all([
+            const [overdueRes, findingsRes, violationsRes] = await Promise.all([
                 api.get('/validations/dashboard/overdue'),
-                api.get('/validations/dashboard/pass-with-findings')
+                api.get('/validations/dashboard/pass-with-findings'),
+                api.get('/validation-workflow/dashboard/sla-violations')
             ]);
             setOverdueModels(overdueRes.data);
             setPassWithFindings(findingsRes.data);
+            setSlaViolations(violationsRes.data);
         } catch (error) {
             console.error('Failed to fetch dashboard data:', error);
         } finally {
             setLoading(false);
         }
+    };
+
+    const formatTimeAgo = (timestamp: string) => {
+        const date = new Date(timestamp);
+        const now = new Date();
+        const diffMs = now.getTime() - date.getTime();
+        const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+
+        if (diffDays === 0) return 'Today';
+        if (diffDays === 1) return 'Yesterday';
+        if (diffDays < 7) return `${diffDays} days ago`;
+        if (diffDays < 30) return `${Math.floor(diffDays / 7)} weeks ago`;
+        return `${Math.floor(diffDays / 30)} months ago`;
     };
 
     if (loading) {
@@ -66,31 +95,97 @@ export default function AdminDashboardPage() {
             </div>
 
             {/* Summary Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-                <div className="bg-white p-6 rounded-lg shadow-md">
-                    <h3 className="text-sm font-medium text-gray-500 uppercase">Overdue Validations</h3>
-                    <p className="text-3xl font-bold text-red-600 mt-2">{overdueModels.length}</p>
-                    <p className="text-sm text-gray-600 mt-1">Models requiring validation</p>
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+                <div className="bg-white p-4 rounded-lg shadow-md">
+                    <h3 className="text-xs font-medium text-gray-500 uppercase">SLA Violations</h3>
+                    <p className="text-3xl font-bold text-red-600 mt-2">{slaViolations.length}</p>
+                    <p className="text-xs text-gray-600 mt-1">Active workflow delays</p>
                 </div>
-                <div className="bg-white p-6 rounded-lg shadow-md">
-                    <h3 className="text-sm font-medium text-gray-500 uppercase">Pass with Findings</h3>
-                    <p className="text-3xl font-bold text-orange-600 mt-2">
+                <div className="bg-white p-4 rounded-lg shadow-md">
+                    <h3 className="text-xs font-medium text-gray-500 uppercase">Overdue Validations</h3>
+                    <p className="text-3xl font-bold text-orange-600 mt-2">{overdueModels.length}</p>
+                    <p className="text-xs text-gray-600 mt-1">Models requiring validation</p>
+                </div>
+                <div className="bg-white p-4 rounded-lg shadow-md">
+                    <h3 className="text-xs font-medium text-gray-500 uppercase">Pass with Findings</h3>
+                    <p className="text-3xl font-bold text-yellow-600 mt-2">
                         {passWithFindings.filter(v => !v.has_recommendations).length}
                     </p>
-                    <p className="text-sm text-gray-600 mt-1">Validations needing recommendations</p>
+                    <p className="text-xs text-gray-600 mt-1">Need recommendations</p>
                 </div>
-                <div className="bg-white p-6 rounded-lg shadow-md">
-                    <h3 className="text-sm font-medium text-gray-500 uppercase">Quick Actions</h3>
-                    <div className="mt-2 space-y-2">
-                        <Link to="/validations" className="block text-blue-600 hover:text-blue-800 text-sm">
+                <div className="bg-white p-4 rounded-lg shadow-md">
+                    <h3 className="text-xs font-medium text-gray-500 uppercase">Quick Actions</h3>
+                    <div className="mt-2 space-y-1">
+                        <Link to="/validation-workflow" className="block text-blue-600 hover:text-blue-800 text-xs">
                             View All Validations &rarr;
                         </Link>
-                        <Link to="/validation-policy" className="block text-blue-600 hover:text-blue-800 text-sm">
-                            Configure Validation Policy &rarr;
+                        <Link to="/workflow-config" className="block text-blue-600 hover:text-blue-800 text-xs">
+                            Configure Workflow SLA &rarr;
                         </Link>
                     </div>
                 </div>
             </div>
+
+            {/* SLA Violations Feed */}
+            {slaViolations.length > 0 && (
+                <div className="bg-white p-4 rounded-lg shadow mb-6">
+                    <div className="flex items-center gap-2 mb-3 pb-2 border-b">
+                        <svg className="w-4 h-4 text-orange-500" fill="currentColor" viewBox="0 0 20 20">
+                            <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                        </svg>
+                        <h3 className="text-sm font-semibold text-gray-700">SLA Violation Alerts</h3>
+                        <span className="text-xs text-gray-500 ml-auto">{slaViolations.length} active</span>
+                    </div>
+                    <div className="space-y-2 max-h-64 overflow-y-auto">
+                        {slaViolations.slice(0, 5).map((violation, index) => (
+                            <div
+                                key={`${violation.request_id}-${index}`}
+                                className="border-l-3 pl-3 py-2 hover:bg-gray-50 rounded-r"
+                                style={{
+                                    borderLeftWidth: '3px',
+                                    borderLeftColor: violation.severity === 'critical' ? '#dc2626' :
+                                                    violation.severity === 'high' ? '#ea580c' : '#ca8a04'
+                                }}
+                            >
+                                <div className="flex items-start justify-between gap-2">
+                                    <div className="flex-1 min-w-0">
+                                        <div className="flex items-center gap-2 mb-1">
+                                            <span className={`px-1.5 py-0.5 text-xs font-medium rounded ${
+                                                violation.severity === 'critical' ? 'bg-red-100 text-red-700' :
+                                                violation.severity === 'high' ? 'bg-orange-100 text-orange-700' :
+                                                'bg-yellow-100 text-yellow-700'
+                                            }`}>
+                                                {violation.severity}
+                                            </span>
+                                            <span className="text-xs text-gray-400">{formatTimeAgo(violation.timestamp)}</span>
+                                        </div>
+                                        <Link
+                                            to={`/validation-workflow/${violation.request_id}`}
+                                            className="text-sm font-medium text-gray-800 hover:text-blue-600 truncate block"
+                                        >
+                                            {violation.model_name}
+                                        </Link>
+                                        <p className="text-xs text-gray-600 mt-0.5">
+                                            {violation.violation_type}: {violation.days_overdue}d overdue
+                                            <span className="text-gray-400 ml-1">(SLA: {violation.sla_days}d)</span>
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                    {slaViolations.length > 5 && (
+                        <div className="mt-3 pt-2 border-t text-center">
+                            <Link
+                                to="/validation-workflow"
+                                className="text-xs text-blue-600 hover:text-blue-800"
+                            >
+                                View all {slaViolations.length} violations &rarr;
+                            </Link>
+                        </div>
+                    )}
+                </div>
+            )}
 
             {/* Overdue Validations Table */}
             <div className="bg-white p-6 rounded-lg shadow-md mb-6">

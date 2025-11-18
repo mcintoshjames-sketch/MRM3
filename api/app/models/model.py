@@ -75,6 +75,11 @@ class Model(Base):
     model_type: Mapped[Optional["TaxonomyValue"]] = relationship("TaxonomyValue", foreign_keys=[model_type_id])
     regulatory_categories: Mapped[List["TaxonomyValue"]] = relationship(
         "TaxonomyValue", secondary=model_regulatory_categories)
+    # Legacy validations - kept for backwards compatibility
     validations: Mapped[List["Validation"]] = relationship(
         "Validation", back_populates="model", cascade="all, delete-orphan", order_by="desc(Validation.validation_date)"
+    )
+    # New workflow-based validation requests
+    validation_requests: Mapped[List["ValidationRequest"]] = relationship(
+        "ValidationRequest", back_populates="model", cascade="all, delete-orphan", order_by="desc(ValidationRequest.request_date)"
     )

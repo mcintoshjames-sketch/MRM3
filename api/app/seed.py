@@ -4,7 +4,7 @@ from datetime import datetime
 from typing import Dict, List
 from app.core.database import SessionLocal
 from app.core.security import get_password_hash
-from app.models import User, UserRole, Vendor, EntraUser, Taxonomy, TaxonomyValue
+from app.models import User, UserRole, Vendor, EntraUser, Taxonomy, TaxonomyValue, ValidationWorkflowSLA
 
 
 REGULATORY_CATEGORY_VALUES = [
@@ -245,6 +245,38 @@ def seed_database():
             print("✓ Created admin user (admin@example.com / admin123)")
         else:
             print("✓ Admin user already exists")
+
+        # Create validator user for UAT
+        validator = db.query(User).filter(
+            User.email == "validator@example.com").first()
+        if not validator:
+            validator = User(
+                email="validator@example.com",
+                full_name="Sarah Chen",
+                password_hash=get_password_hash("validator123"),
+                role=UserRole.VALIDATOR
+            )
+            db.add(validator)
+            db.commit()
+            print("✓ Created validator user (validator@example.com / validator123)")
+        else:
+            print("✓ Validator user already exists")
+
+        # Create regular user for testing
+        regular_user = db.query(User).filter(
+            User.email == "user@example.com").first()
+        if not regular_user:
+            regular_user = User(
+                email="user@example.com",
+                full_name="Model Owner User",
+                password_hash=get_password_hash("user123"),
+                role=UserRole.USER
+            )
+            db.add(regular_user)
+            db.commit()
+            print("✓ Created regular user (user@example.com / user123)")
+        else:
+            print("✓ Regular user already exists")
 
         # Create sample vendors
         sample_vendors = [
@@ -487,39 +519,243 @@ def seed_database():
                 ]
             },
             {
-                "name": "Validation Scope",
-                "description": "Scope and methodology of model validation",
+                "name": "Targeted Scope",
+                "description": "Scope options for targeted validation reviews",
                 "is_system": True,
                 "values": [
                     {
                         "code": "FULL_SCOPE",
                         "label": "Full Scope",
-                        "description": "Comprehensive validation covering all aspects of the model",
+                        "description": "End-to-end, independent review of the entire model lifecycle: conceptual soundness, data, assumptions, implementation, outcomes analysis, use/governance, and performance monitoring. Used for initial validations and periodic 'full refresh' reviews.",
                         "sort_order": 1
                     },
                     {
-                        "code": "CONCEPTUAL_SOUNDNESS",
-                        "label": "Conceptual Soundness",
-                        "description": "Review of model theory, assumptions, and mathematical formulation",
+                        "code": "TARGETED_DATA_INPUTS",
+                        "label": "Targeted: Data & Inputs",
+                        "description": "Focused review of data and inputs only: source systems, lineage, data quality, transformations, sample representativeness, and controls over data extraction/loading. Does not re-cover methodology or outcomes except as needed to assess data adequacy.",
                         "sort_order": 2
                     },
                     {
-                        "code": "DATA_QUALITY",
-                        "label": "Data Quality",
-                        "description": "Assessment of input data quality, completeness, and appropriateness",
+                        "code": "TARGETED_METHODLOGY_ASSUMPTIONS",
+                        "label": "Targeted: Methodology & Assumptions",
+                        "description": "Focused review of conceptual soundness and assumptions: modelling approach, variable selection, segmentation, theoretical justification, expert judgment, parameterization, and key limitations. Does not systematically test code or implementation.",
                         "sort_order": 3
+                    },
+                    {
+                        "code": "TARGETED_IMPLEMENTATION_CODE",
+                        "label": "Targeted: Implementation & Code",
+                        "description": "Focused review of the implementation: code, configuration, parameter files, environment, and integration against the approved model design. Emphasis on implementation errors, parameter mis-specification, and version control—not on re-deriving the model.",
+                        "sort_order": 4
+                    },
+                    {
+                        "code": "TARGETED_OUTCOMES_BENCHMARKING",
+                        "label": "Targeted: Outcomes & Benchmarking",
+                        "description": "Focused review of model outputs: back-testing, stability, discrimination, calibration, benchmarking against challenger models or benchmarks, and sensitivity analysis. Assumes methodology and implementation have already been vetted.",
+                        "sort_order": 5
+                    },
+                    {
+                        "code": "TARGETED_USE_GOVERNANCE_CONTROLS",
+                        "label": "Targeted: Use, Governance & Controls",
+                        "description": "Focused review of model use and governance: alignment with documented use case, adherence to usage constraints, override practices, documentation, roles/responsibilities, and control environment (including approvals and attestations).",
+                        "sort_order": 6
+                    },
+                    {
+                        "code": "PERFORMANCE_MONITORING_FRAMEWORK",
+                        "label": "Performance Monitoring Framework",
+                        "description": "Review of the performance monitoring design rather than the model itself: selected KPIs/KRIs, thresholds, frequency, sampling, reporting, and escalation triggers; assesses whether monitoring is sufficient to detect deterioration and misuse.",
+                        "sort_order": 7
+                    },
+                    {
+                        "code": "MODEL_CHANGE_FOCUSED",
+                        "label": "Model Change Focused",
+                        "description": "Review focused on a specific model change or release (e.g., parameter update, new segmentation, new feature set). Scope is limited to assessing the impact of that change and whether previously-validated elements remain valid.",
+                        "sort_order": 8
+                    },
+                    {
+                        "code": "FOLLOW_UP_ISSUE_REMEDIATION",
+                        "label": "Follow-up: Issue Remediation",
+                        "description": "Narrow review to confirm remediation of previously identified issues or findings. Tests whether agreed actions were implemented and whether they adequately address the original concern; does not re-perform the full validation.",
+                        "sort_order": 9
+                    },
+                    {
+                        "code": "THEMATIC_OR_PORTFOLIO_REVIEW",
+                        "label": "Thematic or Portfolio Review",
+                        "description": "Cross-model review focused on a thematic question across multiple models (e.g., treatment of macro variables, treatment of overrides, treatment of outliers). Depth per model is limited; emphasis is on consistency and systemic risk.",
+                        "sort_order": 10
+                    },
+                ]
+            },
+            # New validation workflow taxonomies
+            {
+                "name": "Validation Priority",
+                "description": "Priority levels for validation requests",
+                "is_system": True,
+                "values": [
+                    {
+                        "code": "CRITICAL",
+                        "label": "Critical",
+                        "description": "Highest priority - requires immediate attention and resources",
+                        "sort_order": 1
+                    },
+                    {
+                        "code": "HIGH",
+                        "label": "High",
+                        "description": "High priority - should be addressed promptly",
+                        "sort_order": 2
+                    },
+                    {
+                        "code": "MEDIUM",
+                        "label": "Medium",
+                        "description": "Normal priority - standard processing timeline",
+                        "sort_order": 3
+                    },
+                    {
+                        "code": "LOW",
+                        "label": "Low",
+                        "description": "Low priority - can be scheduled as resources permit",
+                        "sort_order": 4
+                    },
+                ]
+            },
+            {
+                "name": "Validation Request Status",
+                "description": "Workflow status for validation requests",
+                "is_system": True,
+                "values": [
+                    {
+                        "code": "INTAKE",
+                        "label": "Intake",
+                        "description": "Initial validation request submission - awaiting assignment and planning",
+                        "sort_order": 1
+                    },
+                    {
+                        "code": "PLANNING",
+                        "label": "Planning",
+                        "description": "Scoping and resource allocation phase",
+                        "sort_order": 2
+                    },
+                    {
+                        "code": "IN_PROGRESS",
+                        "label": "In Progress",
+                        "description": "Active validation work being performed",
+                        "sort_order": 3
+                    },
+                    {
+                        "code": "REVIEW",
+                        "label": "Review",
+                        "description": "Internal QA and compilation of findings",
+                        "sort_order": 4
+                    },
+                    {
+                        "code": "PENDING_APPROVAL",
+                        "label": "Pending Approval",
+                        "description": "Awaiting stakeholder sign-offs",
+                        "sort_order": 5
+                    },
+                    {
+                        "code": "APPROVED",
+                        "label": "Approved",
+                        "description": "Validation complete with all approvals",
+                        "sort_order": 6
+                    },
+                    {
+                        "code": "ON_HOLD",
+                        "label": "On Hold",
+                        "description": "Temporarily paused - requires reason tracking",
+                        "sort_order": 7
+                    },
+                    {
+                        "code": "CANCELLED",
+                        "label": "Cancelled",
+                        "description": "Terminated before completion - requires justification",
+                        "sort_order": 8
+                    },
+                ]
+            },
+            {
+                "name": "Work Component Type",
+                "description": "Types of validation work components",
+                "is_system": True,
+                "values": [
+                    {
+                        "code": "CONCEPTUAL_SOUNDNESS",
+                        "label": "Conceptual Soundness Review",
+                        "description": "Assessment of model methodology, theoretical foundation, and assumptions",
+                        "sort_order": 1
+                    },
+                    {
+                        "code": "DATA_QUALITY",
+                        "label": "Data Quality Assessment",
+                        "description": "Evaluation of data sources, quality, completeness, and appropriateness",
+                        "sort_order": 2
                     },
                     {
                         "code": "IMPLEMENTATION_TESTING",
                         "label": "Implementation Testing",
-                        "description": "Verification of model implementation and code correctness",
+                        "description": "Verification of correct model implementation and coding",
+                        "sort_order": 3
+                    },
+                    {
+                        "code": "PERFORMANCE_TESTING",
+                        "label": "Performance Testing",
+                        "description": "Analysis of model performance, accuracy, and stability",
                         "sort_order": 4
                     },
                     {
-                        "code": "PERFORMANCE_MONITORING",
-                        "label": "Performance Monitoring",
-                        "description": "Ongoing monitoring of model performance and stability",
+                        "code": "DOCUMENTATION_REVIEW",
+                        "label": "Documentation Review",
+                        "description": "Assessment of model documentation completeness and accuracy",
                         "sort_order": 5
+                    },
+                ]
+            },
+            {
+                "name": "Work Component Status",
+                "description": "Status of individual validation work components",
+                "is_system": True,
+                "values": [
+                    {
+                        "code": "NOT_STARTED",
+                        "label": "Not Started",
+                        "description": "Work on this component has not yet begun",
+                        "sort_order": 1
+                    },
+                    {
+                        "code": "IN_PROGRESS",
+                        "label": "In Progress",
+                        "description": "Work on this component is currently underway",
+                        "sort_order": 2
+                    },
+                    {
+                        "code": "COMPLETED",
+                        "label": "Completed",
+                        "description": "Work on this component has been finished",
+                        "sort_order": 3
+                    },
+                ]
+            },
+            {
+                "name": "Overall Rating",
+                "description": "Final validation outcome rating",
+                "is_system": True,
+                "values": [
+                    {
+                        "code": "FIT_FOR_PURPOSE",
+                        "label": "Fit for Purpose",
+                        "description": "Model is suitable for its intended use without material concerns",
+                        "sort_order": 1
+                    },
+                    {
+                        "code": "FIT_WITH_CONDITIONS",
+                        "label": "Fit with Conditions",
+                        "description": "Model is suitable for use but with specific conditions or limitations",
+                        "sort_order": 2
+                    },
+                    {
+                        "code": "NOT_FIT_FOR_PURPOSE",
+                        "label": "Not Fit for Purpose",
+                        "description": "Model is not suitable for its intended use and requires significant remediation",
+                        "sort_order": 3
                     },
                 ]
             }
@@ -562,6 +798,26 @@ def seed_database():
         # Seed reference taxonomies for Regulatory Category and Model Type
         seed_taxonomy_reference_data(db)
         db.commit()
+
+        # Create validation workflow SLA configuration
+        existing_sla = db.query(ValidationWorkflowSLA).filter(
+            ValidationWorkflowSLA.workflow_type == "Validation"
+        ).first()
+        if not existing_sla:
+            sla_config = ValidationWorkflowSLA(
+                workflow_type="Validation",
+                assignment_days=10,
+                begin_work_days=5,
+                complete_work_days=80,
+                approval_days=10,
+                created_at=datetime.utcnow(),
+                updated_at=datetime.utcnow()
+            )
+            db.add(sla_config)
+            db.commit()
+            print("✓ Created validation workflow SLA configuration")
+        else:
+            print("✓ Validation workflow SLA configuration already exists")
 
         print("\nSeeding completed successfully!")
 

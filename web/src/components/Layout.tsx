@@ -23,10 +23,10 @@ export default function Layout({ children }: LayoutProps) {
                 </div>
                 <nav className="flex-1 p-4">
                     <ul className="space-y-2">
-                        {user?.role === 'Admin' && (
+                        {(user?.role === 'Admin' || user?.role === 'Validator') && (
                             <li>
                                 <NavLink
-                                    to="/dashboard"
+                                    to={user?.role === 'Admin' ? '/dashboard' : '/validator-dashboard'}
                                     className={({ isActive }) =>
                                         `block px-4 py-2 rounded transition-colors ${
                                             isActive
@@ -55,7 +55,7 @@ export default function Layout({ children }: LayoutProps) {
                         </li>
                         <li>
                             <NavLink
-                                to="/validations"
+                                to="/validation-workflow"
                                 className={({ isActive }) =>
                                     `block px-4 py-2 rounded transition-colors ${
                                         isActive
@@ -123,6 +123,22 @@ export default function Layout({ children }: LayoutProps) {
                                 Audit Logs
                             </NavLink>
                         </li>
+                        {user?.role === 'Admin' && (
+                            <li>
+                                <NavLink
+                                    to="/workflow-config"
+                                    className={({ isActive }) =>
+                                        `block px-4 py-2 rounded transition-colors ${
+                                            isActive
+                                                ? 'bg-blue-600 text-white'
+                                                : 'text-gray-700 hover:bg-gray-100'
+                                        }`
+                                    }
+                                >
+                                    Workflow Config
+                                </NavLink>
+                            </li>
+                        )}
                     </ul>
                 </nav>
                 <div className="p-4 border-t">

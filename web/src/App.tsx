@@ -11,6 +11,10 @@ import TaxonomyPage from './pages/TaxonomyPage';
 import AuditPage from './pages/AuditPage';
 import AdminDashboardPage from './pages/AdminDashboardPage';
 import ValidationsPage from './pages/ValidationsPage';
+import ValidationWorkflowPage from './pages/ValidationWorkflowPage';
+import ValidationRequestDetailPage from './pages/ValidationRequestDetailPage';
+import ValidatorDashboardPage from './pages/ValidatorDashboardPage';
+import WorkflowConfigurationPage from './pages/WorkflowConfigurationPage';
 
 function App() {
     const { user, loading } = useAuth();
@@ -21,23 +25,29 @@ function App() {
 
     const getDefaultRoute = () => {
         if (!user) return '/login';
-        return user.role === 'Admin' ? '/dashboard' : '/models';
+        if (user.role === 'Admin') return '/dashboard';
+        if (user.role === 'Validator') return '/validator-dashboard';
+        return '/models';
     };
 
     return (
         <Routes>
             <Route path="/login" element={!user ? <LoginPage /> : <Navigate to={getDefaultRoute()} />} />
             <Route path="/dashboard" element={user?.role === 'Admin' ? <AdminDashboardPage /> : <Navigate to="/models" />} />
+            <Route path="/validator-dashboard" element={user?.role === 'Validator' ? <ValidatorDashboardPage /> : <Navigate to="/models" />} />
             <Route path="/models" element={user ? <ModelsPage /> : <Navigate to="/login" />} />
             <Route path="/models/:id" element={user ? <ModelDetailsPage /> : <Navigate to="/login" />} />
             <Route path="/validations" element={user ? <ValidationsPage /> : <Navigate to="/login" />} />
             <Route path="/validations/new" element={user ? <ValidationsPage /> : <Navigate to="/login" />} />
+            <Route path="/validation-workflow" element={user ? <ValidationWorkflowPage /> : <Navigate to="/login" />} />
+            <Route path="/validation-workflow/:id" element={user ? <ValidationRequestDetailPage /> : <Navigate to="/login" />} />
             <Route path="/vendors" element={user ? <VendorsPage /> : <Navigate to="/login" />} />
             <Route path="/vendors/:id" element={user ? <VendorDetailsPage /> : <Navigate to="/login" />} />
             <Route path="/users" element={user ? <UsersPage /> : <Navigate to="/login" />} />
             <Route path="/users/:id" element={user ? <UserDetailsPage /> : <Navigate to="/login" />} />
             <Route path="/taxonomy" element={user ? <TaxonomyPage /> : <Navigate to="/login" />} />
             <Route path="/audit" element={user ? <AuditPage /> : <Navigate to="/login" />} />
+            <Route path="/workflow-config" element={user?.role === 'Admin' ? <WorkflowConfigurationPage /> : <Navigate to="/models" />} />
             <Route path="/" element={<Navigate to={getDefaultRoute()} />} />
         </Routes>
     );

@@ -108,6 +108,10 @@ const setupApiMocks = (validations = sampleValidations) => {
         if (url === '/models/') return Promise.resolve({ data: sampleModels });
         if (url === '/auth/users') return Promise.resolve({ data: sampleUsers });
         if (url === '/taxonomies/') return Promise.resolve({ data: sampleTaxonomies });
+        // Individual taxonomy fetches for getting values
+        if (url === '/taxonomies/1') return Promise.resolve({ data: sampleTaxonomies[0] });
+        if (url === '/taxonomies/2') return Promise.resolve({ data: sampleTaxonomies[1] });
+        if (url === '/taxonomies/3') return Promise.resolve({ data: sampleTaxonomies[2] });
         return Promise.reject(new Error('Unknown URL'));
     });
 };

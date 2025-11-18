@@ -5,6 +5,35 @@ from app.models.vendor import Vendor
 from app.models.entra_user import EntraUser
 from app.models.taxonomy import Taxonomy, TaxonomyValue
 from app.models.audit_log import AuditLog
-from app.models.validation import Validation, ValidationPolicy
+from app.models.validation import (
+    Validation,
+    ValidationPolicy,
+    ValidationWorkflowSLA,
+    ValidationRequest,
+    ValidationStatusHistory,
+    ValidationAssignment,
+    ValidationWorkComponent,
+    ValidationOutcome,
+    ValidationApproval
+)
 
-__all__ = ["User", "UserRole", "Model", "ModelStatus", "DevelopmentType", "Vendor", "model_users", "model_regulatory_categories", "EntraUser", "Taxonomy", "TaxonomyValue", "AuditLog", "Validation", "ValidationPolicy"]
+__all__ = [
+    "User", "UserRole",
+    "Model", "ModelStatus", "DevelopmentType", "model_users", "model_regulatory_categories",
+    "Vendor",
+    "EntraUser",
+    "Taxonomy", "TaxonomyValue",
+    "AuditLog",
+    # Legacy validation
+    "Validation",
+    # Validation policy
+    "ValidationPolicy",
+    "ValidationWorkflowSLA",
+    # New workflow-based validation models
+    "ValidationRequest",
+    "ValidationStatusHistory",
+    "ValidationAssignment",
+    "ValidationWorkComponent",
+    "ValidationOutcome",
+    "ValidationApproval"
+]

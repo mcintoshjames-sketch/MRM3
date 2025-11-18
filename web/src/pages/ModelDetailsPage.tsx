@@ -70,6 +70,21 @@ interface Validation {
     created_at: string;
 }
 
+interface ValidationRequest {
+    request_id: number;
+    model_id: number;
+    model_name: string;
+    request_date: string;
+    requestor_name: string;
+    validation_type: string;
+    priority: string;
+    target_completion_date: string;
+    current_status: string;
+    days_in_status: number;
+    primary_validator: string | null;
+    created_at: string;
+}
+
 export default function ModelDetailsPage() {
     const { id } = useParams<{ id: string }>();
     const navigate = useNavigate();
@@ -78,6 +93,7 @@ export default function ModelDetailsPage() {
     const [vendors, setVendors] = useState<Vendor[]>([]);
     const [taxonomies, setTaxonomies] = useState<Taxonomy[]>([]);
     const [validations, setValidations] = useState<Validation[]>([]);
+    const [validationRequests, setValidationRequests] = useState<ValidationRequest[]>([]);
     const [loading, setLoading] = useState(true);
     const [editing, setEditing] = useState(false);
     const [activeTab, setActiveTab] = useState<'details' | 'validations'>('details');
@@ -139,12 +155,17 @@ export default function ModelDetailsPage() {
 
             // Fetch validations separately - this is optional and shouldn't break the page
             try {
-                const validationsRes = await api.get(`/validations/?model_id=${id}`);
+                const [validationsRes, validationRequestsRes] = await Promise.all([
+                    api.get(`/validations/?model_id=${id}`),
+                    api.get(`/validation-workflow/requests/?model_id=${id}`)
+                ]);
                 setValidations(validationsRes.data);
+                setValidationRequests(validationRequestsRes.data);
             } catch (validationError) {
                 console.error('Failed to fetch validations:', validationError);
                 // Keep validations as empty array - don't break the page
                 setValidations([]);
+                setValidationRequests([]);
             }
         } catch (error) {
             console.error('Failed to fetch model:', error);
@@ -295,7 +316,7 @@ export default function ModelDetailsPage() {
                                     : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
                             }`}
                         >
-                            Validation History ({validations.length})
+                            Validation History ({validationRequests.length} active, {validations.length} completed)
                         </button>
                     </nav>
                 </div>
@@ -737,87 +758,201 @@ export default function ModelDetailsPage() {
                     </div>
                 </div>
             ) : (
-                <div className="bg-white rounded-lg shadow-md overflow-hidden">
-                    <div className="p-4 border-b bg-gray-50 flex justify-between items-center">
-                        <h3 className="text-lg font-bold">Validation History</h3>
-                        <Link
-                            to={`/validations/new?model_id=${model.model_id}`}
-                            className="btn-primary text-sm"
-                        >
-                            + New Validation
-                        </Link>
-                    </div>
-                    {validations.length === 0 ? (
-                        <div className="p-6 text-center text-gray-500">
-                            No validation records found for this model.
+                <div className="space-y-6">
+                    {/* Active Validation Projects */}
+                    <div className="bg-white rounded-lg shadow-md overflow-hidden">
+                        <div className="p-4 border-b bg-blue-50 flex justify-between items-center">
+                            <div>
+                                <h3 className="text-lg font-bold">Active Validation Projects</h3>
+                                <p className="text-sm text-gray-600">Workflow-based validation requests in progress</p>
+                            </div>
+                            <Link
+                                to={`/validation-workflow/new?model_id=${model.model_id}`}
+                                className="btn-primary text-sm"
+                            >
+                                + New Validation Request
+                            </Link>
                         </div>
-                    ) : (
-                        <table className="min-w-full divide-y divide-gray-200">
-                            <thead className="bg-gray-50">
-                                <tr>
-                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
-                                        Date
-                                    </th>
-                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
-                                        Validator
-                                    </th>
-                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
-                                        Type
-                                    </th>
-                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
-                                        Outcome
-                                    </th>
-                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
-                                        Scope
-                                    </th>
-                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
-                                        Actions
-                                    </th>
-                                </tr>
-                            </thead>
-                            <tbody className="bg-white divide-y divide-gray-200">
-                                {validations.map((validation) => (
-                                    <tr key={validation.validation_id} className="hover:bg-gray-50">
-                                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                                            {validation.validation_date}
-                                        </td>
-                                        <td className="px-6 py-4 whitespace-nowrap text-sm">
-                                            {validation.validator_name}
-                                        </td>
-                                        <td className="px-6 py-4 whitespace-nowrap">
-                                            <span className="px-2 py-1 text-xs rounded bg-blue-100 text-blue-800">
-                                                {validation.validation_type}
-                                            </span>
-                                        </td>
-                                        <td className="px-6 py-4 whitespace-nowrap">
-                                            <span className={`px-2 py-1 text-xs rounded ${
-                                                validation.outcome === 'Pass'
-                                                    ? 'bg-green-100 text-green-800'
-                                                    : validation.outcome === 'Pass with Findings'
-                                                        ? 'bg-orange-100 text-orange-800'
-                                                        : 'bg-red-100 text-red-800'
-                                            }`}>
-                                                {validation.outcome}
-                                            </span>
-                                        </td>
-                                        <td className="px-6 py-4 whitespace-nowrap">
-                                            <span className="px-2 py-1 text-xs rounded bg-purple-100 text-purple-800">
-                                                {validation.scope}
-                                            </span>
-                                        </td>
-                                        <td className="px-6 py-4 whitespace-nowrap">
-                                            <Link
-                                                to={`/validations/${validation.validation_id}`}
-                                                className="text-blue-600 hover:text-blue-800 text-sm"
-                                            >
-                                                View Details
-                                            </Link>
-                                        </td>
+                        {validationRequests.length === 0 ? (
+                            <div className="p-6 text-center text-gray-500">
+                                No active validation projects for this model.
+                            </div>
+                        ) : (
+                            <table className="min-w-full divide-y divide-gray-200">
+                                <thead className="bg-gray-50">
+                                    <tr>
+                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                                            Request ID
+                                        </th>
+                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                                            Request Date
+                                        </th>
+                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                                            Requestor
+                                        </th>
+                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                                            Type
+                                        </th>
+                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                                            Priority
+                                        </th>
+                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                                            Status
+                                        </th>
+                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                                            Primary Validator
+                                        </th>
+                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                                            Target Date
+                                        </th>
+                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                                            Actions
+                                        </th>
                                     </tr>
-                                ))}
-                            </tbody>
-                        </table>
-                    )}
+                                </thead>
+                                <tbody className="bg-white divide-y divide-gray-200">
+                                    {validationRequests.map((request) => (
+                                        <tr key={request.request_id} className="hover:bg-gray-50">
+                                            <td className="px-6 py-4 whitespace-nowrap text-sm font-mono">
+                                                #{request.request_id}
+                                            </td>
+                                            <td className="px-6 py-4 whitespace-nowrap text-sm">
+                                                {request.request_date}
+                                            </td>
+                                            <td className="px-6 py-4 whitespace-nowrap text-sm">
+                                                {request.requestor_name}
+                                            </td>
+                                            <td className="px-6 py-4 whitespace-nowrap">
+                                                <span className="px-2 py-1 text-xs rounded bg-blue-100 text-blue-800">
+                                                    {request.validation_type}
+                                                </span>
+                                            </td>
+                                            <td className="px-6 py-4 whitespace-nowrap">
+                                                <span className={`px-2 py-1 text-xs rounded ${
+                                                    request.priority === 'Critical' ? 'bg-red-100 text-red-800' :
+                                                    request.priority === 'High' ? 'bg-orange-100 text-orange-800' :
+                                                    request.priority === 'Medium' ? 'bg-yellow-100 text-yellow-800' :
+                                                    'bg-green-100 text-green-800'
+                                                }`}>
+                                                    {request.priority}
+                                                </span>
+                                            </td>
+                                            <td className="px-6 py-4 whitespace-nowrap">
+                                                <span className={`px-2 py-1 text-xs rounded ${
+                                                    request.current_status === 'Intake' ? 'bg-gray-100 text-gray-800' :
+                                                    request.current_status === 'Planning' ? 'bg-blue-100 text-blue-800' :
+                                                    request.current_status === 'In Progress' ? 'bg-yellow-100 text-yellow-800' :
+                                                    request.current_status === 'Review' ? 'bg-purple-100 text-purple-800' :
+                                                    request.current_status === 'Pending Approval' ? 'bg-orange-100 text-orange-800' :
+                                                    request.current_status === 'Approved' ? 'bg-green-100 text-green-800' :
+                                                    'bg-red-100 text-red-800'
+                                                }`}>
+                                                    {request.current_status}
+                                                </span>
+                                            </td>
+                                            <td className="px-6 py-4 whitespace-nowrap text-sm">
+                                                {request.primary_validator || (
+                                                    <span className="text-orange-600">Unassigned</span>
+                                                )}
+                                            </td>
+                                            <td className="px-6 py-4 whitespace-nowrap text-sm">
+                                                {request.target_completion_date}
+                                            </td>
+                                            <td className="px-6 py-4 whitespace-nowrap">
+                                                <Link
+                                                    to={`/validation-workflow/${request.request_id}`}
+                                                    className="text-blue-600 hover:text-blue-800 text-sm"
+                                                >
+                                                    View Details
+                                                </Link>
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        )}
+                    </div>
+
+                    {/* Historical Validations */}
+                    <div className="bg-white rounded-lg shadow-md overflow-hidden">
+                        <div className="p-4 border-b bg-gray-50 flex justify-between items-center">
+                            <div>
+                                <h3 className="text-lg font-bold">Historical Validations</h3>
+                                <p className="text-sm text-gray-600">Completed validation records</p>
+                            </div>
+                        </div>
+                        {validations.length === 0 ? (
+                            <div className="p-6 text-center text-gray-500">
+                                No historical validation records found for this model.
+                            </div>
+                        ) : (
+                            <table className="min-w-full divide-y divide-gray-200">
+                                <thead className="bg-gray-50">
+                                    <tr>
+                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                                            Date
+                                        </th>
+                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                                            Validator
+                                        </th>
+                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                                            Type
+                                        </th>
+                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                                            Outcome
+                                        </th>
+                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                                            Scope
+                                        </th>
+                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                                            Actions
+                                        </th>
+                                    </tr>
+                                </thead>
+                                <tbody className="bg-white divide-y divide-gray-200">
+                                    {validations.map((validation) => (
+                                        <tr key={validation.validation_id} className="hover:bg-gray-50">
+                                            <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                                                {validation.validation_date}
+                                            </td>
+                                            <td className="px-6 py-4 whitespace-nowrap text-sm">
+                                                {validation.validator_name}
+                                            </td>
+                                            <td className="px-6 py-4 whitespace-nowrap">
+                                                <span className="px-2 py-1 text-xs rounded bg-blue-100 text-blue-800">
+                                                    {validation.validation_type}
+                                                </span>
+                                            </td>
+                                            <td className="px-6 py-4 whitespace-nowrap">
+                                                <span className={`px-2 py-1 text-xs rounded ${
+                                                    validation.outcome === 'Pass'
+                                                        ? 'bg-green-100 text-green-800'
+                                                        : validation.outcome === 'Pass with Findings'
+                                                            ? 'bg-orange-100 text-orange-800'
+                                                            : 'bg-red-100 text-red-800'
+                                                }`}>
+                                                    {validation.outcome}
+                                                </span>
+                                            </td>
+                                            <td className="px-6 py-4 whitespace-nowrap">
+                                                <span className="px-2 py-1 text-xs rounded bg-purple-100 text-purple-800">
+                                                    {validation.scope}
+                                                </span>
+                                            </td>
+                                            <td className="px-6 py-4 whitespace-nowrap">
+                                                <Link
+                                                    to={`/validations/${validation.validation_id}`}
+                                                    className="text-blue-600 hover:text-blue-800 text-sm"
+                                                >
+                                                    View Details
+                                                </Link>
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        )}
+                    </div>
                 </div>
             )}
         </Layout>

@@ -73,29 +73,53 @@ export default function ValidationsPage() {
                 api.get('/taxonomies/')
             ]);
 
+            console.log('Models fetched:', modelsRes.data);
+            console.log('Users fetched:', usersRes.data);
+            console.log('Taxonomies fetched:', taxonomiesRes.data);
+
             setValidations(validationsRes.data);
             setModels(modelsRes.data);
             setUsers(usersRes.data);
 
-            // Extract taxonomy values
-            const taxonomies = taxonomiesRes.data;
-            const validationType = taxonomies.find((t: any) => t.name === 'Validation Type');
-            const outcome = taxonomies.find((t: any) => t.name === 'Validation Outcome');
-            const scope = taxonomies.find((t: any) => t.name === 'Validation Scope');
+            // Fetch full taxonomy details to get values - this is separate so it doesn't break models/users
+            try {
+                const taxonomyList = taxonomiesRes.data;
+                const taxDetails = await Promise.all(
+                    taxonomyList.map((t: any) => api.get(`/taxonomies/${t.taxonomy_id}`))
+                );
+                const taxonomies = taxDetails.map((r: any) => r.data);
 
-            if (validationType) setValidationTypes(validationType.values);
-            if (outcome) setOutcomes(outcome.values);
-            if (scope) setScopes(scope.values);
+                // Extract taxonomy values
+                const validationType = taxonomies.find((t: any) => t.name === 'Validation Type');
+                const outcome = taxonomies.find((t: any) => t.name === 'Validation Outcome');
+                const scope = taxonomies.find((t: any) => t.name === 'Targeted Scope');
 
-            // Set defaults if available
-            if (validationType?.values.length > 0) {
-                setFormData(prev => ({ ...prev, validation_type_id: validationType.values[0].value_id }));
-            }
-            if (outcome?.values.length > 0) {
-                setFormData(prev => ({ ...prev, outcome_id: outcome.values[0].value_id }));
-            }
-            if (scope?.values.length > 0) {
-                setFormData(prev => ({ ...prev, scope_id: scope.values[0].value_id }));
+                if (validationType) {
+                    console.log('Validation Type values:', validationType.values);
+                    setValidationTypes(validationType.values || []);
+                }
+                if (outcome) {
+                    console.log('Outcome values:', outcome.values);
+                    setOutcomes(outcome.values || []);
+                }
+                if (scope) {
+                    console.log('Scope values:', scope.values);
+                    setScopes(scope.values || []);
+                }
+
+                // Set defaults if available
+                if (validationType?.values?.length > 0) {
+                    setFormData(prev => ({ ...prev, validation_type_id: 0 }));
+                }
+                if (outcome?.values?.length > 0) {
+                    setFormData(prev => ({ ...prev, outcome_id: 0 }));
+                }
+                if (scope?.values?.length > 0) {
+                    setFormData(prev => ({ ...prev, scope_id: 0 }));
+                }
+            } catch (taxonomyError) {
+                console.error('Failed to fetch taxonomy values:', taxonomyError);
+                // Continue without taxonomy values - models and users are still available
             }
         } catch (error) {
             console.error('Failed to fetch data:', error);
@@ -107,7 +131,16 @@ export default function ValidationsPage() {
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         try {
-            await api.post('/validations/', formData);
+            // Only include scope_id if validation type is TARGETED
+            const selectedValidationType = validationTypes.find(t => t.value_id === formData.validation_type_id);
+            const isTargeted = selectedValidationType?.code === 'TARGETED';
+
+            const submissionData = {
+                ...formData,
+                scope_id: isTargeted ? formData.scope_id : null
+            };
+
+            await api.post('/validations/', submissionData);
             setShowForm(false);
             setFormData({
                 model_id: 0,
@@ -159,13 +192,13 @@ export default function ValidationsPage() {
                                 <select
                                     id="model_id"
                                     className="input-field"
-                                    value={formData.model_id}
-                                    onChange={(e) => setFormData({ ...formData, model_id: parseInt(e.target.value) })}
+                                    value={formData.model_id ? String(formData.model_id) : ''}
+                                    onChange={(e) => setFormData({ ...formData, model_id: e.target.value ? parseInt(e.target.value) : 0 })}
                                     required
                                 >
                                     <option value="">Select Model</option>
                                     {models.map(m => (
-                                        <option key={m.model_id} value={m.model_id}>{m.model_name}</option>
+                                        <option key={m.model_id} value={String(m.model_id)}>{m.model_name}</option>
                                     ))}
                                 </select>
                             </div>
@@ -196,8 +229,8 @@ export default function ValidationsPage() {
                                     required
                                 >
                                     <option value="">Select Validator</option>
-                                    {users.map(u => (
-                                        <option key={u.user_id} value={u.user_id}>{u.full_name}</option>
+                                    {users.filter(u => u.role === 'Validator' || u.role === 'Admin').map(u => (
+                                        <option key={u.user_id} value={u.user_id}>{u.full_name} ({u.role})</option>
                                     ))}
                                 </select>
                             </div>
@@ -213,6 +246,7 @@ export default function ValidationsPage() {
                                     onChange={(e) => setFormData({ ...formData, validation_type_id: parseInt(e.target.value) })}
                                     required
                                 >
+                                    <option value="0">Select Type</option>
                                     {validationTypes.map(t => (
                                         <option key={t.value_id} value={t.value_id}>{t.label}</option>
                                     ))}
@@ -230,28 +264,33 @@ export default function ValidationsPage() {
                                     onChange={(e) => setFormData({ ...formData, outcome_id: parseInt(e.target.value) })}
                                     required
                                 >
+                                    <option value="0">Select Outcome</option>
                                     {outcomes.map(o => (
                                         <option key={o.value_id} value={o.value_id}>{o.label}</option>
                                     ))}
                                 </select>
                             </div>
 
-                            <div className="mb-4">
-                                <label htmlFor="scope_id" className="block text-sm font-medium mb-2">
-                                    Scope
-                                </label>
-                                <select
-                                    id="scope_id"
-                                    className="input-field"
-                                    value={formData.scope_id}
-                                    onChange={(e) => setFormData({ ...formData, scope_id: parseInt(e.target.value) })}
-                                    required
-                                >
-                                    {scopes.map(s => (
-                                        <option key={s.value_id} value={s.value_id}>{s.label}</option>
-                                    ))}
-                                </select>
-                            </div>
+                            {/* Only show Targeted Scope when Targeted Review is selected */}
+                            {validationTypes.find(t => t.value_id === formData.validation_type_id)?.code === 'TARGETED' && (
+                                <div className="mb-4">
+                                    <label htmlFor="scope_id" className="block text-sm font-medium mb-2">
+                                        Targeted Scope
+                                    </label>
+                                    <select
+                                        id="scope_id"
+                                        className="input-field"
+                                        value={formData.scope_id}
+                                        onChange={(e) => setFormData({ ...formData, scope_id: parseInt(e.target.value) })}
+                                        required
+                                    >
+                                        <option value="0">Select Scope</option>
+                                        {scopes.map(s => (
+                                            <option key={s.value_id} value={s.value_id}>{s.label}</option>
+                                        ))}
+                                    </select>
+                                </div>
+                            )}
                         </div>
 
                         <div className="mb-4">
@@ -289,8 +328,9 @@ export default function ValidationsPage() {
                             </button>
                         </div>
                     </form>
-                </div>
-            )}
+                </div >
+            )
+            }
 
             <div className="bg-white rounded-lg shadow-md overflow-hidden">
                 <table className="min-w-full divide-y divide-gray-200">
@@ -335,13 +375,12 @@ export default function ValidationsPage() {
                                         </span>
                                     </td>
                                     <td className="px-6 py-4 whitespace-nowrap">
-                                        <span className={`px-2 py-1 text-xs rounded ${
-                                            validation.outcome === 'Pass'
-                                                ? 'bg-green-100 text-green-800'
-                                                : validation.outcome === 'Pass with Findings'
-                                                    ? 'bg-orange-100 text-orange-800'
-                                                    : 'bg-red-100 text-red-800'
-                                        }`}>
+                                        <span className={`px-2 py-1 text-xs rounded ${validation.outcome === 'Pass'
+                                            ? 'bg-green-100 text-green-800'
+                                            : validation.outcome === 'Pass with Findings'
+                                                ? 'bg-orange-100 text-orange-800'
+                                                : 'bg-red-100 text-red-800'
+                                            }`}>
                                             {validation.outcome}
                                         </span>
                                     </td>
@@ -364,6 +403,6 @@ export default function ValidationsPage() {
                     </tbody>
                 </table>
             </div>
-        </Layout>
+        </Layout >
     );
 }
