@@ -65,7 +65,7 @@ class UserSummary(BaseModel):
 
 class ValidationRequestBase(BaseModel):
     """Base schema for validation request."""
-    model_id: int
+    model_ids: List[int]  # Support multiple models
     validation_type_id: int
     priority_id: int
     target_completion_date: date
@@ -324,7 +324,7 @@ class ValidationStatusHistoryResponse(BaseModel):
 class ValidationRequestResponse(BaseModel):
     """Response schema for validation request with basic relationships."""
     request_id: int
-    model: ModelSummary
+    models: List[ModelSummary]  # Support multiple models
     request_date: date
     requestor: UserSummary
     validation_type: TaxonomyValueResponse
@@ -356,8 +356,8 @@ class ValidationRequestDetailResponse(ValidationRequestResponse):
 class ValidationRequestListResponse(BaseModel):
     """Lightweight response schema for validation request list."""
     request_id: int
-    model_id: int
-    model_name: str
+    model_ids: List[int]  # Support multiple models
+    model_names: List[str]  # Support multiple model names
     request_date: date
     requestor_name: str
     validation_type: str

@@ -4,11 +4,12 @@ import { useAuth } from '../contexts/AuthContext';
 import api from '../api/client';
 import { regionsApi, Region } from '../api/regions';
 import Layout from '../components/Layout';
+import MultiSelectDropdown from '../components/MultiSelectDropdown';
 
 interface ValidationRequest {
     request_id: number;
-    model_id: number;
-    model_name: string;
+    model_ids: number[];  // Support multiple models
+    model_names: string[];  // Support multiple model names
     request_date: string;
     requestor_name: string;
     validation_type: string;
@@ -46,7 +47,7 @@ export default function ValidationWorkflowPage() {
     const [error, setError] = useState<string | null>(null);
 
     const [formData, setFormData] = useState({
-        model_id: 0,
+        model_ids: [] as number[],  // Support multiple models
         validation_type_id: 0,
         priority_id: 0,
         target_completion_date: '',
@@ -54,7 +55,59 @@ export default function ValidationWorkflowPage() {
         region_id: undefined as number | undefined
     });
 
-    // Auto-open form and pre-populate model_id from query params
+    // Filters
+    const [filters, setFilters] = useState({
+        search: '',
+        status_filter: [] as string[],
+        priority_filter: [] as string[],
+        validation_type_filter: [] as string[],
+        region_ids: [] as number[]
+    });
+
+    // Apply filters
+    const filteredRequests = requests.filter(req => {
+        // Search filter (model name) - search across all model names
+        if (filters.search) {
+            const searchLower = filters.search.toLowerCase();
+            const hasMatchingModel = req.model_names.some(name =>
+                name.toLowerCase().includes(searchLower)
+            );
+            if (!hasMatchingModel) {
+                return false;
+            }
+        }
+
+        // Status filter
+        if (filters.status_filter.length > 0 && !filters.status_filter.includes(req.current_status)) {
+            return false;
+        }
+
+        // Priority filter
+        if (filters.priority_filter.length > 0 && !filters.priority_filter.includes(req.priority)) {
+            return false;
+        }
+
+        // Validation type filter
+        if (filters.validation_type_filter.length > 0 && !filters.validation_type_filter.includes(req.validation_type)) {
+            return false;
+        }
+
+        // Region filter (multi-select)
+        if (filters.region_ids.length > 0) {
+            // Check if request has a matching region
+            // If request has no region (global), exclude it
+            if (!req.region) {
+                return false;
+            }
+            if (!filters.region_ids.includes(req.region.region_id)) {
+                return false;
+            }
+        }
+
+        return true;
+    });
+
+    // Auto-open form and pre-populate model_ids from query params
     useEffect(() => {
         if (location.pathname === '/validation-workflow/new') {
             setShowForm(true);
@@ -62,25 +115,30 @@ export default function ValidationWorkflowPage() {
             if (modelIdParam) {
                 setFormData(prev => ({
                     ...prev,
-                    model_id: parseInt(modelIdParam)
+                    model_ids: [parseInt(modelIdParam)]  // Add as first model in the list
                 }));
             }
         }
     }, [location.pathname, searchParams]);
 
-    // Auto-select "Initial" validation type if model has no prior validations
+    // Auto-select "Initial" validation type if all selected models have no prior validations
     useEffect(() => {
         const checkAndSetInitialValidationType = async () => {
-            if (formData.model_id && validationTypes.length > 0) {
+            if (formData.model_ids.length > 0 && validationTypes.length > 0) {
                 try {
-                    // Check if model has any validation requests
+                    // Check if any of the selected models have validation requests
                     const modelValidationsRes = await api.get('/validation-workflow/requests/');
-                    const modelValidations = modelValidationsRes.data.filter(
-                        (req: ValidationRequest) => req.model_id === formData.model_id
+                    const allValidations = modelValidationsRes.data;
+
+                    // Check if any selected model appears in any validation request
+                    const hasAnyPriorValidations = formData.model_ids.some(modelId =>
+                        allValidations.some((req: ValidationRequest) =>
+                            req.model_ids.includes(modelId)
+                        )
                     );
 
-                    // If no prior validations, default to "Initial" validation type
-                    if (modelValidations.length === 0) {
+                    // If none of the models have prior validations, default to "Initial" validation type
+                    if (!hasAnyPriorValidations) {
                         const initialType = validationTypes.find(
                             (type: TaxonomyValue) => type.code === 'INITIAL' || type.label.toLowerCase().includes('initial')
                         );
@@ -98,7 +156,7 @@ export default function ValidationWorkflowPage() {
         };
 
         checkAndSetInitialValidationType();
-    }, [formData.model_id, validationTypes]);
+    }, [formData.model_ids, validationTypes]);
 
     useEffect(() => {
         fetchData();
@@ -152,8 +210,8 @@ export default function ValidationWorkflowPage() {
         e.preventDefault();
         setError(null);
 
-        if (!formData.model_id || !formData.validation_type_id || !formData.priority_id) {
-            setError('Please fill in all required fields');
+        if (formData.model_ids.length === 0 || !formData.validation_type_id || !formData.priority_id) {
+            setError('Please fill in all required fields (at least one model must be selected)');
             return;
         }
 
@@ -166,7 +224,7 @@ export default function ValidationWorkflowPage() {
             await api.post('/validation-workflow/requests/', payload);
             setShowForm(false);
             setFormData({
-                model_id: 0,
+                model_ids: [],
                 validation_type_id: 0,
                 priority_id: 0,
                 target_completion_date: '',
@@ -241,21 +299,16 @@ export default function ValidationWorkflowPage() {
                     <form onSubmit={handleSubmit}>
                         <div className="grid grid-cols-2 gap-4">
                             <div className="mb-4">
-                                <label htmlFor="model_id" className="block text-sm font-medium mb-2">
-                                    Model (Required)
+                                <label className="block text-sm font-medium mb-2">
+                                    Models (Required - Select one or more)
                                 </label>
-                                <select
-                                    id="model_id"
-                                    className="input-field"
-                                    value={formData.model_id || ''}
-                                    onChange={(e) => setFormData({ ...formData, model_id: parseInt(e.target.value) || 0 })}
-                                    required
-                                >
-                                    <option value="">Select Model</option>
-                                    {models.map(m => (
-                                        <option key={m.model_id} value={m.model_id}>{m.model_name}</option>
-                                    ))}
-                                </select>
+                                <MultiSelectDropdown
+                                    label=""
+                                    placeholder="Select Models"
+                                    options={models.map(m => ({ value: m.model_id, label: m.model_name }))}
+                                    selectedValues={formData.model_ids}
+                                    onChange={(values) => setFormData({ ...formData, model_ids: values as number[] })}
+                                />
                             </div>
 
                             <div className="mb-4">
@@ -351,6 +404,91 @@ export default function ValidationWorkflowPage() {
                 </div>
             )}
 
+            {/* Filters */}
+            <div className="bg-white p-4 rounded-lg shadow-md mb-6">
+                <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+                    {/* Search */}
+                    <div>
+                        <label htmlFor="filter-search" className="block text-xs font-medium text-gray-700 mb-1">
+                            Search Model
+                        </label>
+                        <input
+                            id="filter-search"
+                            type="text"
+                            className="input-field text-sm"
+                            placeholder="Model name..."
+                            value={filters.search}
+                            onChange={(e) => setFilters({ ...filters, search: e.target.value })}
+                        />
+                    </div>
+
+                    {/* Status */}
+                    <MultiSelectDropdown
+                        label="Status"
+                        placeholder="All Statuses"
+                        options={[
+                            { value: 'Intake', label: 'Intake' },
+                            { value: 'Planning', label: 'Planning' },
+                            { value: 'In Progress', label: 'In Progress' },
+                            { value: 'Review', label: 'Review' },
+                            { value: 'Pending Approval', label: 'Pending Approval' },
+                            { value: 'Approved', label: 'Approved' },
+                            { value: 'On Hold', label: 'On Hold' },
+                            { value: 'Cancelled', label: 'Cancelled' }
+                        ]}
+                        selectedValues={filters.status_filter}
+                        onChange={(values) => setFilters({ ...filters, status_filter: values as string[] })}
+                    />
+
+                    {/* Priority */}
+                    <MultiSelectDropdown
+                        label="Priority"
+                        placeholder="All Priorities"
+                        options={priorities.map(p => ({ value: p.label, label: p.label }))}
+                        selectedValues={filters.priority_filter}
+                        onChange={(values) => setFilters({ ...filters, priority_filter: values as string[] })}
+                    />
+
+                    {/* Validation Type */}
+                    <MultiSelectDropdown
+                        label="Validation Type"
+                        placeholder="All Types"
+                        options={validationTypes.map(t => ({ value: t.label, label: t.label }))}
+                        selectedValues={filters.validation_type_filter}
+                        onChange={(values) => setFilters({ ...filters, validation_type_filter: values as string[] })}
+                    />
+
+                    {/* Region */}
+                    <MultiSelectDropdown
+                        label="Region"
+                        placeholder="All Regions"
+                        options={regions.map(r => ({ value: r.region_id, label: `${r.name} (${r.code})` }))}
+                        selectedValues={filters.region_ids}
+                        onChange={(values) => setFilters({ ...filters, region_ids: values as number[] })}
+                    />
+                </div>
+
+                {/* Clear Filters and Results Count */}
+                <div className="flex items-center justify-between mt-3 pt-3 border-t">
+                    <div className="text-sm text-gray-600">
+                        Showing <span className="font-semibold">{filteredRequests.length}</span> of{' '}
+                        <span className="font-semibold">{requests.length}</span> requests
+                    </div>
+                    <button
+                        onClick={() => setFilters({
+                            search: '',
+                            status_filter: [],
+                            priority_filter: [],
+                            validation_type_filter: [],
+                            region_ids: []
+                        })}
+                        className="text-sm text-blue-600 hover:text-blue-800"
+                    >
+                        Clear Filters
+                    </button>
+                </div>
+            </div>
+
             <div className="bg-white rounded-lg shadow-md overflow-hidden">
                 <table className="min-w-full divide-y divide-gray-200">
                     <thead className="bg-gray-50">
@@ -368,25 +506,30 @@ export default function ValidationWorkflowPage() {
                         </tr>
                     </thead>
                     <tbody className="bg-white divide-y divide-gray-200">
-                        {requests.length === 0 ? (
+                        {filteredRequests.length === 0 ? (
                             <tr>
                                 <td colSpan={10} className="px-6 py-4 text-center text-gray-500">
                                     No validation requests found. Click "New Validation Request" to create one.
                                 </td>
                             </tr>
                         ) : (
-                            requests.map((req) => (
+                            filteredRequests.map((req) => (
                                 <tr key={req.request_id} className="hover:bg-gray-50">
                                     <td className="px-6 py-4 whitespace-nowrap text-sm font-mono">
                                         #{req.request_id}
                                     </td>
-                                    <td className="px-6 py-4 whitespace-nowrap">
-                                        <Link
-                                            to={`/models/${req.model_id}`}
-                                            className="font-medium text-blue-600 hover:text-blue-800"
-                                        >
-                                            {req.model_name}
-                                        </Link>
+                                    <td className="px-6 py-4">
+                                        <div className="flex flex-wrap gap-1">
+                                            {req.model_names.map((name, idx) => (
+                                                <Link
+                                                    key={req.model_ids[idx]}
+                                                    to={`/models/${req.model_ids[idx]}`}
+                                                    className="font-medium text-blue-600 hover:text-blue-800 text-sm"
+                                                >
+                                                    {name}{idx < req.model_names.length - 1 ? ',' : ''}
+                                                </Link>
+                                            ))}
+                                        </div>
                                     </td>
                                     <td className="px-6 py-4 whitespace-nowrap text-sm">
                                         {req.validation_type}

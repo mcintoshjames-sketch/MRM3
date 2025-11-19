@@ -49,6 +49,7 @@ export default function ModelsPage() {
     const [models, setModels] = useState<Model[]>([]);
     const [users, setUsers] = useState<User[]>([]);
     const [vendors, setVendors] = useState<Vendor[]>([]);
+    const [regions, setRegions] = useState<Region[]>([]);
     const [loading, setLoading] = useState(true);
     const [showForm, setShowForm] = useState(false);
     const [formData, setFormData] = useState({
@@ -69,7 +70,8 @@ export default function ModelsPage() {
         development_types: [] as string[],
         statuses: [] as string[],
         owner_ids: [] as number[],
-        vendor_ids: [] as number[]
+        vendor_ids: [] as number[],
+        region_ids: [] as number[]
     });
 
     // Apply filters first, then sort
@@ -104,6 +106,20 @@ export default function ModelsPage() {
             }
         }
 
+        // Region filter (multi-select)
+        if (filters.region_ids.length > 0) {
+            // Check if model has any of the selected regions
+            // If model has no regions (global), exclude it
+            if (!model.regions || model.regions.length === 0) {
+                return false;
+            }
+            const modelRegionIds = model.regions.map(r => r.region_id);
+            const hasMatchingRegion = filters.region_ids.some(rid => modelRegionIds.includes(rid));
+            if (!hasMatchingRegion) {
+                return false;
+            }
+        }
+
         return true;
     });
 
@@ -116,14 +132,16 @@ export default function ModelsPage() {
 
     const fetchData = async () => {
         try {
-            const [modelsRes, usersRes, vendorsRes] = await Promise.all([
+            const [modelsRes, usersRes, vendorsRes, regionsRes] = await Promise.all([
                 api.get('/models/'),
                 api.get('/auth/users'),
-                api.get('/vendors/')
+                api.get('/vendors/'),
+                api.get('/regions/')
             ]);
             setModels(modelsRes.data);
             setUsers(usersRes.data);
             setVendors(vendorsRes.data);
+            setRegions(regionsRes.data);
         } catch (error) {
             console.error('Failed to fetch data:', error);
         } finally {
@@ -420,7 +438,7 @@ export default function ModelsPage() {
 
             {/* Filters */}
             <div className="bg-white p-4 rounded-lg shadow-md mb-6">
-                <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-6 gap-4">
                     {/* Search */}
                     <div>
                         <label htmlFor="filter-search" className="block text-xs font-medium text-gray-700 mb-1">
@@ -478,6 +496,15 @@ export default function ModelsPage() {
                         selectedValues={filters.vendor_ids}
                         onChange={(values) => setFilters({ ...filters, vendor_ids: values as number[] })}
                     />
+
+                    {/* Region */}
+                    <MultiSelectDropdown
+                        label="Region"
+                        placeholder="All Regions"
+                        options={regions.map(r => ({ value: r.region_id, label: `${r.name} (${r.code})` }))}
+                        selectedValues={filters.region_ids}
+                        onChange={(values) => setFilters({ ...filters, region_ids: values as number[] })}
+                    />
                 </div>
 
                 {/* Clear Filters and Results Count */}
@@ -492,7 +519,8 @@ export default function ModelsPage() {
                             development_types: [],
                             statuses: [],
                             owner_ids: [],
-                            vendor_ids: []
+                            vendor_ids: [],
+                            region_ids: []
                         })}
                         className="text-sm text-blue-600 hover:text-blue-800"
                     >

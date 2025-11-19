@@ -100,17 +100,16 @@ def create_status_history_entry(
     db.add(history)
 
 
-def check_validator_independence(db: Session, model_id: int, validator_id: int) -> bool:
-    """Check if validator is independent from model (not owner or developer)."""
-    model = db.query(Model).filter(Model.model_id == model_id).first()
-    if not model:
+def check_validator_independence(db: Session, model_ids: List[int], validator_id: int) -> bool:
+    """Check if validator is independent from all models (not owner or developer of any)."""
+    models = db.query(Model).filter(Model.model_id.in_(model_ids)).all()
+    if not models or len(models) != len(model_ids):
         return False
 
-    # Validator cannot be model owner or developer
-    if model.owner_id == validator_id:
-        return False
-    if model.developer_id == validator_id:
-        return False
+    # Validator cannot be model owner or developer of any of the models
+    for model in models:
+        if model.owner_id == validator_id or model.developer_id == validator_id:
+            return False
 
     return True
 
@@ -140,10 +139,14 @@ def create_validation_request(
     current_user: User = Depends(get_current_user)
 ):
     """Create a new validation request."""
-    # Verify model exists
-    model = db.query(Model).filter(Model.model_id == request_data.model_id).first()
-    if not model:
-        raise HTTPException(status_code=404, detail="Model not found")
+    # Verify at least one model is specified
+    if not request_data.model_ids or len(request_data.model_ids) == 0:
+        raise HTTPException(status_code=400, detail="At least one model must be specified")
+
+    # Verify all models exist
+    models = db.query(Model).filter(Model.model_id.in_(request_data.model_ids)).all()
+    if len(models) != len(request_data.model_ids):
+        raise HTTPException(status_code=404, detail="One or more models not found")
 
     # Verify validation type exists
     validation_type = db.query(TaxonomyValue).filter(
@@ -169,9 +172,8 @@ def create_validation_request(
         if not region:
             raise HTTPException(status_code=404, detail="Region not found")
 
-    # Create the request
+    # Create the request (without model_id field)
     validation_request = ValidationRequest(
-        model_id=request_data.model_id,
         request_date=date.today(),
         requestor_id=current_user.user_id,
         validation_type_id=request_data.validation_type_id,
@@ -186,20 +188,24 @@ def create_validation_request(
     db.add(validation_request)
     db.flush()
 
+    # Associate models using the many-to-many relationship
+    validation_request.models.extend(models)
+
     # Create initial status history entry
     create_status_history_entry(
         db, validation_request.request_id, None, intake_status.value_id, current_user.user_id
     )
 
     # Create audit log
+    model_names = [m.model_name for m in models]
     audit_log = AuditLog(
         entity_type="ValidationRequest",
         entity_id=validation_request.request_id,
         action="CREATE",
         user_id=current_user.user_id,
         changes={
-            "model_id": model.model_id,
-            "model_name": model.model_name,
+            "model_ids": request_data.model_ids,
+            "model_names": model_names,
             "validation_type": validation_type.label,
             "priority": priority.label,
             "status": "Intake"
@@ -228,8 +234,10 @@ def list_validation_requests(
     current_user: User = Depends(get_current_user)
 ):
     """List validation requests with optional filters."""
+    from app.models.validation import validation_request_models
+
     query = db.query(ValidationRequest).options(
-        joinedload(ValidationRequest.model),
+        joinedload(ValidationRequest.models),
         joinedload(ValidationRequest.requestor),
         joinedload(ValidationRequest.validation_type),
         joinedload(ValidationRequest.priority),
@@ -238,8 +246,9 @@ def list_validation_requests(
         joinedload(ValidationRequest.assignments).joinedload(ValidationAssignment.validator)
     )
 
+    # Filter by model_id requires joining with the association table
     if model_id:
-        query = query.filter(ValidationRequest.model_id == model_id)
+        query = query.join(validation_request_models).filter(validation_request_models.c.model_id == model_id)
     if status_id:
         query = query.filter(ValidationRequest.current_status_id == status_id)
     if priority_id:
@@ -267,8 +276,8 @@ def list_validation_requests(
         )
         result.append(ValidationRequestListResponse(
             request_id=req.request_id,
-            model_id=req.model_id,
-            model_name=req.model.model_name,
+            model_ids=[m.model_id for m in req.models],
+            model_names=[m.model_name for m in req.models],
             request_date=req.request_date,
             requestor_name=req.requestor.full_name,
             validation_type=req.validation_type.label,
@@ -292,7 +301,7 @@ def get_validation_request(
 ):
     """Get detailed validation request with all relationships."""
     validation_request = db.query(ValidationRequest).options(
-        joinedload(ValidationRequest.model),
+        joinedload(ValidationRequest.models),
         joinedload(ValidationRequest.requestor),
         joinedload(ValidationRequest.validation_type),
         joinedload(ValidationRequest.priority),
@@ -324,7 +333,7 @@ def update_validation_request(
     check_validator_or_admin(current_user)
 
     validation_request = db.query(ValidationRequest).options(
-        joinedload(ValidationRequest.model),
+        joinedload(ValidationRequest.models),
         joinedload(ValidationRequest.requestor),
         joinedload(ValidationRequest.validation_type),
         joinedload(ValidationRequest.priority),
@@ -383,7 +392,7 @@ def update_validation_request_status(
     check_validator_or_admin(current_user)
 
     validation_request = db.query(ValidationRequest).options(
-        joinedload(ValidationRequest.model),
+        joinedload(ValidationRequest.models),
         joinedload(ValidationRequest.requestor),
         joinedload(ValidationRequest.validation_type),
         joinedload(ValidationRequest.priority),
@@ -519,11 +528,12 @@ def create_assignment(
     if not validator:
         raise HTTPException(status_code=404, detail="Validator user not found")
 
-    # Check validator independence
-    if not check_validator_independence(db, validation_request.model_id, assignment_data.validator_id):
+    # Check validator independence for all models
+    model_ids = [m.model_id for m in validation_request.models]
+    if not check_validator_independence(db, model_ids, assignment_data.validator_id):
         raise HTTPException(
             status_code=400,
-            detail="Validator cannot be the model owner or developer (independence requirement)"
+            detail="Validator cannot be the model owner or developer of any of the models (independence requirement)"
         )
 
     # Require independence attestation
@@ -1248,7 +1258,7 @@ def get_aging_report(
     # Get all non-terminal requests
     requests = db.query(ValidationRequest).options(
         joinedload(ValidationRequest.current_status),
-        joinedload(ValidationRequest.model),
+        joinedload(ValidationRequest.models),
         joinedload(ValidationRequest.priority)
     ).all()
 
@@ -1256,9 +1266,10 @@ def get_aging_report(
     for req in requests:
         if req.current_status and req.current_status.code not in ["APPROVED", "CANCELLED"]:
             days_in_status = calculate_days_in_status(db, req)
+            model_names = [m.model_name for m in req.models] if req.models else []
             aging_data.append({
                 "request_id": req.request_id,
-                "model_name": req.model.model_name if req.model else "Unknown",
+                "model_names": model_names,
                 "current_status": req.current_status.label if req.current_status else "Unknown",
                 "priority": req.priority.label if req.priority else "Unknown",
                 "days_in_status": days_in_status,
@@ -1324,7 +1335,7 @@ def get_validator_assignments(
 
     # Get all assignments for this validator
     assignments = db.query(ValidationAssignment).options(
-        joinedload(ValidationAssignment.request).joinedload(ValidationRequest.model),
+        joinedload(ValidationAssignment.request).joinedload(ValidationRequest.models),
         joinedload(ValidationAssignment.request).joinedload(ValidationRequest.current_status),
         joinedload(ValidationAssignment.request).joinedload(ValidationRequest.validation_type),
         joinedload(ValidationAssignment.request).joinedload(ValidationRequest.priority)
@@ -1335,11 +1346,13 @@ def get_validator_assignments(
     result = []
     for assignment in assignments:
         req = assignment.request
+        model_ids = [m.model_id for m in req.models] if req.models else []
+        model_names = [m.model_name for m in req.models] if req.models else []
         result.append({
             "assignment_id": assignment.assignment_id,
             "request_id": req.request_id,
-            "model_id": req.model_id,
-            "model_name": req.model.model_name if req.model else "Unknown",
+            "model_ids": model_ids,
+            "model_names": model_names,
             "validation_type": req.validation_type.label if req.validation_type else "Unknown",
             "priority": req.priority.label if req.priority else "Unknown",
             "current_status": req.current_status.label if req.current_status else "Unknown",
@@ -1375,7 +1388,7 @@ def get_sla_violations(
 
     # Get all non-terminal validation requests
     requests = db.query(ValidationRequest).options(
-        joinedload(ValidationRequest.model),
+        joinedload(ValidationRequest.models),
         joinedload(ValidationRequest.current_status),
         joinedload(ValidationRequest.priority),
         joinedload(ValidationRequest.assignments).joinedload(ValidationAssignment.validator),
@@ -1389,6 +1402,7 @@ def get_sla_violations(
         if not req.current_status or req.current_status.code in ["APPROVED", "CANCELLED"]:
             continue
 
+        model_names = [m.model_name for m in req.models] if req.models else []
         # Check Assignment SLA (from request_date to first assignment)
         if req.current_status.code in ["INTAKE", "PLANNING"]:
             days_since_request = (now - req.created_at).days
@@ -1397,7 +1411,7 @@ def get_sla_violations(
                 if not primary_assignment:
                     violations.append({
                         "request_id": req.request_id,
-                        "model_name": req.model.model_name if req.model else "Unknown",
+                        "model_names": model_names,
                         "violation_type": "Assignment Overdue",
                         "sla_days": sla_config.assignment_days,
                         "actual_days": days_since_request,
@@ -1415,7 +1429,7 @@ def get_sla_violations(
             if days_since_assignment > sla_config.begin_work_days:
                 violations.append({
                     "request_id": req.request_id,
-                    "model_name": req.model.model_name if req.model else "Unknown",
+                    "model_names": model_names,
                     "violation_type": "Begin Work Overdue",
                     "sla_days": sla_config.begin_work_days,
                     "actual_days": days_since_assignment,
@@ -1432,7 +1446,7 @@ def get_sla_violations(
             if days_since_assignment > sla_config.complete_work_days:
                 violations.append({
                     "request_id": req.request_id,
-                    "model_name": req.model.model_name if req.model else "Unknown",
+                    "model_names": model_names,
                     "violation_type": "Work Completion Overdue",
                     "sla_days": sla_config.complete_work_days,
                     "actual_days": days_since_assignment,
@@ -1456,7 +1470,7 @@ def get_sla_violations(
                 if days_in_approval > sla_config.approval_days:
                     violations.append({
                         "request_id": req.request_id,
-                        "model_name": req.model.model_name if req.model else "Unknown",
+                        "model_names": model_names,
                         "violation_type": "Approval Overdue",
                         "sla_days": sla_config.approval_days,
                         "actual_days": days_in_approval,
@@ -1483,7 +1497,7 @@ def get_out_of_order_validations(
 
     # Get all validation requests with linked model versions
     requests = db.query(ValidationRequest).options(
-        joinedload(ValidationRequest.model),
+        joinedload(ValidationRequest.models),
         joinedload(ValidationRequest.validation_type),
         joinedload(ValidationRequest.current_status),
         joinedload(ValidationRequest.priority)
@@ -1494,6 +1508,7 @@ def get_out_of_order_validations(
     out_of_order = []
 
     for req in requests:
+        model_names = [m.model_name for m in req.models] if req.models else []
         # Find model versions linked to this validation request
         versions = db.query(ModelVersion).filter(
             ModelVersion.validation_request_id == req.request_id,
@@ -1511,7 +1526,7 @@ def get_out_of_order_validations(
 
                 out_of_order.append({
                     "request_id": req.request_id,
-                    "model_name": req.model.model_name if req.model else "Unknown",
+                    "model_names": model_names,
                     "version_number": version.version_number,
                     "validation_type": req.validation_type.label if req.validation_type else "Unknown",
                     "target_completion_date": target_date.isoformat(),
@@ -1540,7 +1555,7 @@ def get_pending_validator_assignments(
 
     # Get all validation requests in INTAKE status
     requests = db.query(ValidationRequest).options(
-        joinedload(ValidationRequest.model),
+        joinedload(ValidationRequest.models),
         joinedload(ValidationRequest.requestor),
         joinedload(ValidationRequest.validation_type),
         joinedload(ValidationRequest.priority),
@@ -1570,10 +1585,12 @@ def get_pending_validator_assignments(
             else:
                 severity = "medium"
 
+            model_ids = [m.model_id for m in req.models] if req.models else []
+            model_names = [m.model_name for m in req.models] if req.models else []
             pending.append({
                 "request_id": req.request_id,
-                "model_id": req.model_id,
-                "model_name": req.model.model_name if req.model else "Unknown",
+                "model_ids": model_ids,
+                "model_names": model_names,
                 "requestor_name": req.requestor.full_name if req.requestor else "Unknown",
                 "validation_type": req.validation_type.label if req.validation_type else "Unknown",
                 "priority": req.priority.label if req.priority else "Unknown",

@@ -1,9 +1,18 @@
 """Validation workflow models."""
 from datetime import datetime, date
 from typing import Optional, List
-from sqlalchemy import String, Integer, Text, ForeignKey, DateTime, Date, Boolean, Float
+from sqlalchemy import String, Integer, Text, ForeignKey, DateTime, Date, Boolean, Float, Table, Column
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.models.base import Base
+
+
+# Association table for validation request models (many-to-many)
+validation_request_models = Table(
+    "validation_request_models",
+    Base.metadata,
+    Column("request_id", Integer, ForeignKey("validation_requests.request_id", ondelete="CASCADE"), primary_key=True),
+    Column("model_id", Integer, ForeignKey("models.model_id", ondelete="CASCADE"), primary_key=True),
+)
 
 
 class ValidationPolicy(Base):
@@ -55,9 +64,6 @@ class ValidationRequest(Base):
     __tablename__ = "validation_requests"
 
     request_id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    model_id: Mapped[int] = mapped_column(
-        Integer, ForeignKey("models.model_id", ondelete="CASCADE"), nullable=False
-    )
     request_date: Mapped[date] = mapped_column(Date, nullable=False, default=date.today)
     requestor_id: Mapped[int] = mapped_column(
         Integer, ForeignKey("users.user_id"), nullable=False
@@ -84,7 +90,9 @@ class ValidationRequest(Base):
     )
 
     # Relationships
-    model = relationship("Model", back_populates="validation_requests")
+    models: Mapped[List["Model"]] = relationship(
+        "Model", secondary=validation_request_models, back_populates="validation_requests"
+    )
     region = relationship("Region")
     requestor = relationship("User", foreign_keys=[requestor_id])
     validation_type = relationship("TaxonomyValue", foreign_keys=[validation_type_id])

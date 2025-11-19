@@ -82,9 +82,9 @@ class Model(Base):
     validations: Mapped[List["Validation"]] = relationship(
         "Validation", back_populates="model", cascade="all, delete-orphan", order_by="desc(Validation.validation_date)"
     )
-    # New workflow-based validation requests
+    # New workflow-based validation requests (many-to-many)
     validation_requests: Mapped[List["ValidationRequest"]] = relationship(
-        "ValidationRequest", back_populates="model", cascade="all, delete-orphan", order_by="desc(ValidationRequest.request_date)"
+        "ValidationRequest", secondary="validation_request_models", back_populates="models", order_by="desc(ValidationRequest.request_date)"
     )
     # Regional metadata links
     model_regions: Mapped[List["ModelRegion"]] = relationship(

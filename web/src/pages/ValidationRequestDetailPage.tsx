@@ -97,7 +97,7 @@ interface ModelVersion {
 
 interface ValidationRequestDetail {
     request_id: number;
-    model: ModelSummary;
+    models: ModelSummary[];  // Support multiple models
     request_date: string;
     requestor: UserSummary;
     validation_type: TaxonomyValue;
@@ -249,11 +249,18 @@ export default function ValidationRequestDetailPage() {
             ];
             setAllAuditLogs(combinedAuditLogs);
 
-            // Fetch model versions that link to this validation request
-            if (requestRes.data.model.model_id && id) {
+            // Fetch model versions for all associated models that link to this validation request
+            if (requestRes.data.models && requestRes.data.models.length > 0 && id) {
                 try {
-                    const versionsRes = await api.get(`/models/${requestRes.data.model.model_id}/versions`);
-                    const linkedVersions = versionsRes.data.filter((v: any) => v.validation_request_id === parseInt(id));
+                    // Fetch versions for all models in parallel
+                    const versionPromises = requestRes.data.models.map((model: ModelSummary) =>
+                        api.get(`/models/${model.model_id}/versions`)
+                    );
+                    const versionResults = await Promise.all(versionPromises);
+
+                    // Combine and filter versions that link to this validation request
+                    const allVersions = versionResults.flatMap(res => res.data);
+                    const linkedVersions = allVersions.filter((v: any) => v.validation_request_id === parseInt(id));
                     setRelatedVersions(linkedVersions);
                 } catch (err) {
                     console.error('Failed to fetch related versions:', err);
@@ -648,13 +655,21 @@ export default function ValidationRequestDetailPage() {
                     <h2 className="text-2xl font-bold">
                         Validation Request #{request.request_id}
                     </h2>
-                    <div className="flex items-center gap-3 mt-2">
-                        <Link
-                            to={`/models/${request.model.model_id}`}
-                            className="text-blue-600 hover:text-blue-800 font-medium"
-                        >
-                            {request.model.model_name}
-                        </Link>
+                    <div className="flex items-center gap-3 mt-2 flex-wrap">
+                        <div className="flex items-center gap-2">
+                            <span className="text-sm text-gray-600">Models:</span>
+                            {request.models.map((model, idx) => (
+                                <span key={model.model_id}>
+                                    <Link
+                                        to={`/models/${model.model_id}`}
+                                        className="text-blue-600 hover:text-blue-800 font-medium"
+                                    >
+                                        {model.model_name}
+                                    </Link>
+                                    {idx < request.models.length - 1 && <span className="text-gray-400">, </span>}
+                                </span>
+                            ))}
+                        </div>
                         <span className={`px-2 py-1 text-xs rounded ${getStatusColor(request.current_status.label)}`}>
                             {request.current_status.label}
                         </span>
@@ -739,11 +754,17 @@ export default function ValidationRequestDetailPage() {
                                 <p className="text-lg font-mono">#{request.request_id}</p>
                             </div>
                             <div>
-                                <h4 className="text-sm font-medium text-gray-500 mb-1">Model</h4>
-                                <Link to={`/models/${request.model.model_id}`} className="text-blue-600 hover:text-blue-800">
-                                    {request.model.model_name}
-                                </Link>
-                                <span className="ml-2 text-sm text-gray-500">({request.model.status})</span>
+                                <h4 className="text-sm font-medium text-gray-500 mb-1">Models ({request.models.length})</h4>
+                                <div className="flex flex-col gap-1">
+                                    {request.models.map(model => (
+                                        <div key={model.model_id}>
+                                            <Link to={`/models/${model.model_id}`} className="text-blue-600 hover:text-blue-800">
+                                                {model.model_name}
+                                            </Link>
+                                            <span className="ml-2 text-sm text-gray-500">({model.status})</span>
+                                        </div>
+                                    ))}
+                                </div>
                             </div>
                             <div>
                                 <h4 className="text-sm font-medium text-gray-500 mb-1">Validation Type</h4>
