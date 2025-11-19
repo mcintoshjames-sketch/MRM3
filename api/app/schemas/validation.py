@@ -93,6 +93,16 @@ class ValidationRequestStatusUpdate(BaseModel):
     change_reason: Optional[str] = None
 
 
+class ValidationRequestDecline(BaseModel):
+    """Schema for admin declining a validation request."""
+    decline_reason: str
+
+
+class ValidationApprovalUnlink(BaseModel):
+    """Schema for admin unlinking a regional approval."""
+    unlink_reason: str
+
+
 # ==================== VALIDATION ASSIGNMENT SCHEMAS ====================
 
 class ValidationAssignmentBase(BaseModel):

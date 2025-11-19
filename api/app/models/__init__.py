@@ -22,6 +22,7 @@ from app.models.validation import (
     ValidationReviewOutcome,
     ValidationApproval
 )
+from app.models.validation_grouping import ValidationGroupingMemory
 
 __all__ = [
     "User", "UserRole", "user_regions",
@@ -48,5 +49,6 @@ __all__ = [
     "ValidationWorkComponent",
     "ValidationOutcome",
     "ValidationReviewOutcome",
-    "ValidationApproval"
+    "ValidationApproval",
+    "ValidationGroupingMemory"
 ]

@@ -7,6 +7,7 @@ interface Region {
     region_id: number;
     code: string;
     name: string;
+    requires_regional_approval: boolean;
     created_at: string;
 }
 
@@ -18,7 +19,8 @@ export default function RegionsPage() {
     const [editingRegion, setEditingRegion] = useState<Region | null>(null);
     const [formData, setFormData] = useState({
         code: '',
-        name: ''
+        name: '',
+        requires_regional_approval: false
     });
     const [error, setError] = useState<string | null>(null);
 
@@ -38,7 +40,7 @@ export default function RegionsPage() {
     };
 
     const resetForm = () => {
-        setFormData({ code: '', name: '' });
+        setFormData({ code: '', name: '', requires_regional_approval: false });
         setEditingRegion(null);
         setShowForm(false);
         setError(null);
@@ -65,7 +67,8 @@ export default function RegionsPage() {
         setEditingRegion(region);
         setFormData({
             code: region.code,
-            name: region.name
+            name: region.name,
+            requires_regional_approval: region.requires_regional_approval
         });
         setShowForm(true);
     };
@@ -158,6 +161,22 @@ export default function RegionsPage() {
                                 />
                             </div>
                         </div>
+                        <div className="mb-4">
+                            <label className="flex items-center">
+                                <input
+                                    type="checkbox"
+                                    checked={formData.requires_regional_approval}
+                                    onChange={(e) => setFormData({ ...formData, requires_regional_approval: e.target.checked })}
+                                    className="h-4 w-4 text-blue-600 rounded focus:ring-blue-500"
+                                />
+                                <span className="ml-2 text-sm font-medium">
+                                    Requires Regional Approval
+                                </span>
+                            </label>
+                            <p className="text-xs text-gray-500 mt-1 ml-6">
+                                When enabled, validations for models in this region will require sign-off from regional approvers
+                            </p>
+                        </div>
                         <div className="flex gap-2">
                             <button type="submit" className="btn-primary">
                                 {editingRegion ? 'Update' : 'Create'}
@@ -177,6 +196,7 @@ export default function RegionsPage() {
                             <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">ID</th>
                             <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Code</th>
                             <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Name</th>
+                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Approval Required</th>
                             <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Created</th>
                             <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
                         </tr>
@@ -184,7 +204,7 @@ export default function RegionsPage() {
                     <tbody className="bg-white divide-y divide-gray-200">
                         {regions.length === 0 ? (
                             <tr>
-                                <td colSpan={5} className="px-6 py-4 text-center text-gray-500">
+                                <td colSpan={6} className="px-6 py-4 text-center text-gray-500">
                                     No regions yet. Click "Add Region" to create one.
                                 </td>
                             </tr>
@@ -201,6 +221,17 @@ export default function RegionsPage() {
                                     </td>
                                     <td className="px-6 py-4 whitespace-nowrap font-medium">
                                         {region.name}
+                                    </td>
+                                    <td className="px-6 py-4 whitespace-nowrap">
+                                        {region.requires_regional_approval ? (
+                                            <span className="px-2 py-1 bg-green-100 text-green-800 text-xs font-semibold rounded">
+                                                Yes
+                                            </span>
+                                        ) : (
+                                            <span className="px-2 py-1 bg-gray-100 text-gray-800 text-xs font-semibold rounded">
+                                                No
+                                            </span>
+                                        )}
                                     </td>
                                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                                         {new Date(region.created_at).toLocaleDateString()}

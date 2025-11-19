@@ -1,6 +1,7 @@
 """Models routes."""
 import csv
 import io
+import json
 from typing import List
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import StreamingResponse
@@ -14,7 +15,8 @@ from app.models.audit_log import AuditLog
 from app.models.taxonomy import TaxonomyValue
 from app.models.model_version import ModelVersion
 from app.models.model_region import ModelRegion
-from app.schemas.model import ModelCreate, ModelUpdate, ModelDetailResponse
+from app.models.validation_grouping import ValidationGroupingMemory
+from app.schemas.model import ModelCreate, ModelUpdate, ModelDetailResponse, ValidationGroupingSuggestion
 
 router = APIRouter()
 
@@ -198,6 +200,72 @@ def get_model(
             detail="Model not found"
         )
     return model
+
+
+@router.get("/{model_id}/validation-suggestions", response_model=ValidationGroupingSuggestion)
+def get_validation_grouping_suggestions(
+    model_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Get suggested models for validation based on previous groupings.
+
+    Returns models that were previously validated together with this model
+    in the most recent regular validation (Annual Review, Comprehensive, etc.).
+    Targeted validations are excluded from suggestions.
+    """
+    # Verify model exists
+    model = db.query(Model).filter(Model.model_id == model_id).first()
+    if not model:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Model not found"
+        )
+
+    # Look up grouping memory
+    grouping_memory = db.query(ValidationGroupingMemory).filter(
+        ValidationGroupingMemory.model_id == model_id
+    ).first()
+
+    # If no grouping memory, return empty suggestion
+    if not grouping_memory:
+        return ValidationGroupingSuggestion(
+            suggested_model_ids=[],
+            suggested_models=[],
+            last_validation_request_id=None,
+            last_grouped_at=None
+        )
+
+    # Parse grouped model IDs from JSON
+    try:
+        grouped_model_ids = json.loads(grouping_memory.grouped_model_ids)
+    except (json.JSONDecodeError, TypeError):
+        # If JSON is invalid, return empty suggestion
+        return ValidationGroupingSuggestion(
+            suggested_model_ids=[],
+            suggested_models=[],
+            last_validation_request_id=grouping_memory.last_validation_request_id,
+            last_grouped_at=grouping_memory.updated_at
+        )
+
+    # Fetch the suggested models with full details
+    suggested_models = db.query(Model).options(
+        joinedload(Model.owner),
+        joinedload(Model.developer),
+        joinedload(Model.vendor),
+        joinedload(Model.users),
+        joinedload(Model.risk_tier),
+        joinedload(Model.validation_type),
+        joinedload(Model.model_type),
+        joinedload(Model.regulatory_categories)
+    ).filter(Model.model_id.in_(grouped_model_ids)).all()
+
+    return ValidationGroupingSuggestion(
+        suggested_model_ids=grouped_model_ids,
+        suggested_models=suggested_models,
+        last_validation_request_id=grouping_memory.last_validation_request_id,
+        last_grouped_at=grouping_memory.updated_at
+    )
 
 
 @router.patch("/{model_id}", response_model=ModelDetailResponse)

@@ -45,6 +45,10 @@ export default function ValidationWorkflowPage() {
     const [loading, setLoading] = useState(true);
     const [showForm, setShowForm] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const [suggestedModels, setSuggestedModels] = useState<Model[]>([]);
+    const [loadingSuggestions, setLoadingSuggestions] = useState(false);
+    const [suggestedRegions, setSuggestedRegions] = useState<Region[]>([]);
+    const [loadingRegionSuggestions, setLoadingRegionSuggestions] = useState(false);
 
     const [formData, setFormData] = useState({
         model_ids: [] as number[],  // Support multiple models
@@ -157,6 +161,51 @@ export default function ValidationWorkflowPage() {
 
         checkAndSetInitialValidationType();
     }, [formData.model_ids, validationTypes]);
+
+    // Fetch grouping suggestions when exactly one model is selected
+    useEffect(() => {
+        const fetchSuggestions = async () => {
+            if (formData.model_ids.length === 1) {
+                try {
+                    setLoadingSuggestions(true);
+                    const response = await api.get(`/models/${formData.model_ids[0]}/validation-suggestions`);
+                    setSuggestedModels(response.data.suggested_models || []);
+                } catch (err) {
+                    console.error('Failed to fetch grouping suggestions:', err);
+                    setSuggestedModels([]);
+                } finally {
+                    setLoadingSuggestions(false);
+                }
+            } else {
+                setSuggestedModels([]);
+            }
+        };
+
+        fetchSuggestions();
+    }, [formData.model_ids]);
+
+    // Fetch suggested regions when models are selected (Phase 4)
+    useEffect(() => {
+        const fetchRegionSuggestions = async () => {
+            if (formData.model_ids.length > 0) {
+                try {
+                    setLoadingRegionSuggestions(true);
+                    const modelIdsStr = formData.model_ids.join(',');
+                    const response = await api.get(`/validation-workflow/requests/preview-regions?model_ids=${modelIdsStr}`);
+                    setSuggestedRegions(response.data.suggested_regions || []);
+                } catch (err) {
+                    console.error('Failed to fetch region suggestions:', err);
+                    setSuggestedRegions([]);
+                } finally {
+                    setLoadingRegionSuggestions(false);
+                }
+            } else {
+                setSuggestedRegions([]);
+            }
+        };
+
+        fetchRegionSuggestions();
+    }, [formData.model_ids]);
 
     useEffect(() => {
         fetchData();
@@ -309,6 +358,67 @@ export default function ValidationWorkflowPage() {
                                     selectedValues={formData.model_ids}
                                     onChange={(values) => setFormData({ ...formData, model_ids: values as number[] })}
                                 />
+
+                                {/* Grouping Suggestions */}
+                                {formData.model_ids.length === 1 && (
+                                    <div className="mt-3">
+                                        {loadingSuggestions ? (
+                                            <div className="text-sm text-gray-500 italic">
+                                                Loading suggestions...
+                                            </div>
+                                        ) : suggestedModels.length > 0 ? (
+                                            <div className="bg-blue-50 border border-blue-200 rounded p-3">
+                                                <div className="flex items-start justify-between mb-2">
+                                                    <div>
+                                                        <p className="text-sm font-medium text-blue-900">
+                                                            Suggested Models
+                                                        </p>
+                                                        <p className="text-xs text-blue-700 mt-1">
+                                                            These models were previously validated together with your selection
+                                                        </p>
+                                                    </div>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => {
+                                                            const suggestedIds = suggestedModels.map(m => m.model_id);
+                                                            const allIds = [...new Set([...formData.model_ids, ...suggestedIds])];
+                                                            setFormData({ ...formData, model_ids: allIds });
+                                                        }}
+                                                        className="text-xs bg-blue-600 text-white px-3 py-1 rounded hover:bg-blue-700"
+                                                    >
+                                                        Add All
+                                                    </button>
+                                                </div>
+                                                <ul className="text-sm text-blue-800 space-y-1">
+                                                    {suggestedModels.map(model => (
+                                                        <li key={model.model_id} className="flex items-center justify-between">
+                                                            <span>{model.model_name}</span>
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => {
+                                                                    if (!formData.model_ids.includes(model.model_id)) {
+                                                                        setFormData({
+                                                                            ...formData,
+                                                                            model_ids: [...formData.model_ids, model.model_id]
+                                                                        });
+                                                                    }
+                                                                }}
+                                                                className="text-xs text-blue-600 hover:text-blue-800 underline"
+                                                                disabled={formData.model_ids.includes(model.model_id)}
+                                                            >
+                                                                {formData.model_ids.includes(model.model_id) ? 'Added' : 'Add'}
+                                                            </button>
+                                                        </li>
+                                                    ))}
+                                                </ul>
+                                            </div>
+                                        ) : (
+                                            <div className="text-xs text-gray-500 italic">
+                                                No previous grouping suggestions available for this model
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
                             </div>
 
                             <div className="mb-4">
@@ -377,6 +487,56 @@ export default function ValidationWorkflowPage() {
                                         <option key={r.region_id} value={r.region_id}>{r.name} ({r.code})</option>
                                     ))}
                                 </select>
+
+                                {/* Regional Scope Intelligence (Phase 4) */}
+                                {formData.model_ids.length > 0 && (
+                                    <div className="mt-3">
+                                        {loadingRegionSuggestions ? (
+                                            <div className="text-sm text-gray-500 italic">
+                                                Loading region suggestions...
+                                            </div>
+                                        ) : suggestedRegions.length > 0 ? (
+                                            <div className="bg-purple-50 border border-purple-200 rounded p-3">
+                                                <p className="text-sm font-medium text-purple-900 mb-2">
+                                                    Suggested Regions
+                                                </p>
+                                                <p className="text-xs text-purple-700 mb-3">
+                                                    Based on the selected models, the following regions may apply to this validation:
+                                                </p>
+                                                <ul className="space-y-2">
+                                                    {suggestedRegions.map(region => (
+                                                        <li key={region.region_id} className="flex items-start justify-between text-sm">
+                                                            <div className="flex items-center gap-2">
+                                                                <span className="font-medium text-purple-900">
+                                                                    {region.name} ({region.code})
+                                                                </span>
+                                                                {region.requires_regional_approval && (
+                                                                    <span className="px-2 py-0.5 bg-orange-100 text-orange-800 text-xs rounded">
+                                                                        Approval Required
+                                                                    </span>
+                                                                )}
+                                                            </div>
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => {
+                                                                    setFormData({ ...formData, region_id: region.region_id });
+                                                                }}
+                                                                className="text-xs text-purple-600 hover:text-purple-800 underline"
+                                                                disabled={formData.region_id === region.region_id}
+                                                            >
+                                                                {formData.region_id === region.region_id ? 'Selected' : 'Select'}
+                                                            </button>
+                                                        </li>
+                                                    ))}
+                                                </ul>
+                                            </div>
+                                        ) : (
+                                            <div className="text-xs text-gray-500 italic">
+                                                No regional scope detected for selected models
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
                             </div>
                         </div>
 

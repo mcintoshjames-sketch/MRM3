@@ -82,6 +82,14 @@ class ValidationRequest(Base):
     region_id: Mapped[Optional[int]] = mapped_column(
         Integer, ForeignKey("regions.region_id", ondelete="SET NULL"), nullable=True, index=True
     )
+
+    # Admin decline fields
+    declined_by_id: Mapped[Optional[int]] = mapped_column(
+        Integer, ForeignKey("users.user_id"), nullable=True
+    )
+    decline_reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    declined_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime, nullable=False, default=datetime.utcnow
     )
@@ -95,6 +103,7 @@ class ValidationRequest(Base):
     )
     region = relationship("Region")
     requestor = relationship("User", foreign_keys=[requestor_id])
+    declined_by = relationship("User", foreign_keys=[declined_by_id])
     validation_type = relationship("TaxonomyValue", foreign_keys=[validation_type_id])
     priority = relationship("TaxonomyValue", foreign_keys=[priority_id])
     current_status = relationship("TaxonomyValue", foreign_keys=[current_status_id])
@@ -282,6 +291,14 @@ class ValidationApproval(Base):
     approval_status: Mapped[str] = mapped_column(String(50), nullable=False, default="Pending")  # Pending, Approved, Rejected
     comments: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     approved_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+
+    # Admin unlink fields
+    unlinked_by_id: Mapped[Optional[int]] = mapped_column(
+        Integer, ForeignKey("users.user_id"), nullable=True
+    )
+    unlink_reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    unlinked_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime, nullable=False, default=datetime.utcnow
     )
@@ -289,6 +306,7 @@ class ValidationApproval(Base):
     # Relationships
     request = relationship("ValidationRequest", back_populates="approvals")
     approver = relationship("User", foreign_keys=[approver_id])
+    unlinked_by = relationship("User", foreign_keys=[unlinked_by_id])
 
 
 # Keep old Validation model for backwards compatibility during migration

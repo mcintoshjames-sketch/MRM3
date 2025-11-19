@@ -1,6 +1,7 @@
 """Validation workflow API endpoints."""
 from datetime import datetime, date
 from typing import List, Optional
+import json
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import desc
@@ -10,10 +11,12 @@ from app.core.deps import get_current_user
 from app.models import (
     User, Model, TaxonomyValue, Taxonomy, AuditLog,
     ValidationRequest, ValidationStatusHistory, ValidationAssignment,
-    ValidationOutcome, ValidationReviewOutcome, ValidationApproval
+    ValidationOutcome, ValidationReviewOutcome, ValidationApproval, ValidationGroupingMemory,
+    ModelRegion, Region
 )
 from app.schemas.validation import (
     ValidationRequestCreate, ValidationRequestUpdate, ValidationRequestStatusUpdate,
+    ValidationRequestDecline, ValidationApprovalUnlink,
     ValidationRequestResponse, ValidationRequestDetailResponse, ValidationRequestListResponse,
     ValidationAssignmentCreate, ValidationAssignmentUpdate, ValidationAssignmentResponse,
     ReviewerSignOffRequest,
@@ -130,6 +133,88 @@ def calculate_days_in_status(db: Session, request: ValidationRequest) -> int:
         return delta.days
 
 
+def update_grouping_memory(db: Session, validation_request: ValidationRequest, models: List[Model]):
+    """Update validation grouping memory for multi-model regular validations.
+
+    Only updates for regular validations (INITIAL, ANNUAL, COMPREHENSIVE, ONGOING).
+    Skips targeted validations (TARGETED, INTERIM).
+    Only updates if 2 or more models are being validated together.
+    """
+    # Regular validation type codes that should update grouping memory
+    REGULAR_VALIDATION_TYPES = ["INITIAL", "ANNUAL", "COMPREHENSIVE", "ONGOING"]
+
+    # Check if this is a multi-model validation
+    if len(models) < 2:
+        return
+
+    # Get validation type code
+    validation_type = db.query(TaxonomyValue).filter(
+        TaxonomyValue.value_id == validation_request.validation_type_id
+    ).first()
+
+    if not validation_type or validation_type.code not in REGULAR_VALIDATION_TYPES:
+        return
+
+    # For each model, update or create grouping memory
+    model_ids = [m.model_id for m in models]
+
+    for model in models:
+        # Get other model IDs (exclude current model)
+        other_model_ids = [mid for mid in model_ids if mid != model.model_id]
+
+        # Check if grouping memory exists for this model
+        existing_memory = db.query(ValidationGroupingMemory).filter(
+            ValidationGroupingMemory.model_id == model.model_id
+        ).first()
+
+        if existing_memory:
+            # Update existing record
+            existing_memory.last_validation_request_id = validation_request.request_id
+            existing_memory.grouped_model_ids = json.dumps(other_model_ids)
+            existing_memory.is_regular_validation = True
+            existing_memory.updated_at = datetime.utcnow()
+        else:
+            # Create new record
+            new_memory = ValidationGroupingMemory(
+                model_id=model.model_id,
+                last_validation_request_id=validation_request.request_id,
+                grouped_model_ids=json.dumps(other_model_ids),
+                is_regular_validation=True,
+                updated_at=datetime.utcnow()
+            )
+            db.add(new_memory)
+
+
+def compute_suggested_regions(model_ids: List[int], db: Session) -> List[dict]:
+    """Compute union of all regions from selected models (Phase 4).
+
+    Returns a list of region dicts with region_id, code, name, and requires_regional_approval.
+    This enables automatic region suggestion in the validation workflow UI.
+    """
+    if not model_ids:
+        return []
+
+    # Get all model-region links for selected models
+    model_regions = db.query(ModelRegion).options(
+        joinedload(ModelRegion.region)
+    ).filter(
+        ModelRegion.model_id.in_(model_ids)
+    ).all()
+
+    # Extract unique regions using a dict to deduplicate by region_id
+    regions_dict = {}
+    for mr in model_regions:
+        if mr.region_id not in regions_dict:
+            regions_dict[mr.region_id] = {
+                "region_id": mr.region.region_id,
+                "code": mr.region.code,
+                "name": mr.region.name,
+                "requires_regional_approval": mr.region.requires_regional_approval
+            }
+
+    return list(regions_dict.values())
+
+
 # ==================== VALIDATION REQUEST ENDPOINTS ====================
 
 @router.post("/requests/", response_model=ValidationRequestResponse, status_code=status.HTTP_201_CREATED)
@@ -213,6 +298,10 @@ def create_validation_request(
         timestamp=datetime.utcnow()
     )
     db.add(audit_log)
+
+    # Update grouping memory for multi-model regular validations
+    update_grouping_memory(db, validation_request, models)
+
     db.commit()
 
     # Reload with relationships
@@ -291,6 +380,35 @@ def list_validation_requests(
         ))
 
     return result
+
+
+@router.get("/requests/preview-regions")
+def preview_suggested_regions(
+    model_ids: str = Query(..., description="Comma-separated list of model IDs"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Preview suggested regions based on selected models (Phase 4).
+
+    Returns the union of all regions associated with the selected models.
+    This helps users understand which regional approvals may be required.
+    """
+    # Parse comma-separated model_ids
+    try:
+        model_id_list = [int(id.strip()) for id in model_ids.split(",") if id.strip()]
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid model_ids format. Use comma-separated integers.")
+
+    if not model_id_list:
+        return {"suggested_regions": []}
+
+    # Compute suggested regions
+    suggested_regions = compute_suggested_regions(model_id_list, db)
+
+    return {
+        "model_ids": model_id_list,
+        "suggested_regions": suggested_regions
+    }
 
 
 @router.get("/requests/{request_id}", response_model=ValidationRequestDetailResponse)
@@ -464,6 +582,80 @@ def update_validation_request_status(
             "old_status": old_status.label if old_status else None,
             "new_status": new_status.label,
             "reason": status_update.change_reason
+        },
+        timestamp=datetime.utcnow()
+    )
+    db.add(audit_log)
+
+    db.commit()
+    db.refresh(validation_request)
+    return validation_request
+
+
+@router.patch("/requests/{request_id}/decline", response_model=ValidationRequestResponse)
+def decline_validation_request(
+    request_id: int,
+    decline_data: ValidationRequestDecline,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Admin-only: Decline a validation request by changing status to Cancelled."""
+    # Admin-only access
+    if current_user.role != "Admin":
+        raise HTTPException(
+            status_code=403,
+            detail="Only admins can decline validation requests"
+        )
+
+    validation_request = db.query(ValidationRequest).options(
+        joinedload(ValidationRequest.models),
+        joinedload(ValidationRequest.requestor),
+        joinedload(ValidationRequest.validation_type),
+        joinedload(ValidationRequest.priority),
+        joinedload(ValidationRequest.current_status),
+        joinedload(ValidationRequest.region)
+    ).filter(ValidationRequest.request_id == request_id).first()
+
+    if not validation_request:
+        raise HTTPException(status_code=404, detail="Validation request not found")
+
+    # Get CANCELLED status
+    cancelled_status = db.query(TaxonomyValue).join(Taxonomy).filter(
+        Taxonomy.name == "Validation Request Status",
+        TaxonomyValue.code == "CANCELLED"
+    ).first()
+
+    if not cancelled_status:
+        raise HTTPException(status_code=500, detail="CANCELLED status not found in taxonomy")
+
+    # Record old status for audit
+    old_status = validation_request.current_status
+    old_status_id = validation_request.current_status_id
+
+    # Update validation request
+    validation_request.current_status_id = cancelled_status.value_id
+    validation_request.declined_by_id = current_user.user_id
+    validation_request.decline_reason = decline_data.decline_reason
+    validation_request.declined_at = datetime.utcnow()
+    validation_request.updated_at = datetime.utcnow()
+
+    # Create status history
+    create_status_history_entry(
+        db, request_id, old_status_id, cancelled_status.value_id,
+        current_user.user_id, f"Declined: {decline_data.decline_reason}"
+    )
+
+    # Create audit log
+    audit_log = AuditLog(
+        entity_type="ValidationRequest",
+        entity_id=request_id,
+        action="DECLINED",
+        user_id=current_user.user_id,
+        changes={
+            "old_status": old_status.label if old_status else None,
+            "new_status": cancelled_status.label,
+            "decline_reason": decline_data.decline_reason,
+            "declined_by": current_user.full_name
         },
         timestamp=datetime.utcnow()
     )
@@ -1235,6 +1427,55 @@ def submit_approval(
             "approval_id": approval_id,
             "status": update_data.approval_status,
             "approver_role": approval.approver_role
+        },
+        timestamp=datetime.utcnow()
+    )
+    db.add(audit_log)
+
+    db.commit()
+    db.refresh(approval)
+    return approval
+
+
+@router.delete("/approvals/{approval_id}/unlink", response_model=ValidationApprovalResponse)
+def unlink_regional_approval(
+    approval_id: int,
+    unlink_data: ValidationApprovalUnlink,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Admin-only: Unlink a regional approval to unblock a stalled validation."""
+    # Admin-only access
+    if current_user.role != "Admin":
+        raise HTTPException(
+            status_code=403,
+            detail="Only admins can unlink approvals"
+        )
+
+    approval = db.query(ValidationApproval).filter(
+        ValidationApproval.approval_id == approval_id
+    ).first()
+    if not approval:
+        raise HTTPException(status_code=404, detail="Approval not found")
+
+    # Update approval record
+    approval.unlinked_by_id = current_user.user_id
+    approval.unlink_reason = unlink_data.unlink_reason
+    approval.unlinked_at = datetime.utcnow()
+    approval.approval_status = "Removed"
+    approval.is_required = False  # No longer required
+
+    # Create audit log
+    audit_log = AuditLog(
+        entity_type="ValidationApproval",
+        entity_id=approval.request_id,
+        action="APPROVAL_UNLINKED",
+        user_id=current_user.user_id,
+        changes={
+            "approval_id": approval_id,
+            "approver_role": approval.approver_role,
+            "unlink_reason": unlink_data.unlink_reason,
+            "unlinked_by": current_user.full_name
         },
         timestamp=datetime.utcnow()
     )

@@ -91,3 +91,14 @@ class ModelDetailResponse(ModelResponse):
 
     class Config:
         from_attributes = True
+
+
+class ValidationGroupingSuggestion(BaseModel):
+    """Suggested models based on previous validation groupings."""
+    suggested_model_ids: List[int]
+    suggested_models: List[ModelDetailResponse]
+    last_validation_request_id: Optional[int] = None
+    last_grouped_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
