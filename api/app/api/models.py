@@ -2,6 +2,7 @@
 import csv
 import io
 import json
+from datetime import datetime
 from typing import List
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import StreamingResponse
@@ -125,6 +126,16 @@ def create_model(
     db.commit()
     db.refresh(model)
 
+    # Auto-add wholly-owned region to deployment regions
+    if model.wholly_owned_region_id is not None:
+        new_model_region = ModelRegion(
+            model_id=model.model_id,
+            region_id=model.wholly_owned_region_id,
+            created_at=datetime.utcnow()
+        )
+        db.add(new_model_region)
+        db.commit()
+
     # Create initial version 1.0 with change_type_id = 1 (New Model Development)
     initial_version = ModelVersion(
         model_id=model.model_id,
@@ -191,6 +202,7 @@ def get_model(
         joinedload(Model.risk_tier),
         joinedload(Model.validation_type),
         joinedload(Model.model_type),
+        joinedload(Model.wholly_owned_region),
         joinedload(Model.regulatory_categories)
     ).filter(Model.model_id == model_id).first()
 
@@ -370,6 +382,26 @@ def update_model(
 
     if regulatory_categories_changed:
         changes_made["regulatory_category_ids"] = "modified"
+
+    # Auto-sync deployment regions when wholly_owned_region_id changes
+    if 'wholly_owned_region_id' in update_data and update_data['wholly_owned_region_id'] is not None:
+        new_region_id = update_data['wholly_owned_region_id']
+
+        # Check if this region already exists in deployment regions
+        existing_region = db.query(ModelRegion).filter(
+            ModelRegion.model_id == model_id,
+            ModelRegion.region_id == new_region_id
+        ).first()
+
+        # If not, add it
+        if not existing_region:
+            new_model_region = ModelRegion(
+                model_id=model_id,
+                region_id=new_region_id,
+                created_at=datetime.utcnow()
+            )
+            db.add(new_model_region)
+            changes_made["auto_added_deployment_region"] = new_region_id
 
     # Audit log for model update
     if changes_made:

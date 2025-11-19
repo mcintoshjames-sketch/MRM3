@@ -23,7 +23,15 @@ const VersionsList: React.FC<VersionsListProps> = ({ modelId, refreshTrigger, on
             setVersions(data);
             setError(null);
         } catch (err: any) {
-            setError(err.response?.data?.detail || 'Failed to load versions');
+            const errorMsg = err.response?.data?.detail || err.message || 'Failed to load versions';
+            console.error('Version load error:', err);
+
+            // Check if it's an authentication error
+            if (err.response?.status === 401 || errorMsg.includes('credentials')) {
+                setError('Authentication error. Please try refreshing the page or logging in again.');
+            } else {
+                setError(errorMsg);
+            }
         } finally {
             setLoading(false);
         }

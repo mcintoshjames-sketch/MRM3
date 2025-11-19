@@ -25,6 +25,12 @@ interface Region {
     region_name: string;
 }
 
+interface WhollyOwnedRegion {
+    region_id: number;
+    code: string;
+    name: string;
+}
+
 interface Model {
     model_id: number;
     model_name: string;
@@ -33,6 +39,8 @@ interface Model {
     owner_id: number;
     developer_id: number | null;
     vendor_id: number | null;
+    wholly_owned_region_id: number | null;
+    wholly_owned_region: WhollyOwnedRegion | null;
     status: string;
     created_at: string;
     updated_at: string;
@@ -59,6 +67,7 @@ export default function ModelsPage() {
         owner_id: user?.user_id || 0,
         developer_id: null as number | null,
         vendor_id: null as number | null,
+        wholly_owned_region_id: null as number | null,
         status: 'In Development',
         user_ids: [] as number[]
     });
@@ -156,6 +165,7 @@ export default function ModelsPage() {
                 ...formData,
                 developer_id: formData.developer_id || null,
                 vendor_id: formData.vendor_id || null,
+                wholly_owned_region_id: formData.wholly_owned_region_id || null,
                 user_ids: formData.user_ids.length > 0 ? formData.user_ids : null
             };
             await api.post('/models/', payload);
@@ -167,6 +177,7 @@ export default function ModelsPage() {
                 owner_id: user?.user_id || 0,
                 developer_id: null,
                 vendor_id: null,
+                wholly_owned_region_id: null,
                 status: 'In Development',
                 user_ids: []
             });
@@ -351,6 +362,29 @@ export default function ModelsPage() {
                                         </select>
                                     </div>
                                 )}
+
+                                <div className="mb-4">
+                                    <label htmlFor="wholly_owned_region_id" className="block text-sm font-medium mb-2">
+                                        Wholly-Owned By Region
+                                    </label>
+                                    <select
+                                        id="wholly_owned_region_id"
+                                        className="input-field"
+                                        value={formData.wholly_owned_region_id || ''}
+                                        onChange={(e) => setFormData({
+                                            ...formData,
+                                            wholly_owned_region_id: e.target.value ? parseInt(e.target.value) : null
+                                        })}
+                                    >
+                                        <option value="">None (Global)</option>
+                                        {regions.map(r => (
+                                            <option key={r.region_id} value={r.region_id}>{r.region_name} ({r.region_code})</option>
+                                        ))}
+                                    </select>
+                                    <p className="text-xs text-gray-500 mt-1">
+                                        Select a region if this model is wholly-owned by that region's governance structure
+                                    </p>
+                                </div>
 
                                 <div className="mb-4">
                                     <label htmlFor="status" className="block text-sm font-medium mb-2">Status</label>
@@ -602,13 +636,23 @@ export default function ModelsPage() {
                             ) : (
                                 sortedData.map((model) => (
                                     <tr key={model.model_id} className="hover:bg-gray-50">
-                                        <td className="px-6 py-4 whitespace-nowrap">
-                                            <button
-                                                onClick={() => navigate(`/models/${model.model_id}`)}
-                                                className="font-medium text-blue-600 hover:text-blue-800 text-left"
-                                            >
-                                                {model.model_name}
-                                            </button>
+                                        <td className="px-6 py-4">
+                                            <div className="flex items-center gap-2">
+                                                <button
+                                                    onClick={() => navigate(`/models/${model.model_id}`)}
+                                                    className="font-medium text-blue-600 hover:text-blue-800 text-left"
+                                                >
+                                                    {model.model_name}
+                                                </button>
+                                                {model.wholly_owned_region && (
+                                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-indigo-100 text-indigo-800 border border-indigo-300 whitespace-nowrap">
+                                                        <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+                                                            <path fillRule="evenodd" d="M3 6a3 3 0 013-3h10a1 1 0 01.8 1.6L14.25 8l2.55 3.4A1 1 0 0116 13H6a1 1 0 00-1 1v3a1 1 0 11-2 0V6z" clipRule="evenodd" />
+                                                        </svg>
+                                                        {model.wholly_owned_region.code}
+                                                    </span>
+                                                )}
+                                            </div>
                                             <div className="text-sm text-gray-500">{model.description || '-'}</div>
                                         </td>
                                         <td className="px-6 py-4 whitespace-nowrap">

@@ -107,6 +107,26 @@ export default function AuditPage() {
         }
     };
 
+    const formatValue = (value: unknown): string => {
+        if (value === null || value === undefined) {
+            return 'null';
+        }
+        if (Array.isArray(value)) {
+            if (value.length === 0) {
+                return '[]';
+            }
+            // If array of objects, format each object
+            if (typeof value[0] === 'object') {
+                return value.map(item => JSON.stringify(item, null, 2)).join(', ');
+            }
+            return JSON.stringify(value);
+        }
+        if (typeof value === 'object') {
+            return JSON.stringify(value, null, 2);
+        }
+        return String(value);
+    };
+
     const formatChanges = (changes: Record<string, unknown> | null) => {
         if (!changes) return null;
         return Object.entries(changes).map(([key, value]) => {
@@ -116,15 +136,16 @@ export default function AuditPage() {
                     <div key={key} className="mb-2">
                         <span className="font-medium">{key}:</span>
                         <div className="ml-4 text-sm">
-                            <div className="text-red-600">- {String(change.old || 'null')}</div>
-                            <div className="text-green-600">+ {String(change.new || 'null')}</div>
+                            <div className="text-red-600">- {formatValue(change.old)}</div>
+                            <div className="text-green-600">+ {formatValue(change.new)}</div>
                         </div>
                     </div>
                 );
             }
             return (
                 <div key={key} className="mb-1">
-                    <span className="font-medium">{key}:</span> {String(value)}
+                    <span className="font-medium">{key}:</span>
+                    <div className="ml-4 text-sm whitespace-pre-wrap">{formatValue(value)}</div>
                 </div>
             );
         });

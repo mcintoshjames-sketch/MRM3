@@ -220,69 +220,121 @@ def auto_assign_approvers(
     validation_request: ValidationRequest,
     current_user: User
 ) -> None:
-    """Auto-assign approvers based on validation scope (Phase 5).
+    """Auto-assign approvers based on validation scope, model ownership, and deployment regions (Phase 5).
 
     Business Rules:
-    1. Global validations (region_id is NULL) → assign Global Approvers
-    2. Regional validations with requires_regional_approval=True → assign Regional Approvers for that region
-    3. Regional validations with requires_regional_approval=False → assign Global Approvers
+    1. Collect all relevant regions from:
+       - Model governance ownership (wholly_owned_region_id)
+       - Model deployment regions (model_regions)
+       - Validation request scope (regions)
+
+    2. If ALL models are wholly-owned by the SAME region AND
+       all deployment regions (if any) are ONLY that region AND
+       validation scope (if any) is ONLY that region:
+       - Only assign Regional Approvers for that region
+
+    3. Otherwise (mixed ownership, multi-region deployment, or global scope):
+       - Assign Global Approvers
+       - ALSO assign Regional Approvers for all relevant regions that require approval
 
     Creates ValidationApproval records with approval_status="Pending" and is_required=True.
     """
     from app.models.user import UserRole, user_regions
 
     approvals_to_create = []
+    assigned_approver_ids = set()  # Track to avoid duplicates
 
-    if validation_request.region_id is None:
-        # Global validation - assign all Global Approvers
-        global_approvers = db.query(User).filter(
-            User.role == UserRole.GLOBAL_APPROVER
-        ).all()
+    # Collect all unique regions across governance, deployment, and validation scope
+    all_region_ids = set()
 
-        for approver in global_approvers:
-            approvals_to_create.append(ValidationApproval(
-                request_id=validation_request.request_id,
-                approver_id=approver.user_id,
-                approver_role="Global Approver",
-                is_required=True,
-                approval_status="Pending",
-                created_at=datetime.utcnow()
-            ))
-    else:
-        # Regional validation - check if region requires regional approval
-        region = db.query(Region).filter(Region.region_id == validation_request.region_id).first()
+    if validation_request.models and len(validation_request.models) > 0:
+        # Collect governance regions (wholly_owned_region_id)
+        governance_region_ids = set()
+        for model in validation_request.models:
+            if model.wholly_owned_region_id is not None:
+                all_region_ids.add(model.wholly_owned_region_id)
+                governance_region_ids.add(model.wholly_owned_region_id)
 
-        if region and region.requires_regional_approval:
-            # Assign Regional Approvers for this specific region
+            # Collect deployment regions (model_regions)
+            for model_region in model.model_regions:
+                all_region_ids.add(model_region.region_id)
+
+        # Collect validation request scope regions
+        for region in validation_request.regions:
+            all_region_ids.add(region.region_id)
+
+        # Check if this is a single-region scenario
+        # All models must be wholly-owned by the same region
+        wholly_owned_region_id = None
+        all_wholly_owned_by_same_region = False
+
+        if len(governance_region_ids) == 1:
+            wholly_owned_region_id = list(governance_region_ids)[0]
+            # Check if ALL regions (deployment + validation scope) are only this region
+            if all_region_ids == {wholly_owned_region_id}:
+                all_wholly_owned_by_same_region = True
+
+        # Apply business rules
+        if all_wholly_owned_by_same_region and wholly_owned_region_id is not None:
+            # Pure single-region scenario - only assign Regional Approvers
             regional_approvers = db.query(User).join(user_regions).filter(
                 User.role == UserRole.REGIONAL_APPROVER,
-                user_regions.c.region_id == validation_request.region_id
+                user_regions.c.region_id == wholly_owned_region_id
             ).all()
 
+            region = db.query(Region).filter(Region.region_id == wholly_owned_region_id).first()
+            region_code = region.code if region else f"Region {wholly_owned_region_id}"
+
             for approver in regional_approvers:
-                approvals_to_create.append(ValidationApproval(
-                    request_id=validation_request.request_id,
-                    approver_id=approver.user_id,
-                    approver_role=f"Regional Approver ({region.code})",
-                    is_required=True,
-                    approval_status="Pending",
-                    created_at=datetime.utcnow()
-                ))
+                if approver.user_id not in assigned_approver_ids:
+                    approvals_to_create.append(ValidationApproval(
+                        request_id=validation_request.request_id,
+                        approver_id=approver.user_id,
+                        approver_role=f"Regional Approver ({region_code})",
+                        is_required=True,
+                        approval_status="Pending",
+                        created_at=datetime.utcnow()
+                    ))
+                    assigned_approver_ids.add(approver.user_id)
         else:
-            # Region does not require regional approval - assign Global Approvers
+            # Multi-region or global scenario
+            # Assign Global Approvers
             global_approvers = db.query(User).filter(
                 User.role == UserRole.GLOBAL_APPROVER
             ).all()
 
             for approver in global_approvers:
-                approvals_to_create.append(ValidationApproval(
-                    request_id=validation_request.request_id,
-                    approver_id=approver.user_id,
-                    approver_role="Global Approver",
-                    is_required=True,
-                    approval_status="Pending",
-                    created_at=datetime.utcnow()
-                ))
+                if approver.user_id not in assigned_approver_ids:
+                    approvals_to_create.append(ValidationApproval(
+                        request_id=validation_request.request_id,
+                        approver_id=approver.user_id,
+                        approver_role="Global Approver",
+                        is_required=True,
+                        approval_status="Pending",
+                        created_at=datetime.utcnow()
+                    ))
+                    assigned_approver_ids.add(approver.user_id)
+
+            # Additionally, assign Regional Approvers for all relevant regions
+            for region_id in all_region_ids:
+                region = db.query(Region).filter(Region.region_id == region_id).first()
+                if region and region.requires_regional_approval:
+                    regional_approvers = db.query(User).join(user_regions).filter(
+                        User.role == UserRole.REGIONAL_APPROVER,
+                        user_regions.c.region_id == region_id
+                    ).all()
+
+                    for approver in regional_approvers:
+                        if approver.user_id not in assigned_approver_ids:
+                            approvals_to_create.append(ValidationApproval(
+                                request_id=validation_request.request_id,
+                                approver_id=approver.user_id,
+                                approver_role=f"Regional Approver ({region.code})",
+                                is_required=True,
+                                approval_status="Pending",
+                                created_at=datetime.utcnow()
+                            ))
+                            assigned_approver_ids.add(approver.user_id)
 
     # Add all approvals to session
     for approval in approvals_to_create:
@@ -322,8 +374,11 @@ def create_validation_request(
     if not request_data.model_ids or len(request_data.model_ids) == 0:
         raise HTTPException(status_code=400, detail="At least one model must be specified")
 
-    # Verify all models exist
-    models = db.query(Model).filter(Model.model_id.in_(request_data.model_ids)).all()
+    # Verify all models exist (eagerly load model_regions for approver assignment)
+    from sqlalchemy.orm import joinedload
+    models = db.query(Model).options(
+        joinedload(Model.model_regions)
+    ).filter(Model.model_id.in_(request_data.model_ids)).all()
     if len(models) != len(request_data.model_ids):
         raise HTTPException(status_code=404, detail="One or more models not found")
 
@@ -344,14 +399,15 @@ def create_validation_request(
     # Get initial status (INTAKE)
     intake_status = get_taxonomy_value_by_code(db, "Validation Request Status", "INTAKE")
 
-    # Verify region if provided
-    if request_data.region_id:
+    # Verify regions if provided
+    regions = []
+    if request_data.region_ids:
         from app.models import Region
-        region = db.query(Region).filter(Region.region_id == request_data.region_id).first()
-        if not region:
-            raise HTTPException(status_code=404, detail="Region not found")
+        regions = db.query(Region).filter(Region.region_id.in_(request_data.region_ids)).all()
+        if len(regions) != len(request_data.region_ids):
+            raise HTTPException(status_code=404, detail="One or more regions not found")
 
-    # Create the request (without model_id field)
+    # Create the request
     validation_request = ValidationRequest(
         request_date=date.today(),
         requestor_id=current_user.user_id,
@@ -360,7 +416,6 @@ def create_validation_request(
         target_completion_date=request_data.target_completion_date,
         trigger_reason=request_data.trigger_reason,
         current_status_id=intake_status.value_id,
-        region_id=request_data.region_id,
         created_at=datetime.utcnow(),
         updated_at=datetime.utcnow()
     )
@@ -369,6 +424,10 @@ def create_validation_request(
 
     # Associate models using the many-to-many relationship
     validation_request.models.extend(models)
+
+    # Associate regions using the many-to-many relationship
+    if regions:
+        validation_request.regions.extend(regions)
 
     # Create initial status history entry
     create_status_history_entry(
@@ -432,7 +491,7 @@ def list_validation_requests(
         joinedload(ValidationRequest.validation_type),
         joinedload(ValidationRequest.priority),
         joinedload(ValidationRequest.current_status),
-        joinedload(ValidationRequest.region),
+        joinedload(ValidationRequest.regions),
         joinedload(ValidationRequest.assignments).joinedload(ValidationAssignment.validator)
     )
 
@@ -446,12 +505,17 @@ def list_validation_requests(
     if requestor_id:
         query = query.filter(ValidationRequest.requestor_id == requestor_id)
     if region_id:
-        query = query.filter(ValidationRequest.region_id == region_id)
+        # Filter by requests that have this specific region
+        from app.models.validation import validation_request_regions
+        query = query.join(validation_request_regions).filter(validation_request_regions.c.region_id == region_id)
     if scope:
+        from app.models.validation import validation_request_regions
         if scope.lower() == "global":
-            query = query.filter(ValidationRequest.region_id.is_(None))
+            # Global validations have no regions
+            query = query.outerjoin(validation_request_regions).filter(validation_request_regions.c.request_id.is_(None))
         elif scope.lower() == "regional":
-            query = query.filter(ValidationRequest.region_id.isnot(None))
+            # Regional validations have at least one region
+            query = query.join(validation_request_regions)
         else:
             raise HTTPException(status_code=400, detail="Invalid scope. Must be 'global' or 'regional'")
 
@@ -476,6 +540,7 @@ def list_validation_requests(
             current_status=req.current_status.label,
             days_in_status=calculate_days_in_status(db, req),
             primary_validator=primary_validator,
+            regions=req.regions if req.regions else [],
             created_at=req.created_at,
             updated_at=req.updated_at
         ))
@@ -525,7 +590,7 @@ def get_validation_request(
         joinedload(ValidationRequest.validation_type),
         joinedload(ValidationRequest.priority),
         joinedload(ValidationRequest.current_status),
-        joinedload(ValidationRequest.region),
+        joinedload(ValidationRequest.regions),
         joinedload(ValidationRequest.assignments).joinedload(ValidationAssignment.validator),
         joinedload(ValidationRequest.status_history).joinedload(ValidationStatusHistory.old_status),
         joinedload(ValidationRequest.status_history).joinedload(ValidationStatusHistory.new_status),
@@ -557,7 +622,7 @@ def update_validation_request(
         joinedload(ValidationRequest.validation_type),
         joinedload(ValidationRequest.priority),
         joinedload(ValidationRequest.current_status),
-        joinedload(ValidationRequest.region)
+        joinedload(ValidationRequest.regions)
     ).filter(
         ValidationRequest.request_id == request_id
     ).first()
@@ -575,6 +640,18 @@ def update_validation_request(
     # Track changes for audit log
     changes = {}
     update_dict = update_data.model_dump(exclude_unset=True)
+
+    # Handle region_ids separately (many-to-many relationship)
+    if 'region_ids' in update_dict:
+        from app.models import Region
+        new_region_ids = update_dict.pop('region_ids')
+        old_region_ids = [r.region_id for r in validation_request.regions]
+
+        if set(old_region_ids) != set(new_region_ids):
+            # Update regions
+            new_regions = db.query(Region).filter(Region.region_id.in_(new_region_ids)).all() if new_region_ids else []
+            validation_request.regions = new_regions
+            changes['region_ids'] = {"old": old_region_ids, "new": new_region_ids}
 
     for field, new_value in update_dict.items():
         old_value = getattr(validation_request, field)
@@ -616,7 +693,7 @@ def update_validation_request_status(
         joinedload(ValidationRequest.validation_type),
         joinedload(ValidationRequest.priority),
         joinedload(ValidationRequest.current_status),
-        joinedload(ValidationRequest.region)
+        joinedload(ValidationRequest.regions)
     ).filter(ValidationRequest.request_id == request_id).first()
 
     if not validation_request:
@@ -714,7 +791,7 @@ def decline_validation_request(
         joinedload(ValidationRequest.validation_type),
         joinedload(ValidationRequest.priority),
         joinedload(ValidationRequest.current_status),
-        joinedload(ValidationRequest.region)
+        joinedload(ValidationRequest.regions)
     ).filter(ValidationRequest.request_id == request_id).first()
 
     if not validation_request:
@@ -1897,12 +1974,12 @@ def get_pending_validator_assignments(
 
     # Get all validation requests in INTAKE status
     requests = db.query(ValidationRequest).options(
-        joinedload(ValidationRequest.models),
+        joinedload(ValidationRequest.models).joinedload(Model.model_regions),
         joinedload(ValidationRequest.requestor),
         joinedload(ValidationRequest.validation_type),
         joinedload(ValidationRequest.priority),
         joinedload(ValidationRequest.current_status),
-        joinedload(ValidationRequest.region),
+        joinedload(ValidationRequest.regions),
         joinedload(ValidationRequest.assignments).joinedload(ValidationAssignment.validator)
     ).filter(
         ValidationRequest.current_status_id == intake_status.value_id
@@ -1929,6 +2006,49 @@ def get_pending_validator_assignments(
 
             model_ids = [m.model_id for m in req.models] if req.models else []
             model_names = [m.model_name for m in req.models] if req.models else []
+
+            # Determine region display based on governance, deployment, and validation scope
+            all_region_ids = set()
+            governance_region_ids = set()
+
+            if model_ids:
+                models = db.query(Model).filter(Model.model_id.in_(model_ids)).all()
+                for model in models:
+                    # Collect governance regions
+                    if model.wholly_owned_region_id is not None:
+                        all_region_ids.add(model.wholly_owned_region_id)
+                        governance_region_ids.add(model.wholly_owned_region_id)
+                    # Collect deployment regions
+                    for model_region in model.model_regions:
+                        all_region_ids.add(model_region.region_id)
+
+            # Collect validation request scope regions
+            for region in req.regions:
+                all_region_ids.add(region.region_id)
+
+            # Check if pure single-region scenario
+            wholly_owned_region_id = None
+            is_single_region = False
+
+            if len(governance_region_ids) == 1:
+                wholly_owned_region_id = list(governance_region_ids)[0]
+                if all_region_ids == {wholly_owned_region_id}:
+                    is_single_region = True
+
+            # Display region(s)
+            if is_single_region and wholly_owned_region_id is not None:
+                # Pure single-region - only show that region
+                region = db.query(Region).filter(Region.region_id == wholly_owned_region_id).first()
+                region_display = region.name if region else f"Region {wholly_owned_region_id}"
+            elif all_region_ids:
+                # Multi-region - show "Global + [Regions]"
+                regions_list = db.query(Region).filter(Region.region_id.in_(all_region_ids)).all()
+                region_names = [r.name for r in regions_list]
+                region_display = "Global + " + ", ".join(region_names)
+            else:
+                # No regional scope - just show "Global"
+                region_display = "Global"
+
             pending.append({
                 "request_id": req.request_id,
                 "model_ids": model_ids,
@@ -1936,7 +2056,7 @@ def get_pending_validator_assignments(
                 "requestor_name": req.requestor.full_name if req.requestor else "Unknown",
                 "validation_type": req.validation_type.label if req.validation_type else "Unknown",
                 "priority": req.priority.label if req.priority else "Unknown",
-                "region": req.region.name if req.region else "Global",
+                "region": region_display,
                 "request_date": req.request_date.isoformat(),
                 "target_completion_date": req.target_completion_date.isoformat() if req.target_completion_date else None,
                 "days_pending": days_pending,

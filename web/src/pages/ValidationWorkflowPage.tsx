@@ -18,7 +18,7 @@ interface ValidationRequest {
     current_status: string;
     days_in_status: number;
     primary_validator: string | null;
-    region?: Region | null;
+    regions?: Region[];  // Support multiple regions
     created_at: string;
 }
 
@@ -49,6 +49,8 @@ export default function ValidationWorkflowPage() {
     const [loadingSuggestions, setLoadingSuggestions] = useState(false);
     const [suggestedRegions, setSuggestedRegions] = useState<Region[]>([]);
     const [loadingRegionSuggestions, setLoadingRegionSuggestions] = useState(false);
+    const [showRegionWarning, setShowRegionWarning] = useState(false);
+    const [missingRegions, setMissingRegions] = useState<Region[]>([]);
 
     const [formData, setFormData] = useState({
         model_ids: [] as number[],  // Support multiple models
@@ -56,7 +58,7 @@ export default function ValidationWorkflowPage() {
         priority_id: 0,
         target_completion_date: '',
         trigger_reason: '',
-        region_id: undefined as number | undefined
+        region_ids: [] as number[]  // Support multiple regions
     });
 
     // Filters
@@ -98,12 +100,16 @@ export default function ValidationWorkflowPage() {
 
         // Region filter (multi-select)
         if (filters.region_ids.length > 0) {
-            // Check if request has a matching region
-            // If request has no region (global), exclude it
-            if (!req.region) {
+            // Check if request has any matching region
+            // If request has no regions (global), exclude it
+            if (!req.regions || req.regions.length === 0) {
                 return false;
             }
-            if (!filters.region_ids.includes(req.region.region_id)) {
+            // Check if any of the request's regions match the filter
+            const hasMatchingRegion = req.regions.some(region =>
+                filters.region_ids.includes(region.region_id)
+            );
+            if (!hasMatchingRegion) {
                 return false;
             }
         }
@@ -264,26 +270,46 @@ export default function ValidationWorkflowPage() {
             return;
         }
 
+        // Check if models have regional scope that isn't covered
+        if (suggestedRegions.length > 0) {
+            const missing = suggestedRegions.filter(
+                region => !formData.region_ids.includes(region.region_id)
+            );
+
+            if (missing.length > 0) {
+                // Show warning modal
+                setMissingRegions(missing);
+                setShowRegionWarning(true);
+                return;
+            }
+        }
+
+        // Proceed with submission
+        await submitValidationRequest();
+    };
+
+    const submitValidationRequest = async () => {
         try {
-            // Only send region_id if it's set (not 0 or undefined)
             const payload = {
-                ...formData,
-                region_id: formData.region_id || undefined
+                ...formData
             };
             await api.post('/validation-workflow/requests/', payload);
             setShowForm(false);
+            setShowRegionWarning(false);
+            setMissingRegions([]);
             setFormData({
                 model_ids: [],
                 validation_type_id: 0,
                 priority_id: 0,
                 target_completion_date: '',
                 trigger_reason: '',
-                region_id: undefined
+                region_ids: []
             });
             fetchData();
         } catch (err: any) {
             console.error('Failed to create request:', err);
             setError(err.response?.data?.detail || 'Failed to create validation request');
+            setShowRegionWarning(false);
         }
     };
 
@@ -472,21 +498,17 @@ export default function ValidationWorkflowPage() {
                             </div>
 
                             <div className="mb-4">
-                                <label htmlFor="region_id" className="block text-sm font-medium mb-2">
-                                    Region (Optional)
+                                <label className="block text-sm font-medium mb-2">
+                                    Regions (Optional)
                                     <span className="text-xs text-gray-500 ml-2">Leave empty for global validation</span>
                                 </label>
-                                <select
-                                    id="region_id"
-                                    className="input-field"
-                                    value={formData.region_id || ''}
-                                    onChange={(e) => setFormData({ ...formData, region_id: e.target.value ? parseInt(e.target.value) : undefined })}
-                                >
-                                    <option value="">Global (No Region)</option>
-                                    {regions.map(r => (
-                                        <option key={r.region_id} value={r.region_id}>{r.name} ({r.code})</option>
-                                    ))}
-                                </select>
+                                <MultiSelectDropdown
+                                    label=""
+                                    placeholder="Select Regions (or leave empty for global)"
+                                    options={regions.map(r => ({ value: r.region_id, label: `${r.name} (${r.code})` }))}
+                                    selectedValues={formData.region_ids}
+                                    onChange={(values) => setFormData({ ...formData, region_ids: values as number[] })}
+                                />
 
                                 {/* Regional Scope Intelligence (Phase 4) */}
                                 {formData.model_ids.length > 0 && (
@@ -522,12 +544,17 @@ export default function ValidationWorkflowPage() {
                                                             <button
                                                                 type="button"
                                                                 onClick={() => {
-                                                                    setFormData({ ...formData, region_id: region.region_id });
+                                                                    if (!formData.region_ids.includes(region.region_id)) {
+                                                                        setFormData({
+                                                                            ...formData,
+                                                                            region_ids: [...formData.region_ids, region.region_id]
+                                                                        });
+                                                                    }
                                                                 }}
                                                                 className="text-xs text-purple-600 hover:text-purple-800 underline"
-                                                                disabled={formData.region_id === region.region_id}
+                                                                disabled={formData.region_ids.includes(region.region_id)}
                                                             >
-                                                                {formData.region_id === region.region_id ? 'Selected' : 'Select'}
+                                                                {formData.region_ids.includes(region.region_id) ? 'Added' : 'Add'}
                                                             </button>
                                                         </li>
                                                     ))}
@@ -564,6 +591,58 @@ export default function ValidationWorkflowPage() {
                             </button>
                         </div>
                     </form>
+                </div>
+            )}
+
+            {/* Region Warning Modal */}
+            {showRegionWarning && (
+                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+                    <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full mx-4 p-6">
+                        <h3 className="text-xl font-bold text-orange-900 mb-4 flex items-center gap-2">
+                            <svg className="w-6 h-6 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                            </svg>
+                            Regional Scope Warning
+                        </h3>
+                        <div className="mb-4">
+                            <p className="text-gray-700 mb-3">
+                                The selected models are deployed in the following region(s) that you have <strong>not selected</strong> for this validation:
+                            </p>
+                            <ul className="bg-orange-50 border border-orange-200 rounded p-3 space-y-2">
+                                {missingRegions.map(region => (
+                                    <li key={region.region_id} className="flex items-center gap-2 text-sm">
+                                        <span className="w-2 h-2 bg-orange-500 rounded-full"></span>
+                                        <span className="font-medium text-orange-900">{region.name} ({region.code})</span>
+                                        {region.requires_regional_approval && (
+                                            <span className="px-2 py-0.5 bg-red-100 text-red-800 text-xs rounded">
+                                                Requires Approval
+                                            </span>
+                                        )}
+                                    </li>
+                                ))}
+                            </ul>
+                            <p className="text-gray-600 mt-3 text-sm">
+                                If you proceed without selecting these regions, the validation may not cover the full scope of the model deployments.
+                            </p>
+                        </div>
+                        <div className="flex gap-3 justify-end">
+                            <button
+                                onClick={() => {
+                                    setShowRegionWarning(false);
+                                    setMissingRegions([]);
+                                }}
+                                className="px-4 py-2 bg-gray-200 text-gray-700 rounded hover:bg-gray-300"
+                            >
+                                Go Back and Add Regions
+                            </button>
+                            <button
+                                onClick={submitValidationRequest}
+                                className="px-4 py-2 bg-orange-600 text-white rounded hover:bg-orange-700"
+                            >
+                                Proceed Anyway
+                            </button>
+                        </div>
+                    </div>
                 </div>
             )}
 

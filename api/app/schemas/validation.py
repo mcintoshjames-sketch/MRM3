@@ -72,7 +72,7 @@ class ValidationRequestBase(BaseModel):
     priority_id: int
     target_completion_date: date
     trigger_reason: Optional[str] = None
-    region_id: Optional[int] = None
+    region_ids: List[int] = []  # Support multiple regions
 
 
 class ValidationRequestCreate(ValidationRequestBase):
@@ -86,7 +86,7 @@ class ValidationRequestUpdate(BaseModel):
     priority_id: Optional[int] = None
     target_completion_date: Optional[date] = None
     trigger_reason: Optional[str] = None
-    region_id: Optional[int] = None
+    region_ids: Optional[List[int]] = None
 
 
 class ValidationRequestStatusUpdate(BaseModel):
@@ -344,7 +344,7 @@ class ValidationRequestResponse(BaseModel):
     target_completion_date: date
     trigger_reason: Optional[str] = None
     current_status: TaxonomyValueResponse
-    region: Optional[Region] = None
+    regions: List[Region] = []  # Support multiple regions
     approvals: List[ValidationApprovalResponse] = []  # Added for Phase 5: Smart Approver Assignment
     created_at: datetime
     updated_at: datetime
@@ -379,6 +379,7 @@ class ValidationRequestListResponse(BaseModel):
     current_status: str
     days_in_status: int
     primary_validator: Optional[str] = None
+    regions: List[Region] = []  # Support multiple regions
     created_at: datetime
     updated_at: datetime
 

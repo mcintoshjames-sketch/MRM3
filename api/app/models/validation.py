@@ -14,6 +14,14 @@ validation_request_models = Table(
     Column("model_id", Integer, ForeignKey("models.model_id", ondelete="CASCADE"), primary_key=True),
 )
 
+# Association table for validation request regions (many-to-many)
+validation_request_regions = Table(
+    "validation_request_regions",
+    Base.metadata,
+    Column("request_id", Integer, ForeignKey("validation_requests.request_id", ondelete="CASCADE"), primary_key=True),
+    Column("region_id", Integer, ForeignKey("regions.region_id", ondelete="CASCADE"), primary_key=True),
+)
+
 
 class ValidationPolicy(Base):
     """Validation policy configuration by risk tier."""
@@ -83,9 +91,6 @@ class ValidationRequest(Base):
     current_status_id: Mapped[int] = mapped_column(
         Integer, ForeignKey("taxonomy_values.value_id"), nullable=False
     )
-    region_id: Mapped[Optional[int]] = mapped_column(
-        Integer, ForeignKey("regions.region_id", ondelete="SET NULL"), nullable=True, index=True
-    )
 
     # Admin decline fields
     declined_by_id: Mapped[Optional[int]] = mapped_column(
@@ -105,7 +110,9 @@ class ValidationRequest(Base):
     models: Mapped[List["Model"]] = relationship(
         "Model", secondary=validation_request_models, back_populates="validation_requests"
     )
-    region = relationship("Region")
+    regions: Mapped[List["Region"]] = relationship(
+        "Region", secondary=validation_request_regions
+    )
     requestor = relationship("User", foreign_keys=[requestor_id])
     declined_by = relationship("User", foreign_keys=[declined_by_id])
     validation_type = relationship("TaxonomyValue", foreign_keys=[validation_type_id])

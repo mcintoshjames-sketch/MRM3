@@ -15,4 +15,21 @@ api.interceptors.request.use((config) => {
     return config;
 });
 
+// Handle authentication errors
+api.interceptors.response.use(
+    (response) => response,
+    (error) => {
+        // If we get a 401 Unauthorized, the token is invalid or expired
+        if (error.response?.status === 401) {
+            const currentPath = window.location.pathname;
+            // Only redirect if we're not already on the login page
+            if (currentPath !== '/login') {
+                localStorage.removeItem('token');
+                window.location.href = '/login';
+            }
+        }
+        return Promise.reject(error);
+    }
+);
+
 export default api;

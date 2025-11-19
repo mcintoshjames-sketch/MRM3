@@ -23,6 +23,7 @@ class ModelCreate(ModelBase):
     validation_type_id: Optional[int] = None
     model_type_id: Optional[int] = None
     ownership_type_id: Optional[int] = None
+    wholly_owned_region_id: Optional[int] = None
     user_ids: Optional[List[int]] = None
     regulatory_category_ids: Optional[List[int]] = None
 
@@ -45,6 +46,7 @@ class ModelUpdate(BaseModel):
     validation_type_id: Optional[int] = None
     model_type_id: Optional[int] = None
     ownership_type_id: Optional[int] = None
+    wholly_owned_region_id: Optional[int] = None
     status: Optional[str] = None
     user_ids: Optional[List[int]] = None
     regulatory_category_ids: Optional[List[int]] = None
@@ -59,6 +61,7 @@ class ModelResponse(ModelBase):
     validation_type_id: Optional[int] = None
     model_type_id: Optional[int] = None
     ownership_type_id: Optional[int] = None
+    wholly_owned_region_id: Optional[int] = None
     created_at: datetime
     updated_at: datetime
 
@@ -85,6 +88,7 @@ class ModelDetailResponse(ModelResponse):
     validation_type: Optional[TaxonomyValueResponse] = None
     model_type: Optional[TaxonomyValueResponse] = None
     ownership_type: Optional[TaxonomyValueResponse] = None
+    wholly_owned_region: Optional[Region] = None
     users: List[UserResponse] = []
     regulatory_categories: List[TaxonomyValueResponse] = []
     regions: List[ModelRegionListItem] = []

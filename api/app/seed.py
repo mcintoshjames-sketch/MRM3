@@ -1,10 +1,12 @@
 """Seed minimal reference data."""
 import re
-from datetime import datetime
+from datetime import datetime, date, timedelta
 from typing import Dict, List
 from app.core.database import SessionLocal
 from app.core.security import get_password_hash
 from app.models import User, UserRole, Vendor, EntraUser, Taxonomy, TaxonomyValue, ValidationWorkflowSLA, ValidationPolicy, Region
+from app.models.model import Model
+from app.models.validation import Validation
 
 
 REGULATORY_CATEGORY_VALUES = [
@@ -317,10 +319,10 @@ def seed_database():
 
         # Create regions
         default_regions = [
-            {"code": "US", "name": "United States"},
-            {"code": "UK", "name": "United Kingdom"},
-            {"code": "EU", "name": "European Union"},
-            {"code": "APAC", "name": "Asia Pacific"},
+            {"code": "US", "name": "United States", "requires_regional_approval": True},
+            {"code": "UK", "name": "United Kingdom", "requires_regional_approval": True},
+            {"code": "EU", "name": "European Union", "requires_regional_approval": True},
+            {"code": "APAC", "name": "Asia Pacific", "requires_regional_approval": True},
         ]
 
         for region_data in default_regions:
@@ -1036,7 +1038,164 @@ def seed_database():
         else:
             print("⚠ Model Risk Tier taxonomy not found - skipping validation policy seeding")
 
-        print("\nSeeding completed successfully!")
+        # Create demo models with validations to demonstrate overdue logic
+        print("\n=== Creating Demo Data for Overdue Validation Dashboard ===")
+
+        # Get required taxonomy values
+        tier_2 = db.query(TaxonomyValue).filter(
+            TaxonomyValue.code == "TIER_2"
+        ).first()
+        tier_3 = db.query(TaxonomyValue).filter(
+            TaxonomyValue.code == "TIER_3"
+        ).first()
+        initial_val_type = db.query(TaxonomyValue).filter(
+            TaxonomyValue.code == "INITIAL"
+        ).first()
+        annual_val_type = db.query(TaxonomyValue).filter(
+            TaxonomyValue.code == "ANNUAL"
+        ).first()
+        pass_outcome = db.query(TaxonomyValue).filter(
+            TaxonomyValue.code == "PASS"
+        ).first()
+
+        if tier_2 and tier_3 and initial_val_type and annual_val_type and pass_outcome and admin and validator:
+            # Calculate strategic dates for Tier 2 (18 month frequency, 90 day lead time)
+            # Total overdue threshold: 18 months + 3 months grace + 90 days = ~21.5 months
+            today = date.today()
+
+            # Model A: Completely overdue (last validated 24 months ago)
+            model_a_exists = db.query(Model).filter(Model.model_name == "Demo: Overdue Model").first()
+            if not model_a_exists:
+                model_a = Model(
+                    model_name="Demo: Overdue Model",
+                    description="Tier 2 model - validation overdue (last validated 24 months ago)",
+                    development_type="In-House",
+                    status="Active",
+                    owner_id=admin.user_id,
+                    risk_tier_id=tier_2.value_id,
+                    created_at=datetime.utcnow()
+                )
+                db.add(model_a)
+                db.flush()
+
+                # Add validation from 24 months ago
+                validation_a = Validation(
+                    model_id=model_a.model_id,
+                    validator_id=validator.user_id,
+                    validation_type_id=annual_val_type.value_id,
+                    outcome_id=pass_outcome.value_id,
+                    validation_date=today - timedelta(days=24*30),  # 24 months ago
+                    findings_summary="Annual validation completed. Model performing as expected.",
+                    created_at=datetime.utcnow()
+                )
+                db.add(validation_a)
+                print("✓ Created 'Demo: Overdue Model' (24 months since last validation - OVERDUE)")
+
+            # Model B: Submission overdue but validation not yet due (last validated 20 months ago)
+            model_b_exists = db.query(Model).filter(Model.model_name == "Demo: Submission Overdue").first()
+            if not model_b_exists:
+                model_b = Model(
+                    model_name="Demo: Submission Overdue",
+                    description="Tier 2 model - past submission grace period (last validated 20 months ago)",
+                    development_type="In-House",
+                    status="Active",
+                    owner_id=admin.user_id,
+                    risk_tier_id=tier_2.value_id,
+                    created_at=datetime.utcnow()
+                )
+                db.add(model_b)
+                db.flush()
+
+                # Add validation from 20 months ago
+                validation_b = Validation(
+                    model_id=model_b.model_id,
+                    validator_id=validator.user_id,
+                    validation_type_id=annual_val_type.value_id,
+                    outcome_id=pass_outcome.value_id,
+                    validation_date=today - timedelta(days=20*30),  # 20 months ago
+                    findings_summary="Annual validation completed.",
+                    created_at=datetime.utcnow()
+                )
+                db.add(validation_b)
+                print("✓ Created 'Demo: Submission Overdue' (20 months - submission grace passed)")
+
+            # Model C: Due soon but not overdue (last validated 17 months ago)
+            model_c_exists = db.query(Model).filter(Model.model_name == "Demo: Due Soon").first()
+            if not model_c_exists:
+                model_c = Model(
+                    model_name="Demo: Due Soon",
+                    description="Tier 2 model - approaching submission deadline (last validated 17 months ago)",
+                    development_type="In-House",
+                    status="Active",
+                    owner_id=admin.user_id,
+                    risk_tier_id=tier_2.value_id,
+                    created_at=datetime.utcnow()
+                )
+                db.add(model_c)
+                db.flush()
+
+                # Add validation from 17 months ago
+                validation_c = Validation(
+                    model_id=model_c.model_id,
+                    validator_id=validator.user_id,
+                    validation_type_id=annual_val_type.value_id,
+                    outcome_id=pass_outcome.value_id,
+                    validation_date=today - timedelta(days=17*30),  # 17 months ago
+                    findings_summary="Annual validation completed.",
+                    created_at=datetime.utcnow()
+                )
+                db.add(validation_c)
+                print("✓ Created 'Demo: Due Soon' (17 months - submission due within 1 month)")
+
+            # Model D: Never validated (Tier 3)
+            model_d_exists = db.query(Model).filter(Model.model_name == "Demo: Never Validated").first()
+            if not model_d_exists:
+                model_d = Model(
+                    model_name="Demo: Never Validated",
+                    description="Tier 3 model - never validated since deployment",
+                    development_type="In-House",
+                    status="Active",
+                    owner_id=admin.user_id,
+                    risk_tier_id=tier_3.value_id,
+                    created_at=datetime.utcnow()
+                )
+                db.add(model_d)
+                print("✓ Created 'Demo: Never Validated' (no validation history)")
+
+            # Model E: Recently validated (compliant)
+            model_e_exists = db.query(Model).filter(Model.model_name == "Demo: Compliant Model").first()
+            if not model_e_exists:
+                model_e = Model(
+                    model_name="Demo: Compliant Model",
+                    description="Tier 2 model - recently validated and compliant (6 months ago)",
+                    development_type="In-House",
+                    status="Active",
+                    owner_id=admin.user_id,
+                    risk_tier_id=tier_2.value_id,
+                    created_at=datetime.utcnow()
+                )
+                db.add(model_e)
+                db.flush()
+
+                # Add recent validation
+                validation_e = Validation(
+                    model_id=model_e.model_id,
+                    validator_id=validator.user_id,
+                    validation_type_id=annual_val_type.value_id,
+                    outcome_id=pass_outcome.value_id,
+                    validation_date=today - timedelta(days=6*30),  # 6 months ago
+                    findings_summary="Annual validation completed. Model is compliant.",
+                    created_at=datetime.utcnow()
+                )
+                db.add(validation_e)
+                print("✓ Created 'Demo: Compliant Model' (6 months - well within compliance)")
+
+            db.commit()
+            print("✓ Demo data creation completed\n")
+        else:
+            print("⚠ Missing required taxonomy values or users - skipping demo data creation\n")
+
+        print("Seeding completed successfully!")
 
     except Exception as e:
         print(f"Error seeding database: {e}")
