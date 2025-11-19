@@ -13,6 +13,7 @@ from app.models.vendor import Vendor
 from app.models.audit_log import AuditLog
 from app.models.taxonomy import TaxonomyValue
 from app.models.model_version import ModelVersion
+from app.models.model_region import ModelRegion
 from app.schemas.model import ModelCreate, ModelUpdate, ModelDetailResponse
 
 router = APIRouter()
@@ -45,7 +46,8 @@ def list_models(
         joinedload(Model.risk_tier),
         joinedload(Model.validation_type),
         joinedload(Model.model_type),
-        joinedload(Model.regulatory_categories)
+        joinedload(Model.regulatory_categories),
+        joinedload(Model.model_regions).joinedload(ModelRegion.region)
     ).all()
     return models
 

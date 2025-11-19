@@ -1,10 +1,11 @@
 """Model schemas."""
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, field_validator, field_serializer
 from datetime import datetime
-from typing import Optional, List
+from typing import Optional, List, Any
 from app.schemas.user import UserResponse
 from app.schemas.vendor import VendorResponse
 from app.schemas.taxonomy import TaxonomyValueResponse
+from app.schemas.region import Region
 
 
 class ModelBase(BaseModel):
@@ -65,6 +66,16 @@ class ModelResponse(ModelBase):
         from_attributes = True
 
 
+class ModelRegionListItem(BaseModel):
+    """Simplified model-region info for list views."""
+    region_id: int
+    region_code: str
+    region_name: str
+
+    class Config:
+        from_attributes = True
+
+
 class ModelDetailResponse(ModelResponse):
     """Model response with nested user and vendor details."""
     owner: UserResponse
@@ -76,6 +87,7 @@ class ModelDetailResponse(ModelResponse):
     ownership_type: Optional[TaxonomyValueResponse] = None
     users: List[UserResponse] = []
     regulatory_categories: List[TaxonomyValueResponse] = []
+    regions: List[ModelRegionListItem] = []
 
     class Config:
         from_attributes = True

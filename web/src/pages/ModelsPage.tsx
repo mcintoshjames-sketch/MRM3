@@ -19,6 +19,12 @@ interface Vendor {
     contact_info: string;
 }
 
+interface Region {
+    region_id: number;
+    region_code: string;
+    region_name: string;
+}
+
 interface Model {
     model_id: number;
     model_name: string;
@@ -34,6 +40,7 @@ interface Model {
     developer: User | null;
     vendor: Vendor | null;
     users: User[];
+    regions: Region[];
 }
 
 export default function ModelsPage() {
@@ -543,6 +550,7 @@ export default function ModelsPage() {
                                         {getSortIcon('vendor.name')}
                                     </div>
                                 </th>
+                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Regions</th>
                                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Users</th>
                                 <th
                                     className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100"
@@ -559,7 +567,7 @@ export default function ModelsPage() {
                         <tbody className="bg-white divide-y divide-gray-200">
                             {sortedData.length === 0 ? (
                                 <tr>
-                                    <td colSpan={8} className="px-6 py-4 text-center text-gray-500">
+                                    <td colSpan={9} className="px-6 py-4 text-center text-gray-500">
                                         No models yet. Click "Add Model" to create one.
                                     </td>
                                 </tr>
@@ -592,6 +600,19 @@ export default function ModelsPage() {
                                         </td>
                                         <td className="px-6 py-4 whitespace-nowrap text-sm">
                                             {model.vendor?.name || '-'}
+                                        </td>
+                                        <td className="px-6 py-4 text-sm">
+                                            {model.regions && model.regions.length > 0 ? (
+                                                <div className="flex flex-wrap gap-1">
+                                                    {model.regions.map(r => (
+                                                        <span key={r.region_id} className="px-2 py-0.5 bg-blue-100 text-blue-800 rounded text-xs font-semibold">
+                                                            {r.region_code}
+                                                        </span>
+                                                    ))}
+                                                </div>
+                                            ) : (
+                                                <span className="text-gray-400">Global</span>
+                                            )}
                                         </td>
                                         <td className="px-6 py-4 whitespace-nowrap text-sm">
                                             {model.users.length > 0

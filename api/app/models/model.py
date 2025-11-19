@@ -90,6 +90,19 @@ class Model(Base):
     model_regions: Mapped[List["ModelRegion"]] = relationship(
         "ModelRegion", back_populates="model", cascade="all, delete-orphan"
     )
+
+    @property
+    def regions(self):
+        """Compute regions list from model_regions for API responses."""
+        return [
+            {
+                'region_id': mr.region.region_id,
+                'region_code': mr.region.code,
+                'region_name': mr.region.name
+            }
+            for mr in self.model_regions
+        ]
+
     # Model versions
     versions: Mapped[List["ModelVersion"]] = relationship(
         "ModelVersion", back_populates="model", cascade="all, delete-orphan", order_by="desc(ModelVersion.created_at)"

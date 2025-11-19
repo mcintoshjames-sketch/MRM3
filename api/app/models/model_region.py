@@ -19,6 +19,7 @@ class ModelRegion(Base):
         Integer, ForeignKey("users.user_id", ondelete="SET NULL"), nullable=True)
     version_id: Mapped[Optional[int]] = mapped_column(
         Integer, ForeignKey("model_versions.version_id", ondelete="SET NULL"), nullable=True)
+    regional_risk_level: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
     notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow, nullable=False)

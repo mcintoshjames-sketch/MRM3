@@ -5,9 +5,23 @@ from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.core.deps import get_current_user
 from app.models import ModelRegion as ModelRegionModel, Model, Region, User, UserRole
+from app.models.audit_log import AuditLog
 from app.schemas.model_region import ModelRegion, ModelRegionCreate, ModelRegionUpdate
 
 router = APIRouter()
+
+
+def create_audit_log(db: Session, entity_type: str, entity_id: int, action: str, user_id: int, changes: dict = None):
+    """Create an audit log entry."""
+    audit_log = AuditLog(
+        entity_type=entity_type,
+        entity_id=entity_id,
+        action=action,
+        user_id=user_id,
+        changes=changes
+    )
+    db.add(audit_log)
+    # Note: commit happens with the main transaction
 
 
 @router.get("/models/{model_id}/regions", response_model=List[ModelRegion])
@@ -64,8 +78,27 @@ def create_model_region(
             raise HTTPException(status_code=404, detail="Shared model owner not found")
 
     # Create model-region link
-    model_region = ModelRegionModel(**region_data.model_dump())
+    model_region = ModelRegionModel(
+        model_id=model_id,
+        **region_data.model_dump()
+    )
     db.add(model_region)
+
+    # Create audit log
+    create_audit_log(
+        db=db,
+        entity_type="ModelRegion",
+        entity_id=model_id,
+        action="CREATE",
+        user_id=current_user.user_id,
+        changes={
+            "region_id": region_data.region_id,
+            "shared_model_owner_id": region_data.shared_model_owner_id,
+            "regional_risk_level": region_data.regional_risk_level,
+            "notes": region_data.notes
+        }
+    )
+
     db.commit()
     db.refresh(model_region)
     return model_region
@@ -94,6 +127,16 @@ def update_model_region(
     for field, value in update_data.items():
         setattr(model_region, field, value)
 
+    # Create audit log
+    create_audit_log(
+        db=db,
+        entity_type="ModelRegion",
+        entity_id=model_region.model_id,
+        action="UPDATE",
+        user_id=current_user.user_id,
+        changes=update_data
+    )
+
     db.commit()
     db.refresh(model_region)
     return model_region
@@ -113,6 +156,21 @@ def delete_model_region(
     if not model_region:
         raise HTTPException(status_code=404, detail="Model-region link not found")
 
+    # Store model_id before deletion
+    model_id = model_region.model_id
+    region_id = model_region.region_id
+
     db.delete(model_region)
+
+    # Create audit log
+    create_audit_log(
+        db=db,
+        entity_type="ModelRegion",
+        entity_id=model_id,
+        action="DELETE",
+        user_id=current_user.user_id,
+        changes={"region_id": region_id}
+    )
+
     db.commit()
     return None
