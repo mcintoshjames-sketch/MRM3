@@ -55,8 +55,48 @@ export default function ModelsPage() {
     });
     const [userSearchTerm, setUserSearchTerm] = useState('');
 
-    // Table sorting
-    const { sortedData, requestSort, getSortIcon } = useTableSort<Model>(models, 'model_name');
+    // Filters
+    const [filters, setFilters] = useState({
+        search: '',
+        development_type: 'All',
+        status: 'All',
+        owner_id: 'All',
+        vendor_id: 'All'
+    });
+
+    // Apply filters first, then sort
+    const filteredModels = models.filter(model => {
+        // Search filter (model name or description)
+        if (filters.search && !model.model_name.toLowerCase().includes(filters.search.toLowerCase()) &&
+            !model.description?.toLowerCase().includes(filters.search.toLowerCase())) {
+            return false;
+        }
+
+        // Development type filter
+        if (filters.development_type !== 'All' && model.development_type !== filters.development_type) {
+            return false;
+        }
+
+        // Status filter
+        if (filters.status !== 'All' && model.status !== filters.status) {
+            return false;
+        }
+
+        // Owner filter
+        if (filters.owner_id !== 'All' && model.owner_id !== parseInt(filters.owner_id)) {
+            return false;
+        }
+
+        // Vendor filter
+        if (filters.vendor_id !== 'All' && model.vendor_id !== parseInt(filters.vendor_id)) {
+            return false;
+        }
+
+        return true;
+    });
+
+    // Table sorting (applied to filtered data)
+    const { sortedData, requestSort, getSortIcon } = useTableSort<Model>(filteredModels, 'model_name');
 
     useEffect(() => {
         fetchData();
@@ -365,6 +405,117 @@ export default function ModelsPage() {
                         </form>
                     </div>
                 )}
+
+            {/* Filters */}
+            <div className="bg-white p-4 rounded-lg shadow-md mb-6">
+                <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+                    {/* Search */}
+                    <div>
+                        <label htmlFor="filter-search" className="block text-xs font-medium text-gray-700 mb-1">
+                            Search
+                        </label>
+                        <input
+                            id="filter-search"
+                            type="text"
+                            className="input-field text-sm"
+                            placeholder="Model name or description..."
+                            value={filters.search}
+                            onChange={(e) => setFilters({ ...filters, search: e.target.value })}
+                        />
+                    </div>
+
+                    {/* Development Type */}
+                    <div>
+                        <label htmlFor="filter-dev-type" className="block text-xs font-medium text-gray-700 mb-1">
+                            Development Type
+                        </label>
+                        <select
+                            id="filter-dev-type"
+                            className="input-field text-sm"
+                            value={filters.development_type}
+                            onChange={(e) => setFilters({ ...filters, development_type: e.target.value })}
+                        >
+                            <option value="All">All Types</option>
+                            <option value="In-House">In-House</option>
+                            <option value="Third-Party">Third-Party</option>
+                        </select>
+                    </div>
+
+                    {/* Status */}
+                    <div>
+                        <label htmlFor="filter-status" className="block text-xs font-medium text-gray-700 mb-1">
+                            Status
+                        </label>
+                        <select
+                            id="filter-status"
+                            className="input-field text-sm"
+                            value={filters.status}
+                            onChange={(e) => setFilters({ ...filters, status: e.target.value })}
+                        >
+                            <option value="All">All Statuses</option>
+                            <option value="In Development">In Development</option>
+                            <option value="Active">Active</option>
+                            <option value="Retired">Retired</option>
+                        </select>
+                    </div>
+
+                    {/* Owner */}
+                    <div>
+                        <label htmlFor="filter-owner" className="block text-xs font-medium text-gray-700 mb-1">
+                            Owner
+                        </label>
+                        <select
+                            id="filter-owner"
+                            className="input-field text-sm"
+                            value={filters.owner_id}
+                            onChange={(e) => setFilters({ ...filters, owner_id: e.target.value })}
+                        >
+                            <option value="All">All Owners</option>
+                            {users.map(u => (
+                                <option key={u.user_id} value={u.user_id}>{u.full_name}</option>
+                            ))}
+                        </select>
+                    </div>
+
+                    {/* Vendor */}
+                    <div>
+                        <label htmlFor="filter-vendor" className="block text-xs font-medium text-gray-700 mb-1">
+                            Vendor
+                        </label>
+                        <select
+                            id="filter-vendor"
+                            className="input-field text-sm"
+                            value={filters.vendor_id}
+                            onChange={(e) => setFilters({ ...filters, vendor_id: e.target.value })}
+                        >
+                            <option value="All">All Vendors</option>
+                            {vendors.map(v => (
+                                <option key={v.vendor_id} value={v.vendor_id}>{v.name}</option>
+                            ))}
+                        </select>
+                    </div>
+                </div>
+
+                {/* Clear Filters and Results Count */}
+                <div className="flex items-center justify-between mt-3 pt-3 border-t">
+                    <div className="text-sm text-gray-600">
+                        Showing <span className="font-semibold">{sortedData.length}</span> of{' '}
+                        <span className="font-semibold">{models.length}</span> models
+                    </div>
+                    <button
+                        onClick={() => setFilters({
+                            search: '',
+                            development_type: 'All',
+                            status: 'All',
+                            owner_id: 'All',
+                            vendor_id: 'All'
+                        })}
+                        className="text-sm text-blue-600 hover:text-blue-800"
+                    >
+                        Clear Filters
+                    </button>
+                </div>
+            </div>
 
                 <div className="bg-white rounded-lg shadow-md overflow-hidden">
                     <table className="min-w-full divide-y divide-gray-200">
