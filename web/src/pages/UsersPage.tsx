@@ -5,11 +5,18 @@ import api from '../api/client';
 import Layout from '../components/Layout';
 import { useTableSort } from '../hooks/useTableSort';
 
+interface Region {
+    region_id: number;
+    code: string;
+    name: string;
+}
+
 interface User {
     user_id: number;
     email: string;
     full_name: string;
     role: string;
+    regions: Region[];
 }
 
 interface EntraUser {
@@ -29,6 +36,7 @@ interface EntraUser {
 export default function UsersPage() {
     const { user: currentUser } = useAuth();
     const [users, setUsers] = useState<User[]>([]);
+    const [regions, setRegions] = useState<Region[]>([]);
     const [loading, setLoading] = useState(true);
     const [showForm, setShowForm] = useState(false);
     const [editingUser, setEditingUser] = useState<User | null>(null);
@@ -36,7 +44,8 @@ export default function UsersPage() {
         email: '',
         full_name: '',
         password: '',
-        role: 'User'
+        role: 'User',
+        region_ids: [] as number[]
     });
 
     // Entra directory state
@@ -52,6 +61,7 @@ export default function UsersPage() {
 
     useEffect(() => {
         fetchUsers();
+        fetchRegions();
     }, []);
 
     const fetchUsers = async () => {
@@ -65,8 +75,17 @@ export default function UsersPage() {
         }
     };
 
+    const fetchRegions = async () => {
+        try {
+            const response = await api.get('/regions/');
+            setRegions(response.data);
+        } catch (error) {
+            console.error('Failed to fetch regions:', error);
+        }
+    };
+
     const resetForm = () => {
-        setFormData({ email: '', full_name: '', password: '', role: 'User' });
+        setFormData({ email: '', full_name: '', password: '', role: 'User', region_ids: [] });
         setEditingUser(null);
         setShowForm(false);
     };
@@ -75,11 +94,16 @@ export default function UsersPage() {
         e.preventDefault();
         try {
             if (editingUser) {
-                const updatePayload: Record<string, string> = {};
+                const updatePayload: Record<string, any> = {};
                 if (formData.email !== editingUser.email) updatePayload.email = formData.email;
                 if (formData.full_name !== editingUser.full_name) updatePayload.full_name = formData.full_name;
                 if (formData.role !== editingUser.role) updatePayload.role = formData.role;
                 if (formData.password) updatePayload.password = formData.password;
+
+                // Always include region_ids for Regional Approvers (or to clear regions when changing role)
+                if (formData.role === 'Regional Approver' || editingUser.role === 'Regional Approver') {
+                    updatePayload.region_ids = formData.region_ids;
+                }
 
                 await api.patch(`/auth/users/${editingUser.user_id}`, updatePayload);
             } else {
@@ -98,7 +122,8 @@ export default function UsersPage() {
             email: user.email,
             full_name: user.full_name,
             password: '',
-            role: user.role
+            role: user.role,
+            region_ids: user.regions?.map(r => r.region_id) || []
         });
         setShowForm(true);
     };
@@ -239,14 +264,48 @@ export default function UsersPage() {
                                     id="role"
                                     className="input-field"
                                     value={formData.role}
-                                    onChange={(e) => setFormData({ ...formData, role: e.target.value })}
+                                    onChange={(e) => setFormData({ ...formData, role: e.target.value, region_ids: [] })}
                                 >
                                     <option value="User">User</option>
                                     <option value="Validator">Validator</option>
                                     <option value="Admin">Admin</option>
+                                    <option value="Global Approver">Global Approver</option>
+                                    <option value="Regional Approver">Regional Approver</option>
                                 </select>
                             </div>
                         </div>
+
+                        {/* Region Selection for Regional Approvers */}
+                        {formData.role === 'Regional Approver' && (
+                            <div className="mb-4 p-4 border border-gray-200 rounded-lg">
+                                <label className="block text-sm font-medium mb-2">
+                                    Authorized Regions *
+                                </label>
+                                <div className="grid grid-cols-2 gap-2">
+                                    {regions.map((region) => (
+                                        <label key={region.region_id} className="flex items-center gap-2">
+                                            <input
+                                                type="checkbox"
+                                                checked={formData.region_ids.includes(region.region_id)}
+                                                onChange={(e) => {
+                                                    if (e.target.checked) {
+                                                        setFormData({ ...formData, region_ids: [...formData.region_ids, region.region_id] });
+                                                    } else {
+                                                        setFormData({ ...formData, region_ids: formData.region_ids.filter(id => id !== region.region_id) });
+                                                    }
+                                                }}
+                                                className="rounded"
+                                            />
+                                            <span>{region.name} ({region.code})</span>
+                                        </label>
+                                    ))}
+                                </div>
+                                {formData.region_ids.length === 0 && (
+                                    <p className="text-sm text-red-600 mt-2">At least one region must be selected for Regional Approvers</p>
+                                )}
+                            </div>
+                        )}
+
                         <div className="flex gap-2">
                             <button type="submit" className="btn-primary">
                                 {editingUser ? 'Update' : 'Create'}
@@ -300,6 +359,9 @@ export default function UsersPage() {
                                 </div>
                             </th>
                             <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                                Regions
+                            </th>
+                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
                                 Actions
                             </th>
                         </tr>
@@ -307,7 +369,7 @@ export default function UsersPage() {
                     <tbody className="bg-white divide-y divide-gray-200">
                         {sortedData.length === 0 ? (
                             <tr>
-                                <td colSpan={5} className="px-6 py-4 text-center text-gray-500">
+                                <td colSpan={6} className="px-6 py-4 text-center text-gray-500">
                                     No users yet. Click "Add User" to create one.
                                 </td>
                             </tr>
@@ -337,10 +399,27 @@ export default function UsersPage() {
                                                 ? 'bg-purple-100 text-purple-800'
                                                 : user.role === 'Validator'
                                                     ? 'bg-green-100 text-green-800'
-                                                    : 'bg-gray-100 text-gray-800'
+                                                    : user.role === 'Global Approver'
+                                                        ? 'bg-blue-100 text-blue-800'
+                                                        : user.role === 'Regional Approver'
+                                                            ? 'bg-orange-100 text-orange-800'
+                                                            : 'bg-gray-100 text-gray-800'
                                         }`}>
                                             {user.role}
                                         </span>
+                                    </td>
+                                    <td className="px-6 py-4 text-sm">
+                                        {user.regions && user.regions.length > 0 ? (
+                                            <div className="flex flex-wrap gap-1">
+                                                {user.regions.map(r => (
+                                                    <span key={r.region_id} className="px-2 py-0.5 bg-gray-100 text-gray-700 rounded text-xs">
+                                                        {r.code}
+                                                    </span>
+                                                ))}
+                                            </div>
+                                        ) : (
+                                            <span className="text-gray-400">—</span>
+                                        )}
                                     </td>
                                     <td className="px-6 py-4 whitespace-nowrap">
                                         <Link

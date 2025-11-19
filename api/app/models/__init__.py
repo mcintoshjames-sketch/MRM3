@@ -1,5 +1,5 @@
 """Models package."""
-from app.models.user import User, UserRole
+from app.models.user import User, UserRole, user_regions
 from app.models.model import Model, ModelStatus, DevelopmentType, model_users, model_regulatory_categories
 from app.models.vendor import Vendor
 from app.models.entra_user import EntraUser
@@ -24,7 +24,7 @@ from app.models.validation import (
 )
 
 __all__ = [
-    "User", "UserRole",
+    "User", "UserRole", "user_regions",
     "Model", "ModelStatus", "DevelopmentType", "model_users", "model_regulatory_categories",
     "Vendor",
     "EntraUser",

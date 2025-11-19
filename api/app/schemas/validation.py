@@ -367,6 +367,7 @@ class ValidationRequestListResponse(BaseModel):
     days_in_status: int
     primary_validator: Optional[str] = None
     created_at: datetime
+    updated_at: datetime
 
     class Config:
         from_attributes = True

@@ -12,6 +12,7 @@ from app.core.deps import get_current_user
 from app.models.user import User
 from app.models.model import Model
 from app.models.entra_user import EntraUser
+from app.models.region import Region
 from app.schemas.user import LoginRequest, Token, UserResponse, UserCreate, UserUpdate
 from app.schemas.entra_user import EntraUserResponse, EntraUserProvisionRequest
 from app.schemas.model import ModelDetailResponse
@@ -46,7 +47,9 @@ def list_users(
     current_user: User = Depends(get_current_user)
 ):
     """List all users."""
-    users = db.query(User).all()
+    users = db.query(User).options(
+        joinedload(User.regions)
+    ).all()
     return users
 
 
@@ -57,7 +60,9 @@ def get_user(
     current_user: User = Depends(get_current_user)
 ):
     """Get a specific user by ID."""
-    user = db.query(User).filter(User.user_id == user_id).first()
+    user = db.query(User).options(
+        joinedload(User.regions)
+    ).filter(User.user_id == user_id).first()
     if not user:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -118,6 +123,12 @@ def register(user_data: UserCreate, db: Session = Depends(get_db)):
         password_hash=get_password_hash(user_data.password),
         role=user_data.role
     )
+
+    # Handle region associations for Regional Approvers
+    if user_data.region_ids:
+        regions = db.query(Region).filter(Region.region_id.in_(user_data.region_ids)).all()
+        user.regions.extend(regions)
+
     db.add(user)
     db.commit()
     db.refresh(user)
@@ -133,7 +144,9 @@ def update_user(
     current_user: User = Depends(get_current_user)
 ):
     """Update a user."""
-    user = db.query(User).filter(User.user_id == user_id).first()
+    user = db.query(User).options(
+        joinedload(User.regions)
+    ).filter(User.user_id == user_id).first()
     if not user:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -154,6 +167,16 @@ def update_user(
     # Hash password if provided
     if 'password' in update_data:
         update_data['password_hash'] = get_password_hash(update_data.pop('password'))
+
+    # Handle region associations for Regional Approvers
+    if 'region_ids' in update_data:
+        region_ids = update_data.pop('region_ids')
+        # Clear existing regions
+        user.regions.clear()
+        # Add new regions
+        if region_ids:
+            regions = db.query(Region).filter(Region.region_id.in_(region_ids)).all()
+            user.regions.extend(regions)
 
     for field, value in update_data.items():
         setattr(user, field, value)

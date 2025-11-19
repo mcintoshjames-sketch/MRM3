@@ -277,7 +277,8 @@ def list_validation_requests(
             current_status=req.current_status.label,
             days_in_status=calculate_days_in_status(db, req),
             primary_validator=primary_validator,
-            created_at=req.created_at
+            created_at=req.created_at,
+            updated_at=req.updated_at
         ))
 
     return result

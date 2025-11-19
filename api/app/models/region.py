@@ -1,8 +1,12 @@
 """Region model for geographic organization."""
 from datetime import datetime
 from sqlalchemy import String, Integer, DateTime
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+from typing import List, TYPE_CHECKING
 from app.models.base import Base
+
+if TYPE_CHECKING:
+    from app.models.user import User
 
 
 class Region(Base):
@@ -14,4 +18,9 @@ class Region(Base):
     name: Mapped[str] = mapped_column(String(100), nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow, nullable=False
+    )
+
+    # Users who can approve validations in this region
+    approvers: Mapped[List["User"]] = relationship(
+        "User", secondary="user_regions", back_populates="regions"
     )

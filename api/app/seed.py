@@ -278,6 +278,22 @@ def seed_database():
         else:
             print("✓ Regular user already exists")
 
+        # Create global approver user
+        global_approver = db.query(User).filter(
+            User.email == "globalapprover@example.com").first()
+        if not global_approver:
+            global_approver = User(
+                email="globalapprover@example.com",
+                full_name="Global Approver",
+                password_hash=get_password_hash("approver123"),
+                role=UserRole.GLOBAL_APPROVER
+            )
+            db.add(global_approver)
+            db.commit()
+            print("✓ Created global approver (globalapprover@example.com / approver123)")
+        else:
+            print("✓ Global approver already exists")
+
         # Create sample vendors
         sample_vendors = [
             {"name": "Bloomberg", "contact_info": "support@bloomberg.com"},
@@ -318,6 +334,50 @@ def seed_database():
                 print(f"✓ Region already exists: {region_data['name']}")
 
         db.commit()
+
+        # Create regional approver users with region associations
+        # US Regional Approver
+        us_approver = db.query(User).filter(
+            User.email == "usapprover@example.com").first()
+        if not us_approver:
+            us_approver = User(
+                email="usapprover@example.com",
+                full_name="US Regional Approver",
+                password_hash=get_password_hash("approver123"),
+                role=UserRole.REGIONAL_APPROVER
+            )
+            # Associate with US region
+            us_region = db.query(Region).filter(Region.code == "US").first()
+            if us_region:
+                us_approver.regions.append(us_region)
+            db.add(us_approver)
+            db.commit()
+            print("✓ Created US regional approver (usapprover@example.com / approver123)")
+        else:
+            print("✓ US regional approver already exists")
+
+        # EU/UK Regional Approver
+        eu_approver = db.query(User).filter(
+            User.email == "euapprover@example.com").first()
+        if not eu_approver:
+            eu_approver = User(
+                email="euapprover@example.com",
+                full_name="EU Regional Approver",
+                password_hash=get_password_hash("approver123"),
+                role=UserRole.REGIONAL_APPROVER
+            )
+            # Associate with EU and UK regions
+            eu_region = db.query(Region).filter(Region.code == "EU").first()
+            uk_region = db.query(Region).filter(Region.code == "UK").first()
+            if eu_region:
+                eu_approver.regions.append(eu_region)
+            if uk_region:
+                eu_approver.regions.append(uk_region)
+            db.add(eu_approver)
+            db.commit()
+            print("✓ Created EU regional approver (euapprover@example.com / approver123)")
+        else:
+            print("✓ EU regional approver already exists")
 
         # Create mock Microsoft Entra directory users
         entra_users = [
