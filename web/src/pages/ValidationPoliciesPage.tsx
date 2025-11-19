@@ -247,17 +247,30 @@ export default function ValidationPoliciesPage() {
 
             <div className="mt-6 p-4 bg-blue-50 border border-blue-200 rounded">
                 <h3 className="text-sm font-medium text-blue-900 mb-2">About These Settings</h3>
-                <ul className="text-sm text-blue-800 space-y-1 list-disc list-inside">
+                <ul className="text-sm text-blue-800 space-y-2 list-disc list-inside">
                     <li>
-                        <strong>Re-Validation Frequency:</strong> How often models in this risk tier must be re-validated (in months)
+                        <strong>Re-Validation Frequency:</strong> Time from last validation completion to next validation <em>submission/intake</em> (in months)
                     </li>
                     <li>
-                        <strong>Model Change Lead Time:</strong> How many days before a planned model change date an interim validation must be triggered (Phase 6)
+                        <strong>Model Change Lead Time:</strong> Days before a planned model change date to trigger interim validation
                     </li>
                     <li>
                         These policies apply to models based on their <strong>inherent risk tier</strong>
                     </li>
                 </ul>
+
+                <div className="mt-3 p-3 bg-blue-100 rounded text-xs">
+                    <p className="font-semibold text-blue-900 mb-1">Overdue Calculation Example (Tier 2: 18 months, 90 days)</p>
+                    <p className="text-blue-800">Last validation completed: <span className="font-mono">Jan 1, 2024</span></p>
+                    <ul className="mt-1 ml-4 space-y-0.5 text-blue-700">
+                        <li>• Submission due: <span className="font-mono">Jul 1, 2025</span> (+ 18 months)</li>
+                        <li>• Submission overdue: <span className="font-mono">Oct 1, 2025</span> (+ 3 months grace)</li>
+                        <li>• Validation overdue: <span className="font-mono">Dec 30, 2025</span> (+ 90 days lead time)</li>
+                    </ul>
+                    <p className="mt-2 text-blue-800 italic">
+                        A validation is considered overdue if not completed within: <strong>frequency + 3 months grace + lead time days</strong>
+                    </p>
+                </div>
             </div>
         </Layout>
     );

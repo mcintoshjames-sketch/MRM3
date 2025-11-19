@@ -423,9 +423,11 @@ def get_overdue_models(
     """Get models that are overdue for validation based on policy."""
     check_admin(current_user)
 
-    # Get all policies
-    policies = {p.risk_tier_id: p.frequency_months for p in db.query(
-        ValidationPolicy).all()}
+    # Get all policies with frequency and lead time
+    policies = {p.risk_tier_id: {
+        'frequency_months': p.frequency_months,
+        'lead_time_days': p.model_change_lead_time_days
+    } for p in db.query(ValidationPolicy).all()}
 
     if not policies:
         return []
@@ -438,6 +440,7 @@ def get_overdue_models(
 
     overdue = []
     today = date.today()
+    GRACE_PERIOD_MONTHS = 3  # Grace period for submission
 
     for model in models:
         if not model.risk_tier_id or model.risk_tier_id not in policies:
@@ -448,7 +451,9 @@ def get_overdue_models(
             Validation.model_id == model.model_id
         ).order_by(Validation.validation_date.desc()).first()
 
-        frequency_months = policies[model.risk_tier_id]
+        policy = policies[model.risk_tier_id]
+        frequency_months = policy['frequency_months']
+        lead_time_days = policy['lead_time_days']
 
         if not last_validation:
             # Never validated
@@ -463,17 +468,27 @@ def get_overdue_models(
                 "status": "Never Validated"
             })
         else:
-            next_due = last_validation.validation_date + \
+            # Calculate dates per business rules:
+            # 1. Submission due = last validation + frequency
+            # 2. Submission overdue = submission due + 3 months grace
+            # 3. Validation overdue = submission overdue + lead time days
+
+            submission_due = last_validation.validation_date + \
                 timedelta(days=frequency_months * 30)
-            if next_due < today:
-                days_overdue = (today - next_due).days
+            submission_overdue = submission_due + \
+                timedelta(days=GRACE_PERIOD_MONTHS * 30)
+            validation_overdue = submission_overdue + \
+                timedelta(days=lead_time_days)
+
+            if validation_overdue < today:
+                days_overdue = (today - validation_overdue).days
                 overdue.append({
                     "model_id": model.model_id,
                     "model_name": model.model_name,
                     "risk_tier": model.risk_tier.label if model.risk_tier else None,
                     "owner_name": model.owner.full_name,
                     "last_validation_date": str(last_validation.validation_date),
-                    "next_due_date": str(next_due),
+                    "next_due_date": str(submission_due),
                     "days_overdue": days_overdue,
                     "status": "Overdue"
                 })
