@@ -13,6 +13,7 @@ class ValidationPolicyBase(BaseModel):
     """Base schema for validation policy."""
     risk_tier_id: int
     frequency_months: int = 12
+    model_change_lead_time_days: int = 90
     description: Optional[str] = None
 
 
@@ -24,6 +25,7 @@ class ValidationPolicyCreate(ValidationPolicyBase):
 class ValidationPolicyUpdate(BaseModel):
     """Schema for updating a validation policy."""
     frequency_months: Optional[int] = None
+    model_change_lead_time_days: Optional[int] = None
     description: Optional[str] = None
 
 
@@ -343,6 +345,7 @@ class ValidationRequestResponse(BaseModel):
     trigger_reason: Optional[str] = None
     current_status: TaxonomyValueResponse
     region: Optional[Region] = None
+    approvals: List[ValidationApprovalResponse] = []  # Added for Phase 5: Smart Approver Assignment
     created_at: datetime
     updated_at: datetime
 

@@ -167,6 +167,20 @@ export default function Layout({ children }: LayoutProps) {
                                         Regions
                                     </NavLink>
                                 </li>
+                                <li>
+                                    <NavLink
+                                        to="/validation-policies"
+                                        className={({ isActive }) =>
+                                            `block px-4 py-2 rounded transition-colors ${
+                                                isActive
+                                                    ? 'bg-blue-600 text-white'
+                                                    : 'text-gray-700 hover:bg-gray-100'
+                                            }`
+                                        }
+                                    >
+                                        Validation Policies
+                                    </NavLink>
+                                </li>
                             </>
                         )}
                     </ul>

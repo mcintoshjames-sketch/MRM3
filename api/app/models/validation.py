@@ -25,6 +25,10 @@ class ValidationPolicy(Base):
     )
     frequency_months: Mapped[int] = mapped_column(
         Integer, nullable=False, default=12)
+    model_change_lead_time_days: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=90,
+        comment="Lead time in days before model change implementation date to trigger interim validation"
+    )
     description: Mapped[str] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime, nullable=False, default=datetime.utcnow

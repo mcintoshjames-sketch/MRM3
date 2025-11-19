@@ -2,14 +2,7 @@ import { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import api from '../api/client';
 import Layout from '../components/Layout';
-
-interface Region {
-    region_id: number;
-    code: string;
-    name: string;
-    requires_regional_approval: boolean;
-    created_at: string;
-}
+import type { Region } from '../api/regions';
 
 export default function RegionsPage() {
     const { user } = useAuth();
@@ -68,7 +61,7 @@ export default function RegionsPage() {
         setFormData({
             code: region.code,
             name: region.name,
-            requires_regional_approval: region.requires_regional_approval
+            requires_regional_approval: region.requires_regional_approval ?? false
         });
         setShowForm(true);
     };

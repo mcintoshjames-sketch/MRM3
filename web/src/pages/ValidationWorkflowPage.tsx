@@ -497,8 +497,11 @@ export default function ValidationWorkflowPage() {
                                             </div>
                                         ) : suggestedRegions.length > 0 ? (
                                             <div className="bg-purple-50 border border-purple-200 rounded p-3">
-                                                <p className="text-sm font-medium text-purple-900 mb-2">
+                                                <p className="text-sm font-medium text-purple-900 mb-2 flex items-center gap-2">
                                                     Suggested Regions
+                                                    <span className="text-xs font-normal text-gray-600 cursor-help" title="Automatically suggested based on the geographic scope of your selected models">
+                                                        ⓘ
+                                                    </span>
                                                 </p>
                                                 <p className="text-xs text-purple-700 mb-3">
                                                     Based on the selected models, the following regions may apply to this validation:

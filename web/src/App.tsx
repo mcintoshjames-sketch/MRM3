@@ -17,6 +17,7 @@ import ValidatorDashboardPage from './pages/ValidatorDashboardPage';
 import WorkflowConfigurationPage from './pages/WorkflowConfigurationPage';
 import BatchDelegatesPage from './pages/BatchDelegatesPage';
 import RegionsPage from './pages/RegionsPage';
+import ValidationPoliciesPage from './pages/ValidationPoliciesPage';
 
 function App() {
     const { user, loading } = useAuth();
@@ -53,6 +54,7 @@ function App() {
             <Route path="/workflow-config" element={user?.role === 'Admin' ? <WorkflowConfigurationPage /> : <Navigate to="/models" />} />
             <Route path="/batch-delegates" element={user?.role === 'Admin' ? <BatchDelegatesPage /> : <Navigate to="/models" />} />
             <Route path="/regions" element={user?.role === 'Admin' ? <RegionsPage /> : <Navigate to="/models" />} />
+            <Route path="/validation-policies" element={user?.role === 'Admin' ? <ValidationPoliciesPage /> : <Navigate to="/models" />} />
             <Route path="/" element={<Navigate to={getDefaultRoute()} />} />
         </Routes>
     );

@@ -4,6 +4,7 @@ export interface Region {
     region_id: number;
     code: string;
     name: string;
+    requires_regional_approval?: boolean; // Optional for backward compatibility
     created_at: string;
 }
 

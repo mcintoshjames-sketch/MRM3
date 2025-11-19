@@ -215,6 +215,100 @@ def compute_suggested_regions(model_ids: List[int], db: Session) -> List[dict]:
     return list(regions_dict.values())
 
 
+def auto_assign_approvers(
+    db: Session,
+    validation_request: ValidationRequest,
+    current_user: User
+) -> None:
+    """Auto-assign approvers based on validation scope (Phase 5).
+
+    Business Rules:
+    1. Global validations (region_id is NULL) → assign Global Approvers
+    2. Regional validations with requires_regional_approval=True → assign Regional Approvers for that region
+    3. Regional validations with requires_regional_approval=False → assign Global Approvers
+
+    Creates ValidationApproval records with approval_status="Pending" and is_required=True.
+    """
+    from app.models.user import UserRole, user_regions
+
+    approvals_to_create = []
+
+    if validation_request.region_id is None:
+        # Global validation - assign all Global Approvers
+        global_approvers = db.query(User).filter(
+            User.role == UserRole.GLOBAL_APPROVER
+        ).all()
+
+        for approver in global_approvers:
+            approvals_to_create.append(ValidationApproval(
+                request_id=validation_request.request_id,
+                approver_id=approver.user_id,
+                approver_role="Global Approver",
+                is_required=True,
+                approval_status="Pending",
+                created_at=datetime.utcnow()
+            ))
+    else:
+        # Regional validation - check if region requires regional approval
+        region = db.query(Region).filter(Region.region_id == validation_request.region_id).first()
+
+        if region and region.requires_regional_approval:
+            # Assign Regional Approvers for this specific region
+            regional_approvers = db.query(User).join(user_regions).filter(
+                User.role == UserRole.REGIONAL_APPROVER,
+                user_regions.c.region_id == validation_request.region_id
+            ).all()
+
+            for approver in regional_approvers:
+                approvals_to_create.append(ValidationApproval(
+                    request_id=validation_request.request_id,
+                    approver_id=approver.user_id,
+                    approver_role=f"Regional Approver ({region.code})",
+                    is_required=True,
+                    approval_status="Pending",
+                    created_at=datetime.utcnow()
+                ))
+        else:
+            # Region does not require regional approval - assign Global Approvers
+            global_approvers = db.query(User).filter(
+                User.role == UserRole.GLOBAL_APPROVER
+            ).all()
+
+            for approver in global_approvers:
+                approvals_to_create.append(ValidationApproval(
+                    request_id=validation_request.request_id,
+                    approver_id=approver.user_id,
+                    approver_role="Global Approver",
+                    is_required=True,
+                    approval_status="Pending",
+                    created_at=datetime.utcnow()
+                ))
+
+    # Add all approvals to session
+    for approval in approvals_to_create:
+        db.add(approval)
+
+    # Create audit log entry
+    if approvals_to_create:
+        approver_info = [
+            {"approver_id": a.approver_id, "role": a.approver_role}
+            for a in approvals_to_create
+        ]
+        audit_log = AuditLog(
+            entity_type="ValidationRequest",
+            entity_id=validation_request.request_id,
+            action="AUTO_ASSIGN_APPROVERS",
+            user_id=current_user.user_id,
+            changes={
+                "approvers_assigned": len(approvals_to_create),
+                "approvers": approver_info,
+                "assignment_type": "Automatic"
+            },
+            timestamp=datetime.utcnow()
+        )
+        db.add(audit_log)
+
+
 # ==================== VALIDATION REQUEST ENDPOINTS ====================
 
 @router.post("/requests/", response_model=ValidationRequestResponse, status_code=status.HTTP_201_CREATED)
@@ -302,11 +396,18 @@ def create_validation_request(
     # Update grouping memory for multi-model regular validations
     update_grouping_memory(db, validation_request, models)
 
+    # Auto-assign approvers based on validation scope (Phase 5)
+    auto_assign_approvers(db, validation_request, current_user)
+
     db.commit()
 
-    # Reload with relationships
+    # Reload with relationships (including approvals with their approver)
     db.refresh(validation_request)
-    return validation_request
+    validation_request_with_approvals = db.query(ValidationRequest).options(
+        joinedload(ValidationRequest.approvals).joinedload(ValidationApproval.approver)
+    ).filter(ValidationRequest.request_id == validation_request.request_id).first()
+
+    return validation_request_with_approvals
 
 
 @router.get("/requests/", response_model=List[ValidationRequestListResponse])

@@ -118,17 +118,16 @@ class TestValidationRequestCRUD:
             "/validation-workflow/requests/",
             headers=admin_headers,
             json={
-                "model_id": sample_model.model_id,
+                "model_ids": [sample_model.model_id],  # Fixed to use model_ids (plural) from Phase 1
                 "validation_type_id": workflow_taxonomies["type"]["initial"].value_id,
                 "priority_id": workflow_taxonomies["priority"]["high"].value_id,
                 "target_completion_date": target_date,
-                "business_justification": "New model requires initial validation",
                 "trigger_reason": "Model deployment"
             }
         )
         assert response.status_code == 201
         data = response.json()
-        assert data["model"]["model_id"] == sample_model.model_id
+        assert data["models"][0]["model_id"] == sample_model.model_id  # Fixed to use models (plural)
         assert data["current_status"]["label"] == "Intake"
         assert data["priority"]["label"] == "High"
         assert "request_id" in data
@@ -139,11 +138,10 @@ class TestValidationRequestCRUD:
         response = client.post(
             "/validation-workflow/requests/",
             json={
-                "model_id": sample_model.model_id,
+                "model_ids": [sample_model.model_id],
                 "validation_type_id": workflow_taxonomies["type"]["initial"].value_id,
                 "priority_id": workflow_taxonomies["priority"]["high"].value_id,
                 "target_completion_date": target_date,
-                "business_justification": "Test"
             }
         )
         assert response.status_code in [401, 403]  # FastAPI returns 403 for missing auth header
@@ -155,15 +153,15 @@ class TestValidationRequestCRUD:
             "/validation-workflow/requests/",
             headers=admin_headers,
             json={
-                "model_id": 9999,
+                "model_ids": [9999],
                 "validation_type_id": workflow_taxonomies["type"]["initial"].value_id,
                 "priority_id": workflow_taxonomies["priority"]["high"].value_id,
                 "target_completion_date": target_date,
-                "business_justification": "Test"
+                "trigger_reason": "Test"
             }
         )
         assert response.status_code == 404
-        assert "Model not found" in response.json()["detail"]
+        assert "models not found" in response.json()["detail"].lower()  # Updated for multi-model support
 
     def test_create_request_invalid_taxonomy(self, client, admin_headers, sample_model, workflow_taxonomies):
         """Test creating request with invalid taxonomy values."""
@@ -172,11 +170,10 @@ class TestValidationRequestCRUD:
             "/validation-workflow/requests/",
             headers=admin_headers,
             json={
-                "model_id": sample_model.model_id,
+                "model_ids": [sample_model.model_id],
                 "validation_type_id": 9999,
                 "priority_id": workflow_taxonomies["priority"]["high"].value_id,
                 "target_completion_date": target_date,
-                "business_justification": "Test"
             }
         )
         assert response.status_code in [400, 404]  # May be 404 if taxonomy not found
@@ -196,11 +193,10 @@ class TestValidationRequestCRUD:
             "/validation-workflow/requests/",
             headers=admin_headers,
             json={
-                "model_id": sample_model.model_id,
+                "model_ids": [sample_model.model_id],
                 "validation_type_id": workflow_taxonomies["type"]["initial"].value_id,
                 "priority_id": workflow_taxonomies["priority"]["high"].value_id,
                 "target_completion_date": target_date,
-                "business_justification": "Test"
             }
         )
 
@@ -208,7 +204,7 @@ class TestValidationRequestCRUD:
         assert response.status_code == 200
         data = response.json()
         assert len(data) == 1
-        assert data[0]["model_name"] == sample_model.model_name
+        assert data[0]["model_names"][0] == sample_model.model_name
 
     def test_get_request_details(self, client, admin_headers, sample_model, workflow_taxonomies):
         """Test getting detailed request information."""
@@ -217,11 +213,10 @@ class TestValidationRequestCRUD:
             "/validation-workflow/requests/",
             headers=admin_headers,
             json={
-                "model_id": sample_model.model_id,
+                "model_ids": [sample_model.model_id],
                 "validation_type_id": workflow_taxonomies["type"]["initial"].value_id,
                 "priority_id": workflow_taxonomies["priority"]["high"].value_id,
                 "target_completion_date": target_date,
-                "business_justification": "Detailed test"
             }
         )
         request_id = create_response.json()["request_id"]
@@ -230,7 +225,6 @@ class TestValidationRequestCRUD:
         assert response.status_code == 200
         data = response.json()
         assert data["request_id"] == request_id
-        assert data["business_justification"] == "Detailed test"
         # Should have default work components created
         assert "work_components" in data
 
@@ -246,11 +240,10 @@ class TestValidationRequestCRUD:
             "/validation-workflow/requests/",
             headers=admin_headers,
             json={
-                "model_id": sample_model.model_id,
+                "model_ids": [sample_model.model_id],
                 "validation_type_id": workflow_taxonomies["type"]["initial"].value_id,
                 "priority_id": workflow_taxonomies["priority"]["high"].value_id,
                 "target_completion_date": target_date,
-                "business_justification": "Delete test"
             }
         )
         request_id = create_response.json()["request_id"]
@@ -269,11 +262,10 @@ class TestValidationRequestCRUD:
             "/validation-workflow/requests/",
             headers=admin_headers,
             json={
-                "model_id": sample_model.model_id,
+                "model_ids": [sample_model.model_id],
                 "validation_type_id": workflow_taxonomies["type"]["initial"].value_id,
                 "priority_id": workflow_taxonomies["priority"]["high"].value_id,
                 "target_completion_date": target_date,
-                "business_justification": "Delete test"
             }
         )
         request_id = create_response.json()["request_id"]
@@ -288,11 +280,10 @@ class TestValidationRequestCRUD:
             "/validation-workflow/requests/",
             headers=admin_headers,
             json={
-                "model_id": sample_model.model_id,
+                "model_ids": [sample_model.model_id],
                 "validation_type_id": workflow_taxonomies["type"]["initial"].value_id,
                 "priority_id": workflow_taxonomies["priority"]["high"].value_id,
                 "target_completion_date": target_date,
-                "business_justification": "History test"
             }
         )
         request_id = create_response.json()["request_id"]
@@ -315,11 +306,10 @@ class TestStatusTransitions:
             "/validation-workflow/requests/",
             headers=admin_headers,
             json={
-                "model_id": sample_model.model_id,
+                "model_ids": [sample_model.model_id],
                 "validation_type_id": workflow_taxonomies["type"]["initial"].value_id,
                 "priority_id": workflow_taxonomies["priority"]["high"].value_id,
                 "target_completion_date": target_date,
-                "business_justification": "Transition test"
             }
         )
         request_id = create_response.json()["request_id"]
@@ -342,11 +332,10 @@ class TestStatusTransitions:
             "/validation-workflow/requests/",
             headers=admin_headers,
             json={
-                "model_id": sample_model.model_id,
+                "model_ids": [sample_model.model_id],
                 "validation_type_id": workflow_taxonomies["type"]["initial"].value_id,
                 "priority_id": workflow_taxonomies["priority"]["high"].value_id,
                 "target_completion_date": target_date,
-                "business_justification": "Transition test"
             }
         )
         request_id = create_response.json()["request_id"]
@@ -369,11 +358,10 @@ class TestStatusTransitions:
             "/validation-workflow/requests/",
             headers=admin_headers,
             json={
-                "model_id": sample_model.model_id,
+                "model_ids": [sample_model.model_id],
                 "validation_type_id": workflow_taxonomies["type"]["initial"].value_id,
                 "priority_id": workflow_taxonomies["priority"]["high"].value_id,
                 "target_completion_date": target_date,
-                "business_justification": "On hold test"
             }
         )
         request_id = create_response.json()["request_id"]
@@ -396,11 +384,10 @@ class TestStatusTransitions:
             "/validation-workflow/requests/",
             headers=admin_headers,
             json={
-                "model_id": sample_model.model_id,
+                "model_ids": [sample_model.model_id],
                 "validation_type_id": workflow_taxonomies["type"]["initial"].value_id,
                 "priority_id": workflow_taxonomies["priority"]["high"].value_id,
                 "target_completion_date": target_date,
-                "business_justification": "Cancel test"
             }
         )
         request_id = create_response.json()["request_id"]
@@ -423,11 +410,10 @@ class TestStatusTransitions:
             "/validation-workflow/requests/",
             headers=admin_headers,
             json={
-                "model_id": sample_model.model_id,
+                "model_ids": [sample_model.model_id],
                 "validation_type_id": workflow_taxonomies["type"]["initial"].value_id,
                 "priority_id": workflow_taxonomies["priority"]["high"].value_id,
                 "target_completion_date": target_date,
-                "business_justification": "Cancel test"
             }
         )
         request_id = create_response.json()["request_id"]
@@ -461,11 +447,10 @@ class TestStatusTransitions:
             "/validation-workflow/requests/",
             headers=admin_headers,
             json={
-                "model_id": sample_model.model_id,
+                "model_ids": [sample_model.model_id],
                 "validation_type_id": workflow_taxonomies["type"]["initial"].value_id,
                 "priority_id": workflow_taxonomies["priority"]["high"].value_id,
                 "target_completion_date": target_date,
-                "business_justification": "History test"
             }
         )
         request_id = create_response.json()["request_id"]
@@ -515,11 +500,10 @@ class TestValidatorIndependence:
             "/validation-workflow/requests/",
             headers=admin_headers,
             json={
-                "model_id": sample_model.model_id,
+                "model_ids": [sample_model.model_id],
                 "validation_type_id": workflow_taxonomies["type"]["initial"].value_id,
                 "priority_id": workflow_taxonomies["priority"]["high"].value_id,
                 "target_completion_date": target_date,
-                "business_justification": "Independence test"
             }
         )
         request_id = create_response.json()["request_id"]
@@ -548,11 +532,10 @@ class TestValidatorIndependence:
             "/validation-workflow/requests/",
             headers=admin_headers,
             json={
-                "model_id": sample_model.model_id,
+                "model_ids": [sample_model.model_id],
                 "validation_type_id": workflow_taxonomies["type"]["initial"].value_id,
                 "priority_id": workflow_taxonomies["priority"]["high"].value_id,
                 "target_completion_date": target_date,
-                "business_justification": "Independence test"
             }
         )
         request_id = create_response.json()["request_id"]
@@ -577,11 +560,10 @@ class TestValidatorIndependence:
             "/validation-workflow/requests/",
             headers=admin_headers,
             json={
-                "model_id": sample_model.model_id,
+                "model_ids": [sample_model.model_id],
                 "validation_type_id": workflow_taxonomies["type"]["initial"].value_id,
                 "priority_id": workflow_taxonomies["priority"]["high"].value_id,
                 "target_completion_date": target_date,
-                "business_justification": "Independence test"
             }
         )
         request_id = create_response.json()["request_id"]
@@ -605,11 +587,10 @@ class TestValidatorIndependence:
             "/validation-workflow/requests/",
             headers=admin_headers,
             json={
-                "model_id": sample_model.model_id,
+                "model_ids": [sample_model.model_id],
                 "validation_type_id": workflow_taxonomies["type"]["initial"].value_id,
                 "priority_id": workflow_taxonomies["priority"]["high"].value_id,
                 "target_completion_date": target_date,
-                "business_justification": "Attestation test"
             }
         )
         request_id = create_response.json()["request_id"]
@@ -637,11 +618,10 @@ class TestOutcomeCreation:
             "/validation-workflow/requests/",
             headers=admin_headers,
             json={
-                "model_id": sample_model.model_id,
+                "model_ids": [sample_model.model_id],
                 "validation_type_id": workflow_taxonomies["type"]["initial"].value_id,
                 "priority_id": workflow_taxonomies["priority"]["high"].value_id,
                 "target_completion_date": target_date,
-                "business_justification": "Outcome test"
             }
         )
         request_id = create_response.json()["request_id"]
@@ -705,11 +685,10 @@ class TestOutcomeCreation:
             "/validation-workflow/requests/",
             headers=admin_headers,
             json={
-                "model_id": sample_model.model_id,
+                "model_ids": [sample_model.model_id],
                 "validation_type_id": workflow_taxonomies["type"]["initial"].value_id,
                 "priority_id": workflow_taxonomies["priority"]["high"].value_id,
                 "target_completion_date": target_date,
-                "business_justification": "Duplicate outcome test"
             }
         )
         request_id = create_response.json()["request_id"]
@@ -784,11 +763,10 @@ class TestApprovalWorkflow:
             "/validation-workflow/requests/",
             headers=admin_headers,
             json={
-                "model_id": sample_model.model_id,
+                "model_ids": [sample_model.model_id],
                 "validation_type_id": workflow_taxonomies["type"]["initial"].value_id,
                 "priority_id": workflow_taxonomies["priority"]["high"].value_id,
                 "target_completion_date": target_date,
-                "business_justification": "Approval test"
             }
         )
         request_id = create_response.json()["request_id"]
@@ -811,11 +789,10 @@ class TestApprovalWorkflow:
             "/validation-workflow/requests/",
             headers=admin_headers,
             json={
-                "model_id": sample_model.model_id,
+                "model_ids": [sample_model.model_id],
                 "validation_type_id": workflow_taxonomies["type"]["initial"].value_id,
                 "priority_id": workflow_taxonomies["priority"]["high"].value_id,
                 "target_completion_date": target_date,
-                "business_justification": "Approval test"
             }
         )
         request_id = create_response.json()["request_id"]
@@ -854,11 +831,10 @@ class TestApprovalWorkflow:
             "/validation-workflow/requests/",
             headers=admin_headers,
             json={
-                "model_id": sample_model.model_id,
+                "model_ids": [sample_model.model_id],
                 "validation_type_id": workflow_taxonomies["type"]["initial"].value_id,
                 "priority_id": workflow_taxonomies["priority"]["high"].value_id,
                 "target_completion_date": target_date,
-                "business_justification": "Rejection test"
             }
         )
         request_id = create_response.json()["request_id"]
@@ -891,11 +867,10 @@ class TestApprovalWorkflow:
             "/validation-workflow/requests/",
             headers=admin_headers,
             json={
-                "model_id": sample_model.model_id,
+                "model_ids": [sample_model.model_id],
                 "validation_type_id": workflow_taxonomies["type"]["initial"].value_id,
                 "priority_id": workflow_taxonomies["priority"]["high"].value_id,
                 "target_completion_date": target_date,
-                "business_justification": "Invalid status test"
             }
         )
         request_id = create_response.json()["request_id"]
@@ -936,11 +911,10 @@ class TestDashboardEndpoints:
             "/validation-workflow/requests/",
             headers=admin_headers,
             json={
-                "model_id": sample_model.model_id,
+                "model_ids": [sample_model.model_id],
                 "validation_type_id": workflow_taxonomies["type"]["initial"].value_id,
                 "priority_id": workflow_taxonomies["priority"]["critical"].value_id,
                 "target_completion_date": target_date,
-                "business_justification": "Aging test"
             }
         )
 
@@ -957,11 +931,10 @@ class TestDashboardEndpoints:
             "/validation-workflow/requests/",
             headers=admin_headers,
             json={
-                "model_id": sample_model.model_id,
+                "model_ids": [sample_model.model_id],
                 "validation_type_id": workflow_taxonomies["type"]["initial"].value_id,
                 "priority_id": workflow_taxonomies["priority"]["high"].value_id,
                 "target_completion_date": target_date,
-                "business_justification": "Workload test"
             }
         )
         request_id = create_response.json()["request_id"]
@@ -999,11 +972,10 @@ class TestAuditLogging:
             "/validation-workflow/requests/",
             headers=admin_headers,
             json={
-                "model_id": sample_model.model_id,
+                "model_ids": [sample_model.model_id],
                 "validation_type_id": workflow_taxonomies["type"]["initial"].value_id,
                 "priority_id": workflow_taxonomies["priority"]["high"].value_id,
                 "target_completion_date": target_date,
-                "business_justification": "Audit test"
             }
         )
 
@@ -1023,11 +995,10 @@ class TestAuditLogging:
             "/validation-workflow/requests/",
             headers=admin_headers,
             json={
-                "model_id": sample_model.model_id,
+                "model_ids": [sample_model.model_id],
                 "validation_type_id": workflow_taxonomies["type"]["initial"].value_id,
                 "priority_id": workflow_taxonomies["priority"]["high"].value_id,
                 "target_completion_date": target_date,
-                "business_justification": "Status audit test"
             }
         )
         request_id = create_response.json()["request_id"]
@@ -1803,3 +1774,317 @@ class TestRegionalScopeIntelligence:
         )
 
         assert response.status_code == 403
+
+
+class TestSmartApproverAssignment:
+    """Test Phase 5: Smart Approver Assignment."""
+
+    def test_global_validation_assigns_global_approver(
+        self, client, db_session, admin_headers, sample_model, workflow_taxonomies
+    ):
+        """Test that global validations auto-assign Global Approvers."""
+        # Create a Global Approver user
+        from app.models.user import User, UserRole
+        from app.core.security import get_password_hash
+
+        global_approver = User(
+            email="global.approver@example.com",
+            full_name="Global Approver",
+            password_hash=get_password_hash("password123"),
+            role=UserRole.GLOBAL_APPROVER
+        )
+        db_session.add(global_approver)
+        db_session.commit()
+
+        # Create a global validation (no region_id)
+        response = client.post(
+            "/validation-workflow/requests/",
+            json={
+                "model_ids": [sample_model.model_id],
+                "validation_type_id": workflow_taxonomies["type"]["initial"].value_id,
+                "priority_id": workflow_taxonomies["priority"]["high"].value_id,
+                "target_completion_date": "2025-12-31",
+                "trigger_reason": "Annual review"
+                # region_id is NOT provided → global validation
+            },
+            headers=admin_headers
+        )
+
+        assert response.status_code == 201
+        validation_request = response.json()
+
+        # Verify Global Approver was auto-assigned
+        from app.models.validation import ValidationApproval
+        approvals = db_session.query(ValidationApproval).filter(
+            ValidationApproval.request_id == validation_request["request_id"]
+        ).all()
+
+        assert len(approvals) == 1
+        assert approvals[0].approver_id == global_approver.user_id
+        assert approvals[0].approver_role == "Global Approver"
+        assert approvals[0].is_required is True
+        assert approvals[0].approval_status == "Pending"
+
+    def test_regional_validation_with_approval_required_assigns_regional_approver(
+        self, client, db_session, admin_headers, sample_model, workflow_taxonomies
+    ):
+        """Test that regional validations with requires_regional_approval=True assign Regional Approvers."""
+        from app.models.user import User, UserRole, user_regions
+        from app.models.region import Region
+        from app.core.security import get_password_hash
+
+        # Create a region with requires_regional_approval=True
+        region = Region(
+            code="US",
+            name="United States",
+            requires_regional_approval=True
+        )
+        db_session.add(region)
+        db_session.flush()
+
+        # Create a Regional Approver for this region
+        regional_approver = User(
+            email="us.approver@example.com",
+            full_name="US Regional Approver",
+            password_hash=get_password_hash("password123"),
+            role=UserRole.REGIONAL_APPROVER
+        )
+        db_session.add(regional_approver)
+        db_session.flush()
+
+        # Associate approver with region
+        db_session.execute(
+            user_regions.insert().values(
+                user_id=regional_approver.user_id,
+                region_id=region.region_id
+            )
+        )
+        db_session.commit()
+
+        # Create a regional validation
+        response = client.post(
+            "/validation-workflow/requests/",
+            json={
+                "model_ids": [sample_model.model_id],
+                "validation_type_id": workflow_taxonomies["type"]["initial"].value_id,
+                "priority_id": workflow_taxonomies["priority"]["high"].value_id,
+                "target_completion_date": "2025-12-31",
+                "trigger_reason": "Regional compliance check",
+                "region_id": region.region_id
+            },
+            headers=admin_headers
+        )
+
+        assert response.status_code == 201
+        validation_request = response.json()
+
+        # Verify Regional Approver was auto-assigned
+        from app.models.validation import ValidationApproval
+        approvals = db_session.query(ValidationApproval).filter(
+            ValidationApproval.request_id == validation_request["request_id"]
+        ).all()
+
+        assert len(approvals) == 1
+        assert approvals[0].approver_id == regional_approver.user_id
+        assert approvals[0].approver_role == f"Regional Approver ({region.code})"
+        assert approvals[0].is_required is True
+        assert approvals[0].approval_status == "Pending"
+
+    def test_regional_validation_without_approval_required_assigns_global_approver(
+        self, client, db_session, admin_headers, sample_model, workflow_taxonomies
+    ):
+        """Test that regional validations with requires_regional_approval=False assign Global Approvers."""
+        from app.models.user import User, UserRole
+        from app.models.region import Region
+        from app.core.security import get_password_hash
+
+        # Create a region with requires_regional_approval=False
+        region = Region(
+            code="APAC",
+            name="Asia Pacific",
+            requires_regional_approval=False
+        )
+        db_session.add(region)
+        db_session.flush()
+
+        # Create a Global Approver
+        global_approver = User(
+            email="global.approver2@example.com",
+            full_name="Global Approver 2",
+            password_hash=get_password_hash("password123"),
+            role=UserRole.GLOBAL_APPROVER
+        )
+        db_session.add(global_approver)
+        db_session.commit()
+
+        # Create a regional validation
+        response = client.post(
+            "/validation-workflow/requests/",
+            json={
+                "model_ids": [sample_model.model_id],
+                "validation_type_id": workflow_taxonomies["type"]["initial"].value_id,
+                "priority_id": workflow_taxonomies["priority"]["high"].value_id,
+                "target_completion_date": "2025-12-31",
+                "trigger_reason": "Regional check",
+                "region_id": region.region_id
+            },
+            headers=admin_headers
+        )
+
+        assert response.status_code == 201
+        validation_request = response.json()
+
+        # Verify Global Approver was auto-assigned (not Regional)
+        from app.models.validation import ValidationApproval
+        approvals = db_session.query(ValidationApproval).filter(
+            ValidationApproval.request_id == validation_request["request_id"]
+        ).all()
+
+        assert len(approvals) == 1
+        assert approvals[0].approver_id == global_approver.user_id
+        assert approvals[0].approver_role == "Global Approver"
+        assert approvals[0].is_required is True
+        assert approvals[0].approval_status == "Pending"
+
+    def test_multiple_global_approvers_all_assigned(
+        self, client, db_session, admin_headers, sample_model, workflow_taxonomies
+    ):
+        """Test that all Global Approvers are assigned to global validations."""
+        from app.models.user import User, UserRole
+        from app.core.security import get_password_hash
+
+        # Create multiple Global Approvers
+        approver1 = User(
+            email="global1@example.com",
+            full_name="Global Approver 1",
+            password_hash=get_password_hash("password123"),
+            role=UserRole.GLOBAL_APPROVER
+        )
+        approver2 = User(
+            email="global2@example.com",
+            full_name="Global Approver 2",
+            password_hash=get_password_hash("password123"),
+            role=UserRole.GLOBAL_APPROVER
+        )
+        approver3 = User(
+            email="global3@example.com",
+            full_name="Global Approver 3",
+            password_hash=get_password_hash("password123"),
+            role=UserRole.GLOBAL_APPROVER
+        )
+        db_session.add_all([approver1, approver2, approver3])
+        db_session.commit()
+
+        # Create a global validation
+        response = client.post(
+            "/validation-workflow/requests/",
+            json={
+                "model_ids": [sample_model.model_id],
+                "validation_type_id": workflow_taxonomies["type"]["initial"].value_id,
+                "priority_id": workflow_taxonomies["priority"]["high"].value_id,
+                "target_completion_date": "2025-12-31",
+                "trigger_reason": "Test multiple approvers"
+            },
+            headers=admin_headers
+        )
+
+        assert response.status_code == 201
+        validation_request = response.json()
+
+        # Verify all 3 Global Approvers were assigned
+        from app.models.validation import ValidationApproval
+        approvals = db_session.query(ValidationApproval).filter(
+            ValidationApproval.request_id == validation_request["request_id"]
+        ).all()
+
+        assert len(approvals) == 3
+        approver_ids = {a.approver_id for a in approvals}
+        assert approver_ids == {approver1.user_id, approver2.user_id, approver3.user_id}
+
+        for approval in approvals:
+            assert approval.approver_role == "Global Approver"
+            assert approval.is_required is True
+            assert approval.approval_status == "Pending"
+
+    def test_no_approvers_available_creates_no_approvals(
+        self, client, db_session, admin_headers, sample_model, workflow_taxonomies
+    ):
+        """Test that when no approvers exist, no approvals are created (graceful handling)."""
+        # Ensure no Global Approvers exist (cleanup any from previous tests)
+        from app.models.user import User, UserRole
+        db_session.query(User).filter(
+            User.role.in_([UserRole.GLOBAL_APPROVER, UserRole.REGIONAL_APPROVER])
+        ).delete(synchronize_session=False)
+        db_session.commit()
+
+        # Create a global validation
+        response = client.post(
+            "/validation-workflow/requests/",
+            json={
+                "model_ids": [sample_model.model_id],
+                "validation_type_id": workflow_taxonomies["type"]["initial"].value_id,
+                "priority_id": workflow_taxonomies["priority"]["high"].value_id,
+                "target_completion_date": "2025-12-31",
+                "trigger_reason": "Test no approvers"
+            },
+            headers=admin_headers
+        )
+
+        assert response.status_code == 201
+        validation_request = response.json()
+
+        # Verify no approvals were created
+        from app.models.validation import ValidationApproval
+        approvals = db_session.query(ValidationApproval).filter(
+            ValidationApproval.request_id == validation_request["request_id"]
+        ).all()
+
+        assert len(approvals) == 0
+
+    def test_audit_log_created_for_approver_assignment(
+        self, client, db_session, admin_headers, sample_model, workflow_taxonomies
+    ):
+        """Test that auto-assigning approvers creates an audit log entry."""
+        from app.models.user import User, UserRole
+        from app.core.security import get_password_hash
+        from app.models.audit_log import AuditLog
+
+        # Create a Global Approver
+        global_approver = User(
+            email="audittest@example.com",
+            full_name="Audit Test Approver",
+            password_hash=get_password_hash("password123"),
+            role=UserRole.GLOBAL_APPROVER
+        )
+        db_session.add(global_approver)
+        db_session.commit()
+
+        # Create a global validation
+        response = client.post(
+            "/validation-workflow/requests/",
+            json={
+                "model_ids": [sample_model.model_id],
+                "validation_type_id": workflow_taxonomies["type"]["initial"].value_id,
+                "priority_id": workflow_taxonomies["priority"]["high"].value_id,
+                "target_completion_date": "2025-12-31",
+                "trigger_reason": "Audit test"
+            },
+            headers=admin_headers
+        )
+
+        assert response.status_code == 201
+        validation_request = response.json()
+
+        # Verify audit log entry was created
+        audit_entry = db_session.query(AuditLog).filter(
+            AuditLog.entity_type == "ValidationRequest",
+            AuditLog.entity_id == validation_request["request_id"],
+            AuditLog.action == "AUTO_ASSIGN_APPROVERS"
+        ).first()
+
+        assert audit_entry is not None
+        assert audit_entry.changes["approvers_assigned"] == 1
+        assert audit_entry.changes["assignment_type"] == "Automatic"
+        assert len(audit_entry.changes["approvers"]) == 1
+        assert audit_entry.changes["approvers"][0]["approver_id"] == global_approver.user_id
+        assert audit_entry.changes["approvers"][0]["role"] == "Global Approver"

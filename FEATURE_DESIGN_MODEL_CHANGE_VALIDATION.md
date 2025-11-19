@@ -993,19 +993,57 @@ def create_model_change(
 - Tests verify: loading states, API calls, region dropdown population, error handling, form validation, accessibility
 - All 13 tests passing ✅
 
-### 🔄 Phase 5: Smart Approver Assignment (PENDING)
+### ✅ Phase 5: Smart Approver Assignment (COMPLETED - 2025-11-19)
 
-**Planned Work**:
-- Auto-assign approvers based on validation scope
-- Use regional approval configuration
-- Create ValidationApproval records automatically
+**Completed Work**:
+- ✅ Implemented `auto_assign_approvers()` helper function ([api/app/api/validation_workflow.py:218-309](api/app/api/validation_workflow.py#L218-L309))
+- ✅ Integrated auto-assignment into `create_validation_request` endpoint ([api/app/api/validation_workflow.py:399-400](api/app/api/validation_workflow.py#L399-L400))
+- ✅ Created comprehensive test suite (6 tests - all passing) in [test_validation_workflow.py:1808-2120](api/tests/test_validation_workflow.py#L1808-L2120)
+- ✅ Auto-creates audit log entries for approver assignments
 
-### 🔄 Phase 6: Per-Risk-Tier Lead Times (PENDING)
+**Key Features Delivered**:
+- Global validations (no region) automatically assign all Global Approvers
+- Regional validations with `requires_regional_approval=True` assign Regional Approvers for that specific region
+- Regional validations with `requires_regional_approval=False` assign Global Approvers
+- Multiple approvers are assigned when available
+- Graceful handling when no approvers exist
+- Complete audit trail with AUTO_ASSIGN_APPROVERS action
 
-**Planned Work**:
-- Add `model_change_lead_time_days` to ValidationPolicy
-- Calculate target dates based on risk tier
-- Admin UI for configuring lead times
+**Backend Tests** (6 tests - all passing):
+- `test_global_validation_assigns_global_approver` - Verifies Global Approver assignment for global validations
+- `test_regional_validation_with_approval_required_assigns_regional_approver` - Verifies Regional Approver assignment when region requires approval
+- `test_regional_validation_without_approval_required_assigns_global_approver` - Verifies Global Approver fallback for regions not requiring regional approval
+- `test_multiple_global_approvers_all_assigned` - Verifies all Global Approvers are assigned
+- `test_no_approvers_available_creates_no_approvals` - Verifies graceful handling when no approvers exist
+- `test_audit_log_created_for_approver_assignment` - Verifies audit log creation
+
+### ✅ Phase 6: Per-Risk-Tier Lead Times (COMPLETED - 2025-11-19)
+
+**Completed Work**:
+- ✅ Added TIER_4 (Very Low Risk) to Model Risk Tier taxonomy ([api/app/seed.py:537-542](api/app/seed.py#L537-L542))
+- ✅ Added `model_change_lead_time_days` column to `validation_policies` table ([api/app/models/validation.py:28-31](api/app/models/validation.py#L28-L31))
+- ✅ Created database migration ([api/alembic/versions/4ed613a27144_add_model_change_lead_time_days_to_.py](api/alembic/versions/4ed613a27144_add_model_change_lead_time_days_to_.py))
+- ✅ Updated seed.py to populate default policies ([api/app/seed.py:939-996](api/app/seed.py#L939-L996)):
+  - Tier 1 (High): 12 months, 120-day lead time
+  - Tier 2 (Medium): 18 months, 90-day lead time
+  - Tier 3 (Low): 24 months, 60-day lead time
+  - Tier 4 (Very Low): 36 months, 45-day lead time
+- ✅ Updated ValidationPolicy schemas ([api/app/schemas/validation.py:12-40](api/app/schemas/validation.py#L12-L40))
+- ✅ Created admin UI page for policy configuration ([web/src/pages/ValidationPoliciesPage.tsx](web/src/pages/ValidationPoliciesPage.tsx))
+- ✅ Added navigation link in Layout ([web/src/components/Layout.tsx:170-183](web/src/components/Layout.tsx#L170-L183))
+- ✅ All 190 backend tests passing
+
+**Key Features Delivered**:
+- Four-tier risk model (High, Medium, Low, Very Low) aligned with inherent model risk tiers
+- Per-tier configuration for re-validation frequency and model change lead times
+- Admin UI with inline editing for policy configuration
+- Policies drive governance decisions based on inherent (not residual) model risk
+- Backward compatible with server_default='90' for existing rows
+
+**Design Note**:
+- Inherent model risk tier (4-level scale) drives governance policies including re-validation frequency
+- Residual/Final model risk (3-level scale: High, Medium, Low) is calculated separately but does not drive governance (yet)
+- No abstraction layer needed - use `model.risk_tier_id` directly for policy lookups
 
 ### 🔄 Phase 7: Model Change Tracking (PENDING)
 

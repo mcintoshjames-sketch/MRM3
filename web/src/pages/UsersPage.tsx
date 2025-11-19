@@ -4,12 +4,7 @@ import { useAuth } from '../contexts/AuthContext';
 import api from '../api/client';
 import Layout from '../components/Layout';
 import { useTableSort } from '../hooks/useTableSort';
-
-interface Region {
-    region_id: number;
-    code: string;
-    name: string;
-}
+import type { Region } from '../api/regions';
 
 interface User {
     user_id: number;

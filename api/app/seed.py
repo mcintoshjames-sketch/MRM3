@@ -4,7 +4,7 @@ from datetime import datetime
 from typing import Dict, List
 from app.core.database import SessionLocal
 from app.core.security import get_password_hash
-from app.models import User, UserRole, Vendor, EntraUser, Taxonomy, TaxonomyValue, ValidationWorkflowSLA, Region
+from app.models import User, UserRole, Vendor, EntraUser, Taxonomy, TaxonomyValue, ValidationWorkflowSLA, ValidationPolicy, Region
 
 
 REGULATORY_CATEGORY_VALUES = [
@@ -534,6 +534,12 @@ def seed_database():
                         "description": "Non-critical models with limited impact. Require basic validation and less frequent monitoring.",
                         "sort_order": 3
                     },
+                    {
+                        "code": "TIER_4",
+                        "label": "Tier 4 - Very Low Risk",
+                        "description": "Minimal-impact models with very limited scope. Require lightweight validation and minimal monitoring.",
+                        "sort_order": 4
+                    },
                 ]
             },
             {
@@ -876,7 +882,9 @@ def seed_database():
             existing_tax = db.query(Taxonomy).filter(
                 Taxonomy.name == tax_data["name"]
             ).first()
+
             if not existing_tax:
+                # Create new taxonomy with all values
                 taxonomy = Taxonomy(
                     name=tax_data["name"],
                     description=tax_data["description"],
@@ -902,7 +910,30 @@ def seed_database():
                 print(
                     f"✓ Created taxonomy: {tax_data['name']} with {len(tax_data['values'])} values")
             else:
-                print(f"✓ Taxonomy already exists: {tax_data['name']}")
+                # Taxonomy exists - check for missing values and add them
+                existing_codes = {v.code for v in db.query(TaxonomyValue).filter(
+                    TaxonomyValue.taxonomy_id == existing_tax.taxonomy_id
+                ).all()}
+
+                added_count = 0
+                for val_data in tax_data["values"]:
+                    if val_data["code"] not in existing_codes:
+                        value = TaxonomyValue(
+                            taxonomy_id=existing_tax.taxonomy_id,
+                            code=val_data["code"],
+                            label=val_data["label"],
+                            description=val_data["description"],
+                            sort_order=val_data["sort_order"],
+                            is_active=True,
+                            created_at=datetime.utcnow()
+                        )
+                        db.add(value)
+                        added_count += 1
+
+                if added_count > 0:
+                    print(f"✓ Updated taxonomy: {tax_data['name']} (added {added_count} new values)")
+                else:
+                    print(f"✓ Taxonomy already exists: {tax_data['name']}")
 
         db.commit()
 
@@ -929,6 +960,81 @@ def seed_database():
             print("✓ Created validation workflow SLA configuration")
         else:
             print("✓ Validation workflow SLA configuration already exists")
+
+        # Create validation policies for each risk tier (Phase 6)
+        risk_tier_taxonomy = db.query(Taxonomy).filter(
+            Taxonomy.name == "Model Risk Tier"
+        ).first()
+
+        if risk_tier_taxonomy:
+            # Define per-tier policies: lead time days and re-validation frequency
+            tier_policies = {
+                "TIER_1": {
+                    "frequency_months": 12,
+                    "model_change_lead_time_days": 120,
+                    "description": "High-risk models require annual re-validation and 120-day lead time for model changes"
+                },
+                "TIER_2": {
+                    "frequency_months": 18,
+                    "model_change_lead_time_days": 90,
+                    "description": "Medium-risk models require re-validation every 18 months and 90-day lead time for model changes"
+                },
+                "TIER_3": {
+                    "frequency_months": 24,
+                    "model_change_lead_time_days": 60,
+                    "description": "Low-risk models require re-validation every 24 months and 60-day lead time for model changes"
+                },
+                "TIER_4": {
+                    "frequency_months": 36,
+                    "model_change_lead_time_days": 45,
+                    "description": "Very low-risk models require re-validation every 36 months and 45-day lead time for model changes"
+                },
+            }
+
+            for tier_code, policy_config in tier_policies.items():
+                tier_value = db.query(TaxonomyValue).filter(
+                    TaxonomyValue.taxonomy_id == risk_tier_taxonomy.taxonomy_id,
+                    TaxonomyValue.code == tier_code
+                ).first()
+
+                if tier_value:
+                    existing_policy = db.query(ValidationPolicy).filter(
+                        ValidationPolicy.risk_tier_id == tier_value.value_id
+                    ).first()
+
+                    if not existing_policy:
+                        policy = ValidationPolicy(
+                            risk_tier_id=tier_value.value_id,
+                            frequency_months=policy_config["frequency_months"],
+                            model_change_lead_time_days=policy_config["model_change_lead_time_days"],
+                            description=policy_config["description"],
+                            created_at=datetime.utcnow(),
+                            updated_at=datetime.utcnow()
+                        )
+                        db.add(policy)
+                        print(f"✓ Created validation policy for {tier_value.label}")
+                    else:
+                        # Update existing policy to ensure it has canonical values
+                        updated = False
+                        if existing_policy.frequency_months != policy_config["frequency_months"]:
+                            existing_policy.frequency_months = policy_config["frequency_months"]
+                            updated = True
+                        if existing_policy.model_change_lead_time_days != policy_config["model_change_lead_time_days"]:
+                            existing_policy.model_change_lead_time_days = policy_config["model_change_lead_time_days"]
+                            updated = True
+                        if existing_policy.description != policy_config["description"]:
+                            existing_policy.description = policy_config["description"]
+                            updated = True
+
+                        if updated:
+                            existing_policy.updated_at = datetime.utcnow()
+                            print(f"✓ Updated validation policy for {tier_value.label}")
+                        else:
+                            print(f"✓ Validation policy already exists for {tier_value.label}")
+
+            db.commit()
+        else:
+            print("⚠ Model Risk Tier taxonomy not found - skipping validation policy seeding")
 
         print("\nSeeding completed successfully!")
 
