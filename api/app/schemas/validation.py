@@ -222,6 +222,43 @@ class ValidationOutcomeResponse(BaseModel):
         from_attributes = True
 
 
+# ==================== VALIDATION REVIEW OUTCOME SCHEMAS ====================
+
+class ValidationReviewOutcomeBase(BaseModel):
+    """Base schema for validation review outcome."""
+    decision: str  # 'AGREE' or 'SEND_BACK'
+    comments: Optional[str] = None
+    agrees_with_rating: Optional[bool] = None
+
+
+class ValidationReviewOutcomeCreate(ValidationReviewOutcomeBase):
+    """Schema for creating a validation review outcome."""
+    pass
+
+
+class ValidationReviewOutcomeUpdate(BaseModel):
+    """Schema for updating a validation review outcome."""
+    decision: Optional[str] = None
+    comments: Optional[str] = None
+    agrees_with_rating: Optional[bool] = None
+
+
+class ValidationReviewOutcomeResponse(BaseModel):
+    """Response schema for validation review outcome."""
+    review_outcome_id: int
+    request_id: int
+    reviewer: UserSummary
+    decision: str
+    comments: Optional[str] = None
+    agrees_with_rating: Optional[bool] = None
+    review_date: datetime
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
 # ==================== VALIDATION APPROVAL SCHEMAS ====================
 
 class ValidationApprovalBase(BaseModel):
@@ -310,6 +347,7 @@ class ValidationRequestDetailResponse(ValidationRequestResponse):
     status_history: List[ValidationStatusHistoryResponse] = []
     approvals: List[ValidationApprovalResponse] = []
     outcome: Optional[ValidationOutcomeResponse] = None
+    review_outcome: Optional[ValidationReviewOutcomeResponse] = None
 
     class Config:
         from_attributes = True

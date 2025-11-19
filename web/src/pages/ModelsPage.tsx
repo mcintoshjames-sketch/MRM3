@@ -4,6 +4,7 @@ import { useAuth } from '../contexts/AuthContext';
 import api from '../api/client';
 import Layout from '../components/Layout';
 import { useTableSort } from '../hooks/useTableSort';
+import MultiSelectDropdown from '../components/MultiSelectDropdown';
 
 interface User {
     user_id: number;
@@ -58,10 +59,10 @@ export default function ModelsPage() {
     // Filters
     const [filters, setFilters] = useState({
         search: '',
-        development_type: 'All',
-        status: 'All',
-        owner_id: 'All',
-        vendor_id: 'All'
+        development_types: [] as string[],
+        statuses: [] as string[],
+        owner_ids: [] as number[],
+        vendor_ids: [] as number[]
     });
 
     // Apply filters first, then sort
@@ -72,24 +73,28 @@ export default function ModelsPage() {
             return false;
         }
 
-        // Development type filter
-        if (filters.development_type !== 'All' && model.development_type !== filters.development_type) {
+        // Development type filter (multi-select)
+        if (filters.development_types.length > 0 && !filters.development_types.includes(model.development_type)) {
             return false;
         }
 
-        // Status filter
-        if (filters.status !== 'All' && model.status !== filters.status) {
+        // Status filter (multi-select)
+        if (filters.statuses.length > 0 && !filters.statuses.includes(model.status)) {
             return false;
         }
 
-        // Owner filter
-        if (filters.owner_id !== 'All' && model.owner_id !== parseInt(filters.owner_id)) {
+        // Owner filter (multi-select)
+        if (filters.owner_ids.length > 0 && !filters.owner_ids.includes(model.owner_id)) {
             return false;
         }
 
-        // Vendor filter
-        if (filters.vendor_id !== 'All' && model.vendor_id !== parseInt(filters.vendor_id)) {
-            return false;
+        // Vendor filter (multi-select)
+        if (filters.vendor_ids.length > 0) {
+            // For third-party models, check if vendor is in the selected list
+            // For in-house models (vendor_id is null), exclude them
+            if (model.vendor_id === null || !filters.vendor_ids.includes(model.vendor_id)) {
+                return false;
+            }
         }
 
         return true;
@@ -425,75 +430,47 @@ export default function ModelsPage() {
                     </div>
 
                     {/* Development Type */}
-                    <div>
-                        <label htmlFor="filter-dev-type" className="block text-xs font-medium text-gray-700 mb-1">
-                            Development Type
-                        </label>
-                        <select
-                            id="filter-dev-type"
-                            className="input-field text-sm"
-                            value={filters.development_type}
-                            onChange={(e) => setFilters({ ...filters, development_type: e.target.value })}
-                        >
-                            <option value="All">All Types</option>
-                            <option value="In-House">In-House</option>
-                            <option value="Third-Party">Third-Party</option>
-                        </select>
-                    </div>
+                    <MultiSelectDropdown
+                        label="Development Type"
+                        placeholder="All Types"
+                        options={[
+                            { value: 'In-House', label: 'In-House' },
+                            { value: 'Third-Party', label: 'Third-Party' }
+                        ]}
+                        selectedValues={filters.development_types}
+                        onChange={(values) => setFilters({ ...filters, development_types: values as string[] })}
+                    />
 
                     {/* Status */}
-                    <div>
-                        <label htmlFor="filter-status" className="block text-xs font-medium text-gray-700 mb-1">
-                            Status
-                        </label>
-                        <select
-                            id="filter-status"
-                            className="input-field text-sm"
-                            value={filters.status}
-                            onChange={(e) => setFilters({ ...filters, status: e.target.value })}
-                        >
-                            <option value="All">All Statuses</option>
-                            <option value="In Development">In Development</option>
-                            <option value="Active">Active</option>
-                            <option value="Retired">Retired</option>
-                        </select>
-                    </div>
+                    <MultiSelectDropdown
+                        label="Status"
+                        placeholder="All Statuses"
+                        options={[
+                            { value: 'In Development', label: 'In Development' },
+                            { value: 'Active', label: 'Active' },
+                            { value: 'Retired', label: 'Retired' }
+                        ]}
+                        selectedValues={filters.statuses}
+                        onChange={(values) => setFilters({ ...filters, statuses: values as string[] })}
+                    />
 
                     {/* Owner */}
-                    <div>
-                        <label htmlFor="filter-owner" className="block text-xs font-medium text-gray-700 mb-1">
-                            Owner
-                        </label>
-                        <select
-                            id="filter-owner"
-                            className="input-field text-sm"
-                            value={filters.owner_id}
-                            onChange={(e) => setFilters({ ...filters, owner_id: e.target.value })}
-                        >
-                            <option value="All">All Owners</option>
-                            {users.map(u => (
-                                <option key={u.user_id} value={u.user_id}>{u.full_name}</option>
-                            ))}
-                        </select>
-                    </div>
+                    <MultiSelectDropdown
+                        label="Owner"
+                        placeholder="All Owners"
+                        options={users.map(u => ({ value: u.user_id, label: u.full_name }))}
+                        selectedValues={filters.owner_ids}
+                        onChange={(values) => setFilters({ ...filters, owner_ids: values as number[] })}
+                    />
 
                     {/* Vendor */}
-                    <div>
-                        <label htmlFor="filter-vendor" className="block text-xs font-medium text-gray-700 mb-1">
-                            Vendor
-                        </label>
-                        <select
-                            id="filter-vendor"
-                            className="input-field text-sm"
-                            value={filters.vendor_id}
-                            onChange={(e) => setFilters({ ...filters, vendor_id: e.target.value })}
-                        >
-                            <option value="All">All Vendors</option>
-                            {vendors.map(v => (
-                                <option key={v.vendor_id} value={v.vendor_id}>{v.name}</option>
-                            ))}
-                        </select>
-                    </div>
+                    <MultiSelectDropdown
+                        label="Vendor"
+                        placeholder="All Vendors"
+                        options={vendors.map(v => ({ value: v.vendor_id, label: v.name }))}
+                        selectedValues={filters.vendor_ids}
+                        onChange={(values) => setFilters({ ...filters, vendor_ids: values as number[] })}
+                    />
                 </div>
 
                 {/* Clear Filters and Results Count */}
@@ -505,10 +482,10 @@ export default function ModelsPage() {
                     <button
                         onClick={() => setFilters({
                             search: '',
-                            development_type: 'All',
-                            status: 'All',
-                            owner_id: 'All',
-                            vendor_id: 'All'
+                            development_types: [],
+                            statuses: [],
+                            owner_ids: [],
+                            vendor_ids: []
                         })}
                         className="text-sm text-blue-600 hover:text-blue-800"
                     >

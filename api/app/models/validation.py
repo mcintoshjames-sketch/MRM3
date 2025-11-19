@@ -110,6 +110,11 @@ class ValidationRequest(Base):
         back_populates="request", uselist=False, cascade="all, delete-orphan"
     )
 
+    # One-to-one relationship with review outcome
+    review_outcome: Mapped[Optional["ValidationReviewOutcome"]] = relationship(
+        back_populates="request", uselist=False, cascade="all, delete-orphan"
+    )
+
 
 class ValidationStatusHistory(Base):
     """Audit trail for validation status changes."""
@@ -222,6 +227,35 @@ class ValidationOutcome(Base):
     # Relationships
     request = relationship("ValidationRequest", back_populates="outcome")
     overall_rating = relationship("TaxonomyValue", foreign_keys=[overall_rating_id])
+
+
+class ValidationReviewOutcome(Base):
+    """Review outcome - created by reviewer when reviewing validation outcome."""
+    __tablename__ = "validation_review_outcomes"
+
+    review_outcome_id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    request_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("validation_requests.request_id", ondelete="CASCADE"), nullable=False, unique=True
+    )
+    reviewer_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("users.user_id"), nullable=False
+    )
+    decision: Mapped[str] = mapped_column(String(50), nullable=False)  # 'AGREE' or 'SEND_BACK'
+    comments: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    agrees_with_rating: Mapped[Optional[bool]] = mapped_column(Boolean, nullable=True)
+    review_date: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, default=datetime.utcnow
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, default=datetime.utcnow
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow
+    )
+
+    # Relationships
+    request = relationship("ValidationRequest", back_populates="review_outcome")
+    reviewer = relationship("User", foreign_keys=[reviewer_id])
 
 
 class ValidationApproval(Base):

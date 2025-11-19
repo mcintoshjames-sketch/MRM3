@@ -52,12 +52,27 @@ interface OutOfOrderValidation {
     is_interim: boolean;
 }
 
+interface PendingAssignment {
+    request_id: number;
+    model_id: number;
+    model_name: string;
+    requestor_name: string;
+    validation_type: string;
+    priority: string;
+    region: string;
+    request_date: string;
+    target_completion_date: string | null;
+    days_pending: number;
+    severity: string;
+}
+
 export default function AdminDashboardPage() {
     const { user } = useAuth();
     const [overdueModels, setOverdueModels] = useState<OverdueModel[]>([]);
     const [passWithFindings, setPassWithFindings] = useState<PassWithFindingsValidation[]>([]);
     const [slaViolations, setSlaViolations] = useState<SLAViolation[]>([]);
     const [outOfOrder, setOutOfOrder] = useState<OutOfOrderValidation[]>([]);
+    const [pendingAssignments, setPendingAssignments] = useState<PendingAssignment[]>([]);
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
@@ -66,16 +81,18 @@ export default function AdminDashboardPage() {
 
     const fetchDashboardData = async () => {
         try {
-            const [overdueRes, findingsRes, violationsRes, outOfOrderRes] = await Promise.all([
+            const [overdueRes, findingsRes, violationsRes, outOfOrderRes, pendingRes] = await Promise.all([
                 api.get('/validations/dashboard/overdue'),
                 api.get('/validations/dashboard/pass-with-findings'),
                 api.get('/validation-workflow/dashboard/sla-violations'),
-                api.get('/validation-workflow/dashboard/out-of-order')
+                api.get('/validation-workflow/dashboard/out-of-order'),
+                api.get('/validation-workflow/dashboard/pending-assignments')
             ]);
             setOverdueModels(overdueRes.data);
             setPassWithFindings(findingsRes.data);
             setSlaViolations(violationsRes.data);
             setOutOfOrder(outOfOrderRes.data);
+            setPendingAssignments(pendingRes.data);
         } catch (error) {
             console.error('Failed to fetch dashboard data:', error);
         } finally {
@@ -112,7 +129,12 @@ export default function AdminDashboardPage() {
             </div>
 
             {/* Summary Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-5 gap-4 mb-6">
+            <div className="grid grid-cols-1 md:grid-cols-6 gap-4 mb-6">
+                <div className="bg-white p-4 rounded-lg shadow-md">
+                    <h3 className="text-xs font-medium text-gray-500 uppercase">Pending Assignment</h3>
+                    <p className="text-3xl font-bold text-blue-600 mt-2">{pendingAssignments.length}</p>
+                    <p className="text-xs text-gray-600 mt-1">Awaiting validator</p>
+                </div>
                 <div className="bg-white p-4 rounded-lg shadow-md">
                     <h3 className="text-xs font-medium text-gray-500 uppercase">SLA Violations</h3>
                     <p className="text-3xl font-bold text-red-600 mt-2">{slaViolations.length}</p>
@@ -147,6 +169,84 @@ export default function AdminDashboardPage() {
                     </div>
                 </div>
             </div>
+
+            {/* Pending Validator Assignments Feed */}
+            {pendingAssignments.length > 0 && (
+                <div className="bg-white p-4 rounded-lg shadow mb-6">
+                    <div className="flex items-center gap-2 mb-3 pb-2 border-b">
+                        <svg className="w-4 h-4 text-blue-500" fill="currentColor" viewBox="0 0 20 20">
+                            <path fillRule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clipRule="evenodd" />
+                        </svg>
+                        <h3 className="text-sm font-semibold text-gray-700">Pending Validator Assignments</h3>
+                        <span className="text-xs text-gray-500 ml-auto">{pendingAssignments.length} awaiting</span>
+                    </div>
+                    <div className="space-y-2 max-h-64 overflow-y-auto">
+                        {pendingAssignments.slice(0, 5).map((item, index) => (
+                            <div
+                                key={`${item.request_id}-${index}`}
+                                className="border-l-3 pl-3 py-2 hover:bg-gray-50 rounded-r"
+                                style={{
+                                    borderLeftWidth: '3px',
+                                    borderLeftColor: item.severity === 'critical' ? '#2563eb' :
+                                                    item.severity === 'high' ? '#3b82f6' : '#60a5fa'
+                                }}
+                            >
+                                <div className="flex items-start justify-between gap-2">
+                                    <div className="flex-1 min-w-0">
+                                        <div className="flex items-center gap-2 mb-1">
+                                            <span className={`px-1.5 py-0.5 text-xs font-medium rounded ${
+                                                item.severity === 'critical' ? 'bg-blue-100 text-blue-700' :
+                                                item.severity === 'high' ? 'bg-blue-50 text-blue-600' :
+                                                'bg-blue-50 text-blue-500'
+                                            }`}>
+                                                {item.priority}
+                                            </span>
+                                            <span className="px-1.5 py-0.5 text-xs font-medium rounded bg-gray-100 text-gray-700">
+                                                {item.region}
+                                            </span>
+                                            <span className="text-xs text-gray-400">
+                                                {item.days_pending}d pending
+                                            </span>
+                                        </div>
+                                        <Link
+                                            to={`/validation-workflow/${item.request_id}`}
+                                            className="text-sm font-medium text-gray-800 hover:text-blue-600 truncate block"
+                                        >
+                                            {item.model_name}
+                                        </Link>
+                                        <p className="text-xs text-gray-600 mt-0.5">
+                                            {item.validation_type} • Requested by {item.requestor_name}
+                                        </p>
+                                        {item.target_completion_date && (
+                                            <p className="text-xs text-gray-500">
+                                                Target: {new Date(item.target_completion_date).toLocaleDateString()}
+                                            </p>
+                                        )}
+                                    </div>
+                                    <div className="flex-shrink-0">
+                                        <Link
+                                            to={`/validation-workflow/${item.request_id}?assignValidator=true`}
+                                            className="inline-flex items-center px-3 py-1.5 text-xs font-medium text-white bg-blue-600 hover:bg-blue-700 rounded transition-colors"
+                                        >
+                                            Assign Validator
+                                        </Link>
+                                    </div>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                    {pendingAssignments.length > 5 && (
+                        <div className="mt-3 pt-2 border-t text-center">
+                            <Link
+                                to="/validation-workflow"
+                                className="text-xs text-blue-600 hover:text-blue-800"
+                            >
+                                View all {pendingAssignments.length} pending assignments &rarr;
+                            </Link>
+                        </div>
+                    )}
+                </div>
+            )}
 
             {/* SLA Violations Feed */}
             {slaViolations.length > 0 && (

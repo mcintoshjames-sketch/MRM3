@@ -19,6 +19,7 @@ from app.models.validation import (
     ValidationAssignment,
     ValidationWorkComponent,
     ValidationOutcome,
+    ValidationReviewOutcome,
     ValidationApproval
 )
 
@@ -46,5 +47,6 @@ __all__ = [
     "ValidationAssignment",
     "ValidationWorkComponent",
     "ValidationOutcome",
+    "ValidationReviewOutcome",
     "ValidationApproval"
 ]

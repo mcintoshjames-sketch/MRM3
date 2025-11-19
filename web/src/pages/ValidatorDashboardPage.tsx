@@ -27,6 +27,7 @@ interface Assignment {
         full_name: string;
     };
     is_primary: boolean;
+    is_reviewer: boolean;
     estimated_hours: number | null;
     actual_hours: number | null;
 }
@@ -34,6 +35,7 @@ interface Assignment {
 export default function ValidatorDashboardPage() {
     const { user } = useAuth();
     const [myAssignments, setMyAssignments] = useState<ValidationRequest[]>([]);
+    const [myReviews, setMyReviews] = useState<ValidationRequest[]>([]);
     const [pendingRequests, setPendingRequests] = useState<ValidationRequest[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -48,15 +50,30 @@ export default function ValidatorDashboardPage() {
             setLoading(true);
             setError(null);
 
-            // Fetch all validation requests
-            const requestsRes = await api.get('/validation-workflow/requests/');
-            const allRequests: ValidationRequest[] = requestsRes.data;
+            // Fetch all validation requests and detailed assignments
+            const [requestsRes, assignmentsRes] = await Promise.all([
+                api.get('/validation-workflow/requests/'),
+                api.get('/validation-workflow/assignments/')
+            ]);
 
-            // Filter for my assignments (where I'm primary validator)
+            const allRequests: ValidationRequest[] = requestsRes.data;
+            const allAssignments: Assignment[] = assignmentsRes.data;
+
+            // Filter for my primary assignments
             const myWork = allRequests.filter(
                 req => req.primary_validator === user?.full_name
             );
             setMyAssignments(myWork);
+
+            // Filter for validations where I'm assigned as reviewer and status is REVIEW
+            const myReviewerAssignments = allAssignments.filter(
+                a => a.validator.user_id === user?.user_id && a.is_reviewer
+            );
+            const myReviewRequestIds = new Set(myReviewerAssignments.map(a => a.request_id));
+            const reviewWork = allRequests.filter(
+                req => myReviewRequestIds.has(req.request_id) && req.current_status === 'Review'
+            );
+            setMyReviews(reviewWork);
 
             // Filter for pending requests (Intake/Planning) that are unassigned
             const pending = allRequests.filter(
@@ -157,18 +174,16 @@ export default function ValidatorDashboardPage() {
                     <div className="text-3xl font-bold text-blue-600">{activeAssignments.length}</div>
                 </div>
                 <div className="bg-white p-4 rounded-lg shadow">
+                    <div className="text-sm text-gray-500">Pending Reviews</div>
+                    <div className="text-3xl font-bold text-purple-600">{myReviews.length}</div>
+                </div>
+                <div className="bg-white p-4 rounded-lg shadow">
                     <div className="text-sm text-gray-500">Completed This Month</div>
                     <div className="text-3xl font-bold text-green-600">{completedAssignments.length}</div>
                 </div>
                 <div className="bg-white p-4 rounded-lg shadow">
-                    <div className="text-sm text-gray-500">Pending Assignment</div>
+                    <div className="text-sm text-gray-500">Unassigned Requests</div>
                     <div className="text-3xl font-bold text-orange-600">{pendingRequests.length}</div>
-                </div>
-                <div className="bg-white p-4 rounded-lg shadow">
-                    <div className="text-sm text-gray-500">Critical Priority</div>
-                    <div className="text-3xl font-bold text-red-600">
-                        {activeAssignments.filter(r => r.priority === 'Critical').length}
-                    </div>
                 </div>
             </div>
 
@@ -251,6 +266,70 @@ export default function ValidatorDashboardPage() {
                     </div>
                 )}
             </div>
+
+            {/* Pending Reviews */}
+            {myReviews.length > 0 && (
+                <div className="bg-white rounded-lg shadow-md mb-6">
+                    <div className="p-4 border-b bg-purple-50">
+                        <h3 className="text-lg font-bold">Pending Reviews</h3>
+                        <p className="text-sm text-gray-600">Validation requests awaiting your review</p>
+                    </div>
+                    <div className="overflow-x-auto">
+                        <table className="min-w-full divide-y divide-gray-200">
+                            <thead className="bg-gray-50">
+                                <tr>
+                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">ID</th>
+                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Model</th>
+                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Type</th>
+                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Priority</th>
+                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Primary Validator</th>
+                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Target Date</th>
+                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody className="bg-white divide-y divide-gray-200">
+                                {myReviews.map((req) => (
+                                    <tr key={req.request_id} className="hover:bg-gray-50">
+                                        <td className="px-6 py-4 whitespace-nowrap text-sm font-mono">
+                                            #{req.request_id}
+                                        </td>
+                                        <td className="px-6 py-4 whitespace-nowrap">
+                                            <Link
+                                                to={`/models/${req.model_id}`}
+                                                className="font-medium text-blue-600 hover:text-blue-800"
+                                            >
+                                                {req.model_name}
+                                            </Link>
+                                        </td>
+                                        <td className="px-6 py-4 whitespace-nowrap text-sm">
+                                            {req.validation_type}
+                                        </td>
+                                        <td className="px-6 py-4 whitespace-nowrap">
+                                            <span className={`px-2 py-1 text-xs rounded ${getPriorityColor(req.priority)}`}>
+                                                {req.priority}
+                                            </span>
+                                        </td>
+                                        <td className="px-6 py-4 whitespace-nowrap text-sm">
+                                            {req.primary_validator}
+                                        </td>
+                                        <td className="px-6 py-4 whitespace-nowrap text-sm">
+                                            {req.target_completion_date}
+                                        </td>
+                                        <td className="px-6 py-4 whitespace-nowrap">
+                                            <Link
+                                                to={`/validation-workflow/${req.request_id}`}
+                                                className="bg-purple-600 text-white px-3 py-1 rounded text-sm hover:bg-purple-700"
+                                            >
+                                                Review Now
+                                            </Link>
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            )}
 
             {/* Pending Requests Available for Assignment */}
             <div className="bg-white rounded-lg shadow-md">

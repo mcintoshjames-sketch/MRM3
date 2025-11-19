@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useParams, useNavigate, Link } from 'react-router-dom';
+import { useParams, useNavigate, Link, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import api from '../api/client';
 import Layout from '../components/Layout';
@@ -111,17 +111,31 @@ interface ValidationRequestDetail {
     status_history: ValidationStatusHistory[];
     approvals: ValidationApproval[];
     outcome: ValidationOutcome | null;
+    review_outcome: ValidationReviewOutcome | null;
 }
 
-type TabType = 'overview' | 'assignments' | 'outcome' | 'approvals' | 'history';
+interface ValidationReviewOutcome {
+    review_outcome_id: number;
+    request_id: number;
+    reviewer: UserSummary;
+    decision: string;
+    comments: string | null;
+    agrees_with_rating: boolean | null;
+    review_date: string;
+    created_at: string;
+    updated_at: string;
+}
+
+type TabType = 'overview' | 'assignments' | 'outcome' | 'review' | 'approvals' | 'history';
 
 export default function ValidationRequestDetailPage() {
     const { id } = useParams<{ id: string }>();
     const navigate = useNavigate();
     const { user } = useAuth();
+    const [searchParams, setSearchParams] = useSearchParams();
     const [request, setRequest] = useState<ValidationRequestDetail | null>(null);
     const [relatedVersions, setRelatedVersions] = useState<ModelVersion[]>([]);
-    const [assignmentAuditLogs, setAssignmentAuditLogs] = useState<AuditLog[]>([]);
+    const [allAuditLogs, setAllAuditLogs] = useState<AuditLog[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [activeTab, setActiveTab] = useState<TabType>('overview');
@@ -154,6 +168,11 @@ export default function ValidationRequestDetailPage() {
         expiration_date: ''
     });
     const [approvalUpdate, setApprovalUpdate] = useState({ approval_id: 0, status: '', comments: '' });
+    const [newReviewOutcome, setNewReviewOutcome] = useState({
+        decision: '',
+        comments: '',
+        agrees_with_rating: null as boolean | null
+    });
     const [showSignOffModal, setShowSignOffModal] = useState(false);
     const [signOffData, setSignOffData] = useState({ assignment_id: 0, comments: '' });
     const [editAssignment, setEditAssignment] = useState({
@@ -170,22 +189,65 @@ export default function ValidationRequestDetailPage() {
         fetchData();
     }, [id]);
 
+    // Auto-open assignment modal if URL parameter is present
+    useEffect(() => {
+        if (searchParams.get('assignValidator') === 'true' && !loading) {
+            setActiveTab('assignments');
+            setShowAssignmentModal(true);
+            // Clear the URL parameter after opening
+            searchParams.delete('assignValidator');
+            setSearchParams(searchParams, { replace: true });
+        }
+    }, [searchParams, loading]);
+
+    // Set Primary checkbox default based on existing assignments
+    useEffect(() => {
+        if (showAssignmentModal && request) {
+            // Check if there's already a primary validator
+            const hasPrimary = request.assignments?.some(a => a.is_primary) || false;
+
+            // If no primary exists, default the checkbox to true
+            setNewAssignment(prev => ({
+                ...prev,
+                is_primary: !hasPrimary
+            }));
+        } else if (!showAssignmentModal) {
+            // Reset form when modal closes
+            setNewAssignment({
+                validator_id: 0,
+                is_primary: false,
+                is_reviewer: false,
+                estimated_hours: '',
+                independence_attestation: false
+            });
+        }
+    }, [showAssignmentModal, request]);
+
     const fetchData = async () => {
         try {
             setLoading(true);
             setError(null);
 
-            // Fetch request details, taxonomy options, users, and assignment audit logs in parallel
-            const [requestRes, taxonomiesRes, usersRes, auditLogsRes] = await Promise.all([
+            // Fetch request details, taxonomy options, users, and all audit logs in parallel
+            const [requestRes, taxonomiesRes, usersRes, assignmentAuditRes, outcomeAuditRes, reviewAuditRes] = await Promise.all([
                 api.get(`/validation-workflow/requests/${id}`),
                 api.get('/taxonomies/'),
                 api.get('/auth/users'),
-                api.get(`/audit-logs/?entity_type=ValidationAssignment&entity_id=${id}&limit=100`)
+                api.get(`/audit-logs/?entity_type=ValidationAssignment&entity_id=${id}&limit=100`),
+                api.get(`/audit-logs/?entity_type=ValidationOutcome&entity_id=${id}&limit=100`),
+                api.get(`/audit-logs/?entity_type=ValidationReviewOutcome&entity_id=${id}&limit=100`)
             ]);
 
             setRequest(requestRes.data);
             setUsers(usersRes.data);
-            setAssignmentAuditLogs(auditLogsRes.data);
+
+            // Combine all audit logs
+            const combinedAuditLogs = [
+                ...assignmentAuditRes.data,
+                ...outcomeAuditRes.data,
+                ...reviewAuditRes.data
+            ];
+            setAllAuditLogs(combinedAuditLogs);
 
             // Fetch model versions that link to this validation request
             if (requestRes.data.model.model_id && id) {
@@ -205,7 +267,7 @@ export default function ValidationRequestDetailPage() {
             const taxonomies = taxDetails.map((r: any) => r.data);
 
             const statusTax = taxonomies.find((t: any) => t.name === 'Validation Request Status');
-            const ratingTax = taxonomies.find((t: any) => t.name === 'Validation Overall Rating');
+            const ratingTax = taxonomies.find((t: any) => t.name === 'Overall Rating');
 
             if (statusTax) setStatusOptions(statusTax.values || []);
             if (ratingTax) setRatingOptions(ratingTax.values || []);
@@ -403,6 +465,37 @@ export default function ValidationRequestDetailPage() {
         }
     };
 
+    const handleUpdateOutcome = async () => {
+        if (!request?.outcome) return;
+        if (!newOutcome.overall_rating_id || !newOutcome.executive_summary) {
+            setError('Rating and executive summary are required');
+            return;
+        }
+        setActionLoading(true);
+        try {
+            await api.patch(`/validation-workflow/outcomes/${request.outcome.outcome_id}`, {
+                overall_rating_id: newOutcome.overall_rating_id,
+                executive_summary: newOutcome.executive_summary,
+                recommended_review_frequency: newOutcome.recommended_review_frequency,
+                effective_date: newOutcome.effective_date,
+                expiration_date: newOutcome.expiration_date || null
+            });
+            setShowOutcomeModal(false);
+            setNewOutcome({
+                overall_rating_id: 0,
+                executive_summary: '',
+                recommended_review_frequency: 12,
+                effective_date: new Date().toISOString().split('T')[0],
+                expiration_date: ''
+            });
+            fetchData();
+        } catch (err: any) {
+            setError(err.response?.data?.detail || 'Failed to update outcome');
+        } finally {
+            setActionLoading(false);
+        }
+    };
+
     const handleApprovalUpdate = async () => {
         if (!approvalUpdate.status) {
             setError('Approval status is required');
@@ -424,6 +517,27 @@ export default function ValidationRequestDetailPage() {
         }
     };
 
+    const handleCreateReviewOutcome = async () => {
+        if (!newReviewOutcome.decision) {
+            setError('Decision is required');
+            return;
+        }
+        setActionLoading(true);
+        try {
+            await api.post(`/validation-workflow/requests/${id}/review-outcome`, {
+                decision: newReviewOutcome.decision,
+                comments: newReviewOutcome.comments || null,
+                agrees_with_rating: newReviewOutcome.agrees_with_rating
+            });
+            setNewReviewOutcome({ decision: '', comments: '', agrees_with_rating: null });
+            fetchData();
+        } catch (err: any) {
+            setError(err.response?.data?.detail || 'Failed to create review outcome');
+        } finally {
+            setActionLoading(false);
+        }
+    };
+
     const handleBeginWork = async () => {
         if (!request) return;
 
@@ -437,8 +551,8 @@ export default function ValidationRequestDetailPage() {
         setActionLoading(true);
         try {
             await api.patch(`/validation-workflow/requests/${id}/status`, {
-                status_id: inProgressStatus.value_id,
-                reason: 'Beginning validation work'
+                new_status_id: inProgressStatus.value_id,
+                change_reason: 'Beginning validation work'
             });
             await fetchData();
         } catch (err: any) {
@@ -450,6 +564,12 @@ export default function ValidationRequestDetailPage() {
 
     const handleCompleteWork = async () => {
         if (!request) return;
+
+        // Check if outcome has been created
+        if (!request.outcome) {
+            setError('Cannot complete work without creating a validation outcome. Please go to the Outcome tab and complete the validation outcome form.');
+            return;
+        }
 
         // Check if there's a reviewer assigned
         const hasReviewer = request.assignments.some(a => a.is_reviewer);
@@ -475,8 +595,8 @@ export default function ValidationRequestDetailPage() {
         setActionLoading(true);
         try {
             await api.patch(`/validation-workflow/requests/${id}/status`, {
-                status_id: targetStatus.value_id,
-                reason: hasReviewer ? 'Work completed, ready for review' : 'Work completed, moving to approval (no reviewer assigned)'
+                new_status_id: targetStatus.value_id,
+                change_reason: hasReviewer ? 'Work completed, ready for review' : 'Work completed, moving to approval (no reviewer assigned)'
             });
             await fetchData();
         } catch (err: any) {
@@ -489,6 +609,9 @@ export default function ValidationRequestDetailPage() {
     const canEditRequest = user?.role === 'Admin' || user?.role === 'Validator';
     const isPrimaryValidator = request && user && request.assignments.some(
         a => a.is_primary && a.validator.user_id === user.user_id
+    );
+    const isReviewer = request && user && request.assignments.some(
+        a => a.is_reviewer && a.validator.user_id === user.user_id
     );
 
     if (loading) {
@@ -586,7 +709,7 @@ export default function ValidationRequestDetailPage() {
             {/* Tabs */}
             <div className="border-b border-gray-200 mb-6">
                 <nav className="-mb-px flex space-x-8">
-                    {(['overview', 'assignments', 'outcome', 'approvals', 'history'] as TabType[]).map((tab) => (
+                    {(['overview', 'assignments', 'outcome', ...(isReviewer ? ['review'] as TabType[] : []), 'approvals', 'history'] as TabType[]).map((tab) => (
                         <button
                             key={tab}
                             onClick={() => setActiveTab(tab)}
@@ -884,18 +1007,9 @@ export default function ValidationRequestDetailPage() {
 
                 {activeTab === 'outcome' && (
                     <div>
-                        <div className="flex justify-between items-center mb-4">
-                            <h3 className="text-lg font-bold">Validation Outcome</h3>
-                            {canEditRequest && !request.outcome && (
-                                <button
-                                    onClick={() => setShowOutcomeModal(true)}
-                                    className="btn-primary text-sm"
-                                >
-                                    Create Outcome
-                                </button>
-                            )}
-                        </div>
-                        {request.outcome ? (
+                        <h3 className="text-lg font-bold mb-4">Validation Outcome</h3>
+
+                        {request.outcome && !showOutcomeModal ? (
                             <div className="space-y-4">
                                 <div className="grid grid-cols-2 gap-6">
                                     <div>
@@ -929,15 +1043,273 @@ export default function ValidationRequestDetailPage() {
                                         {request.outcome.executive_summary}
                                     </p>
                                 </div>
-                                <div className="text-xs text-gray-400">
-                                    Created: {new Date(request.outcome.created_at).toLocaleString()} |
-                                    Updated: {new Date(request.outcome.updated_at).toLocaleString()}
+                                <div className="flex justify-between items-center">
+                                    <div className="text-xs text-gray-400">
+                                        Created: {new Date(request.outcome.created_at).toLocaleString()} |
+                                        Updated: {new Date(request.outcome.updated_at).toLocaleString()}
+                                    </div>
+                                    {canEditRequest && !['REVIEW', 'PENDING_APPROVAL', 'APPROVED'].includes(request.current_status.code) && (
+                                        <button
+                                            onClick={() => {
+                                                setNewOutcome({
+                                                    overall_rating_id: request.outcome!.overall_rating.value_id,
+                                                    executive_summary: request.outcome!.executive_summary,
+                                                    recommended_review_frequency: request.outcome!.recommended_review_frequency,
+                                                    effective_date: request.outcome!.effective_date,
+                                                    expiration_date: request.outcome!.expiration_date || ''
+                                                });
+                                                setShowOutcomeModal(true);
+                                            }}
+                                            className="btn-secondary text-sm"
+                                        >
+                                            Edit Outcome
+                                        </button>
+                                    )}
                                 </div>
                             </div>
                         ) : (
-                            <div className="text-gray-500 text-center py-8">
-                                No outcome has been recorded yet.
+                            <div className="bg-white border border-gray-200 rounded-lg p-6">
+                                <p className="text-sm text-gray-600 mb-4">
+                                    {request.outcome
+                                        ? 'Edit the validation outcome details below.'
+                                        : 'Complete the validation outcome form below. This information is required before you can complete your work.'}
+                                </p>
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div className="mb-4">
+                                        <label className="block text-sm font-medium mb-2">Overall Rating *</label>
+                                        <select
+                                            className="input-field"
+                                            value={newOutcome.overall_rating_id}
+                                            onChange={(e) => setNewOutcome({ ...newOutcome, overall_rating_id: parseInt(e.target.value) })}
+                                        >
+                                            <option value={0}>Select Rating</option>
+                                            {ratingOptions.map((opt) => (
+                                                <option key={opt.value_id} value={opt.value_id}>
+                                                    {opt.label}
+                                                </option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                    <div className="mb-4">
+                                        <label className="block text-sm font-medium mb-2">Recommended Review (months) *</label>
+                                        <input
+                                            type="number"
+                                            className="input-field"
+                                            value={newOutcome.recommended_review_frequency}
+                                            onChange={(e) => setNewOutcome({ ...newOutcome, recommended_review_frequency: parseInt(e.target.value) })}
+                                            min="1"
+                                            max="60"
+                                        />
+                                    </div>
+                                    <div className="mb-4">
+                                        <label className="block text-sm font-medium mb-2">Effective Date *</label>
+                                        <input
+                                            type="date"
+                                            className="input-field"
+                                            value={newOutcome.effective_date}
+                                            onChange={(e) => setNewOutcome({ ...newOutcome, effective_date: e.target.value })}
+                                        />
+                                    </div>
+                                    <div className="mb-4">
+                                        <label className="block text-sm font-medium mb-2">Expiration Date (Optional)</label>
+                                        <input
+                                            type="date"
+                                            className="input-field"
+                                            value={newOutcome.expiration_date}
+                                            onChange={(e) => setNewOutcome({ ...newOutcome, expiration_date: e.target.value })}
+                                        />
+                                    </div>
+                                </div>
+                                <div className="mb-4">
+                                    <label className="block text-sm font-medium mb-2">Executive Summary *</label>
+                                    <textarea
+                                        className="input-field"
+                                        rows={6}
+                                        value={newOutcome.executive_summary}
+                                        onChange={(e) => setNewOutcome({ ...newOutcome, executive_summary: e.target.value })}
+                                        placeholder="Provide a comprehensive summary of the validation findings and conclusions..."
+                                    />
+                                </div>
+                                <div className="flex gap-2">
+                                    <button
+                                        onClick={request.outcome ? handleUpdateOutcome : handleCreateOutcome}
+                                        disabled={actionLoading || !newOutcome.overall_rating_id || !newOutcome.executive_summary}
+                                        className="btn-primary"
+                                    >
+                                        {actionLoading ? 'Saving...' : request.outcome ? 'Update Outcome' : 'Save Outcome'}
+                                    </button>
+                                    {request.outcome && (
+                                        <button
+                                            onClick={() => setShowOutcomeModal(false)}
+                                            className="btn-secondary"
+                                            disabled={actionLoading}
+                                        >
+                                            Cancel
+                                        </button>
+                                    )}
+                                </div>
                             </div>
+                        )}
+                    </div>
+                )}
+
+                {activeTab === 'review' && (
+                    <div>
+                        <h3 className="text-lg font-bold mb-4">Review Validation Outcome</h3>
+
+                        {/* Show the validation outcome being reviewed */}
+                        {request.outcome ? (
+                            <div className="bg-gray-50 border border-gray-200 rounded-lg p-6 mb-6">
+                                <h4 className="font-semibold mb-4 text-gray-700">Validation Outcome to Review</h4>
+                                <div className="grid grid-cols-2 gap-4 mb-4">
+                                    <div>
+                                        <p className="text-sm text-gray-600">Overall Rating</p>
+                                        <p className="font-medium">{request.outcome.overall_rating?.label || 'N/A'}</p>
+                                    </div>
+                                    <div>
+                                        <p className="text-sm text-gray-600">Recommended Review Frequency</p>
+                                        <p className="font-medium">{request.outcome.recommended_review_frequency} months</p>
+                                    </div>
+                                    <div>
+                                        <p className="text-sm text-gray-600">Effective Date</p>
+                                        <p className="font-medium">{new Date(request.outcome.effective_date).toLocaleDateString()}</p>
+                                    </div>
+                                    {request.outcome.expiration_date && (
+                                        <div>
+                                            <p className="text-sm text-gray-600">Expiration Date</p>
+                                            <p className="font-medium">{new Date(request.outcome.expiration_date).toLocaleDateString()}</p>
+                                        </div>
+                                    )}
+                                </div>
+                                <div>
+                                    <p className="text-sm text-gray-600 mb-2">Executive Summary</p>
+                                    <p className="text-sm whitespace-pre-wrap bg-white p-3 rounded border">{request.outcome.executive_summary}</p>
+                                </div>
+                            </div>
+                        ) : (
+                            <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-6">
+                                <p className="text-yellow-800 text-sm">
+                                    No validation outcome has been created yet. The validator must complete the outcome before review can begin.
+                                </p>
+                            </div>
+                        )}
+
+                        {/* Show existing review outcome or form to create one */}
+                        {request.review_outcome ? (
+                            <div className="bg-white border border-gray-200 rounded-lg p-6">
+                                <h4 className="font-semibold mb-4">Review Decision</h4>
+                                <div className="space-y-3">
+                                    <div>
+                                        <p className="text-sm text-gray-600">Reviewer</p>
+                                        <p className="font-medium">{request.review_outcome.reviewer.full_name}</p>
+                                    </div>
+                                    <div>
+                                        <p className="text-sm text-gray-600">Decision</p>
+                                        <span className={`inline-block px-3 py-1 rounded text-sm font-medium ${
+                                            request.review_outcome.decision === 'AGREE'
+                                                ? 'bg-green-100 text-green-800'
+                                                : 'bg-yellow-100 text-yellow-800'
+                                        }`}>
+                                            {request.review_outcome.decision === 'AGREE' ? 'Agree' : 'Send Back'}
+                                        </span>
+                                    </div>
+                                    {request.review_outcome.agrees_with_rating !== null && (
+                                        <div>
+                                            <p className="text-sm text-gray-600">Agrees with Rating?</p>
+                                            <p className="font-medium">{request.review_outcome.agrees_with_rating ? 'Yes' : 'No'}</p>
+                                        </div>
+                                    )}
+                                    {request.review_outcome.comments && (
+                                        <div>
+                                            <p className="text-sm text-gray-600">Comments</p>
+                                            <p className="text-sm whitespace-pre-wrap bg-gray-50 p-3 rounded border">{request.review_outcome.comments}</p>
+                                        </div>
+                                    )}
+                                    <div>
+                                        <p className="text-sm text-gray-600">Review Date</p>
+                                        <p className="font-medium">{new Date(request.review_outcome.review_date).toLocaleString()}</p>
+                                    </div>
+                                </div>
+                            </div>
+                        ) : (
+                            <>
+                                {isReviewer && request.outcome ? (
+                                    <div className="bg-white border border-gray-200 rounded-lg p-6">
+                                        <h4 className="font-semibold mb-4">Submit Review Decision</h4>
+                                        <p className="text-sm text-gray-600 mb-4">
+                                            Review the validation outcome above and provide your decision.
+                                        </p>
+
+                                        <div className="mb-4">
+                                            <label className="block text-sm font-medium mb-2">Decision *</label>
+                                            <select
+                                                className="input-field"
+                                                value={newReviewOutcome.decision}
+                                                onChange={(e) => setNewReviewOutcome({ ...newReviewOutcome, decision: e.target.value })}
+                                            >
+                                                <option value="">Select Decision</option>
+                                                <option value="AGREE">Agree - Approve for final approval</option>
+                                                <option value="SEND_BACK">Send Back - Request revisions</option>
+                                            </select>
+                                        </div>
+
+                                        <div className="mb-4">
+                                            <label className="flex items-center gap-2 text-sm">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={newReviewOutcome.agrees_with_rating === true}
+                                                    onChange={(e) => setNewReviewOutcome({
+                                                        ...newReviewOutcome,
+                                                        agrees_with_rating: e.target.checked ? true : null
+                                                    })}
+                                                    className="rounded"
+                                                />
+                                                <span>I agree with the overall rating assessment</span>
+                                            </label>
+                                        </div>
+
+                                        <div className="mb-4">
+                                            <label className="block text-sm font-medium mb-2">
+                                                Comments {newReviewOutcome.decision === 'SEND_BACK' && '*'}
+                                            </label>
+                                            <textarea
+                                                className="input-field"
+                                                rows={4}
+                                                value={newReviewOutcome.comments}
+                                                onChange={(e) => setNewReviewOutcome({ ...newReviewOutcome, comments: e.target.value })}
+                                                placeholder={newReviewOutcome.decision === 'SEND_BACK'
+                                                    ? "Please explain what changes are needed..."
+                                                    : "Optional comments about the review..."}
+                                            />
+                                            {newReviewOutcome.decision === 'SEND_BACK' && (
+                                                <p className="text-xs text-gray-500 mt-1">
+                                                    Comments are required when sending back for revisions
+                                                </p>
+                                            )}
+                                        </div>
+
+                                        <button
+                                            onClick={handleCreateReviewOutcome}
+                                            disabled={
+                                                actionLoading ||
+                                                !newReviewOutcome.decision ||
+                                                (newReviewOutcome.decision === 'SEND_BACK' && !newReviewOutcome.comments?.trim())
+                                            }
+                                            className="btn-primary"
+                                        >
+                                            {actionLoading ? 'Submitting...' : 'Submit Review Decision'}
+                                        </button>
+                                    </div>
+                                ) : (
+                                    <div className="bg-gray-50 border border-gray-200 rounded-lg p-6">
+                                        <p className="text-gray-600 text-sm">
+                                            {!isReviewer
+                                                ? 'You are not assigned as a reviewer for this validation request.'
+                                                : 'Waiting for validation outcome to be completed before review can begin.'}
+                                        </p>
+                                    </div>
+                                )}
+                            </>
                         )}
                     </div>
                 )}
@@ -1002,21 +1374,21 @@ export default function ValidationRequestDetailPage() {
                 {activeTab === 'history' && (
                     <div>
                         <h3 className="text-lg font-bold mb-4">Activity History</h3>
-                        {request.status_history.length === 0 && assignmentAuditLogs.length === 0 ? (
+                        {request.status_history.length === 0 && allAuditLogs.length === 0 ? (
                             <div className="text-gray-500 text-center py-8">
                                 No activity recorded.
                             </div>
                         ) : (
                             <div className="space-y-4">
-                                {/* Merge and sort status history and assignment audit logs */}
+                                {/* Merge and sort status history and all audit logs */}
                                 {[
                                     ...request.status_history.map((h) => ({
                                         type: 'status' as const,
                                         timestamp: h.changed_at,
                                         data: h
                                     })),
-                                    ...assignmentAuditLogs.map((a) => ({
-                                        type: 'assignment' as const,
+                                    ...allAuditLogs.map((a) => ({
+                                        type: 'audit' as const,
                                         timestamp: a.timestamp,
                                         data: a
                                     }))
@@ -1058,68 +1430,145 @@ export default function ValidationRequestDetailPage() {
                                             );
                                         } else {
                                             const audit = item.data as AuditLog;
-                                            const actionColors = {
-                                                'CREATE': 'border-green-500',
-                                                'UPDATE': 'border-orange-500',
-                                                'DELETE': 'border-red-500',
-                                                'REVIEWER_SIGN_OFF': 'border-purple-500'
-                                            };
-                                            const actionLabels = {
-                                                'CREATE': 'VALIDATOR ASSIGNED',
-                                                'UPDATE': 'ASSIGNMENT UPDATED',
-                                                'DELETE': 'VALIDATOR REMOVED',
-                                                'REVIEWER_SIGN_OFF': 'REVIEWER SIGN-OFF'
-                                            };
+
+                                            // Determine styling and label based on entity type and action
+                                            let borderColor = 'border-gray-500';
+                                            let label = audit.action;
+
+                                            if (audit.entity_type === 'ValidationAssignment') {
+                                                const colors = {
+                                                    'CREATE': 'border-green-500',
+                                                    'UPDATE': 'border-orange-500',
+                                                    'DELETE': 'border-red-500',
+                                                    'REVIEWER_SIGN_OFF': 'border-purple-500'
+                                                };
+                                                const labels = {
+                                                    'CREATE': 'VALIDATOR ASSIGNED',
+                                                    'UPDATE': 'ASSIGNMENT UPDATED',
+                                                    'DELETE': 'VALIDATOR REMOVED',
+                                                    'REVIEWER_SIGN_OFF': 'REVIEWER SIGN-OFF'
+                                                };
+                                                borderColor = colors[audit.action as keyof typeof colors] || borderColor;
+                                                label = labels[audit.action as keyof typeof labels] || audit.action;
+                                            } else if (audit.entity_type === 'ValidationOutcome') {
+                                                const colors = {
+                                                    'CREATE': 'border-green-500',
+                                                    'UPDATE': 'border-orange-500'
+                                                };
+                                                const labels = {
+                                                    'CREATE': 'OUTCOME CREATED',
+                                                    'UPDATE': 'OUTCOME UPDATED'
+                                                };
+                                                borderColor = colors[audit.action as keyof typeof colors] || borderColor;
+                                                label = labels[audit.action as keyof typeof labels] || audit.action;
+                                            } else if (audit.entity_type === 'ValidationReviewOutcome') {
+                                                const colors = {
+                                                    'CREATE': 'border-purple-500',
+                                                    'UPDATE': 'border-orange-500'
+                                                };
+                                                const labels = {
+                                                    'CREATE': 'REVIEW SUBMITTED',
+                                                    'UPDATE': 'REVIEW UPDATED'
+                                                };
+                                                borderColor = colors[audit.action as keyof typeof colors] || borderColor;
+                                                label = labels[audit.action as keyof typeof labels] || audit.action;
+                                            }
+
                                             return (
-                                                <div key={`audit-${audit.log_id}`} className={`border-l-4 ${actionColors[audit.action as keyof typeof actionColors] || 'border-gray-500'} pl-4 py-2`}>
+                                                <div key={`audit-${audit.log_id}`} className={`border-l-4 ${borderColor} pl-4 py-2`}>
                                                     <div className="flex items-center gap-2">
                                                         <span className="text-xs font-semibold text-gray-700">
-                                                            {actionLabels[audit.action as keyof typeof actionLabels] || audit.action}
+                                                            {label}
                                                         </span>
                                                     </div>
                                                     <div className="mt-2 text-sm">
-                                                        {audit.changes?.validator && (
-                                                            <div>
-                                                                <span className="text-gray-500">Validator:</span>{' '}
-                                                                <span className="font-medium">{audit.changes.validator}</span>
-                                                            </div>
+                                                        {/* Assignment-specific fields */}
+                                                        {audit.entity_type === 'ValidationAssignment' && (
+                                                            <>
+                                                                {audit.changes?.validator && (
+                                                                    <div>
+                                                                        <span className="text-gray-500">Validator:</span>{' '}
+                                                                        <span className="font-medium">{audit.changes.validator}</span>
+                                                                    </div>
+                                                                )}
+                                                                {audit.changes?.role && (
+                                                                    <div>
+                                                                        <span className="text-gray-500">Role:</span>{' '}
+                                                                        <span className="text-gray-700">{audit.changes.role}</span>
+                                                                    </div>
+                                                                )}
+                                                                {audit.changes?.estimated_hours !== undefined && (
+                                                                    <div>
+                                                                        <span className="text-gray-500">Estimated Hours:</span>{' '}
+                                                                        <span className="text-gray-700">{audit.changes.estimated_hours || 'N/A'}</span>
+                                                                    </div>
+                                                                )}
+                                                                {audit.changes?.is_primary !== undefined && (
+                                                                    <div>
+                                                                        <span className="text-gray-500">Primary Validator:</span>{' '}
+                                                                        <span className="text-gray-700">
+                                                                            {audit.changes.is_primary.old} → {audit.changes.is_primary.new}
+                                                                        </span>
+                                                                    </div>
+                                                                )}
+                                                                {audit.changes?.is_reviewer !== undefined && (
+                                                                    <div>
+                                                                        <span className="text-gray-500">Reviewer Role:</span>{' '}
+                                                                        <span className="text-gray-700">
+                                                                            {audit.changes.is_reviewer.old} → {audit.changes.is_reviewer.new}
+                                                                        </span>
+                                                                    </div>
+                                                                )}
+                                                                {audit.changes?.actual_hours !== undefined && (
+                                                                    <div>
+                                                                        <span className="text-gray-500">Actual Hours:</span>{' '}
+                                                                        <span className="text-gray-700">
+                                                                            {audit.changes.actual_hours.old || 'N/A'} → {audit.changes.actual_hours.new || 'N/A'}
+                                                                        </span>
+                                                                    </div>
+                                                                )}
+                                                            </>
                                                         )}
-                                                        {audit.changes?.role && (
-                                                            <div>
-                                                                <span className="text-gray-500">Role:</span>{' '}
-                                                                <span className="text-gray-700">{audit.changes.role}</span>
-                                                            </div>
+
+                                                        {/* Outcome-specific fields */}
+                                                        {audit.entity_type === 'ValidationOutcome' && (
+                                                            <>
+                                                                {audit.changes?.overall_rating && (
+                                                                    <div>
+                                                                        <span className="text-gray-500">Overall Rating:</span>{' '}
+                                                                        <span className="font-medium">{audit.changes.overall_rating}</span>
+                                                                    </div>
+                                                                )}
+                                                                {audit.changes?.recommended_review_frequency !== undefined && (
+                                                                    <div>
+                                                                        <span className="text-gray-500">Recommended Review Frequency:</span>{' '}
+                                                                        <span className="text-gray-700">{audit.changes.recommended_review_frequency} months</span>
+                                                                    </div>
+                                                                )}
+                                                            </>
                                                         )}
-                                                        {audit.changes?.estimated_hours !== undefined && (
-                                                            <div>
-                                                                <span className="text-gray-500">Estimated Hours:</span>{' '}
-                                                                <span className="text-gray-700">{audit.changes.estimated_hours || 'N/A'}</span>
-                                                            </div>
+
+                                                        {/* Review Outcome-specific fields */}
+                                                        {audit.entity_type === 'ValidationReviewOutcome' && (
+                                                            <>
+                                                                {audit.changes?.decision && (
+                                                                    <div>
+                                                                        <span className="text-gray-500">Decision:</span>{' '}
+                                                                        <span className={`font-medium ${audit.changes.decision === 'AGREE' ? 'text-green-700' : 'text-yellow-700'}`}>
+                                                                            {audit.changes.decision === 'AGREE' ? 'Agree' : 'Send Back'}
+                                                                        </span>
+                                                                    </div>
+                                                                )}
+                                                                {audit.changes?.agrees_with_rating !== undefined && audit.changes.agrees_with_rating !== null && (
+                                                                    <div>
+                                                                        <span className="text-gray-500">Agrees with Rating:</span>{' '}
+                                                                        <span className="text-gray-700">{audit.changes.agrees_with_rating ? 'Yes' : 'No'}</span>
+                                                                    </div>
+                                                                )}
+                                                            </>
                                                         )}
-                                                        {audit.changes?.is_primary !== undefined && (
-                                                            <div>
-                                                                <span className="text-gray-500">Primary Validator:</span>{' '}
-                                                                <span className="text-gray-700">
-                                                                    {audit.changes.is_primary.old} → {audit.changes.is_primary.new}
-                                                                </span>
-                                                            </div>
-                                                        )}
-                                                        {audit.changes?.is_reviewer !== undefined && (
-                                                            <div>
-                                                                <span className="text-gray-500">Reviewer Role:</span>{' '}
-                                                                <span className="text-gray-700">
-                                                                    {audit.changes.is_reviewer.old} → {audit.changes.is_reviewer.new}
-                                                                </span>
-                                                            </div>
-                                                        )}
-                                                        {audit.changes?.actual_hours !== undefined && (
-                                                            <div>
-                                                                <span className="text-gray-500">Actual Hours:</span>{' '}
-                                                                <span className="text-gray-700">
-                                                                    {audit.changes.actual_hours.old || 'N/A'} → {audit.changes.actual_hours.new || 'N/A'}
-                                                                </span>
-                                                            </div>
-                                                        )}
+
+                                                        {/* Common fields */}
                                                         {audit.changes?.comments && (
                                                             <div>
                                                                 <span className="text-gray-500">Comments:</span>{' '}
@@ -1334,83 +1783,6 @@ export default function ValidationRequestDetailPage() {
                                 {actionLoading ? 'Updating...' : 'Update Assignment'}
                             </button>
                             <button onClick={() => setShowEditAssignmentModal(false)} className="btn-secondary">
-                                Cancel
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            )}
-
-            {/* Outcome Modal */}
-            {showOutcomeModal && (
-                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-                    <div className="bg-white rounded-lg p-6 w-full max-w-2xl">
-                        <h3 className="text-lg font-bold mb-4">Create Validation Outcome</h3>
-                        <div className="grid grid-cols-2 gap-4">
-                            <div className="mb-4">
-                                <label className="block text-sm font-medium mb-2">Overall Rating</label>
-                                <select
-                                    className="input-field"
-                                    value={newOutcome.overall_rating_id}
-                                    onChange={(e) => setNewOutcome({ ...newOutcome, overall_rating_id: parseInt(e.target.value) })}
-                                >
-                                    <option value={0}>Select Rating</option>
-                                    {ratingOptions.map((opt) => (
-                                        <option key={opt.value_id} value={opt.value_id}>
-                                            {opt.label}
-                                        </option>
-                                    ))}
-                                </select>
-                            </div>
-                            <div className="mb-4">
-                                <label className="block text-sm font-medium mb-2">Recommended Review (months)</label>
-                                <input
-                                    type="number"
-                                    className="input-field"
-                                    value={newOutcome.recommended_review_frequency}
-                                    onChange={(e) => setNewOutcome({ ...newOutcome, recommended_review_frequency: parseInt(e.target.value) })}
-                                    min="1"
-                                    max="60"
-                                />
-                            </div>
-                            <div className="mb-4">
-                                <label className="block text-sm font-medium mb-2">Effective Date</label>
-                                <input
-                                    type="date"
-                                    className="input-field"
-                                    value={newOutcome.effective_date}
-                                    onChange={(e) => setNewOutcome({ ...newOutcome, effective_date: e.target.value })}
-                                />
-                            </div>
-                            <div className="mb-4">
-                                <label className="block text-sm font-medium mb-2">Expiration Date (Optional)</label>
-                                <input
-                                    type="date"
-                                    className="input-field"
-                                    value={newOutcome.expiration_date}
-                                    onChange={(e) => setNewOutcome({ ...newOutcome, expiration_date: e.target.value })}
-                                />
-                            </div>
-                        </div>
-                        <div className="mb-4">
-                            <label className="block text-sm font-medium mb-2">Executive Summary</label>
-                            <textarea
-                                className="input-field"
-                                rows={6}
-                                value={newOutcome.executive_summary}
-                                onChange={(e) => setNewOutcome({ ...newOutcome, executive_summary: e.target.value })}
-                                placeholder="Provide a comprehensive summary of the validation findings and conclusions..."
-                            />
-                        </div>
-                        <div className="flex gap-2">
-                            <button
-                                onClick={handleCreateOutcome}
-                                disabled={actionLoading || !newOutcome.overall_rating_id || !newOutcome.executive_summary}
-                                className="btn-primary"
-                            >
-                                {actionLoading ? 'Creating...' : 'Create Outcome'}
-                            </button>
-                            <button onClick={() => setShowOutcomeModal(false)} className="btn-secondary">
                                 Cancel
                             </button>
                         </div>

@@ -10,7 +10,7 @@ from app.core.deps import get_current_user
 from app.models import (
     User, Model, TaxonomyValue, Taxonomy, AuditLog,
     ValidationRequest, ValidationStatusHistory, ValidationAssignment,
-    ValidationOutcome, ValidationApproval
+    ValidationOutcome, ValidationReviewOutcome, ValidationApproval
 )
 from app.schemas.validation import (
     ValidationRequestCreate, ValidationRequestUpdate, ValidationRequestStatusUpdate,
@@ -18,6 +18,7 @@ from app.schemas.validation import (
     ValidationAssignmentCreate, ValidationAssignmentUpdate, ValidationAssignmentResponse,
     ReviewerSignOffRequest,
     ValidationOutcomeCreate, ValidationOutcomeUpdate, ValidationOutcomeResponse,
+    ValidationReviewOutcomeCreate, ValidationReviewOutcomeUpdate, ValidationReviewOutcomeResponse,
     ValidationApprovalCreate, ValidationApprovalUpdate, ValidationApprovalResponse,
     ValidationStatusHistoryResponse
 )
@@ -301,7 +302,8 @@ def get_validation_request(
         joinedload(ValidationRequest.status_history).joinedload(ValidationStatusHistory.new_status),
         joinedload(ValidationRequest.status_history).joinedload(ValidationStatusHistory.changed_by),
         joinedload(ValidationRequest.approvals).joinedload(ValidationApproval.approver),
-        joinedload(ValidationRequest.outcome)
+        joinedload(ValidationRequest.outcome),
+        joinedload(ValidationRequest.review_outcome).joinedload(ValidationReviewOutcome.reviewer)
     ).filter(ValidationRequest.request_id == request_id).first()
 
     if not validation_request:
@@ -320,7 +322,14 @@ def update_validation_request(
     """Update validation request (only editable fields, not status)."""
     check_validator_or_admin(current_user)
 
-    validation_request = db.query(ValidationRequest).filter(
+    validation_request = db.query(ValidationRequest).options(
+        joinedload(ValidationRequest.model),
+        joinedload(ValidationRequest.requestor),
+        joinedload(ValidationRequest.validation_type),
+        joinedload(ValidationRequest.priority),
+        joinedload(ValidationRequest.current_status),
+        joinedload(ValidationRequest.region)
+    ).filter(
         ValidationRequest.request_id == request_id
     ).first()
     if not validation_request:
@@ -373,7 +382,12 @@ def update_validation_request_status(
     check_validator_or_admin(current_user)
 
     validation_request = db.query(ValidationRequest).options(
-        joinedload(ValidationRequest.current_status)
+        joinedload(ValidationRequest.model),
+        joinedload(ValidationRequest.requestor),
+        joinedload(ValidationRequest.validation_type),
+        joinedload(ValidationRequest.priority),
+        joinedload(ValidationRequest.current_status),
+        joinedload(ValidationRequest.region)
     ).filter(ValidationRequest.request_id == request_id).first()
 
     if not validation_request:
@@ -584,6 +598,21 @@ def create_assignment(
     return assignment
 
 
+@router.get("/assignments/", response_model=List[ValidationAssignmentResponse])
+def get_all_assignments(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Get all validator assignments (for dashboard filtering)."""
+    check_validator_or_admin(current_user)
+
+    assignments = db.query(ValidationAssignment).options(
+        joinedload(ValidationAssignment.validator)
+    ).all()
+
+    return assignments
+
+
 @router.patch("/assignments/{assignment_id}", response_model=ValidationAssignmentResponse)
 def update_assignment(
     assignment_id: int,
@@ -598,8 +627,17 @@ def update_assignment(
     if not assignment:
         raise HTTPException(status_code=404, detail="Assignment not found")
 
-    # Only assigned validator or admin can update
-    if current_user.user_id != assignment.validator_id and current_user.role != "Admin":
+    # Check if current user is the primary validator on this request
+    is_primary_validator = db.query(ValidationAssignment).filter(
+        ValidationAssignment.request_id == assignment.request_id,
+        ValidationAssignment.validator_id == current_user.user_id,
+        ValidationAssignment.is_primary == True
+    ).first() is not None
+
+    # Allow update if: (1) updating own assignment, (2) admin, or (3) primary validator on this request
+    if (current_user.user_id != assignment.validator_id and
+        current_user.role != "Admin" and
+        not is_primary_validator):
         raise HTTPException(status_code=403, detail="Only assigned validator or Admin can update assignment")
 
     update_dict = update_data.model_dump(exclude_unset=True)
@@ -846,12 +884,12 @@ def create_outcome(
     if validation_request.outcome:
         raise HTTPException(status_code=400, detail="Outcome already exists for this request")
 
-    # Verify status is Review or later (not Intake/Planning/In Progress)
+    # Verify status is In Progress or later (must have started work)
     status_code = validation_request.current_status.code if validation_request.current_status else None
-    if status_code not in ["REVIEW", "PENDING_APPROVAL", "APPROVED"]:
+    if status_code not in ["IN_PROGRESS", "REVIEW", "PENDING_APPROVAL", "APPROVED"]:
         raise HTTPException(
             status_code=400,
-            detail="Outcome can only be created when status is Review or later"
+            detail="Outcome can only be created after work has begun (In Progress or later)"
         )
 
     # Verify overall rating exists
@@ -917,13 +955,200 @@ def update_outcome(
         raise HTTPException(status_code=400, detail="Cannot modify outcome of approved validation")
 
     update_dict = update_data.model_dump(exclude_unset=True)
+
+    # Track changes for audit
+    changes = {}
     for field, value in update_dict.items():
-        setattr(outcome, field, value)
+        old_value = getattr(outcome, field)
+        if old_value != value:
+            setattr(outcome, field, value)
+            # For rating, fetch the label
+            if field == 'overall_rating_id' and value:
+                rating = db.query(TaxonomyValue).filter(TaxonomyValue.value_id == value).first()
+                changes['overall_rating'] = rating.label if rating else str(value)
+            else:
+                changes[field] = value
 
     outcome.updated_at = datetime.utcnow()
+
+    # Create audit log if changes were made
+    if changes:
+        audit_log = AuditLog(
+            entity_type="ValidationOutcome",
+            entity_id=outcome.request_id,
+            action="UPDATE",
+            user_id=current_user.user_id,
+            changes=changes,
+            timestamp=datetime.utcnow()
+        )
+        db.add(audit_log)
+
     db.commit()
     db.refresh(outcome)
     return outcome
+
+
+# ==================== REVIEW OUTCOME ENDPOINTS ====================
+
+@router.post("/requests/{request_id}/review-outcome", response_model=ValidationReviewOutcomeResponse, status_code=status.HTTP_201_CREATED)
+def create_review_outcome(
+    request_id: int,
+    review_data: ValidationReviewOutcomeCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Create review outcome (only by assigned reviewer)."""
+    check_validator_or_admin(current_user)
+
+    # Verify request exists
+    validation_request = db.query(ValidationRequest).options(
+        joinedload(ValidationRequest.current_status),
+        joinedload(ValidationRequest.review_outcome),
+        joinedload(ValidationRequest.outcome),
+        joinedload(ValidationRequest.assignments)
+    ).filter(ValidationRequest.request_id == request_id).first()
+
+    if not validation_request:
+        raise HTTPException(status_code=404, detail="Validation request not found")
+
+    # Check if review outcome already exists
+    if validation_request.review_outcome:
+        raise HTTPException(status_code=400, detail="Review outcome already exists for this request")
+
+    # Verify status is REVIEW
+    status_code = validation_request.current_status.code if validation_request.current_status else None
+    if status_code != "REVIEW":
+        raise HTTPException(
+            status_code=400,
+            detail="Review outcome can only be created when status is Review"
+        )
+
+    # Verify validation outcome exists
+    if not validation_request.outcome:
+        raise HTTPException(status_code=400, detail="Validation outcome must exist before creating review outcome")
+
+    # Verify current user is assigned as reviewer
+    is_reviewer = any(a.validator_id == current_user.user_id and a.is_reviewer for a in validation_request.assignments)
+    if not is_reviewer:
+        raise HTTPException(status_code=403, detail="Only the assigned reviewer can create review outcome")
+
+    # Validate decision
+    if review_data.decision not in ["AGREE", "SEND_BACK"]:
+        raise HTTPException(status_code=400, detail="Decision must be 'AGREE' or 'SEND_BACK'")
+
+    # Create review outcome
+    review_outcome = ValidationReviewOutcome(
+        request_id=request_id,
+        reviewer_id=current_user.user_id,
+        decision=review_data.decision,
+        comments=review_data.comments,
+        agrees_with_rating=review_data.agrees_with_rating,
+        review_date=datetime.utcnow(),
+        created_at=datetime.utcnow(),
+        updated_at=datetime.utcnow()
+    )
+    db.add(review_outcome)
+
+    # Update status based on decision
+    if review_data.decision == "AGREE":
+        # Move to Pending Approval
+        pending_approval_status = get_taxonomy_value_by_code(db, "Validation Request Status", "PENDING_APPROVAL")
+        old_status_id = validation_request.current_status_id
+        validation_request.current_status_id = pending_approval_status.value_id
+        validation_request.updated_at = datetime.utcnow()
+
+        # Create status history
+        create_status_history_entry(
+            db, request_id, old_status_id, pending_approval_status.value_id,
+            current_user.user_id, f"Reviewer agreed with validation outcome"
+        )
+    else:  # SEND_BACK
+        # Move back to In Progress
+        in_progress_status = get_taxonomy_value_by_code(db, "Validation Request Status", "IN_PROGRESS")
+        old_status_id = validation_request.current_status_id
+        validation_request.current_status_id = in_progress_status.value_id
+        validation_request.updated_at = datetime.utcnow()
+
+        # Create status history
+        create_status_history_entry(
+            db, request_id, old_status_id, in_progress_status.value_id,
+            current_user.user_id, f"Reviewer sent back for revision: {review_data.comments or 'No comments'}"
+        )
+
+    # Create audit log
+    audit_log = AuditLog(
+        entity_type="ValidationReviewOutcome",
+        entity_id=request_id,
+        action="CREATE",
+        user_id=current_user.user_id,
+        changes={
+            "decision": review_data.decision,
+            "agrees_with_rating": review_data.agrees_with_rating,
+            "comments": review_data.comments
+        },
+        timestamp=datetime.utcnow()
+    )
+    db.add(audit_log)
+
+    db.commit()
+    db.refresh(review_outcome)
+    return review_outcome
+
+
+@router.patch("/review-outcomes/{review_outcome_id}", response_model=ValidationReviewOutcomeResponse)
+def update_review_outcome(
+    review_outcome_id: int,
+    update_data: ValidationReviewOutcomeUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Update review outcome (only by the reviewer who created it)."""
+    check_validator_or_admin(current_user)
+
+    review_outcome = db.query(ValidationReviewOutcome).filter(
+        ValidationReviewOutcome.review_outcome_id == review_outcome_id
+    ).first()
+    if not review_outcome:
+        raise HTTPException(status_code=404, detail="Review outcome not found")
+
+    # Verify current user is the reviewer who created it
+    if review_outcome.reviewer_id != current_user.user_id:
+        raise HTTPException(status_code=403, detail="Only the reviewer who created this outcome can update it")
+
+    # Check if request is in approved status (locked)
+    request = db.query(ValidationRequest).filter(
+        ValidationRequest.request_id == review_outcome.request_id
+    ).first()
+    if request and request.current_status and request.current_status.code == "APPROVED":
+        raise HTTPException(status_code=400, detail="Cannot modify review outcome of approved validation")
+
+    update_dict = update_data.model_dump(exclude_unset=True)
+
+    # Track changes for audit
+    changes = {}
+    for field, value in update_dict.items():
+        old_value = getattr(review_outcome, field)
+        if old_value != value:
+            setattr(review_outcome, field, value)
+            changes[field] = value
+
+    review_outcome.updated_at = datetime.utcnow()
+
+    # Create audit log if changes were made
+    if changes:
+        audit_log = AuditLog(
+            entity_type="ValidationReviewOutcome",
+            entity_id=review_outcome.request_id,
+            action="UPDATE",
+            user_id=current_user.user_id,
+            changes=changes,
+            timestamp=datetime.utcnow()
+        )
+        db.add(audit_log)
+
+    db.commit()
+    db.refresh(review_outcome)
+    return review_outcome
 
 
 # ==================== APPROVAL ENDPOINTS ====================
@@ -1299,3 +1524,64 @@ def get_out_of_order_validations(
 
     # Sort by days gap (worst first)
     return sorted(out_of_order, key=lambda x: x["days_gap"], reverse=True)
+
+
+@router.get("/dashboard/pending-assignments")
+def get_pending_validator_assignments(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Get validation requests in Intake status awaiting primary validator assignment (Admin only)."""
+    check_admin(current_user)
+
+    # Get INTAKE status
+    intake_status = get_taxonomy_value_by_code(db, "Validation Request Status", "INTAKE")
+
+    # Get all validation requests in INTAKE status
+    requests = db.query(ValidationRequest).options(
+        joinedload(ValidationRequest.model),
+        joinedload(ValidationRequest.requestor),
+        joinedload(ValidationRequest.validation_type),
+        joinedload(ValidationRequest.priority),
+        joinedload(ValidationRequest.current_status),
+        joinedload(ValidationRequest.region),
+        joinedload(ValidationRequest.assignments).joinedload(ValidationAssignment.validator)
+    ).filter(
+        ValidationRequest.current_status_id == intake_status.value_id
+    ).all()
+
+    pending = []
+    now = datetime.utcnow()
+
+    for req in requests:
+        # Check if there's a primary validator assigned
+        primary_validator = next((a for a in req.assignments if a.is_primary), None)
+
+        # Only include if no primary validator assigned
+        if not primary_validator:
+            days_pending = (now - req.created_at).days
+
+            # Determine severity based on how long it's been pending
+            if days_pending > 7:
+                severity = "critical"
+            elif days_pending > 3:
+                severity = "high"
+            else:
+                severity = "medium"
+
+            pending.append({
+                "request_id": req.request_id,
+                "model_id": req.model_id,
+                "model_name": req.model.model_name if req.model else "Unknown",
+                "requestor_name": req.requestor.full_name if req.requestor else "Unknown",
+                "validation_type": req.validation_type.label if req.validation_type else "Unknown",
+                "priority": req.priority.label if req.priority else "Unknown",
+                "region": req.region.name if req.region else "Global",
+                "request_date": req.request_date.isoformat(),
+                "target_completion_date": req.target_completion_date.isoformat() if req.target_completion_date else None,
+                "days_pending": days_pending,
+                "severity": severity
+            })
+
+    # Sort by days pending (longest pending first)
+    return sorted(pending, key=lambda x: x["days_pending"], reverse=True)
