@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import api from '../api/client';
 import Layout from '../components/Layout';
+import { useTableSort } from '../hooks/useTableSort';
 
 interface User {
     user_id: number;
@@ -45,6 +46,9 @@ export default function UsersPage() {
     const [entraLoading, setEntraLoading] = useState(false);
     const [selectedEntraUser, setSelectedEntraUser] = useState<EntraUser | null>(null);
     const [provisionRole, setProvisionRole] = useState('User');
+
+    // Table sorting
+    const { sortedData, requestSort, getSortIcon } = useTableSort<User>(users, 'full_name');
 
     useEffect(() => {
         fetchUsers();
@@ -259,17 +263,41 @@ export default function UsersPage() {
                 <table className="min-w-full divide-y divide-gray-200">
                     <thead className="bg-gray-50">
                         <tr>
-                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
-                                ID
+                            <th
+                                className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100"
+                                onClick={() => requestSort('user_id')}
+                            >
+                                <div className="flex items-center gap-2">
+                                    ID
+                                    {getSortIcon('user_id')}
+                                </div>
                             </th>
-                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
-                                Full Name
+                            <th
+                                className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100"
+                                onClick={() => requestSort('full_name')}
+                            >
+                                <div className="flex items-center gap-2">
+                                    Full Name
+                                    {getSortIcon('full_name')}
+                                </div>
                             </th>
-                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
-                                Email
+                            <th
+                                className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100"
+                                onClick={() => requestSort('email')}
+                            >
+                                <div className="flex items-center gap-2">
+                                    Email
+                                    {getSortIcon('email')}
+                                </div>
                             </th>
-                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
-                                Role
+                            <th
+                                className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100"
+                                onClick={() => requestSort('role')}
+                            >
+                                <div className="flex items-center gap-2">
+                                    Role
+                                    {getSortIcon('role')}
+                                </div>
                             </th>
                             <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
                                 Actions
@@ -277,14 +305,14 @@ export default function UsersPage() {
                         </tr>
                     </thead>
                     <tbody className="bg-white divide-y divide-gray-200">
-                        {users.length === 0 ? (
+                        {sortedData.length === 0 ? (
                             <tr>
                                 <td colSpan={5} className="px-6 py-4 text-center text-gray-500">
                                     No users yet. Click "Add User" to create one.
                                 </td>
                             </tr>
                         ) : (
-                            users.map((user) => (
+                            sortedData.map((user) => (
                                 <tr key={user.user_id}>
                                     <td className="px-6 py-4 whitespace-nowrap text-sm">
                                         {user.user_id}

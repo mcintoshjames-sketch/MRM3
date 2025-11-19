@@ -70,7 +70,6 @@ class ValidationRequestBase(BaseModel):
     priority_id: int
     target_completion_date: date
     trigger_reason: Optional[str] = None
-    business_justification: str
     region_id: Optional[int] = None
 
 
@@ -85,7 +84,6 @@ class ValidationRequestUpdate(BaseModel):
     priority_id: Optional[int] = None
     target_completion_date: Optional[date] = None
     trigger_reason: Optional[str] = None
-    business_justification: Optional[str] = None
     region_id: Optional[int] = None
 
 
@@ -296,7 +294,6 @@ class ValidationRequestResponse(BaseModel):
     priority: TaxonomyValueResponse
     target_completion_date: date
     trigger_reason: Optional[str] = None
-    business_justification: str
     current_status: TaxonomyValueResponse
     region: Optional[Region] = None
     created_at: datetime

@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import api from '../api/client';
 import Layout from '../components/Layout';
+import { useTableSort } from '../hooks/useTableSort';
 
 interface Vendor {
     vendor_id: number;
@@ -19,6 +20,9 @@ export default function VendorsPage() {
         name: '',
         contact_info: ''
     });
+
+    // Table sorting
+    const { sortedData, requestSort, getSortIcon } = useTableSort<Vendor>(vendors, 'name');
 
     useEffect(() => {
         fetchVendors();
@@ -143,17 +147,41 @@ export default function VendorsPage() {
                 <table className="min-w-full divide-y divide-gray-200">
                     <thead className="bg-gray-50">
                         <tr>
-                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
-                                ID
+                            <th
+                                className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100"
+                                onClick={() => requestSort('vendor_id')}
+                            >
+                                <div className="flex items-center gap-2">
+                                    ID
+                                    {getSortIcon('vendor_id')}
+                                </div>
                             </th>
-                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
-                                Name
+                            <th
+                                className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100"
+                                onClick={() => requestSort('name')}
+                            >
+                                <div className="flex items-center gap-2">
+                                    Name
+                                    {getSortIcon('name')}
+                                </div>
                             </th>
-                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
-                                Contact Info
+                            <th
+                                className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100"
+                                onClick={() => requestSort('contact_info')}
+                            >
+                                <div className="flex items-center gap-2">
+                                    Contact Info
+                                    {getSortIcon('contact_info')}
+                                </div>
                             </th>
-                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
-                                Created
+                            <th
+                                className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100"
+                                onClick={() => requestSort('created_at')}
+                            >
+                                <div className="flex items-center gap-2">
+                                    Created
+                                    {getSortIcon('created_at')}
+                                </div>
                             </th>
                             <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
                                 Actions
@@ -161,14 +189,14 @@ export default function VendorsPage() {
                         </tr>
                     </thead>
                     <tbody className="bg-white divide-y divide-gray-200">
-                        {vendors.length === 0 ? (
+                        {sortedData.length === 0 ? (
                             <tr>
                                 <td colSpan={5} className="px-6 py-4 text-center text-gray-500">
                                     No vendors yet. Click "Add Vendor" to create one.
                                 </td>
                             </tr>
                         ) : (
-                            vendors.map((vendor) => (
+                            sortedData.map((vendor) => (
                                 <tr key={vendor.vendor_id}>
                                     <td className="px-6 py-4 whitespace-nowrap text-sm">
                                         {vendor.vendor_id}

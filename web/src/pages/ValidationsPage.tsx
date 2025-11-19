@@ -3,6 +3,7 @@ import { Link, useSearchParams, useLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import api from '../api/client';
 import Layout from '../components/Layout';
+import { useTableSort } from '../hooks/useTableSort';
 
 interface User {
     user_id: number;
@@ -59,6 +60,9 @@ export default function ValidationsPage() {
         findings_summary: '',
         report_reference: ''
     });
+
+    // Table sorting
+    const { sortedData, requestSort, getSortIcon } = useTableSort<Validation>(validations, 'validation_date', 'desc');
 
     useEffect(() => {
         fetchData();
@@ -336,24 +340,72 @@ export default function ValidationsPage() {
                 <table className="min-w-full divide-y divide-gray-200">
                     <thead className="bg-gray-50">
                         <tr>
-                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Model</th>
-                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Date</th>
-                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Validator</th>
-                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Type</th>
-                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Outcome</th>
-                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Scope</th>
+                            <th
+                                className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100"
+                                onClick={() => requestSort('model_name')}
+                            >
+                                <div className="flex items-center gap-2">
+                                    Model
+                                    {getSortIcon('model_name')}
+                                </div>
+                            </th>
+                            <th
+                                className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100"
+                                onClick={() => requestSort('validation_date')}
+                            >
+                                <div className="flex items-center gap-2">
+                                    Date
+                                    {getSortIcon('validation_date')}
+                                </div>
+                            </th>
+                            <th
+                                className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100"
+                                onClick={() => requestSort('validator_name')}
+                            >
+                                <div className="flex items-center gap-2">
+                                    Validator
+                                    {getSortIcon('validator_name')}
+                                </div>
+                            </th>
+                            <th
+                                className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100"
+                                onClick={() => requestSort('validation_type')}
+                            >
+                                <div className="flex items-center gap-2">
+                                    Type
+                                    {getSortIcon('validation_type')}
+                                </div>
+                            </th>
+                            <th
+                                className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100"
+                                onClick={() => requestSort('outcome')}
+                            >
+                                <div className="flex items-center gap-2">
+                                    Outcome
+                                    {getSortIcon('outcome')}
+                                </div>
+                            </th>
+                            <th
+                                className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100"
+                                onClick={() => requestSort('scope')}
+                            >
+                                <div className="flex items-center gap-2">
+                                    Scope
+                                    {getSortIcon('scope')}
+                                </div>
+                            </th>
                             <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
                         </tr>
                     </thead>
                     <tbody className="bg-white divide-y divide-gray-200">
-                        {validations.length === 0 ? (
+                        {sortedData.length === 0 ? (
                             <tr>
                                 <td colSpan={7} className="px-6 py-4 text-center text-gray-500">
                                     No validations recorded yet.
                                 </td>
                             </tr>
                         ) : (
-                            validations.map((validation) => (
+                            sortedData.map((validation) => (
                                 <tr key={validation.validation_id} className="hover:bg-gray-50">
                                     <td className="px-6 py-4 whitespace-nowrap">
                                         <Link

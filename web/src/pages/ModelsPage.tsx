@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import api from '../api/client';
 import Layout from '../components/Layout';
+import { useTableSort } from '../hooks/useTableSort';
 
 interface User {
     user_id: number;
@@ -53,6 +54,9 @@ export default function ModelsPage() {
         user_ids: [] as number[]
     });
     const [userSearchTerm, setUserSearchTerm] = useState('');
+
+    // Table sorting
+    const { sortedData, requestSort, getSortIcon } = useTableSort<Model>(models, 'model_name');
 
     useEffect(() => {
         fetchData();
@@ -366,25 +370,73 @@ export default function ModelsPage() {
                     <table className="min-w-full divide-y divide-gray-200">
                         <thead className="bg-gray-50">
                             <tr>
-                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Name</th>
-                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Type</th>
-                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Owner</th>
-                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Developer</th>
-                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Vendor</th>
+                                <th
+                                    className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100"
+                                    onClick={() => requestSort('model_name')}
+                                >
+                                    <div className="flex items-center gap-2">
+                                        Name
+                                        {getSortIcon('model_name')}
+                                    </div>
+                                </th>
+                                <th
+                                    className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100"
+                                    onClick={() => requestSort('development_type')}
+                                >
+                                    <div className="flex items-center gap-2">
+                                        Type
+                                        {getSortIcon('development_type')}
+                                    </div>
+                                </th>
+                                <th
+                                    className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100"
+                                    onClick={() => requestSort('owner.full_name')}
+                                >
+                                    <div className="flex items-center gap-2">
+                                        Owner
+                                        {getSortIcon('owner.full_name')}
+                                    </div>
+                                </th>
+                                <th
+                                    className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100"
+                                    onClick={() => requestSort('developer.full_name')}
+                                >
+                                    <div className="flex items-center gap-2">
+                                        Developer
+                                        {getSortIcon('developer.full_name')}
+                                    </div>
+                                </th>
+                                <th
+                                    className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100"
+                                    onClick={() => requestSort('vendor.name')}
+                                >
+                                    <div className="flex items-center gap-2">
+                                        Vendor
+                                        {getSortIcon('vendor.name')}
+                                    </div>
+                                </th>
                                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Users</th>
-                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+                                <th
+                                    className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100"
+                                    onClick={() => requestSort('status')}
+                                >
+                                    <div className="flex items-center gap-2">
+                                        Status
+                                        {getSortIcon('status')}
+                                    </div>
+                                </th>
                                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
                             </tr>
                         </thead>
                         <tbody className="bg-white divide-y divide-gray-200">
-                            {models.length === 0 ? (
+                            {sortedData.length === 0 ? (
                                 <tr>
                                     <td colSpan={8} className="px-6 py-4 text-center text-gray-500">
                                         No models yet. Click "Add Model" to create one.
                                     </td>
                                 </tr>
                             ) : (
-                                models.map((model) => (
+                                sortedData.map((model) => (
                                     <tr key={model.model_id} className="hover:bg-gray-50">
                                         <td className="px-6 py-4 whitespace-nowrap">
                                             <button

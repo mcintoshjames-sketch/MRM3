@@ -41,6 +41,7 @@ function App() {
             <Route path="/validations" element={user ? <ValidationsPage /> : <Navigate to="/login" />} />
             <Route path="/validations/new" element={user ? <ValidationsPage /> : <Navigate to="/login" />} />
             <Route path="/validation-workflow" element={user ? <ValidationWorkflowPage /> : <Navigate to="/login" />} />
+            <Route path="/validation-workflow/new" element={user ? <ValidationWorkflowPage /> : <Navigate to="/login" />} />
             <Route path="/validation-workflow/:id" element={user ? <ValidationRequestDetailPage /> : <Navigate to="/login" />} />
             <Route path="/vendors" element={user ? <VendorsPage /> : <Navigate to="/login" />} />
             <Route path="/vendors/:id" element={user ? <VendorDetailsPage /> : <Navigate to="/login" />} />

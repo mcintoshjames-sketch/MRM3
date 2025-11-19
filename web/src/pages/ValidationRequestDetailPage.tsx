@@ -104,7 +104,6 @@ interface ValidationRequestDetail {
     priority: TaxonomyValue;
     target_completion_date: string;
     trigger_reason: string | null;
-    business_justification: string;
     current_status: TaxonomyValue;
     created_at: string;
     updated_at: string;
@@ -653,10 +652,6 @@ export default function ValidationRequestDetailPage() {
                                 <span className={`px-2 py-1 text-sm rounded ${getStatusColor(request.current_status.label)}`}>
                                     {request.current_status.label}
                                 </span>
-                            </div>
-                            <div className="col-span-2">
-                                <h4 className="text-sm font-medium text-gray-500 mb-1">Business Justification</h4>
-                                <p className="text-gray-700 bg-gray-50 p-3 rounded">{request.business_justification}</p>
                             </div>
                             {request.trigger_reason && (
                                 <div className="col-span-2">

@@ -70,7 +70,6 @@ class ValidationRequest(Base):
     )
     target_completion_date: Mapped[date] = mapped_column(Date, nullable=False)
     trigger_reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    business_justification: Mapped[str] = mapped_column(Text, nullable=False)
     current_status_id: Mapped[int] = mapped_column(
         Integer, ForeignKey("taxonomy_values.value_id"), nullable=False
     )

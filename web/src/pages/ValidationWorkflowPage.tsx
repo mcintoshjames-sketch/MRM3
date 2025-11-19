@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams, useLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import api from '../api/client';
 import { regionsApi, Region } from '../api/regions';
@@ -34,6 +34,8 @@ interface TaxonomyValue {
 
 export default function ValidationWorkflowPage() {
     const { user } = useAuth();
+    const [searchParams] = useSearchParams();
+    const location = useLocation();
     const [requests, setRequests] = useState<ValidationRequest[]>([]);
     const [models, setModels] = useState<Model[]>([]);
     const [validationTypes, setValidationTypes] = useState<TaxonomyValue[]>([]);
@@ -49,9 +51,54 @@ export default function ValidationWorkflowPage() {
         priority_id: 0,
         target_completion_date: '',
         trigger_reason: '',
-        business_justification: '',
         region_id: undefined as number | undefined
     });
+
+    // Auto-open form and pre-populate model_id from query params
+    useEffect(() => {
+        if (location.pathname === '/validation-workflow/new') {
+            setShowForm(true);
+            const modelIdParam = searchParams.get('model_id');
+            if (modelIdParam) {
+                setFormData(prev => ({
+                    ...prev,
+                    model_id: parseInt(modelIdParam)
+                }));
+            }
+        }
+    }, [location.pathname, searchParams]);
+
+    // Auto-select "Initial" validation type if model has no prior validations
+    useEffect(() => {
+        const checkAndSetInitialValidationType = async () => {
+            if (formData.model_id && validationTypes.length > 0) {
+                try {
+                    // Check if model has any validation requests
+                    const modelValidationsRes = await api.get('/validation-workflow/requests/');
+                    const modelValidations = modelValidationsRes.data.filter(
+                        (req: ValidationRequest) => req.model_id === formData.model_id
+                    );
+
+                    // If no prior validations, default to "Initial" validation type
+                    if (modelValidations.length === 0) {
+                        const initialType = validationTypes.find(
+                            (type: TaxonomyValue) => type.code === 'INITIAL' || type.label.toLowerCase().includes('initial')
+                        );
+                        if (initialType && formData.validation_type_id === 0) {
+                            setFormData(prev => ({
+                                ...prev,
+                                validation_type_id: initialType.value_id
+                            }));
+                        }
+                    }
+                } catch (err) {
+                    console.error('Failed to check model validations:', err);
+                }
+            }
+        };
+
+        checkAndSetInitialValidationType();
+    }, [formData.model_id, validationTypes]);
 
     useEffect(() => {
         fetchData();
@@ -124,7 +171,6 @@ export default function ValidationWorkflowPage() {
                 priority_id: 0,
                 target_completion_date: '',
                 trigger_reason: '',
-                business_justification: '',
                 region_id: undefined
             });
             fetchData();
@@ -279,21 +325,6 @@ export default function ValidationWorkflowPage() {
                                     ))}
                                 </select>
                             </div>
-                        </div>
-
-                        <div className="mb-4">
-                            <label htmlFor="business_justification" className="block text-sm font-medium mb-2">
-                                Business Justification (Required)
-                            </label>
-                            <textarea
-                                id="business_justification"
-                                className="input-field"
-                                rows={3}
-                                value={formData.business_justification}
-                                onChange={(e) => setFormData({ ...formData, business_justification: e.target.value })}
-                                placeholder="Explain why this validation is needed..."
-                                required
-                            />
                         </div>
 
                         <div className="mb-4">

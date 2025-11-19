@@ -133,6 +133,11 @@ cd api && python -m pytest && cd ../web && pnpm test:run
   - Implementation: `utils/csvExport.ts` helper or inline generation
   - Filename format: `{entity_name}_{YYYY-MM-DD}.csv`
   - Export current filtered/sorted view (not full dataset)
+  - **Table Sorting**: All tables must be sortable using the `useTableSort` hook
+  - Implementation: See "Table Sorting Pattern" below
+  - Three-state sorting: ascending → descending → unsorted
+  - Support for nested properties (e.g., `owner.full_name`)
+  - Visual indicators with SVG icons
 - **Pages**:
   - `/login` - Authentication
   - `/dashboard` - Admin dashboard (overdue validations, pass-with-findings alerts)
@@ -154,6 +159,83 @@ cd api && python -m pytest && cd ../web && pnpm test:run
   - Detail pages should show related records in tables with View/navigation links
   - API should provide endpoints like `/vendors/{id}/models` to fetch related data
   - This pattern improves UX by enabling seamless navigation between related entities
+
+### Table Sorting Pattern
+
+All table views must implement sorting using the `useTableSort` custom hook located at `web/src/hooks/useTableSort.tsx`.
+
+**Implementation Steps**:
+
+1. **Import the hook**:
+```typescript
+import { useTableSort } from '../hooks/useTableSort';
+```
+
+2. **Use the hook in your component**:
+```typescript
+// For a simple table with string initial sort
+const { sortedData, requestSort, getSortIcon } = useTableSort<Model>(models, 'model_name');
+
+// For tables that should default to descending order (e.g., dates)
+const { sortedData, requestSort, getSortIcon } = useTableSort<Validation>(validations, 'validation_date', 'desc');
+```
+
+3. **Update table headers** to be clickable with sort icons:
+```typescript
+<th
+    className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100"
+    onClick={() => requestSort('column_name')}
+>
+    <div className="flex items-center gap-2">
+        Column Name
+        {getSortIcon('column_name')}
+    </div>
+</th>
+```
+
+4. **Replace data.map() with sortedData.map()** in the table body:
+```typescript
+<tbody className="bg-white divide-y divide-gray-200">
+    {sortedData.length === 0 ? (
+        <tr>
+            <td colSpan={5} className="px-6 py-4 text-center text-gray-500">
+                No data available.
+            </td>
+        </tr>
+    ) : (
+        sortedData.map((item) => (
+            <tr key={item.id}>
+                {/* table cells */}
+            </tr>
+        ))
+    )}
+</tbody>
+```
+
+**Features of useTableSort**:
+- **Generic type support**: Works with any data type using TypeScript generics
+- **Nested property access**: Supports sorting by nested properties like `owner.full_name` or `vendor.name`
+- **Three-state sorting**: Clicking a column cycles through: ascending → descending → unsorted
+- **Null handling**: Properly handles null/undefined values (pushes to end)
+- **Type detection**: Automatically detects and handles strings, numbers, and dates
+- **Visual indicators**: SVG icons show current sort state (up arrow, down arrow, or unsorted)
+- **Performance**: Uses React's useMemo for efficient re-rendering
+
+**Columns to Sort**:
+- Include sorting for all data columns that users might want to order
+- Exclude sorting for action columns or columns with complex UI elements
+- Common sortable columns: IDs, names, dates, statuses, email addresses
+
+**Examples**:
+- **Simple property**: `requestSort('model_name')`, `requestSort('email')`
+- **Nested property**: `requestSort('owner.full_name')`, `requestSort('vendor.name')`
+- **Dates**: `requestSort('created_at')`, `requestSort('validation_date')`
+
+**Reference Implementations**:
+- [ModelsPage.tsx](web/src/pages/ModelsPage.tsx) - Sorting with nested properties (owner.full_name, developer.full_name)
+- [ValidationsPage.tsx](web/src/pages/ValidationsPage.tsx) - Date-based default sort (descending)
+- [VendorsPage.tsx](web/src/pages/VendorsPage.tsx) - Simple property sorting
+- [UsersPage.tsx](web/src/pages/UsersPage.tsx) - Multi-column sorting example
 
 ### Taxonomy System
 - **Purpose**: Configurable classification values for models

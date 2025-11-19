@@ -177,7 +177,6 @@ def create_validation_request(
         priority_id=request_data.priority_id,
         target_completion_date=request_data.target_completion_date,
         trigger_reason=request_data.trigger_reason,
-        business_justification=request_data.business_justification,
         current_status_id=intake_status.value_id,
         region_id=request_data.region_id,
         created_at=datetime.utcnow(),
