@@ -5,6 +5,7 @@ import api from '../api/client';
 import Layout from '../components/Layout';
 import { useTableSort } from '../hooks/useTableSort';
 import MultiSelectDropdown from '../components/MultiSelectDropdown';
+import { regionsApi, Region } from '../api/regions';
 
 interface User {
     user_id: number;
@@ -17,12 +18,6 @@ interface Vendor {
     vendor_id: number;
     name: string;
     contact_info: string;
-}
-
-interface Region {
-    region_id: number;
-    region_code: string;
-    region_name: string;
 }
 
 interface WhollyOwnedRegion {
@@ -64,15 +59,24 @@ export default function ModelsPage() {
         model_name: '',
         description: '',
         development_type: 'In-House',
-        owner_id: user?.user_id || 0,
+        owner_id: 0,
         developer_id: null as number | null,
         vendor_id: null as number | null,
         wholly_owned_region_id: null as number | null,
         status: 'In Development',
         user_ids: [] as number[],
-        initial_implementation_date: '' as string
+        region_ids: [] as number[],
+        initial_version_number: '' as string,
+        initial_implementation_date: '' as string,
+        auto_create_validation: false,
+        validation_request_type_id: 0,
+        validation_request_priority_id: 0,
+        validation_request_target_date: '' as string,
+        validation_request_trigger_reason: '' as string
     });
     const [userSearchTerm, setUserSearchTerm] = useState('');
+    const [validationTypes, setValidationTypes] = useState<any[]>([]);
+    const [validationPriorities, setValidationPriorities] = useState<any[]>([]);
 
     // Filters
     const [filters, setFilters] = useState({
@@ -142,16 +146,34 @@ export default function ModelsPage() {
 
     const fetchData = async () => {
         try {
-            const [modelsRes, usersRes, vendorsRes, regionsRes] = await Promise.all([
+            const [modelsRes, usersRes, vendorsRes, regionsRes, taxonomiesRes] = await Promise.all([
                 api.get('/models/'),
                 api.get('/auth/users'),
                 api.get('/vendors/'),
-                api.get('/regions/')
+                api.get('/regions/'),
+                api.get('/taxonomies/')
             ]);
             setModels(modelsRes.data);
             setUsers(usersRes.data);
             setVendors(vendorsRes.data);
             setRegions(regionsRes.data);
+
+            // Fetch taxonomy values for validation types and priorities
+            const taxonomyList = taxonomiesRes.data;
+            const taxDetails = await Promise.all(
+                taxonomyList.map((t: any) => api.get(`/taxonomies/${t.taxonomy_id}`))
+            );
+            const taxonomies = taxDetails.map((r: any) => r.data);
+
+            const valType = taxonomies.find((t: any) => t.name === 'Validation Type');
+            const valPriority = taxonomies.find((t: any) => t.name === 'Validation Priority');
+
+            if (valType) {
+                setValidationTypes(valType.values || []);
+            }
+            if (valPriority) {
+                setValidationPriorities(valPriority.values || []);
+            }
         } catch (error) {
             console.error('Failed to fetch data:', error);
         } finally {
@@ -161,6 +183,19 @@ export default function ModelsPage() {
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
+
+        // Validate auto-create validation fields if checkbox is checked
+        if (formData.auto_create_validation) {
+            if (!formData.validation_request_type_id || formData.validation_request_type_id === 0) {
+                alert('Please select a Validation Type when auto-creating a validation request.');
+                return;
+            }
+            if (!formData.validation_request_priority_id || formData.validation_request_priority_id === 0) {
+                alert('Please select a Priority when auto-creating a validation request.');
+                return;
+            }
+        }
+
         try {
             const payload = {
                 ...formData,
@@ -168,25 +203,52 @@ export default function ModelsPage() {
                 vendor_id: formData.vendor_id || null,
                 wholly_owned_region_id: formData.wholly_owned_region_id || null,
                 user_ids: formData.user_ids.length > 0 ? formData.user_ids : null,
-                initial_implementation_date: formData.initial_implementation_date || null
+                region_ids: formData.region_ids.length > 0 ? formData.region_ids : null,
+                initial_version_number: formData.initial_version_number || null,
+                initial_implementation_date: formData.initial_implementation_date || null,
+                validation_request_type_id: formData.validation_request_type_id || null,
+                validation_request_priority_id: formData.validation_request_priority_id || null,
+                validation_request_target_date: formData.validation_request_target_date || null,
+                validation_request_trigger_reason: formData.validation_request_trigger_reason || null
             };
-            await api.post('/models/', payload);
+            const response = await api.post('/models/', payload);
+
+            // Check for warnings in the response
+            if (response.data.warnings && response.data.warnings.length > 0) {
+                const warningMessages = response.data.warnings.map((w: any) => w.message).join('\n\n');
+                const viewModel = confirm(`Model created successfully, but with warnings:\n\n${warningMessages}\n\nWould you like to view the model details?`);
+
+                if (viewModel && response.data.model_id) {
+                    // Navigate to model details page
+                    navigate(`/models/${response.data.model_id}`);
+                    return;
+                }
+            }
+
             setShowForm(false);
             setFormData({
                 model_name: '',
                 description: '',
                 development_type: 'In-House',
-                owner_id: user?.user_id || 0,
+                owner_id: 0,
                 developer_id: null,
                 vendor_id: null,
                 wholly_owned_region_id: null,
                 status: 'In Development',
                 user_ids: [],
-                initial_implementation_date: ''
+                region_ids: [],
+                initial_version_number: '',
+                initial_implementation_date: '',
+                auto_create_validation: false,
+                validation_request_type_id: 0,
+                validation_request_priority_id: 0,
+                validation_request_target_date: '',
+                validation_request_trigger_reason: ''
             });
             fetchData();
-        } catch (error) {
+        } catch (error: any) {
             console.error('Failed to create model:', error);
+            alert(`Failed to create model: ${error.response?.data?.detail || error.message || 'Unknown error'}`);
         }
     };
 
@@ -316,8 +378,8 @@ export default function ModelsPage() {
                                     <select
                                         id="owner_id"
                                         className="input-field"
-                                        value={formData.owner_id}
-                                        onChange={(e) => setFormData({ ...formData, owner_id: parseInt(e.target.value) })}
+                                        value={formData.owner_id || ''}
+                                        onChange={(e) => setFormData({ ...formData, owner_id: e.target.value ? parseInt(e.target.value) : 0 })}
                                         required
                                     >
                                         <option value="">Select Owner</option>
@@ -381,11 +443,33 @@ export default function ModelsPage() {
                                     >
                                         <option value="">None (Global)</option>
                                         {regions.map(r => (
-                                            <option key={r.region_id} value={r.region_id}>{r.region_name} ({r.region_code})</option>
+                                            <option key={r.region_id} value={r.region_id}>{r.name} ({r.code})</option>
                                         ))}
                                     </select>
                                     <p className="text-xs text-gray-500 mt-1">
                                         Select a region if this model is wholly-owned by that region's governance structure
+                                    </p>
+                                </div>
+
+                                <div className="mb-4">
+                                    <label className="block text-sm font-medium mb-2">
+                                        Deployment Regions (Optional)
+                                    </label>
+                                    <MultiSelectDropdown
+                                        label=""
+                                        placeholder="Select Regions"
+                                        options={regions.map(r => ({
+                                            value: r.region_id,
+                                            label: `${r.name} (${r.code})`
+                                        }))}
+                                        selectedValues={formData.region_ids}
+                                        onChange={(values) => setFormData({
+                                            ...formData,
+                                            region_ids: values as number[]
+                                        })}
+                                    />
+                                    <p className="text-xs text-gray-500 mt-1">
+                                        Select regions where this model will be deployed. The wholly-owned region (if selected) will be automatically included.
                                     </p>
                                 </div>
 
@@ -401,6 +485,23 @@ export default function ModelsPage() {
                                         <option value="Active">Active</option>
                                         <option value="Retired">Retired</option>
                                     </select>
+                                </div>
+
+                                <div className="mb-4">
+                                    <label htmlFor="initial_version_number" className="block text-sm font-medium mb-2">
+                                        Initial Version Number (Optional)
+                                    </label>
+                                    <input
+                                        id="initial_version_number"
+                                        type="text"
+                                        className="input-field"
+                                        placeholder="1.0"
+                                        value={formData.initial_version_number}
+                                        onChange={(e) => setFormData({ ...formData, initial_version_number: e.target.value })}
+                                    />
+                                    <p className="text-xs text-gray-500 mt-1">
+                                        Starting version number for this model (defaults to 1.0 if not specified)
+                                    </p>
                                 </div>
 
                                 <div className="mb-4">
@@ -475,6 +576,108 @@ export default function ModelsPage() {
                                                 </div>
                                             ) : null;
                                         })}
+                                    </div>
+                                )}
+                            </div>
+
+                            {/* Auto-create Validation Request Section */}
+                            <div className="mb-4 border-t pt-4">
+                                <div className="mb-4">
+                                    <label className="flex items-center gap-2">
+                                        <input
+                                            type="checkbox"
+                                            checked={formData.auto_create_validation}
+                                            onChange={(e) => {
+                                                const isChecked = e.target.checked;
+                                                // Find "Initial" validation type and set as default
+                                                const initialValidationType = validationTypes.find(vt =>
+                                                    vt.code === 'INITIAL' || vt.label.toLowerCase().includes('initial')
+                                                );
+                                                setFormData({
+                                                    ...formData,
+                                                    auto_create_validation: isChecked,
+                                                    validation_request_type_id: isChecked && initialValidationType ? initialValidationType.value_id : 0
+                                                });
+                                            }}
+                                            className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                                        />
+                                        <span className="text-sm font-medium">Auto-create validation request upon model creation</span>
+                                    </label>
+                                    <p className="text-xs text-gray-500 mt-1 ml-6">
+                                        Automatically create a validation request for this model when it is created
+                                    </p>
+                                </div>
+
+                                {formData.auto_create_validation && (
+                                    <div className="ml-6 space-y-4 p-4 bg-gray-50 rounded">
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                            <div>
+                                                <label htmlFor="validation_request_type_id" className="block text-sm font-medium mb-2">
+                                                    Validation Type <span className="text-red-500">*</span>
+                                                </label>
+                                                <select
+                                                    id="validation_request_type_id"
+                                                    className="input-field"
+                                                    value={formData.validation_request_type_id || ''}
+                                                    onChange={(e) => setFormData({ ...formData, validation_request_type_id: e.target.value ? parseInt(e.target.value) : 0 })}
+                                                    required={formData.auto_create_validation}
+                                                >
+                                                    <option value="">-- Select Validation Type --</option>
+                                                    {validationTypes.map(vt => (
+                                                        <option key={vt.value_id} value={vt.value_id}>
+                                                            {vt.label}
+                                                        </option>
+                                                    ))}
+                                                </select>
+                                            </div>
+
+                                            <div>
+                                                <label htmlFor="validation_request_priority_id" className="block text-sm font-medium mb-2">
+                                                    Priority <span className="text-red-500">*</span>
+                                                </label>
+                                                <select
+                                                    id="validation_request_priority_id"
+                                                    className="input-field"
+                                                    value={formData.validation_request_priority_id || ''}
+                                                    onChange={(e) => setFormData({ ...formData, validation_request_priority_id: e.target.value ? parseInt(e.target.value) : 0 })}
+                                                    required={formData.auto_create_validation}
+                                                >
+                                                    <option value="">-- Select Priority --</option>
+                                                    {validationPriorities.map(vp => (
+                                                        <option key={vp.value_id} value={vp.value_id}>
+                                                            {vp.label}
+                                                        </option>
+                                                    ))}
+                                                </select>
+                                            </div>
+                                        </div>
+
+                                        <div>
+                                            <label htmlFor="validation_request_target_date" className="block text-sm font-medium mb-2">
+                                                Target Completion Date (Optional)
+                                            </label>
+                                            <input
+                                                id="validation_request_target_date"
+                                                type="date"
+                                                className="input-field"
+                                                value={formData.validation_request_target_date}
+                                                onChange={(e) => setFormData({ ...formData, validation_request_target_date: e.target.value })}
+                                            />
+                                        </div>
+
+                                        <div>
+                                            <label htmlFor="validation_request_trigger_reason" className="block text-sm font-medium mb-2">
+                                                Trigger Reason (Optional)
+                                            </label>
+                                            <textarea
+                                                id="validation_request_trigger_reason"
+                                                className="input-field"
+                                                rows={2}
+                                                placeholder="Reason for validation request..."
+                                                value={formData.validation_request_trigger_reason}
+                                                onChange={(e) => setFormData({ ...formData, validation_request_trigger_reason: e.target.value })}
+                                            />
+                                        </div>
                                     </div>
                                 )}
                             </div>

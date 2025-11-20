@@ -112,6 +112,7 @@ export default function ModelDetailsPage() {
     const [taxonomies, setTaxonomies] = useState<Taxonomy[]>([]);
     const [validations, setValidations] = useState<Validation[]>([]);
     const [validationRequests, setValidationRequests] = useState<ValidationRequest[]>([]);
+    const [versions, setVersions] = useState<ModelVersion[]>([]);
     const [loading, setLoading] = useState(true);
     const [editing, setEditing] = useState(false);
     const [activeTab, setActiveTab] = useState<'details' | 'versions' | 'delegates' | 'validations'>('details');
@@ -179,19 +180,22 @@ export default function ModelDetailsPage() {
                 regulatory_category_ids: modelData.regulatory_categories.map((c: TaxonomyValue) => c.value_id)
             });
 
-            // Fetch validations separately - this is optional and shouldn't break the page
+            // Fetch validations and versions separately - this is optional and shouldn't break the page
             try {
-                const [validationsRes, validationRequestsRes] = await Promise.all([
+                const [validationsRes, validationRequestsRes, versionsRes] = await Promise.all([
                     api.get(`/validations/?model_id=${id}`),
-                    api.get(`/validation-workflow/requests/?model_id=${id}`)
+                    api.get(`/validation-workflow/requests/?model_id=${id}`),
+                    api.get(`/models/${id}/versions`)
                 ]);
                 setValidations(validationsRes.data);
                 setValidationRequests(validationRequestsRes.data);
+                setVersions(versionsRes.data);
             } catch (validationError) {
                 console.error('Failed to fetch validations:', validationError);
                 // Keep validations as empty array - don't break the page
                 setValidations([]);
                 setValidationRequests([]);
+                setVersions([]);
             }
         } catch (error) {
             console.error('Failed to fetch model:', error);
@@ -226,6 +230,36 @@ export default function ModelDetailsPage() {
     const getValidationTypeTaxonomy = () => taxonomies.find(t => t.name === 'Validation Type');
     const getModelTypeTaxonomy = () => taxonomies.find(t => t.name === 'Model Type');
     const getRegulatoryCategoryTaxonomy = () => taxonomies.find(t => t.name === 'Regulatory Category');
+
+    // Check for out-of-order validation conditions
+    const getOutOfOrderWarnings = () => {
+        const warnings: string[] = [];
+        const activeStatuses = ['Intake', 'Planning', 'In Progress', 'Review', 'Pending Approval'];
+
+        // Find active validation requests
+        const activeRequests = validationRequests.filter(req =>
+            activeStatuses.includes(req.current_status) && req.target_completion_date
+        );
+
+        // Find versions with production dates
+        const implementedVersions = versions.filter(v => v.production_date);
+
+        // Check each active request against implemented versions
+        activeRequests.forEach(request => {
+            implementedVersions.forEach(version => {
+                const targetDate = new Date(request.target_completion_date);
+                const implDate = new Date(version.production_date!);
+
+                if (implDate < targetDate) {
+                    warnings.push(
+                        `Active validation request (${request.validation_type}, target: ${targetDate.toLocaleDateString()}) has a target completion date after version ${version.version_number} implementation date (${implDate.toLocaleDateString()}). Consider expediting validation or using Interim Review.`
+                    );
+                }
+            });
+        });
+
+        return warnings;
+    };
 
     const toggleRegulatoryCategory = (valueId: number) => {
         setFormData(prev => {
@@ -333,6 +367,27 @@ export default function ModelDetailsPage() {
                     )}
                 </div>
             </div>
+
+            {/* Out-of-Order Validation Warning */}
+            {getOutOfOrderWarnings().length > 0 && (
+                <div className="mb-6 p-4 bg-yellow-50 border border-yellow-300 rounded-lg">
+                    <div className="flex items-start gap-3">
+                        <svg className="w-6 h-6 text-yellow-600 flex-shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
+                            <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                        </svg>
+                        <div className="flex-1">
+                            <h3 className="text-sm font-semibold text-yellow-900 mb-2">Validation Timing Warning</h3>
+                            <div className="space-y-1">
+                                {getOutOfOrderWarnings().map((warning, index) => (
+                                    <p key={index} className="text-sm text-yellow-800">
+                                        {warning}
+                                    </p>
+                                ))}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {/* Tabs */}
             {!editing && (

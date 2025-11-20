@@ -26,7 +26,15 @@ class ModelCreate(ModelBase):
     wholly_owned_region_id: Optional[int] = None
     user_ids: Optional[List[int]] = None
     regulatory_category_ids: Optional[List[int]] = None
+    region_ids: Optional[List[int]] = None
+    initial_version_number: Optional[str] = None
     initial_implementation_date: Optional[date] = None
+    # Auto-create validation request fields
+    auto_create_validation: bool = False
+    validation_request_type_id: Optional[int] = None
+    validation_request_priority_id: Optional[int] = None
+    validation_request_target_date: Optional[date] = None
+    validation_request_trigger_reason: Optional[str] = None
 
     @field_validator('vendor_id')
     @classmethod
@@ -104,6 +112,46 @@ class ValidationGroupingSuggestion(BaseModel):
     suggested_models: List[ModelDetailResponse]
     last_validation_request_id: Optional[int] = None
     last_grouped_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
+
+class ModelCreateWarning(BaseModel):
+    """Warning message for model creation."""
+    type: str
+    message: str
+
+
+class ModelCreateResponse(BaseModel):
+    """Response for model creation with optional warnings."""
+    model_id: int
+    model_name: str
+    description: Optional[str] = None
+    development_type: str
+    status: str
+    owner_id: int
+    developer_id: Optional[int] = None
+    vendor_id: Optional[int] = None
+    risk_tier_id: Optional[int] = None
+    validation_type_id: Optional[int] = None
+    model_type_id: Optional[int] = None
+    ownership_type_id: Optional[int] = None
+    wholly_owned_region_id: Optional[int] = None
+    created_at: datetime
+    updated_at: datetime
+    owner: UserResponse
+    developer: Optional[UserResponse] = None
+    vendor: Optional[VendorResponse] = None
+    risk_tier: Optional[TaxonomyValueResponse] = None
+    validation_type: Optional[TaxonomyValueResponse] = None
+    model_type: Optional[TaxonomyValueResponse] = None
+    ownership_type: Optional[TaxonomyValueResponse] = None
+    wholly_owned_region: Optional[Any] = None
+    users: List[UserResponse] = []
+    regulatory_categories: List[TaxonomyValueResponse] = []
+    regions: List[ModelRegionListItem] = []
+    warnings: Optional[List[ModelCreateWarning]] = None
 
     class Config:
         from_attributes = True

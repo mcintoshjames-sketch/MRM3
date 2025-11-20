@@ -153,7 +153,8 @@ def create_model_version(
     # Auto-generate version number if not provided
     version_number = version_data.version_number
     if not version_number:
-        version_number = generate_next_version_number(db, model_id, version_data.change_type)
+        version_number = generate_next_version_number(
+            db, model_id, version_data.change_type)
 
     # Check if version number already exists for this model
     existing = db.query(ModelVersion).filter(
@@ -186,6 +187,27 @@ def create_model_version(
     validation_request = None
     validation_warning = None
     validation_type_code = None
+
+    # Check lead time policy for ALL changes if production date is provided
+    if version_data.production_date:
+        from app.models.validation import ValidationPolicy
+
+        # Calculate lead time based on submission date (today) vs implementation date
+        days_lead_time = (version_data.production_date - date.today()).days
+
+        # Get model-specific lead time from validation policy
+        lead_time_required = 90  # Default
+        if model.risk_tier_id:
+            policy = db.query(ValidationPolicy).filter(
+                ValidationPolicy.risk_tier_id == model.risk_tier_id
+            ).first()
+            if policy:
+                lead_time_required = policy.model_change_lead_time_days
+
+        if days_lead_time < lead_time_required:
+            msg = f"Request submitted with insufficient lead time. Policy requires {lead_time_required} days lead time before implementation, but only {max(0, days_lead_time)} days remain."
+            validation_warning = "WARNING: " + msg
+
     if version_data.change_type == "MAJOR":
         from datetime import timedelta
 
@@ -212,17 +234,21 @@ def create_model_version(
         priority_code = "2"  # Medium by default
 
         if version_data.production_date:
-            days_until_production = (version_data.production_date - date.today()).days
+            days_until_production = (
+                version_data.production_date - date.today()).days
 
             if days_until_production <= total_sla_days:
                 # Within lead time window - use INTERIM validation
                 is_interim = True
                 validation_type_code = "INTERIM"
                 priority_code = "3"  # High priority
-                validation_warning = f"WARNING: Production date ({version_data.production_date}) is within {days_until_production} days. " \
-                                   f"Standard validation SLA is {total_sla_days} days. Expedited INTERIM review required."
+                msg = f"WARNING: Production date ({version_data.production_date}) is within {days_until_production} days. " \
+                    f"Standard validation SLA is {total_sla_days} days. Expedited INTERIM review required."
 
-        # Get validation type from taxonomy
+                if validation_warning:
+                    validation_warning += " " + msg
+                else:
+                    validation_warning = msg        # Get validation type from taxonomy
         validation_type = db.query(TaxonomyValue).join(
             TaxonomyValue.taxonomy
         ).filter(
@@ -243,7 +269,8 @@ def create_model_version(
                 # Calculate target completion date
                 if version_data.production_date:
                     # Target completion should be 5 business days before production (safety buffer)
-                    target_date = version_data.production_date - timedelta(days=5)
+                    target_date = version_data.production_date - \
+                        timedelta(days=5)
 
                     # Check if target completion is after production date (out of order)
                     if target_date > version_data.production_date:
@@ -300,7 +327,8 @@ def create_model_version(
         entity_id=new_version.version_id,
         action="CREATE",
         user_id=current_user.user_id,
-        changes={"version_number": version_number, "change_type": version_data.change_type, "auto_generated": not version_data.version_number}
+        changes={"version_number": version_number, "change_type": version_data.change_type,
+                 "auto_generated": not version_data.version_number}
     )
     db.commit()
     db.refresh(new_version)
@@ -332,7 +360,8 @@ def list_model_versions(
         )
 
     versions = db.query(ModelVersion).options(
-        joinedload(ModelVersion.change_type_detail).joinedload(ModelChangeType.category),
+        joinedload(ModelVersion.change_type_detail).joinedload(
+            ModelChangeType.category),
         joinedload(ModelVersion.created_by)
     ).filter(
         ModelVersion.model_id == model_id
@@ -405,7 +434,8 @@ def approve_version(
             detail="Only Validators and Admins can approve versions"
         )
 
-    version = db.query(ModelVersion).filter(ModelVersion.version_id == version_id).first()
+    version = db.query(ModelVersion).filter(
+        ModelVersion.version_id == version_id).first()
     if not version:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -445,7 +475,8 @@ def activate_version(
     current_user: User = Depends(get_current_user)
 ):
     """Mark a version as ACTIVE (only one ACTIVE per model, requires model owner/developer permission)."""
-    version = db.query(ModelVersion).filter(ModelVersion.version_id == version_id).first()
+    version = db.query(ModelVersion).filter(
+        ModelVersion.version_id == version_id).first()
     if not version:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -481,7 +512,8 @@ def activate_version(
             entity_id=current_active.version_id,
             action="UPDATE",
             user_id=current_user.user_id,
-            changes={"status": {"old": VersionStatus.ACTIVE, "new": VersionStatus.SUPERSEDED}}
+            changes={"status": {"old": VersionStatus.ACTIVE,
+                                "new": VersionStatus.SUPERSEDED}}
         )
 
     # Activate new version
@@ -511,7 +543,8 @@ def set_production_date(
     current_user: User = Depends(get_current_user)
 ):
     """Set the production deployment date for a version."""
-    version = db.query(ModelVersion).filter(ModelVersion.version_id == version_id).first()
+    version = db.query(ModelVersion).filter(
+        ModelVersion.version_id == version_id).first()
     if not version:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -535,7 +568,8 @@ def set_production_date(
         entity_id=version.version_id,
         action="UPDATE",
         user_id=current_user.user_id,
-        changes={"production_date": {"old": str(old_date) if old_date else None, "new": str(production_date)}}
+        changes={"production_date": {"old": str(
+            old_date) if old_date else None, "new": str(production_date)}}
     )
 
     db.commit()
@@ -551,7 +585,8 @@ def delete_version(
     current_user: User = Depends(get_current_user)
 ):
     """Delete a DRAFT version (only DRAFT versions can be deleted)."""
-    version = db.query(ModelVersion).filter(ModelVersion.version_id == version_id).first()
+    version = db.query(ModelVersion).filter(
+        ModelVersion.version_id == version_id).first()
     if not version:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -605,7 +640,8 @@ def export_model_versions_csv(
 
     # Get all versions with relationships
     versions = db.query(ModelVersion).options(
-        joinedload(ModelVersion.change_type_detail).joinedload(ModelChangeType.category),
+        joinedload(ModelVersion.change_type_detail).joinedload(
+            ModelChangeType.category),
         joinedload(ModelVersion.created_by)
     ).filter(
         ModelVersion.model_id == model_id
@@ -641,8 +677,10 @@ def export_model_versions_csv(
             version.status,
             version.change_description,
             version.created_by.full_name if version.created_by else "",
-            version.created_at.strftime("%Y-%m-%d %H:%M:%S") if version.created_at else "",
-            version.production_date.strftime("%Y-%m-%d") if version.production_date else "",
+            version.created_at.strftime(
+                "%Y-%m-%d %H:%M:%S") if version.created_at else "",
+            version.production_date.strftime(
+                "%Y-%m-%d") if version.production_date else "",
             version.validation_request_id or ""
         ])
 
@@ -665,7 +703,8 @@ def get_version_details(
 ):
     """Get detailed information about a specific version."""
     version = db.query(ModelVersion).options(
-        joinedload(ModelVersion.change_type_detail).joinedload(ModelChangeType.category),
+        joinedload(ModelVersion.change_type_detail).joinedload(
+            ModelChangeType.category),
         joinedload(ModelVersion.created_by),
         joinedload(ModelVersion.model)
     ).filter(ModelVersion.version_id == version_id).first()
@@ -703,7 +742,8 @@ def update_version(
     current_user: User = Depends(get_current_user)
 ):
     """Update a version (only DRAFT versions can be edited, and only before validation begins)."""
-    version = db.query(ModelVersion).filter(ModelVersion.version_id == version_id).first()
+    version = db.query(ModelVersion).filter(
+        ModelVersion.version_id == version_id).first()
     if not version:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -749,15 +789,18 @@ def update_version(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=f"Version {version_data.version_number} already exists for this model"
             )
-        changes["version_number"] = {"old": version.version_number, "new": version_data.version_number}
+        changes["version_number"] = {
+            "old": version.version_number, "new": version_data.version_number}
         version.version_number = version_data.version_number
 
     if version_data.change_type is not None:
-        changes["change_type"] = {"old": version.change_type, "new": version_data.change_type}
+        changes["change_type"] = {
+            "old": version.change_type, "new": version_data.change_type}
         version.change_type = version_data.change_type
 
     if version_data.change_description is not None:
-        changes["change_description"] = {"old": version.change_description, "new": version_data.change_description}
+        changes["change_description"] = {
+            "old": version.change_description, "new": version_data.change_description}
         version.change_description = version_data.change_description
 
     if version_data.production_date is not None:

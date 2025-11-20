@@ -1,6 +1,6 @@
 """Validation workflow API endpoints."""
 from datetime import datetime, date
-from typing import List, Optional
+from typing import List, Optional, Union
 import json
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session, joinedload
@@ -10,7 +10,7 @@ from app.core.database import get_db
 from app.core.deps import get_current_user
 from app.models import (
     User, Model, TaxonomyValue, Taxonomy, AuditLog,
-    ValidationRequest, ValidationStatusHistory, ValidationAssignment,
+    ValidationRequest, ValidationRequestModelVersion, ValidationStatusHistory, ValidationAssignment,
     ValidationOutcome, ValidationReviewOutcome, ValidationApproval, ValidationGroupingMemory,
     ModelRegion, Region
 )
@@ -75,45 +75,16 @@ def check_target_completion_date_warnings(
     default_lead_time = sla.model_change_lead_time_days if sla else 90
 
     # Load models with their versions
-    models = db.query(Model).filter(Model.model_id.in_(request_data.model_ids)).all()
+    models = db.query(Model).filter(
+        Model.model_id.in_(request_data.model_ids)).all()
 
     for model in models:
         version_id = model_versions_dict.get(model.model_id)
         version = None
 
         if version_id:
-            version = db.query(ModelVersion).filter(ModelVersion.version_id == version_id).first()
-
-        # Check 1: Model change lead time
-        # If a specific version is selected with an implementation date, check lead time
-        if version and version.production_date:
-            days_before_implementation = (version.production_date - target_date).days
-
-            # Get model-specific lead time from validation policy
-            lead_time_required = default_lead_time
-            if model.risk_tier_id:
-                policy = db.query(ValidationPolicy).filter(
-                    ValidationPolicy.risk_tier_id == model.risk_tier_id
-                ).first()
-                if policy:
-                    lead_time_required = policy.model_change_lead_time_days
-
-            if days_before_implementation < lead_time_required:
-                severity = "ERROR" if days_before_implementation < 0 else "WARNING"
-                warnings.append(ValidationWarning(
-                    warning_type="LEAD_TIME",
-                    severity=severity,
-                    model_id=model.model_id,
-                    model_name=model.model_name,
-                    version_number=version.version_number,
-                    message=f"Target completion date does not meet {lead_time_required}-day lead time requirement before implementation date ({version.production_date.isoformat()}). Only {max(0, days_before_implementation)} days provided.",
-                    details={
-                        "required_lead_time_days": lead_time_required,
-                        "actual_days_before": days_before_implementation,
-                        "implementation_date": version.production_date.isoformat(),
-                        "target_completion_date": target_date.isoformat()
-                    }
-                ))
+            version = db.query(ModelVersion).filter(
+                ModelVersion.version_id == version_id).first()
 
         # Check 2: Implementation date already passed
         if version and version.production_date and target_date > version.production_date:
@@ -123,7 +94,7 @@ def check_target_completion_date_warnings(
                 model_id=model.model_id,
                 model_name=model.model_name,
                 version_number=version.version_number,
-                message=f"Target completion date ({target_date.isoformat()}) is after the model version implementation date ({version.production_date.isoformat()}). Validation must be completed before implementation.",
+                message=f"Target completion date ({target_date.isoformat()}) is after the implementation date ({version.production_date.isoformat()}). Validation must be completed prior to implementation.",
                 details={
                     "implementation_date": version.production_date.isoformat(),
                     "target_completion_date": target_date.isoformat()
@@ -155,9 +126,11 @@ def check_target_completion_date_warnings(
 
             if policy:
                 # Calculate when next validation is due
-                next_validation_due = last_validation.updated_at.date() + timedelta(days=policy.frequency_months * 30)
+                next_validation_due = last_validation.updated_at.date(
+                ) + timedelta(days=policy.frequency_months * 30)
                 grace_period_days = 30  # Allow 30 day grace period
-                overdue_date = next_validation_due + timedelta(days=grace_period_days)
+                overdue_date = next_validation_due + \
+                    timedelta(days=grace_period_days)
 
                 if target_date > overdue_date:
                     warnings.append(ValidationWarning(
@@ -181,16 +154,19 @@ def check_target_completion_date_warnings(
 
 def get_taxonomy_value_by_code(db: Session, taxonomy_name: str, code: str) -> TaxonomyValue:
     """Get taxonomy value by taxonomy name and code."""
-    taxonomy = db.query(Taxonomy).filter(Taxonomy.name == taxonomy_name).first()
+    taxonomy = db.query(Taxonomy).filter(
+        Taxonomy.name == taxonomy_name).first()
     if not taxonomy:
-        raise HTTPException(status_code=404, detail=f"Taxonomy '{taxonomy_name}' not found")
+        raise HTTPException(
+            status_code=404, detail=f"Taxonomy '{taxonomy_name}' not found")
 
     value = db.query(TaxonomyValue).filter(
         TaxonomyValue.taxonomy_id == taxonomy.taxonomy_id,
         TaxonomyValue.code == code
     ).first()
     if not value:
-        raise HTTPException(status_code=404, detail=f"Taxonomy value '{code}' not found in '{taxonomy_name}'")
+        raise HTTPException(
+            status_code=404, detail=f"Taxonomy value '{code}' not found in '{taxonomy_name}'")
     return value
 
 
@@ -271,7 +247,8 @@ def update_grouping_memory(db: Session, validation_request: ValidationRequest, m
     Only updates if 2 or more models are being validated together.
     """
     # Regular validation type codes that should update grouping memory
-    REGULAR_VALIDATION_TYPES = ["INITIAL", "ANNUAL", "COMPREHENSIVE", "ONGOING"]
+    REGULAR_VALIDATION_TYPES = ["INITIAL",
+                                "ANNUAL", "COMPREHENSIVE", "ONGOING"]
 
     # Check if this is a multi-model validation
     if len(models) < 2:
@@ -412,7 +389,8 @@ def auto_assign_approvers(
                 user_regions.c.region_id == wholly_owned_region_id
             ).all()
 
-            region = db.query(Region).filter(Region.region_id == wholly_owned_region_id).first()
+            region = db.query(Region).filter(
+                Region.region_id == wholly_owned_region_id).first()
             region_code = region.code if region else f"Region {wholly_owned_region_id}"
 
             for approver in regional_approvers:
@@ -447,7 +425,8 @@ def auto_assign_approvers(
 
             # Additionally, assign Regional Approvers for all relevant regions
             for region_id in all_region_ids:
-                region = db.query(Region).filter(Region.region_id == region_id).first()
+                region = db.query(Region).filter(
+                    Region.region_id == region_id).first()
                 if region and region.requires_regional_approval:
                     regional_approvers = db.query(User).join(user_regions).filter(
                         User.role == UserRole.REGIONAL_APPROVER,
@@ -493,16 +472,50 @@ def auto_assign_approvers(
 
 # ==================== VALIDATION REQUEST ENDPOINTS ====================
 
-@router.post("/requests/", response_model=ValidationRequestResponse, status_code=status.HTTP_201_CREATED)
+@router.post("/requests/check-warnings", response_model=ValidationRequestWarningsResponse)
+def check_validation_request_warnings(
+    request_data: ValidationRequestCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Check for warnings about target completion date without creating a request.
+
+    This endpoint validates the request data and returns warnings about:
+    - Model change lead time violations
+    - Implementation date conflicts
+    - Revalidation overdue scenarios
+    """
+    # Run validation checks
+    warnings = check_target_completion_date_warnings(db, request_data)
+
+    # Determine if user can proceed (no ERROR-severity warnings)
+    has_errors = any(w.severity == "ERROR" for w in warnings)
+
+    return ValidationRequestWarningsResponse(
+        has_warnings=len(warnings) > 0,
+        can_proceed=not has_errors,
+        warnings=warnings,
+        request_data=request_data
+    )
+
+
+@router.post("/requests/", response_model=Union[ValidationRequestResponse, ValidationRequestWarningsResponse], status_code=status.HTTP_201_CREATED)
 def create_validation_request(
     request_data: ValidationRequestCreate,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Create a new validation request."""
+    """
+    Create a new validation request.
+
+    If check_warnings=True, returns warnings without creating the request.
+    Otherwise, creates the request and returns the created object.
+    """
     # Verify at least one model is specified
     if not request_data.model_ids or len(request_data.model_ids) == 0:
-        raise HTTPException(status_code=400, detail="At least one model must be specified")
+        raise HTTPException(
+            status_code=400, detail="At least one model must be specified")
 
     # Verify all models exist (eagerly load model_regions for approver assignment)
     from sqlalchemy.orm import joinedload
@@ -510,14 +523,27 @@ def create_validation_request(
         joinedload(Model.model_regions)
     ).filter(Model.model_id.in_(request_data.model_ids)).all()
     if len(models) != len(request_data.model_ids):
-        raise HTTPException(status_code=404, detail="One or more models not found")
+        raise HTTPException(
+            status_code=404, detail="One or more models not found")
+
+    # If check_warnings flag is set, return warnings without creating
+    if request_data.check_warnings:
+        warnings = check_target_completion_date_warnings(db, request_data)
+        has_errors = any(w.severity == "ERROR" for w in warnings)
+        return ValidationRequestWarningsResponse(
+            has_warnings=len(warnings) > 0,
+            can_proceed=not has_errors,
+            warnings=warnings,
+            request_data=request_data
+        )
 
     # Verify validation type exists
     validation_type = db.query(TaxonomyValue).filter(
         TaxonomyValue.value_id == request_data.validation_type_id
     ).first()
     if not validation_type:
-        raise HTTPException(status_code=404, detail="Validation type not found")
+        raise HTTPException(
+            status_code=404, detail="Validation type not found")
 
     # Verify priority exists
     priority = db.query(TaxonomyValue).filter(
@@ -527,15 +553,18 @@ def create_validation_request(
         raise HTTPException(status_code=404, detail="Priority not found")
 
     # Get initial status (INTAKE)
-    intake_status = get_taxonomy_value_by_code(db, "Validation Request Status", "INTAKE")
+    intake_status = get_taxonomy_value_by_code(
+        db, "Validation Request Status", "INTAKE")
 
     # Verify regions if provided
     regions = []
     if request_data.region_ids:
         from app.models import Region
-        regions = db.query(Region).filter(Region.region_id.in_(request_data.region_ids)).all()
+        regions = db.query(Region).filter(
+            Region.region_id.in_(request_data.region_ids)).all()
         if len(regions) != len(request_data.region_ids):
-            raise HTTPException(status_code=404, detail="One or more regions not found")
+            raise HTTPException(
+                status_code=404, detail="One or more regions not found")
 
     # Create the request
     validation_request = ValidationRequest(
@@ -552,8 +581,31 @@ def create_validation_request(
     db.add(validation_request)
     db.flush()
 
-    # Associate models using the many-to-many relationship
-    validation_request.models.extend(models)
+    # Associate models with optional version tracking
+    model_versions_dict = request_data.model_versions or {}
+    for model in models:
+        version_id = model_versions_dict.get(model.model_id)
+
+        # Verify version exists and belongs to this model if specified
+        if version_id:
+            from app.models import ModelVersion
+            version = db.query(ModelVersion).filter(
+                ModelVersion.version_id == version_id,
+                ModelVersion.model_id == model.model_id
+            ).first()
+            if not version:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Version {version_id} not found for model {model.model_name}"
+                )
+
+        # Create association with version tracking
+        assoc = ValidationRequestModelVersion(
+            request_id=validation_request.request_id,
+            model_id=model.model_id,
+            version_id=version_id
+        )
+        db.add(assoc)
 
     # Associate regions using the many-to-many relationship
     if regions:
@@ -593,7 +645,8 @@ def create_validation_request(
     # Reload with relationships (including approvals with their approver)
     db.refresh(validation_request)
     validation_request_with_approvals = db.query(ValidationRequest).options(
-        joinedload(ValidationRequest.approvals).joinedload(ValidationApproval.approver)
+        joinedload(ValidationRequest.approvals).joinedload(
+            ValidationApproval.approver)
     ).filter(ValidationRequest.request_id == validation_request.request_id).first()
 
     return validation_request_with_approvals
@@ -606,7 +659,8 @@ def list_validation_requests(
     priority_id: Optional[int] = None,
     requestor_id: Optional[int] = None,
     region_id: Optional[int] = None,
-    scope: Optional[str] = Query(None, description="Filter by scope: 'global' (region_id IS NULL) or 'regional' (region_id IS NOT NULL)"),
+    scope: Optional[str] = Query(
+        None, description="Filter by scope: 'global' (region_id IS NULL) or 'regional' (region_id IS NOT NULL)"),
     limit: int = 100,
     offset: int = 0,
     db: Session = Depends(get_db),
@@ -622,12 +676,14 @@ def list_validation_requests(
         joinedload(ValidationRequest.priority),
         joinedload(ValidationRequest.current_status),
         joinedload(ValidationRequest.regions),
-        joinedload(ValidationRequest.assignments).joinedload(ValidationAssignment.validator)
+        joinedload(ValidationRequest.assignments).joinedload(
+            ValidationAssignment.validator)
     )
 
     # Filter by model_id requires joining with the association table
     if model_id:
-        query = query.join(validation_request_models).filter(validation_request_models.c.model_id == model_id)
+        query = query.join(validation_request_models).filter(
+            validation_request_models.c.model_id == model_id)
     if status_id:
         query = query.filter(ValidationRequest.current_status_id == status_id)
     if priority_id:
@@ -637,19 +693,23 @@ def list_validation_requests(
     if region_id:
         # Filter by requests that have this specific region
         from app.models.validation import validation_request_regions
-        query = query.join(validation_request_regions).filter(validation_request_regions.c.region_id == region_id)
+        query = query.join(validation_request_regions).filter(
+            validation_request_regions.c.region_id == region_id)
     if scope:
         from app.models.validation import validation_request_regions
         if scope.lower() == "global":
             # Global validations have no regions
-            query = query.outerjoin(validation_request_regions).filter(validation_request_regions.c.request_id.is_(None))
+            query = query.outerjoin(validation_request_regions).filter(
+                validation_request_regions.c.request_id.is_(None))
         elif scope.lower() == "regional":
             # Regional validations have at least one region
             query = query.join(validation_request_regions)
         else:
-            raise HTTPException(status_code=400, detail="Invalid scope. Must be 'global' or 'regional'")
+            raise HTTPException(
+                status_code=400, detail="Invalid scope. Must be 'global' or 'regional'")
 
-    requests = query.order_by(desc(ValidationRequest.request_date)).offset(offset).limit(limit).all()
+    requests = query.order_by(desc(ValidationRequest.request_date)).offset(
+        offset).limit(limit).all()
 
     # Transform to list response format
     result = []
@@ -680,7 +740,8 @@ def list_validation_requests(
 
 @router.get("/requests/preview-regions")
 def preview_suggested_regions(
-    model_ids: str = Query(..., description="Comma-separated list of model IDs"),
+    model_ids: str = Query(...,
+                           description="Comma-separated list of model IDs"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
@@ -691,9 +752,11 @@ def preview_suggested_regions(
     """
     # Parse comma-separated model_ids
     try:
-        model_id_list = [int(id.strip()) for id in model_ids.split(",") if id.strip()]
+        model_id_list = [int(id.strip())
+                         for id in model_ids.split(",") if id.strip()]
     except ValueError:
-        raise HTTPException(status_code=400, detail="Invalid model_ids format. Use comma-separated integers.")
+        raise HTTPException(
+            status_code=400, detail="Invalid model_ids format. Use comma-separated integers.")
 
     if not model_id_list:
         return {"suggested_regions": []}
@@ -721,17 +784,24 @@ def get_validation_request(
         joinedload(ValidationRequest.priority),
         joinedload(ValidationRequest.current_status),
         joinedload(ValidationRequest.regions),
-        joinedload(ValidationRequest.assignments).joinedload(ValidationAssignment.validator),
-        joinedload(ValidationRequest.status_history).joinedload(ValidationStatusHistory.old_status),
-        joinedload(ValidationRequest.status_history).joinedload(ValidationStatusHistory.new_status),
-        joinedload(ValidationRequest.status_history).joinedload(ValidationStatusHistory.changed_by),
-        joinedload(ValidationRequest.approvals).joinedload(ValidationApproval.approver),
+        joinedload(ValidationRequest.assignments).joinedload(
+            ValidationAssignment.validator),
+        joinedload(ValidationRequest.status_history).joinedload(
+            ValidationStatusHistory.old_status),
+        joinedload(ValidationRequest.status_history).joinedload(
+            ValidationStatusHistory.new_status),
+        joinedload(ValidationRequest.status_history).joinedload(
+            ValidationStatusHistory.changed_by),
+        joinedload(ValidationRequest.approvals).joinedload(
+            ValidationApproval.approver),
         joinedload(ValidationRequest.outcome),
-        joinedload(ValidationRequest.review_outcome).joinedload(ValidationReviewOutcome.reviewer)
+        joinedload(ValidationRequest.review_outcome).joinedload(
+            ValidationReviewOutcome.reviewer)
     ).filter(ValidationRequest.request_id == request_id).first()
 
     if not validation_request:
-        raise HTTPException(status_code=404, detail="Validation request not found")
+        raise HTTPException(
+            status_code=404, detail="Validation request not found")
 
     return validation_request
 
@@ -757,7 +827,8 @@ def update_validation_request(
         ValidationRequest.request_id == request_id
     ).first()
     if not validation_request:
-        raise HTTPException(status_code=404, detail="Validation request not found")
+        raise HTTPException(
+            status_code=404, detail="Validation request not found")
 
     # Check if request is locked (in approval stage)
     status_code = validation_request.current_status.code if validation_request.current_status else None
@@ -779,9 +850,11 @@ def update_validation_request(
 
         if set(old_region_ids) != set(new_region_ids):
             # Update regions
-            new_regions = db.query(Region).filter(Region.region_id.in_(new_region_ids)).all() if new_region_ids else []
+            new_regions = db.query(Region).filter(Region.region_id.in_(
+                new_region_ids)).all() if new_region_ids else []
             validation_request.regions = new_regions
-            changes['region_ids'] = {"old": old_region_ids, "new": new_region_ids}
+            changes['region_ids'] = {
+                "old": old_region_ids, "new": new_region_ids}
 
     for field, new_value in update_dict.items():
         old_value = getattr(validation_request, field)
@@ -827,7 +900,8 @@ def update_validation_request_status(
     ).filter(ValidationRequest.request_id == request_id).first()
 
     if not validation_request:
-        raise HTTPException(status_code=404, detail="Validation request not found")
+        raise HTTPException(
+            status_code=404, detail="Validation request not found")
 
     # Get new status
     new_status = db.query(TaxonomyValue).filter(
@@ -851,12 +925,14 @@ def update_validation_request_status(
     if new_status_code == "REVIEW":
         # Must have at least one assigned validator
         if not validation_request.assignments:
-            raise HTTPException(status_code=400, detail="Cannot move to Review without assigned validators")
+            raise HTTPException(
+                status_code=400, detail="Cannot move to Review without assigned validators")
 
     if new_status_code == "PENDING_APPROVAL":
         # Must have an outcome created
         if not validation_request.outcome:
-            raise HTTPException(status_code=400, detail="Cannot move to Pending Approval without creating outcome")
+            raise HTTPException(
+                status_code=400, detail="Cannot move to Pending Approval without creating outcome")
 
         # If a reviewer is assigned, they must have signed off
         reviewer_assignment = db.query(ValidationAssignment).filter(
@@ -925,7 +1001,8 @@ def decline_validation_request(
     ).filter(ValidationRequest.request_id == request_id).first()
 
     if not validation_request:
-        raise HTTPException(status_code=404, detail="Validation request not found")
+        raise HTTPException(
+            status_code=404, detail="Validation request not found")
 
     # Get CANCELLED status
     cancelled_status = db.query(TaxonomyValue).join(Taxonomy).filter(
@@ -934,7 +1011,8 @@ def decline_validation_request(
     ).first()
 
     if not cancelled_status:
-        raise HTTPException(status_code=500, detail="CANCELLED status not found in taxonomy")
+        raise HTTPException(
+            status_code=500, detail="CANCELLED status not found in taxonomy")
 
     # Record old status for audit
     old_status = validation_request.current_status
@@ -987,7 +1065,8 @@ def delete_validation_request(
         ValidationRequest.request_id == request_id
     ).first()
     if not validation_request:
-        raise HTTPException(status_code=404, detail="Validation request not found")
+        raise HTTPException(
+            status_code=404, detail="Validation request not found")
 
     # Create audit log before deletion
     audit_log = AuditLog(
@@ -1021,10 +1100,12 @@ def create_assignment(
         ValidationRequest.request_id == request_id
     ).first()
     if not validation_request:
-        raise HTTPException(status_code=404, detail="Validation request not found")
+        raise HTTPException(
+            status_code=404, detail="Validation request not found")
 
     # Verify validator user exists
-    validator = db.query(User).filter(User.user_id == assignment_data.validator_id).first()
+    validator = db.query(User).filter(
+        User.user_id == assignment_data.validator_id).first()
     if not validator:
         raise HTTPException(status_code=404, detail="Validator user not found")
 
@@ -1049,7 +1130,8 @@ def create_assignment(
         ValidationAssignment.validator_id == assignment_data.validator_id
     ).first()
     if existing:
-        raise HTTPException(status_code=400, detail="Validator already assigned to this request")
+        raise HTTPException(
+            status_code=400, detail="Validator already assigned to this request")
 
     # If this is primary, demote existing primary
     if assignment_data.is_primary:
@@ -1148,8 +1230,9 @@ def update_assignment(
     # Allow update if: (1) updating own assignment, (2) admin, or (3) primary validator on this request
     if (current_user.user_id != assignment.validator_id and
         current_user.role != "Admin" and
-        not is_primary_validator):
-        raise HTTPException(status_code=403, detail="Only assigned validator or Admin can update assignment")
+            not is_primary_validator):
+        raise HTTPException(
+            status_code=403, detail="Only assigned validator or Admin can update assignment")
 
     update_dict = update_data.model_dump(exclude_unset=True)
 
@@ -1201,7 +1284,8 @@ def update_assignment(
 @router.delete("/assignments/{assignment_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_assignment(
     assignment_id: int,
-    new_primary_id: Optional[int] = Query(None, description="New primary validator ID (required when removing primary with multiple remaining validators)"),
+    new_primary_id: Optional[int] = Query(
+        None, description="New primary validator ID (required when removing primary with multiple remaining validators)"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
@@ -1260,7 +1344,8 @@ def delete_assignment(
                 )
 
             # Find and promote the new primary
-            new_primary = next((v for v in remaining_validators if v.validator_id == new_primary_id), None)
+            new_primary = next(
+                (v for v in remaining_validators if v.validator_id == new_primary_id), None)
             if not new_primary:
                 raise HTTPException(
                     status_code=400,
@@ -1318,7 +1403,8 @@ def reviewer_sign_off(
 ):
     """Reviewer signs off on validation work for quality assurance."""
     assignment = db.query(ValidationAssignment).options(
-        joinedload(ValidationAssignment.request).joinedload(ValidationRequest.current_status)
+        joinedload(ValidationAssignment.request).joinedload(
+            ValidationRequest.current_status)
     ).filter(
         ValidationAssignment.assignment_id == assignment_id
     ).first()
@@ -1328,14 +1414,17 @@ def reviewer_sign_off(
 
     # Only the assigned reviewer can sign off
     if not assignment.is_reviewer:
-        raise HTTPException(status_code=400, detail="This assignment is not a reviewer role")
+        raise HTTPException(
+            status_code=400, detail="This assignment is not a reviewer role")
 
     if current_user.user_id != assignment.validator_id:
-        raise HTTPException(status_code=403, detail="Only the assigned reviewer can sign off")
+        raise HTTPException(
+            status_code=403, detail="Only the assigned reviewer can sign off")
 
     # Check if already signed off
     if assignment.reviewer_signed_off:
-        raise HTTPException(status_code=400, detail="Reviewer has already signed off")
+        raise HTTPException(
+            status_code=400, detail="Reviewer has already signed off")
 
     # Verify the request has an outcome (reviewer should review the outcome before signing off)
     request = assignment.request
@@ -1389,11 +1478,13 @@ def create_outcome(
     ).filter(ValidationRequest.request_id == request_id).first()
 
     if not validation_request:
-        raise HTTPException(status_code=404, detail="Validation request not found")
+        raise HTTPException(
+            status_code=404, detail="Validation request not found")
 
     # Check if outcome already exists
     if validation_request.outcome:
-        raise HTTPException(status_code=400, detail="Outcome already exists for this request")
+        raise HTTPException(
+            status_code=400, detail="Outcome already exists for this request")
 
     # Verify status is In Progress or later (must have started work)
     status_code = validation_request.current_status.code if validation_request.current_status else None
@@ -1463,7 +1554,8 @@ def update_outcome(
         ValidationRequest.request_id == outcome.request_id
     ).first()
     if request and request.current_status and request.current_status.code == "APPROVED":
-        raise HTTPException(status_code=400, detail="Cannot modify outcome of approved validation")
+        raise HTTPException(
+            status_code=400, detail="Cannot modify outcome of approved validation")
 
     update_dict = update_data.model_dump(exclude_unset=True)
 
@@ -1475,8 +1567,10 @@ def update_outcome(
             setattr(outcome, field, value)
             # For rating, fetch the label
             if field == 'overall_rating_id' and value:
-                rating = db.query(TaxonomyValue).filter(TaxonomyValue.value_id == value).first()
-                changes['overall_rating'] = rating.label if rating else str(value)
+                rating = db.query(TaxonomyValue).filter(
+                    TaxonomyValue.value_id == value).first()
+                changes['overall_rating'] = rating.label if rating else str(
+                    value)
             else:
                 changes[field] = value
 
@@ -1520,11 +1614,13 @@ def create_review_outcome(
     ).filter(ValidationRequest.request_id == request_id).first()
 
     if not validation_request:
-        raise HTTPException(status_code=404, detail="Validation request not found")
+        raise HTTPException(
+            status_code=404, detail="Validation request not found")
 
     # Check if review outcome already exists
     if validation_request.review_outcome:
-        raise HTTPException(status_code=400, detail="Review outcome already exists for this request")
+        raise HTTPException(
+            status_code=400, detail="Review outcome already exists for this request")
 
     # Verify status is REVIEW
     status_code = validation_request.current_status.code if validation_request.current_status else None
@@ -1536,16 +1632,20 @@ def create_review_outcome(
 
     # Verify validation outcome exists
     if not validation_request.outcome:
-        raise HTTPException(status_code=400, detail="Validation outcome must exist before creating review outcome")
+        raise HTTPException(
+            status_code=400, detail="Validation outcome must exist before creating review outcome")
 
     # Verify current user is assigned as reviewer
-    is_reviewer = any(a.validator_id == current_user.user_id and a.is_reviewer for a in validation_request.assignments)
+    is_reviewer = any(
+        a.validator_id == current_user.user_id and a.is_reviewer for a in validation_request.assignments)
     if not is_reviewer:
-        raise HTTPException(status_code=403, detail="Only the assigned reviewer can create review outcome")
+        raise HTTPException(
+            status_code=403, detail="Only the assigned reviewer can create review outcome")
 
     # Validate decision
     if review_data.decision not in ["AGREE", "SEND_BACK"]:
-        raise HTTPException(status_code=400, detail="Decision must be 'AGREE' or 'SEND_BACK'")
+        raise HTTPException(
+            status_code=400, detail="Decision must be 'AGREE' or 'SEND_BACK'")
 
     # Create review outcome
     review_outcome = ValidationReviewOutcome(
@@ -1563,7 +1663,8 @@ def create_review_outcome(
     # Update status based on decision
     if review_data.decision == "AGREE":
         # Move to Pending Approval
-        pending_approval_status = get_taxonomy_value_by_code(db, "Validation Request Status", "PENDING_APPROVAL")
+        pending_approval_status = get_taxonomy_value_by_code(
+            db, "Validation Request Status", "PENDING_APPROVAL")
         old_status_id = validation_request.current_status_id
         validation_request.current_status_id = pending_approval_status.value_id
         validation_request.updated_at = datetime.utcnow()
@@ -1575,7 +1676,8 @@ def create_review_outcome(
         )
     else:  # SEND_BACK
         # Move back to In Progress
-        in_progress_status = get_taxonomy_value_by_code(db, "Validation Request Status", "IN_PROGRESS")
+        in_progress_status = get_taxonomy_value_by_code(
+            db, "Validation Request Status", "IN_PROGRESS")
         old_status_id = validation_request.current_status_id
         validation_request.current_status_id = in_progress_status.value_id
         validation_request.updated_at = datetime.utcnow()
@@ -1624,14 +1726,16 @@ def update_review_outcome(
 
     # Verify current user is the reviewer who created it
     if review_outcome.reviewer_id != current_user.user_id:
-        raise HTTPException(status_code=403, detail="Only the reviewer who created this outcome can update it")
+        raise HTTPException(
+            status_code=403, detail="Only the reviewer who created this outcome can update it")
 
     # Check if request is in approved status (locked)
     request = db.query(ValidationRequest).filter(
         ValidationRequest.request_id == review_outcome.request_id
     ).first()
     if request and request.current_status and request.current_status.code == "APPROVED":
-        raise HTTPException(status_code=400, detail="Cannot modify review outcome of approved validation")
+        raise HTTPException(
+            status_code=400, detail="Cannot modify review outcome of approved validation")
 
     update_dict = update_data.model_dump(exclude_unset=True)
 
@@ -1679,10 +1783,12 @@ def create_approval_requirement(
         ValidationRequest.request_id == request_id
     ).first()
     if not validation_request:
-        raise HTTPException(status_code=404, detail="Validation request not found")
+        raise HTTPException(
+            status_code=404, detail="Validation request not found")
 
     # Verify approver user exists
-    approver = db.query(User).filter(User.user_id == approval_data.approver_id).first()
+    approver = db.query(User).filter(
+        User.user_id == approval_data.approver_id).first()
     if not approver:
         raise HTTPException(status_code=404, detail="Approver user not found")
 
@@ -1717,7 +1823,8 @@ def submit_approval(
 
     # Only the designated approver can submit approval
     if current_user.user_id != approval.approver_id:
-        raise HTTPException(status_code=403, detail="Only the designated approver can submit this approval")
+        raise HTTPException(
+            status_code=403, detail="Only the designated approver can submit this approval")
 
     approval.approval_status = update_data.approval_status
     approval.comments = update_data.comments
@@ -1815,7 +1922,8 @@ def get_aging_report(
     for req in requests:
         if req.current_status and req.current_status.code not in ["APPROVED", "CANCELLED"]:
             days_in_status = calculate_days_in_status(db, req)
-            model_names = [m.model_name for m in req.models] if req.models else []
+            model_names = [
+                m.model_name for m in req.models] if req.models else []
             aging_data.append({
                 "request_id": req.request_id,
                 "model_names": model_names,
@@ -1838,7 +1946,8 @@ def get_workload_report(
     check_admin(current_user)
 
     # Get validators and their assignments
-    validators = db.query(User).filter(User.role.in_(["Validator", "Admin"])).all()
+    validators = db.query(User).filter(
+        User.role.in_(["Validator", "Admin"])).all()
 
     workload_data = []
     for validator in validators:
@@ -1884,10 +1993,14 @@ def get_validator_assignments(
 
     # Get all assignments for this validator
     assignments = db.query(ValidationAssignment).options(
-        joinedload(ValidationAssignment.request).joinedload(ValidationRequest.models),
-        joinedload(ValidationAssignment.request).joinedload(ValidationRequest.current_status),
-        joinedload(ValidationAssignment.request).joinedload(ValidationRequest.validation_type),
-        joinedload(ValidationAssignment.request).joinedload(ValidationRequest.priority)
+        joinedload(ValidationAssignment.request).joinedload(
+            ValidationRequest.models),
+        joinedload(ValidationAssignment.request).joinedload(
+            ValidationRequest.current_status),
+        joinedload(ValidationAssignment.request).joinedload(
+            ValidationRequest.validation_type),
+        joinedload(ValidationAssignment.request).joinedload(
+            ValidationRequest.priority)
     ).filter(
         ValidationAssignment.validator_id == validator_id
     ).order_by(ValidationAssignment.created_at.desc()).all()
@@ -1940,8 +2053,10 @@ def get_sla_violations(
         joinedload(ValidationRequest.models),
         joinedload(ValidationRequest.current_status),
         joinedload(ValidationRequest.priority),
-        joinedload(ValidationRequest.assignments).joinedload(ValidationAssignment.validator),
-        joinedload(ValidationRequest.status_history).joinedload(ValidationStatusHistory.new_status)
+        joinedload(ValidationRequest.assignments).joinedload(
+            ValidationAssignment.validator),
+        joinedload(ValidationRequest.status_history).joinedload(
+            ValidationStatusHistory.new_status)
     ).all()
 
     violations = []
@@ -1956,7 +2071,8 @@ def get_sla_violations(
         if req.current_status.code in ["INTAKE", "PLANNING"]:
             days_since_request = (now - req.created_at).days
             if days_since_request > sla_config.assignment_days:
-                primary_assignment = next((a for a in req.assignments if a.is_primary), None)
+                primary_assignment = next(
+                    (a for a in req.assignments if a.is_primary), None)
                 if not primary_assignment:
                     violations.append({
                         "request_id": req.request_id,
@@ -1972,9 +2088,11 @@ def get_sla_violations(
                     })
 
         # Check Begin Work SLA (from assignment to IN_PROGRESS)
-        primary_assignment = next((a for a in req.assignments if a.is_primary), None)
+        primary_assignment = next(
+            (a for a in req.assignments if a.is_primary), None)
         if primary_assignment and req.current_status.code == "PLANNING":
-            days_since_assignment = (now.date() - primary_assignment.assignment_date).days
+            days_since_assignment = (
+                now.date() - primary_assignment.assignment_date).days
             if days_since_assignment > sla_config.begin_work_days:
                 violations.append({
                     "request_id": req.request_id,
@@ -1991,7 +2109,8 @@ def get_sla_violations(
 
         # Check Complete Work SLA (from assignment to REVIEW/PENDING_APPROVAL)
         if primary_assignment and req.current_status.code == "IN_PROGRESS":
-            days_since_assignment = (now.date() - primary_assignment.assignment_date).days
+            days_since_assignment = (
+                now.date() - primary_assignment.assignment_date).days
             if days_since_assignment > sla_config.complete_work_days:
                 violations.append({
                     "request_id": req.request_id,
@@ -2051,7 +2170,8 @@ def get_out_of_order_validations(
         joinedload(ValidationRequest.current_status),
         joinedload(ValidationRequest.priority)
     ).filter(
-        ValidationRequest.current_status.has(TaxonomyValue.code.notin_(["APPROVED", "CANCELLED"]))
+        ValidationRequest.current_status.has(
+            TaxonomyValue.code.notin_(["APPROVED", "CANCELLED"]))
     ).all()
 
     out_of_order = []
@@ -2100,7 +2220,8 @@ def get_pending_validator_assignments(
     check_admin(current_user)
 
     # Get INTAKE status
-    intake_status = get_taxonomy_value_by_code(db, "Validation Request Status", "INTAKE")
+    intake_status = get_taxonomy_value_by_code(
+        db, "Validation Request Status", "INTAKE")
 
     # Get all validation requests in INTAKE status
     requests = db.query(ValidationRequest).options(
@@ -2110,7 +2231,8 @@ def get_pending_validator_assignments(
         joinedload(ValidationRequest.priority),
         joinedload(ValidationRequest.current_status),
         joinedload(ValidationRequest.regions),
-        joinedload(ValidationRequest.assignments).joinedload(ValidationAssignment.validator)
+        joinedload(ValidationRequest.assignments).joinedload(
+            ValidationAssignment.validator)
     ).filter(
         ValidationRequest.current_status_id == intake_status.value_id
     ).all()
@@ -2120,7 +2242,8 @@ def get_pending_validator_assignments(
 
     for req in requests:
         # Check if there's a primary validator assigned
-        primary_validator = next((a for a in req.assignments if a.is_primary), None)
+        primary_validator = next(
+            (a for a in req.assignments if a.is_primary), None)
 
         # Only include if no primary validator assigned
         if not primary_validator:
@@ -2135,14 +2258,16 @@ def get_pending_validator_assignments(
                 severity = "medium"
 
             model_ids = [m.model_id for m in req.models] if req.models else []
-            model_names = [m.model_name for m in req.models] if req.models else []
+            model_names = [
+                m.model_name for m in req.models] if req.models else []
 
             # Determine region display based on governance, deployment, and validation scope
             all_region_ids = set()
             governance_region_ids = set()
 
             if model_ids:
-                models = db.query(Model).filter(Model.model_id.in_(model_ids)).all()
+                models = db.query(Model).filter(
+                    Model.model_id.in_(model_ids)).all()
                 for model in models:
                     # Collect governance regions
                     if model.wholly_owned_region_id is not None:
@@ -2168,11 +2293,13 @@ def get_pending_validator_assignments(
             # Display region(s)
             if is_single_region and wholly_owned_region_id is not None:
                 # Pure single-region - only show that region
-                region = db.query(Region).filter(Region.region_id == wholly_owned_region_id).first()
+                region = db.query(Region).filter(
+                    Region.region_id == wholly_owned_region_id).first()
                 region_display = region.name if region else f"Region {wholly_owned_region_id}"
             elif all_region_ids:
                 # Multi-region - show "Global + [Regions]"
-                regions_list = db.query(Region).filter(Region.region_id.in_(all_region_ids)).all()
+                regions_list = db.query(Region).filter(
+                    Region.region_id.in_(all_region_ids)).all()
                 region_names = [r.name for r in regions_list]
                 region_display = "Global + " + ", ".join(region_names)
             else:

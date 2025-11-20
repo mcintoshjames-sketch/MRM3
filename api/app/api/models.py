@@ -2,7 +2,7 @@
 import csv
 import io
 import json
-from datetime import datetime
+from datetime import datetime, date, timedelta
 from typing import List
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import StreamingResponse
@@ -17,7 +17,7 @@ from app.models.taxonomy import TaxonomyValue
 from app.models.model_version import ModelVersion
 from app.models.model_region import ModelRegion
 from app.models.validation_grouping import ValidationGroupingMemory
-from app.schemas.model import ModelCreate, ModelUpdate, ModelDetailResponse, ValidationGroupingSuggestion
+from app.schemas.model import ModelCreate, ModelUpdate, ModelDetailResponse, ValidationGroupingSuggestion, ModelCreateResponse
 
 router = APIRouter()
 
@@ -55,7 +55,7 @@ def list_models(
     return models
 
 
-@router.post("/", response_model=ModelDetailResponse, status_code=status.HTTP_201_CREATED)
+@router.post("/", response_model=ModelCreateResponse, status_code=status.HTTP_201_CREATED)
 def create_model(
     model_data: ModelCreate,
     db: Session = Depends(get_db),
@@ -95,11 +95,26 @@ def create_model(
                 detail="Developer user not found"
             )
 
-    # Extract user_ids, regulatory_category_ids, and initial_implementation_date before creating model
+    # Extract user_ids, regulatory_category_ids, region_ids, initial_version_number, initial_implementation_date, and validation request fields before creating model
     user_ids = model_data.user_ids or []
     regulatory_category_ids = model_data.regulatory_category_ids or []
+    region_ids = model_data.region_ids or []
+    initial_version_number = model_data.initial_version_number or "1.0"
     initial_implementation_date = model_data.initial_implementation_date
-    model_dict = model_data.model_dump(exclude={'user_ids', 'regulatory_category_ids', 'initial_implementation_date'})
+    auto_create_validation = model_data.auto_create_validation
+    validation_request_data = {
+        'type_id': model_data.validation_request_type_id,
+        'priority_id': model_data.validation_request_priority_id,
+        'target_date': model_data.validation_request_target_date,
+        'trigger_reason': model_data.validation_request_trigger_reason
+    }
+    model_dict = model_data.model_dump(exclude={
+        'user_ids', 'regulatory_category_ids', 'region_ids',
+        'initial_version_number', 'initial_implementation_date',
+        'auto_create_validation', 'validation_request_type_id',
+        'validation_request_priority_id', 'validation_request_target_date',
+        'validation_request_trigger_reason'
+    })
 
     model = Model(**model_dict)
 
@@ -127,22 +142,39 @@ def create_model(
     db.commit()
     db.refresh(model)
 
-    # Auto-add wholly-owned region to deployment regions
+    # Add deployment regions
+    # Combine wholly-owned region and additional regions, removing duplicates
+    all_region_ids = set(region_ids)
     if model.wholly_owned_region_id is not None:
-        new_model_region = ModelRegion(
-            model_id=model.model_id,
-            region_id=model.wholly_owned_region_id,
-            created_at=datetime.utcnow()
-        )
-        db.add(new_model_region)
+        all_region_ids.add(model.wholly_owned_region_id)
+
+    if all_region_ids:
+        # Validate all regions exist
+        from app.models import Region
+        regions = db.query(Region).filter(Region.region_id.in_(all_region_ids)).all()
+        if len(regions) != len(all_region_ids):
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="One or more regions not found"
+            )
+
+        # Create ModelRegion entries
+        for region_id in all_region_ids:
+            new_model_region = ModelRegion(
+                model_id=model.model_id,
+                region_id=region_id,
+                created_at=datetime.utcnow()
+            )
+            db.add(new_model_region)
         db.commit()
 
-    # Create initial version 1.0 with change_type_id = 1 (New Model Development)
+    # Create initial version with change_type_id = 1 (New Model Development)
+    # Use custom version number if provided, otherwise default to "1.0"
     # Use implementation date if provided, otherwise DRAFT status with no date
-    version_status = "PRODUCTION" if initial_implementation_date else "DRAFT"
+    version_status = "ACTIVE" if initial_implementation_date else "DRAFT"
     initial_version = ModelVersion(
         model_id=model.model_id,
-        version_number="1.0",
+        version_number=initial_version_number,
         change_type="MAJOR",  # New models are MAJOR changes
         change_type_id=1,  # Code 1 = "New Model Development"
         change_description="Initial model version",
@@ -171,9 +203,112 @@ def create_model(
         entity_id=initial_version.version_id,
         action="CREATE",
         user_id=current_user.user_id,
-        changes={"version_number": "1.0", "change_type_id": 1, "auto_created": True}
+        changes={"version_number": initial_version_number, "change_type_id": 1, "auto_created": True}
     )
     db.commit()
+
+    # Validate implementation date vs validation timing
+    warnings = []
+    if auto_create_validation and initial_implementation_date:
+        # Get validation type to check if it's Interim Review
+        from app.models import TaxonomyValue
+        validation_type = db.query(TaxonomyValue).filter(
+            TaxonomyValue.value_id == validation_request_data['type_id']
+        ).first()
+        is_interim = validation_type and ('interim' in validation_type.label.lower() or validation_type.code == 'INTERIM')
+
+        # Check if implementation date is before validation target completion date
+        if validation_request_data['target_date']:
+            target_date = validation_request_data['target_date']
+            if initial_implementation_date < target_date:
+                if not is_interim:
+                    warnings.append({
+                        'type': 'IMPLEMENTATION_BEFORE_VALIDATION',
+                        'message': f"Implementation date ({initial_implementation_date}) is before validation target completion date ({target_date}). Consider: (1) using 'Interim Review' validation type for faster approval, (2) setting an earlier validation target date, or (3) delaying implementation to {target_date} or later."
+                    })
+
+        # Check if implementation date is within policy lead time
+        if model.risk_tier_id:
+            from app.models import ValidationPolicy
+            policy = db.query(ValidationPolicy).filter(
+                ValidationPolicy.risk_tier_id == model.risk_tier_id
+            ).first()
+
+            if policy:
+                lead_time_days = policy.model_change_lead_time_days
+                days_until_implementation = (initial_implementation_date - date.today()).days
+
+                if days_until_implementation < lead_time_days:
+                    # Warn if not using Interim Review
+                    if not is_interim:
+                        suggested_impl_date = date.today() + timedelta(days=lead_time_days)
+                        warnings.append({
+                            'type': 'LEAD_TIME_WARNING',
+                            'message': f"Implementation date is only {days_until_implementation} days away, but policy requires {lead_time_days} days lead time for this risk tier. Consider using 'Interim Review' validation type or delaying implementation to {suggested_impl_date.isoformat()}."
+                        })
+
+    # Auto-create validation request if requested
+    if auto_create_validation and validation_request_data['type_id'] and validation_request_data['priority_id']:
+        from app.models import ValidationRequest, ValidationRequestModelVersion, TaxonomyValue, Taxonomy
+        from datetime import datetime
+
+        # Get INTAKE status
+        intake_status = db.query(TaxonomyValue).join(Taxonomy).filter(
+            Taxonomy.name == "Validation Request Status",
+            TaxonomyValue.code == "INTAKE"
+        ).first()
+
+        if intake_status:
+            # Create validation request
+            validation_request = ValidationRequest(
+                request_date=date.today(),
+                requestor_id=current_user.user_id,
+                validation_type_id=validation_request_data['type_id'],
+                priority_id=validation_request_data['priority_id'],
+                target_completion_date=validation_request_data['target_date'],
+                trigger_reason=validation_request_data['trigger_reason'] or "Auto-created with new model",
+                current_status_id=intake_status.value_id,
+                created_at=datetime.utcnow(),
+                updated_at=datetime.utcnow()
+            )
+            db.add(validation_request)
+            db.flush()
+
+            # Associate model with validation request, including version if implementation date was set
+            assoc = ValidationRequestModelVersion(
+                request_id=validation_request.request_id,
+                model_id=model.model_id,
+                version_id=initial_version.version_id if initial_implementation_date else None
+            )
+            db.add(assoc)
+
+            # Create initial status history entry
+            from app.models import ValidationStatusHistory
+            status_history = ValidationStatusHistory(
+                request_id=validation_request.request_id,
+                old_status_id=None,
+                new_status_id=intake_status.value_id,
+                changed_by_id=current_user.user_id,
+                changed_at=datetime.utcnow(),
+                change_reason="Auto-created with new model"
+            )
+            db.add(status_history)
+
+            # Create audit log for validation request
+            validation_audit = AuditLog(
+                entity_type="ValidationRequest",
+                entity_id=validation_request.request_id,
+                action="CREATE",
+                user_id=current_user.user_id,
+                changes={
+                    "model_id": model.model_id,
+                    "model_name": model.model_name,
+                    "auto_created": True
+                },
+                timestamp=datetime.utcnow()
+            )
+            db.add(validation_audit)
+            db.commit()
 
     # Reload with relationships
     model = db.query(Model).options(
@@ -187,7 +322,13 @@ def create_model(
         joinedload(Model.regulatory_categories)
     ).filter(Model.model_id == model.model_id).first()
 
-    return model
+    # Return model with warnings if any
+    # Convert model to dict and add warnings
+    from pydantic import TypeAdapter
+    model_dict = ModelCreateResponse.model_validate(model).model_dump()
+    if warnings:
+        model_dict['warnings'] = warnings
+    return model_dict
 
 
 @router.get("/{model_id}", response_model=ModelDetailResponse)

@@ -1,10 +1,10 @@
 import { useState, useEffect } from 'react';
 import { Link, useSearchParams, useLocation } from 'react-router-dom';
-import { useAuth } from '../contexts/AuthContext';
 import api from '../api/client';
 import { regionsApi, Region } from '../api/regions';
 import Layout from '../components/Layout';
 import MultiSelectDropdown from '../components/MultiSelectDropdown';
+import ValidationWarningModal from '../components/ValidationWarningModal';
 
 interface ValidationRequest {
     request_id: number;
@@ -27,14 +27,36 @@ interface Model {
     model_name: string;
 }
 
+interface ModelVersion {
+    version_id: number;
+    version_number: string;
+    production_date: string | null;
+    status: string;
+}
+
 interface TaxonomyValue {
     value_id: number;
     code: string;
     label: string;
 }
 
+interface ValidationWarning {
+    warning_type: string;
+    severity: string;
+    model_id: number;
+    model_name: string;
+    version_number?: string;
+    message: string;
+    details?: Record<string, any>;
+}
+
+interface ValidationWarningsResponse {
+    has_warnings: boolean;
+    can_proceed: boolean;
+    warnings: ValidationWarning[];
+}
+
 export default function ValidationWorkflowPage() {
-    const { user } = useAuth();
     const [searchParams] = useSearchParams();
     const location = useLocation();
     const [requests, setRequests] = useState<ValidationRequest[]>([]);
@@ -51,6 +73,12 @@ export default function ValidationWorkflowPage() {
     const [loadingRegionSuggestions, setLoadingRegionSuggestions] = useState(false);
     const [showRegionWarning, setShowRegionWarning] = useState(false);
     const [missingRegions, setMissingRegions] = useState<Region[]>([]);
+    const [modelVersions, setModelVersions] = useState<{ [modelId: number]: ModelVersion[] }>({});
+    const [selectedVersions, setSelectedVersions] = useState<{ [modelId: number]: number | null }>({});
+    const [loadingVersions, setLoadingVersions] = useState(false);
+    const [showValidationWarnings, setShowValidationWarnings] = useState(false);
+    const [validationWarnings, setValidationWarnings] = useState<ValidationWarning[]>([]);
+    const [canProceedWithWarnings, setCanProceedWithWarnings] = useState(false);
 
     const [formData, setFormData] = useState({
         model_ids: [] as number[],  // Support multiple models
@@ -261,6 +289,52 @@ export default function ValidationWorkflowPage() {
         }
     };
 
+    // Fetch versions for selected models
+    useEffect(() => {
+        const fetchVersions = async () => {
+            if (formData.model_ids.length === 0) {
+                setModelVersions({});
+                setSelectedVersions({});
+                return;
+            }
+
+            setLoadingVersions(true);
+            try {
+                const versionsPromises = formData.model_ids.map(modelId =>
+                    api.get(`/models/${modelId}/versions/`)
+                );
+                const versionsResponses = await Promise.all(versionsPromises);
+
+                const newModelVersions: { [modelId: number]: ModelVersion[] } = {};
+                const newSelectedVersions: { [modelId: number]: number | null } = {};
+
+                formData.model_ids.forEach((modelId, index) => {
+                    const versions = versionsResponses[index].data;
+                    newModelVersions[modelId] = versions;
+
+                    // Auto-select the latest ACTIVE version if available, otherwise null
+                    const activeVersions = versions.filter((v: ModelVersion) => v.status === 'ACTIVE');
+                    if (activeVersions.length > 0) {
+                        // Sort by version_id descending to get latest
+                        activeVersions.sort((a: ModelVersion, b: ModelVersion) => b.version_id - a.version_id);
+                        newSelectedVersions[modelId] = activeVersions[0].version_id;
+                    } else {
+                        newSelectedVersions[modelId] = null;
+                    }
+                });
+
+                setModelVersions(newModelVersions);
+                setSelectedVersions(newSelectedVersions);
+            } catch (err) {
+                console.error('Failed to fetch model versions:', err);
+            } finally {
+                setLoadingVersions(false);
+            }
+        };
+
+        fetchVersions();
+    }, [formData.model_ids]);
+
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         setError(null);
@@ -268,6 +342,31 @@ export default function ValidationWorkflowPage() {
         if (formData.model_ids.length === 0 || !formData.validation_type_id || !formData.priority_id) {
             setError('Please fill in all required fields (at least one model must be selected)');
             return;
+        }
+
+        // Check for target completion date warnings
+        if (formData.target_completion_date) {
+            try {
+                const payload = {
+                    ...formData,
+                    model_versions: selectedVersions,
+                    check_warnings: true  // Flag to check without creating
+                };
+                const response = await api.post('/validation-workflow/requests/', payload);
+                const warningsData: ValidationWarningsResponse = response.data;
+
+                if (warningsData.has_warnings) {
+                    // Show warning modal
+                    setValidationWarnings(warningsData.warnings);
+                    setCanProceedWithWarnings(warningsData.can_proceed);
+                    setShowValidationWarnings(true);
+                    return;
+                }
+            } catch (err: any) {
+                console.error('Failed to check warnings:', err);
+                setError(err.response?.data?.detail || 'Failed to validate request');
+                return;
+            }
         }
 
         // Check if models have regional scope that isn't covered
@@ -291,7 +390,8 @@ export default function ValidationWorkflowPage() {
     const submitValidationRequest = async () => {
         try {
             const payload = {
-                ...formData
+                ...formData,
+                model_versions: selectedVersions  // Add version tracking
             };
             await api.post('/validation-workflow/requests/', payload);
             setShowForm(false);
@@ -305,6 +405,8 @@ export default function ValidationWorkflowPage() {
                 trigger_reason: '',
                 region_ids: []
             });
+            setSelectedVersions({});
+            setModelVersions({});
             fetchData();
         } catch (err: any) {
             console.error('Failed to create request:', err);
@@ -441,6 +543,55 @@ export default function ValidationWorkflowPage() {
                                         ) : (
                                             <div className="text-xs text-gray-500 italic">
                                                 No previous grouping suggestions available for this model
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
+
+                                {/* Model Version Selection */}
+                                {formData.model_ids.length > 0 && (
+                                    <div className="mt-4">
+                                        <label className="block text-sm font-medium mb-2">
+                                            Model Versions (Optional)
+                                        </label>
+                                        <p className="text-xs text-gray-600 mb-3">
+                                            Select the specific version being validated for each model. If no version is selected, the validation will apply to the model generally.
+                                        </p>
+                                        {loadingVersions ? (
+                                            <div className="text-sm text-gray-500 italic">Loading versions...</div>
+                                        ) : (
+                                            <div className="space-y-2">
+                                                {formData.model_ids.map(modelId => {
+                                                    const model = models.find(m => m.model_id === modelId);
+                                                    const versions = modelVersions[modelId] || [];
+                                                    return (
+                                                        <div key={modelId} className="bg-gray-50 p-3 rounded border border-gray-200">
+                                                            <div className="flex items-start gap-3">
+                                                                <div className="flex-1">
+                                                                    <label className="block text-xs font-medium text-gray-700 mb-1">
+                                                                        {model?.model_name}
+                                                                    </label>
+                                                                    <select
+                                                                        className="input-field text-sm"
+                                                                        value={selectedVersions[modelId] || ''}
+                                                                        onChange={(e) => setSelectedVersions({
+                                                                            ...selectedVersions,
+                                                                            [modelId]: e.target.value ? parseInt(e.target.value) : null
+                                                                        })}
+                                                                    >
+                                                                        <option value="">No specific version (general validation)</option>
+                                                                        {versions.map((v: ModelVersion) => (
+                                                                            <option key={v.version_id} value={v.version_id}>
+                                                                                {v.version_number} - {v.status}
+                                                                                {v.production_date ? ` (Implemented: ${new Date(v.production_date).toLocaleDateString()})` : ''}
+                                                                            </option>
+                                                                        ))}
+                                                                    </select>
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    );
+                                                })}
                                             </div>
                                         )}
                                     </div>
@@ -644,6 +795,28 @@ export default function ValidationWorkflowPage() {
                         </div>
                     </div>
                 </div>
+            )}
+
+            {/* Target Completion Date Warnings Modal */}
+            {showValidationWarnings && (
+                <ValidationWarningModal
+                    warnings={validationWarnings}
+                    canProceed={canProceedWithWarnings}
+                    onClose={() => {
+                        setShowValidationWarnings(false);
+                        setValidationWarnings([]);
+                    }}
+                    onProceed={async () => {
+                        setShowValidationWarnings(false);
+                        setValidationWarnings([]);
+                        await submitValidationRequest();
+                    }}
+                    onAmend={() => {
+                        setShowValidationWarnings(false);
+                        setValidationWarnings([]);
+                        // User can now edit the target_completion_date field in the form
+                    }}
+                />
             )}
 
             {/* Filters */}
