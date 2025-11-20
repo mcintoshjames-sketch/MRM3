@@ -319,10 +319,14 @@ def seed_database():
 
         # Create regions
         default_regions = [
-            {"code": "US", "name": "United States", "requires_regional_approval": True},
-            {"code": "UK", "name": "United Kingdom", "requires_regional_approval": True},
-            {"code": "EU", "name": "European Union", "requires_regional_approval": True},
-            {"code": "APAC", "name": "Asia Pacific", "requires_regional_approval": True},
+            {"code": "US", "name": "United States",
+                "requires_regional_approval": True},
+            {"code": "UK", "name": "United Kingdom",
+                "requires_regional_approval": True},
+            {"code": "EU", "name": "European Union",
+                "requires_regional_approval": True},
+            {"code": "APAC", "name": "Asia Pacific",
+                "requires_regional_approval": True},
         ]
 
         for region_data in default_regions:
@@ -331,7 +335,8 @@ def seed_database():
             if not existing:
                 region = Region(**region_data)
                 db.add(region)
-                print(f"✓ Created region: {region_data['name']} ({region_data['code']})")
+                print(
+                    f"✓ Created region: {region_data['name']} ({region_data['code']})")
             else:
                 print(f"✓ Region already exists: {region_data['name']}")
 
@@ -933,7 +938,8 @@ def seed_database():
                         added_count += 1
 
                 if added_count > 0:
-                    print(f"✓ Updated taxonomy: {tax_data['name']} (added {added_count} new values)")
+                    print(
+                        f"✓ Updated taxonomy: {tax_data['name']} (added {added_count} new values)")
                 else:
                     print(f"✓ Taxonomy already exists: {tax_data['name']}")
 
@@ -1014,29 +1020,16 @@ def seed_database():
                             updated_at=datetime.utcnow()
                         )
                         db.add(policy)
-                        print(f"✓ Created validation policy for {tier_value.label}")
+                        print(
+                            f"✓ Created validation policy for {tier_value.label}")
                     else:
-                        # Update existing policy to ensure it has canonical values
-                        updated = False
-                        if existing_policy.frequency_months != policy_config["frequency_months"]:
-                            existing_policy.frequency_months = policy_config["frequency_months"]
-                            updated = True
-                        if existing_policy.model_change_lead_time_days != policy_config["model_change_lead_time_days"]:
-                            existing_policy.model_change_lead_time_days = policy_config["model_change_lead_time_days"]
-                            updated = True
-                        if existing_policy.description != policy_config["description"]:
-                            existing_policy.description = policy_config["description"]
-                            updated = True
-
-                        if updated:
-                            existing_policy.updated_at = datetime.utcnow()
-                            print(f"✓ Updated validation policy for {tier_value.label}")
-                        else:
-                            print(f"✓ Validation policy already exists for {tier_value.label}")
+                        print(
+                            f"✓ Validation policy already exists for {tier_value.label} (skipping update to preserve user changes)")
 
             db.commit()
         else:
-            print("⚠ Model Risk Tier taxonomy not found - skipping validation policy seeding")
+            print(
+                "⚠ Model Risk Tier taxonomy not found - skipping validation policy seeding")
 
         # Create demo models with validations to demonstrate overdue logic
         print("\n=== Creating Demo Data for Overdue Validation Dashboard ===")
@@ -1064,7 +1057,8 @@ def seed_database():
             today = date.today()
 
             # Model A: Completely overdue (last validated 24 months ago)
-            model_a_exists = db.query(Model).filter(Model.model_name == "Demo: Overdue Model").first()
+            model_a_exists = db.query(Model).filter(
+                Model.model_name == "Demo: Overdue Model").first()
             if not model_a_exists:
                 model_a = Model(
                     model_name="Demo: Overdue Model",
@@ -1084,15 +1078,18 @@ def seed_database():
                     validator_id=validator.user_id,
                     validation_type_id=annual_val_type.value_id,
                     outcome_id=pass_outcome.value_id,
-                    validation_date=today - timedelta(days=24*30),  # 24 months ago
+                    validation_date=today -
+                    timedelta(days=24*30),  # 24 months ago
                     findings_summary="Annual validation completed. Model performing as expected.",
                     created_at=datetime.utcnow()
                 )
                 db.add(validation_a)
-                print("✓ Created 'Demo: Overdue Model' (24 months since last validation - OVERDUE)")
+                print(
+                    "✓ Created 'Demo: Overdue Model' (24 months since last validation - OVERDUE)")
 
             # Model B: Submission overdue but validation not yet due (last validated 20 months ago)
-            model_b_exists = db.query(Model).filter(Model.model_name == "Demo: Submission Overdue").first()
+            model_b_exists = db.query(Model).filter(
+                Model.model_name == "Demo: Submission Overdue").first()
             if not model_b_exists:
                 model_b = Model(
                     model_name="Demo: Submission Overdue",
@@ -1112,15 +1109,18 @@ def seed_database():
                     validator_id=validator.user_id,
                     validation_type_id=annual_val_type.value_id,
                     outcome_id=pass_outcome.value_id,
-                    validation_date=today - timedelta(days=20*30),  # 20 months ago
+                    validation_date=today -
+                    timedelta(days=20*30),  # 20 months ago
                     findings_summary="Annual validation completed.",
                     created_at=datetime.utcnow()
                 )
                 db.add(validation_b)
-                print("✓ Created 'Demo: Submission Overdue' (20 months - submission grace passed)")
+                print(
+                    "✓ Created 'Demo: Submission Overdue' (20 months - submission grace passed)")
 
             # Model C: Due soon but not overdue (last validated 17 months ago)
-            model_c_exists = db.query(Model).filter(Model.model_name == "Demo: Due Soon").first()
+            model_c_exists = db.query(Model).filter(
+                Model.model_name == "Demo: Due Soon").first()
             if not model_c_exists:
                 model_c = Model(
                     model_name="Demo: Due Soon",
@@ -1140,15 +1140,18 @@ def seed_database():
                     validator_id=validator.user_id,
                     validation_type_id=annual_val_type.value_id,
                     outcome_id=pass_outcome.value_id,
-                    validation_date=today - timedelta(days=17*30),  # 17 months ago
+                    validation_date=today -
+                    timedelta(days=17*30),  # 17 months ago
                     findings_summary="Annual validation completed.",
                     created_at=datetime.utcnow()
                 )
                 db.add(validation_c)
-                print("✓ Created 'Demo: Due Soon' (17 months - submission due within 1 month)")
+                print(
+                    "✓ Created 'Demo: Due Soon' (17 months - submission due within 1 month)")
 
             # Model D: Never validated (Tier 3)
-            model_d_exists = db.query(Model).filter(Model.model_name == "Demo: Never Validated").first()
+            model_d_exists = db.query(Model).filter(
+                Model.model_name == "Demo: Never Validated").first()
             if not model_d_exists:
                 model_d = Model(
                     model_name="Demo: Never Validated",
@@ -1163,7 +1166,8 @@ def seed_database():
                 print("✓ Created 'Demo: Never Validated' (no validation history)")
 
             # Model E: Recently validated (compliant)
-            model_e_exists = db.query(Model).filter(Model.model_name == "Demo: Compliant Model").first()
+            model_e_exists = db.query(Model).filter(
+                Model.model_name == "Demo: Compliant Model").first()
             if not model_e_exists:
                 model_e = Model(
                     model_name="Demo: Compliant Model",
@@ -1183,17 +1187,20 @@ def seed_database():
                     validator_id=validator.user_id,
                     validation_type_id=annual_val_type.value_id,
                     outcome_id=pass_outcome.value_id,
-                    validation_date=today - timedelta(days=6*30),  # 6 months ago
+                    validation_date=today -
+                    timedelta(days=6*30),  # 6 months ago
                     findings_summary="Annual validation completed. Model is compliant.",
                     created_at=datetime.utcnow()
                 )
                 db.add(validation_e)
-                print("✓ Created 'Demo: Compliant Model' (6 months - well within compliance)")
+                print(
+                    "✓ Created 'Demo: Compliant Model' (6 months - well within compliance)")
 
             db.commit()
             print("✓ Demo data creation completed\n")
         else:
-            print("⚠ Missing required taxonomy values or users - skipping demo data creation\n")
+            print(
+                "⚠ Missing required taxonomy values or users - skipping demo data creation\n")
 
         print("Seeding completed successfully!")
 
