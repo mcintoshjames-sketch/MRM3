@@ -120,6 +120,12 @@ class ValidationRequestDecline(BaseModel):
     decline_reason: str
 
 
+class ValidationRequestMarkSubmission(BaseModel):
+    """Schema for marking submission received."""
+    submission_received_date: date
+    notes: Optional[str] = None
+
+
 class ValidationApprovalUnlink(BaseModel):
     """Schema for admin unlinking a regional approval."""
     unlink_reason: str
@@ -368,6 +374,23 @@ class ValidationRequestResponse(BaseModel):
     approvals: List[ValidationApprovalResponse] = []  # Added for Phase 5: Smart Approver Assignment
     created_at: datetime
     updated_at: datetime
+
+    # Revalidation Lifecycle Fields
+    prior_validation_request_id: Optional[int] = None
+    submission_received_date: Optional[date] = None
+
+    # Computed revalidation lifecycle properties
+    is_periodic_revalidation: bool = False
+    submission_due_date: Optional[date] = None
+    submission_grace_period_end: Optional[date] = None
+    model_validation_due_date: Optional[date] = None
+    validation_team_sla_due_date: Optional[date] = None
+    submission_status: str = "N/A"
+    model_compliance_status: str = "N/A"
+    validation_team_sla_status: str = "N/A"
+    days_until_submission_due: Optional[int] = None
+    days_until_model_validation_due: Optional[int] = None
+    days_until_team_sla_due: Optional[int] = None
 
     class Config:
         from_attributes = True

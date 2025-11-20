@@ -1,6 +1,7 @@
 """Validation workflow API endpoints."""
-from datetime import datetime, date
-from typing import List, Optional, Union
+from datetime import datetime, date, timedelta
+from dateutil.relativedelta import relativedelta
+from typing import List, Optional, Union, Dict
 import json
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session, joinedload
@@ -12,11 +13,11 @@ from app.models import (
     User, Model, TaxonomyValue, Taxonomy, AuditLog,
     ValidationRequest, ValidationRequestModelVersion, ValidationStatusHistory, ValidationAssignment,
     ValidationOutcome, ValidationReviewOutcome, ValidationApproval, ValidationGroupingMemory,
-    ModelRegion, Region
+    ValidationPolicy, ModelRegion, Region
 )
 from app.schemas.validation import (
     ValidationRequestCreate, ValidationRequestUpdate, ValidationRequestStatusUpdate,
-    ValidationRequestDecline, ValidationApprovalUnlink,
+    ValidationRequestDecline, ValidationRequestMarkSubmission, ValidationApprovalUnlink,
     ValidationWarning, ValidationRequestWarningsResponse,
     ValidationRequestResponse, ValidationRequestDetailResponse, ValidationRequestListResponse,
     ValidationAssignmentCreate, ValidationAssignmentUpdate, ValidationAssignmentResponse,
@@ -470,7 +471,210 @@ def auto_assign_approvers(
         db.add(audit_log)
 
 
+# ==================== REVALIDATION LIFECYCLE HELPERS ====================
+
+def calculate_model_revalidation_status(model: Model, db: Session) -> Dict:
+    """
+    Calculate revalidation status for a model dynamically.
+    No stored schedule - computed from last validation + policy.
+
+    Returns dict with:
+        - model_id, model_name, model_owner, risk_tier
+        - status: "Never Validated" | "No Policy Configured" | "Upcoming" |
+                  "Awaiting Submission" | "In Grace Period" | "Submission Overdue" |
+                  "Validation In Progress" | "Validation Overdue" | "Revalidation Overdue (No Request)" |
+                  "Should Create Request"
+        - last_validation_date, next_submission_due, grace_period_end, next_validation_due
+        - days_until_submission_due, days_until_validation_due
+        - active_request_id, submission_received
+    """
+
+    # Find most recent APPROVED validation for this model
+    last_validation = db.query(ValidationRequest).join(
+        ValidationRequestModelVersion
+    ).filter(
+        ValidationRequestModelVersion.model_id == model.model_id,
+        ValidationRequest.current_status.has(TaxonomyValue.code == "APPROVED")
+    ).order_by(
+        ValidationRequest.updated_at.desc()
+    ).first()
+
+    if not last_validation:
+        return {
+            "model_id": model.model_id,
+            "model_name": model.model_name,
+            "model_owner": model.owner.full_name if model.owner else "Unknown",
+            "risk_tier": model.risk_tier.label if model.risk_tier else None,
+            "status": "Never Validated",
+            "last_validation_date": None,
+            "next_submission_due": None,
+            "grace_period_end": None,
+            "next_validation_due": None,
+            "days_until_submission_due": None,
+            "days_until_validation_due": None,
+            "active_request_id": None,
+            "submission_received": None
+        }
+
+    # Get validation policy for this model's risk tier
+    policy = db.query(ValidationPolicy).filter(
+        ValidationPolicy.risk_tier_id == model.risk_tier_id
+    ).first()
+
+    if not policy:
+        return {
+            "model_id": model.model_id,
+            "model_name": model.model_name,
+            "model_owner": model.owner.full_name if model.owner else "Unknown",
+            "risk_tier": model.risk_tier.label if model.risk_tier else None,
+            "status": "No Policy Configured",
+            "last_validation_date": last_validation.updated_at.date(),
+            "next_submission_due": None,
+            "grace_period_end": None,
+            "next_validation_due": None,
+            "days_until_submission_due": None,
+            "days_until_validation_due": None,
+            "active_request_id": None,
+            "submission_received": None
+        }
+
+    # Calculate dates
+    last_completed = last_validation.updated_at.date()
+    submission_due = last_completed + relativedelta(months=policy.frequency_months)
+    grace_period_end = submission_due + relativedelta(months=3)
+    validation_due = grace_period_end + timedelta(days=policy.model_change_lead_time_days)
+
+    # Check if active revalidation request exists
+    active_request = db.query(ValidationRequest).join(
+        ValidationRequestModelVersion
+    ).filter(
+        ValidationRequestModelVersion.model_id == model.model_id,
+        ValidationRequest.validation_type.has(TaxonomyValue.code.in_(["COMPREHENSIVE", "ANNUAL"])),
+        ValidationRequest.prior_validation_request_id == last_validation.request_id,
+        ValidationRequest.current_status.has(TaxonomyValue.code.notin_(["APPROVED", "CANCELLED"]))
+    ).first()
+
+    today = date.today()
+
+    # Determine status
+    if active_request:
+        if not active_request.submission_received_date:
+            if today > grace_period_end:
+                status = "Submission Overdue"
+            elif today > submission_due:
+                status = "In Grace Period"
+            else:
+                status = "Awaiting Submission"
+        else:
+            if today > validation_due:
+                status = "Validation Overdue"
+            else:
+                status = "Validation In Progress"
+    else:
+        # No active request
+        if today > validation_due:
+            status = "Revalidation Overdue (No Request)"
+        elif today > grace_period_end:
+            status = "Should Create Request"
+        else:
+            status = "Upcoming"
+
+    return {
+        "model_id": model.model_id,
+        "model_name": model.model_name,
+        "model_owner": model.owner.full_name if model.owner else "Unknown",
+        "risk_tier": model.risk_tier.label if model.risk_tier else None,
+        "status": status,
+        "last_validation_date": last_completed,
+        "next_submission_due": submission_due,
+        "grace_period_end": grace_period_end,
+        "next_validation_due": validation_due,
+        "days_until_submission_due": (submission_due - today).days,
+        "days_until_validation_due": (validation_due - today).days,
+        "active_request_id": active_request.request_id if active_request else None,
+        "submission_received": active_request.submission_received_date if active_request else None
+    }
+
+
+def get_models_needing_revalidation(
+    db: Session,
+    days_ahead: int = 90,
+    include_overdue: bool = True
+) -> List[Dict]:
+    """
+    Get all models that need revalidation (upcoming or overdue).
+    Calculates dynamically - no stored schedule.
+
+    Args:
+        db: Database session
+        days_ahead: Look ahead this many days for upcoming revalidations
+        include_overdue: Include models with overdue revalidations
+
+    Returns:
+        List of revalidation status dicts sorted by submission due date
+    """
+
+    today = date.today()
+    results = []
+
+    # Get all active models with risk tiers (needed for policy lookup)
+    models = db.query(Model).filter(
+        Model.status == "Active",
+        Model.risk_tier_id.isnot(None)
+    ).all()
+
+    for model in models:
+        revalidation_status = calculate_model_revalidation_status(model, db)
+
+        # Filter based on criteria
+        if include_overdue and "Overdue" in revalidation_status["status"]:
+            results.append(revalidation_status)
+        elif revalidation_status["days_until_submission_due"] is not None:
+            if revalidation_status["days_until_submission_due"] <= days_ahead:
+                results.append(revalidation_status)
+
+    # Sort by submission due date (None values go to end)
+    results.sort(key=lambda x: x["next_submission_due"] if x["next_submission_due"] else date.max)
+
+    return results
+
+
 # ==================== VALIDATION REQUEST ENDPOINTS ====================
+
+@router.get("/test/revalidation-status/{model_id}")
+def test_revalidation_status(
+    model_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    TEST ENDPOINT: Get revalidation status for a specific model.
+    For testing Phase 2 helper functions.
+    """
+    model = db.query(Model).filter(Model.model_id == model_id).first()
+
+    if not model:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Model {model_id} not found"
+        )
+
+    return calculate_model_revalidation_status(model, db)
+
+
+@router.get("/test/models-needing-revalidation")
+def test_models_needing_revalidation(
+    days_ahead: int = Query(90, description="Look ahead this many days"),
+    include_overdue: bool = Query(True, description="Include overdue models"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    TEST ENDPOINT: Get all models needing revalidation.
+    For testing Phase 2 helper functions.
+    """
+    return get_models_needing_revalidation(db, days_ahead, include_overdue)
+
 
 @router.post("/requests/check-warnings", response_model=ValidationRequestWarningsResponse)
 def check_validation_request_warnings(
@@ -610,6 +814,9 @@ def create_validation_request(
     # Associate regions using the many-to-many relationship
     if regions:
         validation_request.regions.extend(regions)
+
+    # Flush to populate relationships before auto-assigning approvers
+    db.flush()
 
     # Create initial status history entry
     create_status_history_entry(
@@ -874,6 +1081,112 @@ def update_validation_request(
             timestamp=datetime.utcnow()
         )
         db.add(audit_log)
+
+    db.commit()
+    db.refresh(validation_request)
+    return validation_request
+
+
+@router.post("/requests/{request_id}/mark-submission", response_model=ValidationRequestResponse)
+def mark_submission_received(
+    request_id: int,
+    submission_data: ValidationRequestMarkSubmission,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Mark submission as received and auto-transition from Planning to In Progress.
+    This action starts the validation team's SLA timer.
+    """
+    check_validator_or_admin(current_user)
+
+    validation_request = db.query(ValidationRequest).options(
+        joinedload(ValidationRequest.models),
+        joinedload(ValidationRequest.requestor),
+        joinedload(ValidationRequest.validation_type),
+        joinedload(ValidationRequest.priority),
+        joinedload(ValidationRequest.current_status),
+        joinedload(ValidationRequest.regions)
+    ).filter(
+        ValidationRequest.request_id == request_id
+    ).first()
+
+    if not validation_request:
+        raise HTTPException(
+            status_code=404, detail="Validation request not found")
+
+    # Check if submission already received
+    if validation_request.submission_received_date:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Submission already marked as received on {validation_request.submission_received_date}"
+        )
+
+    # Validate submission date is not in the future
+    if submission_data.submission_received_date > date.today():
+        raise HTTPException(
+            status_code=400,
+            detail="Submission date cannot be in the future"
+        )
+
+    # Update submission_received_date
+    old_date = validation_request.submission_received_date
+    validation_request.submission_received_date = submission_data.submission_received_date
+
+    # Auto-transition from Planning to In Progress
+    current_status_code = validation_request.current_status.code if validation_request.current_status else None
+    auto_transitioned = False
+
+    if current_status_code == "PLANNING":
+        # Get IN_PROGRESS status
+        in_progress_status = get_taxonomy_value_by_code(
+            db, "Validation Request Status", "IN_PROGRESS")
+
+        if in_progress_status:
+            old_status = validation_request.current_status
+            validation_request.current_status_id = in_progress_status.value_id
+            auto_transitioned = True
+
+            # Create status history entry
+            status_history = ValidationStatusHistory(
+                request_id=request_id,
+                old_status_id=old_status.value_id if old_status else None,
+                new_status_id=in_progress_status.value_id,
+                changed_by_id=current_user.user_id,
+                change_reason=f"Auto-transitioned when submission received on {submission_data.submission_received_date}",
+                changed_at=datetime.utcnow()
+            )
+            db.add(status_history)
+
+    validation_request.updated_at = datetime.utcnow()
+
+    # Create audit log
+    changes = {
+        "submission_received_date": {
+            "old": str(old_date) if old_date else None,
+            "new": str(submission_data.submission_received_date)
+        }
+    }
+
+    if auto_transitioned:
+        changes["status_auto_transition"] = {
+            "from": "Planning",
+            "to": "In Progress",
+            "reason": "Submission received"
+        }
+
+    if submission_data.notes:
+        changes["notes"] = submission_data.notes
+
+    audit_log = AuditLog(
+        entity_type="ValidationRequest",
+        entity_id=request_id,
+        action="MARK_SUBMISSION_RECEIVED",
+        user_id=current_user.user_id,
+        changes=changes,
+        timestamp=datetime.utcnow()
+    )
+    db.add(audit_log)
 
     db.commit()
     db.refresh(validation_request)
@@ -2036,118 +2349,78 @@ def get_sla_violations(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Get all SLA violations for validation requests (Admin only)."""
+    """
+    Get validation team SLA violations (Admin only).
+
+    Shows validations where time from submission_received_date to now (or completion)
+    exceeds the lead time specified in the validation policy for the model's risk tier.
+    """
     check_admin(current_user)
 
-    # Get SLA configuration
-    from app.models.validation import ValidationWorkflowSLA
-    sla_config = db.query(ValidationWorkflowSLA).filter(
-        ValidationWorkflowSLA.workflow_type == "Validation"
-    ).first()
+    from app.models.validation import ValidationPolicy
 
-    if not sla_config:
-        return []
-
-    # Get all non-terminal validation requests
+    # Get all active (non-terminal) validation requests with submission received
     requests = db.query(ValidationRequest).options(
-        joinedload(ValidationRequest.models),
+        joinedload(ValidationRequest.models).joinedload(Model.risk_tier),
         joinedload(ValidationRequest.current_status),
-        joinedload(ValidationRequest.priority),
-        joinedload(ValidationRequest.assignments).joinedload(
-            ValidationAssignment.validator),
-        joinedload(ValidationRequest.status_history).joinedload(
-            ValidationStatusHistory.new_status)
+        joinedload(ValidationRequest.priority)
+    ).filter(
+        ValidationRequest.submission_received_date.isnot(None),
+        ValidationRequest.current_status.has(
+            TaxonomyValue.code.notin_(["APPROVED", "CANCELLED"])
+        )
     ).all()
 
     violations = []
     now = datetime.utcnow()
 
     for req in requests:
-        if not req.current_status or req.current_status.code in ["APPROVED", "CANCELLED"]:
+        if not req.models:
             continue
 
-        model_names = [m.model_name for m in req.models] if req.models else []
-        # Check Assignment SLA (from request_date to first assignment)
-        if req.current_status.code in ["INTAKE", "PLANNING"]:
-            days_since_request = (now - req.created_at).days
-            if days_since_request > sla_config.assignment_days:
-                primary_assignment = next(
-                    (a for a in req.assignments if a.is_primary), None)
-                if not primary_assignment:
-                    violations.append({
-                        "request_id": req.request_id,
-                        "model_names": model_names,
-                        "violation_type": "Assignment Overdue",
-                        "sla_days": sla_config.assignment_days,
-                        "actual_days": days_since_request,
-                        "days_overdue": days_since_request - sla_config.assignment_days,
-                        "current_status": req.current_status.label,
-                        "priority": req.priority.label if req.priority else "Unknown",
-                        "severity": "high" if (days_since_request - sla_config.assignment_days) > 5 else "medium",
-                        "timestamp": req.created_at.isoformat()
-                    })
+        # Use first model's risk tier to determine policy
+        model = req.models[0]
+        if not model.risk_tier:
+            continue
 
-        # Check Begin Work SLA (from assignment to IN_PROGRESS)
-        primary_assignment = next(
-            (a for a in req.assignments if a.is_primary), None)
-        if primary_assignment and req.current_status.code == "PLANNING":
-            days_since_assignment = (
-                now.date() - primary_assignment.assignment_date).days
-            if days_since_assignment > sla_config.begin_work_days:
-                violations.append({
-                    "request_id": req.request_id,
-                    "model_names": model_names,
-                    "violation_type": "Begin Work Overdue",
-                    "sla_days": sla_config.begin_work_days,
-                    "actual_days": days_since_assignment,
-                    "days_overdue": days_since_assignment - sla_config.begin_work_days,
-                    "current_status": req.current_status.label,
-                    "priority": req.priority.label if req.priority else "Unknown",
-                    "severity": "high" if (days_since_assignment - sla_config.begin_work_days) > 3 else "medium",
-                    "timestamp": primary_assignment.assignment_date.isoformat()
-                })
+        # Get validation policy for this risk tier
+        policy = db.query(ValidationPolicy).filter(
+            ValidationPolicy.risk_tier_id == model.risk_tier.value_id
+        ).first()
 
-        # Check Complete Work SLA (from assignment to REVIEW/PENDING_APPROVAL)
-        if primary_assignment and req.current_status.code == "IN_PROGRESS":
-            days_since_assignment = (
-                now.date() - primary_assignment.assignment_date).days
-            if days_since_assignment > sla_config.complete_work_days:
-                violations.append({
-                    "request_id": req.request_id,
-                    "model_names": model_names,
-                    "violation_type": "Work Completion Overdue",
-                    "sla_days": sla_config.complete_work_days,
-                    "actual_days": days_since_assignment,
-                    "days_overdue": days_since_assignment - sla_config.complete_work_days,
-                    "current_status": req.current_status.label,
-                    "priority": req.priority.label if req.priority else "Unknown",
-                    "severity": "critical" if (days_since_assignment - sla_config.complete_work_days) > 10 else "high",
-                    "timestamp": primary_assignment.assignment_date.isoformat()
-                })
+        if not policy:
+            continue
 
-        # Check Approval SLA (from PENDING_APPROVAL status to APPROVED)
-        if req.current_status.code == "PENDING_APPROVAL":
-            # Find when it moved to PENDING_APPROVAL
-            approval_history = next(
-                (h for h in sorted(req.status_history, key=lambda x: x.changed_at, reverse=True)
-                 if h.new_status.code == "PENDING_APPROVAL"),
-                None
-            )
-            if approval_history:
-                days_in_approval = (now - approval_history.changed_at).days
-                if days_in_approval > sla_config.approval_days:
-                    violations.append({
-                        "request_id": req.request_id,
-                        "model_names": model_names,
-                        "violation_type": "Approval Overdue",
-                        "sla_days": sla_config.approval_days,
-                        "actual_days": days_in_approval,
-                        "days_overdue": days_in_approval - sla_config.approval_days,
-                        "current_status": req.current_status.label,
-                        "priority": req.priority.label if req.priority else "Unknown",
-                        "severity": "critical" if (days_in_approval - sla_config.approval_days) > 5 else "high",
-                        "timestamp": approval_history.changed_at.isoformat()
-                    })
+        lead_time_days = policy.model_change_lead_time_days
+
+        # Calculate days since submission
+        days_since_submission = (now.date() - req.submission_received_date).days
+
+        # Check if lead time has been exceeded
+        if days_since_submission > lead_time_days:
+            model_name = model.model_name
+            days_overdue = days_since_submission - lead_time_days
+
+            # Calculate severity based on how overdue
+            if days_overdue > 30:
+                severity = "critical"
+            elif days_overdue > 14:
+                severity = "high"
+            else:
+                severity = "medium"
+
+            violations.append({
+                "request_id": req.request_id,
+                "model_name": model_name,
+                "violation_type": "Validation Lead Time Exceeded",
+                "sla_days": lead_time_days,
+                "actual_days": days_since_submission,
+                "days_overdue": days_overdue,
+                "current_status": req.current_status.label if req.current_status else "Unknown",
+                "priority": req.priority.label if req.priority else "Unknown",
+                "severity": severity,
+                "timestamp": req.submission_received_date.isoformat()
+            })
 
     # Sort by days overdue (most overdue first)
     return sorted(violations, key=lambda x: x["days_overdue"], reverse=True)
@@ -2322,3 +2595,287 @@ def get_pending_validator_assignments(
 
     # Sort by days pending (longest pending first)
     return sorted(pending, key=lambda x: x["days_pending"], reverse=True)
+
+
+# ==================== REVALIDATION LIFECYCLE ENDPOINTS ====================
+
+@router.patch("/requests/{request_id}/submit-documentation")
+def submit_documentation(
+    request_id: int,
+    submission_date: Optional[date] = None,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Mark documentation as received for a revalidation request.
+    Sets submission_received_date and creates audit log.
+
+    Args:
+        request_id: Validation request ID
+        submission_date: Date documentation was received (defaults to today)
+    """
+    # Get validation request
+    validation_request = db.query(ValidationRequest).filter(
+        ValidationRequest.request_id == request_id
+    ).first()
+
+    if not validation_request:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Validation request {request_id} not found"
+        )
+
+    # Check if this is a periodic revalidation
+    if not validation_request.is_periodic_revalidation:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Can only mark submission for periodic revalidations (COMPREHENSIVE or ANNUAL)"
+        )
+
+    # Check if submission already received
+    if validation_request.submission_received_date:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Submission already received on {validation_request.submission_received_date}"
+        )
+
+    # Set submission date (default to today)
+    received_date = submission_date if submission_date else date.today()
+
+    old_value = None
+    validation_request.submission_received_date = received_date
+
+    # Create audit log
+    audit_log = AuditLog(
+        entity_type="ValidationRequest",
+        entity_id=request_id,
+        action="SUBMIT_DOCUMENTATION",
+        user_id=current_user.user_id,
+        changes={
+            "submission_received_date": received_date.isoformat(),
+            "submission_status": validation_request.submission_status,
+            "validation_team_sla_due_date": validation_request.validation_team_sla_due_date.isoformat() if validation_request.validation_team_sla_due_date else None
+        },
+        timestamp=datetime.utcnow()
+    )
+    db.add(audit_log)
+    db.commit()
+    db.refresh(validation_request)
+
+    return {
+        "request_id": request_id,
+        "submission_received_date": validation_request.submission_received_date,
+        "submission_status": validation_request.submission_status,
+        "validation_team_sla_due_date": validation_request.validation_team_sla_due_date,
+        "days_until_team_sla_due": validation_request.days_until_team_sla_due,
+        "message": "Documentation submission recorded successfully"
+    }
+
+
+@router.get("/dashboard/overdue-submissions")
+def get_overdue_submissions(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Get models with overdue documentation submissions (past grace period).
+    Uses dynamic calculation from computed properties.
+    Admin only.
+    """
+    check_admin(current_user)
+
+    today = date.today()
+
+    # Find active revalidation requests without submissions
+    overdue_requests = db.query(ValidationRequest).filter(
+        ValidationRequest.validation_type.has(TaxonomyValue.code.in_(["COMPREHENSIVE", "ANNUAL"])),
+        ValidationRequest.submission_received_date.is_(None),
+        ValidationRequest.current_status.has(TaxonomyValue.code.in_(["INTAKE", "PLANNING"]))
+    ).all()
+
+    results = []
+    for req in overdue_requests:
+        # Use computed properties to check if overdue
+        if req.submission_grace_period_end and today > req.submission_grace_period_end:
+            # Get model info from first model in request
+            if req.model_versions_assoc and len(req.model_versions_assoc) > 0:
+                model_assoc = req.model_versions_assoc[0]
+                model = model_assoc.model
+
+                results.append({
+                    "request_id": req.request_id,
+                    "model_id": model.model_id,
+                    "model_name": model.model_name,
+                    "model_owner": model.owner.full_name if model.owner else "Unknown",
+                    "risk_tier": model.risk_tier.label if model.risk_tier else None,
+                    "submission_due_date": req.submission_due_date,
+                    "grace_period_end": req.submission_grace_period_end,
+                    "days_overdue": (today - req.submission_grace_period_end).days,
+                    "model_validation_due_date": req.model_validation_due_date,
+                    "submission_status": req.submission_status,
+                    "current_status": req.current_status.label if req.current_status else "Unknown"
+                })
+
+    # Sort by days overdue (most overdue first)
+    return sorted(results, key=lambda x: x["days_overdue"], reverse=True)
+
+
+@router.get("/dashboard/overdue-validations")
+def get_overdue_validations(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Get models with overdue validations (past model validation due date).
+    Uses dynamic calculation from computed properties.
+    Admin only.
+    """
+    check_admin(current_user)
+
+    today = date.today()
+
+    # Find active revalidation requests
+    active_requests = db.query(ValidationRequest).filter(
+        ValidationRequest.validation_type.has(TaxonomyValue.code.in_(["COMPREHENSIVE", "ANNUAL"])),
+        ValidationRequest.current_status.has(TaxonomyValue.code.notin_(["APPROVED", "CANCELLED"]))
+    ).all()
+
+    results = []
+    for req in active_requests:
+        # Use computed properties to check if validation is overdue
+        if req.model_validation_due_date and today > req.model_validation_due_date:
+            # Get model info from first model in request
+            if req.model_versions_assoc and len(req.model_versions_assoc) > 0:
+                model_assoc = req.model_versions_assoc[0]
+                model = model_assoc.model
+
+                results.append({
+                    "request_id": req.request_id,
+                    "model_id": model.model_id,
+                    "model_name": model.model_name,
+                    "model_owner": model.owner.full_name if model.owner else "Unknown",
+                    "risk_tier": model.risk_tier.label if model.risk_tier else None,
+                    "submission_due_date": req.submission_due_date,
+                    "submission_received_date": req.submission_received_date,
+                    "model_validation_due_date": req.model_validation_due_date,
+                    "days_overdue": (today - req.model_validation_due_date).days,
+                    "model_compliance_status": req.model_compliance_status,
+                    "current_status": req.current_status.label if req.current_status else "Unknown"
+                })
+
+    # Sort by days overdue (most overdue first)
+    return sorted(results, key=lambda x: x["days_overdue"], reverse=True)
+
+
+@router.get("/dashboard/upcoming-revalidations")
+def get_upcoming_revalidations(
+    days_ahead: int = Query(90, description="Look ahead this many days for upcoming revalidations"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Get models with revalidations due in next N days.
+    Uses dynamic calculation - no stored schedule table.
+    Admin only.
+    """
+    check_admin(current_user)
+
+    # Use helper function to calculate all revalidations
+    upcoming = get_models_needing_revalidation(
+        db=db,
+        days_ahead=days_ahead,
+        include_overdue=False  # Only upcoming, not overdue
+    )
+
+    return upcoming
+
+
+@router.get("/my-pending-submissions")
+def get_my_pending_submissions(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Get pending submission requests for models owned by the current user.
+    Shows revalidation requests awaiting documentation submission.
+    """
+    today = date.today()
+
+    # Find revalidation requests for models owned by current user
+    # that are awaiting submission
+    pending_requests = db.query(ValidationRequest).join(
+        ValidationRequestModelVersion
+    ).join(
+        Model
+    ).filter(
+        Model.owner_id == current_user.user_id,
+        ValidationRequest.validation_type.has(TaxonomyValue.code.in_(["COMPREHENSIVE", "ANNUAL"])),
+        ValidationRequest.submission_received_date.is_(None),
+        ValidationRequest.current_status.has(TaxonomyValue.code.in_(["INTAKE", "PLANNING"]))
+    ).all()
+
+    results = []
+    for req in pending_requests:
+        # Get model info from first model in request
+        if req.model_versions_assoc and len(req.model_versions_assoc) > 0:
+            model_assoc = req.model_versions_assoc[0]
+            model = model_assoc.model
+
+            # Determine urgency
+            if req.submission_due_date:
+                days_until_due = (req.submission_due_date - today).days
+                if days_until_due < 0:
+                    if req.submission_grace_period_end and today > req.submission_grace_period_end:
+                        urgency = "overdue"
+                    else:
+                        urgency = "in_grace_period"
+                elif days_until_due <= 30:
+                    urgency = "due_soon"
+                else:
+                    urgency = "upcoming"
+            else:
+                urgency = "unknown"
+
+            results.append({
+                "request_id": req.request_id,
+                "model_id": model.model_id,
+                "model_name": model.model_name,
+                "validation_type": req.validation_type.label if req.validation_type else "Unknown",
+                "priority": req.priority.label if req.priority else "Medium",
+                "request_date": req.request_date.isoformat() if req.request_date else str(req.created_at.date()),
+                "submission_due_date": req.submission_due_date.isoformat() if req.submission_due_date else None,
+                "grace_period_end": req.submission_grace_period_end.isoformat() if req.submission_grace_period_end else None,
+                "model_validation_due_date": req.model_validation_due_date.isoformat() if req.model_validation_due_date else None,
+                "days_until_submission_due": req.days_until_submission_due,
+                "days_until_validation_due": req.days_until_model_validation_due,
+                "submission_status": req.submission_status,
+                "model_compliance_status": req.model_compliance_status,
+                "urgency": urgency
+            })
+
+    # Sort by urgency (overdue first, then by days until due)
+    urgency_order = {"overdue": 0, "in_grace_period": 1, "due_soon": 2, "upcoming": 3, "unknown": 4}
+    return sorted(results, key=lambda x: (urgency_order.get(x["urgency"], 4), x["days_until_submission_due"] or 999))
+
+
+@router.get("/models/{model_id}/revalidation-status")
+def get_model_revalidation_status(
+    model_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Get revalidation status for a specific model.
+    Returns comprehensive revalidation timeline and status information.
+    """
+    # Get model
+    model = db.query(Model).filter(Model.model_id == model_id).first()
+
+    if not model:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Model {model_id} not found"
+        )
+
+    # Use helper function to calculate revalidation status
+    return calculate_model_revalidation_status(model, db)

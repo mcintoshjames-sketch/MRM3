@@ -105,6 +105,7 @@ interface ValidationRequestDetail {
     target_completion_date: string;
     trigger_reason: string | null;
     current_status: TaxonomyValue;
+    submission_received_date: string | null;
     created_at: string;
     updated_at: string;
     assignments: ValidationAssignment[];
@@ -147,6 +148,7 @@ export default function ValidationRequestDetailPage() {
     const [showEditAssignmentModal, setShowEditAssignmentModal] = useState(false);
     const [showOutcomeModal, setShowOutcomeModal] = useState(false);
     const [showApprovalModal, setShowApprovalModal] = useState(false);
+    const [showMarkSubmissionModal, setShowMarkSubmissionModal] = useState(false);
 
     const [statusOptions, setStatusOptions] = useState<TaxonomyValue[]>([]);
     const [ratingOptions, setRatingOptions] = useState<TaxonomyValue[]>([]);
@@ -184,6 +186,10 @@ export default function ValidationRequestDetailPage() {
     });
     const [showSelectPrimaryModal, setShowSelectPrimaryModal] = useState(false);
     const [deleteAssignmentData, setDeleteAssignmentData] = useState({ assignment_id: 0, new_primary_id: 0 });
+    const [submissionData, setSubmissionData] = useState({
+        submission_received_date: new Date().toISOString().split('T')[0],
+        notes: ''
+    });
 
     useEffect(() => {
         fetchData();
@@ -333,6 +339,30 @@ export default function ValidationRequestDetailPage() {
             fetchData();
         } catch (err: any) {
             setError(err.response?.data?.detail || 'Failed to update status');
+        } finally {
+            setActionLoading(false);
+        }
+    };
+
+    const handleMarkSubmission = async () => {
+        if (!submissionData.submission_received_date) {
+            setError('Submission date is required');
+            return;
+        }
+        setActionLoading(true);
+        try {
+            await api.post(`/validation-workflow/requests/${id}/mark-submission`, {
+                submission_received_date: submissionData.submission_received_date,
+                notes: submissionData.notes || null
+            });
+            setShowMarkSubmissionModal(false);
+            setSubmissionData({
+                submission_received_date: new Date().toISOString().split('T')[0],
+                notes: ''
+            });
+            fetchData();
+        } catch (err: any) {
+            setError(err.response?.data?.detail || 'Failed to mark submission received');
         } finally {
             setActionLoading(false);
         }
@@ -702,6 +732,19 @@ export default function ValidationRequestDetailPage() {
                         </button>
                     )}
 
+                    {/* Mark Submission Received Button */}
+                    {canEditRequest &&
+                     !request.submission_received_date &&
+                     (request.current_status.code === 'INTAKE' || request.current_status.code === 'PLANNING') && (
+                        <button
+                            onClick={() => setShowMarkSubmissionModal(true)}
+                            disabled={actionLoading}
+                            className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 disabled:opacity-50"
+                        >
+                            Mark Submission Received
+                        </button>
+                    )}
+
                     {/* Update Status Button (for admins/validators) */}
                     {canEditRequest && (
                         <button
@@ -843,6 +886,21 @@ export default function ValidationRequestDetailPage() {
                                     </div>
                                 </div>
                             )}
+                            <div>
+                                <h4 className="text-sm font-medium text-gray-500 mb-1">Submission Received</h4>
+                                {request.submission_received_date ? (
+                                    <div>
+                                        <p className="text-sm text-green-700 font-medium">
+                                            {new Date(request.submission_received_date).toLocaleDateString()}
+                                        </p>
+                                        <p className="text-xs text-gray-500 mt-1">
+                                            Validation team SLA timer started
+                                        </p>
+                                    </div>
+                                ) : (
+                                    <p className="text-sm text-gray-400 italic">Not yet received</p>
+                                )}
+                            </div>
                             <div>
                                 <h4 className="text-sm font-medium text-gray-500 mb-1">Created</h4>
                                 <p className="text-sm">{new Date(request.created_at).toLocaleString()}</p>
@@ -1653,6 +1711,53 @@ export default function ValidationRequestDetailPage() {
                                 {actionLoading ? 'Updating...' : 'Update Status'}
                             </button>
                             <button onClick={() => setShowStatusModal(false)} className="btn-secondary">
+                                Cancel
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Mark Submission Received Modal */}
+            {showMarkSubmissionModal && (
+                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+                    <div className="bg-white rounded-lg p-6 w-full max-w-md">
+                        <h3 className="text-lg font-bold mb-4">Mark Submission Received</h3>
+                        <p className="text-sm text-gray-600 mb-4">
+                            Recording the submission date will start the validation team's SLA timer. If the status is currently "Planning", it will automatically transition to "In Progress".
+                        </p>
+                        <div className="mb-4">
+                            <label className="block text-sm font-medium mb-2">Submission Received Date *</label>
+                            <input
+                                type="date"
+                                className="input-field"
+                                value={submissionData.submission_received_date}
+                                onChange={(e) => setSubmissionData({ ...submissionData, submission_received_date: e.target.value })}
+                                max={new Date().toISOString().split('T')[0]}
+                            />
+                            <p className="text-xs text-gray-500 mt-1">
+                                Date cannot be in the future. Defaults to today.
+                            </p>
+                        </div>
+                        <div className="mb-4">
+                            <label className="block text-sm font-medium mb-2">Notes (Optional)</label>
+                            <textarea
+                                className="input-field"
+                                rows={3}
+                                value={submissionData.notes}
+                                onChange={(e) => setSubmissionData({ ...submissionData, notes: e.target.value })}
+                                placeholder="Any additional notes about the submission..."
+                            />
+                        </div>
+                        <div className="flex gap-2">
+                            <button
+                                onClick={handleMarkSubmission}
+                                disabled={actionLoading || !submissionData.submission_received_date}
+                                className="btn-primary"
+                            >
+                                {actionLoading ? 'Marking...' : 'Mark as Received'}
+                            </button>
+                            <button onClick={() => setShowMarkSubmissionModal(false)} className="btn-secondary">
                                 Cancel
                             </button>
                         </div>

@@ -69,6 +69,20 @@ export default function Layout({ children }: LayoutProps) {
                         </li>
                         <li>
                             <NavLink
+                                to="/my-pending-submissions"
+                                className={({ isActive }) =>
+                                    `block px-4 py-2 rounded transition-colors ${
+                                        isActive
+                                            ? 'bg-blue-600 text-white'
+                                            : 'text-gray-700 hover:bg-gray-100'
+                                    }`
+                                }
+                            >
+                                My Pending Submissions
+                            </NavLink>
+                        </li>
+                        <li>
+                            <NavLink
                                 to="/vendors"
                                 className={({ isActive }) =>
                                     `block px-4 py-2 rounded transition-colors ${

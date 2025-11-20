@@ -358,6 +358,26 @@ def get_model(
     return model
 
 
+@router.get("/{model_id}/revalidation-status")
+def get_model_revalidation_status(
+    model_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Get revalidation status for a specific model."""
+    from app.api.validation_workflow import calculate_model_revalidation_status
+
+    model = db.query(Model).filter(Model.model_id == model_id).first()
+
+    if not model:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Model not found"
+        )
+
+    return calculate_model_revalidation_status(model, db)
+
+
 @router.get("/{model_id}/validation-suggestions", response_model=ValidationGroupingSuggestion)
 def get_validation_grouping_suggestions(
     model_id: int,

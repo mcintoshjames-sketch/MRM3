@@ -115,6 +115,19 @@ class ValidationRequest(Base):
     decline_reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     declined_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
 
+    # Revalidation Lifecycle Fields
+    prior_validation_request_id: Mapped[Optional[int]] = mapped_column(
+        Integer,
+        ForeignKey("validation_requests.request_id", ondelete="SET NULL"),
+        nullable=True,
+        comment="Link to the previous validation that this revalidation follows"
+    )
+    submission_received_date: Mapped[Optional[date]] = mapped_column(
+        Date,
+        nullable=True,
+        comment="Date model owner actually submitted documentation"
+    )
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime, nullable=False, default=datetime.utcnow
     )
@@ -140,6 +153,13 @@ class ValidationRequest(Base):
     priority = relationship("TaxonomyValue", foreign_keys=[priority_id])
     current_status = relationship("TaxonomyValue", foreign_keys=[current_status_id])
 
+    # Self-referential relationship for revalidation chain
+    prior_validation_request = relationship(
+        "ValidationRequest",
+        foreign_keys=[prior_validation_request_id],
+        remote_side=[request_id]
+    )
+
     # One-to-many relationships
     status_history: Mapped[List["ValidationStatusHistory"]] = relationship(
         back_populates="request", cascade="all, delete-orphan", order_by="desc(ValidationStatusHistory.changed_at)"
@@ -163,6 +183,226 @@ class ValidationRequest(Base):
     review_outcome: Mapped[Optional["ValidationReviewOutcome"]] = relationship(
         back_populates="request", uselist=False, cascade="all, delete-orphan"
     )
+
+    # Computed properties for revalidation lifecycle
+    @property
+    def is_periodic_revalidation(self) -> bool:
+        """Determine if this is a periodic revalidation based on validation type."""
+        if not self.validation_type:
+            return False
+        return self.validation_type.code in ["COMPREHENSIVE", "ANNUAL"]
+
+    @property
+    def submission_due_date(self) -> Optional[date]:
+        """Calculate submission due date from prior validation + frequency."""
+        if not self.is_periodic_revalidation or not self.prior_validation_request_id:
+            return None
+
+        # Get prior validation
+        prior = self.prior_validation_request
+        if not prior or prior.current_status.code != "APPROVED":
+            return None
+
+        # Find when prior was approved (use updated_at as proxy for approval date)
+        prior_completed = prior.updated_at.date()
+
+        # Get model to find risk tier
+        if not self.model_versions_assoc or len(self.model_versions_assoc) == 0:
+            return None
+        model = self.model_versions_assoc[0].model
+
+        # Get policy for this risk tier
+        from sqlalchemy.orm import Session
+        session = Session.object_session(self)
+        if not session:
+            return None
+
+        policy = session.query(ValidationPolicy).filter(
+            ValidationPolicy.risk_tier_id == model.risk_tier_id
+        ).first()
+
+        if not policy:
+            return None
+
+        # Calculate: prior_completed + frequency_months
+        from dateutil.relativedelta import relativedelta
+        return prior_completed + relativedelta(months=policy.frequency_months)
+
+    @property
+    def submission_grace_period_end(self) -> Optional[date]:
+        """Calculate grace period end (submission_due + 3 months)."""
+        if not self.submission_due_date:
+            return None
+        from dateutil.relativedelta import relativedelta
+        return self.submission_due_date + relativedelta(months=3)
+
+    @property
+    def model_validation_due_date(self) -> Optional[date]:
+        """
+        Model compliance due date (fixed based on policy).
+        = Submission Due + 3mo grace + Lead Time
+        Model is "overdue" if not validated by this date.
+        """
+        if not self.submission_grace_period_end:
+            return None
+
+        # Get model to find risk tier
+        if not self.model_versions_assoc or len(self.model_versions_assoc) == 0:
+            return None
+        model = self.model_versions_assoc[0].model
+
+        # Get policy for this risk tier
+        from sqlalchemy.orm import Session
+        session = Session.object_session(self)
+        if not session:
+            return None
+
+        policy = session.query(ValidationPolicy).filter(
+            ValidationPolicy.risk_tier_id == model.risk_tier_id
+        ).first()
+
+        if not policy:
+            return None
+
+        from datetime import timedelta
+        return self.submission_grace_period_end + timedelta(days=policy.model_change_lead_time_days)
+
+    @property
+    def validation_team_sla_due_date(self) -> Optional[date]:
+        """
+        Validation team SLA due date (based on actual submission).
+        = Submission Received + Lead Time
+        Measures team performance independent of submission timing.
+        """
+        if not self.submission_received_date:
+            return None  # SLA doesn't start until submission received
+
+        # Get model to find risk tier
+        if not self.model_versions_assoc or len(self.model_versions_assoc) == 0:
+            return None
+        model = self.model_versions_assoc[0].model
+
+        # Get policy for this risk tier
+        from sqlalchemy.orm import Session
+        session = Session.object_session(self)
+        if not session:
+            return None
+
+        policy = session.query(ValidationPolicy).filter(
+            ValidationPolicy.risk_tier_id == model.risk_tier_id
+        ).first()
+
+        if not policy:
+            return None
+
+        from datetime import timedelta
+        return self.submission_received_date + timedelta(days=policy.model_change_lead_time_days)
+
+    @property
+    def submission_status(self) -> str:
+        """Calculate current submission status."""
+        if not self.is_periodic_revalidation:
+            return "N/A"
+
+        if self.submission_received_date:
+            if self.submission_due_date and self.submission_received_date <= self.submission_due_date:
+                return "Submitted On Time"
+            elif self.submission_grace_period_end and self.submission_received_date <= self.submission_grace_period_end:
+                return "Submitted In Grace Period"
+            else:
+                return "Submitted Late"
+
+        today = date.today()
+        if not self.submission_due_date:
+            return "Unknown"
+        if today < self.submission_due_date:
+            return "Not Yet Due"
+        elif self.submission_grace_period_end and today <= self.submission_grace_period_end:
+            return "Due (In Grace Period)"
+        else:
+            return "Overdue"
+
+    @property
+    def model_compliance_status(self) -> str:
+        """
+        Is the MODEL overdue for validation (regardless of team performance)?
+        Based on model_validation_due_date.
+        """
+        if not self.is_periodic_revalidation:
+            return "N/A"
+
+        if self.current_status.code == "APPROVED":
+            # Check if completed on time
+            completed_date = self.updated_at.date()
+            if not self.model_validation_due_date:
+                return "Unknown"  # Can't determine if on time without a due date
+            if completed_date <= self.model_validation_due_date:
+                return "Validated On Time"
+            else:
+                return "Validated Late"
+
+        today = date.today()
+        if not self.model_validation_due_date:
+            return "Unknown"
+
+        if self.submission_due_date and today <= self.submission_due_date:
+            return "On Track"
+        elif self.submission_grace_period_end and today <= self.submission_grace_period_end:
+            return "In Grace Period"
+        elif today <= self.model_validation_due_date:
+            return "At Risk"
+        else:
+            return "Overdue"
+
+    @property
+    def validation_team_sla_status(self) -> str:
+        """
+        Is the validation TEAM behind on their SLA?
+        Based on validation_team_sla_due_date (from submission received).
+        """
+        if not self.is_periodic_revalidation:
+            return "N/A"
+
+        if not self.submission_received_date:
+            return "Awaiting Submission"
+
+        if self.current_status.code == "APPROVED":
+            # Check if completed within SLA
+            completed_date = self.updated_at.date()
+            if self.validation_team_sla_due_date and completed_date <= self.validation_team_sla_due_date:
+                return "Completed Within SLA"
+            else:
+                return "Completed Past SLA"
+
+        today = date.today()
+        if not self.validation_team_sla_due_date:
+            return "Unknown"
+
+        if today <= self.validation_team_sla_due_date:
+            return "In Progress (On Time)"
+        else:
+            return "In Progress (Past SLA)"
+
+    @property
+    def days_until_submission_due(self) -> Optional[int]:
+        """Days until submission due (negative if past)."""
+        if not self.submission_due_date:
+            return None
+        return (self.submission_due_date - date.today()).days
+
+    @property
+    def days_until_model_validation_due(self) -> Optional[int]:
+        """Days until model validation due (negative if overdue)."""
+        if not self.model_validation_due_date:
+            return None
+        return (self.model_validation_due_date - date.today()).days
+
+    @property
+    def days_until_team_sla_due(self) -> Optional[int]:
+        """Days until validation team SLA expires (negative if past)."""
+        if not self.validation_team_sla_due_date:
+            return None
+        return (self.validation_team_sla_due_date - date.today()).days
 
 
 class ValidationStatusHistory(Base):

@@ -66,6 +66,43 @@ interface PendingAssignment {
     severity: string;
 }
 
+interface OverdueSubmission {
+    request_id: number;
+    model_id: number;
+    model_name: string;
+    model_owner: string;
+    submission_due_date: string;
+    grace_period_end: string;
+    days_overdue: number;
+    validation_due_date: string;
+    submission_status: string;
+}
+
+interface OverdueValidation {
+    request_id: number;
+    model_id: number;
+    model_name: string;
+    model_owner: string;
+    submission_received_date: string | null;
+    model_validation_due_date: string;
+    days_overdue: number;
+    current_status: string;
+    model_compliance_status: string;
+}
+
+interface UpcomingRevalidation {
+    model_id: number;
+    model_name: string;
+    model_owner: string;
+    risk_tier: string | null;
+    status: string;
+    last_validation_date: string;
+    next_submission_due: string;
+    next_validation_due: string;
+    days_until_submission_due: number;
+    days_until_validation_due: number;
+}
+
 export default function AdminDashboardPage() {
     const { user } = useAuth();
     const [overdueModels, setOverdueModels] = useState<OverdueModel[]>([]);
@@ -73,6 +110,9 @@ export default function AdminDashboardPage() {
     const [slaViolations, setSlaViolations] = useState<SLAViolation[]>([]);
     const [outOfOrder, setOutOfOrder] = useState<OutOfOrderValidation[]>([]);
     const [pendingAssignments, setPendingAssignments] = useState<PendingAssignment[]>([]);
+    const [overdueSubmissions, setOverdueSubmissions] = useState<OverdueSubmission[]>([]);
+    const [overdueValidations, setOverdueValidations] = useState<OverdueValidation[]>([]);
+    const [upcomingRevalidations, setUpcomingRevalidations] = useState<UpcomingRevalidation[]>([]);
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
@@ -81,18 +121,33 @@ export default function AdminDashboardPage() {
 
     const fetchDashboardData = async () => {
         try {
-            const [overdueRes, findingsRes, violationsRes, outOfOrderRes, pendingRes] = await Promise.all([
+            const [
+                overdueRes,
+                findingsRes,
+                violationsRes,
+                outOfOrderRes,
+                pendingRes,
+                overdueSubmissionsRes,
+                overdueValidationsRes,
+                upcomingRevalidationsRes
+            ] = await Promise.all([
                 api.get('/validations/dashboard/overdue'),
                 api.get('/validations/dashboard/pass-with-findings'),
                 api.get('/validation-workflow/dashboard/sla-violations'),
                 api.get('/validation-workflow/dashboard/out-of-order'),
-                api.get('/validation-workflow/dashboard/pending-assignments')
+                api.get('/validation-workflow/dashboard/pending-assignments'),
+                api.get('/validation-workflow/dashboard/overdue-submissions'),
+                api.get('/validation-workflow/dashboard/overdue-validations'),
+                api.get('/validation-workflow/dashboard/upcoming-revalidations?days_ahead=90')
             ]);
             setOverdueModels(overdueRes.data);
             setPassWithFindings(findingsRes.data);
             setSlaViolations(violationsRes.data);
             setOutOfOrder(outOfOrderRes.data);
             setPendingAssignments(pendingRes.data);
+            setOverdueSubmissions(overdueSubmissionsRes.data);
+            setOverdueValidations(overdueValidationsRes.data);
+            setUpcomingRevalidations(upcomingRevalidationsRes.data);
         } catch (error) {
             console.error('Failed to fetch dashboard data:', error);
         } finally {
@@ -136,9 +191,9 @@ export default function AdminDashboardPage() {
                     <p className="text-xs text-gray-600 mt-1">Awaiting validator</p>
                 </div>
                 <div className="bg-white p-4 rounded-lg shadow-md">
-                    <h3 className="text-xs font-medium text-gray-500 uppercase">SLA Violations</h3>
+                    <h3 className="text-xs font-medium text-gray-500 uppercase">Lead Time Violations</h3>
                     <p className="text-3xl font-bold text-red-600 mt-2">{slaViolations.length}</p>
-                    <p className="text-xs text-gray-600 mt-1">Active workflow delays</p>
+                    <p className="text-xs text-gray-600 mt-1">Validation team SLA exceeded</p>
                 </div>
                 <div className="bg-white p-4 rounded-lg shadow-md">
                     <h3 className="text-xs font-medium text-gray-500 uppercase">Out of Order</h3>
@@ -238,7 +293,7 @@ export default function AdminDashboardPage() {
                     {pendingAssignments.length > 5 && (
                         <div className="mt-3 pt-2 border-t text-center">
                             <Link
-                                to="/validation-workflow"
+                                to="/validation-workflow?status=Intake"
                                 className="text-xs text-blue-600 hover:text-blue-800"
                             >
                                 View all {pendingAssignments.length} pending assignments &rarr;
@@ -248,14 +303,14 @@ export default function AdminDashboardPage() {
                 </div>
             )}
 
-            {/* SLA Violations Feed */}
+            {/* Validation Team SLA Violations Feed */}
             {slaViolations.length > 0 && (
                 <div className="bg-white p-4 rounded-lg shadow mb-6">
                     <div className="flex items-center gap-2 mb-3 pb-2 border-b">
                         <svg className="w-4 h-4 text-orange-500" fill="currentColor" viewBox="0 0 20 20">
                             <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
                         </svg>
-                        <h3 className="text-sm font-semibold text-gray-700">SLA Violation Alerts</h3>
+                        <h3 className="text-sm font-semibold text-gray-700">Validation Team Lead Time Violations</h3>
                         <span className="text-xs text-gray-500 ml-auto">{slaViolations.length} active</span>
                     </div>
                     <div className="space-y-2 max-h-64 overflow-y-auto">
@@ -288,8 +343,8 @@ export default function AdminDashboardPage() {
                                             {violation.model_name}
                                         </Link>
                                         <p className="text-xs text-gray-600 mt-0.5">
-                                            {violation.violation_type}: {violation.days_overdue}d overdue
-                                            <span className="text-gray-400 ml-1">(SLA: {violation.sla_days}d)</span>
+                                            Submitted {formatTimeAgo(violation.timestamp)} • {violation.days_overdue}d past lead time
+                                            <span className="text-gray-400 ml-1">(Lead time: {violation.sla_days}d)</span>
                                         </p>
                                     </div>
                                 </div>
@@ -529,6 +584,196 @@ export default function AdminDashboardPage() {
                                 ))}
                             </tbody>
                         </table>
+                    </div>
+                )}
+            </div>
+
+            {/* Revalidation Lifecycle Widgets */}
+            <div className="mt-8 space-y-6">
+                {/* Overdue Submissions */}
+                {overdueSubmissions.length > 0 && (
+                    <div className="bg-white rounded-lg shadow-md overflow-hidden">
+                        <div className="p-4 border-b bg-red-50">
+                            <div className="flex items-center">
+                                <svg className="h-5 w-5 text-red-600 mr-2" fill="currentColor" viewBox="0 0 20 20">
+                                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+                                </svg>
+                                <h3 className="text-lg font-bold text-red-900">
+                                    Overdue Revalidation Submissions ({overdueSubmissions.length})
+                                </h3>
+                            </div>
+                            <p className="text-sm text-red-700 ml-7">Models with overdue documentation submissions (past grace period)</p>
+                        </div>
+                        <table className="min-w-full divide-y divide-gray-200">
+                            <thead className="bg-gray-50">
+                                <tr>
+                                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Model</th>
+                                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Owner</th>
+                                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Submission Due</th>
+                                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Grace Period End</th>
+                                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Days Overdue</th>
+                                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Validation Due</th>
+                                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody className="bg-white divide-y divide-gray-200">
+                                {overdueSubmissions.map((submission) => (
+                                    <tr key={submission.request_id} className="hover:bg-red-50">
+                                        <td className="px-4 py-3 whitespace-nowrap">
+                                            <Link
+                                                to={`/models/${submission.model_id}`}
+                                                className="text-blue-600 hover:text-blue-800 font-medium"
+                                            >
+                                                {submission.model_name}
+                                            </Link>
+                                        </td>
+                                        <td className="px-4 py-3 whitespace-nowrap text-sm">{submission.model_owner}</td>
+                                        <td className="px-4 py-3 whitespace-nowrap text-sm">{submission.submission_due_date}</td>
+                                        <td className="px-4 py-3 whitespace-nowrap text-sm">{submission.grace_period_end}</td>
+                                        <td className="px-4 py-3 whitespace-nowrap">
+                                            <span className="px-2 py-1 text-xs font-semibold rounded bg-red-100 text-red-800">
+                                                {submission.days_overdue} days
+                                            </span>
+                                        </td>
+                                        <td className="px-4 py-3 whitespace-nowrap text-sm">{submission.validation_due_date}</td>
+                                        <td className="px-4 py-3 whitespace-nowrap">
+                                            <Link
+                                                to={`/validation-workflow/${submission.request_id}`}
+                                                className="text-blue-600 hover:text-blue-800 text-sm"
+                                            >
+                                                View Request
+                                            </Link>
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                )}
+
+                {/* Overdue Validations */}
+                {overdueValidations.length > 0 && (
+                    <div className="bg-white rounded-lg shadow-md overflow-hidden">
+                        <div className="p-4 border-b bg-orange-50">
+                            <div className="flex items-center">
+                                <svg className="h-5 w-5 text-orange-600 mr-2" fill="currentColor" viewBox="0 0 20 20">
+                                    <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                                </svg>
+                                <h3 className="text-lg font-bold text-orange-900">
+                                    Overdue Validations ({overdueValidations.length})
+                                </h3>
+                            </div>
+                            <p className="text-sm text-orange-700 ml-7">Models with overdue validations (past model validation due date)</p>
+                        </div>
+                        <table className="min-w-full divide-y divide-gray-200">
+                            <thead className="bg-gray-50">
+                                <tr>
+                                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Model</th>
+                                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Owner</th>
+                                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Submission Received</th>
+                                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Validation Due</th>
+                                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Days Overdue</th>
+                                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+                                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody className="bg-white divide-y divide-gray-200">
+                                {overdueValidations.map((validation) => (
+                                    <tr key={validation.request_id} className="hover:bg-orange-50">
+                                        <td className="px-4 py-3 whitespace-nowrap">
+                                            <Link
+                                                to={`/models/${validation.model_id}`}
+                                                className="text-blue-600 hover:text-blue-800 font-medium"
+                                            >
+                                                {validation.model_name}
+                                            </Link>
+                                        </td>
+                                        <td className="px-4 py-3 whitespace-nowrap text-sm">{validation.model_owner}</td>
+                                        <td className="px-4 py-3 whitespace-nowrap text-sm">
+                                            {validation.submission_received_date || <span className="text-gray-400">Not received</span>}
+                                        </td>
+                                        <td className="px-4 py-3 whitespace-nowrap text-sm">{validation.model_validation_due_date}</td>
+                                        <td className="px-4 py-3 whitespace-nowrap">
+                                            <span className="px-2 py-1 text-xs font-semibold rounded bg-orange-100 text-orange-800">
+                                                {validation.days_overdue} days
+                                            </span>
+                                        </td>
+                                        <td className="px-4 py-3 whitespace-nowrap text-sm">{validation.current_status}</td>
+                                        <td className="px-4 py-3 whitespace-nowrap">
+                                            <Link
+                                                to={`/validation-workflow/${validation.request_id}`}
+                                                className="text-blue-600 hover:text-blue-800 text-sm"
+                                            >
+                                                View Request
+                                            </Link>
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                )}
+
+                {/* Upcoming Revalidations */}
+                {upcomingRevalidations.length > 0 && (
+                    <div className="bg-white rounded-lg shadow-md overflow-hidden">
+                        <div className="p-4 border-b bg-blue-50">
+                            <div className="flex items-center">
+                                <svg className="h-5 w-5 text-blue-600 mr-2" fill="currentColor" viewBox="0 0 20 20">
+                                    <path fillRule="evenodd" d="M6 2a1 1 0 00-1 1v1H4a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V6a2 2 0 00-2-2h-1V3a1 1 0 10-2 0v1H7V3a1 1 0 00-1-1zm0 5a1 1 0 000 2h8a1 1 0 100-2H6z" clipRule="evenodd" />
+                                </svg>
+                                <h3 className="text-lg font-bold text-blue-900">
+                                    Upcoming Revalidations ({upcomingRevalidations.length})
+                                </h3>
+                            </div>
+                            <p className="text-sm text-blue-700 ml-7">Models with revalidations due in the next 90 days</p>
+                        </div>
+                        <table className="min-w-full divide-y divide-gray-200">
+                            <thead className="bg-gray-50">
+                                <tr>
+                                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Model</th>
+                                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Owner</th>
+                                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Risk Tier</th>
+                                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Last Validation</th>
+                                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Submission Due</th>
+                                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Validation Due</th>
+                                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Days Until Due</th>
+                                </tr>
+                            </thead>
+                            <tbody className="bg-white divide-y divide-gray-200">
+                                {upcomingRevalidations.slice(0, 10).map((revalidation) => (
+                                    <tr key={revalidation.model_id} className="hover:bg-blue-50">
+                                        <td className="px-4 py-3 whitespace-nowrap">
+                                            <Link
+                                                to={`/models/${revalidation.model_id}`}
+                                                className="text-blue-600 hover:text-blue-800 font-medium"
+                                            >
+                                                {revalidation.model_name}
+                                            </Link>
+                                        </td>
+                                        <td className="px-4 py-3 whitespace-nowrap text-sm">{revalidation.model_owner}</td>
+                                        <td className="px-4 py-3 whitespace-nowrap text-sm">{revalidation.risk_tier}</td>
+                                        <td className="px-4 py-3 whitespace-nowrap text-sm">{revalidation.last_validation_date}</td>
+                                        <td className="px-4 py-3 whitespace-nowrap text-sm">{revalidation.next_submission_due}</td>
+                                        <td className="px-4 py-3 whitespace-nowrap text-sm">{revalidation.next_validation_due}</td>
+                                        <td className="px-4 py-3 whitespace-nowrap">
+                                            <span className={`px-2 py-1 text-xs font-semibold rounded ${
+                                                revalidation.days_until_submission_due < 30 ? 'bg-yellow-100 text-yellow-800' :
+                                                revalidation.days_until_submission_due < 60 ? 'bg-blue-100 text-blue-800' :
+                                                'bg-gray-100 text-gray-800'
+                                            }`}>
+                                                {revalidation.days_until_submission_due} days
+                                            </span>
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                        {upcomingRevalidations.length > 10 && (
+                            <div className="p-3 bg-gray-50 text-sm text-gray-600 text-center">
+                                Showing first 10 of {upcomingRevalidations.length} upcoming revalidations
+                            </div>
+                        )}
                     </div>
                 )}
             </div>

@@ -141,9 +141,13 @@ const setupApiMocks = (validations = sampleValidations, modelData = sampleModel)
         if (url === '/models/1') return Promise.resolve({ data: modelData });
         if (url === '/auth/users') return Promise.resolve({ data: sampleUsers });
         if (url === '/vendors/') return Promise.resolve({ data: sampleVendors });
+        if (url === '/regions/') return Promise.resolve({ data: [] });
         if (url === '/taxonomies/') return Promise.resolve({ data: sampleTaxonomies });
         if (url === '/taxonomies/1') return Promise.resolve({ data: sampleTaxonomyDetails });
         if (url === '/validations/?model_id=1') return Promise.resolve({ data: validations });
+        if (url === '/validation-workflow/requests/?model_id=1') return Promise.resolve({ data: [] });
+        if (url === '/models/1/versions') return Promise.resolve({ data: [] });
+        if (url === '/models/1/revalidation-status') return Promise.resolve({ data: { status: 'Never Validated' } });
         return Promise.reject(new Error(`Unknown URL: ${url}`));
     });
 };

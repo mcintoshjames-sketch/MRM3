@@ -1870,7 +1870,7 @@ class TestSmartApproverAssignment:
                 "priority_id": workflow_taxonomies["priority"]["high"].value_id,
                 "target_completion_date": "2025-12-31",
                 "trigger_reason": "Regional compliance check",
-                "region_id": region.region_id
+                "region_ids": [region.region_id]
             },
             headers=admin_headers
         )
@@ -1926,7 +1926,7 @@ class TestSmartApproverAssignment:
                 "priority_id": workflow_taxonomies["priority"]["high"].value_id,
                 "target_completion_date": "2025-12-31",
                 "trigger_reason": "Regional check",
-                "region_id": region.region_id
+                "region_ids": [region.region_id]
             },
             headers=admin_headers
         )

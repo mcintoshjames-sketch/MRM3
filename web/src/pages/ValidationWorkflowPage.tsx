@@ -159,6 +159,17 @@ export default function ValidationWorkflowPage() {
         }
     }, [location.pathname, searchParams]);
 
+    // Initialize filters from URL parameters
+    useEffect(() => {
+        const statusParam = searchParams.get('status');
+        if (statusParam) {
+            setFilters(prev => ({
+                ...prev,
+                status_filter: [statusParam]
+            }));
+        }
+    }, [searchParams]);
+
     // Auto-select "Initial" validation type if all selected models have no prior validations
     useEffect(() => {
         const checkAndSetInitialValidationType = async () => {

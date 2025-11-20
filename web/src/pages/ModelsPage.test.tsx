@@ -86,7 +86,9 @@ const setupApiMocks = (models = sampleModels) => {
         if (url === '/models/') return Promise.resolve({ data: models });
         if (url === '/auth/users') return Promise.resolve({ data: sampleUsers });
         if (url === '/vendors/') return Promise.resolve({ data: sampleVendors });
-        return Promise.reject(new Error('Unknown URL'));
+        if (url === '/regions/') return Promise.resolve({ data: [] });
+        if (url === '/taxonomies/') return Promise.resolve({ data: [] });
+        return Promise.reject(new Error('Unknown URL: ' + url));
     });
 };
 

@@ -69,7 +69,25 @@ const setupApiMocks = (overdue = sampleOverdueModels, findings = samplePassWithF
         if (url === '/validations/dashboard/pass-with-findings') {
             return Promise.resolve({ data: findings });
         }
-        return Promise.reject(new Error('Unknown URL'));
+        if (url === '/validation-workflow/dashboard/sla-violations') {
+            return Promise.resolve({ data: [] });
+        }
+        if (url === '/validation-workflow/dashboard/out-of-order') {
+            return Promise.resolve({ data: [] });
+        }
+        if (url === '/validation-workflow/dashboard/pending-assignments') {
+            return Promise.resolve({ data: [] });
+        }
+        if (url === '/validation-workflow/dashboard/overdue-submissions') {
+            return Promise.resolve({ data: [] });
+        }
+        if (url === '/validation-workflow/dashboard/overdue-validations') {
+            return Promise.resolve({ data: [] });
+        }
+        if (url === '/validation-workflow/dashboard/upcoming-revalidations?days_ahead=90') {
+            return Promise.resolve({ data: [] });
+        }
+        return Promise.reject(new Error('Unknown URL: ' + url));
     });
 };
 

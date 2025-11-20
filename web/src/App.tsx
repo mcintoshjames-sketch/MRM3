@@ -18,6 +18,7 @@ import WorkflowConfigurationPage from './pages/WorkflowConfigurationPage';
 import BatchDelegatesPage from './pages/BatchDelegatesPage';
 import RegionsPage from './pages/RegionsPage';
 import ValidationPoliciesPage from './pages/ValidationPoliciesPage';
+import MyPendingSubmissionsPage from './pages/MyPendingSubmissionsPage';
 
 function App() {
     const { user, loading } = useAuth();
@@ -45,6 +46,7 @@ function App() {
             <Route path="/validation-workflow" element={user ? <ValidationWorkflowPage /> : <Navigate to="/login" />} />
             <Route path="/validation-workflow/new" element={user ? <ValidationWorkflowPage /> : <Navigate to="/login" />} />
             <Route path="/validation-workflow/:id" element={user ? <ValidationRequestDetailPage /> : <Navigate to="/login" />} />
+            <Route path="/my-pending-submissions" element={user ? <MyPendingSubmissionsPage /> : <Navigate to="/login" />} />
             <Route path="/vendors" element={user ? <VendorsPage /> : <Navigate to="/login" />} />
             <Route path="/vendors/:id" element={user ? <VendorDetailsPage /> : <Navigate to="/login" />} />
             <Route path="/users" element={user ? <UsersPage /> : <Navigate to="/login" />} />
