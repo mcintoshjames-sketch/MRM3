@@ -17,6 +17,7 @@ from app.models import (
 from app.schemas.validation import (
     ValidationRequestCreate, ValidationRequestUpdate, ValidationRequestStatusUpdate,
     ValidationRequestDecline, ValidationApprovalUnlink,
+    ValidationWarning, ValidationRequestWarningsResponse,
     ValidationRequestResponse, ValidationRequestDetailResponse, ValidationRequestListResponse,
     ValidationAssignmentCreate, ValidationAssignmentUpdate, ValidationAssignmentResponse,
     ReviewerSignOffRequest,
@@ -47,6 +48,135 @@ def check_admin(user: User):
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only Admins can perform this action"
         )
+
+
+def check_target_completion_date_warnings(
+    db: Session,
+    request_data: ValidationRequestCreate
+) -> List[ValidationWarning]:
+    """
+    Check for warnings/issues with the target completion date.
+
+    Returns list of warnings for:
+    1. Model change lead time violations
+    2. Implementation date conflicts
+    3. Revalidation overdue scenarios
+    """
+    from app.models import Model, ValidationPolicy, ValidationWorkflowSLA, ModelVersion
+    from app.models.validation import validation_request_models
+    from datetime import timedelta
+
+    warnings = []
+    target_date = request_data.target_completion_date
+    model_versions_dict = request_data.model_versions or {}
+
+    # Get SLA configuration for lead time
+    sla = db.query(ValidationWorkflowSLA).first()
+    default_lead_time = sla.model_change_lead_time_days if sla else 90
+
+    # Load models with their versions
+    models = db.query(Model).filter(Model.model_id.in_(request_data.model_ids)).all()
+
+    for model in models:
+        version_id = model_versions_dict.get(model.model_id)
+        version = None
+
+        if version_id:
+            version = db.query(ModelVersion).filter(ModelVersion.version_id == version_id).first()
+
+        # Check 1: Model change lead time
+        # If a specific version is selected with an implementation date, check lead time
+        if version and version.production_date:
+            days_before_implementation = (version.production_date - target_date).days
+
+            # Get model-specific lead time from validation policy
+            lead_time_required = default_lead_time
+            if model.risk_tier_id:
+                policy = db.query(ValidationPolicy).filter(
+                    ValidationPolicy.risk_tier_id == model.risk_tier_id
+                ).first()
+                if policy:
+                    lead_time_required = policy.model_change_lead_time_days
+
+            if days_before_implementation < lead_time_required:
+                severity = "ERROR" if days_before_implementation < 0 else "WARNING"
+                warnings.append(ValidationWarning(
+                    warning_type="LEAD_TIME",
+                    severity=severity,
+                    model_id=model.model_id,
+                    model_name=model.model_name,
+                    version_number=version.version_number,
+                    message=f"Target completion date does not meet {lead_time_required}-day lead time requirement before implementation date ({version.production_date.isoformat()}). Only {max(0, days_before_implementation)} days provided.",
+                    details={
+                        "required_lead_time_days": lead_time_required,
+                        "actual_days_before": days_before_implementation,
+                        "implementation_date": version.production_date.isoformat(),
+                        "target_completion_date": target_date.isoformat()
+                    }
+                ))
+
+        # Check 2: Implementation date already passed
+        if version and version.production_date and target_date > version.production_date:
+            warnings.append(ValidationWarning(
+                warning_type="IMPLEMENTATION_DATE",
+                severity="ERROR",
+                model_id=model.model_id,
+                model_name=model.model_name,
+                version_number=version.version_number,
+                message=f"Target completion date ({target_date.isoformat()}) is after the model version implementation date ({version.production_date.isoformat()}). Validation must be completed before implementation.",
+                details={
+                    "implementation_date": version.production_date.isoformat(),
+                    "target_completion_date": target_date.isoformat()
+                }
+            ))
+
+        # Check 3: Revalidation overdue
+        # Get the last completed validation for this model
+        # Find APPROVED status
+        approved_status = db.query(TaxonomyValue).join(Taxonomy).filter(
+            Taxonomy.name == "Validation Request Status",
+            TaxonomyValue.code == "APPROVED"
+        ).first()
+
+        if approved_status:
+            last_validation = db.query(ValidationRequest).join(
+                validation_request_models
+            ).filter(
+                validation_request_models.c.model_id == model.model_id,
+                ValidationRequest.current_status_id == approved_status.value_id
+            ).order_by(desc(ValidationRequest.updated_at)).first()
+        else:
+            last_validation = None
+
+        if last_validation and model.risk_tier_id:
+            policy = db.query(ValidationPolicy).filter(
+                ValidationPolicy.risk_tier_id == model.risk_tier_id
+            ).first()
+
+            if policy:
+                # Calculate when next validation is due
+                next_validation_due = last_validation.updated_at.date() + timedelta(days=policy.frequency_months * 30)
+                grace_period_days = 30  # Allow 30 day grace period
+                overdue_date = next_validation_due + timedelta(days=grace_period_days)
+
+                if target_date > overdue_date:
+                    warnings.append(ValidationWarning(
+                        warning_type="REVALIDATION_OVERDUE",
+                        severity="WARNING",
+                        model_id=model.model_id,
+                        model_name=model.model_name,
+                        version_number=version.version_number if version else None,
+                        message=f"Target completion date would result in model being overdue for revalidation (due {next_validation_due.isoformat()}, grace period until {overdue_date.isoformat()}).",
+                        details={
+                            "last_validation_date": last_validation.updated_at.date().isoformat(),
+                            "next_due_date": next_validation_due.isoformat(),
+                            "grace_period_end": overdue_date.isoformat(),
+                            "target_completion_date": target_date.isoformat(),
+                            "frequency_months": policy.frequency_months
+                        }
+                    ))
+
+    return warnings
 
 
 def get_taxonomy_value_by_code(db: Session, taxonomy_name: str, code: str) -> TaxonomyValue:

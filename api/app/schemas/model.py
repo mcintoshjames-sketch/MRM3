@@ -1,6 +1,6 @@
 """Model schemas."""
 from pydantic import BaseModel, field_validator, field_serializer
-from datetime import datetime
+from datetime import datetime, date
 from typing import Optional, List, Any
 from app.schemas.user import UserResponse
 from app.schemas.vendor import VendorResponse
@@ -26,6 +26,7 @@ class ModelCreate(ModelBase):
     wholly_owned_region_id: Optional[int] = None
     user_ids: Optional[List[int]] = None
     regulatory_category_ids: Optional[List[int]] = None
+    initial_implementation_date: Optional[date] = None
 
     @field_validator('vendor_id')
     @classmethod

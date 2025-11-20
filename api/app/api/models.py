@@ -95,10 +95,11 @@ def create_model(
                 detail="Developer user not found"
             )
 
-    # Extract user_ids and regulatory_category_ids before creating model
+    # Extract user_ids, regulatory_category_ids, and initial_implementation_date before creating model
     user_ids = model_data.user_ids or []
     regulatory_category_ids = model_data.regulatory_category_ids or []
-    model_dict = model_data.model_dump(exclude={'user_ids', 'regulatory_category_ids'})
+    initial_implementation_date = model_data.initial_implementation_date
+    model_dict = model_data.model_dump(exclude={'user_ids', 'regulatory_category_ids', 'initial_implementation_date'})
 
     model = Model(**model_dict)
 
@@ -137,6 +138,8 @@ def create_model(
         db.commit()
 
     # Create initial version 1.0 with change_type_id = 1 (New Model Development)
+    # Use implementation date if provided, otherwise DRAFT status with no date
+    version_status = "PRODUCTION" if initial_implementation_date else "DRAFT"
     initial_version = ModelVersion(
         model_id=model.model_id,
         version_number="1.0",
@@ -144,8 +147,8 @@ def create_model(
         change_type_id=1,  # Code 1 = "New Model Development"
         change_description="Initial model version",
         created_by_id=current_user.user_id,
-        production_date=None,  # Not in production yet
-        status="DRAFT"  # New models start as DRAFT
+        production_date=initial_implementation_date,
+        status=version_status
     )
     db.add(initial_version)
     db.commit()

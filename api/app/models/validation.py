@@ -6,13 +6,29 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.models.base import Base
 
 
-# Association table for validation request models (many-to-many)
-validation_request_models = Table(
-    "validation_request_models",
-    Base.metadata,
-    Column("request_id", Integer, ForeignKey("validation_requests.request_id", ondelete="CASCADE"), primary_key=True),
-    Column("model_id", Integer, ForeignKey("models.model_id", ondelete="CASCADE"), primary_key=True),
-)
+# Association class for validation request models with version tracking
+class ValidationRequestModelVersion(Base):
+    """Association object for validation request models with specific versions."""
+    __tablename__ = "validation_request_models"
+
+    request_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("validation_requests.request_id", ondelete="CASCADE"), primary_key=True
+    )
+    model_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("models.model_id", ondelete="CASCADE"), primary_key=True
+    )
+    version_id: Mapped[Optional[int]] = mapped_column(
+        Integer, ForeignKey("model_versions.version_id", ondelete="SET NULL"), nullable=True
+    )
+
+    # Relationships
+    request = relationship("ValidationRequest", back_populates="model_versions_assoc")
+    model = relationship("Model")
+    version = relationship("ModelVersion")
+
+
+# Backward compatibility: make table accessible for filtering
+validation_request_models = ValidationRequestModelVersion.__table__
 
 # Association table for validation request regions (many-to-many)
 validation_request_regions = Table(
@@ -107,8 +123,13 @@ class ValidationRequest(Base):
     )
 
     # Relationships
+    # Association object for model-version tracking
+    model_versions_assoc: Mapped[List["ValidationRequestModelVersion"]] = relationship(
+        back_populates="request", cascade="all, delete-orphan"
+    )
+    # Backward compatibility: simple list of models
     models: Mapped[List["Model"]] = relationship(
-        "Model", secondary=validation_request_models, back_populates="validation_requests"
+        "Model", secondary="validation_request_models", back_populates="validation_requests", viewonly=True
     )
     regions: Mapped[List["Region"]] = relationship(
         "Region", secondary=validation_request_regions

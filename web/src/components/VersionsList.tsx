@@ -140,7 +140,7 @@ const VersionsList: React.FC<VersionsListProps> = ({ modelId, refreshTrigger, on
                         <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
                         <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Validation</th>
                         <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Description</th>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Production Date</th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Implementation Date</th>
                         <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Created</th>
                         <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
                     </tr>

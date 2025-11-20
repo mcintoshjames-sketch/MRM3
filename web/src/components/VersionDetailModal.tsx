@@ -206,10 +206,10 @@ const VersionDetailModal: React.FC<VersionDetailModalProps> = ({ version, onClos
                         )}
                     </div>
 
-                    {/* Production Date */}
+                    {/* Implementation Date */}
                     <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">
-                            Production Date
+                            Implementation Date
                         </label>
                         {editMode ? (
                             <input

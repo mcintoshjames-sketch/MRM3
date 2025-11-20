@@ -15,6 +15,8 @@ from app.models.validation import (
     ValidationPolicy,
     ValidationWorkflowSLA,
     ValidationRequest,
+    ValidationRequestModelVersion,
+    validation_request_models,
     ValidationStatusHistory,
     ValidationAssignment,
     ValidationWorkComponent,
@@ -44,6 +46,8 @@ __all__ = [
     "ValidationWorkflowSLA",
     # New workflow-based validation models
     "ValidationRequest",
+    "ValidationRequestModelVersion",
+    "validation_request_models",
     "ValidationStatusHistory",
     "ValidationAssignment",
     "ValidationWorkComponent",

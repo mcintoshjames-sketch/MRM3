@@ -348,10 +348,10 @@ const SubmitChangeModal: React.FC<SubmitChangeModalProps> = ({ modelId, onClose,
                         />
                     </div>
 
-                    {/* Production Date */}
+                    {/* Implementation Date */}
                     <div className="mb-6">
                         <label className="block text-sm font-medium text-gray-700 mb-1">
-                            Production Date (Optional)
+                            Implementation Date (Optional)
                         </label>
                         <input
                             type="date"
@@ -360,7 +360,7 @@ const SubmitChangeModal: React.FC<SubmitChangeModalProps> = ({ modelId, onClose,
                             className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                         />
                         <p className="text-xs text-gray-500 mt-1">
-                            When this version was/will be deployed to production
+                            When this version was/will be implemented in production
                         </p>
                     </div>
 

@@ -1,7 +1,7 @@
 """Validation workflow schemas."""
 from pydantic import BaseModel, field_validator
 from datetime import datetime, date
-from typing import Optional, List
+from typing import Optional, List, Dict
 from app.schemas.user import UserResponse
 from app.schemas.taxonomy import TaxonomyValueResponse
 from app.schemas.region import Region
@@ -77,7 +77,27 @@ class ValidationRequestBase(BaseModel):
 
 class ValidationRequestCreate(ValidationRequestBase):
     """Schema for creating a validation request."""
-    pass
+    model_versions: Optional[Dict[int, Optional[int]]] = None  # {model_id: version_id or None}
+    check_warnings: bool = False  # If True, return warnings without creating request
+
+
+class ValidationWarning(BaseModel):
+    """Individual warning about target completion date."""
+    warning_type: str  # 'LEAD_TIME', 'IMPLEMENTATION_DATE', 'REVALIDATION_OVERDUE'
+    severity: str  # 'ERROR', 'WARNING', 'INFO'
+    model_id: int
+    model_name: str
+    version_number: Optional[str] = None
+    message: str
+    details: Optional[Dict] = None  # Additional contextual information
+
+
+class ValidationRequestWarningsResponse(BaseModel):
+    """Response with warnings about target completion date issues."""
+    has_warnings: bool
+    can_proceed: bool  # False if there are blocking errors
+    warnings: List[ValidationWarning]
+    request_data: ValidationRequestBase  # Echo back the request data
 
 
 class ValidationRequestUpdate(BaseModel):

@@ -69,7 +69,8 @@ export default function ModelsPage() {
         vendor_id: null as number | null,
         wholly_owned_region_id: null as number | null,
         status: 'In Development',
-        user_ids: [] as number[]
+        user_ids: [] as number[],
+        initial_implementation_date: '' as string
     });
     const [userSearchTerm, setUserSearchTerm] = useState('');
 
@@ -166,7 +167,8 @@ export default function ModelsPage() {
                 developer_id: formData.developer_id || null,
                 vendor_id: formData.vendor_id || null,
                 wholly_owned_region_id: formData.wholly_owned_region_id || null,
-                user_ids: formData.user_ids.length > 0 ? formData.user_ids : null
+                user_ids: formData.user_ids.length > 0 ? formData.user_ids : null,
+                initial_implementation_date: formData.initial_implementation_date || null
             };
             await api.post('/models/', payload);
             setShowForm(false);
@@ -179,7 +181,8 @@ export default function ModelsPage() {
                 vendor_id: null,
                 wholly_owned_region_id: null,
                 status: 'In Development',
-                user_ids: []
+                user_ids: [],
+                initial_implementation_date: ''
             });
             fetchData();
         } catch (error) {
@@ -398,6 +401,22 @@ export default function ModelsPage() {
                                         <option value="Active">Active</option>
                                         <option value="Retired">Retired</option>
                                     </select>
+                                </div>
+
+                                <div className="mb-4">
+                                    <label htmlFor="initial_implementation_date" className="block text-sm font-medium mb-2">
+                                        Implementation Date (Optional)
+                                    </label>
+                                    <input
+                                        id="initial_implementation_date"
+                                        type="date"
+                                        className="input-field"
+                                        value={formData.initial_implementation_date}
+                                        onChange={(e) => setFormData({ ...formData, initial_implementation_date: e.target.value })}
+                                    />
+                                    <p className="text-xs text-gray-500 mt-1">
+                                        Date when this model was (or will be) implemented in production
+                                    </p>
                                 </div>
                             </div>
 
