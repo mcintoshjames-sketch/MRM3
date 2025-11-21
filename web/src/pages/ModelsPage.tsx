@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import api from '../api/client';
@@ -6,6 +6,7 @@ import Layout from '../components/Layout';
 import { useTableSort } from '../hooks/useTableSort';
 import MultiSelectDropdown from '../components/MultiSelectDropdown';
 import { regionsApi, Region } from '../api/regions';
+import { exportViewsApi, ExportView } from '../api/exportViews';
 
 interface User {
     user_id: number;
@@ -79,6 +80,80 @@ export default function ModelsPage() {
     const [userSearchTerm, setUserSearchTerm] = useState('');
     const [validationTypes, setValidationTypes] = useState<any[]>([]);
     const [validationPriorities, setValidationPriorities] = useState<any[]>([]);
+    const [showExportModal, setShowExportModal] = useState(false);
+    const [showSaveViewModal, setShowSaveViewModal] = useState(false);
+    const [newViewName, setNewViewName] = useState('');
+    const [newViewDescription, setNewViewDescription] = useState('');
+    const [newViewIsPublic, setNewViewIsPublic] = useState(false);
+    const [editingViewId, setEditingViewId] = useState<number | null>(null);
+    const [dbViews, setDbViews] = useState<ExportView[]>([]);
+
+    // Define available columns for export
+    const availableColumns = [
+        { key: 'model_id', label: 'Model ID', default: true },
+        { key: 'model_name', label: 'Model Name', default: true },
+        { key: 'description', label: 'Description', default: true },
+        { key: 'development_type', label: 'Development Type', default: true },
+        { key: 'status', label: 'Status', default: true },
+        { key: 'owner', label: 'Owner', default: true },
+        { key: 'developer', label: 'Developer', default: true },
+        { key: 'vendor', label: 'Vendor', default: false },
+        { key: 'wholly_owned_region', label: 'Wholly Owned Region', default: false },
+        { key: 'regions', label: 'Regions', default: false },
+        { key: 'row_approval_status', label: 'Approval Status', default: false },
+        { key: 'created_at', label: 'Created Date', default: false },
+        { key: 'updated_at', label: 'Updated Date', default: false }
+    ];
+
+    // Define default preset views
+    const defaultViews = {
+        'default': {
+            id: 'default',
+            name: 'Default View',
+            columns: availableColumns.filter(col => col.default).map(col => col.key),
+            isDefault: true
+        },
+        'basic': {
+            id: 'basic',
+            name: 'Basic Info',
+            columns: ['model_id', 'model_name', 'status'],
+            isDefault: true
+        },
+        'full': {
+            id: 'full',
+            name: 'Full Details',
+            columns: availableColumns.map(col => col.key),
+            isDefault: true
+        },
+        'ownership': {
+            id: 'ownership',
+            name: 'Ownership Report',
+            columns: ['model_name', 'development_type', 'owner', 'developer', 'vendor', 'status'],
+            isDefault: true
+        }
+    };
+
+    // Combined views: default views + database views
+    const allViews = React.useMemo(() => {
+        const combined = { ...defaultViews };
+        // Add database views
+        dbViews.forEach(view => {
+            combined[`db_${view.view_id}`] = {
+                id: `db_${view.view_id}`,
+                name: view.view_name,
+                columns: view.columns,
+                isDefault: false,
+                isPublic: view.is_public,
+                dbView: view
+            };
+        });
+        return combined;
+    }, [dbViews]);
+
+    const [currentViewId, setCurrentViewId] = useState<string>('default');
+    const [selectedColumns, setSelectedColumns] = useState<string[]>(
+        availableColumns.filter(col => col.default).map(col => col.key)
+    );
 
     // Filters
     const [filters, setFilters] = useState({
@@ -144,7 +219,17 @@ export default function ModelsPage() {
 
     useEffect(() => {
         fetchData();
+        loadExportViews();
     }, []);
+
+    const loadExportViews = async () => {
+        try {
+            const views = await exportViewsApi.list('models');
+            setDbViews(views);
+        } catch (error) {
+            console.error('Failed to load export views:', error);
+        }
+    };
 
     const fetchData = async () => {
         try {
@@ -291,14 +376,196 @@ export default function ModelsPage() {
         );
     };
 
-    const handleExportCSV = async () => {
+    const toggleColumn = (columnKey: string) => {
+        setSelectedColumns(prev => {
+            if (prev.includes(columnKey)) {
+                return prev.filter(k => k !== columnKey);
+            } else {
+                return [...prev, columnKey];
+            }
+        });
+    };
+
+    const selectAllColumns = () => {
+        setSelectedColumns(availableColumns.map(col => col.key));
+    };
+
+    const deselectAllColumns = () => {
+        setSelectedColumns([]);
+    };
+
+    const loadView = (viewId: string) => {
+        const view = allViews[viewId];
+        if (view) {
+            setSelectedColumns(view.columns);
+            setCurrentViewId(viewId);
+        }
+    };
+
+    const saveCurrentView = async () => {
+        if (!newViewName.trim()) {
+            alert('Please enter a name for this view.');
+            return;
+        }
+
         try {
-            const response = await api.get('/models/export/csv', {
-                responseType: 'blob'
+            if (editingViewId) {
+                // Update existing view
+                await exportViewsApi.update(editingViewId, {
+                    view_name: newViewName,
+                    columns: selectedColumns,
+                    is_public: newViewIsPublic,
+                    description: newViewDescription || undefined
+                });
+            } else {
+                // Create new view
+                const newView = await exportViewsApi.create({
+                    entity_type: 'models',
+                    view_name: newViewName,
+                    columns: selectedColumns,
+                    is_public: newViewIsPublic,
+                    description: newViewDescription || undefined
+                });
+                setCurrentViewId(`db_${newView.view_id}`);
+            }
+
+            // Reload views from API
+            await loadExportViews();
+
+            // Reset form
+            setNewViewName('');
+            setNewViewDescription('');
+            setNewViewIsPublic(false);
+            setShowSaveViewModal(false);
+            setEditingViewId(null);
+        } catch (error: any) {
+            console.error('Failed to save view:', error);
+            alert(`Failed to save view: ${error.response?.data?.detail || error.message || 'Unknown error'}`);
+        }
+    };
+
+    const deleteView = async (viewId: string) => {
+        const view = allViews[viewId];
+        if (view.isDefault) {
+            alert('Cannot delete default views.');
+            return;
+        }
+
+        if (!confirm(`Delete view "${view.name}"?`)) {
+            return;
+        }
+
+        try {
+            // Extract numeric ID from db_X format
+            const numericId = parseInt(viewId.replace('db_', ''));
+            await exportViewsApi.delete(numericId);
+
+            // Reload views
+            await loadExportViews();
+
+            // If deleted view was current, switch to default
+            if (currentViewId === viewId) {
+                setCurrentViewId('default');
+                loadView('default');
+            }
+        } catch (error: any) {
+            console.error('Failed to delete view:', error);
+            alert(`Failed to delete view: ${error.response?.data?.detail || error.message || 'Unknown error'}`);
+        }
+    };
+
+    const startEditView = (viewId: string) => {
+        const view = allViews[viewId];
+        if (view.isDefault) {
+            alert('Cannot edit default views. You can save a copy with a new name.');
+            return;
+        }
+        // Extract numeric ID from db_X format
+        const numericId = parseInt(viewId.replace('db_', ''));
+        setEditingViewId(numericId);
+        setNewViewName(view.name);
+        if (view.dbView) {
+            setNewViewDescription(view.dbView.description || '');
+            setNewViewIsPublic(view.dbView.is_public);
+        }
+        setShowSaveViewModal(true);
+    };
+
+    const handleExportCSV = () => {
+        if (selectedColumns.length === 0) {
+            alert('Please select at least one column to export.');
+            return;
+        }
+
+        try {
+
+            // Generate CSV headers
+            const headers = availableColumns
+                .filter(col => selectedColumns.includes(col.key))
+                .map(col => col.label);
+
+            // Generate CSV rows
+            const rows = sortedData.map(model => {
+                const row: string[] = [];
+                selectedColumns.forEach(colKey => {
+                    let value = '';
+                    switch (colKey) {
+                        case 'model_id':
+                            value = model.model_id.toString();
+                            break;
+                        case 'model_name':
+                            value = model.model_name;
+                            break;
+                        case 'description':
+                            value = model.description || '';
+                            break;
+                        case 'development_type':
+                            value = model.development_type;
+                            break;
+                        case 'status':
+                            value = model.status;
+                            break;
+                        case 'owner':
+                            value = model.owner ? model.owner.full_name : '';
+                            break;
+                        case 'developer':
+                            value = model.developer ? model.developer.full_name : '';
+                            break;
+                        case 'vendor':
+                            value = model.vendor ? model.vendor.name : '';
+                            break;
+                        case 'wholly_owned_region':
+                            value = model.wholly_owned_region ? `${model.wholly_owned_region.name} (${model.wholly_owned_region.code})` : '';
+                            break;
+                        case 'regions':
+                            value = model.regions ? model.regions.map(r => r.code).join('; ') : '';
+                            break;
+                        case 'row_approval_status':
+                            value = model.row_approval_status || 'Approved';
+                            break;
+                        case 'created_at':
+                            value = new Date(model.created_at).toLocaleDateString();
+                            break;
+                        case 'updated_at':
+                            value = new Date(model.updated_at).toLocaleDateString();
+                            break;
+                    }
+                    // Escape quotes and commas for CSV
+                    value = value.replace(/"/g, '""');
+                    if (value.includes(',') || value.includes('"') || value.includes('\n')) {
+                        value = `"${value}"`;
+                    }
+                    row.push(value);
+                });
+                return row.join(',');
             });
 
-            // Create a download link
-            const url = window.URL.createObjectURL(new Blob([response.data]));
+            // Combine headers and rows
+            const csv = [headers.join(','), ...rows].join('\n');
+
+            // Create blob and download
+            const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+            const url = window.URL.createObjectURL(blob);
             const link = document.createElement('a');
             link.href = url;
 
@@ -313,6 +580,9 @@ export default function ModelsPage() {
             // Cleanup
             link.parentNode?.removeChild(link);
             window.URL.revokeObjectURL(url);
+
+            // Close modal
+            setShowExportModal(false);
         } catch (error) {
             console.error('Failed to export CSV:', error);
             alert('Failed to export CSV. Please try again.');
@@ -332,7 +602,7 @@ export default function ModelsPage() {
             <div className="flex justify-between items-center mb-6">
                 <h2 className="text-2xl font-bold">Models</h2>
                 <div className="flex gap-2">
-                    <button onClick={handleExportCSV} className="btn-secondary">
+                    <button onClick={() => setShowExportModal(true)} className="btn-secondary">
                         Export CSV
                     </button>
                     <button onClick={() => setShowForm(true)} className="btn-primary">
@@ -691,6 +961,234 @@ export default function ModelsPage() {
                             </button>
                         </div>
                     </form>
+                </div>
+            )}
+
+            {/* Export Column Selection Modal */}
+            {showExportModal && (
+                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+                    <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full mx-4 max-h-[80vh] overflow-hidden flex flex-col">
+                        <div className="p-6 border-b border-gray-200">
+                            <h3 className="text-xl font-bold">Select Columns to Export</h3>
+                            <p className="text-sm text-gray-600 mt-1">
+                                Choose which columns to include in the CSV export. Your selection will be saved for future exports.
+                            </p>
+                        </div>
+
+                        <div className="flex-1 overflow-y-auto p-6">
+                            {/* View Selector */}
+                            <div className="mb-4 p-4 bg-gray-50 rounded-lg">
+                                <label className="block text-sm font-medium mb-2">Saved Views</label>
+                                <div className="flex gap-2">
+                                    <select
+                                        value={currentViewId}
+                                        onChange={(e) => loadView(e.target.value)}
+                                        className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                    >
+                                        <optgroup label="Default Views">
+                                            {Object.values(allViews)
+                                                .filter((v: any) => v.isDefault)
+                                                .map((view: any) => (
+                                                    <option key={view.id} value={view.id}>
+                                                        {view.name} ({view.columns.length} columns)
+                                                    </option>
+                                                ))}
+                                        </optgroup>
+                                        {Object.values(allViews).some((v: any) => !v.isDefault) && (
+                                            <optgroup label="My Views">
+                                                {Object.values(allViews)
+                                                    .filter((v: any) => !v.isDefault && !v.isPublic)
+                                                    .map((view: any) => (
+                                                        <option key={view.id} value={view.id}>
+                                                            {view.name} ({view.columns.length} columns)
+                                                        </option>
+                                                    ))}
+                                            </optgroup>
+                                        )}
+                                        {Object.values(allViews).some((v: any) => v.isPublic) && (
+                                            <optgroup label="Public Views">
+                                                {Object.values(allViews)
+                                                    .filter((v: any) => !v.isDefault && v.isPublic)
+                                                    .map((view: any) => (
+                                                        <option key={view.id} value={view.id}>
+                                                            {view.name} ({view.columns.length} columns) 🌐
+                                                        </option>
+                                                    ))}
+                                            </optgroup>
+                                        )}
+                                    </select>
+                                    <button
+                                        onClick={() => {
+                                            setNewViewName('');
+                                            setNewViewDescription('');
+                                            setNewViewIsPublic(false);
+                                            setEditingViewId(null);
+                                            setShowSaveViewModal(true);
+                                        }}
+                                        className="px-3 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 text-sm whitespace-nowrap"
+                                    >
+                                        💾 Save as New
+                                    </button>
+                                    {!allViews[currentViewId]?.isDefault && (
+                                        <>
+                                            <button
+                                                onClick={() => startEditView(currentViewId)}
+                                                className="px-3 py-2 border border-gray-300 rounded-md hover:bg-gray-50 text-sm"
+                                                title="Rename view"
+                                            >
+                                                ✏️
+                                            </button>
+                                            <button
+                                                onClick={() => deleteView(currentViewId)}
+                                                className="px-3 py-2 border border-red-300 text-red-600 rounded-md hover:bg-red-50 text-sm"
+                                                title="Delete view"
+                                            >
+                                                🗑️
+                                            </button>
+                                        </>
+                                    )}
+                                </div>
+                            </div>
+
+                            <div className="flex gap-2 mb-4">
+                                <button
+                                    onClick={selectAllColumns}
+                                    className="text-sm px-3 py-1 rounded border border-gray-300 hover:bg-gray-50"
+                                >
+                                    Select All
+                                </button>
+                                <button
+                                    onClick={deselectAllColumns}
+                                    className="text-sm px-3 py-1 rounded border border-gray-300 hover:bg-gray-50"
+                                >
+                                    Deselect All
+                                </button>
+                                <div className="ml-auto text-sm text-gray-600">
+                                    {selectedColumns.length} of {availableColumns.length} columns selected
+                                </div>
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-3">
+                                {availableColumns.map(col => (
+                                    <label
+                                        key={col.key}
+                                        className="flex items-center gap-2 p-3 border border-gray-200 rounded hover:bg-gray-50 cursor-pointer"
+                                    >
+                                        <input
+                                            type="checkbox"
+                                            checked={selectedColumns.includes(col.key)}
+                                            onChange={() => toggleColumn(col.key)}
+                                            className="w-4 h-4 text-blue-600 rounded"
+                                        />
+                                        <span className="text-sm">{col.label}</span>
+                                    </label>
+                                ))}
+                            </div>
+                        </div>
+
+                        <div className="p-6 border-t border-gray-200 flex justify-end gap-2">
+                            <button
+                                onClick={() => setShowExportModal(false)}
+                                className="btn-secondary"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={handleExportCSV}
+                                className="btn-primary"
+                                disabled={selectedColumns.length === 0}
+                            >
+                                Export {selectedColumns.length > 0 ? `(${selectedColumns.length} columns)` : ''}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Save View Modal */}
+            {showSaveViewModal && (
+                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+                    <div className="bg-white rounded-lg shadow-xl max-w-md w-full mx-4">
+                        <div className="p-6 border-b border-gray-200">
+                            <h3 className="text-xl font-bold">
+                                {editingViewId ? 'Rename View' : 'Save Column Selection as View'}
+                            </h3>
+                            <p className="text-sm text-gray-600 mt-1">
+                                {editingViewId
+                                    ? 'Enter a new name for this view.'
+                                    : 'Give your current column selection a name so you can quickly load it later.'}
+                            </p>
+                        </div>
+
+                        <div className="p-6 space-y-4">
+                            <div>
+                                <label className="block text-sm font-medium mb-2">View Name *</label>
+                                <input
+                                    type="text"
+                                    value={newViewName}
+                                    onChange={(e) => setNewViewName(e.target.value)}
+                                    placeholder="e.g., Compliance Report"
+                                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                    autoFocus
+                                />
+                            </div>
+
+                            <div>
+                                <label className="block text-sm font-medium mb-2">Description (optional)</label>
+                                <textarea
+                                    value={newViewDescription}
+                                    onChange={(e) => setNewViewDescription(e.target.value)}
+                                    placeholder="What is this view for?"
+                                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                    rows={2}
+                                />
+                            </div>
+
+                            <div>
+                                <label className="flex items-center gap-2 cursor-pointer">
+                                    <input
+                                        type="checkbox"
+                                        checked={newViewIsPublic}
+                                        onChange={(e) => setNewViewIsPublic(e.target.checked)}
+                                        className="w-4 h-4 text-blue-600 rounded"
+                                    />
+                                    <span className="text-sm font-medium">
+                                        Make this view public 🌐
+                                    </span>
+                                </label>
+                                <p className="text-xs text-gray-500 mt-1 ml-6">
+                                    Public views can be seen and used by all users, but only you can edit or delete them.
+                                </p>
+                            </div>
+
+                            {!editingViewId && (
+                                <p className="text-xs text-gray-500 bg-blue-50 p-2 rounded">
+                                    Currently selected: {selectedColumns.length} column{selectedColumns.length !== 1 ? 's' : ''}
+                                </p>
+                            )}
+                        </div>
+
+                        <div className="p-6 border-t border-gray-200 flex justify-end gap-2">
+                            <button
+                                onClick={() => {
+                                    setShowSaveViewModal(false);
+                                    setNewViewName('');
+                                    setNewViewDescription('');
+                                    setNewViewIsPublic(false);
+                                    setEditingViewId(null);
+                                }}
+                                className="btn-secondary"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={saveCurrentView}
+                                className="btn-primary"
+                            >
+                                {editingViewId ? 'Rename' : 'Save View'}
+                            </button>
+                        </div>
+                    </div>
                 </div>
             )}
 

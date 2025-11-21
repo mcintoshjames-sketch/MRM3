@@ -26,6 +26,7 @@ from app.models.validation import (
     ValidationApproval
 )
 from app.models.validation_grouping import ValidationGroupingMemory
+from app.models.export_view import ExportView
 
 __all__ = [
     "User", "UserRole", "user_regions",
@@ -56,5 +57,6 @@ __all__ = [
     "ValidationOutcome",
     "ValidationReviewOutcome",
     "ValidationApproval",
-    "ValidationGroupingMemory"
+    "ValidationGroupingMemory",
+    "ExportView"
 ]
