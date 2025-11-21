@@ -59,7 +59,7 @@ export default function ValidatorDashboardPage() {
             setLoading(true);
             setError(null);
 
-            // Fetch all validation requests and detailed assignments
+            // Fetch all validation projects and detailed assignments
             const [requestsRes, assignmentsRes] = await Promise.all([
                 api.get('/validation-workflow/requests/'),
                 api.get('/validation-workflow/assignments/')
@@ -115,7 +115,7 @@ export default function ValidatorDashboardPage() {
             await fetchData();
         } catch (err: any) {
             console.error('Failed to claim request:', err);
-            setError(err.response?.data?.detail || 'Failed to claim validation request');
+            setError(err.response?.data?.detail || 'Failed to claim validation project');
         } finally {
             setClaimingId(null);
         }
@@ -268,7 +268,7 @@ export default function ValidatorDashboardPage() {
                     <div className="text-3xl font-bold text-green-600">{completedAssignments.length}</div>
                 </div>
                 <div className="bg-white p-4 rounded-lg shadow">
-                    <div className="text-sm text-gray-500">Unassigned Requests</div>
+                    <div className="text-sm text-gray-500">Unassigned Projects</div>
                     <div className="text-3xl font-bold text-orange-600">{pendingRequests.length}</div>
                 </div>
             </div>
@@ -363,11 +363,11 @@ export default function ValidatorDashboardPage() {
             <div className="bg-white rounded-lg shadow-md mb-6">
                 <div className="p-4 border-b bg-blue-50">
                     <h3 className="text-lg font-bold">My Active Assignments</h3>
-                    <p className="text-sm text-gray-600">Validation requests where you are the primary validator</p>
+                    <p className="text-sm text-gray-600">Validation projects where you are the primary validator</p>
                 </div>
                 {activeAssignments.length === 0 ? (
                     <div className="p-6 text-center text-gray-500">
-                        No active assignments. Check pending requests below or wait to be assigned.
+                        No active assignments. Check pending projects below or wait to be assigned.
                     </div>
                 ) : (
                     <div className="overflow-x-auto">
@@ -416,19 +416,18 @@ export default function ValidatorDashboardPage() {
                                         <td className="px-6 py-4 whitespace-nowrap">
                                             <Link
                                                 to={`/validation-workflow/${req.request_id}`}
-                                                className={`px-3 py-1 rounded text-sm ${
-                                                    req.current_status === 'Intake' || req.current_status === 'Planning'
-                                                        ? 'bg-green-600 text-white hover:bg-green-700'
-                                                        : req.current_status === 'In Progress'
+                                                className={`px-3 py-1 rounded text-sm ${req.current_status === 'Intake' || req.current_status === 'Planning'
+                                                    ? 'bg-green-600 text-white hover:bg-green-700'
+                                                    : req.current_status === 'In Progress'
                                                         ? 'bg-blue-600 text-white hover:bg-blue-700'
                                                         : 'bg-gray-600 text-white hover:bg-gray-700'
-                                                }`}
+                                                    }`}
                                             >
                                                 {req.current_status === 'Intake' || req.current_status === 'Planning'
                                                     ? 'Begin Work'
                                                     : req.current_status === 'In Progress'
-                                                    ? 'Continue Work'
-                                                    : 'View Status'}
+                                                        ? 'Continue Work'
+                                                        : 'View Status'}
                                             </Link>
                                         </td>
                                     </tr>
@@ -444,7 +443,7 @@ export default function ValidatorDashboardPage() {
                 <div className="bg-white rounded-lg shadow-md mb-6">
                     <div className="p-4 border-b bg-purple-50">
                         <h3 className="text-lg font-bold">Pending Reviews</h3>
-                        <p className="text-sm text-gray-600">Validation requests awaiting your review</p>
+                        <p className="text-sm text-gray-600">Validation projects awaiting your review</p>
                     </div>
                     <div className="overflow-x-auto">
                         <table className="min-w-full divide-y divide-gray-200">
@@ -506,12 +505,12 @@ export default function ValidatorDashboardPage() {
             {/* Pending Requests Available for Assignment */}
             <div className="bg-white rounded-lg shadow-md">
                 <div className="p-4 border-b bg-orange-50">
-                    <h3 className="text-lg font-bold">Pending Validation Requests</h3>
-                    <p className="text-sm text-gray-600">Requests awaiting validator assignment</p>
+                    <h3 className="text-lg font-bold">Pending Validation Projects</h3>
+                    <p className="text-sm text-gray-600">Projects awaiting validator assignment</p>
                 </div>
                 {pendingRequests.length === 0 ? (
                     <div className="p-6 text-center text-gray-500">
-                        No pending requests at this time.
+                        No pending projects at this time.
                     </div>
                 ) : (
                     <div className="overflow-x-auto">
@@ -572,19 +571,18 @@ export default function ValidatorDashboardPage() {
                                                 <button
                                                     onClick={() => claimRequest(req.request_id)}
                                                     disabled={claimingId === req.request_id || !!req.primary_validator}
-                                                    className={`px-3 py-1 rounded text-sm ${
-                                                        req.primary_validator
-                                                            ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                                                            : claimingId === req.request_id
+                                                    className={`px-3 py-1 rounded text-sm ${req.primary_validator
+                                                        ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                                                        : claimingId === req.request_id
                                                             ? 'bg-green-400 text-white cursor-wait'
                                                             : 'bg-green-600 text-white hover:bg-green-700'
-                                                    }`}
+                                                        }`}
                                                 >
                                                     {claimingId === req.request_id
                                                         ? 'Claiming...'
                                                         : req.primary_validator
-                                                        ? 'Assigned'
-                                                        : 'Claim'}
+                                                            ? 'Assigned'
+                                                            : 'Claim'}
                                                 </button>
                                                 <Link
                                                     to={`/validation-workflow/${req.request_id}`}
@@ -610,7 +608,7 @@ export default function ValidatorDashboardPage() {
                         to="/validation-workflow"
                         className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700"
                     >
-                        View All Validation Requests
+                        View All Validation Projects
                     </Link>
                     <Link
                         to="/models"

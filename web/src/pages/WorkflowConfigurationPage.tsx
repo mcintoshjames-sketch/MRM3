@@ -128,7 +128,7 @@ export default function WorkflowConfigurationPage() {
                                     </div>
                                     <div className="flex-1">
                                         <p className="text-sm text-gray-600">
-                                            Time allowed for a validation request to be assigned to a validator or claimed
+                                            Time allowed for a validation project to be assigned to a validator or claimed
                                             (from Intake status to having a primary validator assigned)
                                         </p>
                                     </div>

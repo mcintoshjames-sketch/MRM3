@@ -64,6 +64,7 @@ export default function LoginPage() {
                     <div>Admin: admin@example.com / admin123</div>
                     <div>Validator: validator@example.com / validator123</div>
                     <div>Validator: david.brown@contoso.com / validator123</div>
+                    <div>Model Owner: emily.davis@contoso.com / emily123</div>
                     <div>Global Approver: globalapprover@example.com / approver123</div>
                     <div>US Approver: usapprover@example.com / approver123</div>
                     <div>EU Approver: euapprover@example.com / approver123</div>

@@ -4,17 +4,6 @@ import { useAuth } from '../contexts/AuthContext';
 import api from '../api/client';
 import Layout from '../components/Layout';
 
-interface OverdueModel {
-    model_id: number;
-    model_name: string;
-    risk_tier: string | null;
-    owner_name: string;
-    last_validation_date: string | null;
-    next_due_date: string | null;
-    days_overdue: number | null;
-    status: string;
-}
-
 interface PassWithFindingsValidation {
     validation_id: number;
     model_id: number;
@@ -74,6 +63,7 @@ interface OverdueSubmission {
     submission_due_date: string;
     grace_period_end: string;
     days_overdue: number;
+    urgency: string;
     validation_due_date: string;
     submission_status: string;
 }
@@ -105,7 +95,6 @@ interface UpcomingRevalidation {
 
 export default function AdminDashboardPage() {
     const { user } = useAuth();
-    const [overdueModels, setOverdueModels] = useState<OverdueModel[]>([]);
     const [passWithFindings, setPassWithFindings] = useState<PassWithFindingsValidation[]>([]);
     const [slaViolations, setSlaViolations] = useState<SLAViolation[]>([]);
     const [outOfOrder, setOutOfOrder] = useState<OutOfOrderValidation[]>([]);
@@ -122,7 +111,6 @@ export default function AdminDashboardPage() {
     const fetchDashboardData = async () => {
         try {
             const [
-                overdueRes,
                 findingsRes,
                 violationsRes,
                 outOfOrderRes,
@@ -131,7 +119,6 @@ export default function AdminDashboardPage() {
                 overdueValidationsRes,
                 upcomingRevalidationsRes
             ] = await Promise.all([
-                api.get('/validations/dashboard/overdue'),
                 api.get('/validations/dashboard/pass-with-findings'),
                 api.get('/validation-workflow/dashboard/sla-violations'),
                 api.get('/validation-workflow/dashboard/out-of-order'),
@@ -140,7 +127,6 @@ export default function AdminDashboardPage() {
                 api.get('/validation-workflow/dashboard/overdue-validations'),
                 api.get('/validation-workflow/dashboard/upcoming-revalidations?days_ahead=90')
             ]);
-            setOverdueModels(overdueRes.data);
             setPassWithFindings(findingsRes.data);
             setSlaViolations(violationsRes.data);
             setOutOfOrder(outOfOrderRes.data);
@@ -184,7 +170,7 @@ export default function AdminDashboardPage() {
             </div>
 
             {/* Summary Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-6 gap-4 mb-6">
+            <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-7 gap-4 mb-6">
                 <div className="bg-white p-4 rounded-lg shadow-md">
                     <h3 className="text-xs font-medium text-gray-500 uppercase">Pending Assignment</h3>
                     <p className="text-3xl font-bold text-blue-600 mt-2">{pendingAssignments.length}</p>
@@ -201,9 +187,14 @@ export default function AdminDashboardPage() {
                     <p className="text-xs text-gray-600 mt-1">Validation after production</p>
                 </div>
                 <div className="bg-white p-4 rounded-lg shadow-md">
+                    <h3 className="text-xs font-medium text-gray-500 uppercase">Pending Submissions</h3>
+                    <p className="text-3xl font-bold text-orange-600 mt-2">{overdueSubmissions.length}</p>
+                    <p className="text-xs text-gray-600 mt-1">Past due date</p>
+                </div>
+                <div className="bg-white p-4 rounded-lg shadow-md">
                     <h3 className="text-xs font-medium text-gray-500 uppercase">Overdue Validations</h3>
-                    <p className="text-3xl font-bold text-orange-600 mt-2">{overdueModels.length}</p>
-                    <p className="text-xs text-gray-600 mt-1">Models requiring validation</p>
+                    <p className="text-3xl font-bold text-red-600 mt-2">{overdueValidations.length}</p>
+                    <p className="text-xs text-gray-600 mt-1">Past validation due</p>
                 </div>
                 <div className="bg-white p-4 rounded-lg shadow-md">
                     <h3 className="text-xs font-medium text-gray-500 uppercase">Pass with Findings</h3>
@@ -434,90 +425,6 @@ export default function AdminDashboardPage() {
                 </div>
             )}
 
-            {/* Overdue Validations Table */}
-            <div className="bg-white p-6 rounded-lg shadow-md mb-6">
-                <h3 className="text-lg font-bold mb-4">
-                    Models Overdue for Validation ({overdueModels.length})
-                </h3>
-                {overdueModels.length === 0 ? (
-                    <p className="text-gray-500">No models are currently overdue for validation.</p>
-                ) : (
-                    <div className="overflow-x-auto">
-                        <table className="min-w-full divide-y divide-gray-200">
-                            <thead className="bg-gray-50">
-                                <tr>
-                                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">
-                                        Model Name
-                                    </th>
-                                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">
-                                        Risk Tier
-                                    </th>
-                                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">
-                                        Owner
-                                    </th>
-                                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">
-                                        Last Validation
-                                    </th>
-                                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">
-                                        Status
-                                    </th>
-                                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">
-                                        Actions
-                                    </th>
-                                </tr>
-                            </thead>
-                            <tbody className="bg-white divide-y divide-gray-200">
-                                {overdueModels.map((model) => (
-                                    <tr key={model.model_id}>
-                                        <td className="px-4 py-3 whitespace-nowrap font-medium">
-                                            <Link
-                                                to={`/models/${model.model_id}`}
-                                                className="text-blue-600 hover:text-blue-800"
-                                            >
-                                                {model.model_name}
-                                            </Link>
-                                        </td>
-                                        <td className="px-4 py-3 whitespace-nowrap">
-                                            {model.risk_tier ? (
-                                                <span className="px-2 py-1 text-xs rounded bg-orange-100 text-orange-800">
-                                                    {model.risk_tier}
-                                                </span>
-                                            ) : (
-                                                <span className="text-gray-400">-</span>
-                                            )}
-                                        </td>
-                                        <td className="px-4 py-3 whitespace-nowrap text-sm">
-                                            {model.owner_name}
-                                        </td>
-                                        <td className="px-4 py-3 whitespace-nowrap text-sm">
-                                            {model.last_validation_date || 'Never'}
-                                        </td>
-                                        <td className="px-4 py-3 whitespace-nowrap">
-                                            <span className={`px-2 py-1 text-xs rounded ${
-                                                model.status === 'Never Validated'
-                                                    ? 'bg-red-100 text-red-800'
-                                                    : 'bg-orange-100 text-orange-800'
-                                            }`}>
-                                                {model.status}
-                                                {model.days_overdue && ` (${model.days_overdue} days)`}
-                                            </span>
-                                        </td>
-                                        <td className="px-4 py-3 whitespace-nowrap">
-                                            <Link
-                                                to={`/validations/new?model_id=${model.model_id}`}
-                                                className="text-blue-600 hover:text-blue-800 text-sm"
-                                            >
-                                                Create Validation
-                                            </Link>
-                                        </td>
-                                    </tr>
-                                ))}
-                            </tbody>
-                        </table>
-                    </div>
-                )}
-            </div>
-
             {/* Pass with Findings Table */}
             <div className="bg-white p-6 rounded-lg shadow-md">
                 <h3 className="text-lg font-bold mb-4">
@@ -590,35 +497,48 @@ export default function AdminDashboardPage() {
 
             {/* Revalidation Lifecycle Widgets */}
             <div className="mt-8 space-y-6">
-                {/* Overdue Submissions */}
+                {/* Pending and Overdue Submissions */}
                 {overdueSubmissions.length > 0 && (
                     <div className="bg-white rounded-lg shadow-md overflow-hidden">
-                        <div className="p-4 border-b bg-red-50">
+                        <div className="p-4 border-b bg-orange-50">
                             <div className="flex items-center">
-                                <svg className="h-5 w-5 text-red-600 mr-2" fill="currentColor" viewBox="0 0 20 20">
-                                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+                                <svg className="h-5 w-5 text-orange-600 mr-2" fill="currentColor" viewBox="0 0 20 20">
+                                    <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
                                 </svg>
-                                <h3 className="text-lg font-bold text-red-900">
-                                    Overdue Revalidation Submissions ({overdueSubmissions.length})
+                                <h3 className="text-lg font-bold text-orange-900">
+                                    Pending and Overdue Revalidation Submissions ({overdueSubmissions.length})
                                 </h3>
                             </div>
-                            <p className="text-sm text-red-700 ml-7">Models with overdue documentation submissions (past grace period)</p>
+                            <p className="text-sm text-orange-700 ml-7">Models past submission due date (includes those in grace period and fully overdue)</p>
                         </div>
                         <table className="min-w-full divide-y divide-gray-200">
                             <thead className="bg-gray-50">
                                 <tr>
+                                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
                                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Model</th>
                                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Owner</th>
                                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Submission Due</th>
                                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Grace Period End</th>
-                                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Days Overdue</th>
+                                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Days Late</th>
                                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Validation Due</th>
                                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
                                 </tr>
                             </thead>
                             <tbody className="bg-white divide-y divide-gray-200">
                                 {overdueSubmissions.map((submission) => (
-                                    <tr key={submission.request_id} className="hover:bg-red-50">
+                                    <tr
+                                        key={submission.request_id}
+                                        className="hover:bg-orange-50"
+                                    >
+                                        <td className="px-4 py-3 whitespace-nowrap">
+                                            <span className={`px-2 py-1 text-xs font-semibold rounded ${
+                                                submission.urgency === 'overdue'
+                                                    ? 'bg-red-100 text-red-800'
+                                                    : 'bg-yellow-100 text-yellow-800'
+                                            }`}>
+                                                {submission.urgency === 'overdue' ? 'Overdue' : 'In Grace Period'}
+                                            </span>
+                                        </td>
                                         <td className="px-4 py-3 whitespace-nowrap">
                                             <Link
                                                 to={`/models/${submission.model_id}`}
@@ -631,7 +551,11 @@ export default function AdminDashboardPage() {
                                         <td className="px-4 py-3 whitespace-nowrap text-sm">{submission.submission_due_date}</td>
                                         <td className="px-4 py-3 whitespace-nowrap text-sm">{submission.grace_period_end}</td>
                                         <td className="px-4 py-3 whitespace-nowrap">
-                                            <span className="px-2 py-1 text-xs font-semibold rounded bg-red-100 text-red-800">
+                                            <span className={`px-2 py-1 text-xs font-semibold rounded ${
+                                                submission.urgency === 'overdue'
+                                                    ? 'bg-orange-100 text-orange-800'
+                                                    : 'bg-blue-100 text-blue-800'
+                                            }`}>
                                                 {submission.days_overdue} days
                                             </span>
                                         </td>
@@ -654,16 +578,16 @@ export default function AdminDashboardPage() {
                 {/* Overdue Validations */}
                 {overdueValidations.length > 0 && (
                     <div className="bg-white rounded-lg shadow-md overflow-hidden">
-                        <div className="p-4 border-b bg-orange-50">
+                        <div className="p-4 border-b bg-red-50">
                             <div className="flex items-center">
-                                <svg className="h-5 w-5 text-orange-600 mr-2" fill="currentColor" viewBox="0 0 20 20">
-                                    <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                                <svg className="h-5 w-5 text-red-600 mr-2" fill="currentColor" viewBox="0 0 20 20">
+                                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
                                 </svg>
-                                <h3 className="text-lg font-bold text-orange-900">
+                                <h3 className="text-lg font-bold text-red-900">
                                     Overdue Validations ({overdueValidations.length})
                                 </h3>
                             </div>
-                            <p className="text-sm text-orange-700 ml-7">Models with overdue validations (past model validation due date)</p>
+                            <p className="text-sm text-red-700 ml-7">Models past their final validation due date</p>
                         </div>
                         <table className="min-w-full divide-y divide-gray-200">
                             <thead className="bg-gray-50">
@@ -679,7 +603,7 @@ export default function AdminDashboardPage() {
                             </thead>
                             <tbody className="bg-white divide-y divide-gray-200">
                                 {overdueValidations.map((validation) => (
-                                    <tr key={validation.request_id} className="hover:bg-orange-50">
+                                    <tr key={validation.request_id} className="hover:bg-red-50">
                                         <td className="px-4 py-3 whitespace-nowrap">
                                             <Link
                                                 to={`/models/${validation.model_id}`}
@@ -694,7 +618,7 @@ export default function AdminDashboardPage() {
                                         </td>
                                         <td className="px-4 py-3 whitespace-nowrap text-sm">{validation.model_validation_due_date}</td>
                                         <td className="px-4 py-3 whitespace-nowrap">
-                                            <span className="px-2 py-1 text-xs font-semibold rounded bg-orange-100 text-orange-800">
+                                            <span className="px-2 py-1 text-xs font-semibold rounded bg-red-100 text-red-800">
                                                 {validation.days_overdue} days
                                             </span>
                                         </td>
@@ -714,7 +638,7 @@ export default function AdminDashboardPage() {
                     </div>
                 )}
 
-                {/* Upcoming Revalidations */}
+                {/* Upcoming Submissions */}
                 {upcomingRevalidations.length > 0 && (
                     <div className="bg-white rounded-lg shadow-md overflow-hidden">
                         <div className="p-4 border-b bg-blue-50">
@@ -723,10 +647,10 @@ export default function AdminDashboardPage() {
                                     <path fillRule="evenodd" d="M6 2a1 1 0 00-1 1v1H4a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V6a2 2 0 00-2-2h-1V3a1 1 0 10-2 0v1H7V3a1 1 0 00-1-1zm0 5a1 1 0 000 2h8a1 1 0 100-2H6z" clipRule="evenodd" />
                                 </svg>
                                 <h3 className="text-lg font-bold text-blue-900">
-                                    Upcoming Revalidations ({upcomingRevalidations.length})
+                                    Upcoming Submissions ({upcomingRevalidations.length})
                                 </h3>
                             </div>
-                            <p className="text-sm text-blue-700 ml-7">Models with revalidations due in the next 90 days</p>
+                            <p className="text-sm text-blue-700 ml-7">Models with submissions due in the next 90 days</p>
                         </div>
                         <table className="min-w-full divide-y divide-gray-200">
                             <thead className="bg-gray-50">
@@ -771,7 +695,7 @@ export default function AdminDashboardPage() {
                         </table>
                         {upcomingRevalidations.length > 10 && (
                             <div className="p-3 bg-gray-50 text-sm text-gray-600 text-center">
-                                Showing first 10 of {upcomingRevalidations.length} upcoming revalidations
+                                Showing first 10 of {upcomingRevalidations.length} upcoming submissions
                             </div>
                         )}
                     </div>

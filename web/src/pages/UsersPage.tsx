@@ -50,6 +50,7 @@ export default function UsersPage() {
     const [entraLoading, setEntraLoading] = useState(false);
     const [selectedEntraUser, setSelectedEntraUser] = useState<EntraUser | null>(null);
     const [provisionRole, setProvisionRole] = useState('User');
+    const [provisionRegionIds, setProvisionRegionIds] = useState<number[]>([]);
 
     // Table sorting
     const { sortedData, requestSort, getSortIcon } = useTableSort<User>(users, 'full_name');
@@ -154,15 +155,23 @@ export default function UsersPage() {
         if (!selectedEntraUser) return;
 
         try {
-            await api.post('/auth/entra/provision', {
+            const payload: any = {
                 entra_id: selectedEntraUser.entra_id,
                 role: provisionRole
-            });
+            };
+
+            // Include region_ids for Regional Approvers
+            if (provisionRole === 'Regional Approver') {
+                payload.region_ids = provisionRegionIds;
+            }
+
+            await api.post('/auth/entra/provision', payload);
             setShowEntraModal(false);
             setSelectedEntraUser(null);
             setEntraSearch('');
             setEntraUsers([]);
             setProvisionRole('User');
+            setProvisionRegionIds([]);
             fetchUsers();
         } catch (error: any) {
             console.error('Failed to provision user:', error);
@@ -176,6 +185,7 @@ export default function UsersPage() {
         setEntraSearch('');
         setEntraUsers([]);
         setProvisionRole('User');
+        setProvisionRegionIds([]);
     };
 
     if (loading) {
@@ -572,19 +582,57 @@ export default function UsersPage() {
                                             {selectedEntraUser.mobile_phone || 'N/A'}
                                         </div>
                                     </div>
-                                    <div className="flex items-center gap-4">
-                                        <label className="text-sm font-medium">
-                                            Application Role:
-                                        </label>
-                                        <select
-                                            className="input-field w-auto"
-                                            value={provisionRole}
-                                            onChange={(e) => setProvisionRole(e.target.value)}
-                                        >
-                                            <option value="User">User</option>
-                                            <option value="Validator">Validator</option>
-                                            <option value="Admin">Admin</option>
-                                        </select>
+                                    <div>
+                                        <div className="flex items-center gap-4 mb-3">
+                                            <label className="text-sm font-medium">
+                                                Application Role:
+                                            </label>
+                                            <select
+                                                className="input-field w-auto"
+                                                value={provisionRole}
+                                                onChange={(e) => {
+                                                    setProvisionRole(e.target.value);
+                                                    setProvisionRegionIds([]);
+                                                }}
+                                            >
+                                                <option value="User">User</option>
+                                                <option value="Validator">Validator</option>
+                                                <option value="Admin">Admin</option>
+                                                <option value="Global Approver">Global Approver</option>
+                                                <option value="Regional Approver">Regional Approver</option>
+                                            </select>
+                                        </div>
+
+                                        {/* Region Selection for Regional Approvers */}
+                                        {provisionRole === 'Regional Approver' && (
+                                            <div className="mt-3 p-3 border border-gray-200 rounded-lg">
+                                                <label className="block text-sm font-medium mb-2">
+                                                    Authorized Regions *
+                                                </label>
+                                                <div className="grid grid-cols-2 gap-2">
+                                                    {regions.map((region) => (
+                                                        <label key={region.region_id} className="flex items-center gap-2">
+                                                            <input
+                                                                type="checkbox"
+                                                                checked={provisionRegionIds.includes(region.region_id)}
+                                                                onChange={(e) => {
+                                                                    if (e.target.checked) {
+                                                                        setProvisionRegionIds([...provisionRegionIds, region.region_id]);
+                                                                    } else {
+                                                                        setProvisionRegionIds(provisionRegionIds.filter(id => id !== region.region_id));
+                                                                    }
+                                                                }}
+                                                                className="rounded"
+                                                            />
+                                                            <span className="text-sm">{region.name} ({region.code})</span>
+                                                        </label>
+                                                    ))}
+                                                </div>
+                                                {provisionRegionIds.length === 0 && (
+                                                    <p className="text-sm text-red-600 mt-2">At least one region must be selected for Regional Approvers</p>
+                                                )}
+                                            </div>
+                                        )}
                                     </div>
                                 </div>
                             )}
@@ -597,7 +645,10 @@ export default function UsersPage() {
                             <button
                                 onClick={provisionEntraUser}
                                 className="btn-primary"
-                                disabled={!selectedEntraUser}
+                                disabled={
+                                    !selectedEntraUser ||
+                                    (provisionRole === 'Regional Approver' && provisionRegionIds.length === 0)
+                                }
                             >
                                 Add to Application
                             </button>

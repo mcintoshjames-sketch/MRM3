@@ -140,7 +140,7 @@ export default function TaxonomyPage() {
     };
 
     const isSystemProtectedValue = (value: TaxonomyValue): boolean => {
-        // TARGETED validation type is used by the system for auto-generated validation requests
+        // TARGETED validation type is used by the system for auto-generated validation projects
         // and should not be deleted
         return selectedTaxonomy?.name === 'Validation Type' && value.code === 'TARGETED';
     };
@@ -228,11 +228,10 @@ export default function TaxonomyPage() {
                                     <button
                                         key={tax.taxonomy_id}
                                         onClick={() => selectTaxonomy(tax.taxonomy_id)}
-                                        className={`w-full text-left px-3 py-2 rounded text-sm ${
-                                            selectedTaxonomy?.taxonomy_id === tax.taxonomy_id
-                                                ? 'bg-blue-100 text-blue-800 font-medium'
-                                                : 'hover:bg-gray-100'
-                                        }`}
+                                        className={`w-full text-left px-3 py-2 rounded text-sm ${selectedTaxonomy?.taxonomy_id === tax.taxonomy_id
+                                            ? 'bg-blue-100 text-blue-800 font-medium'
+                                            : 'hover:bg-gray-100'
+                                            }`}
                                     >
                                         <div className="flex items-center justify-between">
                                             <span>{tax.name}</span>
@@ -406,11 +405,10 @@ export default function TaxonomyPage() {
                                                                 {value.description || '-'}
                                                             </td>
                                                             <td className="px-4 py-2">
-                                                                <span className={`px-2 py-1 text-xs rounded ${
-                                                                    value.is_active
-                                                                        ? 'bg-green-100 text-green-800'
-                                                                        : 'bg-gray-100 text-gray-800'
-                                                                }`}>
+                                                                <span className={`px-2 py-1 text-xs rounded ${value.is_active
+                                                                    ? 'bg-green-100 text-green-800'
+                                                                    : 'bg-gray-100 text-gray-800'
+                                                                    }`}>
                                                                     {value.is_active ? 'Active' : 'Inactive'}
                                                                 </span>
                                                             </td>
@@ -424,7 +422,7 @@ export default function TaxonomyPage() {
                                                                 {isSystemProtectedValue(value) ? (
                                                                     <span
                                                                         className="text-gray-400 text-sm cursor-not-allowed"
-                                                                        title="This value is used by the system for auto-generated validation requests and cannot be deleted"
+                                                                        title="This value is used by the system for auto-generated validation projects and cannot be deleted"
                                                                     >
                                                                         Delete
                                                                     </span>

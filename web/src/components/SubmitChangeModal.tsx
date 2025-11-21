@@ -119,7 +119,7 @@ const SubmitChangeModal: React.FC<SubmitChangeModalProps> = ({ modelId, onClose,
                 production_date: formData.production_date || null,
             });
 
-            // Check if validation request was created
+            // Check if validation project was created
             if (response.validation_request_created) {
                 setValidationAcknowledgment({
                     created: true,
@@ -171,7 +171,7 @@ const SubmitChangeModal: React.FC<SubmitChangeModalProps> = ({ modelId, onClose,
                                 </div>
                                 {validationAcknowledgment.request_id && (
                                     <div>
-                                        <span className="font-medium">Request ID:</span> #{validationAcknowledgment.request_id}
+                                        <span className="font-medium">Project ID:</span> #{validationAcknowledgment.request_id}
                                     </div>
                                 )}
                             </div>
@@ -182,7 +182,7 @@ const SubmitChangeModal: React.FC<SubmitChangeModalProps> = ({ modelId, onClose,
                             </div>
                         )}
                         <p className="text-sm mb-3">
-                            The validation request is now pending assignment to a validator. You will be notified when the validation is complete.
+                            The validation project is now pending assignment to a validator. You will be notified when the validation is complete.
                         </p>
                         <button
                             onClick={() => {

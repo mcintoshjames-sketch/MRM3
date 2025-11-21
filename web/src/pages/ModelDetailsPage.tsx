@@ -260,7 +260,7 @@ export default function ModelDetailsPage() {
         const warnings: string[] = [];
         const activeStatuses = ['Intake', 'Planning', 'In Progress', 'Review', 'Pending Approval'];
 
-        // Find active validation requests
+        // Find active validation projects
         const activeRequests = validationRequests.filter(req =>
             activeStatuses.includes(req.current_status) && req.target_completion_date
         );
@@ -268,7 +268,7 @@ export default function ModelDetailsPage() {
         // Find versions with production dates
         const implementedVersions = versions.filter(v => v.production_date);
 
-        // Check each active request against implemented versions
+        // Check each active project against implemented versions
         activeRequests.forEach(request => {
             implementedVersions.forEach(version => {
                 const targetDate = new Date(request.target_completion_date);
@@ -276,7 +276,7 @@ export default function ModelDetailsPage() {
 
                 if (implDate < targetDate) {
                     warnings.push(
-                        `Active validation request (${request.validation_type}, target: ${targetDate.toLocaleDateString()}) has a target completion date after version ${version.version_number} implementation date (${implDate.toLocaleDateString()}). Consider expediting validation or using Interim Review.`
+                        `Active validation project (${request.validation_type}, target: ${targetDate.toLocaleDateString()}) has a target completion date after version ${version.version_number} implementation date (${implDate.toLocaleDateString()}). Consider expediting validation or using Interim Review.`
                     );
                 }
             });
@@ -317,7 +317,7 @@ export default function ModelDetailsPage() {
     const filteredUsersForSearch = users.filter(u =>
         !formData.user_ids.includes(u.user_id) &&
         (u.full_name.toLowerCase().includes(userSearchTerm.toLowerCase()) ||
-         u.email.toLowerCase().includes(userSearchTerm.toLowerCase()))
+            u.email.toLowerCase().includes(userSearchTerm.toLowerCase()))
     );
 
     const selectedUsers = users.filter(u => formData.user_ids.includes(u.user_id));
@@ -419,41 +419,37 @@ export default function ModelDetailsPage() {
                     <nav className="-mb-px flex space-x-8">
                         <button
                             onClick={() => setActiveTab('details')}
-                            className={`py-2 px-1 border-b-2 font-medium text-sm ${
-                                activeTab === 'details'
-                                    ? 'border-blue-500 text-blue-600'
-                                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                            }`}
+                            className={`py-2 px-1 border-b-2 font-medium text-sm ${activeTab === 'details'
+                                ? 'border-blue-500 text-blue-600'
+                                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                                }`}
                         >
                             Model Details
                         </button>
                         <button
                             onClick={() => setActiveTab('versions')}
-                            className={`py-2 px-1 border-b-2 font-medium text-sm ${
-                                activeTab === 'versions'
-                                    ? 'border-blue-500 text-blue-600'
-                                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                            }`}
+                            className={`py-2 px-1 border-b-2 font-medium text-sm ${activeTab === 'versions'
+                                ? 'border-blue-500 text-blue-600'
+                                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                                }`}
                         >
                             Versions
                         </button>
                         <button
                             onClick={() => setActiveTab('delegates')}
-                            className={`py-2 px-1 border-b-2 font-medium text-sm ${
-                                activeTab === 'delegates'
-                                    ? 'border-blue-500 text-blue-600'
-                                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                            }`}
+                            className={`py-2 px-1 border-b-2 font-medium text-sm ${activeTab === 'delegates'
+                                ? 'border-blue-500 text-blue-600'
+                                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                                }`}
                         >
                             Delegates
                         </button>
                         <button
                             onClick={() => setActiveTab('validations')}
-                            className={`py-2 px-1 border-b-2 font-medium text-sm ${
-                                activeTab === 'validations'
-                                    ? 'border-blue-500 text-blue-600'
-                                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                            }`}
+                            className={`py-2 px-1 border-b-2 font-medium text-sm ${activeTab === 'validations'
+                                ? 'border-blue-500 text-blue-600'
+                                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                                }`}
                         >
                             Validation History ({validationRequests.filter(req => req.current_status !== 'Approved' && req.current_status !== 'Cancelled').length} active, {validationRequests.filter(req => req.current_status === 'Approved').length + validations.length} historical)
                         </button>
@@ -478,7 +474,7 @@ export default function ModelDetailsPage() {
                                         {revalidationStatus.next_validation_due && ` Validation was due on ${revalidationStatus.next_validation_due}.`}
                                         {revalidationStatus.active_request_id && (
                                             <Link to={`/validation-workflow/${revalidationStatus.active_request_id}`} className="ml-2 underline font-medium hover:text-red-900">
-                                                View active request →
+                                                View active project →
                                             </Link>
                                         )}
                                     </p>
@@ -504,7 +500,7 @@ export default function ModelDetailsPage() {
                                         )}
                                         {revalidationStatus.active_request_id && (
                                             <Link to={`/validation-workflow/${revalidationStatus.active_request_id}`} className="ml-2 underline font-medium hover:text-orange-900">
-                                                View active request →
+                                                View active project →
                                             </Link>
                                         )}
                                     </p>
@@ -887,11 +883,10 @@ export default function ModelDetailsPage() {
                         </div>
                         <div>
                             <h4 className="text-sm font-medium text-gray-500 mb-1">Development Type</h4>
-                            <span className={`px-2 py-1 text-sm rounded ${
-                                model.development_type === 'In-House'
-                                    ? 'bg-green-100 text-green-800'
-                                    : 'bg-purple-100 text-purple-800'
-                            }`}>
+                            <span className={`px-2 py-1 text-sm rounded ${model.development_type === 'In-House'
+                                ? 'bg-green-100 text-green-800'
+                                : 'bg-purple-100 text-purple-800'
+                                }`}>
                                 {model.development_type}
                             </span>
                         </div>
@@ -1046,12 +1041,11 @@ export default function ModelDetailsPage() {
                                 {/* Status Badge */}
                                 <div className="mb-6 flex items-center gap-3">
                                     <span className="text-sm font-medium text-gray-600">Overall Status:</span>
-                                    <span className={`px-3 py-1 text-sm font-semibold rounded-full ${
-                                        revalidationStatus.status.includes('Overdue') ? 'bg-red-100 text-red-800' :
+                                    <span className={`px-3 py-1 text-sm font-semibold rounded-full ${revalidationStatus.status.includes('Overdue') ? 'bg-red-100 text-red-800' :
                                         revalidationStatus.status.includes('In Progress') || revalidationStatus.status.includes('Awaiting') ? 'bg-yellow-100 text-yellow-800' :
-                                        revalidationStatus.status === 'Upcoming' ? 'bg-blue-100 text-blue-800' :
-                                        'bg-gray-100 text-gray-800'
-                                    }`}>
+                                            revalidationStatus.status === 'Upcoming' ? 'bg-blue-100 text-blue-800' :
+                                                'bg-gray-100 text-gray-800'
+                                        }`}>
                                         {revalidationStatus.status}
                                     </span>
                                 </div>
@@ -1069,19 +1063,17 @@ export default function ModelDetailsPage() {
 
                                         {/* Submission Due */}
                                         {revalidationStatus.next_submission_due && (
-                                            <div className={`border-l-4 pl-4 ${
-                                                revalidationStatus.days_until_submission_due && revalidationStatus.days_until_submission_due < 0 ? 'border-red-500' :
+                                            <div className={`border-l-4 pl-4 ${revalidationStatus.days_until_submission_due && revalidationStatus.days_until_submission_due < 0 ? 'border-red-500' :
                                                 revalidationStatus.days_until_submission_due && revalidationStatus.days_until_submission_due < 30 ? 'border-yellow-500' :
-                                                'border-blue-500'
-                                            }`}>
+                                                    'border-blue-500'
+                                                }`}>
                                                 <div className="text-xs font-medium text-gray-500 uppercase">Submission Due</div>
                                                 <div className="text-lg font-semibold text-gray-900">{revalidationStatus.next_submission_due}</div>
                                                 {revalidationStatus.days_until_submission_due !== null && (
-                                                    <div className={`text-xs font-medium ${
-                                                        revalidationStatus.days_until_submission_due < 0 ? 'text-red-600' :
+                                                    <div className={`text-xs font-medium ${revalidationStatus.days_until_submission_due < 0 ? 'text-red-600' :
                                                         revalidationStatus.days_until_submission_due < 30 ? 'text-yellow-600' :
-                                                        'text-blue-600'
-                                                    }`}>
+                                                            'text-blue-600'
+                                                        }`}>
                                                         {revalidationStatus.days_until_submission_due < 0 ?
                                                             `${Math.abs(revalidationStatus.days_until_submission_due)} days overdue` :
                                                             `${revalidationStatus.days_until_submission_due} days left`
@@ -1093,19 +1085,17 @@ export default function ModelDetailsPage() {
 
                                         {/* Validation Due */}
                                         {revalidationStatus.next_validation_due && (
-                                            <div className={`border-l-4 pl-4 ${
-                                                revalidationStatus.days_until_validation_due && revalidationStatus.days_until_validation_due < 0 ? 'border-red-500' :
+                                            <div className={`border-l-4 pl-4 ${revalidationStatus.days_until_validation_due && revalidationStatus.days_until_validation_due < 0 ? 'border-red-500' :
                                                 revalidationStatus.days_until_validation_due && revalidationStatus.days_until_validation_due < 60 ? 'border-orange-500' :
-                                                'border-purple-500'
-                                            }`}>
+                                                    'border-purple-500'
+                                                }`}>
                                                 <div className="text-xs font-medium text-gray-500 uppercase">Validation Due</div>
                                                 <div className="text-lg font-semibold text-gray-900">{revalidationStatus.next_validation_due}</div>
                                                 {revalidationStatus.days_until_validation_due !== null && (
-                                                    <div className={`text-xs font-medium ${
-                                                        revalidationStatus.days_until_validation_due < 0 ? 'text-red-600' :
+                                                    <div className={`text-xs font-medium ${revalidationStatus.days_until_validation_due < 0 ? 'text-red-600' :
                                                         revalidationStatus.days_until_validation_due < 60 ? 'text-orange-600' :
-                                                        'text-purple-600'
-                                                    }`}>
+                                                            'text-purple-600'
+                                                        }`}>
                                                         {revalidationStatus.days_until_validation_due < 0 ?
                                                             `${Math.abs(revalidationStatus.days_until_validation_due)} days overdue` :
                                                             `${revalidationStatus.days_until_validation_due} days left`
@@ -1122,12 +1112,11 @@ export default function ModelDetailsPage() {
                                             {revalidationStatus.submission_status && (
                                                 <div>
                                                     <span className="text-sm font-medium text-gray-600">Submission Status: </span>
-                                                    <span className={`text-sm font-semibold ${
-                                                        revalidationStatus.submission_status.includes('Overdue') || revalidationStatus.submission_status.includes('Late') ? 'text-red-600' :
+                                                    <span className={`text-sm font-semibold ${revalidationStatus.submission_status.includes('Overdue') || revalidationStatus.submission_status.includes('Late') ? 'text-red-600' :
                                                         revalidationStatus.submission_status.includes('Grace') ? 'text-yellow-600' :
-                                                        revalidationStatus.submission_status.includes('On Time') ? 'text-green-600' :
-                                                        'text-gray-600'
-                                                    }`}>
+                                                            revalidationStatus.submission_status.includes('On Time') ? 'text-green-600' :
+                                                                'text-gray-600'
+                                                        }`}>
                                                         {revalidationStatus.submission_status}
                                                     </span>
                                                 </div>
@@ -1135,13 +1124,12 @@ export default function ModelDetailsPage() {
                                             {revalidationStatus.model_compliance_status && (
                                                 <div>
                                                     <span className="text-sm font-medium text-gray-600">Compliance Status: </span>
-                                                    <span className={`text-sm font-semibold ${
-                                                        revalidationStatus.model_compliance_status.includes('Overdue') ? 'text-red-600' :
+                                                    <span className={`text-sm font-semibold ${revalidationStatus.model_compliance_status.includes('Overdue') ? 'text-red-600' :
                                                         revalidationStatus.model_compliance_status.includes('At Risk') ? 'text-orange-600' :
-                                                        revalidationStatus.model_compliance_status.includes('Grace') ? 'text-yellow-600' :
-                                                        revalidationStatus.model_compliance_status.includes('On Time') ? 'text-green-600' :
-                                                        'text-gray-600'
-                                                    }`}>
+                                                            revalidationStatus.model_compliance_status.includes('Grace') ? 'text-yellow-600' :
+                                                                revalidationStatus.model_compliance_status.includes('On Time') ? 'text-green-600' :
+                                                                    'text-gray-600'
+                                                        }`}>
                                                         {revalidationStatus.model_compliance_status}
                                                     </span>
                                                 </div>
@@ -1156,7 +1144,7 @@ export default function ModelDetailsPage() {
                                                 to={`/validation-workflow/${revalidationStatus.active_request_id}`}
                                                 className="text-blue-600 hover:text-blue-800 text-sm font-medium hover:underline"
                                             >
-                                                → View Active Revalidation Request #{revalidationStatus.active_request_id}
+                                                → View Active Revalidation Project #{revalidationStatus.active_request_id}
                                             </Link>
                                         </div>
                                     )}
@@ -1170,13 +1158,13 @@ export default function ModelDetailsPage() {
                         <div className="p-4 border-b bg-blue-50 flex justify-between items-center">
                             <div>
                                 <h3 className="text-lg font-bold">Active Validation Projects</h3>
-                                <p className="text-sm text-gray-600">Workflow-based validation requests in progress</p>
+                                <p className="text-sm text-gray-600">Workflow-based validation projects in progress</p>
                             </div>
                             <Link
                                 to={`/validation-workflow/new?model_id=${model.model_id}`}
                                 className="btn-primary text-sm"
                             >
-                                + New Validation Request
+                                + New Validation Project
                             </Link>
                         </div>
                         {validationRequests.filter(req =>
@@ -1240,25 +1228,23 @@ export default function ModelDetailsPage() {
                                                 </span>
                                             </td>
                                             <td className="px-6 py-4 whitespace-nowrap">
-                                                <span className={`px-2 py-1 text-xs rounded ${
-                                                    request.priority === 'Critical' ? 'bg-red-100 text-red-800' :
+                                                <span className={`px-2 py-1 text-xs rounded ${request.priority === 'Critical' ? 'bg-red-100 text-red-800' :
                                                     request.priority === 'High' ? 'bg-orange-100 text-orange-800' :
-                                                    request.priority === 'Medium' ? 'bg-yellow-100 text-yellow-800' :
-                                                    'bg-green-100 text-green-800'
-                                                }`}>
+                                                        request.priority === 'Medium' ? 'bg-yellow-100 text-yellow-800' :
+                                                            'bg-green-100 text-green-800'
+                                                    }`}>
                                                     {request.priority}
                                                 </span>
                                             </td>
                                             <td className="px-6 py-4 whitespace-nowrap">
-                                                <span className={`px-2 py-1 text-xs rounded ${
-                                                    request.current_status === 'Intake' ? 'bg-gray-100 text-gray-800' :
+                                                <span className={`px-2 py-1 text-xs rounded ${request.current_status === 'Intake' ? 'bg-gray-100 text-gray-800' :
                                                     request.current_status === 'Planning' ? 'bg-blue-100 text-blue-800' :
-                                                    request.current_status === 'In Progress' ? 'bg-yellow-100 text-yellow-800' :
-                                                    request.current_status === 'Review' ? 'bg-purple-100 text-purple-800' :
-                                                    request.current_status === 'Pending Approval' ? 'bg-orange-100 text-orange-800' :
-                                                    request.current_status === 'Approved' ? 'bg-green-100 text-green-800' :
-                                                    'bg-red-100 text-red-800'
-                                                }`}>
+                                                        request.current_status === 'In Progress' ? 'bg-yellow-100 text-yellow-800' :
+                                                            request.current_status === 'Review' ? 'bg-purple-100 text-purple-800' :
+                                                                request.current_status === 'Pending Approval' ? 'bg-orange-100 text-orange-800' :
+                                                                    request.current_status === 'Approved' ? 'bg-green-100 text-green-800' :
+                                                                        'bg-red-100 text-red-800'
+                                                    }`}>
                                                     {request.current_status}
                                                 </span>
                                             </td>
@@ -1365,9 +1351,8 @@ export default function ModelDetailsPage() {
                                                                 </span>
                                                             </td>
                                                             <td className="px-6 py-4 whitespace-nowrap">
-                                                                <span className={`px-2 py-1 text-xs rounded ${
-                                                                    request.current_status === 'Approved' ? 'bg-green-100 text-green-800' : 'bg-gray-400 text-white'
-                                                                }`}>
+                                                                <span className={`px-2 py-1 text-xs rounded ${request.current_status === 'Approved' ? 'bg-green-100 text-green-800' : 'bg-gray-400 text-white'
+                                                                    }`}>
                                                                     {request.current_status}
                                                                 </span>
                                                             </td>
@@ -1433,13 +1418,12 @@ export default function ModelDetailsPage() {
                                                                 </span>
                                                             </td>
                                                             <td className="px-6 py-4 whitespace-nowrap">
-                                                                <span className={`px-2 py-1 text-xs rounded ${
-                                                                    validation.outcome === 'Pass'
-                                                                        ? 'bg-green-100 text-green-800'
-                                                                        : validation.outcome === 'Pass with Findings'
-                                                                            ? 'bg-orange-100 text-orange-800'
-                                                                            : 'bg-red-100 text-red-800'
-                                                                }`}>
+                                                                <span className={`px-2 py-1 text-xs rounded ${validation.outcome === 'Pass'
+                                                                    ? 'bg-green-100 text-green-800'
+                                                                    : validation.outcome === 'Pass with Findings'
+                                                                        ? 'bg-orange-100 text-orange-800'
+                                                                        : 'bg-red-100 text-red-800'
+                                                                    }`}>
                                                                     {validation.outcome}
                                                                 </span>
                                                             </td>

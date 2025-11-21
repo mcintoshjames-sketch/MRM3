@@ -175,11 +175,11 @@ export default function ValidationWorkflowPage() {
         const checkAndSetInitialValidationType = async () => {
             if (formData.model_ids.length > 0 && validationTypes.length > 0) {
                 try {
-                    // Check if any of the selected models have validation requests
+                    // Check if any of the selected models have validation projects
                     const modelValidationsRes = await api.get('/validation-workflow/requests/');
                     const allValidations = modelValidationsRes.data;
 
-                    // Check if any selected model appears in any validation request
+                    // Check if any selected model appears in any validation project
                     const hasAnyPriorValidations = formData.model_ids.some(modelId =>
                         allValidations.some((req: ValidationRequest) =>
                             req.model_ids.includes(modelId)
@@ -261,7 +261,7 @@ export default function ValidationWorkflowPage() {
             setLoading(true);
             setError(null);
 
-            // Fetch validation requests
+            // Fetch validation projects
             const requestsRes = await api.get('/validation-workflow/requests/');
             setRequests(requestsRes.data);
 
@@ -294,7 +294,7 @@ export default function ValidationWorkflowPage() {
             setRegions(regionsData);
         } catch (err: any) {
             console.error('Failed to fetch data:', err);
-            setError(err.response?.data?.detail || 'Failed to load validation requests');
+            setError(err.response?.data?.detail || 'Failed to load validation projects');
         } finally {
             setLoading(false);
         }
@@ -421,7 +421,7 @@ export default function ValidationWorkflowPage() {
             fetchData();
         } catch (err: any) {
             console.error('Failed to create request:', err);
-            setError(err.response?.data?.detail || 'Failed to create validation request');
+            setError(err.response?.data?.detail || 'Failed to create validation project');
             setShowRegionWarning(false);
         }
     };
@@ -464,11 +464,11 @@ export default function ValidationWorkflowPage() {
                 <div>
                     <h2 className="text-2xl font-bold">Validation Workflow</h2>
                     <p className="text-sm text-gray-600 mt-1">
-                        Manage validation requests through their complete lifecycle
+                        Manage validation projects through their complete lifecycle
                     </p>
                 </div>
                 <button onClick={() => setShowForm(true)} className="btn-primary">
-                    + New Validation Request
+                    + New Validation Project
                 </button>
             </div>
 
@@ -480,9 +480,9 @@ export default function ValidationWorkflowPage() {
 
             {showForm && (
                 <div className="bg-white p-6 rounded-lg shadow-md mb-6">
-                    <h3 className="text-lg font-bold mb-4">Create New Validation Request</h3>
+                    <h3 className="text-lg font-bold mb-4">Create New Validation Project</h3>
                     <p className="text-sm text-gray-600 mb-4">
-                        Submit a validation request. The outcome will be determined after the validation work is complete.
+                        Submit a validation project. The outcome will be determined after the validation work is complete.
                     </p>
                     <form onSubmit={handleSubmit}>
                         <div className="grid grid-cols-2 gap-4">
@@ -742,12 +742,12 @@ export default function ValidationWorkflowPage() {
                                 className="input-field"
                                 value={formData.trigger_reason}
                                 onChange={(e) => setFormData({ ...formData, trigger_reason: e.target.value })}
-                                placeholder="What triggered this validation request?"
+                                placeholder="What triggered this validation project?"
                             />
                         </div>
 
                         <div className="flex gap-2">
-                            <button type="submit" className="btn-primary">Submit Request</button>
+                            <button type="submit" className="btn-primary">Submit Project</button>
                             <button type="button" onClick={() => setShowForm(false)} className="btn-secondary">
                                 Cancel
                             </button>
@@ -898,7 +898,7 @@ export default function ValidationWorkflowPage() {
                 <div className="flex items-center justify-between mt-3 pt-3 border-t">
                     <div className="text-sm text-gray-600">
                         Showing <span className="font-semibold">{filteredRequests.length}</span> of{' '}
-                        <span className="font-semibold">{requests.length}</span> requests
+                        <span className="font-semibold">{requests.length}</span> projects
                     </div>
                     <button
                         onClick={() => setFilters({
@@ -935,7 +935,7 @@ export default function ValidationWorkflowPage() {
                         {filteredRequests.length === 0 ? (
                             <tr>
                                 <td colSpan={10} className="px-6 py-4 text-center text-gray-500">
-                                    No validation requests found. Click "New Validation Request" to create one.
+                                    No validation projects found. Click "New Validation Project" to create one.
                                 </td>
                             </tr>
                         ) : (

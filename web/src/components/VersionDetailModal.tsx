@@ -234,14 +234,14 @@ const VersionDetailModal: React.FC<VersionDetailModalProps> = ({ version, onClos
                         <p className="text-sm text-gray-500">{new Date(version.created_at).toLocaleString()}</p>
                     </div>
 
-                    {/* Validation Request */}
+                    {/* Validation Project */}
                     {version.validation_request_id && (
                         <div>
                             <label className="block text-sm font-medium text-gray-700 mb-1">
-                                Validation Request
+                                Validation Project
                             </label>
                             <p className="text-gray-700">
-                                Validation Request #{version.validation_request_id}
+                                Validation Project #{version.validation_request_id}
                                 {version.validation_request_id && (
                                     <span className="ml-2 text-xs bg-yellow-100 text-yellow-800 px-2 py-1 rounded">
                                         Validation in progress

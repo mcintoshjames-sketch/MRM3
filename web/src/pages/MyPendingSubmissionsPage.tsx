@@ -120,9 +120,6 @@ export default function MyPendingSubmissionsPage() {
                                     Validation Due
                                 </th>
                                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
-                                    Status
-                                </th>
-                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
                                     Actions
                                 </th>
                             </tr>
@@ -180,24 +177,6 @@ export default function MyPendingSubmissionsPage() {
                                                 }
                                             </div>
                                         )}
-                                    </td>
-                                    <td className="px-6 py-4">
-                                        <div className="text-xs">
-                                            <div className={`font-medium ${
-                                                submission.submission_status.includes('Overdue') ? 'text-red-600' :
-                                                submission.submission_status.includes('Grace') ? 'text-yellow-600' :
-                                                'text-gray-600'
-                                            }`}>
-                                                {submission.submission_status}
-                                            </div>
-                                            <div className={`mt-1 ${
-                                                submission.model_compliance_status.includes('Overdue') ? 'text-red-600' :
-                                                submission.model_compliance_status.includes('At Risk') ? 'text-orange-600' :
-                                                'text-gray-600'
-                                            }`}>
-                                                {submission.model_compliance_status}
-                                            </div>
-                                        </div>
                                     </td>
                                     <td className="px-6 py-4 whitespace-nowrap">
                                         <Link

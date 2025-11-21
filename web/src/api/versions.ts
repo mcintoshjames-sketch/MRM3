@@ -18,7 +18,7 @@ export interface ModelVersion {
     created_by_name: string | null;
     change_type_name: string | null;
     change_category_name: string | null;
-    // Validation request info (populated when auto-created)
+    // Validation project info (populated when auto-created)
     validation_request_created?: boolean;
     validation_type?: string;  // "TARGETED" or "INTERIM"
     validation_warning?: string;
