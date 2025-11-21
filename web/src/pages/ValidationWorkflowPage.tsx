@@ -960,11 +960,15 @@ export default function ValidationWorkflowPage() {
                                     <td className="px-6 py-4 whitespace-nowrap text-sm">
                                         {req.validation_type}
                                     </td>
-                                    <td className="px-6 py-4 whitespace-nowrap text-sm">
-                                        {req.region ? (
-                                            <span className="px-2 py-1 text-xs rounded bg-blue-100 text-blue-800">
-                                                {req.region.code}
-                                            </span>
+                                    <td className="px-6 py-4 text-sm">
+                                        {req.regions && req.regions.length > 0 ? (
+                                            <div className="flex flex-wrap gap-1">
+                                                {req.regions.map(region => (
+                                                    <span key={region.region_id} className="px-2 py-1 text-xs rounded bg-blue-100 text-blue-800">
+                                                        {region.code}
+                                                    </span>
+                                                ))}
+                                            </div>
                                         ) : (
                                             <span className="text-gray-400 text-xs">Global</span>
                                         )}

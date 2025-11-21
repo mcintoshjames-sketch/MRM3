@@ -14,6 +14,7 @@ import ValidationsPage from './pages/ValidationsPage';
 import ValidationWorkflowPage from './pages/ValidationWorkflowPage';
 import ValidationRequestDetailPage from './pages/ValidationRequestDetailPage';
 import ValidatorDashboardPage from './pages/ValidatorDashboardPage';
+import ModelOwnerDashboardPage from './pages/ModelOwnerDashboardPage';
 import WorkflowConfigurationPage from './pages/WorkflowConfigurationPage';
 import BatchDelegatesPage from './pages/BatchDelegatesPage';
 import RegionsPage from './pages/RegionsPage';
@@ -31,7 +32,7 @@ function App() {
         if (!user) return '/login';
         if (user.role === 'Admin') return '/dashboard';
         if (user.role === 'Validator') return '/validator-dashboard';
-        return '/models';
+        return '/my-dashboard';
     };
 
     return (
@@ -39,6 +40,7 @@ function App() {
             <Route path="/login" element={!user ? <LoginPage /> : <Navigate to={getDefaultRoute()} />} />
             <Route path="/dashboard" element={user?.role === 'Admin' ? <AdminDashboardPage /> : <Navigate to="/models" />} />
             <Route path="/validator-dashboard" element={user?.role === 'Validator' ? <ValidatorDashboardPage /> : <Navigate to="/models" />} />
+            <Route path="/my-dashboard" element={user && user.role !== 'Admin' && user.role !== 'Validator' ? <ModelOwnerDashboardPage /> : <Navigate to={getDefaultRoute()} />} />
             <Route path="/models" element={user ? <ModelsPage /> : <Navigate to="/login" />} />
             <Route path="/models/:id" element={user ? <ModelDetailsPage /> : <Navigate to="/login" />} />
             <Route path="/validations" element={user ? <ValidationsPage /> : <Navigate to="/login" />} />

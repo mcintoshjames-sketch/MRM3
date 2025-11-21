@@ -188,12 +188,28 @@ export default function BatchDelegatesPage() {
                             <li>Models affected: {result.models_affected}</li>
                             <li>New delegations created: {result.delegations_created}</li>
                             <li>Existing delegations updated: {result.delegations_updated}</li>
+                            {result.delegations_revoked > 0 && (
+                                <li>Delegations revoked: {result.delegations_revoked}</li>
+                            )}
                         </ul>
-                        {result.model_ids.length > 0 && (
+                        {result.model_details.length > 0 && (
                             <details className="mt-3">
-                                <summary className="cursor-pointer font-medium">View affected model IDs</summary>
-                                <div className="mt-2 text-sm">
-                                    {result.model_ids.join(', ')}
+                                <summary className="cursor-pointer font-medium">
+                                    View affected models ({result.model_details.length})
+                                </summary>
+                                <div className="mt-2 space-y-1">
+                                    {result.model_details.map(detail => (
+                                        <div key={detail.model_id} className="flex items-center gap-2 text-sm">
+                                            <span className="font-medium">{detail.model_name}</span>
+                                            <span className={`px-1.5 py-0.5 text-xs rounded ${
+                                                detail.action === 'created' ? 'bg-green-100 text-green-700' :
+                                                detail.action === 'updated' ? 'bg-blue-100 text-blue-700' :
+                                                'bg-yellow-100 text-yellow-700'
+                                            }`}>
+                                                {detail.action}
+                                            </span>
+                                        </div>
+                                    ))}
                                 </div>
                             </details>
                         )}

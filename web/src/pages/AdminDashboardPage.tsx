@@ -93,6 +93,17 @@ interface UpcomingRevalidation {
     days_until_validation_due: number;
 }
 
+interface PendingModelSubmission {
+    model_id: number;
+    model_name: string;
+    description: string | null;
+    development_type: string;
+    owner: { full_name: string };
+    submitted_by_user: { full_name: string };
+    submitted_at: string;
+    row_approval_status: string;
+}
+
 export default function AdminDashboardPage() {
     const { user } = useAuth();
     const [passWithFindings, setPassWithFindings] = useState<PassWithFindingsValidation[]>([]);
@@ -102,6 +113,7 @@ export default function AdminDashboardPage() {
     const [overdueSubmissions, setOverdueSubmissions] = useState<OverdueSubmission[]>([]);
     const [overdueValidations, setOverdueValidations] = useState<OverdueValidation[]>([]);
     const [upcomingRevalidations, setUpcomingRevalidations] = useState<UpcomingRevalidation[]>([]);
+    const [pendingModelSubmissions, setPendingModelSubmissions] = useState<PendingModelSubmission[]>([]);
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
@@ -117,7 +129,8 @@ export default function AdminDashboardPage() {
                 pendingRes,
                 overdueSubmissionsRes,
                 overdueValidationsRes,
-                upcomingRevalidationsRes
+                upcomingRevalidationsRes,
+                pendingModelsRes
             ] = await Promise.all([
                 api.get('/validations/dashboard/pass-with-findings'),
                 api.get('/validation-workflow/dashboard/sla-violations'),
@@ -125,7 +138,8 @@ export default function AdminDashboardPage() {
                 api.get('/validation-workflow/dashboard/pending-assignments'),
                 api.get('/validation-workflow/dashboard/overdue-submissions'),
                 api.get('/validation-workflow/dashboard/overdue-validations'),
-                api.get('/validation-workflow/dashboard/upcoming-revalidations?days_ahead=90')
+                api.get('/validation-workflow/dashboard/upcoming-revalidations?days_ahead=90'),
+                api.get('/models/pending-submissions')
             ]);
             setPassWithFindings(findingsRes.data);
             setSlaViolations(violationsRes.data);
@@ -134,6 +148,7 @@ export default function AdminDashboardPage() {
             setOverdueSubmissions(overdueSubmissionsRes.data);
             setOverdueValidations(overdueValidationsRes.data);
             setUpcomingRevalidations(upcomingRevalidationsRes.data);
+            setPendingModelSubmissions(pendingModelsRes.data);
         } catch (error) {
             console.error('Failed to fetch dashboard data:', error);
         } finally {
@@ -168,6 +183,83 @@ export default function AdminDashboardPage() {
                 <h2 className="text-2xl font-bold">Admin Dashboard</h2>
                 <p className="text-gray-600 mt-1">Welcome back, {user?.full_name}</p>
             </div>
+
+            {/* New Model Records Awaiting Approval Widget */}
+            {pendingModelSubmissions.length > 0 && (
+                <div className="bg-white p-4 rounded-lg shadow mb-6">
+                    <div className="flex items-center gap-2 mb-3 pb-2 border-b">
+                        <svg className="w-4 h-4 text-green-500" fill="currentColor" viewBox="0 0 20 20">
+                            <path fillRule="evenodd" d="M4 4a2 2 0 012-2h8a2 2 0 012 2v12a2 2 0 01-2 2H6a2 2 0 01-2-2V4zm3 1h6v4H7V5zm6 6H7v2h6v-2z" clipRule="evenodd" />
+                        </svg>
+                        <h3 className="text-sm font-semibold text-gray-700">New Model Records Awaiting Approval</h3>
+                        <span className="text-xs text-gray-500 ml-auto">{pendingModelSubmissions.length} pending</span>
+                    </div>
+                    <div className="space-y-2 max-h-64 overflow-y-auto">
+                        {pendingModelSubmissions.slice(0, 5).map((submission) => (
+                            <div
+                                key={submission.model_id}
+                                className="border-l-3 pl-3 py-2 hover:bg-gray-50 rounded-r"
+                                style={{
+                                    borderLeftWidth: '3px',
+                                    borderLeftColor: submission.row_approval_status === 'needs_revision' ? '#f59e0b' : '#10b981'
+                                }}
+                            >
+                                <div className="flex items-start justify-between gap-2">
+                                    <div className="flex-1 min-w-0">
+                                        <div className="flex items-center gap-2 mb-1">
+                                            <span className={`px-1.5 py-0.5 text-xs font-medium rounded ${
+                                                submission.row_approval_status === 'needs_revision'
+                                                    ? 'bg-yellow-100 text-yellow-700'
+                                                    : 'bg-green-100 text-green-700'
+                                            }`}>
+                                                {submission.row_approval_status === 'needs_revision' ? 'Needs Revision' : 'New Record'}
+                                            </span>
+                                            <span className="px-1.5 py-0.5 text-xs font-medium rounded bg-gray-100 text-gray-700">
+                                                {submission.development_type}
+                                            </span>
+                                            <span className="text-xs text-gray-400">
+                                                {formatTimeAgo(submission.submitted_at)}
+                                            </span>
+                                        </div>
+                                        <Link
+                                            to={`/models/${submission.model_id}`}
+                                            className="text-sm font-medium text-gray-800 hover:text-blue-600 truncate block"
+                                        >
+                                            {submission.model_name}
+                                        </Link>
+                                        <p className="text-xs text-gray-600 mt-0.5">
+                                            Owner: {submission.owner.full_name} • Submitted by: {submission.submitted_by_user.full_name}
+                                        </p>
+                                        {submission.description && (
+                                            <p className="text-xs text-gray-500 truncate mt-0.5">
+                                                {submission.description}
+                                            </p>
+                                        )}
+                                    </div>
+                                    <div className="flex-shrink-0">
+                                        <Link
+                                            to={`/models/${submission.model_id}?review=true`}
+                                            className="inline-flex items-center px-3 py-1.5 text-xs font-medium text-white bg-green-600 hover:bg-green-700 rounded transition-colors"
+                                        >
+                                            Review
+                                        </Link>
+                                    </div>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                    {pendingModelSubmissions.length > 5 && (
+                        <div className="mt-3 pt-2 border-t text-center">
+                            <Link
+                                to="/models?approval_status=pending"
+                                className="text-xs text-blue-600 hover:text-blue-800"
+                            >
+                                View all {pendingModelSubmissions.length} pending records &rarr;
+                            </Link>
+                        </div>
+                    )}
+                </div>
+            )}
 
             {/* Summary Cards */}
             <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-7 gap-4 mb-6">

@@ -39,6 +39,22 @@ export default function Layout({ children }: LayoutProps) {
                                 </NavLink>
                             </li>
                         )}
+                        {(user?.role !== 'Admin' && user?.role !== 'Validator') && (
+                            <li>
+                                <NavLink
+                                    to="/my-dashboard"
+                                    className={({ isActive }) =>
+                                        `block px-4 py-2 rounded transition-colors ${
+                                            isActive
+                                                ? 'bg-blue-600 text-white'
+                                                : 'text-gray-700 hover:bg-gray-100'
+                                        }`
+                                    }
+                                >
+                                    My Dashboard
+                                </NavLink>
+                            </li>
+                        )}
                         <li>
                             <NavLink
                                 to="/models"

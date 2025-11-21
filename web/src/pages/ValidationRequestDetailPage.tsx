@@ -97,7 +97,7 @@ interface ModelVersion {
 
 interface ValidationRequestDetail {
     request_id: number;
-    models: ModelSummary[];  // Support multiple models
+    models: ModelSummary[];  // API returns array of models
     request_date: string;
     requestor: UserSummary;
     validation_type: TaxonomyValue;
@@ -105,29 +105,26 @@ interface ValidationRequestDetail {
     target_completion_date: string;
     trigger_reason: string | null;
     current_status: TaxonomyValue;
-    submission_received_date: string | null;
     created_at: string;
     updated_at: string;
     assignments: ValidationAssignment[];
     status_history: ValidationStatusHistory[];
     approvals: ValidationApproval[];
     outcome: ValidationOutcome | null;
-    review_outcome: ValidationReviewOutcome | null;
 }
 
-interface ValidationReviewOutcome {
-    review_outcome_id: number;
-    request_id: number;
-    reviewer: UserSummary;
-    decision: string;
-    comments: string | null;
-    agrees_with_rating: boolean | null;
-    review_date: string;
+interface WorkflowSLA {
+    sla_id: number;
+    workflow_type: string;
+    assignment_days: number;
+    begin_work_days: number;
+    complete_work_days: number;
+    approval_days: number;
     created_at: string;
     updated_at: string;
 }
 
-type TabType = 'overview' | 'assignments' | 'outcome' | 'review' | 'approvals' | 'history';
+type TabType = 'overview' | 'assignments' | 'outcome' | 'approvals' | 'history';
 
 export default function ValidationRequestDetailPage() {
     const { id } = useParams<{ id: string }>();
@@ -136,7 +133,8 @@ export default function ValidationRequestDetailPage() {
     const [searchParams, setSearchParams] = useSearchParams();
     const [request, setRequest] = useState<ValidationRequestDetail | null>(null);
     const [relatedVersions, setRelatedVersions] = useState<ModelVersion[]>([]);
-    const [allAuditLogs, setAllAuditLogs] = useState<AuditLog[]>([]);
+    const [assignmentAuditLogs, setAssignmentAuditLogs] = useState<AuditLog[]>([]);
+    const [workflowSLA, setWorkflowSLA] = useState<WorkflowSLA | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [activeTab, setActiveTab] = useState<TabType>('overview');
@@ -148,7 +146,6 @@ export default function ValidationRequestDetailPage() {
     const [showEditAssignmentModal, setShowEditAssignmentModal] = useState(false);
     const [showOutcomeModal, setShowOutcomeModal] = useState(false);
     const [showApprovalModal, setShowApprovalModal] = useState(false);
-    const [showMarkSubmissionModal, setShowMarkSubmissionModal] = useState(false);
 
     const [statusOptions, setStatusOptions] = useState<TaxonomyValue[]>([]);
     const [ratingOptions, setRatingOptions] = useState<TaxonomyValue[]>([]);
@@ -170,11 +167,6 @@ export default function ValidationRequestDetailPage() {
         expiration_date: ''
     });
     const [approvalUpdate, setApprovalUpdate] = useState({ approval_id: 0, status: '', comments: '' });
-    const [newReviewOutcome, setNewReviewOutcome] = useState({
-        decision: '',
-        comments: '',
-        agrees_with_rating: null as boolean | null
-    });
     const [showSignOffModal, setShowSignOffModal] = useState(false);
     const [signOffData, setSignOffData] = useState({ assignment_id: 0, comments: '' });
     const [editAssignment, setEditAssignment] = useState({
@@ -186,10 +178,6 @@ export default function ValidationRequestDetailPage() {
     });
     const [showSelectPrimaryModal, setShowSelectPrimaryModal] = useState(false);
     const [deleteAssignmentData, setDeleteAssignmentData] = useState({ assignment_id: 0, new_primary_id: 0 });
-    const [submissionData, setSubmissionData] = useState({
-        submission_received_date: new Date().toISOString().split('T')[0],
-        notes: ''
-    });
 
     useEffect(() => {
         fetchData();
@@ -234,39 +222,25 @@ export default function ValidationRequestDetailPage() {
             setLoading(true);
             setError(null);
 
-            // Fetch request details, taxonomy options, users, and all audit logs in parallel
-            const [requestRes, taxonomiesRes, usersRes, assignmentAuditRes, outcomeAuditRes, reviewAuditRes] = await Promise.all([
+            // Fetch request details, taxonomy options, users, assignment audit logs, and SLA config in parallel
+            const [requestRes, taxonomiesRes, usersRes, auditLogsRes, slaRes] = await Promise.all([
                 api.get(`/validation-workflow/requests/${id}`),
                 api.get('/taxonomies/'),
                 api.get('/auth/users'),
                 api.get(`/audit-logs/?entity_type=ValidationAssignment&entity_id=${id}&limit=100`),
-                api.get(`/audit-logs/?entity_type=ValidationOutcome&entity_id=${id}&limit=100`),
-                api.get(`/audit-logs/?entity_type=ValidationReviewOutcome&entity_id=${id}&limit=100`)
+                api.get('/workflow-sla/validation').catch(() => ({ data: null })) // Gracefully handle if SLA not configured
             ]);
 
             setRequest(requestRes.data);
             setUsers(usersRes.data);
+            setAssignmentAuditLogs(auditLogsRes.data);
+            setWorkflowSLA(slaRes.data);
 
-            // Combine all audit logs
-            const combinedAuditLogs = [
-                ...assignmentAuditRes.data,
-                ...outcomeAuditRes.data,
-                ...reviewAuditRes.data
-            ];
-            setAllAuditLogs(combinedAuditLogs);
-
-            // Fetch model versions for all associated models that link to this validation request
-            if (requestRes.data.models && requestRes.data.models.length > 0 && id) {
+            // Fetch model versions that link to this validation project
+            if (requestRes.data.models && requestRes.data.models.length > 0 && requestRes.data.models[0].model_id && id) {
                 try {
-                    // Fetch versions for all models in parallel
-                    const versionPromises = requestRes.data.models.map((model: ModelSummary) =>
-                        api.get(`/models/${model.model_id}/versions`)
-                    );
-                    const versionResults = await Promise.all(versionPromises);
-
-                    // Combine and filter versions that link to this validation request
-                    const allVersions = versionResults.flatMap(res => res.data);
-                    const linkedVersions = allVersions.filter((v: any) => v.validation_request_id === parseInt(id));
+                    const versionsRes = await api.get(`/models/${requestRes.data.models[0].model_id}/versions`);
+                    const linkedVersions = versionsRes.data.filter((v: any) => v.validation_request_id === parseInt(id));
                     setRelatedVersions(linkedVersions);
                 } catch (err) {
                     console.error('Failed to fetch related versions:', err);
@@ -287,7 +261,7 @@ export default function ValidationRequestDetailPage() {
 
         } catch (err: any) {
             console.error('Failed to fetch request details:', err);
-            setError(err.response?.data?.detail || 'Failed to load validation request');
+            setError(err.response?.data?.detail || 'Failed to load validation project');
         } finally {
             setLoading(false);
         }
@@ -339,30 +313,6 @@ export default function ValidationRequestDetailPage() {
             fetchData();
         } catch (err: any) {
             setError(err.response?.data?.detail || 'Failed to update status');
-        } finally {
-            setActionLoading(false);
-        }
-    };
-
-    const handleMarkSubmission = async () => {
-        if (!submissionData.submission_received_date) {
-            setError('Submission date is required');
-            return;
-        }
-        setActionLoading(true);
-        try {
-            await api.post(`/validation-workflow/requests/${id}/mark-submission`, {
-                submission_received_date: submissionData.submission_received_date,
-                notes: submissionData.notes || null
-            });
-            setShowMarkSubmissionModal(false);
-            setSubmissionData({
-                submission_received_date: new Date().toISOString().split('T')[0],
-                notes: ''
-            });
-            fetchData();
-        } catch (err: any) {
-            setError(err.response?.data?.detail || 'Failed to mark submission received');
         } finally {
             setActionLoading(false);
         }
@@ -554,27 +504,6 @@ export default function ValidationRequestDetailPage() {
         }
     };
 
-    const handleCreateReviewOutcome = async () => {
-        if (!newReviewOutcome.decision) {
-            setError('Decision is required');
-            return;
-        }
-        setActionLoading(true);
-        try {
-            await api.post(`/validation-workflow/requests/${id}/review-outcome`, {
-                decision: newReviewOutcome.decision,
-                comments: newReviewOutcome.comments || null,
-                agrees_with_rating: newReviewOutcome.agrees_with_rating
-            });
-            setNewReviewOutcome({ decision: '', comments: '', agrees_with_rating: null });
-            fetchData();
-        } catch (err: any) {
-            setError(err.response?.data?.detail || 'Failed to create review outcome');
-        } finally {
-            setActionLoading(false);
-        }
-    };
-
     const handleBeginWork = async () => {
         if (!request) return;
 
@@ -647,9 +576,58 @@ export default function ValidationRequestDetailPage() {
     const isPrimaryValidator = request && user && request.assignments.some(
         a => a.is_primary && a.validator.user_id === user.user_id
     );
-    const isReviewer = request && user && request.assignments.some(
-        a => a.is_reviewer && a.validator.user_id === user.user_id
-    );
+
+    // Helper functions for workflow timing
+    const getTimeInCurrentStage = () => {
+        if (!request) return 0;
+        const currentStatusEntry = request.status_history
+            .filter(h => h.new_status.label === request.current_status.label)
+            .sort((a, b) => new Date(b.changed_at).getTime() - new Date(a.changed_at).getTime())[0];
+
+        if (!currentStatusEntry) return 0;
+
+        const statusChangeDate = new Date(currentStatusEntry.changed_at);
+        const now = new Date();
+        const diffMs = now.getTime() - statusChangeDate.getTime();
+        return Math.floor(diffMs / (1000 * 60 * 60 * 24));
+    };
+
+    const getStageSLA = (stageName: string): number | null => {
+        if (!workflowSLA) return null;
+
+        const stageMap: { [key: string]: keyof WorkflowSLA } = {
+            'Intake': 'assignment_days',
+            'Planning': 'assignment_days',
+            'In Progress': 'complete_work_days',
+            'Review': 'begin_work_days',
+            'Pending Approval': 'approval_days'
+        };
+
+        const slaField = stageMap[stageName];
+        return slaField ? workflowSLA[slaField] as number : null;
+    };
+
+    const getStageStatus = (stageName: string) => {
+        if (!request) return { completed: false, current: false, daysInStage: 0, slaDays: null, daysRemaining: null, isOverdue: false };
+
+        const isCompleted = request.status_history.some(h => h.new_status.label === stageName);
+        const isCurrent = request.current_status.label === stageName;
+        const slaDays = getStageSLA(stageName);
+
+        let daysInStage = 0;
+        let daysRemaining: number | null = null;
+        let isOverdue = false;
+
+        if (isCurrent) {
+            daysInStage = getTimeInCurrentStage();
+            if (slaDays !== null) {
+                daysRemaining = slaDays - daysInStage;
+                isOverdue = daysRemaining < 0;
+            }
+        }
+
+        return { completed: isCompleted, current: isCurrent, daysInStage, slaDays, daysRemaining, isOverdue };
+    };
 
     if (loading) {
         return (
@@ -663,7 +641,7 @@ export default function ValidationRequestDetailPage() {
         return (
             <Layout>
                 <div className="text-center">
-                    <h2 className="text-2xl font-bold mb-4">Validation Request Not Found</h2>
+                    <h2 className="text-2xl font-bold mb-4">Validation Project Not Found</h2>
                     <button onClick={() => navigate('/validation-workflow')} className="btn-primary">
                         Back to Validation Workflow
                     </button>
@@ -683,23 +661,17 @@ export default function ValidationRequestDetailPage() {
                         &larr; Back to Validation Workflow
                     </button>
                     <h2 className="text-2xl font-bold">
-                        Validation Request #{request.request_id}
+                        Validation Project #{request.request_id}
                     </h2>
-                    <div className="flex items-center gap-3 mt-2 flex-wrap">
-                        <div className="flex items-center gap-2">
-                            <span className="text-sm text-gray-600">Models:</span>
-                            {request.models.map((model, idx) => (
-                                <span key={model.model_id}>
-                                    <Link
-                                        to={`/models/${model.model_id}`}
-                                        className="text-blue-600 hover:text-blue-800 font-medium"
-                                    >
-                                        {model.model_name}
-                                    </Link>
-                                    {idx < request.models.length - 1 && <span className="text-gray-400">, </span>}
-                                </span>
-                            ))}
-                        </div>
+                    <div className="flex items-center gap-3 mt-2">
+                        {request.models && request.models.length > 0 && (
+                            <Link
+                                to={`/models/${request.models[0].model_id}`}
+                                className="text-blue-600 hover:text-blue-800 font-medium"
+                            >
+                                {request.models[0].model_name}
+                            </Link>
+                        )}
                         <span className={`px-2 py-1 text-xs rounded ${getStatusColor(request.current_status.label)}`}>
                             {request.current_status.label}
                         </span>
@@ -711,15 +683,15 @@ export default function ValidationRequestDetailPage() {
                 <div className="flex gap-2">
                     {/* Begin Work Button */}
                     {isPrimaryValidator &&
-                     (request.current_status.code === 'INTAKE' || request.current_status.code === 'PLANNING') && (
-                        <button
-                            onClick={handleBeginWork}
-                            disabled={actionLoading}
-                            className="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700 disabled:opacity-50"
-                        >
-                            {actionLoading ? 'Starting...' : 'Begin Work'}
-                        </button>
-                    )}
+                        (request.current_status.code === 'INTAKE' || request.current_status.code === 'PLANNING') && (
+                            <button
+                                onClick={handleBeginWork}
+                                disabled={actionLoading}
+                                className="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700 disabled:opacity-50"
+                            >
+                                {actionLoading ? 'Starting...' : 'Begin Work'}
+                            </button>
+                        )}
 
                     {/* Complete Work Button */}
                     {isPrimaryValidator && request.current_status.code === 'IN_PROGRESS' && (
@@ -729,19 +701,6 @@ export default function ValidationRequestDetailPage() {
                             className="bg-purple-600 text-white px-4 py-2 rounded hover:bg-purple-700 disabled:opacity-50"
                         >
                             {actionLoading ? 'Completing...' : 'Complete Work'}
-                        </button>
-                    )}
-
-                    {/* Mark Submission Received Button */}
-                    {canEditRequest &&
-                     !request.submission_received_date &&
-                     (request.current_status.code === 'INTAKE' || request.current_status.code === 'PLANNING') && (
-                        <button
-                            onClick={() => setShowMarkSubmissionModal(true)}
-                            disabled={actionLoading}
-                            className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 disabled:opacity-50"
-                        >
-                            Mark Submission Received
                         </button>
                     )}
 
@@ -767,15 +726,14 @@ export default function ValidationRequestDetailPage() {
             {/* Tabs */}
             <div className="border-b border-gray-200 mb-6">
                 <nav className="-mb-px flex space-x-8">
-                    {(['overview', 'assignments', 'outcome', ...(isReviewer ? ['review'] as TabType[] : []), 'approvals', 'history'] as TabType[]).map((tab) => (
+                    {(['overview', 'assignments', 'outcome', 'approvals', 'history'] as TabType[]).map((tab) => (
                         <button
                             key={tab}
                             onClick={() => setActiveTab(tab)}
-                            className={`py-2 px-1 border-b-2 font-medium text-sm capitalize ${
-                                activeTab === tab
-                                    ? 'border-blue-500 text-blue-600'
-                                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                            }`}
+                            className={`py-2 px-1 border-b-2 font-medium text-sm capitalize ${activeTab === tab
+                                ? 'border-blue-500 text-blue-600'
+                                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                                }`}
                         >
                             {tab}
                             {tab === 'assignments' && ` (${request.assignments.length})`}
@@ -790,24 +748,22 @@ export default function ValidationRequestDetailPage() {
             <div className="bg-white rounded-lg shadow-md p-6">
                 {activeTab === 'overview' && (
                     <div>
-                        <h3 className="text-lg font-bold mb-4">Request Overview</h3>
+                        <h3 className="text-lg font-bold mb-4">Project Overview</h3>
                         <div className="grid grid-cols-2 gap-6">
                             <div>
-                                <h4 className="text-sm font-medium text-gray-500 mb-1">Request ID</h4>
+                                <h4 className="text-sm font-medium text-gray-500 mb-1">Project ID</h4>
                                 <p className="text-lg font-mono">#{request.request_id}</p>
                             </div>
                             <div>
-                                <h4 className="text-sm font-medium text-gray-500 mb-1">Models ({request.models.length})</h4>
-                                <div className="flex flex-col gap-1">
-                                    {request.models.map(model => (
-                                        <div key={model.model_id}>
-                                            <Link to={`/models/${model.model_id}`} className="text-blue-600 hover:text-blue-800">
-                                                {model.model_name}
-                                            </Link>
-                                            <span className="ml-2 text-sm text-gray-500">({model.status})</span>
-                                        </div>
-                                    ))}
-                                </div>
+                                <h4 className="text-sm font-medium text-gray-500 mb-1">Model</h4>
+                                {request.models && request.models.length > 0 && (
+                                    <>
+                                        <Link to={`/models/${request.models[0].model_id}`} className="text-blue-600 hover:text-blue-800">
+                                            {request.models[0].model_name}
+                                        </Link>
+                                        <span className="ml-2 text-sm text-gray-500">({request.models[0].status})</span>
+                                    </>
+                                )}
                             </div>
                             <div>
                                 <h4 className="text-sm font-medium text-gray-500 mb-1">Validation Type</h4>
@@ -822,7 +778,17 @@ export default function ValidationRequestDetailPage() {
                                 </span>
                             </div>
                             <div>
-                                <h4 className="text-sm font-medium text-gray-500 mb-1">Request Date</h4>
+                                <h4 className="text-sm font-medium text-gray-500 mb-1 flex items-center gap-1">
+                                    Project Date
+                                    <span
+                                        className="inline-flex items-center justify-center w-4 h-4 rounded-full bg-gray-300 text-white text-xs cursor-help"
+                                        title="The date when this validation project was initiated and opened in the system"
+                                    >
+                                        <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+                                            <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
+                                        </svg>
+                                    </span>
+                                </h4>
                                 <p className="text-lg">{request.request_date}</p>
                             </div>
                             <div>
@@ -855,19 +821,17 @@ export default function ValidationRequestDetailPage() {
                                                 <div className="flex justify-between items-start mb-2">
                                                     <div>
                                                         <span className="font-medium text-gray-900">Version {version.version_number}</span>
-                                                        <span className={`ml-2 px-2 py-0.5 rounded text-xs font-semibold ${
-                                                            version.change_type === 'MAJOR'
-                                                                ? 'bg-orange-200 text-orange-800'
-                                                                : 'bg-blue-200 text-blue-800'
-                                                        }`}>
+                                                        <span className={`ml-2 px-2 py-0.5 rounded text-xs font-semibold ${version.change_type === 'MAJOR'
+                                                            ? 'bg-orange-200 text-orange-800'
+                                                            : 'bg-blue-200 text-blue-800'
+                                                            }`}>
                                                             {version.change_type}
                                                         </span>
-                                                        <span className={`ml-2 px-2 py-0.5 rounded text-xs font-semibold ${
-                                                            version.status === 'ACTIVE' ? 'bg-green-600 text-white' :
+                                                        <span className={`ml-2 px-2 py-0.5 rounded text-xs font-semibold ${version.status === 'ACTIVE' ? 'bg-green-600 text-white' :
                                                             version.status === 'APPROVED' ? 'bg-green-200 text-green-800' :
-                                                            version.status === 'IN_VALIDATION' ? 'bg-blue-200 text-blue-800' :
-                                                            'bg-gray-200 text-gray-800'
-                                                        }`}>
+                                                                version.status === 'IN_VALIDATION' ? 'bg-blue-200 text-blue-800' :
+                                                                    'bg-gray-200 text-gray-800'
+                                                            }`}>
                                                             {version.status}
                                                         </span>
                                                     </div>
@@ -887,21 +851,6 @@ export default function ValidationRequestDetailPage() {
                                 </div>
                             )}
                             <div>
-                                <h4 className="text-sm font-medium text-gray-500 mb-1">Submission Received</h4>
-                                {request.submission_received_date ? (
-                                    <div>
-                                        <p className="text-sm text-green-700 font-medium">
-                                            {new Date(request.submission_received_date).toLocaleDateString()}
-                                        </p>
-                                        <p className="text-xs text-gray-500 mt-1">
-                                            Validation team SLA timer started
-                                        </p>
-                                    </div>
-                                ) : (
-                                    <p className="text-sm text-gray-400 italic">Not yet received</p>
-                                )}
-                            </div>
-                            <div>
                                 <h4 className="text-sm font-medium text-gray-500 mb-1">Created</h4>
                                 <p className="text-sm">{new Date(request.created_at).toLocaleString()}</p>
                             </div>
@@ -914,30 +863,70 @@ export default function ValidationRequestDetailPage() {
                         {/* Timeline visualization */}
                         <div className="mt-8">
                             <h4 className="text-sm font-medium text-gray-500 mb-4">Workflow Progress</h4>
-                            <div className="flex items-center justify-between">
+                            <div className="flex items-start justify-between">
                                 {['Intake', 'Planning', 'In Progress', 'Review', 'Pending Approval', 'Approved'].map((status, index) => {
-                                    const isCompleted = request.status_history.some(h => h.new_status.label === status);
-                                    const isCurrent = request.current_status.label === status;
+                                    const stageStatus = getStageStatus(status);
+                                    const isCompleted = stageStatus.completed;
+                                    const isCurrent = stageStatus.current;
+                                    const isOverdue = stageStatus.isOverdue;
+
                                     return (
                                         <div key={status} className="flex items-center">
                                             <div className={`flex flex-col items-center ${index > 0 ? 'ml-4' : ''}`}>
-                                                <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold ${
-                                                    isCurrent
-                                                        ? 'bg-blue-600 text-white'
-                                                        : isCompleted
-                                                            ? 'bg-green-600 text-white'
-                                                            : 'bg-gray-200 text-gray-500'
-                                                }`}>
+                                                <div className={`w-10 h-10 rounded-full flex items-center justify-center text-xs font-bold ${
+                                                    isOverdue
+                                                        ? 'bg-red-600 text-white ring-2 ring-red-300'
+                                                        : isCurrent
+                                                            ? 'bg-blue-600 text-white'
+                                                            : isCompleted
+                                                                ? 'bg-green-600 text-white'
+                                                                : 'bg-gray-200 text-gray-500'
+                                                    }`}>
                                                     {isCompleted && !isCurrent ? '✓' : index + 1}
                                                 </div>
-                                                <span className={`mt-1 text-xs ${isCurrent ? 'font-bold text-blue-600' : 'text-gray-500'}`}>
+                                                <span className={`mt-2 text-xs text-center max-w-[90px] ${
+                                                    isCurrent ? 'font-bold text-blue-600' : 'text-gray-500'
+                                                }`}>
                                                     {status}
                                                 </span>
+
+                                                {/* SLA Timing Information */}
+                                                {isCurrent && (
+                                                    <div className="mt-2 text-center">
+                                                        <div className={`text-xs font-medium ${isOverdue ? 'text-red-600' : 'text-blue-600'}`}>
+                                                            {stageStatus.daysInStage} {stageStatus.daysInStage === 1 ? 'day' : 'days'} in stage
+                                                        </div>
+                                                        {stageStatus.slaDays !== null && (
+                                                            <div className="text-xs text-gray-500 mt-0.5">
+                                                                SLA: {stageStatus.slaDays} {stageStatus.slaDays === 1 ? 'day' : 'days'}
+                                                            </div>
+                                                        )}
+                                                        {stageStatus.daysRemaining !== null && (
+                                                            <div className={`text-xs font-semibold mt-0.5 ${
+                                                                isOverdue ? 'text-red-600' : 'text-green-600'
+                                                            }`}>
+                                                                {isOverdue
+                                                                    ? `${Math.abs(stageStatus.daysRemaining!)} ${Math.abs(stageStatus.daysRemaining!) === 1 ? 'day' : 'days'} overdue`
+                                                                    : `${stageStatus.daysRemaining} ${stageStatus.daysRemaining === 1 ? 'day' : 'days'} remaining`
+                                                                }
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                )}
+
+                                                {/* Show SLA target for non-current stages if SLA is configured */}
+                                                {!isCurrent && stageStatus.slaDays !== null && (
+                                                    <div className="mt-2 text-center">
+                                                        <div className="text-xs text-gray-400">
+                                                            Target: {stageStatus.slaDays}d
+                                                        </div>
+                                                    </div>
+                                                )}
                                             </div>
                                             {index < 5 && (
-                                                <div className={`w-12 h-1 ml-4 ${
+                                                <div className={`w-12 h-1 ml-4 mt-5 ${
                                                     isCompleted && !isCurrent ? 'bg-green-600' : 'bg-gray-200'
-                                                }`} />
+                                                    }`} />
                                             )}
                                         </div>
                                     );
@@ -1026,11 +1015,10 @@ export default function ValidationRequestDetailPage() {
                                             </div>
                                         </div>
                                         <div className="mt-2 flex items-center gap-2">
-                                            <span className={`px-2 py-1 text-xs rounded ${
-                                                assignment.independence_attestation
-                                                    ? 'bg-green-100 text-green-800'
-                                                    : 'bg-red-100 text-red-800'
-                                            }`}>
+                                            <span className={`px-2 py-1 text-xs rounded ${assignment.independence_attestation
+                                                ? 'bg-green-100 text-green-800'
+                                                : 'bg-red-100 text-red-800'
+                                                }`}>
                                                 Independence: {assignment.independence_attestation ? 'Attested' : 'Not Attested'}
                                             </span>
                                         </div>
@@ -1053,16 +1041,16 @@ export default function ValidationRequestDetailPage() {
                                                     {!assignment.reviewer_signed_off &&
                                                         user?.user_id === assignment.validator.user_id &&
                                                         request.outcome && (
-                                                        <button
-                                                            onClick={() => {
-                                                                setSignOffData({ assignment_id: assignment.assignment_id, comments: '' });
-                                                                setShowSignOffModal(true);
-                                                            }}
-                                                            className="bg-purple-600 text-white px-3 py-1 rounded text-xs hover:bg-purple-700"
-                                                        >
-                                                            Sign Off
-                                                        </button>
-                                                    )}
+                                                            <button
+                                                                onClick={() => {
+                                                                    setSignOffData({ assignment_id: assignment.assignment_id, comments: '' });
+                                                                    setShowSignOffModal(true);
+                                                                }}
+                                                                className="bg-purple-600 text-white px-3 py-1 rounded text-xs hover:bg-purple-700"
+                                                            >
+                                                                Sign Off
+                                                            </button>
+                                                        )}
                                                 </div>
                                                 {assignment.reviewer_signed_off && assignment.reviewer_signed_off_at && (
                                                     <div className="mt-2 text-xs text-gray-500">
@@ -1093,13 +1081,12 @@ export default function ValidationRequestDetailPage() {
                                 <div className="grid grid-cols-2 gap-6">
                                     <div>
                                         <h4 className="text-sm font-medium text-gray-500 mb-1">Overall Rating</h4>
-                                        <span className={`px-3 py-1 text-sm rounded ${
-                                            request.outcome.overall_rating.label.includes('Fit')
-                                                ? request.outcome.overall_rating.label === 'Fit for Use'
-                                                    ? 'bg-green-100 text-green-800'
-                                                    : 'bg-orange-100 text-orange-800'
-                                                : 'bg-red-100 text-red-800'
-                                        }`}>
+                                        <span className={`px-3 py-1 text-sm rounded ${request.outcome.overall_rating.label.includes('Fit')
+                                            ? request.outcome.overall_rating.label === 'Fit for Use'
+                                                ? 'bg-green-100 text-green-800'
+                                                : 'bg-orange-100 text-orange-800'
+                                            : 'bg-red-100 text-red-800'
+                                            }`}>
                                             {request.outcome.overall_rating.label}
                                         </span>
                                     </div>
@@ -1206,7 +1193,7 @@ export default function ValidationRequestDetailPage() {
                                         rows={6}
                                         value={newOutcome.executive_summary}
                                         onChange={(e) => setNewOutcome({ ...newOutcome, executive_summary: e.target.value })}
-                                        placeholder="Provide a comprehensive summary of the validation findings and conclusions..."
+                                        placeholder="Provide a comprehensive summary of the validation findings and conclusions, including rationale for overall rating..."
                                     />
                                 </div>
                                 <div className="flex gap-2">
@@ -1232,173 +1219,12 @@ export default function ValidationRequestDetailPage() {
                     </div>
                 )}
 
-                {activeTab === 'review' && (
-                    <div>
-                        <h3 className="text-lg font-bold mb-4">Review Validation Outcome</h3>
-
-                        {/* Show the validation outcome being reviewed */}
-                        {request.outcome ? (
-                            <div className="bg-gray-50 border border-gray-200 rounded-lg p-6 mb-6">
-                                <h4 className="font-semibold mb-4 text-gray-700">Validation Outcome to Review</h4>
-                                <div className="grid grid-cols-2 gap-4 mb-4">
-                                    <div>
-                                        <p className="text-sm text-gray-600">Overall Rating</p>
-                                        <p className="font-medium">{request.outcome.overall_rating?.label || 'N/A'}</p>
-                                    </div>
-                                    <div>
-                                        <p className="text-sm text-gray-600">Recommended Review Frequency</p>
-                                        <p className="font-medium">{request.outcome.recommended_review_frequency} months</p>
-                                    </div>
-                                    <div>
-                                        <p className="text-sm text-gray-600">Effective Date</p>
-                                        <p className="font-medium">{new Date(request.outcome.effective_date).toLocaleDateString()}</p>
-                                    </div>
-                                    {request.outcome.expiration_date && (
-                                        <div>
-                                            <p className="text-sm text-gray-600">Expiration Date</p>
-                                            <p className="font-medium">{new Date(request.outcome.expiration_date).toLocaleDateString()}</p>
-                                        </div>
-                                    )}
-                                </div>
-                                <div>
-                                    <p className="text-sm text-gray-600 mb-2">Executive Summary</p>
-                                    <p className="text-sm whitespace-pre-wrap bg-white p-3 rounded border">{request.outcome.executive_summary}</p>
-                                </div>
-                            </div>
-                        ) : (
-                            <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-6">
-                                <p className="text-yellow-800 text-sm">
-                                    No validation outcome has been created yet. The validator must complete the outcome before review can begin.
-                                </p>
-                            </div>
-                        )}
-
-                        {/* Show existing review outcome or form to create one */}
-                        {request.review_outcome ? (
-                            <div className="bg-white border border-gray-200 rounded-lg p-6">
-                                <h4 className="font-semibold mb-4">Review Decision</h4>
-                                <div className="space-y-3">
-                                    <div>
-                                        <p className="text-sm text-gray-600">Reviewer</p>
-                                        <p className="font-medium">{request.review_outcome.reviewer.full_name}</p>
-                                    </div>
-                                    <div>
-                                        <p className="text-sm text-gray-600">Decision</p>
-                                        <span className={`inline-block px-3 py-1 rounded text-sm font-medium ${
-                                            request.review_outcome.decision === 'AGREE'
-                                                ? 'bg-green-100 text-green-800'
-                                                : 'bg-yellow-100 text-yellow-800'
-                                        }`}>
-                                            {request.review_outcome.decision === 'AGREE' ? 'Agree' : 'Send Back'}
-                                        </span>
-                                    </div>
-                                    {request.review_outcome.agrees_with_rating !== null && (
-                                        <div>
-                                            <p className="text-sm text-gray-600">Agrees with Rating?</p>
-                                            <p className="font-medium">{request.review_outcome.agrees_with_rating ? 'Yes' : 'No'}</p>
-                                        </div>
-                                    )}
-                                    {request.review_outcome.comments && (
-                                        <div>
-                                            <p className="text-sm text-gray-600">Comments</p>
-                                            <p className="text-sm whitespace-pre-wrap bg-gray-50 p-3 rounded border">{request.review_outcome.comments}</p>
-                                        </div>
-                                    )}
-                                    <div>
-                                        <p className="text-sm text-gray-600">Review Date</p>
-                                        <p className="font-medium">{new Date(request.review_outcome.review_date).toLocaleString()}</p>
-                                    </div>
-                                </div>
-                            </div>
-                        ) : (
-                            <>
-                                {isReviewer && request.outcome ? (
-                                    <div className="bg-white border border-gray-200 rounded-lg p-6">
-                                        <h4 className="font-semibold mb-4">Submit Review Decision</h4>
-                                        <p className="text-sm text-gray-600 mb-4">
-                                            Review the validation outcome above and provide your decision.
-                                        </p>
-
-                                        <div className="mb-4">
-                                            <label className="block text-sm font-medium mb-2">Decision *</label>
-                                            <select
-                                                className="input-field"
-                                                value={newReviewOutcome.decision}
-                                                onChange={(e) => setNewReviewOutcome({ ...newReviewOutcome, decision: e.target.value })}
-                                            >
-                                                <option value="">Select Decision</option>
-                                                <option value="AGREE">Agree - Approve for final approval</option>
-                                                <option value="SEND_BACK">Send Back - Request revisions</option>
-                                            </select>
-                                        </div>
-
-                                        <div className="mb-4">
-                                            <label className="flex items-center gap-2 text-sm">
-                                                <input
-                                                    type="checkbox"
-                                                    checked={newReviewOutcome.agrees_with_rating === true}
-                                                    onChange={(e) => setNewReviewOutcome({
-                                                        ...newReviewOutcome,
-                                                        agrees_with_rating: e.target.checked ? true : null
-                                                    })}
-                                                    className="rounded"
-                                                />
-                                                <span>I agree with the overall rating assessment</span>
-                                            </label>
-                                        </div>
-
-                                        <div className="mb-4">
-                                            <label className="block text-sm font-medium mb-2">
-                                                Comments {newReviewOutcome.decision === 'SEND_BACK' && '*'}
-                                            </label>
-                                            <textarea
-                                                className="input-field"
-                                                rows={4}
-                                                value={newReviewOutcome.comments}
-                                                onChange={(e) => setNewReviewOutcome({ ...newReviewOutcome, comments: e.target.value })}
-                                                placeholder={newReviewOutcome.decision === 'SEND_BACK'
-                                                    ? "Please explain what changes are needed..."
-                                                    : "Optional comments about the review..."}
-                                            />
-                                            {newReviewOutcome.decision === 'SEND_BACK' && (
-                                                <p className="text-xs text-gray-500 mt-1">
-                                                    Comments are required when sending back for revisions
-                                                </p>
-                                            )}
-                                        </div>
-
-                                        <button
-                                            onClick={handleCreateReviewOutcome}
-                                            disabled={
-                                                actionLoading ||
-                                                !newReviewOutcome.decision ||
-                                                (newReviewOutcome.decision === 'SEND_BACK' && !newReviewOutcome.comments?.trim())
-                                            }
-                                            className="btn-primary"
-                                        >
-                                            {actionLoading ? 'Submitting...' : 'Submit Review Decision'}
-                                        </button>
-                                    </div>
-                                ) : (
-                                    <div className="bg-gray-50 border border-gray-200 rounded-lg p-6">
-                                        <p className="text-gray-600 text-sm">
-                                            {!isReviewer
-                                                ? 'You are not assigned as a reviewer for this validation request.'
-                                                : 'Waiting for validation outcome to be completed before review can begin.'}
-                                        </p>
-                                    </div>
-                                )}
-                            </>
-                        )}
-                    </div>
-                )}
-
                 {activeTab === 'approvals' && (
                     <div>
                         <h3 className="text-lg font-bold mb-4">Approval Status</h3>
                         {request.approvals.length === 0 ? (
                             <div className="text-gray-500 text-center py-8">
-                                No approvals configured for this request.
+                                No approvals configured for this project.
                             </div>
                         ) : (
                             <div className="space-y-4">
@@ -1419,16 +1245,16 @@ export default function ValidationRequestDetailPage() {
                                                 </span>
                                                 {approval.approval_status === 'Pending' &&
                                                     user?.user_id === approval.approver.user_id && (
-                                                    <button
-                                                        onClick={() => {
-                                                            setApprovalUpdate({ approval_id: approval.approval_id, status: '', comments: '' });
-                                                            setShowApprovalModal(true);
-                                                        }}
-                                                        className="btn-primary text-xs"
-                                                    >
-                                                        Submit
-                                                    </button>
-                                                )}
+                                                        <button
+                                                            onClick={() => {
+                                                                setApprovalUpdate({ approval_id: approval.approval_id, status: '', comments: '' });
+                                                                setShowApprovalModal(true);
+                                                            }}
+                                                            className="btn-primary text-xs"
+                                                        >
+                                                            Submit
+                                                        </button>
+                                                    )}
                                             </div>
                                         </div>
                                         {approval.approved_at && (
@@ -1453,21 +1279,21 @@ export default function ValidationRequestDetailPage() {
                 {activeTab === 'history' && (
                     <div>
                         <h3 className="text-lg font-bold mb-4">Activity History</h3>
-                        {request.status_history.length === 0 && allAuditLogs.length === 0 ? (
+                        {request.status_history.length === 0 && assignmentAuditLogs.length === 0 ? (
                             <div className="text-gray-500 text-center py-8">
                                 No activity recorded.
                             </div>
                         ) : (
                             <div className="space-y-4">
-                                {/* Merge and sort status history and all audit logs */}
+                                {/* Merge and sort status history and assignment audit logs */}
                                 {[
                                     ...request.status_history.map((h) => ({
                                         type: 'status' as const,
                                         timestamp: h.changed_at,
                                         data: h
                                     })),
-                                    ...allAuditLogs.map((a) => ({
-                                        type: 'audit' as const,
+                                    ...assignmentAuditLogs.map((a) => ({
+                                        type: 'assignment' as const,
                                         timestamp: a.timestamp,
                                         data: a
                                     }))
@@ -1509,145 +1335,68 @@ export default function ValidationRequestDetailPage() {
                                             );
                                         } else {
                                             const audit = item.data as AuditLog;
-
-                                            // Determine styling and label based on entity type and action
-                                            let borderColor = 'border-gray-500';
-                                            let label = audit.action;
-
-                                            if (audit.entity_type === 'ValidationAssignment') {
-                                                const colors = {
-                                                    'CREATE': 'border-green-500',
-                                                    'UPDATE': 'border-orange-500',
-                                                    'DELETE': 'border-red-500',
-                                                    'REVIEWER_SIGN_OFF': 'border-purple-500'
-                                                };
-                                                const labels = {
-                                                    'CREATE': 'VALIDATOR ASSIGNED',
-                                                    'UPDATE': 'ASSIGNMENT UPDATED',
-                                                    'DELETE': 'VALIDATOR REMOVED',
-                                                    'REVIEWER_SIGN_OFF': 'REVIEWER SIGN-OFF'
-                                                };
-                                                borderColor = colors[audit.action as keyof typeof colors] || borderColor;
-                                                label = labels[audit.action as keyof typeof labels] || audit.action;
-                                            } else if (audit.entity_type === 'ValidationOutcome') {
-                                                const colors = {
-                                                    'CREATE': 'border-green-500',
-                                                    'UPDATE': 'border-orange-500'
-                                                };
-                                                const labels = {
-                                                    'CREATE': 'OUTCOME CREATED',
-                                                    'UPDATE': 'OUTCOME UPDATED'
-                                                };
-                                                borderColor = colors[audit.action as keyof typeof colors] || borderColor;
-                                                label = labels[audit.action as keyof typeof labels] || audit.action;
-                                            } else if (audit.entity_type === 'ValidationReviewOutcome') {
-                                                const colors = {
-                                                    'CREATE': 'border-purple-500',
-                                                    'UPDATE': 'border-orange-500'
-                                                };
-                                                const labels = {
-                                                    'CREATE': 'REVIEW SUBMITTED',
-                                                    'UPDATE': 'REVIEW UPDATED'
-                                                };
-                                                borderColor = colors[audit.action as keyof typeof colors] || borderColor;
-                                                label = labels[audit.action as keyof typeof labels] || audit.action;
-                                            }
-
+                                            const actionColors = {
+                                                'CREATE': 'border-green-500',
+                                                'UPDATE': 'border-orange-500',
+                                                'DELETE': 'border-red-500',
+                                                'REVIEWER_SIGN_OFF': 'border-purple-500'
+                                            };
+                                            const actionLabels = {
+                                                'CREATE': 'VALIDATOR ASSIGNED',
+                                                'UPDATE': 'ASSIGNMENT UPDATED',
+                                                'DELETE': 'VALIDATOR REMOVED',
+                                                'REVIEWER_SIGN_OFF': 'REVIEWER SIGN-OFF'
+                                            };
                                             return (
-                                                <div key={`audit-${audit.log_id}`} className={`border-l-4 ${borderColor} pl-4 py-2`}>
+                                                <div key={`audit-${audit.log_id}`} className={`border-l-4 ${actionColors[audit.action as keyof typeof actionColors] || 'border-gray-500'} pl-4 py-2`}>
                                                     <div className="flex items-center gap-2">
                                                         <span className="text-xs font-semibold text-gray-700">
-                                                            {label}
+                                                            {actionLabels[audit.action as keyof typeof actionLabels] || audit.action}
                                                         </span>
                                                     </div>
                                                     <div className="mt-2 text-sm">
-                                                        {/* Assignment-specific fields */}
-                                                        {audit.entity_type === 'ValidationAssignment' && (
-                                                            <>
-                                                                {audit.changes?.validator && (
-                                                                    <div>
-                                                                        <span className="text-gray-500">Validator:</span>{' '}
-                                                                        <span className="font-medium">{audit.changes.validator}</span>
-                                                                    </div>
-                                                                )}
-                                                                {audit.changes?.role && (
-                                                                    <div>
-                                                                        <span className="text-gray-500">Role:</span>{' '}
-                                                                        <span className="text-gray-700">{audit.changes.role}</span>
-                                                                    </div>
-                                                                )}
-                                                                {audit.changes?.estimated_hours !== undefined && (
-                                                                    <div>
-                                                                        <span className="text-gray-500">Estimated Hours:</span>{' '}
-                                                                        <span className="text-gray-700">{audit.changes.estimated_hours || 'N/A'}</span>
-                                                                    </div>
-                                                                )}
-                                                                {audit.changes?.is_primary !== undefined && (
-                                                                    <div>
-                                                                        <span className="text-gray-500">Primary Validator:</span>{' '}
-                                                                        <span className="text-gray-700">
-                                                                            {audit.changes.is_primary.old} → {audit.changes.is_primary.new}
-                                                                        </span>
-                                                                    </div>
-                                                                )}
-                                                                {audit.changes?.is_reviewer !== undefined && (
-                                                                    <div>
-                                                                        <span className="text-gray-500">Reviewer Role:</span>{' '}
-                                                                        <span className="text-gray-700">
-                                                                            {audit.changes.is_reviewer.old} → {audit.changes.is_reviewer.new}
-                                                                        </span>
-                                                                    </div>
-                                                                )}
-                                                                {audit.changes?.actual_hours !== undefined && (
-                                                                    <div>
-                                                                        <span className="text-gray-500">Actual Hours:</span>{' '}
-                                                                        <span className="text-gray-700">
-                                                                            {audit.changes.actual_hours.old || 'N/A'} → {audit.changes.actual_hours.new || 'N/A'}
-                                                                        </span>
-                                                                    </div>
-                                                                )}
-                                                            </>
+                                                        {audit.changes?.validator && (
+                                                            <div>
+                                                                <span className="text-gray-500">Validator:</span>{' '}
+                                                                <span className="font-medium">{audit.changes.validator}</span>
+                                                            </div>
                                                         )}
-
-                                                        {/* Outcome-specific fields */}
-                                                        {audit.entity_type === 'ValidationOutcome' && (
-                                                            <>
-                                                                {audit.changes?.overall_rating && (
-                                                                    <div>
-                                                                        <span className="text-gray-500">Overall Rating:</span>{' '}
-                                                                        <span className="font-medium">{audit.changes.overall_rating}</span>
-                                                                    </div>
-                                                                )}
-                                                                {audit.changes?.recommended_review_frequency !== undefined && (
-                                                                    <div>
-                                                                        <span className="text-gray-500">Recommended Review Frequency:</span>{' '}
-                                                                        <span className="text-gray-700">{audit.changes.recommended_review_frequency} months</span>
-                                                                    </div>
-                                                                )}
-                                                            </>
+                                                        {audit.changes?.role && (
+                                                            <div>
+                                                                <span className="text-gray-500">Role:</span>{' '}
+                                                                <span className="text-gray-700">{audit.changes.role}</span>
+                                                            </div>
                                                         )}
-
-                                                        {/* Review Outcome-specific fields */}
-                                                        {audit.entity_type === 'ValidationReviewOutcome' && (
-                                                            <>
-                                                                {audit.changes?.decision && (
-                                                                    <div>
-                                                                        <span className="text-gray-500">Decision:</span>{' '}
-                                                                        <span className={`font-medium ${audit.changes.decision === 'AGREE' ? 'text-green-700' : 'text-yellow-700'}`}>
-                                                                            {audit.changes.decision === 'AGREE' ? 'Agree' : 'Send Back'}
-                                                                        </span>
-                                                                    </div>
-                                                                )}
-                                                                {audit.changes?.agrees_with_rating !== undefined && audit.changes.agrees_with_rating !== null && (
-                                                                    <div>
-                                                                        <span className="text-gray-500">Agrees with Rating:</span>{' '}
-                                                                        <span className="text-gray-700">{audit.changes.agrees_with_rating ? 'Yes' : 'No'}</span>
-                                                                    </div>
-                                                                )}
-                                                            </>
+                                                        {audit.changes?.estimated_hours !== undefined && (
+                                                            <div>
+                                                                <span className="text-gray-500">Estimated Hours:</span>{' '}
+                                                                <span className="text-gray-700">{audit.changes.estimated_hours || 'N/A'}</span>
+                                                            </div>
                                                         )}
-
-                                                        {/* Common fields */}
+                                                        {audit.changes?.is_primary !== undefined && (
+                                                            <div>
+                                                                <span className="text-gray-500">Primary Validator:</span>{' '}
+                                                                <span className="text-gray-700">
+                                                                    {audit.changes.is_primary.old} → {audit.changes.is_primary.new}
+                                                                </span>
+                                                            </div>
+                                                        )}
+                                                        {audit.changes?.is_reviewer !== undefined && (
+                                                            <div>
+                                                                <span className="text-gray-500">Reviewer Role:</span>{' '}
+                                                                <span className="text-gray-700">
+                                                                    {audit.changes.is_reviewer.old} → {audit.changes.is_reviewer.new}
+                                                                </span>
+                                                            </div>
+                                                        )}
+                                                        {audit.changes?.actual_hours !== undefined && (
+                                                            <div>
+                                                                <span className="text-gray-500">Actual Hours:</span>{' '}
+                                                                <span className="text-gray-700">
+                                                                    {audit.changes.actual_hours.old || 'N/A'} → {audit.changes.actual_hours.new || 'N/A'}
+                                                                </span>
+                                                            </div>
+                                                        )}
                                                         {audit.changes?.comments && (
                                                             <div>
                                                                 <span className="text-gray-500">Comments:</span>{' '}
@@ -1676,7 +1425,7 @@ export default function ValidationRequestDetailPage() {
             {showStatusModal && (
                 <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
                     <div className="bg-white rounded-lg p-6 w-full max-w-md">
-                        <h3 className="text-lg font-bold mb-4">Update Request Status</h3>
+                        <h3 className="text-lg font-bold mb-4">Update Project Status</h3>
                         <div className="mb-4">
                             <label className="block text-sm font-medium mb-2">New Status</label>
                             <select
@@ -1711,53 +1460,6 @@ export default function ValidationRequestDetailPage() {
                                 {actionLoading ? 'Updating...' : 'Update Status'}
                             </button>
                             <button onClick={() => setShowStatusModal(false)} className="btn-secondary">
-                                Cancel
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            )}
-
-            {/* Mark Submission Received Modal */}
-            {showMarkSubmissionModal && (
-                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-                    <div className="bg-white rounded-lg p-6 w-full max-w-md">
-                        <h3 className="text-lg font-bold mb-4">Mark Submission Received</h3>
-                        <p className="text-sm text-gray-600 mb-4">
-                            Recording the submission date will start the validation team's SLA timer. If the status is currently "Planning", it will automatically transition to "In Progress".
-                        </p>
-                        <div className="mb-4">
-                            <label className="block text-sm font-medium mb-2">Submission Received Date *</label>
-                            <input
-                                type="date"
-                                className="input-field"
-                                value={submissionData.submission_received_date}
-                                onChange={(e) => setSubmissionData({ ...submissionData, submission_received_date: e.target.value })}
-                                max={new Date().toISOString().split('T')[0]}
-                            />
-                            <p className="text-xs text-gray-500 mt-1">
-                                Date cannot be in the future. Defaults to today.
-                            </p>
-                        </div>
-                        <div className="mb-4">
-                            <label className="block text-sm font-medium mb-2">Notes (Optional)</label>
-                            <textarea
-                                className="input-field"
-                                rows={3}
-                                value={submissionData.notes}
-                                onChange={(e) => setSubmissionData({ ...submissionData, notes: e.target.value })}
-                                placeholder="Any additional notes about the submission..."
-                            />
-                        </div>
-                        <div className="flex gap-2">
-                            <button
-                                onClick={handleMarkSubmission}
-                                disabled={actionLoading || !submissionData.submission_received_date}
-                                className="btn-primary"
-                            >
-                                {actionLoading ? 'Marking...' : 'Mark as Received'}
-                            </button>
-                            <button onClick={() => setShowMarkSubmissionModal(false)} className="btn-secondary">
                                 Cancel
                             </button>
                         </div>

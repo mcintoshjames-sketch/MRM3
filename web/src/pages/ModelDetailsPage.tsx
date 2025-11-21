@@ -48,6 +48,16 @@ interface Region {
     requires_regional_approval: boolean;
 }
 
+interface SubmissionComment {
+    comment_id: number;
+    model_id: number;
+    user_id: number;
+    comment_text: string;
+    action_taken: string | null;
+    created_at: string;
+    user: User;
+}
+
 interface Model {
     model_id: number;
     model_name: string;
@@ -63,6 +73,9 @@ interface Model {
     status: string;
     created_at: string;
     updated_at: string;
+    row_approval_status: string | null;
+    submitted_by_user_id: number | null;
+    submitted_at: string | null;
     owner: User;
     developer: User | null;
     vendor: Vendor | null;
@@ -72,6 +85,8 @@ interface Model {
     wholly_owned_region: Region | null;
     users: User[];
     regulatory_categories: TaxonomyValue[];
+    submitted_by_user: User | null;
+    submission_comments: SubmissionComment[];
 }
 
 interface Validation {
@@ -143,6 +158,12 @@ export default function ModelDetailsPage() {
     const [userSearchTerm, setUserSearchTerm] = useState('');
     const [showUserDropdown, setShowUserDropdown] = useState(false);
     const [showCancelledValidations, setShowCancelledValidations] = useState(false);
+    const [showApprovalActions, setShowApprovalActions] = useState(false);
+    const [showResubmitForm, setShowResubmitForm] = useState(false);
+    const [approvalComment, setApprovalComment] = useState('');
+    const [sendBackComment, setSendBackComment] = useState('');
+    const [resubmitComment, setResubmitComment] = useState('');
+    const [submittingApproval, setSubmittingApproval] = useState(false);
     const [formData, setFormData] = useState({
         model_name: '',
         description: '',
@@ -332,6 +353,66 @@ export default function ModelDetailsPage() {
         }
     };
 
+    const handleApprove = async () => {
+        if (!model) return;
+        setSubmittingApproval(true);
+        try {
+            await api.post(`/models/${model.model_id}/approve`, {
+                comment: approvalComment || 'Record approved for inventory.'
+            });
+            // Refresh the model data
+            await fetchData();
+            setShowApprovalActions(false);
+            setApprovalComment('');
+        } catch (error: any) {
+            console.error('Failed to approve record:', error);
+            alert(error.response?.data?.detail || 'Failed to approve record');
+        } finally {
+            setSubmittingApproval(false);
+        }
+    };
+
+    const handleSendBack = async () => {
+        if (!model || !sendBackComment.trim()) {
+            alert('Please provide feedback for the submitter.');
+            return;
+        }
+        setSubmittingApproval(true);
+        try {
+            await api.post(`/models/${model.model_id}/send-back`, {
+                comment: sendBackComment
+            });
+            // Refresh the model data
+            await fetchData();
+            setShowApprovalActions(false);
+            setSendBackComment('');
+        } catch (error: any) {
+            console.error('Failed to send back record:', error);
+            alert(error.response?.data?.detail || 'Failed to send back record');
+        } finally {
+            setSubmittingApproval(false);
+        }
+    };
+
+    const handleResubmit = async () => {
+        if (!model) return;
+        setSubmittingApproval(true);
+        try {
+            await api.post(`/models/${model.model_id}/resubmit`, {
+                comment: resubmitComment || 'Resubmitted for review.'
+            });
+            // Refresh the model data
+            await fetchData();
+            setShowResubmitForm(false);
+            setResubmitComment('');
+        } catch (error: any) {
+            console.error('Failed to resubmit record:', error);
+            alert(error.response?.data?.detail || 'Failed to resubmit record');
+        } finally {
+            setSubmittingApproval(false);
+        }
+    };
+
     if (loading) {
         return (
             <Layout>
@@ -391,6 +472,197 @@ export default function ModelDetailsPage() {
                     )}
                 </div>
             </div>
+
+            {/* Approval Status Banner */}
+            {model.row_approval_status && (
+                <div className={`mb-6 p-4 rounded-lg border-l-4 ${
+                    model.row_approval_status === 'needs_revision'
+                        ? 'bg-orange-50 border-orange-500'
+                        : 'bg-blue-50 border-blue-500'
+                }`}>
+                    <div className="flex items-start justify-between gap-4">
+                        <div className="flex items-start gap-3 flex-1">
+                            <svg className={`w-6 h-6 flex-shrink-0 mt-0.5 ${
+                                model.row_approval_status === 'needs_revision'
+                                    ? 'text-orange-600'
+                                    : 'text-blue-600'
+                            }`} fill="currentColor" viewBox="0 0 20 20">
+                                <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
+                            </svg>
+                            <div className="flex-1">
+                                <h3 className={`text-sm font-semibold mb-1 ${
+                                    model.row_approval_status === 'needs_revision'
+                                        ? 'text-orange-900'
+                                        : 'text-blue-900'
+                                }`}>
+                                    {model.row_approval_status === 'pending' && 'New Model Record Awaiting Approval'}
+                                    {model.row_approval_status === 'needs_revision' && 'Revisions Requested'}
+                                </h3>
+                                <p className={`text-sm ${
+                                    model.row_approval_status === 'needs_revision'
+                                        ? 'text-orange-800'
+                                        : 'text-blue-800'
+                                }`}>
+                                    {model.row_approval_status === 'pending' && 'This record is pending admin approval to be added to the inventory.'}
+                                    {model.row_approval_status === 'needs_revision' && 'This record has been sent back for revisions. Please review the feedback below and resubmit when ready.'}
+                                </p>
+                                {model.submitted_by_user && (
+                                    <p className="text-xs text-gray-600 mt-1">
+                                        Submitted by {model.submitted_by_user.full_name} on {new Date(model.submitted_at!).toLocaleDateString()}
+                                    </p>
+                                )}
+                            </div>
+                        </div>
+
+                        {/* Admin Actions */}
+                        {user?.role === 'Admin' && model.row_approval_status === 'pending' && (
+                            <div className="flex gap-2 flex-shrink-0">
+                                <button
+                                    onClick={() => setShowApprovalActions(!showApprovalActions)}
+                                    className="inline-flex items-center px-4 py-2 text-sm font-medium text-white bg-green-600 hover:bg-green-700 rounded transition-colors"
+                                >
+                                    Review & Approve
+                                </button>
+                            </div>
+                        )}
+
+                        {/* Submitter Resubmit Action */}
+                        {model.row_approval_status === 'needs_revision' && model.submitted_by_user_id === user?.user_id && (
+                            <div className="flex gap-2 flex-shrink-0">
+                                <button
+                                    onClick={() => setShowResubmitForm(!showResubmitForm)}
+                                    className="inline-flex items-center px-4 py-2 text-sm font-medium text-white bg-orange-600 hover:bg-orange-700 rounded transition-colors"
+                                >
+                                    {showResubmitForm ? 'Cancel' : 'Resubmit for Review'}
+                                </button>
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Approval Actions Panel */}
+                    {showApprovalActions && user?.role === 'Admin' && (
+                        <div className="mt-4 pt-4 border-t border-blue-200 space-y-4">
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                {/* Approve Section */}
+                                <div className="space-y-2">
+                                    <label className="block text-sm font-medium text-gray-700">
+                                        Approve Record
+                                    </label>
+                                    <textarea
+                                        value={approvalComment}
+                                        onChange={(e) => setApprovalComment(e.target.value)}
+                                        placeholder="Optional: Add approval comment..."
+                                        className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
+                                        rows={3}
+                                    />
+                                    <button
+                                        onClick={handleApprove}
+                                        disabled={submittingApproval}
+                                        className="w-full bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700 disabled:opacity-50 text-sm font-medium"
+                                    >
+                                        {submittingApproval ? 'Approving...' : 'Approve & Add to Inventory'}
+                                    </button>
+                                </div>
+
+                                {/* Send Back Section */}
+                                <div className="space-y-2">
+                                    <label className="block text-sm font-medium text-gray-700">
+                                        Send Back for Revisions
+                                    </label>
+                                    <textarea
+                                        value={sendBackComment}
+                                        onChange={(e) => setSendBackComment(e.target.value)}
+                                        placeholder="Provide feedback for the submitter... (required)"
+                                        className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
+                                        rows={3}
+                                    />
+                                    <button
+                                        onClick={handleSendBack}
+                                        disabled={submittingApproval || !sendBackComment.trim()}
+                                        className="w-full bg-orange-600 text-white px-4 py-2 rounded hover:bg-orange-700 disabled:opacity-50 text-sm font-medium"
+                                    >
+                                        {submittingApproval ? 'Sending...' : 'Send Back for Revisions'}
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Resubmit Form Panel */}
+                    {showResubmitForm && model.row_approval_status === 'needs_revision' && model.submitted_by_user_id === user?.user_id && (
+                        <div className="mt-4 pt-4 border-t border-orange-200 space-y-3">
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-2">
+                                    Resubmit for Review
+                                </label>
+                                <p className="text-sm text-gray-600 mb-3">
+                                    Describe the changes you made to address the feedback above. This will help the reviewer understand what was updated.
+                                </p>
+                                <textarea
+                                    value={resubmitComment}
+                                    onChange={(e) => setResubmitComment(e.target.value)}
+                                    placeholder="Optional: Describe what you changed in response to the feedback..."
+                                    className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
+                                    rows={4}
+                                />
+                            </div>
+                            <div className="flex gap-2 justify-end">
+                                <button
+                                    onClick={() => {
+                                        setShowResubmitForm(false);
+                                        setResubmitComment('');
+                                    }}
+                                    className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded hover:bg-gray-50"
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    onClick={handleResubmit}
+                                    disabled={submittingApproval}
+                                    className="px-4 py-2 text-sm font-medium text-white bg-orange-600 hover:bg-orange-700 rounded disabled:opacity-50"
+                                >
+                                    {submittingApproval ? 'Resubmitting...' : 'Submit for Review'}
+                                </button>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Submission Comments Thread */}
+                    {model.submission_comments && model.submission_comments.length > 0 && (
+                        <div className="mt-4 pt-4 border-t border-gray-200">
+                            <h4 className="text-sm font-semibold text-gray-700 mb-3">Review History</h4>
+                            <div className="space-y-3">
+                                {model.submission_comments.map((comment) => (
+                                    <div key={comment.comment_id} className="bg-white p-3 rounded border border-gray-200">
+                                        <div className="flex items-center gap-2 mb-1">
+                                            <span className="text-sm font-medium text-gray-900">
+                                                {comment.user.full_name}
+                                            </span>
+                                            {comment.action_taken && (
+                                                <span className={`px-2 py-0.5 text-xs rounded ${
+                                                    comment.action_taken === 'approved' ? 'bg-green-100 text-green-700' :
+                                                    comment.action_taken === 'sent_back' ? 'bg-orange-100 text-orange-700' :
+                                                    comment.action_taken === 'resubmitted' ? 'bg-blue-100 text-blue-700' :
+                                                    'bg-gray-100 text-gray-700'
+                                                }`}>
+                                                    {comment.action_taken === 'sent_back' ? 'Sent Back' :
+                                                     comment.action_taken === 'resubmitted' ? 'Resubmitted' :
+                                                     comment.action_taken === 'approved' ? 'Approved' :
+                                                     comment.action_taken}
+                                                </span>
+                                            )}
+                                            <span className="text-xs text-gray-500 ml-auto">
+                                                {new Date(comment.created_at).toLocaleString()}
+                                            </span>
+                                        </div>
+                                        <p className="text-sm text-gray-700">{comment.comment_text}</p>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+                </div>
+            )}
 
             {/* Out-of-Order Validation Warning */}
             {getOutOfOrderWarnings().length > 0 && (

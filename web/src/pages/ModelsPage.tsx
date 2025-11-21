@@ -39,6 +39,8 @@ interface Model {
     status: string;
     created_at: string;
     updated_at: string;
+    row_approval_status: string | null;
+    submitted_at: string | null;
     owner: User;
     developer: User | null;
     vendor: Vendor | null;
@@ -866,6 +868,19 @@ export default function ModelsPage() {
                                             >
                                                 {model.model_name}
                                             </button>
+                                            {model.row_approval_status && (
+                                                <span className={`px-2 py-0.5 rounded text-xs font-medium ${
+                                                    model.row_approval_status === 'pending'
+                                                        ? 'bg-blue-100 text-blue-800'
+                                                        : model.row_approval_status === 'needs_revision'
+                                                        ? 'bg-orange-100 text-orange-800'
+                                                        : 'bg-gray-100 text-gray-800'
+                                                }`}>
+                                                    {model.row_approval_status === 'pending' ? 'Pending Approval' :
+                                                     model.row_approval_status === 'needs_revision' ? 'Needs Revision' :
+                                                     model.row_approval_status}
+                                                </span>
+                                            )}
                                             {model.wholly_owned_region && (
                                                 <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-indigo-100 text-indigo-800 border border-indigo-300 whitespace-nowrap">
                                                     <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
@@ -899,7 +914,7 @@ export default function ModelsPage() {
                                             <div className="flex flex-wrap gap-1">
                                                 {model.regions.map(r => (
                                                     <span key={r.region_id} className="px-2 py-0.5 bg-blue-100 text-blue-800 rounded text-xs font-semibold">
-                                                        {r.region_code}
+                                                        {r.code}
                                                     </span>
                                                 ))}
                                             </div>

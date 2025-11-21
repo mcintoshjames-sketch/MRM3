@@ -5,7 +5,7 @@ This document tracks the regression testing strategy and test coverage for itera
 ## Quick Reference
 
 ```bash
-# Run all backend tests (195 tests passing)
+# Run all backend tests (208 tests passing)
 cd api && python -m pytest
 
 # Run all frontend tests (128 tests passing)
@@ -233,6 +233,21 @@ cd web && pnpm test:coverage
 - [x] Sort by urgency and due dates
 - [x] Support for models without validation policies
 - [x] Handle models with no validation history
+
+#### Model Submission Workflow (`test_model_submission_workflow.py`)
+- [x] Admin creating model is auto-approved
+- [x] User creating model is pending approval
+- [x] User can edit their own pending model
+- [x] User cannot edit approved model (workflow restriction)
+- [x] Admin can approve pending model
+- [x] Admin can send back model for revision
+- [x] User can resubmit model after revision
+- [x] RLS: User sees only their own pending submissions
+- [x] Submission comment thread retrieval
+- [x] Full workflow integration (Create -> Send Back -> Resubmit -> Approve)
+- [x] User cannot approve their own model
+- [x] Dashboard news feed retrieval
+- [x] Non-admin must include themselves as model user
 
 ### Frontend Component Tests (web/src/) - ✅ FULLY OPERATIONAL
 
@@ -505,6 +520,7 @@ describe('NewPage', () => {
 | **Validation Workflow** | ✅ test_validation_workflow.py (36 tests) | ⚠️ ValidationWorkflowPage + ValidationRequestDetailPage (tests pending) | 2025-11-17 |
 | **Revalidation Lifecycle (Phase 3)** | ✅ test_revalidation.py (30 tests) | N/A (API-only phase) | 2025-11-20 |
 | **Revalidation Lifecycle UI (Phase 4)** | N/A (frontend-only) | ✅ MyPendingSubmissionsPage + ModelDetailsPage + AdminDashboardPage (3 components, test coverage integrated) | 2025-11-20 |
+| **Model Submission Workflow** | ✅ test_model_submission_workflow.py (13 tests) | N/A (API-only phase) | 2025-11-21 |
 
 **Features Added:**
 - Development type (In-House / Third-Party)
@@ -524,8 +540,9 @@ describe('NewPage', () => {
 - **Validation Request Detail View** (6-tab interface: Overview, Assignments, Work Components, Outcome, Approvals, History)
 - **Revalidation Lifecycle System (Phase 3)** (two-SLA tracking, submission due dates, grace periods, validation due dates, model compliance vs validation team SLA, multi-region coordination, wholly-owned governance, model version tracking)
 - **Revalidation Lifecycle UI (Phase 4)** (MyPendingSubmissionsPage for model owners, revalidation status display on ModelDetailsPage, three revalidation dashboard widgets on AdminDashboardPage)
+- **Model Submission Workflow** (Submission, Approval, Send Back, Resubmit, RLS, Dashboard Feed)
 
-**Total: 323 tests (195 backend + 128 frontend passing)**
+**Total: 336 tests (208 backend + 128 frontend passing)**
 
 **Frontend Testing Debt:**
 - ValidationWorkflowPage component tests (~15 tests)
