@@ -24,3 +24,4 @@ class EntraUserProvisionRequest(BaseModel):
     """Request to provision an Entra user as an application user."""
     entra_id: str
     role: str = "User"
+    region_ids: list[int] = []

@@ -1,11 +1,15 @@
 """Model schemas."""
 from pydantic import BaseModel, field_validator, field_serializer
 from datetime import datetime, date
-from typing import Optional, List, Any
+from typing import Optional, List, Any, TYPE_CHECKING
 from app.schemas.user import UserResponse
 from app.schemas.vendor import VendorResponse
 from app.schemas.taxonomy import TaxonomyValueResponse
 from app.schemas.region import Region
+from app.schemas.model_submission_comment import ModelSubmissionCommentResponse
+
+if TYPE_CHECKING:
+    pass
 
 
 class ModelBase(BaseModel):
@@ -73,6 +77,10 @@ class ModelResponse(ModelBase):
     wholly_owned_region_id: Optional[int] = None
     created_at: datetime
     updated_at: datetime
+    # Row approval workflow fields
+    row_approval_status: Optional[str] = None
+    submitted_by_user_id: Optional[int] = None
+    submitted_at: Optional[datetime] = None
 
     class Config:
         from_attributes = True
@@ -92,6 +100,7 @@ class ModelDetailResponse(ModelResponse):
     """Model response with nested user and vendor details."""
     owner: UserResponse
     developer: Optional[UserResponse] = None
+    submitted_by_user: Optional[UserResponse] = None
     vendor: Optional[VendorResponse] = None
     risk_tier: Optional[TaxonomyValueResponse] = None
     validation_type: Optional[TaxonomyValueResponse] = None
@@ -101,6 +110,7 @@ class ModelDetailResponse(ModelResponse):
     users: List[UserResponse] = []
     regulatory_categories: List[TaxonomyValueResponse] = []
     regions: List[ModelRegionListItem] = []
+    submission_comments: List[ModelSubmissionCommentResponse] = []
 
     class Config:
         from_attributes = True
@@ -140,8 +150,14 @@ class ModelCreateResponse(BaseModel):
     wholly_owned_region_id: Optional[int] = None
     created_at: datetime
     updated_at: datetime
+    # Row approval workflow fields
+    row_approval_status: Optional[str] = None
+    submitted_by_user_id: Optional[int] = None
+    submitted_at: Optional[datetime] = None
+    # Relationships
     owner: UserResponse
     developer: Optional[UserResponse] = None
+    submitted_by_user: Optional[UserResponse] = None
     vendor: Optional[VendorResponse] = None
     risk_tier: Optional[TaxonomyValueResponse] = None
     validation_type: Optional[TaxonomyValueResponse] = None

@@ -22,7 +22,8 @@ class ValidationRequestModelVersion(Base):
     )
 
     # Relationships
-    request = relationship("ValidationRequest", back_populates="model_versions_assoc")
+    request = relationship("ValidationRequest",
+                           back_populates="model_versions_assoc")
     model = relationship("Model")
     version = relationship("ModelVersion")
 
@@ -34,8 +35,10 @@ validation_request_models = ValidationRequestModelVersion.__table__
 validation_request_regions = Table(
     "validation_request_regions",
     Base.metadata,
-    Column("request_id", Integer, ForeignKey("validation_requests.request_id", ondelete="CASCADE"), primary_key=True),
-    Column("region_id", Integer, ForeignKey("regions.region_id", ondelete="CASCADE"), primary_key=True),
+    Column("request_id", Integer, ForeignKey(
+        "validation_requests.request_id", ondelete="CASCADE"), primary_key=True),
+    Column("region_id", Integer, ForeignKey(
+        "regions.region_id", ondelete="CASCADE"), primary_key=True),
 )
 
 
@@ -70,11 +73,16 @@ class ValidationWorkflowSLA(Base):
     __tablename__ = "validation_workflow_slas"
 
     sla_id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    workflow_type: Mapped[str] = mapped_column(String(100), nullable=False, default="Validation")
-    assignment_days: Mapped[int] = mapped_column(Integer, nullable=False, default=10)
-    begin_work_days: Mapped[int] = mapped_column(Integer, nullable=False, default=5)
-    complete_work_days: Mapped[int] = mapped_column(Integer, nullable=False, default=80)
-    approval_days: Mapped[int] = mapped_column(Integer, nullable=False, default=10)
+    workflow_type: Mapped[str] = mapped_column(
+        String(100), nullable=False, default="Validation")
+    assignment_days: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=10)
+    begin_work_days: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=5)
+    complete_work_days: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=80)
+    approval_days: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=10)
     model_change_lead_time_days: Mapped[int] = mapped_column(
         Integer, nullable=False, default=90,
         comment="Lead time in days before model change implementation date to trigger interim validation"
@@ -92,7 +100,8 @@ class ValidationRequest(Base):
     __tablename__ = "validation_requests"
 
     request_id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    request_date: Mapped[date] = mapped_column(Date, nullable=False, default=date.today)
+    request_date: Mapped[date] = mapped_column(
+        Date, nullable=False, default=date.today)
     requestor_id: Mapped[int] = mapped_column(
         Integer, ForeignKey("users.user_id"), nullable=False
     )
@@ -113,7 +122,8 @@ class ValidationRequest(Base):
         Integer, ForeignKey("users.user_id"), nullable=True
     )
     decline_reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    declined_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    declined_at: Mapped[Optional[datetime]
+                        ] = mapped_column(DateTime, nullable=True)
 
     # Revalidation Lifecycle Fields
     prior_validation_request_id: Mapped[Optional[int]] = mapped_column(
@@ -142,16 +152,18 @@ class ValidationRequest(Base):
     )
     # Backward compatibility: simple list of models
     models: Mapped[List["Model"]] = relationship(
-        "Model", secondary="validation_request_models", back_populates="validation_requests", viewonly=True
+        "Model", secondary="validation_request_models", viewonly=True
     )
     regions: Mapped[List["Region"]] = relationship(
         "Region", secondary=validation_request_regions
     )
     requestor = relationship("User", foreign_keys=[requestor_id])
     declined_by = relationship("User", foreign_keys=[declined_by_id])
-    validation_type = relationship("TaxonomyValue", foreign_keys=[validation_type_id])
+    validation_type = relationship(
+        "TaxonomyValue", foreign_keys=[validation_type_id])
     priority = relationship("TaxonomyValue", foreign_keys=[priority_id])
-    current_status = relationship("TaxonomyValue", foreign_keys=[current_status_id])
+    current_status = relationship(
+        "TaxonomyValue", foreign_keys=[current_status_id])
 
     # Self-referential relationship for revalidation chain
     prior_validation_request = relationship(
@@ -428,7 +440,8 @@ class ValidationStatusHistory(Base):
     )
 
     # Relationships
-    request = relationship("ValidationRequest", back_populates="status_history")
+    request = relationship("ValidationRequest",
+                           back_populates="status_history")
     old_status = relationship("TaxonomyValue", foreign_keys=[old_status_id])
     new_status = relationship("TaxonomyValue", foreign_keys=[new_status_id])
     changed_by = relationship("User", foreign_keys=[changed_by_id])
@@ -445,16 +458,25 @@ class ValidationAssignment(Base):
     validator_id: Mapped[int] = mapped_column(
         Integer, ForeignKey("users.user_id"), nullable=False
     )
-    is_primary: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
-    is_reviewer: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
-    assignment_date: Mapped[date] = mapped_column(Date, nullable=False, default=date.today)
-    estimated_hours: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
-    actual_hours: Mapped[Optional[float]] = mapped_column(Float, nullable=True, default=0.0)
-    independence_attestation: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    is_primary: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False)
+    is_reviewer: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False)
+    assignment_date: Mapped[date] = mapped_column(
+        Date, nullable=False, default=date.today)
+    estimated_hours: Mapped[Optional[float]
+                            ] = mapped_column(Float, nullable=True)
+    actual_hours: Mapped[Optional[float]] = mapped_column(
+        Float, nullable=True, default=0.0)
+    independence_attestation: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False)
     # Reviewer sign-off fields
-    reviewer_signed_off: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
-    reviewer_signed_off_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
-    reviewer_sign_off_comments: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    reviewer_signed_off: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False)
+    reviewer_signed_off_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime, nullable=True)
+    reviewer_sign_off_comments: Mapped[Optional[str]] = mapped_column(
+        Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime, nullable=False, default=datetime.utcnow
     )
@@ -486,8 +508,10 @@ class ValidationWorkComponent(Base):
     )
 
     # Relationships
-    request = relationship("ValidationRequest", back_populates="work_components")
-    component_type = relationship("TaxonomyValue", foreign_keys=[component_type_id])
+    request = relationship("ValidationRequest",
+                           back_populates="work_components")
+    component_type = relationship(
+        "TaxonomyValue", foreign_keys=[component_type_id])
     status = relationship("TaxonomyValue", foreign_keys=[status_id])
 
 
@@ -503,9 +527,11 @@ class ValidationOutcome(Base):
         Integer, ForeignKey("taxonomy_values.value_id"), nullable=False
     )
     executive_summary: Mapped[str] = mapped_column(Text, nullable=False)
-    recommended_review_frequency: Mapped[int] = mapped_column(Integer, nullable=False)  # in months
+    recommended_review_frequency: Mapped[int] = mapped_column(
+        Integer, nullable=False)  # in months
     effective_date: Mapped[date] = mapped_column(Date, nullable=False)
-    expiration_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
+    expiration_date: Mapped[Optional[date]
+                            ] = mapped_column(Date, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime, nullable=False, default=datetime.utcnow
     )
@@ -515,7 +541,8 @@ class ValidationOutcome(Base):
 
     # Relationships
     request = relationship("ValidationRequest", back_populates="outcome")
-    overall_rating = relationship("TaxonomyValue", foreign_keys=[overall_rating_id])
+    overall_rating = relationship(
+        "TaxonomyValue", foreign_keys=[overall_rating_id])
 
 
 class ValidationReviewOutcome(Base):
@@ -529,9 +556,11 @@ class ValidationReviewOutcome(Base):
     reviewer_id: Mapped[int] = mapped_column(
         Integer, ForeignKey("users.user_id"), nullable=False
     )
-    decision: Mapped[str] = mapped_column(String(50), nullable=False)  # 'AGREE' or 'SEND_BACK'
+    decision: Mapped[str] = mapped_column(
+        String(50), nullable=False)  # 'AGREE' or 'SEND_BACK'
     comments: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    agrees_with_rating: Mapped[Optional[bool]] = mapped_column(Boolean, nullable=True)
+    agrees_with_rating: Mapped[Optional[bool]
+                               ] = mapped_column(Boolean, nullable=True)
     review_date: Mapped[datetime] = mapped_column(
         DateTime, nullable=False, default=datetime.utcnow
     )
@@ -543,7 +572,8 @@ class ValidationReviewOutcome(Base):
     )
 
     # Relationships
-    request = relationship("ValidationRequest", back_populates="review_outcome")
+    request = relationship("ValidationRequest",
+                           back_populates="review_outcome")
     reviewer = relationship("User", foreign_keys=[reviewer_id])
 
 
@@ -558,18 +588,23 @@ class ValidationApproval(Base):
     approver_id: Mapped[int] = mapped_column(
         Integer, ForeignKey("users.user_id"), nullable=False
     )
-    approver_role: Mapped[str] = mapped_column(String(100), nullable=False)  # Validator, Validation Head, Model Owner, Risk Officer
-    is_required: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
-    approval_status: Mapped[str] = mapped_column(String(50), nullable=False, default="Pending")  # Pending, Approved, Rejected
+    # Validator, Validation Head, Model Owner, Risk Officer
+    approver_role: Mapped[str] = mapped_column(String(100), nullable=False)
+    is_required: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True)
+    approval_status: Mapped[str] = mapped_column(
+        String(50), nullable=False, default="Pending")  # Pending, Approved, Rejected
     comments: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    approved_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    approved_at: Mapped[Optional[datetime]
+                        ] = mapped_column(DateTime, nullable=True)
 
     # Admin unlink fields
     unlinked_by_id: Mapped[Optional[int]] = mapped_column(
         Integer, ForeignKey("users.user_id"), nullable=True
     )
     unlink_reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    unlinked_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    unlinked_at: Mapped[Optional[datetime]
+                        ] = mapped_column(DateTime, nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime, nullable=False, default=datetime.utcnow

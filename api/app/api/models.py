@@ -18,6 +18,7 @@ from app.models.model_version import ModelVersion
 from app.models.model_region import ModelRegion
 from app.models.validation_grouping import ValidationGroupingMemory
 from app.schemas.model import ModelCreate, ModelUpdate, ModelDetailResponse, ValidationGroupingSuggestion, ModelCreateResponse
+from app.schemas.submission_action import SubmissionAction, SubmissionFeedback, SubmissionCommentCreate
 
 router = APIRouter()
 
@@ -40,8 +41,17 @@ def list_models(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """List all models with details."""
-    models = db.query(Model).options(
+    """
+    List models with details.
+
+    Row-Level Security:
+    - Admin, Validator, Global Approver, Regional Approver: See all models
+    - User: Only see models where they are owner, developer, or delegate
+    """
+    from app.core.rls import apply_model_rls
+
+    from app.models import ModelSubmissionComment
+    query = db.query(Model).options(
         joinedload(Model.owner),
         joinedload(Model.developer),
         joinedload(Model.vendor),
@@ -50,9 +60,16 @@ def list_models(
         joinedload(Model.validation_type),
         joinedload(Model.model_type),
         joinedload(Model.regulatory_categories),
-        joinedload(Model.model_regions).joinedload(ModelRegion.region)
-    ).all()
-    return models
+        joinedload(Model.model_regions).joinedload(ModelRegion.region),
+        joinedload(Model.submitted_by_user),
+        joinedload(Model.submission_comments).joinedload(
+            ModelSubmissionComment.user)
+    )
+
+    # Apply row-level security filtering
+    query = apply_model_rls(query, current_user, db)
+
+    return query.all()
 
 
 @router.post("/", response_model=ModelCreateResponse, status_code=status.HTTP_201_CREATED)
@@ -62,6 +79,18 @@ def create_model(
     current_user: User = Depends(get_current_user)
 ):
     """Create a new model."""
+    # Check if user is Admin
+    is_admin = current_user.role == "Admin"
+
+    # Non-Admin users must include themselves as a model user
+    if not is_admin:
+        user_ids = model_data.user_ids or []
+        if current_user.user_id not in user_ids:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="You must include yourself as a model user when creating a model. Please add yourself to the 'Model Users' list."
+            )
+
     # Validate vendor requirement for third-party models
     if model_data.development_type == "Third-Party" and not model_data.vendor_id:
         raise HTTPException(
@@ -71,7 +100,8 @@ def create_model(
 
     # Validate vendor exists if provided
     if model_data.vendor_id:
-        vendor = db.query(Vendor).filter(Vendor.vendor_id == model_data.vendor_id).first()
+        vendor = db.query(Vendor).filter(
+            Vendor.vendor_id == model_data.vendor_id).first()
         if not vendor:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -88,7 +118,8 @@ def create_model(
 
     # Validate developer exists if provided
     if model_data.developer_id:
-        developer = db.query(User).filter(User.user_id == model_data.developer_id).first()
+        developer = db.query(User).filter(
+            User.user_id == model_data.developer_id).first()
         if not developer:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -118,6 +149,12 @@ def create_model(
 
     model = Model(**model_dict)
 
+    # Set row approval status for non-Admin users
+    if not is_admin:
+        model.row_approval_status = "pending"
+        model.submitted_by_user_id = current_user.user_id
+        model.submitted_at = datetime.utcnow()
+
     # Add model users
     if user_ids:
         users = db.query(User).filter(User.user_id.in_(user_ids)).all()
@@ -130,7 +167,8 @@ def create_model(
 
     # Add regulatory categories
     if regulatory_category_ids:
-        categories = db.query(TaxonomyValue).filter(TaxonomyValue.value_id.in_(regulatory_category_ids)).all()
+        categories = db.query(TaxonomyValue).filter(
+            TaxonomyValue.value_id.in_(regulatory_category_ids)).all()
         if len(categories) != len(regulatory_category_ids):
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -151,7 +189,8 @@ def create_model(
     if all_region_ids:
         # Validate all regions exist
         from app.models import Region
-        regions = db.query(Region).filter(Region.region_id.in_(all_region_ids)).all()
+        regions = db.query(Region).filter(
+            Region.region_id.in_(all_region_ids)).all()
         if len(regions) != len(all_region_ids):
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -193,7 +232,8 @@ def create_model(
         entity_id=model.model_id,
         action="CREATE",
         user_id=current_user.user_id,
-        changes={"model_name": model.model_name, "status": model.status, "development_type": model.development_type}
+        changes={"model_name": model.model_name, "status": model.status,
+                 "development_type": model.development_type}
     )
 
     # Audit log for initial version
@@ -203,8 +243,22 @@ def create_model(
         entity_id=initial_version.version_id,
         action="CREATE",
         user_id=current_user.user_id,
-        changes={"version_number": initial_version_number, "change_type_id": 1, "auto_created": True}
+        changes={"version_number": initial_version_number,
+                 "change_type_id": 1, "auto_created": True}
     )
+
+    # Create initial submission comment for non-Admin users
+    if not is_admin:
+        from app.models import ModelSubmissionComment
+        initial_comment = ModelSubmissionComment(
+            model_id=model.model_id,
+            user_id=current_user.user_id,
+            comment_text=f"Model '{model.model_name}' submitted for admin approval.",
+            action_taken="submitted",
+            created_at=datetime.utcnow()
+        )
+        db.add(initial_comment)
+
     db.commit()
 
     # Validate implementation date vs validation timing
@@ -215,7 +269,8 @@ def create_model(
         validation_type = db.query(TaxonomyValue).filter(
             TaxonomyValue.value_id == validation_request_data['type_id']
         ).first()
-        is_interim = validation_type and ('interim' in validation_type.label.lower() or validation_type.code == 'INTERIM')
+        is_interim = validation_type and (
+            'interim' in validation_type.label.lower() or validation_type.code == 'INTERIM')
 
         # Check if implementation date is before validation target completion date
         if validation_request_data['target_date']:
@@ -236,7 +291,8 @@ def create_model(
 
             if policy:
                 lead_time_days = policy.model_change_lead_time_days
-                days_until_implementation = (initial_implementation_date - date.today()).days
+                days_until_implementation = (
+                    initial_implementation_date - date.today()).days
 
                 if days_until_implementation < lead_time_days:
                     # Warn if not using Interim Review
@@ -250,7 +306,7 @@ def create_model(
     # Auto-create validation request if requested
     if auto_create_validation and validation_request_data['type_id'] and validation_request_data['priority_id']:
         from app.models import ValidationRequest, ValidationRequestModelVersion, TaxonomyValue, Taxonomy
-        from datetime import datetime
+        # datetime is already imported at module level
 
         # Get INTAKE status
         intake_status = db.query(TaxonomyValue).join(Taxonomy).filter(
@@ -311,6 +367,7 @@ def create_model(
             db.commit()
 
     # Reload with relationships
+    from app.models import ModelSubmissionComment
     model = db.query(Model).options(
         joinedload(Model.owner),
         joinedload(Model.developer),
@@ -319,7 +376,10 @@ def create_model(
         joinedload(Model.risk_tier),
         joinedload(Model.validation_type),
         joinedload(Model.model_type),
-        joinedload(Model.regulatory_categories)
+        joinedload(Model.regulatory_categories),
+        joinedload(Model.submitted_by_user),
+        joinedload(Model.submission_comments).joinedload(
+            ModelSubmissionComment.user)
     ).filter(Model.model_id == model.model_id).first()
 
     # Return model with warnings if any
@@ -331,13 +391,102 @@ def create_model(
     return model_dict
 
 
+# ============================================================================
+# Model Submission Approval Workflow Endpoints
+# ============================================================================
+
+
+@router.get("/pending-submissions", response_model=List[ModelDetailResponse])
+def get_pending_submissions(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Get all models pending admin approval.
+
+    Admin only. Returns models with row_approval_status IN ('pending', 'needs_revision').
+    """
+    if current_user.role != "Admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only admins can view pending submissions"
+        )
+
+    from app.models import ModelSubmissionComment
+    models = db.query(Model).options(
+        joinedload(Model.owner),
+        joinedload(Model.developer),
+        joinedload(Model.submitted_by_user),
+        joinedload(Model.vendor),
+        joinedload(Model.users),
+        joinedload(Model.risk_tier),
+        joinedload(Model.validation_type),
+        joinedload(Model.model_type),
+        joinedload(Model.regulatory_categories),
+        joinedload(Model.model_regions).joinedload(ModelRegion.region),
+        joinedload(Model.submission_comments).joinedload(
+            ModelSubmissionComment.user)
+    ).filter(
+        Model.row_approval_status.in_(['pending', 'needs_revision'])
+    ).order_by(Model.submitted_at.desc()).all()
+
+    return models
+
+
+@router.get("/my-submissions", response_model=List[ModelDetailResponse])
+def get_my_submissions(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Get current user's model submissions (pending/needs_revision/rejected).
+
+    Non-Admin users can see their own submissions.
+    """
+    from app.models import ModelSubmissionComment
+    models = db.query(Model).options(
+        joinedload(Model.owner),
+        joinedload(Model.developer),
+        joinedload(Model.submitted_by_user),
+        joinedload(Model.vendor),
+        joinedload(Model.users),
+        joinedload(Model.risk_tier),
+        joinedload(Model.validation_type),
+        joinedload(Model.model_type),
+        joinedload(Model.regulatory_categories),
+        joinedload(Model.model_regions).joinedload(ModelRegion.region),
+        joinedload(Model.submission_comments).joinedload(
+            ModelSubmissionComment.user)
+    ).filter(
+        Model.submitted_by_user_id == current_user.user_id,
+        Model.row_approval_status != None  # Not approved yet
+    ).order_by(Model.submitted_at.desc()).all()
+
+    return models
+
+
 @router.get("/{model_id}", response_model=ModelDetailResponse)
 def get_model(
     model_id: int,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Get a specific model with details."""
+    """
+    Get a specific model with details.
+
+    Row-Level Security:
+    - Admin, Validator, Global Approver, Regional Approver: Can access any model
+    - User: Can only access models where they are owner, developer, or delegate
+    """
+    from app.core.rls import can_access_model
+
+    # Check RLS access
+    if not can_access_model(model_id, current_user, db):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Model not found"
+        )
+
     model = db.query(Model).options(
         joinedload(Model.owner),
         joinedload(Model.developer),
@@ -364,8 +513,22 @@ def get_model_revalidation_status(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Get revalidation status for a specific model."""
+    """
+    Get revalidation status for a specific model.
+
+    Row-Level Security:
+    - Admin, Validator, Global Approver, Regional Approver: Can access any model's status
+    - User: Can only access status for models they have access to
+    """
     from app.api.validation_workflow import calculate_model_revalidation_status
+    from app.core.rls import can_access_model
+
+    # Check RLS access
+    if not can_access_model(model_id, current_user, db):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Model not found"
+        )
 
     model = db.query(Model).filter(Model.model_id == model_id).first()
 
@@ -384,12 +547,26 @@ def get_validation_grouping_suggestions(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Get suggested models for validation based on previous groupings.
+    """
+    Get suggested models for validation based on previous groupings.
 
     Returns models that were previously validated together with this model
     in the most recent regular validation (Annual Review, Comprehensive, etc.).
     Targeted validations are excluded from suggestions.
+
+    Row-Level Security:
+    - Admin, Validator, Global Approver, Regional Approver: Can access any model's suggestions
+    - User: Can only access suggestions for models they have access to
     """
+    from app.core.rls import can_access_model
+
+    # Check RLS access
+    if not can_access_model(model_id, current_user, db):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Model not found"
+        )
+
     # Verify model exists
     model = db.query(Model).filter(Model.model_id == model_id).first()
     if not model:
@@ -451,19 +628,36 @@ def update_model(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Update a model."""
-    model = db.query(Model).filter(Model.model_id == model_id).first()
-    if not model:
+    """
+    Update a model.
+
+    Row-Level Security:
+    - Admin: Can update any model
+    - Owner: Can update their models
+    - Developer: Can update models they develop
+    - Delegate with can_submit_changes: Can update delegated models
+    """
+    from app.core.rls import can_access_model, can_modify_model
+
+    # Check RLS access first (can user see this model?)
+    if not can_access_model(model_id, current_user, db):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Model not found"
         )
 
-    # Authorization: only model owner or admin can update
-    if model.owner_id != current_user.user_id and current_user.role != "Admin":
+    # Check modification rights
+    if not can_modify_model(model_id, current_user, db):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only model owner or administrator can update this model"
+            detail="You do not have permission to modify this model"
+        )
+
+    model = db.query(Model).filter(Model.model_id == model_id).first()
+    if not model:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Model not found"
         )
 
     update_data = model_data.model_dump(exclude_unset=True)
@@ -480,7 +674,8 @@ def update_model(
 
     # Validate vendor exists if provided
     if 'vendor_id' in update_data and update_data['vendor_id'] is not None:
-        vendor = db.query(Vendor).filter(Vendor.vendor_id == update_data['vendor_id']).first()
+        vendor = db.query(Vendor).filter(Vendor.vendor_id ==
+                                         update_data['vendor_id']).first()
         if not vendor:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -489,7 +684,8 @@ def update_model(
 
     # Validate owner exists if provided
     if 'owner_id' in update_data:
-        owner = db.query(User).filter(User.user_id == update_data['owner_id']).first()
+        owner = db.query(User).filter(
+            User.user_id == update_data['owner_id']).first()
         if not owner:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -498,7 +694,8 @@ def update_model(
 
     # Validate developer exists if provided
     if 'developer_id' in update_data and update_data['developer_id'] is not None:
-        developer = db.query(User).filter(User.user_id == update_data['developer_id']).first()
+        developer = db.query(User).filter(
+            User.user_id == update_data['developer_id']).first()
         if not developer:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -524,7 +721,8 @@ def update_model(
     if 'regulatory_category_ids' in update_data:
         category_ids = update_data.pop('regulatory_category_ids')
         if category_ids is not None:
-            categories = db.query(TaxonomyValue).filter(TaxonomyValue.value_id.in_(category_ids)).all()
+            categories = db.query(TaxonomyValue).filter(
+                TaxonomyValue.value_id.in_(category_ids)).all()
             if len(categories) != len(category_ids):
                 raise HTTPException(
                     status_code=status.HTTP_404_NOT_FOUND,
@@ -582,6 +780,7 @@ def update_model(
     db.refresh(model)
 
     # Reload with relationships
+    from app.models import ModelSubmissionComment
     model = db.query(Model).options(
         joinedload(Model.owner),
         joinedload(Model.developer),
@@ -590,7 +789,10 @@ def update_model(
         joinedload(Model.risk_tier),
         joinedload(Model.validation_type),
         joinedload(Model.model_type),
-        joinedload(Model.regulatory_categories)
+        joinedload(Model.regulatory_categories),
+        joinedload(Model.submitted_by_user),
+        joinedload(Model.submission_comments).joinedload(
+            ModelSubmissionComment.user)
     ).filter(Model.model_id == model.model_id).first()
 
     return model
@@ -602,19 +804,36 @@ def delete_model(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Delete a model."""
-    model = db.query(Model).filter(Model.model_id == model_id).first()
-    if not model:
+    """
+    Delete a model.
+
+    Row-Level Security:
+    - Admin: Can delete any model
+    - Owner: Can delete their models
+    - Developer: Can delete models they develop
+    - Delegate with can_submit_changes: Can delete delegated models
+    """
+    from app.core.rls import can_access_model, can_modify_model
+
+    # Check RLS access first (can user see this model?)
+    if not can_access_model(model_id, current_user, db):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Model not found"
         )
 
-    # Authorization: only model owner or admin can delete
-    if model.owner_id != current_user.user_id and current_user.role != "Admin":
+    # Check modification rights
+    if not can_modify_model(model_id, current_user, db):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only model owner or administrator can delete this model"
+            detail="You do not have permission to delete this model"
+        )
+
+    model = db.query(Model).filter(Model.model_id == model_id).first()
+    if not model:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Model not found"
         )
 
     # Audit log for model deletion (before delete)
@@ -638,8 +857,16 @@ def export_models_csv(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Export all models to CSV."""
-    models = db.query(Model).options(
+    """
+    Export models to CSV.
+
+    Row-Level Security:
+    - Admin, Validator, Global Approver, Regional Approver: Export all models
+    - User: Export only models where they are owner, developer, or delegate
+    """
+    from app.core.rls import apply_model_rls
+
+    query = db.query(Model).options(
         joinedload(Model.owner),
         joinedload(Model.developer),
         joinedload(Model.vendor),
@@ -648,7 +875,11 @@ def export_models_csv(
         joinedload(Model.model_type),
         joinedload(Model.users),
         joinedload(Model.regulatory_categories)
-    ).all()
+    )
+
+    # Apply row-level security filtering
+    query = apply_model_rls(query, current_user, db)
+    models = query.all()
 
     # Create CSV in memory
     output = io.StringIO()
@@ -678,9 +909,11 @@ def export_models_csv(
     # Write data rows
     for model in models:
         # Format model users as comma-separated list
-        model_users_str = ", ".join([u.full_name for u in model.users]) if model.users else ""
+        model_users_str = ", ".join(
+            [u.full_name for u in model.users]) if model.users else ""
         # Format regulatory categories as comma-separated list
-        reg_categories_str = ", ".join([c.label for c in model.regulatory_categories]) if model.regulatory_categories else ""
+        reg_categories_str = ", ".join(
+            [c.label for c in model.regulatory_categories]) if model.regulatory_categories else ""
 
         writer.writerow([
             model.model_id,
@@ -713,3 +946,344 @@ def export_models_csv(
             "Content-Disposition": "attachment; filename=models_export.csv"
         }
     )
+
+
+@router.get("/{model_id}/submission-thread")
+def get_submission_thread(
+    model_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Get submission comment thread for a model."""
+    from app.core.rls import can_access_model
+    from app.models import ModelSubmissionComment
+    from app.schemas.model_submission_comment import ModelSubmissionCommentResponse
+
+    # Check access
+    if not can_access_model(model_id, current_user, db):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Model not found"
+        )
+
+    # Get comments
+    comments = db.query(ModelSubmissionComment).options(
+        joinedload(ModelSubmissionComment.user)
+    ).filter(
+        ModelSubmissionComment.model_id == model_id
+    ).order_by(ModelSubmissionComment.created_at.asc()).all()
+
+    return [ModelSubmissionCommentResponse.model_validate(c) for c in comments]
+
+
+@router.post("/{model_id}/comments")
+def add_submission_comment(
+    model_id: int,
+    comment_data: SubmissionCommentCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Add a comment to the submission thread."""
+    from app.core.rls import can_access_model
+    from app.models import ModelSubmissionComment
+
+    # Check access
+    if not can_access_model(model_id, current_user, db):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Model not found"
+        )
+
+    model = db.query(Model).filter(Model.model_id == model_id).first()
+
+    # Only allow comments on pending/needs_revision models
+    if model.row_approval_status not in ('pending', 'needs_revision'):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Can only comment on pending or needs_revision models"
+        )
+
+    comment = ModelSubmissionComment(
+        model_id=model_id,
+        user_id=current_user.user_id,
+        comment_text=comment_data.comment_text,
+        action_taken=None,
+        created_at=datetime.utcnow()
+    )
+    db.add(comment)
+    db.commit()
+    db.refresh(comment)
+
+    return {"message": "Comment added", "comment_id": comment.comment_id}
+
+
+@router.post("/{model_id}/approve", response_model=ModelDetailResponse)
+def approve_model_submission(
+    model_id: int,
+    action: SubmissionAction,
+    create_validation: bool = False,
+    validation_type_id: int | None = None,
+    validation_priority_id: int | None = None,
+    validation_target_date: str | None = None,
+    validation_trigger_reason: str | None = None,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Approve a model submission (Admin only).
+
+    Optionally creates a validation request for the approved model.
+    """
+    if current_user.role != "Admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only admins can approve models"
+        )
+
+    model = db.query(Model).options(
+        joinedload(Model.owner),
+        joinedload(Model.developer),
+        joinedload(Model.vendor),
+        joinedload(Model.users),
+        joinedload(Model.risk_tier),
+        joinedload(Model.validation_type),
+        joinedload(Model.model_type),
+        joinedload(Model.regulatory_categories),
+        joinedload(Model.submitted_by_user),
+        joinedload(Model.submission_comments)
+    ).filter(Model.model_id == model_id).first()
+
+    if not model:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Model not found"
+        )
+
+    if model.row_approval_status not in ('pending', 'needs_revision'):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Model is not pending approval"
+        )
+
+    # Approve the model
+    model.row_approval_status = None
+
+    # Add approval comment
+    from app.models import ModelSubmissionComment
+    comment_text = action.comment or f"Model approved by {current_user.full_name} and added to inventory."
+    approval_comment = ModelSubmissionComment(
+        model_id=model_id,
+        user_id=current_user.user_id,
+        comment_text=comment_text,
+        action_taken="approved",
+        created_at=datetime.utcnow()
+    )
+    db.add(approval_comment)
+
+    # Audit log
+    create_audit_log(
+        db=db,
+        entity_type="Model",
+        entity_id=model_id,
+        action="APPROVE",
+        user_id=current_user.user_id,
+        changes={"row_approval_status": "approved",
+                 "approved_by": current_user.full_name}
+    )
+
+    db.commit()
+
+    # Optionally create validation request
+    if create_validation and validation_type_id and validation_priority_id:
+        from app.models import ValidationRequest, ValidationRequestModelVersion, Taxonomy
+
+        # Get INTAKE status
+        intake_status = db.query(TaxonomyValue).join(Taxonomy).filter(
+            Taxonomy.name == "Validation Request Status",
+            TaxonomyValue.code == "INTAKE"
+        ).first()
+
+        if not intake_status:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="INTAKE status not found in taxonomy"
+            )
+
+        # Get current version
+        current_version = db.query(ModelVersion).filter(
+            ModelVersion.model_id == model_id,
+            ModelVersion.status == "ACTIVE"
+        ).order_by(ModelVersion.created_at.desc()).first()
+
+        if not current_version:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="No active model version found"
+            )
+
+        # Create validation request
+        validation_request = ValidationRequest(
+            request_date=date.today(),
+            type_id=validation_type_id,
+            priority_id=validation_priority_id,
+            status_id=intake_status.value_id,
+            target_completion_date=date.fromisoformat(
+                validation_target_date) if validation_target_date else None,
+            trigger_reason=validation_trigger_reason or f"Initial validation for approved model {model.model_name}",
+            created_by_id=current_user.user_id
+        )
+        db.add(validation_request)
+        db.commit()
+        db.refresh(validation_request)
+
+        # Link model version
+        link = ValidationRequestModelVersion(
+            request_id=validation_request.request_id,
+            model_id=model_id,
+            version_id=current_version.version_id
+        )
+        db.add(link)
+        db.commit()
+
+    # Reload model to ensure all relationships are populated for response
+    db.refresh(model)
+    return model
+
+
+@router.post("/{model_id}/send-back", response_model=ModelDetailResponse)
+def send_back_model_submission(
+    model_id: int,
+    feedback: SubmissionFeedback,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Send a model submission back to submitter with feedback (Admin only)."""
+    if current_user.role != "Admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only admins can send back models"
+        )
+
+    model = db.query(Model).options(
+        joinedload(Model.owner),
+        joinedload(Model.developer),
+        joinedload(Model.vendor),
+        joinedload(Model.users),
+        joinedload(Model.risk_tier),
+        joinedload(Model.validation_type),
+        joinedload(Model.model_type),
+        joinedload(Model.regulatory_categories),
+        joinedload(Model.submitted_by_user),
+        joinedload(Model.submission_comments)
+    ).filter(Model.model_id == model_id).first()
+
+    if not model:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Model not found"
+        )
+
+    if model.row_approval_status != 'pending':
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Can only send back pending models"
+        )
+
+    # Change status to needs_revision
+    model.row_approval_status = 'needs_revision'
+
+    # Add feedback comment
+    from app.models import ModelSubmissionComment
+    feedback_comment = ModelSubmissionComment(
+        model_id=model_id,
+        user_id=current_user.user_id,
+        comment_text=feedback.comment,
+        action_taken="sent_back",
+        created_at=datetime.utcnow()
+    )
+    db.add(feedback_comment)
+
+    # Audit log
+    create_audit_log(
+        db=db,
+        entity_type="Model",
+        entity_id=model_id,
+        action="SEND_BACK",
+        user_id=current_user.user_id,
+        changes={"row_approval_status": "needs_revision",
+                 "feedback": feedback.comment}
+    )
+
+    db.commit()
+    db.refresh(model)
+    return model
+
+
+@router.post("/{model_id}/resubmit", response_model=ModelDetailResponse)
+def resubmit_model(
+    model_id: int,
+    action: SubmissionAction,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Resubmit a model after addressing feedback (Submitter only)."""
+    model = db.query(Model).options(
+        joinedload(Model.owner),
+        joinedload(Model.developer),
+        joinedload(Model.vendor),
+        joinedload(Model.users),
+        joinedload(Model.risk_tier),
+        joinedload(Model.validation_type),
+        joinedload(Model.model_type),
+        joinedload(Model.regulatory_categories),
+        joinedload(Model.submitted_by_user),
+        joinedload(Model.submission_comments)
+    ).filter(Model.model_id == model_id).first()
+
+    if not model:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Model not found"
+        )
+
+    # Only submitter can resubmit
+    if model.submitted_by_user_id != current_user.user_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only the submitter can resubmit this model"
+        )
+
+    if model.row_approval_status != 'needs_revision':
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Can only resubmit models that need revision"
+        )
+
+    # Change status back to pending
+    model.row_approval_status = 'pending'
+
+    # Add resubmission comment
+    from app.models import ModelSubmissionComment
+    note_text = action.comment or "Model resubmitted after addressing feedback."
+    resubmit_comment = ModelSubmissionComment(
+        model_id=model_id,
+        user_id=current_user.user_id,
+        comment_text=note_text,
+        action_taken="resubmitted",
+        created_at=datetime.utcnow()
+    )
+    db.add(resubmit_comment)
+
+    # Audit log
+    create_audit_log(
+        db=db,
+        entity_type="Model",
+        entity_id=model_id,
+        action="RESUBMIT",
+        user_id=current_user.user_id,
+        changes={"row_approval_status": "pending"}
+    )
+
+    db.commit()
+    db.refresh(model)
+    return model

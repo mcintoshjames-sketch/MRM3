@@ -5,7 +5,7 @@ from typing import List, Optional, Union, Dict
 import json
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session, joinedload
-from sqlalchemy import desc
+from sqlalchemy import desc, or_
 
 from app.core.database import get_db
 from app.core.deps import get_current_user
@@ -873,8 +873,15 @@ def list_validation_requests(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """List validation requests with optional filters."""
+    """
+    List validation requests with optional filters.
+
+    Row-Level Security:
+    - Admin, Validator, Global Approver, Regional Approver: See all validation requests
+    - User: Only see validation requests for models they have access to
+    """
     from app.models.validation import validation_request_models
+    from app.core.rls import apply_validation_request_rls
 
     query = db.query(ValidationRequest).options(
         joinedload(ValidationRequest.models),
@@ -887,10 +894,22 @@ def list_validation_requests(
             ValidationAssignment.validator)
     )
 
-    # Filter by model_id requires joining with the association table
+    # Apply Row-Level Security BEFORE other filters
+    from app.core.rls import can_see_all_data
+    rls_applied = not can_see_all_data(current_user)
+    query = apply_validation_request_rls(query, current_user, db)
+
+    # Filter by model_id
+    # If RLS was applied, the join already exists, so just add the filter
+    # Otherwise, we need to join the association table
     if model_id:
-        query = query.join(validation_request_models).filter(
-            validation_request_models.c.model_id == model_id)
+        if rls_applied:
+            # RLS already joined ValidationRequestModelVersion, just add filter
+            query = query.filter(ValidationRequestModelVersion.model_id == model_id)
+        else:
+            # Privileged user - need to join the association table
+            query = query.join(validation_request_models).filter(
+                validation_request_models.c.model_id == model_id)
     if status_id:
         query = query.filter(ValidationRequest.current_status_id == status_id)
     if priority_id:
@@ -983,7 +1002,20 @@ def get_validation_request(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Get detailed validation request with all relationships."""
+    """
+    Get detailed validation request with all relationships.
+
+    Row-Level Security:
+    - Admin, Validator, Global Approver, Regional Approver: Can access any validation request
+    - User: Can only access validation requests for models they have access to
+    """
+    from app.core.rls import can_access_validation_request
+
+    # Check RLS access
+    if not can_access_validation_request(request_id, current_user, db):
+        raise HTTPException(
+            status_code=404, detail="Validation request not found")
+
     validation_request = db.query(ValidationRequest).options(
         joinedload(ValidationRequest.models),
         joinedload(ValidationRequest.requestor),
@@ -2678,7 +2710,10 @@ def get_overdue_submissions(
     current_user: User = Depends(get_current_user)
 ):
     """
-    Get models with overdue documentation submissions (past grace period).
+    Get models with pending or overdue documentation submissions.
+    Includes:
+    1. Models past submission due date but still in grace period
+    2. Models past grace period (fully overdue)
     Uses dynamic calculation from computed properties.
     Admin only.
     """
@@ -2687,20 +2722,31 @@ def get_overdue_submissions(
     today = date.today()
 
     # Find active revalidation requests without submissions
-    overdue_requests = db.query(ValidationRequest).filter(
+    pending_requests = db.query(ValidationRequest).filter(
         ValidationRequest.validation_type.has(TaxonomyValue.code.in_(["COMPREHENSIVE", "ANNUAL"])),
         ValidationRequest.submission_received_date.is_(None),
         ValidationRequest.current_status.has(TaxonomyValue.code.in_(["INTAKE", "PLANNING"]))
     ).all()
 
     results = []
-    for req in overdue_requests:
-        # Use computed properties to check if overdue
-        if req.submission_grace_period_end and today > req.submission_grace_period_end:
+    for req in pending_requests:
+        # Check if EITHER past submission due date OR past grace period
+        is_past_due = req.submission_due_date and today > req.submission_due_date
+        is_past_grace = req.submission_grace_period_end and today > req.submission_grace_period_end
+
+        if is_past_due or is_past_grace:
             # Get model info from first model in request
             if req.model_versions_assoc and len(req.model_versions_assoc) > 0:
                 model_assoc = req.model_versions_assoc[0]
                 model = model_assoc.model
+
+                # Calculate days overdue and urgency
+                if is_past_grace:
+                    days_overdue = (today - req.submission_grace_period_end).days
+                    urgency = "overdue"  # Past grace period
+                else:
+                    days_overdue = (today - req.submission_due_date).days
+                    urgency = "in_grace_period"  # Past due but in grace
 
                 results.append({
                     "request_id": req.request_id,
@@ -2710,14 +2756,15 @@ def get_overdue_submissions(
                     "risk_tier": model.risk_tier.label if model.risk_tier else None,
                     "submission_due_date": req.submission_due_date,
                     "grace_period_end": req.submission_grace_period_end,
-                    "days_overdue": (today - req.submission_grace_period_end).days,
-                    "model_validation_due_date": req.model_validation_due_date,
+                    "days_overdue": days_overdue,
+                    "urgency": urgency,
+                    "validation_due_date": req.model_validation_due_date,
                     "submission_status": req.submission_status,
                     "current_status": req.current_status.label if req.current_status else "Unknown"
                 })
 
-    # Sort by days overdue (most overdue first)
-    return sorted(results, key=lambda x: x["days_overdue"], reverse=True)
+    # Sort by urgency (overdue first) then by days overdue
+    return sorted(results, key=lambda x: (0 if x["urgency"] == "overdue" else 1, -x["days_overdue"]))
 
 
 @router.get("/dashboard/overdue-validations")
@@ -2726,7 +2773,8 @@ def get_overdue_validations(
     current_user: User = Depends(get_current_user)
 ):
     """
-    Get models with overdue validations (past model validation due date).
+    Get models with overdue validations (past model_validation_due_date).
+    This is SEPARATE from overdue submissions - no overlap.
     Uses dynamic calculation from computed properties.
     Admin only.
     """
@@ -2742,12 +2790,15 @@ def get_overdue_validations(
 
     results = []
     for req in active_requests:
-        # Use computed properties to check if validation is overdue
+        # Check ONLY if validation is overdue (past model_validation_due_date)
+        # Submission overdue is handled separately by /dashboard/overdue-submissions
         if req.model_validation_due_date and today > req.model_validation_due_date:
             # Get model info from first model in request
             if req.model_versions_assoc and len(req.model_versions_assoc) > 0:
                 model_assoc = req.model_versions_assoc[0]
                 model = model_assoc.model
+
+                days_overdue = (today - req.model_validation_due_date).days
 
                 results.append({
                     "request_id": req.request_id,
@@ -2758,7 +2809,7 @@ def get_overdue_validations(
                     "submission_due_date": req.submission_due_date,
                     "submission_received_date": req.submission_received_date,
                     "model_validation_due_date": req.model_validation_due_date,
-                    "days_overdue": (today - req.model_validation_due_date).days,
+                    "days_overdue": days_overdue,
                     "model_compliance_status": req.model_compliance_status,
                     "current_status": req.current_status.label if req.current_status else "Unknown"
                 })
@@ -2796,19 +2847,31 @@ def get_my_pending_submissions(
     current_user: User = Depends(get_current_user)
 ):
     """
-    Get pending submission requests for models owned by the current user.
-    Shows revalidation requests awaiting documentation submission.
+    Get pending submission requests for models accessible by the current user.
+    Shows revalidation requests awaiting documentation submission for models where user is:
+    - Owner
+    - Developer
+    - Delegate
     """
+    from app.models.model_delegate import ModelDelegate
+
     today = date.today()
 
-    # Find revalidation requests for models owned by current user
+    # Find revalidation requests for models accessible by current user
     # that are awaiting submission
     pending_requests = db.query(ValidationRequest).join(
         ValidationRequestModelVersion
     ).join(
         Model
     ).filter(
-        Model.owner_id == current_user.user_id,
+        or_(
+            Model.owner_id == current_user.user_id,
+            Model.developer_id == current_user.user_id,
+            Model.delegates.any(
+                (ModelDelegate.user_id == current_user.user_id) &
+                (ModelDelegate.revoked_at == None)
+            )
+        ),
         ValidationRequest.validation_type.has(TaxonomyValue.code.in_(["COMPREHENSIVE", "ANNUAL"])),
         ValidationRequest.submission_received_date.is_(None),
         ValidationRequest.current_status.has(TaxonomyValue.code.in_(["INTAKE", "PLANNING"]))

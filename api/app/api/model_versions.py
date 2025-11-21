@@ -115,6 +115,15 @@ def get_next_version_preview(
     current_user: User = Depends(get_current_user)
 ):
     """Preview what the next auto-generated version number would be."""
+    from app.core.rls import can_access_model
+
+    # Check RLS access
+    if not can_access_model(model_id, current_user, db):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Model not found"
+        )
+
     # Verify model exists
     model = db.query(Model).filter(Model.model_id == model_id).first()
     if not model:
@@ -135,6 +144,15 @@ def create_model_version(
     current_user: User = Depends(get_current_user)
 ):
     """Create a new model version (submit model change)."""
+    from app.core.rls import can_access_model
+
+    # Check RLS access first
+    if not can_access_model(model_id, current_user, db):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Model not found"
+        )
+
     # Get model
     model = db.query(Model).filter(Model.model_id == model_id).first()
     if not model:
@@ -351,6 +369,15 @@ def list_model_versions(
     current_user: User = Depends(get_current_user)
 ):
     """List all versions for a model (newest first)."""
+    from app.core.rls import can_access_model
+
+    # Check RLS access
+    if not can_access_model(model_id, current_user, db):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Model not found"
+        )
+
     # Verify model exists
     model = db.query(Model).filter(Model.model_id == model_id).first()
     if not model:
@@ -398,6 +425,15 @@ def get_current_version(
     current_user: User = Depends(get_current_user)
 ):
     """Get the current ACTIVE version for a model."""
+    from app.core.rls import can_access_model
+
+    # Check RLS access
+    if not can_access_model(model_id, current_user, db):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Model not found"
+        )
+
     # Verify model exists
     model = db.query(Model).filter(Model.model_id == model_id).first()
     if not model:
@@ -629,7 +665,22 @@ def export_model_versions_csv(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Export all versions for a model to CSV."""
+    """
+    Export all versions for a model to CSV.
+
+    Row-Level Security:
+    - Admin, Validator, Global Approver, Regional Approver: Can export any model's versions
+    - User: Can only export versions for models they have access to
+    """
+    from app.core.rls import can_access_model
+
+    # Check RLS access
+    if not can_access_model(model_id, current_user, db):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Model not found"
+        )
+
     # Verify model exists
     model = db.query(Model).filter(Model.model_id == model_id).first()
     if not model:
@@ -702,6 +753,8 @@ def get_version_details(
     current_user: User = Depends(get_current_user)
 ):
     """Get detailed information about a specific version."""
+    from app.core.rls import can_access_model
+
     version = db.query(ModelVersion).options(
         joinedload(ModelVersion.change_type_detail).joinedload(
             ModelChangeType.category),
@@ -710,6 +763,13 @@ def get_version_details(
     ).filter(ModelVersion.version_id == version_id).first()
 
     if not version:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Version not found"
+        )
+
+    # Check RLS access to the model
+    if not can_access_model(version.model_id, current_user, db):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Version not found"

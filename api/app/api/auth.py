@@ -284,6 +284,14 @@ def provision_entra_user(
             detail="User with this email already exists in application"
         )
 
+    # Validate region_ids for Regional Approvers
+    if provision_data.role == "Regional Approver":
+        if not provision_data.region_ids or len(provision_data.region_ids) == 0:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Regional Approvers must have at least one region assigned"
+            )
+
     # Create application user from Entra data
     # In production, password would not be used as auth goes through Entra ID
     user = User(
@@ -293,6 +301,19 @@ def provision_entra_user(
         role=provision_data.role
     )
     db.add(user)
+    db.flush()  # Flush to get user_id before attaching regions
+
+    # Attach regions for Regional Approvers
+    if provision_data.role == "Regional Approver" and provision_data.region_ids:
+        from app.models.region import Region
+        regions = db.query(Region).filter(Region.region_id.in_(provision_data.region_ids)).all()
+        if len(regions) != len(provision_data.region_ids):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="One or more invalid region IDs provided"
+            )
+        user.regions = regions
+
     db.commit()
     db.refresh(user)
 

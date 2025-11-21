@@ -24,16 +24,20 @@ class DevelopmentType(str, enum.Enum):
 model_users = Table(
     "model_users",
     Base.metadata,
-    Column("model_id", Integer, ForeignKey("models.model_id", ondelete="CASCADE"), primary_key=True),
-    Column("user_id", Integer, ForeignKey("users.user_id", ondelete="CASCADE"), primary_key=True),
+    Column("model_id", Integer, ForeignKey(
+        "models.model_id", ondelete="CASCADE"), primary_key=True),
+    Column("user_id", Integer, ForeignKey(
+        "users.user_id", ondelete="CASCADE"), primary_key=True),
 )
 
 # Association table for model regulatory categories (many-to-many)
 model_regulatory_categories = Table(
     "model_regulatory_categories",
     Base.metadata,
-    Column("model_id", Integer, ForeignKey("models.model_id", ondelete="CASCADE"), primary_key=True),
-    Column("value_id", Integer, ForeignKey("taxonomy_values.value_id", ondelete="CASCADE"), primary_key=True),
+    Column("model_id", Integer, ForeignKey(
+        "models.model_id", ondelete="CASCADE"), primary_key=True),
+    Column("value_id", Integer, ForeignKey(
+        "taxonomy_values.value_id", ondelete="CASCADE"), primary_key=True),
 )
 
 
@@ -69,25 +73,41 @@ class Model(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 
+    # Row-level approval workflow fields
+    row_approval_status: Mapped[Optional[str]] = mapped_column(
+        String(20), nullable=True,
+        comment="Status of this record in the approval workflow: pending, needs_revision, rejected, or NULL (approved)")
+    submitted_by_user_id: Mapped[Optional[int]] = mapped_column(
+        Integer, ForeignKey("users.user_id", ondelete="SET NULL"), nullable=True,
+        comment="User who submitted this model for approval")
+    submitted_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime, nullable=True,
+        comment="Timestamp when model was first submitted")
+
     # Relationships
     owner: Mapped["User"] = relationship("User", foreign_keys=[owner_id])
-    developer: Mapped[Optional["User"]] = relationship("User", foreign_keys=[developer_id])
+    developer: Mapped[Optional["User"]] = relationship(
+        "User", foreign_keys=[developer_id])
+    submitted_by_user: Mapped[Optional["User"]] = relationship(
+        "User", foreign_keys=[submitted_by_user_id])
     vendor: Mapped[Optional["Vendor"]] = relationship("Vendor")
-    users: Mapped[List["User"]] = relationship("User", secondary=model_users, backref="models_used")
-    risk_tier: Mapped[Optional["TaxonomyValue"]] = relationship("TaxonomyValue", foreign_keys=[risk_tier_id])
-    validation_type: Mapped[Optional["TaxonomyValue"]] = relationship("TaxonomyValue", foreign_keys=[validation_type_id])
-    model_type: Mapped[Optional["TaxonomyValue"]] = relationship("TaxonomyValue", foreign_keys=[model_type_id])
-    ownership_type: Mapped[Optional["TaxonomyValue"]] = relationship("TaxonomyValue", foreign_keys=[ownership_type_id])
-    wholly_owned_region: Mapped[Optional["Region"]] = relationship("Region", foreign_keys=[wholly_owned_region_id])
+    users: Mapped[List["User"]] = relationship(
+        "User", secondary=model_users, backref="models_used")
+    risk_tier: Mapped[Optional["TaxonomyValue"]] = relationship(
+        "TaxonomyValue", foreign_keys=[risk_tier_id])
+    validation_type: Mapped[Optional["TaxonomyValue"]] = relationship(
+        "TaxonomyValue", foreign_keys=[validation_type_id])
+    model_type: Mapped[Optional["TaxonomyValue"]] = relationship(
+        "TaxonomyValue", foreign_keys=[model_type_id])
+    ownership_type: Mapped[Optional["TaxonomyValue"]] = relationship(
+        "TaxonomyValue", foreign_keys=[ownership_type_id])
+    wholly_owned_region: Mapped[Optional["Region"]] = relationship(
+        "Region", foreign_keys=[wholly_owned_region_id])
     regulatory_categories: Mapped[List["TaxonomyValue"]] = relationship(
         "TaxonomyValue", secondary=model_regulatory_categories)
     # Legacy validations - kept for backwards compatibility
     validations: Mapped[List["Validation"]] = relationship(
         "Validation", back_populates="model", cascade="all, delete-orphan", order_by="desc(Validation.validation_date)"
-    )
-    # New workflow-based validation requests (many-to-many)
-    validation_requests: Mapped[List["ValidationRequest"]] = relationship(
-        "ValidationRequest", secondary="validation_request_models", back_populates="models", order_by="desc(ValidationRequest.request_date)"
     )
     # Regional metadata links
     model_regions: Mapped[List["ModelRegion"]] = relationship(
@@ -113,4 +133,8 @@ class Model(Base):
     # Model delegates
     delegates: Mapped[List["ModelDelegate"]] = relationship(
         "ModelDelegate", back_populates="model", cascade="all, delete-orphan"
+    )
+    # Model submission comments
+    submission_comments: Mapped[List["ModelSubmissionComment"]] = relationship(
+        "ModelSubmissionComment", back_populates="model", cascade="all, delete-orphan", order_by="ModelSubmissionComment.created_at"
     )

@@ -9,6 +9,7 @@ from app.models.region import Region
 from app.models.model_region import ModelRegion
 from app.models.model_version import ModelVersion
 from app.models.model_delegate import ModelDelegate
+from app.models.model_submission_comment import ModelSubmissionComment
 from app.models.model_change_taxonomy import ModelChangeCategory, ModelChangeType
 from app.models.validation import (
     Validation,
@@ -37,6 +38,7 @@ __all__ = [
     "ModelRegion",
     "ModelVersion",
     "ModelDelegate",
+    "ModelSubmissionComment",
     "ModelChangeCategory",
     "ModelChangeType",
     # Legacy validation

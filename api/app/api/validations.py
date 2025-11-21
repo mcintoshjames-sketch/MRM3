@@ -55,7 +55,15 @@ def list_validations(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """List validations with optional filters."""
+    """
+    List validations with optional filters.
+
+    Row-Level Security:
+    - Admin, Validator, Global Approver, Regional Approver: See all validations
+    - User: Only see validations for models they have access to
+    """
+    from app.core.rls import apply_legacy_validation_rls
+
     query = db.query(Validation).options(
         joinedload(Validation.model),
         joinedload(Validation.validator),
@@ -64,6 +72,9 @@ def list_validations(
         joinedload(Validation.scope),
         joinedload(Validation.region)
     )
+
+    # Apply Row-Level Security BEFORE other filters
+    query = apply_legacy_validation_rls(query, current_user, db)
 
     if model_id is not None:
         query = query.filter(Validation.model_id == model_id)
@@ -198,7 +209,22 @@ def get_validation(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Get a specific validation."""
+    """
+    Get a specific validation.
+
+    Row-Level Security:
+    - Admin, Validator, Global Approver, Regional Approver: Can access any validation
+    - User: Can only access validations for models they have access to
+    """
+    from app.core.rls import can_access_legacy_validation
+
+    # Check RLS access
+    if not can_access_legacy_validation(validation_id, current_user, db):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Validation not found"
+        )
+
     validation = db.query(Validation).options(
         joinedload(Validation.model),
         joinedload(Validation.validator),
