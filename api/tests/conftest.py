@@ -102,13 +102,19 @@ def admin_headers(admin_user):
 
 @pytest.fixture
 def sample_model(db_session, test_user):
-    """Create a sample model."""
+    """Create a sample model in pending state (editable by submitter).
+
+    Note: Model is in 'pending' approval state with test_user as submitter.
+    This allows test_user to access and modify it via RLS without being in users list.
+    """
     model = Model(
         model_name="Test Model",
         description="A test model",
         development_type="In-House",
         status="In Development",
-        owner_id=test_user.user_id
+        owner_id=test_user.user_id,
+        row_approval_status="pending",  # Pending models are editable by submitter
+        submitted_by_user_id=test_user.user_id  # test_user is the submitter
     )
     db_session.add(model)
     db_session.commit()

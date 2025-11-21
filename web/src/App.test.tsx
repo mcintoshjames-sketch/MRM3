@@ -48,6 +48,14 @@ vi.mock('./pages/AdminDashboardPage', () => ({
     default: () => <div data-testid="admin-dashboard-page">Admin Dashboard Page</div>
 }));
 
+vi.mock('./pages/ModelOwnerDashboardPage', () => ({
+    default: () => <div data-testid="model-owner-dashboard-page">Model Owner Dashboard Page</div>
+}));
+
+vi.mock('./pages/ValidatorDashboardPage', () => ({
+    default: () => <div data-testid="validator-dashboard-page">Validator Dashboard Page</div>
+}));
+
 // Mock useAuth hook
 const mockUseAuth = vi.fn();
 vi.mock('./contexts/AuthContext', () => ({
@@ -174,14 +182,14 @@ describe('App Routing - Authenticated User', () => {
         expect(screen.getByTestId('models-page')).toBeInTheDocument();
     });
 
-    it('redirects root to /models for regular user', () => {
+    it('redirects root to /my-dashboard for regular user', async () => {
         renderWithRouter('/');
-        expect(screen.getByTestId('models-page')).toBeInTheDocument();
+        expect(await screen.findByTestId('model-owner-dashboard-page')).toBeInTheDocument();
     });
 
-    it('redirects /login to /models when already authenticated', () => {
+    it('redirects /login to /my-dashboard when already authenticated as regular user', async () => {
         renderWithRouter('/login');
-        expect(screen.getByTestId('models-page')).toBeInTheDocument();
+        expect(await screen.findByTestId('model-owner-dashboard-page')).toBeInTheDocument();
     });
 });
 

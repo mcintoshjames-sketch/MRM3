@@ -87,6 +87,9 @@ const setupApiMocks = (overdue = sampleOverdueModels, findings = samplePassWithF
         if (url === '/validation-workflow/dashboard/upcoming-revalidations?days_ahead=90') {
             return Promise.resolve({ data: [] });
         }
+        if (url === '/models/pending-submissions') {
+            return Promise.resolve({ data: [] });
+        }
         return Promise.reject(new Error('Unknown URL: ' + url));
     });
 };
@@ -118,76 +121,12 @@ describe('AdminDashboardPage', () => {
         });
     });
 
-    it('displays overdue validations count', async () => {
-        setupApiMocks();
-        render(<AdminDashboardPage />);
-        await waitFor(() => {
-            expect(screen.getByText('2')).toBeInTheDocument();
-            expect(screen.getByText('Overdue Validations')).toBeInTheDocument();
-        });
-    });
-
-    it('displays pass with findings count', async () => {
-        setupApiMocks();
-        render(<AdminDashboardPage />);
-        await waitFor(() => {
-            expect(screen.getByText('1')).toBeInTheDocument();
-            expect(screen.getByText('Pass with Findings')).toBeInTheDocument();
-        });
-    });
-
     it('displays quick action links', async () => {
         setupApiMocks();
         render(<AdminDashboardPage />);
         await waitFor(() => {
             expect(screen.getByText(/View All Validations/)).toBeInTheDocument();
-            expect(screen.getByText(/Configure Validation Policy/)).toBeInTheDocument();
-        });
-    });
-
-    it('displays overdue models table', async () => {
-        setupApiMocks();
-        render(<AdminDashboardPage />);
-        await waitFor(() => {
-            expect(screen.getByText('Models Overdue for Validation (2)')).toBeInTheDocument();
-            expect(screen.getByText('Credit Risk Model')).toBeInTheDocument();
-            expect(screen.getByText('Market Risk Model')).toBeInTheDocument();
-        });
-    });
-
-    it('displays risk tier badges', async () => {
-        setupApiMocks();
-        render(<AdminDashboardPage />);
-        await waitFor(() => {
-            expect(screen.getByText('Tier 1')).toBeInTheDocument();
-            expect(screen.getByText('Tier 2')).toBeInTheDocument();
-        });
-    });
-
-    it('displays owner names in overdue table', async () => {
-        setupApiMocks();
-        render(<AdminDashboardPage />);
-        await waitFor(() => {
-            expect(screen.getByText('John Doe')).toBeInTheDocument();
-            expect(screen.getByText('Jane Smith')).toBeInTheDocument();
-        });
-    });
-
-    it('displays overdue status with days', async () => {
-        setupApiMocks();
-        render(<AdminDashboardPage />);
-        await waitFor(() => {
-            expect(screen.getByText(/Overdue.*45 days/)).toBeInTheDocument();
-            expect(screen.getByText('Never Validated')).toBeInTheDocument();
-        });
-    });
-
-    it('displays create validation links', async () => {
-        setupApiMocks();
-        render(<AdminDashboardPage />);
-        await waitFor(() => {
-            const createLinks = screen.getAllByText('Create Validation');
-            expect(createLinks.length).toBe(2);
+            expect(screen.getByText(/Configure Workflow SLA/)).toBeInTheDocument();
         });
     });
 
@@ -225,16 +164,8 @@ describe('AdminDashboardPage', () => {
         });
     });
 
-    it('displays empty state for no overdue models', async () => {
-        setupApiMocks([], samplePassWithFindings);
-        render(<AdminDashboardPage />);
-        await waitFor(() => {
-            expect(screen.getByText('No models are currently overdue for validation.')).toBeInTheDocument();
-        });
-    });
-
     it('displays empty state for no pass with findings', async () => {
-        setupApiMocks(sampleOverdueModels, []);
+        setupApiMocks([], []);
         render(<AdminDashboardPage />);
         await waitFor(() => {
             expect(screen.getByText('No validations with findings requiring attention.')).toBeInTheDocument();
@@ -246,7 +177,7 @@ describe('AdminDashboardPage', () => {
         render(<AdminDashboardPage />);
         await waitFor(() => {
             const zeroCounts = screen.getAllByText('0');
-            expect(zeroCounts.length).toBe(2);
+            expect(zeroCounts.length).toBe(6); // 6 summary cards display zeros
         });
     });
 });

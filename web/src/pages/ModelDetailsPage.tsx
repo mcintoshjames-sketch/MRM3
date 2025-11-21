@@ -7,6 +7,7 @@ import SubmitChangeModal from '../components/SubmitChangeModal';
 import VersionsList from '../components/VersionsList';
 import VersionDetailModal from '../components/VersionDetailModal';
 import DelegatesSection from '../components/DelegatesSection';
+import RegionalVersionsTable from '../components/RegionalVersionsTable';
 import { useAuth } from '../contexts/AuthContext';
 import { ModelVersion } from '../api/versions';
 
@@ -1286,13 +1287,19 @@ export default function ModelDetailsPage() {
                     </div>
                 </div>
             ) : activeTab === 'versions' ? (
-                <div className="bg-white p-6 rounded-lg shadow-md">
-                    <h3 className="text-lg font-semibold mb-4">Model Versions</h3>
-                    <VersionsList
-                        modelId={model.model_id}
-                        refreshTrigger={versionsRefreshTrigger}
-                        onVersionClick={(version) => setSelectedVersion(version)}
-                    />
+                <div className="space-y-6">
+                    {/* Regional Version Deployments */}
+                    <RegionalVersionsTable modelId={model.model_id} />
+
+                    {/* Model Versions List */}
+                    <div className="bg-white p-6 rounded-lg shadow-md">
+                        <h3 className="text-lg font-semibold mb-4">Model Versions</h3>
+                        <VersionsList
+                            modelId={model.model_id}
+                            refreshTrigger={versionsRefreshTrigger}
+                            onVersionClick={(version) => setSelectedVersion(version)}
+                        />
+                    </div>
                 </div>
             ) : activeTab === 'delegates' ? (
                 <DelegatesSection

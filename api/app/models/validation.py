@@ -590,6 +590,15 @@ class ValidationApproval(Base):
     )
     # Validator, Validation Head, Model Owner, Risk Officer
     approver_role: Mapped[str] = mapped_column(String(100), nullable=False)
+
+    # Approval type and region tracking
+    approval_type: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="Global"
+    )  # 'Global' or 'Regional'
+    region_id: Mapped[Optional[int]] = mapped_column(
+        Integer, ForeignKey("regions.region_id"), nullable=True
+    )  # Required if approval_type='Regional', NULL for Global
+
     is_required: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=True)
     approval_status: Mapped[str] = mapped_column(
@@ -614,6 +623,7 @@ class ValidationApproval(Base):
     request = relationship("ValidationRequest", back_populates="approvals")
     approver = relationship("User", foreign_keys=[approver_id])
     unlinked_by = relationship("User", foreign_keys=[unlinked_by_id])
+    region = relationship("Region")  # Region for regional approvals
 
 
 # Keep old Validation model for backwards compatibility during migration

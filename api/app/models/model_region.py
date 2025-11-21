@@ -17,8 +17,16 @@ class ModelRegion(Base):
         Integer, ForeignKey("regions.region_id", ondelete="CASCADE"), nullable=False, index=True)
     shared_model_owner_id: Mapped[Optional[int]] = mapped_column(
         Integer, ForeignKey("users.user_id", ondelete="SET NULL"), nullable=True)
+
+    # Version deployment tracking
     version_id: Mapped[Optional[int]] = mapped_column(
-        Integer, ForeignKey("model_versions.version_id", ondelete="SET NULL"), nullable=True)
+        Integer, ForeignKey("model_versions.version_id", ondelete="SET NULL"), nullable=True,
+        comment="Current active version deployed in this region")
+    deployed_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime, nullable=True, comment="When this version was deployed to this region")
+    deployment_notes: Mapped[Optional[str]] = mapped_column(
+        Text, nullable=True, comment="Notes about this regional deployment")
+
     regional_risk_level: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
     notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(

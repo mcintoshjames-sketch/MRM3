@@ -5,7 +5,7 @@ This document tracks the regression testing strategy and test coverage for itera
 ## Quick Reference
 
 ```bash
-# Run all backend tests (208 tests passing)
+# Run all backend tests (239 tests passing, 4 errors in pre-existing test_rls_banners.py)
 cd api && python -m pytest
 
 # Run all frontend tests (128 tests passing)
@@ -248,6 +248,30 @@ cd web && pnpm test:coverage
 - [x] User cannot approve their own model
 - [x] Dashboard news feed retrieval
 - [x] Non-admin must include themselves as model user
+
+#### Regional Version Scope (`test_regional_versions.py`)
+- [x] Create GLOBAL version (scope field and null affected_region_ids)
+- [x] Create REGIONAL version with affected regions
+- [x] Create version with planned/actual production dates
+- [x] Scope defaults to GLOBAL if not specified
+- [x] Get regional versions endpoint (no regions)
+- [x] Regional versions endpoint requires authentication
+- [x] MAJOR version auto-creates validation request (if policies configured)
+- [x] REGIONAL MAJOR version properly stores regional scope
+- [x] Urgent MAJOR version creates INTERIM validation
+- [x] MINOR version does not create validation request
+- [x] Planned date maps to legacy production_date field
+- [x] Legacy production_date field still works
+
+#### Deployment Task Ratification (`test_deployment_tasks.py`)
+- [x] Get my deployment tasks list
+- [x] My tasks endpoint requires authentication
+- [x] Confirm deployment without validation (happy path)
+- [x] Confirm requires override when validation not approved (validation control)
+- [x] Confirm with validation override (override mechanism works)
+- [x] Cannot confirm task twice (idempotency)
+- [x] Cannot access other users' deployment tasks
+- [x] Cannot confirm other users' deployment tasks
 
 ### Frontend Component Tests (web/src/) - ✅ FULLY OPERATIONAL
 
@@ -521,6 +545,8 @@ describe('NewPage', () => {
 | **Revalidation Lifecycle (Phase 3)** | ✅ test_revalidation.py (30 tests) | N/A (API-only phase) | 2025-11-20 |
 | **Revalidation Lifecycle UI (Phase 4)** | N/A (frontend-only) | ✅ MyPendingSubmissionsPage + ModelDetailsPage + AdminDashboardPage (3 components, test coverage integrated) | 2025-11-20 |
 | **Model Submission Workflow** | ✅ test_model_submission_workflow.py (13 tests) | N/A (API-only phase) | 2025-11-21 |
+| **Regional Version Scope (Phase 7)** | ✅ test_regional_versions.py (12 tests) | ✅ SubmitChangeModal + RegionalVersionsTable + ModelChangeRecordPage | 2025-11-21 |
+| **Deployment Tasks (Phase 8)** | ✅ test_deployment_tasks.py (8 tests) | ✅ MyDeploymentTasksPage | 2025-11-21 |
 
 **Features Added:**
 - Development type (In-House / Third-Party)
@@ -541,8 +567,11 @@ describe('NewPage', () => {
 - **Revalidation Lifecycle System (Phase 3)** (two-SLA tracking, submission due dates, grace periods, validation due dates, model compliance vs validation team SLA, multi-region coordination, wholly-owned governance, model version tracking)
 - **Revalidation Lifecycle UI (Phase 4)** (MyPendingSubmissionsPage for model owners, revalidation status display on ModelDetailsPage, three revalidation dashboard widgets on AdminDashboardPage)
 - **Model Submission Workflow** (Submission, Approval, Send Back, Resubmit, RLS, Dashboard Feed)
+- **Regional Version Scope (Phase 7)** (scope field: GLOBAL/REGIONAL, affected_region_ids tracking, planned/actual production dates, auto-validation for MAJOR changes, phased rollout support, regional deployment tracking)
+- **Deployment Task Ratification (Phase 8)** (deployment confirmation workflow, validation control with override mechanism, model owner/delegate assignment, compliance audit trail, MyDeploymentTasksPage)
 
-**Total: 336 tests (208 backend + 128 frontend passing)**
+**Total: 367 tests (239 backend + 128 frontend passing)**
+**Note**: 4 pre-existing errors in test_rls_banners.py (not related to Phase 7/8 changes)
 
 **Frontend Testing Debt:**
 - ValidationWorkflowPage component tests (~15 tests)

@@ -142,6 +142,7 @@ const setupApiMocks = (validations = sampleValidations, modelData = sampleModel)
         if (url === '/auth/users') return Promise.resolve({ data: sampleUsers });
         if (url === '/vendors/') return Promise.resolve({ data: sampleVendors });
         if (url === '/regions/') return Promise.resolve({ data: [] });
+        if (url === '/models/1/regions') return Promise.resolve({ data: [] });
         if (url === '/taxonomies/') return Promise.resolve({ data: sampleTaxonomies });
         if (url === '/taxonomies/1') return Promise.resolve({ data: sampleTaxonomyDetails });
         if (url === '/validations/?model_id=1') return Promise.resolve({ data: validations });
@@ -250,7 +251,7 @@ describe('ModelDetailsPage', () => {
         setupApiMocks();
         render(<ModelDetailsPage />);
         await waitFor(() => {
-            expect(screen.getByText('Validation History (2)')).toBeInTheDocument();
+            expect(screen.getByText(/Validation History \(0 active, 2 historical\)/)).toBeInTheDocument();
         });
     });
 
@@ -258,10 +259,10 @@ describe('ModelDetailsPage', () => {
         setupApiMocks();
         render(<ModelDetailsPage />);
         await waitFor(() => {
-            expect(screen.getByText('Validation History (2)')).toBeInTheDocument();
+            expect(screen.getByText(/Validation History \(0 active, 2 historical\)/)).toBeInTheDocument();
         });
 
-        fireEvent.click(screen.getByText('Validation History (2)'));
+        fireEvent.click(screen.getByText(/Validation History \(0 active, 2 historical\)/));
 
         await waitFor(() => {
             // Check for validation history table headers
@@ -277,7 +278,7 @@ describe('ModelDetailsPage', () => {
         setupApiMocks();
         render(<ModelDetailsPage />);
         await waitFor(() => {
-            fireEvent.click(screen.getByText('Validation History (2)'));
+            fireEvent.click(screen.getByText(/Validation History \(0 active, 2 historical\)/));
         });
 
         await waitFor(() => {
@@ -295,11 +296,11 @@ describe('ModelDetailsPage', () => {
         setupApiMocks([]);
         render(<ModelDetailsPage />);
         await waitFor(() => {
-            fireEvent.click(screen.getByText('Validation History (0)'));
+            fireEvent.click(screen.getByText(/Validation History \(0 active, 0 historical\)/));
         });
 
         await waitFor(() => {
-            expect(screen.getByText('No validation records found for this model.')).toBeInTheDocument();
+            expect(screen.getByText('No historical validation records found for this model.')).toBeInTheDocument();
         });
     });
 
@@ -307,11 +308,11 @@ describe('ModelDetailsPage', () => {
         setupApiMocks();
         render(<ModelDetailsPage />);
         await waitFor(() => {
-            fireEvent.click(screen.getByText('Validation History (2)'));
+            fireEvent.click(screen.getByText(/Validation History \(0 active, 2 historical\)/));
         });
 
         await waitFor(() => {
-            expect(screen.getByText('+ New Validation')).toBeInTheDocument();
+            expect(screen.getByText('+ New Validation Project')).toBeInTheDocument();
         });
     });
 
@@ -370,9 +371,14 @@ describe('ModelDetailsPage', () => {
             if (url === '/models/1') return Promise.resolve({ data: sampleModel });
             if (url === '/auth/users') return Promise.resolve({ data: sampleUsers });
             if (url === '/vendors/') return Promise.resolve({ data: sampleVendors });
+            if (url === '/regions/') return Promise.resolve({ data: [] });
+            if (url === '/models/1/regions') return Promise.resolve({ data: [] });
             if (url === '/taxonomies/') return Promise.resolve({ data: sampleTaxonomies });
             if (url === '/taxonomies/1') return Promise.resolve({ data: sampleTaxonomyDetails });
             if (url === '/validations/?model_id=1') return Promise.reject(new Error('Validations API error'));
+            if (url === '/validation-workflow/requests/?model_id=1') return Promise.resolve({ data: [] });
+            if (url === '/models/1/versions') return Promise.resolve({ data: [] });
+            if (url === '/models/1/revalidation-status') return Promise.resolve({ data: { status: 'Never Validated' } });
             return Promise.reject(new Error(`Unknown URL: ${url}`));
         });
 
@@ -390,9 +396,14 @@ describe('ModelDetailsPage', () => {
             if (url === '/models/1') return Promise.resolve({ data: sampleModel });
             if (url === '/auth/users') return Promise.resolve({ data: sampleUsers });
             if (url === '/vendors/') return Promise.resolve({ data: sampleVendors });
+            if (url === '/regions/') return Promise.resolve({ data: [] });
+            if (url === '/models/1/regions') return Promise.resolve({ data: [] });
             if (url === '/taxonomies/') return Promise.resolve({ data: sampleTaxonomies });
             if (url === '/taxonomies/1') return Promise.resolve({ data: sampleTaxonomyDetails });
             if (url === '/validations/?model_id=1') return Promise.reject(new Error('Validations API error'));
+            if (url === '/validation-workflow/requests/?model_id=1') return Promise.resolve({ data: [] });
+            if (url === '/models/1/versions') return Promise.resolve({ data: [] });
+            if (url === '/models/1/revalidation-status') return Promise.resolve({ data: { status: 'Never Validated' } });
             return Promise.reject(new Error(`Unknown URL: ${url}`));
         });
 
@@ -400,13 +411,13 @@ describe('ModelDetailsPage', () => {
 
         await waitFor(() => {
             // Should show 0 validations since fetch failed
-            expect(screen.getByText('Validation History (0)')).toBeInTheDocument();
+            expect(screen.getByText(/Validation History \(0 active, 0 historical\)/)).toBeInTheDocument();
         });
 
-        fireEvent.click(screen.getByText('Validation History (0)'));
+        fireEvent.click(screen.getByText(/Validation History \(0 active, 0 historical\)/));
 
         await waitFor(() => {
-            expect(screen.getByText('No validation records found for this model.')).toBeInTheDocument();
+            expect(screen.getByText('No historical validation records found for this model.')).toBeInTheDocument();
         });
     });
 

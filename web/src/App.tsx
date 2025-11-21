@@ -3,6 +3,7 @@ import { useAuth } from './contexts/AuthContext';
 import LoginPage from './pages/LoginPage';
 import ModelsPage from './pages/ModelsPage';
 import ModelDetailsPage from './pages/ModelDetailsPage';
+import ModelChangeRecordPage from './pages/ModelChangeRecordPage';
 import VendorsPage from './pages/VendorsPage';
 import VendorDetailsPage from './pages/VendorDetailsPage';
 import UsersPage from './pages/UsersPage';
@@ -20,6 +21,8 @@ import BatchDelegatesPage from './pages/BatchDelegatesPage';
 import RegionsPage from './pages/RegionsPage';
 import ValidationPoliciesPage from './pages/ValidationPoliciesPage';
 import MyPendingSubmissionsPage from './pages/MyPendingSubmissionsPage';
+import MyDeploymentTasksPage from './pages/MyDeploymentTasksPage';
+import RegionalComplianceReportPage from './pages/RegionalComplianceReportPage';
 
 function App() {
     const { user, loading } = useAuth();
@@ -42,6 +45,7 @@ function App() {
             <Route path="/validator-dashboard" element={user?.role === 'Validator' ? <ValidatorDashboardPage /> : <Navigate to="/models" />} />
             <Route path="/my-dashboard" element={user && user.role !== 'Admin' && user.role !== 'Validator' ? <ModelOwnerDashboardPage /> : <Navigate to={getDefaultRoute()} />} />
             <Route path="/models" element={user ? <ModelsPage /> : <Navigate to="/login" />} />
+            <Route path="/models/:model_id/versions/:version_id" element={user ? <ModelChangeRecordPage /> : <Navigate to="/login" />} />
             <Route path="/models/:id" element={user ? <ModelDetailsPage /> : <Navigate to="/login" />} />
             <Route path="/validations" element={user ? <ValidationsPage /> : <Navigate to="/login" />} />
             <Route path="/validations/new" element={user ? <ValidationsPage /> : <Navigate to="/login" />} />
@@ -49,6 +53,7 @@ function App() {
             <Route path="/validation-workflow/new" element={user ? <ValidationWorkflowPage /> : <Navigate to="/login" />} />
             <Route path="/validation-workflow/:id" element={user ? <ValidationRequestDetailPage /> : <Navigate to="/login" />} />
             <Route path="/my-pending-submissions" element={user ? <MyPendingSubmissionsPage /> : <Navigate to="/login" />} />
+            <Route path="/my-deployment-tasks" element={user ? <MyDeploymentTasksPage /> : <Navigate to="/login" />} />
             <Route path="/vendors" element={user ? <VendorsPage /> : <Navigate to="/login" />} />
             <Route path="/vendors/:id" element={user ? <VendorDetailsPage /> : <Navigate to="/login" />} />
             <Route path="/users" element={user ? <UsersPage /> : <Navigate to="/login" />} />
@@ -59,6 +64,7 @@ function App() {
             <Route path="/batch-delegates" element={user?.role === 'Admin' ? <BatchDelegatesPage /> : <Navigate to="/models" />} />
             <Route path="/regions" element={user?.role === 'Admin' ? <RegionsPage /> : <Navigate to="/models" />} />
             <Route path="/validation-policies" element={user?.role === 'Admin' ? <ValidationPoliciesPage /> : <Navigate to="/models" />} />
+            <Route path="/regional-compliance-report" element={user ? <RegionalComplianceReportPage /> : <Navigate to="/login" />} />
             <Route path="/" element={<Navigate to={getDefaultRoute()} />} />
         </Routes>
     );

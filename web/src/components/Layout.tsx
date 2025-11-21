@@ -99,6 +99,20 @@ export default function Layout({ children }: LayoutProps) {
                         </li>
                         <li>
                             <NavLink
+                                to="/my-deployment-tasks"
+                                className={({ isActive }) =>
+                                    `block px-4 py-2 rounded transition-colors ${
+                                        isActive
+                                            ? 'bg-blue-600 text-white'
+                                            : 'text-gray-700 hover:bg-gray-100'
+                                    }`
+                                }
+                            >
+                                My Deployment Tasks
+                            </NavLink>
+                        </li>
+                        <li>
+                            <NavLink
                                 to="/vendors"
                                 className={({ isActive }) =>
                                     `block px-4 py-2 rounded transition-colors ${
@@ -137,6 +151,20 @@ export default function Layout({ children }: LayoutProps) {
                                 }
                             >
                                 Taxonomy
+                            </NavLink>
+                        </li>
+                        <li>
+                            <NavLink
+                                to="/regional-compliance-report"
+                                className={({ isActive }) =>
+                                    `block px-4 py-2 rounded transition-colors ${
+                                        isActive
+                                            ? 'bg-blue-600 text-white'
+                                            : 'text-gray-700 hover:bg-gray-100'
+                                    }`
+                                }
+                            >
+                                Regional Compliance
                             </NavLink>
                         </li>
                         <li>

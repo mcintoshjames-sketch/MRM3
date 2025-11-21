@@ -152,7 +152,15 @@ const VersionsList: React.FC<VersionsListProps> = ({ modelId, refreshTrigger, on
                             onClick={() => onVersionClick && onVersionClick(version)}
                             className="hover:bg-gray-50 cursor-pointer"
                         >
-                            <td className="px-4 py-3 text-sm font-medium text-gray-900">{version.version_number}</td>
+                            <td className="px-4 py-3 text-sm font-medium">
+                                <Link
+                                    to={`/models/${modelId}/versions/${version.version_id}`}
+                                    onClick={(e) => e.stopPropagation()}
+                                    className="text-blue-600 hover:text-blue-800 hover:underline font-medium"
+                                >
+                                    {version.version_number}
+                                </Link>
+                            </td>
                             <td className="px-4 py-3 text-sm">
                                 {version.change_type_name ? (
                                     <div>

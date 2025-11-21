@@ -185,14 +185,18 @@ def create_model_version(
             detail=f"Version {version_number} already exists for this model"
         )
 
-    # Create version
+    # Create version with regional scope support
     new_version = ModelVersion(
         model_id=model_id,
         version_number=version_number,
         change_type=version_data.change_type,
         change_type_id=version_data.change_type_id,
         change_description=version_data.change_description,
-        production_date=version_data.production_date,
+        scope=version_data.scope,
+        affected_region_ids=version_data.affected_region_ids,
+        planned_production_date=version_data.planned_production_date or version_data.production_date,
+        actual_production_date=version_data.actual_production_date,
+        production_date=version_data.production_date or version_data.planned_production_date,  # Legacy field
         created_by_id=current_user.user_id,
         status=VersionStatus.DRAFT
     )
@@ -206,12 +210,15 @@ def create_model_version(
     validation_warning = None
     validation_type_code = None
 
+    # Determine production date (prefer planned_production_date)
+    target_production_date = version_data.planned_production_date or version_data.production_date
+
     # Check lead time policy for ALL changes if production date is provided
-    if version_data.production_date:
+    if target_production_date:
         from app.models.validation import ValidationPolicy
 
         # Calculate lead time based on submission date (today) vs implementation date
-        days_lead_time = (version_data.production_date - date.today()).days
+        days_lead_time = (target_production_date - date.today()).days
 
         # Get model-specific lead time from validation policy
         lead_time_required = 90  # Default
@@ -249,18 +256,18 @@ def create_model_version(
         # Determine validation type and priority based on production date
         is_interim = False
         validation_type_code = "TARGETED"
-        priority_code = "2"  # Medium by default
+        priority_code = "MEDIUM"  # Medium by default
 
-        if version_data.production_date:
+        if target_production_date:
             days_until_production = (
-                version_data.production_date - date.today()).days
+                target_production_date - date.today()).days
 
             if days_until_production <= total_sla_days:
                 # Within lead time window - use INTERIM validation
                 is_interim = True
                 validation_type_code = "INTERIM"
-                priority_code = "3"  # High priority
-                msg = f"WARNING: Production date ({version_data.production_date}) is within {days_until_production} days. " \
+                priority_code = "HIGH"  # High priority
+                msg = f"WARNING: Production date ({target_production_date}) is within {days_until_production} days. " \
                     f"Standard validation SLA is {total_sla_days} days. Expedited INTERIM review required."
 
                 if validation_warning:
@@ -285,13 +292,13 @@ def create_model_version(
 
             if priority:
                 # Calculate target completion date
-                if version_data.production_date:
+                if target_production_date:
                     # Target completion should be 5 business days before production (safety buffer)
-                    target_date = version_data.production_date - \
+                    target_date = target_production_date - \
                         timedelta(days=5)
 
                     # Check if target completion is after production date (out of order)
-                    if target_date > version_data.production_date:
+                    if target_date > target_production_date:
                         if validation_warning:
                             validation_warning += " Target completion date exceeds planned production date."
                         else:
@@ -305,23 +312,54 @@ def create_model_version(
                 if validation_warning:
                     trigger_reason = validation_warning + " " + trigger_reason
 
-                # Create validation request
+                # Get initial status (INTAKE)
+                initial_status = db.query(TaxonomyValue).join(
+                    TaxonomyValue.taxonomy
+                ).filter(
+                    TaxonomyValue.code == "INTAKE",
+                    TaxonomyValue.taxonomy.has(name="Validation Request Status")
+                ).first()
+
+                # Create validation request (without model_id - uses association table)
                 validation_request = ValidationRequest(
-                    model_id=model_id,
                     request_date=date.today(),
                     requestor_id=current_user.user_id,
                     validation_type_id=validation_type.value_id,
                     priority_id=priority.value_id,
+                    current_status_id=initial_status.value_id,
                     target_completion_date=target_date,
                     trigger_reason=trigger_reason
                 )
 
                 db.add(validation_request)
-                db.commit()
-                db.refresh(validation_request)
+                db.flush()  # Get request_id without full commit
+
+                # Link model and version to validation request via association table
+                from app.models.validation import ValidationRequestModelVersion
+                model_version_link = ValidationRequestModelVersion(
+                    request_id=validation_request.request_id,
+                    model_id=model_id,
+                    version_id=new_version.version_id
+                )
+                db.add(model_version_link)
 
                 # Link validation request to version
                 new_version.validation_request_id = validation_request.request_id
+
+                # Handle regional scope - add regions to validation request
+                if version_data.scope == "REGIONAL" and version_data.affected_region_ids:
+                    # Import Region model
+                    from app.models.region import Region
+
+                    # Fetch and add affected regions
+                    regions = db.query(Region).filter(
+                        Region.region_id.in_(version_data.affected_region_ids)
+                    ).all()
+
+                    validation_request.regions = regions
+
+                db.commit()
+                db.refresh(validation_request)
 
                 # Audit log for validation request creation
                 create_audit_log(
@@ -334,7 +372,9 @@ def create_model_version(
                         "auto_created": True,
                         "model_version_id": new_version.version_id,
                         "is_interim": is_interim,
-                        "production_date": str(version_data.production_date) if version_data.production_date else None
+                        "production_date": str(target_production_date) if target_production_date else None,
+                        "scope": version_data.scope,
+                        "affected_region_ids": version_data.affected_region_ids
                     }
                 )
 
@@ -407,8 +447,16 @@ def list_model_versions(
             "status": version.status,
             "created_by_id": version.created_by_id,
             "created_at": version.created_at,
-            "production_date": version.production_date,
+            # Production dates (new fields)
+            "planned_production_date": version.planned_production_date,
+            "actual_production_date": version.actual_production_date,
+            "production_date": version.production_date,  # Legacy field
+            # Regional scope (new fields)
+            "scope": version.scope,
+            "affected_region_ids": version.affected_region_ids,
+            # Validation
             "validation_request_id": version.validation_request_id,
+            # Nested/populated fields
             "created_by_name": version.created_by.full_name if version.created_by else None,
             "change_type_name": version.change_type_detail.name if version.change_type_detail else None,
             "change_category_name": version.change_type_detail.category.name if version.change_type_detail and version.change_type_detail.category else None,
@@ -786,8 +834,16 @@ def get_version_details(
         "status": version.status,
         "created_by_id": version.created_by_id,
         "created_at": version.created_at,
-        "production_date": version.production_date,
+        # Production dates (new fields)
+        "planned_production_date": version.planned_production_date,
+        "actual_production_date": version.actual_production_date,
+        "production_date": version.production_date,  # Legacy field
+        # Regional scope (new fields)
+        "scope": version.scope,
+        "affected_region_ids": version.affected_region_ids,
+        # Validation
         "validation_request_id": version.validation_request_id,
+        # Nested/populated fields
         "created_by_name": version.created_by.full_name if version.created_by else None,
         "change_type_name": version.change_type_detail.name if version.change_type_detail else None,
         "change_category_name": version.change_type_detail.category.name if version.change_type_detail and version.change_type_detail.category else None,
@@ -885,3 +941,85 @@ def update_version(
     db.refresh(version)
 
     return version
+
+
+@router.get("/models/{model_id}/regional-versions")
+def get_regional_versions(
+    model_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Get version deployment status by region for a model.
+    Shows which version is currently deployed in each region.
+    """
+    from app.core.rls import can_access_model
+    from app.models.region import Region
+    from app.models.model_region import ModelRegion
+
+    # Check RLS access
+    if not can_access_model(model_id, current_user, db):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Model not found"
+        )
+
+    # Get model
+    model = db.query(Model).filter(Model.model_id == model_id).first()
+    if not model:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Model not found"
+        )
+
+    # Get the latest ACTIVE global version (if any)
+    global_version = db.query(ModelVersion).filter(
+        ModelVersion.model_id == model_id,
+        ModelVersion.status == VersionStatus.ACTIVE,
+        ModelVersion.scope == "GLOBAL"
+    ).order_by(desc(ModelVersion.created_at)).first()
+
+    # Get all model-region links with their versions
+    model_regions = db.query(ModelRegion).join(
+        Region
+    ).filter(
+        ModelRegion.model_id == model_id
+    ).options(
+        joinedload(ModelRegion.region),
+        joinedload(ModelRegion.version)
+    ).all()
+
+    regional_versions = []
+    for mr in model_regions:
+        # Get the current version for this region (either regional specific or global)
+        current_version = mr.version if mr.version_id else global_version
+
+        is_same_as_global = False
+        if current_version and global_version:
+            is_same_as_global = current_version.version_id == global_version.version_id
+
+        regional_versions.append({
+            "region_id": mr.region.region_id,
+            "region_code": mr.region.code,
+            "region_name": mr.region.name,
+            "current_version_id": current_version.version_id if current_version else None,
+            "version_number": current_version.version_number if current_version else None,
+            "version_status": current_version.status if current_version else None,
+            "deployed_at": mr.deployed_at,
+            "deployment_notes": mr.deployment_notes,
+            "is_same_as_global": is_same_as_global,
+            "is_regional_override": mr.version_id is not None  # True if region has specific version
+        })
+
+    return {
+        "model_id": model_id,
+        "model_name": model.model_name,
+        "global_version": {
+            "version_id": global_version.version_id if global_version else None,
+            "version_number": global_version.version_number if global_version else None,
+            "status": global_version.status if global_version else None,
+            "planned_production_date": global_version.planned_production_date if global_version else None,
+            "actual_production_date": global_version.actual_production_date if global_version else None
+        } if global_version else None,
+        "regional_versions": regional_versions
+    }

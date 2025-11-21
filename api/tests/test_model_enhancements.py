@@ -12,7 +12,8 @@ class TestModelDevelopmentType:
             json={
                 "model_name": "In-House Model",
                 "development_type": "In-House",
-                "owner_id": test_user.user_id
+                "owner_id": test_user.user_id,
+                "user_ids": [test_user.user_id]
             }
         )
         assert response.status_code == 201
@@ -28,7 +29,8 @@ class TestModelDevelopmentType:
                 "model_name": "Third-Party Model",
                 "development_type": "Third-Party",
                 "owner_id": test_user.user_id,
-                "vendor_id": sample_vendor.vendor_id
+                "vendor_id": sample_vendor.vendor_id,
+                "user_ids": [test_user.user_id]
             }
         )
         assert response.status_code == 201
@@ -44,7 +46,8 @@ class TestModelDevelopmentType:
             json={
                 "model_name": "Invalid Third-Party",
                 "development_type": "Third-Party",
-                "owner_id": test_user.user_id
+                "owner_id": test_user.user_id,
+                "user_ids": [test_user.user_id]
             }
         )
         assert response.status_code == 400
@@ -95,7 +98,8 @@ class TestModelOwnerDeveloper:
             json={
                 "model_name": "Model with Developer",
                 "owner_id": test_user.user_id,
-                "developer_id": second_user.user_id
+                "developer_id": second_user.user_id,
+                "user_ids": [test_user.user_id]
             }
         )
         assert response.status_code == 201
@@ -103,15 +107,18 @@ class TestModelOwnerDeveloper:
         assert data["developer_id"] == second_user.user_id
         assert data["developer"]["full_name"] == "Developer User"
 
-    def test_create_model_invalid_owner_fails(self, client, auth_headers):
+    def test_create_model_invalid_owner_fails(self, client, auth_headers, test_user):
         response = client.post(
             "/models/",
             headers=auth_headers,
             json={
                 "model_name": "Invalid Owner",
-                "owner_id": 9999
+                "development_type": "In-House",
+                "owner_id": 9999,
+                "user_ids": [test_user.user_id, 9999]  # Include self AND invalid owner
             }
         )
+        # Validation checks owner_id exists AFTER checking user_ids
         assert response.status_code == 404
         assert "Owner user not found" in response.json()["detail"]
 
@@ -121,8 +128,10 @@ class TestModelOwnerDeveloper:
             headers=auth_headers,
             json={
                 "model_name": "Invalid Developer",
+                "development_type": "In-House",
                 "owner_id": test_user.user_id,
-                "developer_id": 9999
+                "developer_id": 9999,
+                "user_ids": [test_user.user_id]  # Must include self as model user
             }
         )
         assert response.status_code == 404
@@ -232,7 +241,8 @@ class TestModelVendorValidation:
                 "model_name": "Invalid Vendor",
                 "development_type": "Third-Party",
                 "owner_id": test_user.user_id,
-                "vendor_id": 9999
+                "vendor_id": 9999,
+                "user_ids": [test_user.user_id]
             }
         )
         assert response.status_code == 404

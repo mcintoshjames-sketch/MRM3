@@ -36,8 +36,10 @@ class TestCreateModel:
             json={
                 "model_name": "New Model",
                 "description": "A new model",
+                "development_type": "In-House",
                 "status": "In Development",
-                "owner_id": test_user.user_id
+                "owner_id": test_user.user_id,
+                "user_ids": [test_user.user_id]  # Must include self as model user
             }
         )
         assert response.status_code == 201
@@ -56,7 +58,9 @@ class TestCreateModel:
             headers=auth_headers,
             json={
                 "model_name": "Minimal Model",
-                "owner_id": test_user.user_id
+                "development_type": "In-House",
+                "owner_id": test_user.user_id,
+                "user_ids": [test_user.user_id]  # Must include self as model user
             }
         )
         assert response.status_code == 201

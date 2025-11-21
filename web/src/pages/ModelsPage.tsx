@@ -599,6 +599,7 @@ export default function ModelsPage() {
 
     return (
         <Layout>
+            <div data-testid="models-page">
             <div className="flex justify-between items-center mb-6">
                 <h2 className="text-2xl font-bold">Models</h2>
                 <div className="flex gap-2">
@@ -1444,6 +1445,7 @@ export default function ModelsPage() {
                         )}
                     </tbody>
                 </table>
+            </div>
             </div>
         </Layout>
     );

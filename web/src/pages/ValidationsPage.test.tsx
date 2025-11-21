@@ -235,7 +235,7 @@ describe('ValidationsPage', () => {
             expect(screen.getByLabelText(/^Validator$/)).toBeInTheDocument();
             expect(screen.getByLabelText('Validation Type')).toBeInTheDocument();
             expect(screen.getByLabelText('Outcome')).toBeInTheDocument();
-            expect(screen.getByLabelText('Scope')).toBeInTheDocument();
+            // Note: "Targeted Scope" field is conditional and only shown when Targeted Review is selected
         });
     });
 

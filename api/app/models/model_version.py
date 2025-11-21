@@ -1,7 +1,7 @@
 """Model Version model for tracking model changes and versioning."""
 from datetime import datetime, date
-from typing import Optional
-from sqlalchemy import String, Integer, Text, DateTime, Date, ForeignKey
+from typing import Optional, List
+from sqlalchemy import String, Integer, Text, DateTime, Date, ForeignKey, JSON
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.models.base import Base
 
@@ -26,7 +26,26 @@ class ModelVersion(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime, nullable=False, default=datetime.utcnow
     )
-    production_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
+
+    # Regional scope tracking
+    scope: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="GLOBAL", index=True
+    )  # GLOBAL | REGIONAL
+    affected_region_ids: Mapped[Optional[List[int]]] = mapped_column(
+        JSON, nullable=True, comment="List of region IDs affected by this change (for REGIONAL scope)"
+    )
+
+    # Production dates
+    planned_production_date: Mapped[Optional[date]] = mapped_column(
+        Date, nullable=True, comment="Planned/target production date"
+    )
+    actual_production_date: Mapped[Optional[date]] = mapped_column(
+        Date, nullable=True, comment="Actual date when deployed to production"
+    )
+    production_date: Mapped[Optional[date]] = mapped_column(
+        Date, nullable=True, comment="Legacy field - maps to planned_production_date"
+    )
+
     status: Mapped[str] = mapped_column(
         String(20), nullable=False, default="DRAFT", index=True
     )  # DRAFT | IN_VALIDATION | APPROVED | ACTIVE | SUPERSEDED

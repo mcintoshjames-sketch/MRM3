@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { versionsApi, ChangeType } from '../api/versions';
 import { changeTaxonomyApi, ModelChangeCategory, ModelChangeType } from '../api/changeTaxonomy';
+import api from '../api/client';
 
 interface SubmitChangeModalProps {
     modelId: number;
@@ -8,16 +9,26 @@ interface SubmitChangeModalProps {
     onSuccess: () => void;
 }
 
+interface Region {
+    region_id: number;
+    code: string;
+    name: string;
+}
+
 const SubmitChangeModal: React.FC<SubmitChangeModalProps> = ({ modelId, onClose, onSuccess }) => {
     const [versioningMode, setVersioningMode] = useState<'auto' | 'manual'>('auto');
+    const [deploymentOption, setDeploymentOption] = useState<'global-all' | 'global-selective' | 'regional'>('global-all');
     const [formData, setFormData] = useState({
         version_number: '',
         change_type: 'MINOR' as ChangeType,
         change_type_id: null as number | null,
         change_description: '',
         production_date: '',
+        scope: 'GLOBAL' as 'GLOBAL' | 'REGIONAL',
+        affected_region_ids: [] as number[],
     });
     const [categories, setCategories] = useState<ModelChangeCategory[]>([]);
+    const [regions, setRegions] = useState<Region[]>([]);
     const [selectedChangeType, setSelectedChangeType] = useState<ModelChangeType | null>(null);
     const [nextVersionPreview, setNextVersionPreview] = useState<string>('');
     const [overrideVersion, setOverrideVersion] = useState<string>('');
@@ -30,17 +41,21 @@ const SubmitChangeModal: React.FC<SubmitChangeModalProps> = ({ modelId, onClose,
         request_id?: number;
     } | null>(null);
 
-    // Fetch taxonomy data on mount
+    // Fetch taxonomy data and regions on mount
     useEffect(() => {
-        const fetchTaxonomy = async () => {
+        const fetchData = async () => {
             try {
-                const data = await changeTaxonomyApi.getCategories();
-                setCategories(data);
+                const [categoryData, regionData] = await Promise.all([
+                    changeTaxonomyApi.getCategories(),
+                    api.get('/regions/')
+                ]);
+                setCategories(categoryData);
+                setRegions(regionData.data);
             } catch (err) {
-                console.error('Failed to fetch change taxonomy:', err);
+                console.error('Failed to fetch data:', err);
             }
         };
-        fetchTaxonomy();
+        fetchData();
     }, []);
 
     // Fetch preview when change type changes in auto mode
@@ -99,6 +114,13 @@ const SubmitChangeModal: React.FC<SubmitChangeModalProps> = ({ modelId, onClose,
         e.preventDefault();
         setError(null);
         setValidationAcknowledgment(null);
+
+        // Validate regional scope and selective deployment
+        if ((deploymentOption === 'regional' || deploymentOption === 'global-selective') && formData.affected_region_ids.length === 0) {
+            setError('Please select at least one region');
+            return;
+        }
+
         setLoading(true);
 
         try {
@@ -111,12 +133,20 @@ const SubmitChangeModal: React.FC<SubmitChangeModalProps> = ({ modelId, onClose,
                 versionNumber = overrideVersion || null;
             }
 
+            // Determine scope and affected_region_ids based on deployment option
+            const scope = deploymentOption === 'regional' ? 'REGIONAL' : 'GLOBAL';
+            const affectedRegionIds = (deploymentOption === 'regional' || deploymentOption === 'global-selective')
+                ? formData.affected_region_ids
+                : null;
+
             const response = await versionsApi.createVersion(modelId, {
                 version_number: versionNumber,
                 change_type: formData.change_type,
                 change_type_id: formData.change_type_id,
                 change_description: formData.change_description,
                 production_date: formData.production_date || null,
+                scope: scope,
+                affected_region_ids: affectedRegionIds,
             });
 
             // Check if validation project was created
@@ -349,7 +379,7 @@ const SubmitChangeModal: React.FC<SubmitChangeModalProps> = ({ modelId, onClose,
                     </div>
 
                     {/* Implementation Date */}
-                    <div className="mb-6">
+                    <div className="mb-4">
                         <label className="block text-sm font-medium text-gray-700 mb-1">
                             Implementation Date (Optional)
                         </label>
@@ -362,6 +392,107 @@ const SubmitChangeModal: React.FC<SubmitChangeModalProps> = ({ modelId, onClose,
                         <p className="text-xs text-gray-500 mt-1">
                             When this version was/will be implemented in production
                         </p>
+                    </div>
+
+                    {/* Regional Scope */}
+                    <div className="mb-4 p-4 bg-gray-50 rounded-lg border border-gray-200">
+                        <label className="block text-sm font-medium text-gray-700 mb-3">
+                            Change Scope & Deployment
+                        </label>
+                        <div className="space-y-2 mb-3">
+                            <label className="flex items-start cursor-pointer">
+                                <input
+                                    type="radio"
+                                    name="scope"
+                                    value="global-all"
+                                    checked={deploymentOption === 'global-all'}
+                                    onChange={() => {
+                                        setDeploymentOption('global-all');
+                                        setFormData({ ...formData, scope: 'GLOBAL', affected_region_ids: [] });
+                                    }}
+                                    className="mr-2 mt-0.5"
+                                />
+                                <div>
+                                    <span className="text-sm font-medium">Global - Deploy to All Regions</span>
+                                    <p className="text-xs text-gray-600">Change applies globally and will be deployed to all regions immediately</p>
+                                </div>
+                            </label>
+                            <label className="flex items-start cursor-pointer">
+                                <input
+                                    type="radio"
+                                    name="scope"
+                                    value="global-selective"
+                                    checked={deploymentOption === 'global-selective'}
+                                    onChange={() => {
+                                        setDeploymentOption('global-selective');
+                                        setFormData({ ...formData, scope: 'GLOBAL' });
+                                    }}
+                                    className="mr-2 mt-0.5"
+                                />
+                                <div>
+                                    <span className="text-sm font-medium">Global - Selective Deployment</span>
+                                    <p className="text-xs text-gray-600">Change applies globally but will initially deploy to selected regions only (phased rollout)</p>
+                                </div>
+                            </label>
+                            <label className="flex items-start cursor-pointer">
+                                <input
+                                    type="radio"
+                                    name="scope"
+                                    value="regional"
+                                    checked={deploymentOption === 'regional'}
+                                    onChange={() => {
+                                        setDeploymentOption('regional');
+                                        setFormData({ ...formData, scope: 'REGIONAL' });
+                                    }}
+                                    className="mr-2 mt-0.5"
+                                />
+                                <div>
+                                    <span className="text-sm font-medium">Regional-Specific Change</span>
+                                    <p className="text-xs text-gray-600">Change only applies to specific regions (e.g., regulatory requirement for certain jurisdictions)</p>
+                                </div>
+                            </label>
+                        </div>
+
+                        {/* Region Multi-Select (shown for both REGIONAL and GLOBAL_SELECTIVE) */}
+                        {(deploymentOption === 'regional' || deploymentOption === 'global-selective') && (
+                            <div className="mt-3">
+                                <label className="block text-sm font-medium text-gray-700 mb-1">
+                                    Affected Regions *
+                                </label>
+                                <div className="border border-gray-300 rounded-md p-2 max-h-40 overflow-y-auto bg-white">
+                                    {regions.length === 0 ? (
+                                        <p className="text-sm text-gray-500 italic">No regions configured</p>
+                                    ) : (
+                                        regions.map(region => (
+                                            <label key={region.region_id} className="flex items-center py-1 px-2 hover:bg-gray-50 cursor-pointer">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={formData.affected_region_ids.includes(region.region_id)}
+                                                    onChange={(e) => {
+                                                        if (e.target.checked) {
+                                                            setFormData({
+                                                                ...formData,
+                                                                affected_region_ids: [...formData.affected_region_ids, region.region_id]
+                                                            });
+                                                        } else {
+                                                            setFormData({
+                                                                ...formData,
+                                                                affected_region_ids: formData.affected_region_ids.filter(id => id !== region.region_id)
+                                                            });
+                                                        }
+                                                    }}
+                                                    className="mr-2"
+                                                />
+                                                <span className="text-sm">{region.name} ({region.code})</span>
+                                            </label>
+                                        ))
+                                    )}
+                                </div>
+                                {(deploymentOption === 'regional' || deploymentOption === 'global-selective') && formData.affected_region_ids.length === 0 && (
+                                    <p className="text-xs text-red-600 mt-1">Please select at least one region</p>
+                                )}
+                            </div>
+                        )}
                     </div>
 
                     {/* Action Buttons */}

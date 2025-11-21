@@ -2,6 +2,7 @@ import api from './client';
 
 export type ChangeType = 'MINOR' | 'MAJOR';
 export type VersionStatus = 'DRAFT' | 'IN_VALIDATION' | 'APPROVED' | 'ACTIVE' | 'SUPERSEDED';
+export type VersionScope = 'GLOBAL' | 'REGIONAL';
 
 export interface ModelVersion {
     version_id: number;
@@ -13,7 +14,14 @@ export interface ModelVersion {
     status: VersionStatus;
     created_by_id: number;
     created_at: string;
-    production_date: string | null;
+    // Production dates
+    planned_production_date: string | null;
+    actual_production_date: string | null;
+    production_date: string | null;  // Legacy field
+    // Regional scope
+    scope: VersionScope;
+    affected_region_ids: number[] | null;
+    // Validation
     validation_request_id: number | null;
     created_by_name: string | null;
     change_type_name: string | null;
@@ -30,6 +38,9 @@ export interface ModelVersionCreate {
     change_type_id?: number | null;
     change_description: string;
     production_date?: string | null;
+    // Regional scope
+    scope?: VersionScope;
+    affected_region_ids?: number[] | null;
 }
 
 export interface NextVersionPreview {

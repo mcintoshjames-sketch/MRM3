@@ -17,14 +17,15 @@ class TestModelAuthorization:
         assert response.json()["model_name"] == "Updated by Owner"
 
     def test_non_owner_cannot_update_model(self, client, second_user_headers, sample_model):
-        """Non-owner user cannot update someone else's model."""
+        """Non-owner user cannot update someone else's model (RLS returns 404)."""
         response = client.patch(
             f"/models/{sample_model.model_id}",
             headers=second_user_headers,
             json={"model_name": "Updated by Non-Owner"}
         )
-        assert response.status_code == 403
-        assert "Only model owner or administrator" in response.json()["detail"]
+        # RLS returns 404 to hide existence of inaccessible models
+        assert response.status_code == 404
+        assert "not found" in response.json()["detail"].lower()
 
     def test_admin_can_update_any_model(self, client, admin_headers, sample_model):
         """Admin user can update any model."""
@@ -45,13 +46,14 @@ class TestModelAuthorization:
         assert response.status_code == 204
 
     def test_non_owner_cannot_delete_model(self, client, second_user_headers, sample_model):
-        """Non-owner user cannot delete someone else's model."""
+        """Non-owner user cannot delete someone else's model (RLS returns 404)."""
         response = client.delete(
             f"/models/{sample_model.model_id}",
             headers=second_user_headers
         )
-        assert response.status_code == 403
-        assert "Only model owner or administrator" in response.json()["detail"]
+        # RLS returns 404 to hide existence of inaccessible models
+        assert response.status_code == 404
+        assert "not found" in response.json()["detail"].lower()
 
     def test_admin_can_delete_any_model(self, client, admin_headers, sample_model):
         """Admin user can delete any model."""
@@ -74,7 +76,8 @@ class TestAuditLogging:
                 "model_name": "Audit Test Model",
                 "development_type": "In-House",
                 "status": "In Development",
-                "owner_id": test_user.user_id
+                "owner_id": test_user.user_id,
+                "user_ids": [test_user.user_id]
             }
         )
         assert response.status_code == 201

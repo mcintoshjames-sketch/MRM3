@@ -1,7 +1,7 @@
 """FastAPI application entry point."""
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.api import auth, models, vendors, taxonomies, audit_logs, validations, validation_workflow, workflow_sla, regions, model_regions, model_versions, model_delegates, model_change_taxonomy, dashboard, export_views
+from app.api import auth, models, vendors, taxonomies, audit_logs, validations, validation_workflow, workflow_sla, regions, model_regions, model_versions, model_delegates, model_change_taxonomy, dashboard, export_views, version_deployment_tasks, regional_compliance_report
 
 app = FastAPI(title="MRM System v3", version="3.0.0")
 
@@ -41,6 +41,11 @@ app.include_router(workflow_sla.router,
 # Export views for CSV exports
 app.include_router(export_views.router,
                    prefix="/export-views", tags=["export-views"])
+# Version deployment tasks for model owner ratification
+app.include_router(version_deployment_tasks.router,
+                   prefix="/deployment-tasks", tags=["deployment-tasks"])
+# Regional compliance report
+app.include_router(regional_compliance_report.router, tags=["reports"])
 
 
 @app.get("/")
