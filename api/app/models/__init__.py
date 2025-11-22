@@ -8,6 +8,7 @@ from app.models.audit_log import AuditLog
 from app.models.region import Region
 from app.models.model_region import ModelRegion
 from app.models.model_version import ModelVersion
+from app.models.model_version_region import ModelVersionRegion
 from app.models.model_delegate import ModelDelegate
 from app.models.model_submission_comment import ModelSubmissionComment
 from app.models.model_change_taxonomy import ModelChangeCategory, ModelChangeType
@@ -38,6 +39,7 @@ __all__ = [
     "Region",
     "ModelRegion",
     "ModelVersion",
+    "ModelVersionRegion",
     "ModelDelegate",
     "ModelSubmissionComment",
     "ModelChangeCategory",

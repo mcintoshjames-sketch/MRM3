@@ -47,6 +47,7 @@ def workflow_taxonomies(db_session):
 
     initial_val = TaxonomyValue(taxonomy_id=type_tax.taxonomy_id, code="INITIAL", label="Initial Validation", sort_order=1)
     annual_val = TaxonomyValue(taxonomy_id=type_tax.taxonomy_id, code="ANNUAL", label="Annual Review", sort_order=2)
+    comprehensive_val = TaxonomyValue(taxonomy_id=type_tax.taxonomy_id, code="COMPREHENSIVE", label="Comprehensive Review", sort_order=3)
 
     # Work Component Type
     component_tax = Taxonomy(name="Work Component Type", is_system=True)
@@ -80,7 +81,7 @@ def workflow_taxonomies(db_session):
     db_session.add_all([
         critical, high, medium, low,
         intake, planning, in_progress, review, pending_approval, approved, on_hold, cancelled,
-        initial_val, annual_val,
+        initial_val, annual_val, comprehensive_val,
         conceptual, data_quality, implementation, performance, documentation,
         not_started, comp_in_progress, completed,
         fit_for_purpose, fit_with_conditions, not_fit
@@ -94,7 +95,7 @@ def workflow_taxonomies(db_session):
             "review": review, "pending_approval": pending_approval, "approved": approved,
             "on_hold": on_hold, "cancelled": cancelled
         },
-        "type": {"initial": initial_val, "annual": annual_val},
+        "type": {"initial": initial_val, "annual": annual_val, "comprehensive": comprehensive_val},
         "component_type": {
             "conceptual": conceptual, "data_quality": data_quality,
             "implementation": implementation, "performance": performance, "documentation": documentation

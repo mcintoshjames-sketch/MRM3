@@ -337,6 +337,8 @@ class ValidationApprovalResponse(BaseModel):
     comments: Optional[str] = None
     approved_at: Optional[datetime] = None
     created_at: datetime
+    # Historical context field
+    represented_region_id: Optional[int] = None
 
     class Config:
         from_attributes = True

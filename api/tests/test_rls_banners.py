@@ -14,6 +14,7 @@ from app.models import User, Model, ValidationRequest, ValidationRequestModelVer
 from app.core.security import get_password_hash
 from datetime import date, datetime, timedelta
 from dateutil.relativedelta import relativedelta
+from tests.test_validation_workflow import workflow_taxonomies  # Import fixture
 
 
 @pytest.fixture
@@ -34,18 +35,13 @@ def emily_user(db_session):
 @pytest.fixture
 def test_model(db_session, emily_user):
     """Create a test model owned by Emily."""
-    # Get risk tier
-    risk_tier = db_session.query(TaxonomyValue).filter(
-        TaxonomyValue.code == "TIER_2"
-    ).first()
-
     model = Model(
         model_name="RLS Test Model",
         description="Test model for RLS and banner regression tests",
         development_type="In-House",
         status="Active",
         owner_id=emily_user.user_id,
-        risk_tier_id=risk_tier.value_id if risk_tier else None
+        risk_tier_id=None  # Not needed for RLS tests
     )
     db_session.add(model)
     db_session.commit()
@@ -54,20 +50,12 @@ def test_model(db_session, emily_user):
 
 
 @pytest.fixture
-def overdue_validation(db_session, test_model):
+def overdue_validation(db_session, test_model, workflow_taxonomies):
     """Create an overdue validation request for the test model."""
-    # Get taxonomy values
-    comprehensive = db_session.query(TaxonomyValue).filter(
-        TaxonomyValue.code == "COMPREHENSIVE"
-    ).first()
-
-    approved_status = db_session.query(TaxonomyValue).filter(
-        TaxonomyValue.code == "APPROVED"
-    ).first()
-
-    in_progress_status = db_session.query(TaxonomyValue).filter(
-        TaxonomyValue.code == "IN_PROGRESS"
-    ).first()
+    # Get taxonomy values from workflow_taxonomies fixture
+    comprehensive = workflow_taxonomies['type']['comprehensive']
+    approved_status = workflow_taxonomies['status']['approved']
+    in_progress_status = workflow_taxonomies['status']['in_progress']
 
     # Create an old APPROVED validation
     old_validation = ValidationRequest(
@@ -75,6 +63,7 @@ def overdue_validation(db_session, test_model):
         requestor_id=test_model.owner_id,
         validation_type_id=comprehensive.value_id,
         priority_id=comprehensive.value_id,  # Use any taxonomy value as priority
+        target_completion_date=date.today() - timedelta(days=640),  # Was completed before this date
         current_status_id=approved_status.value_id,
         created_at=datetime.utcnow() - timedelta(days=700),
         updated_at=datetime.utcnow() - timedelta(days=650)

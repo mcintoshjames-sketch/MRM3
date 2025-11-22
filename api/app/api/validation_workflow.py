@@ -5,7 +5,7 @@ from typing import List, Optional, Union, Dict
 import json
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session, joinedload
-from sqlalchemy import desc, or_
+from sqlalchemy import desc, or_, func
 
 from app.core.database import get_db
 from app.core.deps import get_current_user
@@ -294,12 +294,17 @@ def check_validator_independence(db: Session, model_ids: List[int], validator_id
     return True
 
 
-def calculate_days_in_status(db: Session, request: ValidationRequest) -> int:
-    """Calculate how many days the request has been in current status."""
-    latest_history = db.query(ValidationStatusHistory).filter(
-        ValidationStatusHistory.request_id == request.request_id,
-        ValidationStatusHistory.new_status_id == request.current_status_id
-    ).order_by(desc(ValidationStatusHistory.changed_at)).first()
+def calculate_days_in_status(request: ValidationRequest) -> int:
+    """Calculate how many days the request has been in current status.
+
+    Uses pre-loaded status_history to avoid N+1 queries.
+    """
+    # Find latest history entry for current status (already loaded via eager-loading)
+    latest_history = next(
+        (h for h in sorted(request.status_history, key=lambda x: x.changed_at, reverse=True)
+         if h.new_status_id == request.current_status_id),
+        None
+    )
 
     if latest_history:
         delta = datetime.utcnow() - latest_history.changed_at
@@ -472,6 +477,7 @@ def auto_assign_approvers(
                         approver_role=f"Regional Approver ({region_code})",
                         is_required=True,
                         approval_status="Pending",
+                        represented_region_id=wholly_owned_region_id,  # Snapshot region context
                         created_at=datetime.utcnow()
                     ))
                     assigned_approver_ids.add(approver.user_id)
@@ -490,6 +496,7 @@ def auto_assign_approvers(
                         approver_role="Global Approver",
                         is_required=True,
                         approval_status="Pending",
+                        represented_region_id=None,  # Global approver - no specific region
                         created_at=datetime.utcnow()
                     ))
                     assigned_approver_ids.add(approver.user_id)
@@ -512,6 +519,7 @@ def auto_assign_approvers(
                                 approver_role=f"Regional Approver ({region.code})",
                                 is_required=True,
                                 approval_status="Pending",
+                                represented_region_id=region_id,  # Snapshot region context
                                 created_at=datetime.utcnow()
                             ))
                             assigned_approver_ids.add(approver.user_id)
@@ -968,7 +976,8 @@ def list_validation_requests(
         joinedload(ValidationRequest.current_status),
         joinedload(ValidationRequest.regions),
         joinedload(ValidationRequest.assignments).joinedload(
-            ValidationAssignment.validator)
+            ValidationAssignment.validator),
+        joinedload(ValidationRequest.status_history)  # Eager-load for days_in_status calculation
     )
 
     # Apply Row-Level Security BEFORE other filters
@@ -1031,7 +1040,7 @@ def list_validation_requests(
             priority=req.priority.label,
             target_completion_date=req.target_completion_date,
             current_status=req.current_status.label,
-            days_in_status=calculate_days_in_status(db, req),
+            days_in_status=calculate_days_in_status(req),
             primary_validator=primary_validator,
             regions=req.regions if req.regions else [],
             created_at=req.created_at,
@@ -2253,7 +2262,10 @@ def submit_approval(
     current_user: User = Depends(get_current_user)
 ):
     """Submit approval or rejection for a validation request."""
-    approval = db.query(ValidationApproval).filter(
+    from sqlalchemy.orm import joinedload
+    approval = db.query(ValidationApproval).options(
+        joinedload(ValidationApproval.approver)
+    ).filter(
         ValidationApproval.approval_id == approval_id
     ).first()
     if not approval:
@@ -2302,6 +2314,8 @@ def submit_approval(
 
     db.commit()
     db.refresh(approval)
+    # Force load the approver relationship for the response schema
+    _ = approval.approver
     return approval
 
 
@@ -2368,13 +2382,14 @@ def get_aging_report(
     requests = db.query(ValidationRequest).options(
         joinedload(ValidationRequest.current_status),
         joinedload(ValidationRequest.models),
-        joinedload(ValidationRequest.priority)
+        joinedload(ValidationRequest.priority),
+        joinedload(ValidationRequest.status_history)  # For days_in_status calculation
     ).all()
 
     aging_data = []
     for req in requests:
         if req.current_status and req.current_status.code not in ["APPROVED", "CANCELLED"]:
-            days_in_status = calculate_days_in_status(db, req)
+            days_in_status = calculate_days_in_status(req)
             model_names = [
                 m.model_name for m in req.models] if req.models else []
             aging_data.append({

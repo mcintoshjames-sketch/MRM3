@@ -193,7 +193,6 @@ def create_model_version(
         change_type_id=version_data.change_type_id,
         change_description=version_data.change_description,
         scope=version_data.scope,
-        affected_region_ids=version_data.affected_region_ids,
         planned_production_date=version_data.planned_production_date or version_data.production_date,
         actual_production_date=version_data.actual_production_date,
         production_date=version_data.production_date or version_data.planned_production_date,  # Legacy field
@@ -202,8 +201,33 @@ def create_model_version(
     )
 
     db.add(new_version)
+    db.flush()  # Get version_id before adding regions
+
+    # Handle affected regions (if REGIONAL scope)
+    if version_data.scope == "REGIONAL" and version_data.affected_region_ids:
+        from app.models.model_version_region import ModelVersionRegion
+        from app.models.region import Region
+
+        # Verify regions exist
+        regions = db.query(Region).filter(
+            Region.region_id.in_(version_data.affected_region_ids)
+        ).all()
+
+        # Create associations
+        for region in regions:
+            assoc = ModelVersionRegion(
+                version_id=new_version.version_id,
+                region_id=region.region_id
+            )
+            db.add(assoc)
+
     db.commit()
     db.refresh(new_version)
+
+    # Eager-load the affected_regions_assoc for the response
+    if new_version.scope == "REGIONAL":
+        # Force load the associations so the property works
+        _ = new_version.affected_regions_assoc
 
     # Auto-create validation request for MAJOR changes (requires MV approval)
     validation_request = None
@@ -347,16 +371,9 @@ def create_model_version(
                 new_version.validation_request_id = validation_request.request_id
 
                 # Handle regional scope - add regions to validation request
-                if version_data.scope == "REGIONAL" and version_data.affected_region_ids:
-                    # Import Region model
-                    from app.models.region import Region
-
-                    # Fetch and add affected regions
-                    regions = db.query(Region).filter(
-                        Region.region_id.in_(version_data.affected_region_ids)
-                    ).all()
-
-                    validation_request.regions = regions
+                # Use the regions from the version's affected_regions relationship
+                if version_data.scope == "REGIONAL" and new_version.affected_regions:
+                    validation_request.regions = new_version.affected_regions
 
                 db.commit()
                 db.refresh(validation_request)
@@ -394,6 +411,7 @@ def create_model_version(
     # Create response with validation info
     response_dict = {
         **new_version.__dict__,
+        "affected_region_ids": new_version.affected_region_ids,  # Use property
         "validation_request_created": validation_request is not None,
         "validation_type": validation_type_code if validation_request else None,
         "validation_warning": validation_warning
@@ -429,7 +447,8 @@ def list_model_versions(
     versions = db.query(ModelVersion).options(
         joinedload(ModelVersion.change_type_detail).joinedload(
             ModelChangeType.category),
-        joinedload(ModelVersion.created_by)
+        joinedload(ModelVersion.created_by),
+        joinedload(ModelVersion.affected_regions_assoc)  # Eager-load for affected_region_ids property
     ).filter(
         ModelVersion.model_id == model_id
     ).order_by(desc(ModelVersion.created_at)).all()
@@ -741,7 +760,8 @@ def export_model_versions_csv(
     versions = db.query(ModelVersion).options(
         joinedload(ModelVersion.change_type_detail).joinedload(
             ModelChangeType.category),
-        joinedload(ModelVersion.created_by)
+        joinedload(ModelVersion.created_by),
+        joinedload(ModelVersion.affected_regions_assoc)  # Eager-load for affected_region_ids property
     ).filter(
         ModelVersion.model_id == model_id
     ).order_by(desc(ModelVersion.created_at)).all()
@@ -807,7 +827,8 @@ def get_version_details(
         joinedload(ModelVersion.change_type_detail).joinedload(
             ModelChangeType.category),
         joinedload(ModelVersion.created_by),
-        joinedload(ModelVersion.model)
+        joinedload(ModelVersion.model),
+        joinedload(ModelVersion.affected_regions_assoc)  # Eager-load for affected_region_ids property
     ).filter(ModelVersion.version_id == version_id).first()
 
     if not version:

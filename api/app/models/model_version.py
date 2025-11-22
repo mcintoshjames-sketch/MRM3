@@ -1,7 +1,7 @@
 """Model Version model for tracking model changes and versioning."""
 from datetime import datetime, date
 from typing import Optional, List
-from sqlalchemy import String, Integer, Text, DateTime, Date, ForeignKey, JSON
+from sqlalchemy import String, Integer, Text, DateTime, Date, ForeignKey
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.models.base import Base
 
@@ -31,9 +31,6 @@ class ModelVersion(Base):
     scope: Mapped[str] = mapped_column(
         String(20), nullable=False, default="GLOBAL", index=True
     )  # GLOBAL | REGIONAL
-    affected_region_ids: Mapped[Optional[List[int]]] = mapped_column(
-        JSON, nullable=True, comment="List of region IDs affected by this change (for REGIONAL scope)"
-    )
 
     # Production dates
     planned_production_date: Mapped[Optional[date]] = mapped_column(
@@ -58,3 +55,23 @@ class ModelVersion(Base):
     created_by = relationship("User", foreign_keys=[created_by_id])
     validation_request = relationship("ValidationRequest", foreign_keys=[validation_request_id])
     change_type_detail = relationship("ModelChangeType", foreign_keys=[change_type_id])
+
+    # Regional scope - association object for normalized regions
+    affected_regions_assoc: Mapped[List["ModelVersionRegion"]] = relationship(
+        back_populates="version", cascade="all, delete-orphan"
+    )
+    # Convenience property: list of region objects
+    affected_regions: Mapped[List["Region"]] = relationship(
+        "Region", secondary="model_version_regions", viewonly=True
+    )
+
+    # Helper property to get list of region IDs (backward compatibility)
+    @property
+    def affected_region_ids(self) -> Optional[List[int]]:
+        """Return list of affected region IDs for backward compatibility."""
+        # Return None for GLOBAL scope or if no regions
+        if self.scope != "REGIONAL":
+            return None
+        if not self.affected_regions_assoc:
+            return []
+        return [assoc.region_id for assoc in self.affected_regions_assoc]

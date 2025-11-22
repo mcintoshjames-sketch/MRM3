@@ -50,7 +50,6 @@ def list_models(
     """
     from app.core.rls import apply_model_rls
 
-    from app.models import ModelSubmissionComment
     query = db.query(Model).options(
         joinedload(Model.owner),
         joinedload(Model.developer),
@@ -62,8 +61,10 @@ def list_models(
         joinedload(Model.regulatory_categories),
         joinedload(Model.model_regions).joinedload(ModelRegion.region),
         joinedload(Model.submitted_by_user),
-        joinedload(Model.submission_comments).joinedload(
-            ModelSubmissionComment.user)
+        joinedload(Model.wholly_owned_region),  # For regional ownership models
+        joinedload(Model.ownership_type)  # For ownership taxonomy classification
+        # Note: submission_comments intentionally excluded from list view for performance
+        # They are only loaded in the detail endpoint where they're actually displayed
     )
 
     # Apply row-level security filtering

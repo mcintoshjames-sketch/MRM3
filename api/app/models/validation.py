@@ -627,6 +627,13 @@ class ValidationApproval(Base):
         Integer, ForeignKey("regions.region_id"), nullable=True
     )  # Required if approval_type='Regional', NULL for Global
 
+    # Historical context: What role did the approver represent at approval time?
+    # This preserves history even if the user's role changes later
+    represented_region_id: Mapped[Optional[int]] = mapped_column(
+        Integer, ForeignKey("regions.region_id", ondelete="SET NULL"), nullable=True, index=True,
+        comment="Region the approver was representing at approval time (NULL for Global Approver)"
+    )
+
     is_required: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=True)
     approval_status: Mapped[str] = mapped_column(
@@ -651,7 +658,8 @@ class ValidationApproval(Base):
     request = relationship("ValidationRequest", back_populates="approvals")
     approver = relationship("User", foreign_keys=[approver_id])
     unlinked_by = relationship("User", foreign_keys=[unlinked_by_id])
-    region = relationship("Region")  # Region for regional approvals
+    region = relationship("Region", foreign_keys=[region_id])  # Region for regional approvals
+    represented_region = relationship("Region", foreign_keys=[represented_region_id])  # Historical role context
 
 
 # Keep old Validation model for backwards compatibility during migration
