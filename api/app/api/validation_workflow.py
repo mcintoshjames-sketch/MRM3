@@ -210,6 +210,76 @@ def create_status_history_entry(
     db.add(history)
 
 
+def update_version_statuses_for_validation(
+    db: Session,
+    validation_request: ValidationRequest,
+    new_validation_status: str,
+    current_user: User
+):
+    """
+    Auto-update linked model version statuses based on validation request status changes.
+
+    Lifecycle transitions:
+    - INTAKE/PLANNING -> IN_PROGRESS: Version moves DRAFT -> IN_VALIDATION
+    - Any status -> APPROVED: Version moves IN_VALIDATION -> APPROVED
+    - Any status -> CANCELLED/ON_HOLD: Version returns to DRAFT (if not yet approved)
+    """
+    from app.models.model_version import ModelVersion
+    from app.schemas.model_version import VersionStatus
+
+    # Get all linked versions via association table
+    for model_version_assoc in validation_request.model_versions_assoc:
+        if not model_version_assoc.version_id:
+            continue  # Skip if no version linked
+
+        version = db.query(ModelVersion).filter(
+            ModelVersion.version_id == model_version_assoc.version_id
+        ).first()
+
+        if not version:
+            continue
+
+        old_version_status = version.status
+        new_version_status = None
+
+        # Determine new version status based on validation status
+        if new_validation_status == "IN_PROGRESS":
+            # When validation work begins, move version to IN_VALIDATION
+            if version.status == VersionStatus.DRAFT:
+                new_version_status = VersionStatus.IN_VALIDATION
+
+        elif new_validation_status == "APPROVED":
+            # When validation is approved, move version to APPROVED
+            if version.status == VersionStatus.IN_VALIDATION:
+                new_version_status = VersionStatus.APPROVED
+
+        elif new_validation_status in ["CANCELLED", "ON_HOLD"]:
+            # If validation is cancelled or on hold, revert to DRAFT (unless already approved)
+            if version.status == VersionStatus.IN_VALIDATION:
+                new_version_status = VersionStatus.DRAFT
+
+        # Apply status change if determined
+        if new_version_status and new_version_status != old_version_status:
+            version.status = new_version_status
+
+            # Create audit log for version status change
+            from app.core.audit import create_audit_log
+            create_audit_log(
+                db=db,
+                entity_type="ModelVersion",
+                entity_id=version.version_id,
+                action="AUTO_STATUS_UPDATE",
+                user_id=current_user.user_id,
+                changes={
+                    "status": {
+                        "old": old_version_status,
+                        "new": new_version_status
+                    },
+                    "trigger": f"Validation request {validation_request.request_id} status changed to {new_validation_status}"
+                }
+            )
+
+
 def check_validator_independence(db: Session, model_ids: List[int], validator_id: int) -> bool:
     """Check if validator is independent from all models (not owner or developer of any)."""
     models = db.query(Model).filter(Model.model_id.in_(model_ids)).all()
@@ -1220,6 +1290,12 @@ def mark_submission_received(
     )
     db.add(audit_log)
 
+    # Auto-update linked version statuses if we auto-transitioned to IN_PROGRESS
+    if auto_transitioned:
+        update_version_statuses_for_validation(
+            db, validation_request, "IN_PROGRESS", current_user
+        )
+
     db.commit()
     db.refresh(validation_request)
     return validation_request
@@ -1316,6 +1392,11 @@ def update_validation_request_status(
     )
     db.add(audit_log)
 
+    # Auto-update linked model version statuses based on validation status
+    update_version_statuses_for_validation(
+        db, validation_request, new_status_code, current_user
+    )
+
     db.commit()
     db.refresh(validation_request)
     return validation_request
@@ -1391,6 +1472,11 @@ def decline_validation_request(
         timestamp=datetime.utcnow()
     )
     db.add(audit_log)
+
+    # Auto-update linked model version statuses
+    update_version_statuses_for_validation(
+        db, validation_request, "CANCELLED", current_user
+    )
 
     db.commit()
     db.refresh(validation_request)
@@ -2191,6 +2277,21 @@ def submit_approval(
         timestamp=datetime.utcnow()
     )
     db.add(audit_log)
+
+    # Update validation request completion_date when approval is granted
+    if update_data.approval_status == "Approved":
+        # Calculate latest approval date for this validation request
+        latest_approval_date = db.query(func.max(ValidationApproval.approved_at)).filter(
+            ValidationApproval.request_id == approval.request_id,
+            ValidationApproval.approval_status == 'Approved'
+        ).scalar()
+
+        if latest_approval_date:
+            validation_request = db.query(ValidationRequest).filter(
+                ValidationRequest.request_id == approval.request_id
+            ).first()
+            if validation_request:
+                validation_request.completion_date = latest_approval_date
 
     db.commit()
     db.refresh(approval)

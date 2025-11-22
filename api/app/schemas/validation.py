@@ -1,5 +1,5 @@
 """Validation workflow schemas."""
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, Field, field_validator
 from datetime import datetime, date
 from typing import Optional, List, Dict
 from app.schemas.user import UserResponse
@@ -425,6 +425,7 @@ class ValidationRequestListResponse(BaseModel):
     regions: List[Region] = []  # Support multiple regions
     created_at: datetime
     updated_at: datetime
+    completion_date: Optional[datetime] = Field(None, description="Date when validation was completed (latest approval date)")
 
     class Config:
         from_attributes = True

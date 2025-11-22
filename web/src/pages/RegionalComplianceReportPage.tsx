@@ -298,6 +298,9 @@ const RegionalComplianceReportPage: React.FC = () => {
                                         Validation Status
                                     </th>
                                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                        Date Validated
+                                    </th>
+                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                                         Regional Approval
                                     </th>
                                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -308,7 +311,7 @@ const RegionalComplianceReportPage: React.FC = () => {
                             <tbody className="bg-white divide-y divide-gray-200">
                                 {reportData && reportData.records.length === 0 ? (
                                     <tr>
-                                        <td colSpan={7} className="px-6 py-4 text-center text-gray-500">
+                                        <td colSpan={8} className="px-6 py-4 text-center text-gray-500">
                                             No records found. Try adjusting your filters.
                                         </td>
                                     </tr>
@@ -323,11 +326,6 @@ const RegionalComplianceReportPage: React.FC = () => {
                                                     <span className="text-xs text-gray-500">
                                                         {record.region_name}
                                                     </span>
-                                                    {record.requires_regional_approval && (
-                                                        <span className="text-xs text-blue-600 mt-1">
-                                                            ✓ Requires approval
-                                                        </span>
-                                                    )}
                                                 </div>
                                             </td>
                                             <td className="px-6 py-4 whitespace-nowrap">
@@ -358,6 +356,11 @@ const RegionalComplianceReportPage: React.FC = () => {
                                                 ) : (
                                                     <span className="text-sm text-gray-400">No validation</span>
                                                 )}
+                                            </td>
+                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                                {record.validation_completion_date
+                                                    ? new Date(record.validation_completion_date).toLocaleDateString()
+                                                    : '-'}
                                             </td>
                                             <td className="px-6 py-4">
                                                 {record.requires_regional_approval ? (
@@ -399,13 +402,6 @@ const RegionalComplianceReportPage: React.FC = () => {
                                 )}
                             </tbody>
                         </table>
-                    </div>
-                    <div className="bg-gray-50 px-6 py-3 border-t border-gray-200">
-                        <p className="text-xs text-gray-600">
-                            * <strong>⚠️ Schema Limitation:</strong> Regional approval data shows ALL regional approvals
-                            across ALL regions but cannot determine which approval applies to this specific region.
-                            See warning above for details.
-                        </p>
                     </div>
                 </div>
             </div>

@@ -144,6 +144,11 @@ class ValidationRequest(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow
     )
+    completion_date: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+        comment="Date when validation was completed (latest approval date)"
+    )
 
     # Relationships
     # Association object for model-version tracking

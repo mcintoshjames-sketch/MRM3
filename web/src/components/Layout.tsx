@@ -155,7 +155,7 @@ export default function Layout({ children }: LayoutProps) {
                         </li>
                         <li>
                             <NavLink
-                                to="/regional-compliance-report"
+                                to="/reports"
                                 className={({ isActive }) =>
                                     `block px-4 py-2 rounded transition-colors ${
                                         isActive
@@ -164,7 +164,7 @@ export default function Layout({ children }: LayoutProps) {
                                     }`
                                 }
                             >
-                                Regional Compliance
+                                Reports
                             </NavLink>
                         </li>
                         <li>

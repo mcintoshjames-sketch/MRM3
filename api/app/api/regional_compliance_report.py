@@ -136,7 +136,7 @@ async def get_regional_deployment_compliance_report(
             ValidationRequest.request_id.label('validation_request_id'),
             TaxonomyValue.label.label('validation_status'),
             TaxonomyValue.code.label('validation_status_code'),
-            ValidationRequest.updated_at.label('validation_completion_date'),  # Use updated_at as proxy for completion
+            ValidationRequest.completion_date.label('validation_completion_date'),
         )
         .select_from(ModelRegion)
         .join(Region, ModelRegion.region_id == Region.region_id)
@@ -216,7 +216,7 @@ async def get_regional_deployment_compliance_report(
             validation_request_id=row.validation_request_id,
             validation_status=row.validation_status,
             validation_status_code=row.validation_status_code,
-            validation_completion_date=row.validation_completion_date,
+            validation_completion_date=row.validation_completion_date,  # Use stored completion date
             has_regional_approval=has_regional_approval,
             regional_approver_name=regional_approver_name,
             regional_approver_role=regional_approver_role,

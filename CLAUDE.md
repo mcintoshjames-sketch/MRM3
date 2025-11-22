@@ -160,6 +160,88 @@ cd api && python -m pytest && cd ../web && pnpm test:run
   - API should provide endpoints like `/vendors/{id}/models` to fetch related data
   - This pattern improves UX by enabling seamless navigation between related entities
 
+### Reports System
+
+The application includes a centralized Reports section for generating and exporting regulatory and operational reports.
+
+**Architecture**:
+- **Reports Gallery**: `/reports` - Central hub displaying all available canned reports
+- **Report Detail Pages**: Individual pages for each report (e.g., `/reports/regional-compliance`)
+- **Navigation**: "Reports" link in main navigation sidebar
+
+**Current Reports**:
+- **Regional Deployment & Compliance Report** (`/reports/regional-compliance`)
+  - Shows models deployed by region with validation and approval status
+  - Filters: Region, deployment status
+  - Export: CSV with region-specific approval data
+  - API: `GET /regional-compliance-report/`
+
+**Extension Pattern - Adding New Reports**:
+
+To add a new canned report to the Reports section, follow these three steps:
+
+**Step 1**: Add report metadata to `web/src/pages/ReportsPage.tsx`:
+```typescript
+const availableReports: Report[] = [
+    // ... existing reports ...
+    {
+        id: 'validation-aging',                    // Unique identifier
+        name: 'Validation Aging Report',           // Display name
+        description: 'Track validation requests by status and SLA compliance.',
+        path: '/reports/validation-aging',         // Route path
+        icon: '⏱️',                                 // Display icon (emoji)
+        category: 'Validation'                      // Category for grouping
+    },
+];
+```
+
+**Step 2**: Create the report detail page component:
+```typescript
+// web/src/pages/ValidationAgingReportPage.tsx
+import React, { useEffect, useState } from 'react';
+import Layout from '../components/Layout';
+import client from '../api/client';
+
+const ValidationAgingReportPage: React.FC = () => {
+    const [loading, setLoading] = useState(true);
+    const [reportData, setReportData] = useState(null);
+
+    const fetchReport = async () => {
+        const response = await client.get('/validation-aging-report/');
+        setReportData(response.data);
+    };
+
+    return (
+        <Layout>
+            {/* Report filters, table, and export functionality */}
+        </Layout>
+    );
+};
+
+export default ValidationAgingReportPage;
+```
+
+**Step 3**: Add route in `web/src/App.tsx`:
+```typescript
+import ValidationAgingReportPage from './pages/ValidationAgingReportPage';
+
+// ... in Routes component:
+<Route
+    path="/reports/validation-aging"
+    element={user ? <ValidationAgingReportPage /> : <Navigate to="/login" />}
+/>
+```
+
+**Report Page Standard Features**:
+- Filters for data (region, date range, status, etc.)
+- Summary statistics cards (total records, key metrics)
+- Data table with sortable columns
+- CSV export button
+- "Refresh Report" button
+- Responsive layout with proper loading states
+
+**Reference Implementation**: See [RegionalComplianceReportPage.tsx](web/src/pages/RegionalComplianceReportPage.tsx) for a complete example.
+
 ### Table Sorting Pattern
 
 All table views must implement sorting using the `useTableSort` custom hook located at `web/src/hooks/useTableSort.tsx`.

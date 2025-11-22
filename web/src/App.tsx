@@ -23,6 +23,7 @@ import ValidationPoliciesPage from './pages/ValidationPoliciesPage';
 import MyPendingSubmissionsPage from './pages/MyPendingSubmissionsPage';
 import MyDeploymentTasksPage from './pages/MyDeploymentTasksPage';
 import RegionalComplianceReportPage from './pages/RegionalComplianceReportPage';
+import ReportsPage from './pages/ReportsPage';
 
 function App() {
     const { user, loading } = useAuth();
@@ -64,7 +65,8 @@ function App() {
             <Route path="/batch-delegates" element={user?.role === 'Admin' ? <BatchDelegatesPage /> : <Navigate to="/models" />} />
             <Route path="/regions" element={user?.role === 'Admin' ? <RegionsPage /> : <Navigate to="/models" />} />
             <Route path="/validation-policies" element={user?.role === 'Admin' ? <ValidationPoliciesPage /> : <Navigate to="/models" />} />
-            <Route path="/regional-compliance-report" element={user ? <RegionalComplianceReportPage /> : <Navigate to="/login" />} />
+            <Route path="/reports" element={user ? <ReportsPage /> : <Navigate to="/login" />} />
+            <Route path="/reports/regional-compliance" element={user ? <RegionalComplianceReportPage /> : <Navigate to="/login" />} />
             <Route path="/" element={<Navigate to={getDefaultRoute()} />} />
         </Routes>
     );
