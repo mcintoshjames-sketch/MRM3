@@ -23,7 +23,10 @@ from app.models.validation import (
     ValidationWorkComponent,
     ValidationOutcome,
     ValidationReviewOutcome,
-    ValidationApproval
+    ValidationApproval,
+    ValidationComponentDefinition,
+    ValidationPlan,
+    ValidationPlanComponent
 )
 from app.models.validation_grouping import ValidationGroupingMemory
 from app.models.export_view import ExportView
@@ -56,6 +59,9 @@ __all__ = [
     "ValidationOutcome",
     "ValidationReviewOutcome",
     "ValidationApproval",
+    "ValidationComponentDefinition",
+    "ValidationPlan",
+    "ValidationPlanComponent",
     "ValidationGroupingMemory",
     "ExportView"
 ]

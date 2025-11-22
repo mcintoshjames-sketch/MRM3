@@ -1,0 +1,410 @@
+import React, { useState, useEffect } from 'react';
+import api from '../api/client';
+
+interface ValidationComponentDefinition {
+    component_id: number;
+    section_number: string;
+    section_title: string;
+    component_code: string;
+    component_title: string;
+    is_test_or_analysis: boolean;
+    expectation_high: string;
+    expectation_medium: string;
+    expectation_low: string;
+    expectation_very_low: string;
+    sort_order: number;
+    is_active: boolean;
+}
+
+interface ValidationPlanComponent {
+    plan_component_id?: number;
+    component_id: number;
+    default_expectation: string;
+    planned_treatment: string;
+    is_deviation: boolean;
+    rationale?: string;
+    additional_notes?: string;
+    component_definition: ValidationComponentDefinition;
+}
+
+interface ValidationPlan {
+    plan_id?: number;
+    request_id: number;
+    overall_scope_summary?: string;
+    material_deviation_from_standard: boolean;
+    overall_deviation_rationale?: string;
+    components: ValidationPlanComponent[];
+    model_id?: number;
+    model_name?: string;
+    risk_tier?: string;
+    validation_approach?: string;
+}
+
+interface Props {
+    requestId: number;
+    modelName?: string;
+    riskTier?: string;
+    onSave?: () => void;
+}
+
+const ValidationPlanForm: React.FC<Props> = ({ requestId, modelName, riskTier, onSave }) => {
+    const [loading, setLoading] = useState(true);
+    const [saving, setSaving] = useState(false);
+    const [plan, setPlan] = useState<ValidationPlan | null>(null);
+    const [error, setError] = useState<string | null>(null);
+
+    const [formData, setFormData] = useState<ValidationPlan>({
+        request_id: requestId,
+        overall_scope_summary: '',
+        material_deviation_from_standard: false,
+        overall_deviation_rationale: '',
+        components: [],
+        model_name: modelName,
+        risk_tier: riskTier
+    });
+
+    useEffect(() => {
+        fetchValidationPlan();
+    }, [requestId]);
+
+    const fetchValidationPlan = async () => {
+        setLoading(true);
+        setError(null);
+
+        try {
+            // Try to fetch existing plan
+            const response = await api.get(`/validation-workflow/requests/${requestId}/plan`);
+            setPlan(response.data);
+            setFormData(response.data);
+        } catch (err: any) {
+            if (err.response?.status === 404) {
+                // Plan doesn't exist yet - that's okay, we'll create one
+                setPlan(null);
+            } else {
+                setError('Failed to load validation plan');
+                console.error('Error loading validation plan:', err);
+            }
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const handleCreatePlan = async () => {
+        setSaving(true);
+        setError(null);
+
+        try {
+            // Create plan with empty components array - API will auto-create defaults
+            const response = await api.post(`/validation-workflow/requests/${requestId}/plan`, {
+                overall_scope_summary: formData.overall_scope_summary || '',
+                material_deviation_from_standard: false,
+                overall_deviation_rationale: '',
+                components: []
+            });
+
+            setPlan(response.data);
+            setFormData(response.data);
+
+            if (onSave) onSave();
+        } catch (err: any) {
+            setError(err.response?.data?.detail || 'Failed to create validation plan');
+            console.error('Error creating validation plan:', err);
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    const handleSave = async () => {
+        setSaving(true);
+        setError(null);
+
+        try {
+            // Validate deviations have rationale
+            for (const comp of formData.components) {
+                if (comp.is_deviation && !comp.rationale?.trim()) {
+                    const compDef = comp.component_definition;
+                    throw new Error(`Rationale required for ${compDef.component_code} (${compDef.component_title}) because it deviates from the bank standard`);
+                }
+            }
+
+            // Validate material deviation rationale
+            if (formData.material_deviation_from_standard && !formData.overall_deviation_rationale?.trim()) {
+                throw new Error('Overall deviation rationale is required when there is a material deviation from standard');
+            }
+
+            const updatePayload = {
+                overall_scope_summary: formData.overall_scope_summary,
+                material_deviation_from_standard: formData.material_deviation_from_standard,
+                overall_deviation_rationale: formData.overall_deviation_rationale,
+                components: formData.components.map(comp => ({
+                    component_id: comp.component_id,
+                    planned_treatment: comp.planned_treatment,
+                    rationale: comp.rationale,
+                    additional_notes: comp.additional_notes
+                }))
+            };
+
+            const response = await api.patch(`/validation-workflow/requests/${requestId}/plan`, updatePayload);
+            setPlan(response.data);
+            setFormData(response.data);
+
+            if (onSave) onSave();
+        } catch (err: any) {
+            if (err.message) {
+                setError(err.message);
+            } else {
+                setError(err.response?.data?.detail || 'Failed to save validation plan');
+            }
+            console.error('Error saving validation plan:', err);
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    const handleComponentChange = (componentId: number, field: string, value: string) => {
+        setFormData(prev => ({
+            ...prev,
+            components: prev.components.map(comp => {
+                if (comp.component_id === componentId) {
+                    const updated = { ...comp, [field]: value };
+
+                    // Recalculate deviation if planned_treatment changed
+                    if (field === 'planned_treatment') {
+                        updated.is_deviation = calculateIsDeviation(comp.default_expectation, value);
+                    }
+
+                    return updated;
+                }
+                return comp;
+            })
+        }));
+    };
+
+    const calculateIsDeviation = (defaultExpectation: string, plannedTreatment: string): boolean => {
+        if (defaultExpectation === 'Required' && (plannedTreatment === 'NotPlanned' || plannedTreatment === 'NotApplicable')) {
+            return true;
+        }
+        if (defaultExpectation === 'NotExpected' && plannedTreatment === 'Planned') {
+            return true;
+        }
+        return false;
+    };
+
+    // Group components by section
+    const groupedComponents = formData.components.reduce((acc, comp) => {
+        const sectionKey = `${comp.component_definition.section_number}|${comp.component_definition.section_title}`;
+        if (!acc[sectionKey]) {
+            acc[sectionKey] = [];
+        }
+        acc[sectionKey].push(comp);
+        return acc;
+    }, {} as Record<string, ValidationPlanComponent[]>);
+
+    const sections = Object.keys(groupedComponents).sort((a, b) => {
+        const aNum = parseInt(a.split('|')[0]);
+        const bNum = parseInt(b.split('|')[0]);
+        return aNum - bNum;
+    });
+
+    if (loading) {
+        return <div className="text-gray-600">Loading validation plan...</div>;
+    }
+
+    if (!plan) {
+        return (
+            <div className="bg-white rounded-lg shadow-md p-6">
+                <h2 className="text-xl font-bold mb-4">Validation Plan</h2>
+                <p className="text-gray-600 mb-4">
+                    No validation plan exists for this request yet. Create a plan to document which validation components will be performed.
+                </p>
+                <button
+                    onClick={handleCreatePlan}
+                    disabled={saving}
+                    className="btn-primary"
+                >
+                    {saving ? 'Creating...' : 'Create Validation Plan'}
+                </button>
+            </div>
+        );
+    }
+
+    return (
+        <div className="bg-white rounded-lg shadow-md p-6">
+            <h2 className="text-xl font-bold mb-6">Validation Plan</h2>
+
+            {error && (
+                <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded text-red-800">
+                    {error}
+                </div>
+            )}
+
+            {/* Header Info */}
+            <div className="mb-6 p-4 bg-gray-50 rounded">
+                <div className="grid grid-cols-3 gap-4">
+                    <div>
+                        <div className="text-sm font-medium text-gray-500">Model</div>
+                        <div className="text-base font-semibold">{formData.model_name || 'N/A'}</div>
+                    </div>
+                    <div>
+                        <div className="text-sm font-medium text-gray-500">Risk Tier</div>
+                        <div className="text-base font-semibold">{formData.risk_tier || 'N/A'}</div>
+                    </div>
+                    <div>
+                        <div className="text-sm font-medium text-gray-500">Validation Approach</div>
+                        <div className="text-base font-semibold">{formData.validation_approach || 'N/A'}</div>
+                    </div>
+                </div>
+            </div>
+
+            {/* Overall Scope Summary */}
+            <div className="mb-6">
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Overall Scope Summary
+                </label>
+                <textarea
+                    className="w-full border border-gray-300 rounded p-2 h-24"
+                    placeholder="Describe the high-level scope of this validation..."
+                    value={formData.overall_scope_summary || ''}
+                    onChange={(e) => setFormData({ ...formData, overall_scope_summary: e.target.value })}
+                />
+            </div>
+
+            {/* Material Deviation */}
+            <div className="mb-6 p-4 border border-gray-300 rounded">
+                <label className="flex items-center mb-2">
+                    <input
+                        type="checkbox"
+                        checked={formData.material_deviation_from_standard}
+                        onChange={(e) => setFormData({ ...formData, material_deviation_from_standard: e.target.checked })}
+                        className="mr-2"
+                    />
+                    <span className="font-medium">Material Deviation from Standard</span>
+                </label>
+                {formData.material_deviation_from_standard && (
+                    <div className="mt-2">
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                            Overall Deviation Rationale <span className="text-red-500">*</span>
+                        </label>
+                        <textarea
+                            className="w-full border border-gray-300 rounded p-2 h-20"
+                            placeholder="Explain why this validation deviates materially from the standard approach..."
+                            value={formData.overall_deviation_rationale || ''}
+                            onChange={(e) => setFormData({ ...formData, overall_deviation_rationale: e.target.value })}
+                        />
+                    </div>
+                )}
+            </div>
+
+            {/* Components Table */}
+            <div className="mb-6">
+                <h3 className="text-lg font-semibold mb-4">Validation Components</h3>
+
+                {sections.map(sectionKey => {
+                    const [sectionNum, sectionTitle] = sectionKey.split('|');
+                    const components = groupedComponents[sectionKey];
+
+                    return (
+                        <div key={sectionKey} className="mb-6">
+                            <h4 className="font-semibold text-gray-800 mb-2 bg-gray-100 px-3 py-2 rounded">
+                                Section {sectionNum} – {sectionTitle}
+                            </h4>
+
+                            <table className="min-w-full border border-gray-300 table-fixed">
+                                <thead className="bg-gray-50">
+                                    <tr>
+                                        <th className="border border-gray-300 px-3 py-2 text-left text-xs font-medium w-1/4">
+                                            Component
+                                        </th>
+                                        <th className="border border-gray-300 px-3 py-2 text-left text-xs font-medium w-36">
+                                            Bank Expectation
+                                        </th>
+                                        <th className="border border-gray-300 px-3 py-2 text-left text-xs font-medium w-40">
+                                            Planned Status
+                                        </th>
+                                        <th className="border border-gray-300 px-3 py-2 text-left text-xs font-medium">
+                                            Rationale
+                                        </th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {components.map(comp => (
+                                        <tr
+                                            key={comp.component_id}
+                                            className={comp.is_deviation ? 'bg-yellow-50' : ''}
+                                        >
+                                            <td className="border border-gray-300 px-3 py-2 text-sm">
+                                                <div className="flex items-center gap-2">
+                                                    {comp.is_deviation && (
+                                                        <span className="text-yellow-600" title="Deviation from bank standard">
+                                                            ⚠️
+                                                        </span>
+                                                    )}
+                                                    <div>
+                                                        <div className="font-medium">{comp.component_definition.component_code}</div>
+                                                        <div className="text-gray-600">{comp.component_definition.component_title}</div>
+                                                    </div>
+                                                </div>
+                                            </td>
+                                            <td className="border border-gray-300 px-3 py-2 text-sm">
+                                                <span className={`px-2 py-1 rounded text-xs font-medium ${
+                                                    comp.default_expectation === 'Required' ? 'bg-blue-100 text-blue-800' :
+                                                    comp.default_expectation === 'IfApplicable' ? 'bg-gray-100 text-gray-800' :
+                                                    'bg-red-100 text-red-800'
+                                                }`}>
+                                                    {comp.default_expectation}
+                                                </span>
+                                            </td>
+                                            <td className="border border-gray-300 px-3 py-2">
+                                                <select
+                                                    className="border border-gray-300 rounded px-2 py-1 text-sm w-full"
+                                                    value={comp.planned_treatment}
+                                                    onChange={(e) => handleComponentChange(comp.component_id, 'planned_treatment', e.target.value)}
+                                                >
+                                                    <option value="Planned">Planned</option>
+                                                    <option value="NotPlanned">Not Planned</option>
+                                                    <option value="NotApplicable">Not Applicable</option>
+                                                </select>
+                                            </td>
+                                            <td className="border border-gray-300 px-3 py-2">
+                                                {comp.is_deviation ? (
+                                                    <textarea
+                                                        className="w-full border border-gray-300 rounded px-2 py-1 text-sm"
+                                                        placeholder="Required: Explain deviation from standard..."
+                                                        rows={2}
+                                                        value={comp.rationale || ''}
+                                                        onChange={(e) => handleComponentChange(comp.component_id, 'rationale', e.target.value)}
+                                                    />
+                                                ) : (
+                                                    <textarea
+                                                        className="w-full border border-gray-300 rounded px-2 py-1 text-sm"
+                                                        placeholder="Optional notes..."
+                                                        rows={2}
+                                                        value={comp.rationale || ''}
+                                                        onChange={(e) => handleComponentChange(comp.component_id, 'rationale', e.target.value)}
+                                                    />
+                                                )}
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    );
+                })}
+            </div>
+
+            {/* Save Button */}
+            <div className="flex justify-end gap-3">
+                <button
+                    onClick={handleSave}
+                    disabled={saving}
+                    className="btn-primary"
+                >
+                    {saving ? 'Saving...' : 'Save Validation Plan'}
+                </button>
+            </div>
+        </div>
+    );
+};
+
+export default ValidationPlanForm;

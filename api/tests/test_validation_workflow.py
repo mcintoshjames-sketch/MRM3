@@ -608,6 +608,58 @@ class TestValidatorIndependence:
         assert response.status_code == 400
         assert "attestation" in response.json()["detail"].lower()
 
+    def test_auto_transition_intake_to_planning_on_assignment(self, client, admin_headers, sample_model, validator_user, workflow_taxonomies):
+        """Test that validation request automatically transitions from INTAKE to PLANNING when validator is assigned."""
+        target_date = (date.today() + timedelta(days=30)).isoformat()
+
+        # Create request in INTAKE status
+        create_response = client.post(
+            "/validation-workflow/requests/",
+            headers=admin_headers,
+            json={
+                "model_ids": [sample_model.model_id],
+                "validation_type_id": workflow_taxonomies["type"]["initial"].value_id,
+                "priority_id": workflow_taxonomies["priority"]["high"].value_id,
+                "target_completion_date": target_date,
+                "current_status_id": workflow_taxonomies["status"]["intake"].value_id
+            }
+        )
+        assert create_response.status_code == 201
+        request_id = create_response.json()["request_id"]
+
+        # Verify it's in INTAKE status
+        get_response = client.get(f"/validation-workflow/requests/{request_id}", headers=admin_headers)
+        assert get_response.json()["current_status"]["code"] == "INTAKE"
+
+        # Assign validator
+        assign_response = client.post(
+            f"/validation-workflow/requests/{request_id}/assignments",
+            headers=admin_headers,
+            json={
+                "validator_id": validator_user.user_id,
+                "is_primary": True,
+                "independence_attestation": True,
+                "estimated_hours": 40.0
+            }
+        )
+        assert assign_response.status_code == 201
+
+        # Verify status auto-transitioned to PLANNING
+        get_response_after = client.get(f"/validation-workflow/requests/{request_id}", headers=admin_headers)
+        response_data = get_response_after.json()
+        assert response_data["current_status"]["code"] == "PLANNING", \
+            f"Expected PLANNING status after validator assignment, got {response_data['current_status']['code']}"
+
+        # Verify status history shows the transition
+        status_history = response_data["status_history"]
+        assert len(status_history) >= 2, "Should have at least 2 status history entries"
+
+        # Find the planning transition
+        planning_entry = next((h for h in status_history if h["new_status"]["code"] == "PLANNING"), None)
+        assert planning_entry is not None, "Should have status history entry for PLANNING"
+        assert "auto" in planning_entry["change_reason"].lower() or "assigned" in planning_entry["change_reason"].lower(), \
+            f"Change reason should indicate auto-transition: {planning_entry['change_reason']}"
+
 
 class TestOutcomeCreation:
     """Test outcome creation validation."""

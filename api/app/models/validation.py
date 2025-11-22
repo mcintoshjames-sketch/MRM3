@@ -206,6 +206,11 @@ class ValidationRequest(Base):
         back_populates="request", uselist=False, cascade="all, delete-orphan"
     )
 
+    # One-to-one relationship with validation plan
+    validation_plan: Mapped[Optional["ValidationPlan"]] = relationship(
+        back_populates="request", uselist=False, cascade="all, delete-orphan"
+    )
+
     # Computed properties for revalidation lifecycle
     @property
     def is_periodic_revalidation(self) -> bool:
@@ -660,3 +665,89 @@ class ValidationApproval(Base):
     unlinked_by = relationship("User", foreign_keys=[unlinked_by_id])
     region = relationship("Region", foreign_keys=[region_id])  # Region for regional approvals
     represented_region = relationship("Region", foreign_keys=[represented_region_id])  # Historical role context
+
+
+class ValidationComponentDefinition(Base):
+    """Master list of validation components (sections/subsections from bank standard)."""
+    __tablename__ = "validation_component_definitions"
+
+    component_id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    section_number: Mapped[str] = mapped_column(String(10), nullable=False)
+    section_title: Mapped[str] = mapped_column(String(200), nullable=False)
+    component_code: Mapped[str] = mapped_column(String(20), nullable=False, unique=True,
+                                                  comment="Stable identifier like '1.1', '3.4'")
+    component_title: Mapped[str] = mapped_column(String(200), nullable=False)
+    is_test_or_analysis: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False,
+                                                        comment="True if test/analysis, False if report section")
+
+    # Figure 3 matrix: expectation per risk tier (Required, IfApplicable, NotExpected)
+    expectation_high: Mapped[str] = mapped_column(String(20), nullable=False, default="Required")
+    expectation_medium: Mapped[str] = mapped_column(String(20), nullable=False, default="Required")
+    expectation_low: Mapped[str] = mapped_column(String(20), nullable=False, default="Required")
+    expectation_very_low: Mapped[str] = mapped_column(String(20), nullable=False, default="Required")
+
+    sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    # Relationships
+    plan_components: Mapped[List["ValidationPlanComponent"]] = relationship(
+        back_populates="component_definition", cascade="all, delete-orphan"
+    )
+
+
+class ValidationPlan(Base):
+    """Validation plan header - linked to a validation request."""
+    __tablename__ = "validation_plans"
+
+    plan_id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    request_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("validation_requests.request_id", ondelete="CASCADE"), nullable=False, unique=True
+    )
+    overall_scope_summary: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    material_deviation_from_standard: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    overall_deviation_rationale: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    # Relationships
+    request = relationship("ValidationRequest", back_populates="validation_plan")
+    components: Mapped[List["ValidationPlanComponent"]] = relationship(
+        back_populates="plan", cascade="all, delete-orphan"
+    )
+
+
+class ValidationPlanComponent(Base):
+    """Per-component entry in a validation plan."""
+    __tablename__ = "validation_plan_components"
+
+    plan_component_id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    plan_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("validation_plans.plan_id", ondelete="CASCADE"), nullable=False
+    )
+    component_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("validation_component_definitions.component_id"), nullable=False
+    )
+
+    # Copied from master definition at plan creation (for this model's tier)
+    default_expectation: Mapped[str] = mapped_column(String(20), nullable=False,
+                                                       comment="Required, IfApplicable, or NotExpected")
+    # Validator's choice
+    planned_treatment: Mapped[str] = mapped_column(String(20), nullable=False, default="Planned",
+                                                     comment="Planned, NotPlanned, or NotApplicable")
+    # Computed: true when planned_treatment conflicts with default_expectation
+    is_deviation: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+
+    # Required when is_deviation=true, optional otherwise
+    rationale: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    additional_notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    # Relationships
+    plan = relationship("ValidationPlan", back_populates="components")
+    component_definition = relationship("ValidationComponentDefinition", back_populates="plan_components")

@@ -186,6 +186,7 @@ export default function ModelDetailsPage() {
     const [submittingApproval, setSubmittingApproval] = useState(false);
     const [activities, setActivities] = useState<ActivityTimelineItem[]>([]);
     const [activitiesLoading, setActivitiesLoading] = useState(false);
+    const [editError, setEditError] = useState<string | null>(null);
     const [formData, setFormData] = useState({
         model_name: '',
         description: '',
@@ -295,6 +296,7 @@ export default function ModelDetailsPage() {
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
+        setEditError(null);
         try {
             const payload = {
                 ...formData,
@@ -309,8 +311,13 @@ export default function ModelDetailsPage() {
             };
             await api.patch(`/models/${id}`, payload);
             setEditing(false);
+            setEditError(null);
             fetchData();
-        } catch (error) {
+        } catch (error: any) {
+            const errorMessage = error.response?.status === 403
+                ? 'You do not have permission to edit this model. Only the model owner or administrators can make changes.'
+                : error.response?.data?.detail || 'Failed to update model. Please try again.';
+            setEditError(errorMessage);
             console.error('Failed to update model:', error);
         }
     };
@@ -604,7 +611,7 @@ export default function ModelDetailsPage() {
                             <button onClick={() => setShowSubmitChangeModal(true)} className="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700">
                                 Submit Change
                             </button>
-                            <button onClick={() => setEditing(true)} className="btn-primary">
+                            <button onClick={() => { setEditError(null); setEditing(true); }} className="btn-primary">
                                 Edit Model
                             </button>
                             <button onClick={handleDelete} className="btn-secondary text-red-600">
@@ -960,6 +967,18 @@ export default function ModelDetailsPage() {
             {editing ? (
                 <div className="bg-white p-6 rounded-lg shadow-md">
                     <h3 className="text-lg font-bold mb-4">Edit Model</h3>
+                    {editError && (
+                        <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-md">
+                            <div className="flex">
+                                <svg className="h-5 w-5 text-red-400" fill="currentColor" viewBox="0 0 20 20">
+                                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+                                </svg>
+                                <div className="ml-3">
+                                    <p className="text-sm font-medium text-red-800">{editError}</p>
+                                </div>
+                            </div>
+                        </div>
+                    )}
                     <form onSubmit={handleSubmit}>
                         <div className="grid grid-cols-2 gap-4">
                             <div className="mb-4">
@@ -1284,7 +1303,9 @@ export default function ModelDetailsPage() {
                         )}
 
                         <div className="flex gap-2">
-                            <button type="submit" className="btn-primary">Save Changes</button>
+                            <button type="submit" className="btn-primary">
+                                Save Changes
+                            </button>
                             <button type="button" onClick={() => setEditing(false)} className="btn-secondary">
                                 Cancel
                             </button>

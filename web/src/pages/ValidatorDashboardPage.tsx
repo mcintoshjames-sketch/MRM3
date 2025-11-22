@@ -6,8 +6,8 @@ import Layout from '../components/Layout';
 
 interface ValidationRequest {
     request_id: number;
-    model_id: number;
-    model_name: string;
+    model_ids: number[];
+    model_names: string[];
     request_date: string;
     requestor_name: string;
     validation_type: string;
@@ -330,7 +330,7 @@ export default function ValidatorDashboardPage() {
                                                         </span>
                                                     </div>
                                                     <p className={`text-sm font-semibold ${textColor} mb-1`}>
-                                                        {activity.request.model_name}
+                                                        {activity.request.model_names.join(', ')}
                                                     </p>
                                                     <p className="text-sm text-gray-700">
                                                         {activity.message}
@@ -389,13 +389,28 @@ export default function ValidatorDashboardPage() {
                                         <td className="px-6 py-4 whitespace-nowrap text-sm font-mono">
                                             #{req.request_id}
                                         </td>
-                                        <td className="px-6 py-4 whitespace-nowrap">
-                                            <Link
-                                                to={`/models/${req.model_id}`}
-                                                className="font-medium text-blue-600 hover:text-blue-800"
-                                            >
-                                                {req.model_name}
-                                            </Link>
+                                        <td className="px-6 py-4">
+                                            {req.model_ids.length === 1 ? (
+                                                <Link
+                                                    to={`/models/${req.model_ids[0]}`}
+                                                    className="font-medium text-blue-600 hover:text-blue-800"
+                                                >
+                                                    {req.model_names[0]}
+                                                </Link>
+                                            ) : (
+                                                <div className="space-y-1">
+                                                    {req.model_names.map((name, idx) => (
+                                                        <div key={idx}>
+                                                            <Link
+                                                                to={`/models/${req.model_ids[idx]}`}
+                                                                className="font-medium text-blue-600 hover:text-blue-800 text-sm"
+                                                            >
+                                                                {name}
+                                                            </Link>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            )}
                                         </td>
                                         <td className="px-6 py-4 whitespace-nowrap text-sm">
                                             {req.validation_type}
@@ -464,13 +479,28 @@ export default function ValidatorDashboardPage() {
                                         <td className="px-6 py-4 whitespace-nowrap text-sm font-mono">
                                             #{req.request_id}
                                         </td>
-                                        <td className="px-6 py-4 whitespace-nowrap">
-                                            <Link
-                                                to={`/models/${req.model_id}`}
-                                                className="font-medium text-blue-600 hover:text-blue-800"
-                                            >
-                                                {req.model_name}
-                                            </Link>
+                                        <td className="px-6 py-4">
+                                            {req.model_ids.length === 1 ? (
+                                                <Link
+                                                    to={`/models/${req.model_ids[0]}`}
+                                                    className="font-medium text-blue-600 hover:text-blue-800"
+                                                >
+                                                    {req.model_names[0]}
+                                                </Link>
+                                            ) : (
+                                                <div className="space-y-1">
+                                                    {req.model_names.map((name, idx) => (
+                                                        <div key={idx}>
+                                                            <Link
+                                                                to={`/models/${req.model_ids[idx]}`}
+                                                                className="font-medium text-blue-600 hover:text-blue-800 text-sm"
+                                                            >
+                                                                {name}
+                                                            </Link>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            )}
                                         </td>
                                         <td className="px-6 py-4 whitespace-nowrap text-sm">
                                             {req.validation_type}
@@ -534,13 +564,28 @@ export default function ValidatorDashboardPage() {
                                         <td className="px-6 py-4 whitespace-nowrap text-sm font-mono">
                                             #{req.request_id}
                                         </td>
-                                        <td className="px-6 py-4 whitespace-nowrap">
-                                            <Link
-                                                to={`/models/${req.model_id}`}
-                                                className="font-medium text-blue-600 hover:text-blue-800"
-                                            >
-                                                {req.model_name}
-                                            </Link>
+                                        <td className="px-6 py-4">
+                                            {req.model_ids.length === 1 ? (
+                                                <Link
+                                                    to={`/models/${req.model_ids[0]}`}
+                                                    className="font-medium text-blue-600 hover:text-blue-800"
+                                                >
+                                                    {req.model_names[0]}
+                                                </Link>
+                                            ) : (
+                                                <div className="space-y-1">
+                                                    {req.model_names.map((name, idx) => (
+                                                        <div key={idx}>
+                                                            <Link
+                                                                to={`/models/${req.model_ids[idx]}`}
+                                                                className="font-medium text-blue-600 hover:text-blue-800 text-sm"
+                                                            >
+                                                                {name}
+                                                            </Link>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            )}
                                         </td>
                                         <td className="px-6 py-4 whitespace-nowrap text-sm">
                                             {req.requestor_name}

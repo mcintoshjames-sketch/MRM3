@@ -497,3 +497,95 @@ class ValidationListResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+# ==================== VALIDATION PLAN SCHEMAS ====================
+
+class ValidationComponentDefinitionResponse(BaseModel):
+    """Response schema for validation component definition."""
+    component_id: int
+    section_number: str
+    section_title: str
+    component_code: str
+    component_title: str
+    is_test_or_analysis: bool
+    expectation_high: str
+    expectation_medium: str
+    expectation_low: str
+    expectation_very_low: str
+    sort_order: int
+    is_active: bool
+
+    class Config:
+        from_attributes = True
+
+
+class ValidationPlanComponentBase(BaseModel):
+    """Base schema for validation plan component."""
+    component_id: int
+    planned_treatment: str  # Planned, NotPlanned, NotApplicable
+    rationale: Optional[str] = None
+    additional_notes: Optional[str] = None
+
+
+class ValidationPlanComponentCreate(ValidationPlanComponentBase):
+    """Schema for creating a validation plan component."""
+    pass
+
+
+class ValidationPlanComponentUpdate(BaseModel):
+    """Schema for updating a validation plan component."""
+    planned_treatment: Optional[str] = None
+    rationale: Optional[str] = None
+    additional_notes: Optional[str] = None
+
+
+class ValidationPlanComponentResponse(ValidationPlanComponentBase):
+    """Response schema for validation plan component."""
+    plan_component_id: int
+    default_expectation: str
+    is_deviation: bool
+    component_definition: ValidationComponentDefinitionResponse
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class ValidationPlanBase(BaseModel):
+    """Base schema for validation plan."""
+    overall_scope_summary: Optional[str] = None
+    material_deviation_from_standard: bool = False
+    overall_deviation_rationale: Optional[str] = None
+
+
+class ValidationPlanCreate(ValidationPlanBase):
+    """Schema for creating a validation plan."""
+    components: List[ValidationPlanComponentCreate] = []
+
+
+class ValidationPlanUpdate(BaseModel):
+    """Schema for updating a validation plan."""
+    overall_scope_summary: Optional[str] = None
+    material_deviation_from_standard: Optional[bool] = None
+    overall_deviation_rationale: Optional[str] = None
+    components: Optional[List[ValidationPlanComponentUpdate]] = None
+
+
+class ValidationPlanResponse(ValidationPlanBase):
+    """Response schema for validation plan."""
+    plan_id: int
+    request_id: int
+    components: List[ValidationPlanComponentResponse]
+    created_at: datetime
+    updated_at: datetime
+
+    # Derived fields for UI convenience
+    model_id: Optional[int] = None
+    model_name: Optional[str] = None
+    risk_tier: Optional[str] = None
+    validation_approach: Optional[str] = None
+
+    class Config:
+        from_attributes = True

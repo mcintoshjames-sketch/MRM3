@@ -4,7 +4,7 @@ from datetime import datetime, date, timedelta
 from typing import Dict, List
 from app.core.database import SessionLocal
 from app.core.security import get_password_hash
-from app.models import User, UserRole, Vendor, EntraUser, Taxonomy, TaxonomyValue, ValidationWorkflowSLA, ValidationPolicy, Region
+from app.models import User, UserRole, Vendor, EntraUser, Taxonomy, TaxonomyValue, ValidationWorkflowSLA, ValidationPolicy, Region, ValidationComponentDefinition
 from app.models.model import Model
 
 
@@ -222,6 +222,112 @@ def seed_taxonomy_reference_data(db):
         description="Functional classification describing what the model does.",
         values=MODEL_TYPE_VALUES,
     )
+
+
+def seed_validation_components(db):
+    """Seed validation component definitions (Figure 3 matrix)."""
+    # Check if already seeded
+    existing_count = db.query(ValidationComponentDefinition).count()
+    if existing_count > 0:
+        print(f"✓ Validation component definitions already seeded ({existing_count} components)")
+        return
+
+    print("Seeding validation component definitions...")
+
+    # Figure 3: Minimum Requirements for Validation Approach
+    # Risk tiers: High (Comprehensive), Medium (Standard), Low (Conceptual), Very Low (Executive Summary)
+    # Expectations: Required, IfApplicable, NotExpected
+
+    components = [
+        # Section 1 – Executive Summary
+        {"section_number": "1", "section_title": "Executive Summary", "component_code": "1.1", "component_title": "Summary", "is_test_or_analysis": False, "sort_order": 1,
+         "expectation_high": "Required", "expectation_medium": "Required", "expectation_low": "Required", "expectation_very_low": "Required"},
+        {"section_number": "1", "section_title": "Executive Summary", "component_code": "1.2", "component_title": "Model Risk and Model Limitation", "is_test_or_analysis": False, "sort_order": 2,
+         "expectation_high": "Required", "expectation_medium": "Required", "expectation_low": "Required", "expectation_very_low": "Required"},
+        {"section_number": "1", "section_title": "Executive Summary", "component_code": "1.3", "component_title": "Recent Updates and Outstanding Issues", "is_test_or_analysis": False, "sort_order": 3,
+         "expectation_high": "Required", "expectation_medium": "Required", "expectation_low": "IfApplicable", "expectation_very_low": "IfApplicable"},
+        {"section_number": "1", "section_title": "Executive Summary", "component_code": "1.4", "component_title": "Scorecard", "is_test_or_analysis": False, "sort_order": 4,
+         "expectation_high": "Required", "expectation_medium": "Required", "expectation_low": "Required", "expectation_very_low": "Required"},
+        {"section_number": "1", "section_title": "Executive Summary", "component_code": "1.5", "component_title": "Model Risk Ranking Template", "is_test_or_analysis": False, "sort_order": 5,
+         "expectation_high": "Required", "expectation_medium": "Required", "expectation_low": "Required", "expectation_very_low": "Required"},
+
+        # Section 2 – Introduction
+        {"section_number": "2", "section_title": "Introduction", "component_code": "2.1", "component_title": "Purpose and Rationale for Modelling", "is_test_or_analysis": False, "sort_order": 6,
+         "expectation_high": "Required", "expectation_medium": "Required", "expectation_low": "Required", "expectation_very_low": "Required"},
+        {"section_number": "2", "section_title": "Introduction", "component_code": "2.2", "component_title": "Product Description", "is_test_or_analysis": False, "sort_order": 7,
+         "expectation_high": "Required", "expectation_medium": "Required", "expectation_low": "Required", "expectation_very_low": "IfApplicable"},
+        {"section_number": "2", "section_title": "Introduction", "component_code": "2.3", "component_title": "Regulatory Requirements", "is_test_or_analysis": False, "sort_order": 8,
+         "expectation_high": "Required", "expectation_medium": "Required", "expectation_low": "IfApplicable", "expectation_very_low": "IfApplicable"},
+        {"section_number": "2", "section_title": "Introduction", "component_code": "2.4", "component_title": "Validation Scope", "is_test_or_analysis": False, "sort_order": 9,
+         "expectation_high": "Required", "expectation_medium": "Required", "expectation_low": "Required", "expectation_very_low": "Required"},
+
+        # Section 3 – Evaluation of Conceptual Soundness
+        {"section_number": "3", "section_title": "Evaluation of Conceptual Soundness", "component_code": "3.1", "component_title": "Model Methodology", "is_test_or_analysis": False, "sort_order": 10,
+         "expectation_high": "Required", "expectation_medium": "Required", "expectation_low": "Required", "expectation_very_low": "Required"},
+        {"section_number": "3", "section_title": "Evaluation of Conceptual Soundness", "component_code": "3.2", "component_title": "Model Development Data", "is_test_or_analysis": False, "sort_order": 11,
+         "expectation_high": "IfApplicable", "expectation_medium": "IfApplicable", "expectation_low": "IfApplicable", "expectation_very_low": "NotExpected"},
+        {"section_number": "3", "section_title": "Evaluation of Conceptual Soundness", "component_code": "3.3", "component_title": "Model Assumptions and Simplifications", "is_test_or_analysis": False, "sort_order": 12,
+         "expectation_high": "Required", "expectation_medium": "Required", "expectation_low": "Required", "expectation_very_low": "IfApplicable"},
+        {"section_number": "3", "section_title": "Evaluation of Conceptual Soundness", "component_code": "3.4", "component_title": "Model Inputs and Model Outputs", "is_test_or_analysis": False, "sort_order": 13,
+         "expectation_high": "Required", "expectation_medium": "Required", "expectation_low": "Required", "expectation_very_low": "IfApplicable"},
+        {"section_number": "3", "section_title": "Evaluation of Conceptual Soundness", "component_code": "3.5", "component_title": "Alternative Modelling", "is_test_or_analysis": True, "sort_order": 14,
+         "expectation_high": "IfApplicable", "expectation_medium": "IfApplicable", "expectation_low": "NotExpected", "expectation_very_low": "NotExpected"},
+        {"section_number": "3", "section_title": "Evaluation of Conceptual Soundness", "component_code": "3.6", "component_title": "Vendor Models", "is_test_or_analysis": False, "sort_order": 15,
+         "expectation_high": "IfApplicable", "expectation_medium": "IfApplicable", "expectation_low": "IfApplicable", "expectation_very_low": "IfApplicable"},
+
+        # Section 4 – Ongoing Monitoring / Benchmarking
+        {"section_number": "4", "section_title": "Ongoing Monitoring / Benchmarking", "component_code": "4.1", "component_title": "Benchmarking", "is_test_or_analysis": True, "sort_order": 16,
+         "expectation_high": "IfApplicable", "expectation_medium": "IfApplicable", "expectation_low": "NotExpected", "expectation_very_low": "NotExpected"},
+        {"section_number": "4", "section_title": "Ongoing Monitoring / Benchmarking", "component_code": "4.2", "component_title": "Process Verification / Replication Testing", "is_test_or_analysis": True, "sort_order": 17,
+         "expectation_high": "Required", "expectation_medium": "Required", "expectation_low": "IfApplicable", "expectation_very_low": "NotExpected"},
+        {"section_number": "4", "section_title": "Ongoing Monitoring / Benchmarking", "component_code": "4.3", "component_title": "Sensitivity Analysis", "is_test_or_analysis": True, "sort_order": 18,
+         "expectation_high": "Required", "expectation_medium": "IfApplicable", "expectation_low": "IfApplicable", "expectation_very_low": "NotExpected"},
+
+        # Section 5 – Outcome Analysis / Model Assessment and Testing
+        {"section_number": "5", "section_title": "Outcome Analysis / Model Assessment and Testing", "component_code": "5.1", "component_title": "Back-testing", "is_test_or_analysis": True, "sort_order": 19,
+         "expectation_high": "IfApplicable", "expectation_medium": "IfApplicable", "expectation_low": "NotExpected", "expectation_very_low": "NotExpected"},
+        {"section_number": "5", "section_title": "Outcome Analysis / Model Assessment and Testing", "component_code": "5.2", "component_title": "Stress Testing", "is_test_or_analysis": True, "sort_order": 20,
+         "expectation_high": "IfApplicable", "expectation_medium": "IfApplicable", "expectation_low": "NotExpected", "expectation_very_low": "NotExpected"},
+        {"section_number": "5", "section_title": "Outcome Analysis / Model Assessment and Testing", "component_code": "5.3", "component_title": "Boundary Testing", "is_test_or_analysis": True, "sort_order": 21,
+         "expectation_high": "Required", "expectation_medium": "IfApplicable", "expectation_low": "IfApplicable", "expectation_very_low": "NotExpected"},
+        {"section_number": "5", "section_title": "Outcome Analysis / Model Assessment and Testing", "component_code": "5.4", "component_title": "Accuracy Testing / Convergence Analysis", "is_test_or_analysis": True, "sort_order": 22,
+         "expectation_high": "IfApplicable", "expectation_medium": "IfApplicable", "expectation_low": "IfApplicable", "expectation_very_low": "NotExpected"},
+        {"section_number": "5", "section_title": "Outcome Analysis / Model Assessment and Testing", "component_code": "5.5", "component_title": "Impact Analysis", "is_test_or_analysis": True, "sort_order": 23,
+         "expectation_high": "Required", "expectation_medium": "Required", "expectation_low": "IfApplicable", "expectation_very_low": "NotExpected"},
+        {"section_number": "5", "section_title": "Outcome Analysis / Model Assessment and Testing", "component_code": "5.6", "component_title": "Other Quantitative / Qualitative Testing", "is_test_or_analysis": True, "sort_order": 24,
+         "expectation_high": "IfApplicable", "expectation_medium": "IfApplicable", "expectation_low": "IfApplicable", "expectation_very_low": "NotExpected"},
+
+        # Section 6 – Model Risk: Limitations and Weakness
+        {"section_number": "6", "section_title": "Model Risk: Limitations and Weakness", "component_code": "6", "component_title": "Model Risk: Limitations and Weakness", "is_test_or_analysis": False, "sort_order": 25,
+         "expectation_high": "Required", "expectation_medium": "Required", "expectation_low": "Required", "expectation_very_low": "IfApplicable"},
+
+        # Section 7 – Conclusion
+        {"section_number": "7", "section_title": "Conclusion", "component_code": "7", "component_title": "Conclusion", "is_test_or_analysis": False, "sort_order": 26,
+         "expectation_high": "Required", "expectation_medium": "Required", "expectation_low": "Required", "expectation_very_low": "Required"},
+
+        # Section 8 – Model Deployment
+        {"section_number": "8", "section_title": "Model Deployment", "component_code": "8", "component_title": "Model Deployment", "is_test_or_analysis": False, "sort_order": 27,
+         "expectation_high": "IfApplicable", "expectation_medium": "IfApplicable", "expectation_low": "IfApplicable", "expectation_very_low": "NotExpected"},
+
+        # Section 9 – Model Performance Monitoring Requirements
+        {"section_number": "9", "section_title": "Model Performance Monitoring Requirements", "component_code": "9", "component_title": "Model Performance Monitoring Requirements", "is_test_or_analysis": False, "sort_order": 28,
+         "expectation_high": "Required", "expectation_medium": "Required", "expectation_low": "Required", "expectation_very_low": "IfApplicable"},
+
+        # Section 10 – Reference
+        {"section_number": "10", "section_title": "Reference", "component_code": "10", "component_title": "Reference", "is_test_or_analysis": False, "sort_order": 29,
+         "expectation_high": "IfApplicable", "expectation_medium": "IfApplicable", "expectation_low": "IfApplicable", "expectation_very_low": "IfApplicable"},
+
+        # Section 11 – Appendix
+        {"section_number": "11", "section_title": "Appendix", "component_code": "11", "component_title": "Appendix", "is_test_or_analysis": False, "sort_order": 30,
+         "expectation_high": "IfApplicable", "expectation_medium": "IfApplicable", "expectation_low": "IfApplicable", "expectation_very_low": "IfApplicable"},
+    ]
+
+    for comp_data in components:
+        component = ValidationComponentDefinition(**comp_data)
+        db.add(component)
+
+    db.commit()
+    print(f"✓ Seeded {len(components)} validation component definitions")
 
 
 def seed_database():
@@ -817,6 +923,10 @@ def seed_database():
 
         # Seed reference taxonomies for Regulatory Category and Model Type
         seed_taxonomy_reference_data(db)
+        db.commit()
+
+        # Seed validation component definitions (Figure 3 matrix)
+        seed_validation_components(db)
         db.commit()
 
         # Create validation workflow SLA configuration

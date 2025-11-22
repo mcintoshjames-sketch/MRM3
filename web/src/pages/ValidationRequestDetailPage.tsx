@@ -3,6 +3,7 @@ import { useParams, useNavigate, Link, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext';
 import api from '../api/client';
 import Layout from '../components/Layout';
+import ValidationPlanForm from '../components/ValidationPlanForm';
 
 interface TaxonomyValue {
     value_id: number;
@@ -125,7 +126,7 @@ interface WorkflowSLA {
     updated_at: string;
 }
 
-type TabType = 'overview' | 'assignments' | 'outcome' | 'approvals' | 'history';
+type TabType = 'overview' | 'plan' | 'assignments' | 'outcome' | 'approvals' | 'history';
 
 export default function ValidationRequestDetailPage() {
     const { id } = useParams<{ id: string }>();
@@ -726,7 +727,7 @@ export default function ValidationRequestDetailPage() {
             {/* Tabs */}
             <div className="border-b border-gray-200 mb-6">
                 <nav className="-mb-px flex space-x-8">
-                    {(['overview', 'assignments', 'outcome', 'approvals', 'history'] as TabType[]).map((tab) => (
+                    {(['overview', 'plan', 'assignments', 'outcome', 'approvals', 'history'] as TabType[]).map((tab) => (
                         <button
                             key={tab}
                             onClick={() => setActiveTab(tab)}
@@ -954,6 +955,15 @@ export default function ValidationRequestDetailPage() {
                             </div>
                         </div>
                     </div>
+                )}
+
+                {activeTab === 'plan' && request && (
+                    <ValidationPlanForm
+                        requestId={request.request_id}
+                        modelName={request.models[0]?.model_name}
+                        riskTier={request.models[0]?.model_id ? 'Loading...' : undefined}
+                        onSave={fetchData}
+                    />
                 )}
 
                 {activeTab === 'assignments' && (

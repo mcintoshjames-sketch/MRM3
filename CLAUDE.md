@@ -363,6 +363,7 @@ const { sortedData, requestSort, getSortIcon } = useTableSort<Validation>(valida
 
 - **Business Rules**:
   - Status transitions enforce valid state machine (cannot skip stages)
+  - **Automatic Intake → Planning transition**: When a validator is assigned to a validation request in INTAKE status, the system automatically transitions it to PLANNING status
   - Validator independence enforced (cannot be model owner/developer)
   - Outcome entry only allowed when status >= Review
   - Request locked from editing once in Pending Approval or Approved status

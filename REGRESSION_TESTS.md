@@ -5,7 +5,7 @@ This document tracks the regression testing strategy and test coverage for itera
 ## Quick Reference
 
 ```bash
-# Run all backend tests (239 tests passing, 4 errors in pre-existing test_rls_banners.py)
+# Run all backend tests (202 tests passing - all tests passing!)
 cd api && python -m pytest
 
 # Run all frontend tests (128 tests passing)
@@ -539,14 +539,15 @@ describe('NewPage', () => {
 | Model Enhancements | ✅ test_model_enhancements.py (21 tests) | ✅ Form + table updated | 2025-11-16 |
 | Authorization & Audit | ✅ test_authorization_audit.py (11 tests) | N/A | 2025-11-16 |
 | Audit Logs API | ✅ test_audit_logs.py (14 tests) | N/A | 2025-11-16 |
-| Model Validation Management | ✅ test_validations.py (35 tests) | ✅ AdminDashboardPage (18) + ValidationsPage (16) | 2025-11-16 |
+| Model Validation Management (Legacy) | ⚠️ Removed - migrated to Validation Workflow | ⚠️ Migrated to validation workflow pages | 2025-11-16 (removed 2025-11-22) |
 | Routing & Navigation | N/A | ✅ App.test.tsx (47 tests) | 2025-11-16 |
-| **Validation Workflow** | ✅ test_validation_workflow.py (36 tests) | ⚠️ ValidationWorkflowPage + ValidationRequestDetailPage (tests pending) | 2025-11-17 |
+| **Validation Workflow** | ✅ test_validation_workflow.py (62 tests) | ⚠️ ValidationWorkflowPage + ValidationRequestDetailPage (tests pending) | 2025-11-17 (updated 2025-11-22) |
 | **Revalidation Lifecycle (Phase 3)** | ✅ test_revalidation.py (30 tests) | N/A (API-only phase) | 2025-11-20 |
 | **Revalidation Lifecycle UI (Phase 4)** | N/A (frontend-only) | ✅ MyPendingSubmissionsPage + ModelDetailsPage + AdminDashboardPage (3 components, test coverage integrated) | 2025-11-20 |
 | **Model Submission Workflow** | ✅ test_model_submission_workflow.py (13 tests) | N/A (API-only phase) | 2025-11-21 |
 | **Regional Version Scope (Phase 7)** | ✅ test_regional_versions.py (12 tests) | ✅ SubmitChangeModal + RegionalVersionsTable + ModelChangeRecordPage | 2025-11-21 |
 | **Deployment Tasks (Phase 8)** | ✅ test_deployment_tasks.py (8 tests) | ✅ MyDeploymentTasksPage | 2025-11-21 |
+| **Validation Plan (Phase 9)** | ✅ Manual API tests (component definitions, plan CRUD) | ✅ ValidationPlanForm component integrated | 2025-11-22 |
 
 **Features Added:**
 - Development type (In-House / Third-Party)

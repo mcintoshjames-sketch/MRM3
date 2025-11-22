@@ -13,7 +13,8 @@ from app.models import (
     User, Model, TaxonomyValue, Taxonomy, AuditLog,
     ValidationRequest, ValidationRequestModelVersion, ValidationStatusHistory, ValidationAssignment,
     ValidationOutcome, ValidationReviewOutcome, ValidationApproval, ValidationGroupingMemory,
-    ValidationPolicy, ModelRegion, Region
+    ValidationPolicy, ModelRegion, Region,
+    ValidationComponentDefinition, ValidationPlan, ValidationPlanComponent
 )
 from app.schemas.validation import (
     ValidationRequestCreate, ValidationRequestUpdate, ValidationRequestStatusUpdate,
@@ -25,7 +26,9 @@ from app.schemas.validation import (
     ValidationOutcomeCreate, ValidationOutcomeUpdate, ValidationOutcomeResponse,
     ValidationReviewOutcomeCreate, ValidationReviewOutcomeUpdate, ValidationReviewOutcomeResponse,
     ValidationApprovalCreate, ValidationApprovalUpdate, ValidationApprovalResponse,
-    ValidationStatusHistoryResponse
+    ValidationStatusHistoryResponse,
+    ValidationComponentDefinitionResponse,
+    ValidationPlanCreate, ValidationPlanUpdate, ValidationPlanResponse
 )
 
 router = APIRouter()
@@ -1632,6 +1635,45 @@ def create_assignment(
     )
     db.add(audit_log)
 
+    # Auto-transition from INTAKE to PLANNING when first validator is assigned
+    if validation_request.current_status and validation_request.current_status.code == "INTAKE":
+        # Get PLANNING status
+        planning_status = db.query(TaxonomyValue).join(Taxonomy).filter(
+            Taxonomy.name == "Validation Request Status",
+            TaxonomyValue.code == "PLANNING"
+        ).first()
+
+        if planning_status:
+            old_status_id = validation_request.current_status_id
+            validation_request.current_status_id = planning_status.value_id
+            validation_request.updated_at = datetime.utcnow()
+
+            # Create status history entry
+            create_status_history_entry(
+                db,
+                request_id,
+                old_status_id,
+                planning_status.value_id,
+                current_user.user_id,
+                f"Auto-transitioned to Planning when {validator.full_name} was assigned"
+            )
+
+            # Create audit log for status change
+            status_audit = AuditLog(
+                entity_type="ValidationRequest",
+                entity_id=request_id,
+                action="UPDATE",
+                user_id=current_user.user_id,
+                changes={
+                    "field": "current_status",
+                    "old_value": "INTAKE",
+                    "new_value": "PLANNING",
+                    "reason": "Auto-transitioned when validator assigned"
+                },
+                timestamp=datetime.utcnow()
+            )
+            db.add(status_audit)
+
     db.commit()
     db.refresh(assignment)
 
@@ -3109,3 +3151,436 @@ def get_model_revalidation_status(
 
     # Use helper function to calculate revalidation status
     return calculate_model_revalidation_status(model, db)
+
+
+# ==================== VALIDATION PLAN ENDPOINTS ====================
+
+@router.get("/component-definitions", response_model=List[ValidationComponentDefinitionResponse])
+def list_validation_component_definitions(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Get all validation component definitions (Figure 3 matrix).
+    Returns the master list of validation components with expectations per risk tier.
+    """
+    components = db.query(ValidationComponentDefinition).filter(
+        ValidationComponentDefinition.is_active == True
+    ).order_by(ValidationComponentDefinition.sort_order).all()
+
+    return components
+
+
+def get_expectation_for_tier(component: ValidationComponentDefinition, risk_tier_code: str) -> str:
+    """Helper to get expectation for a given risk tier."""
+    tier_mapping = {
+        "TIER_1": component.expectation_high,
+        "TIER_2": component.expectation_medium,
+        "TIER_3": component.expectation_low,
+        "TIER_4": component.expectation_very_low,
+        # Legacy fallbacks for backwards compatibility
+        "HIGH": component.expectation_high,
+        "MEDIUM": component.expectation_medium,
+        "LOW": component.expectation_low,
+        "VERY_LOW": component.expectation_very_low
+    }
+    return tier_mapping.get(risk_tier_code, "Required")
+
+
+def calculate_is_deviation(default_expectation: str, planned_treatment: str) -> bool:
+    """
+    Calculate if a planned treatment is a deviation from the default expectation.
+
+    Deviation cases:
+    - Required -> NotPlanned or NotApplicable
+    - NotExpected -> Planned
+    - IfApplicable -> (no automatic deviation, requires judgment)
+    """
+    if default_expectation == "Required" and planned_treatment in ["NotPlanned", "NotApplicable"]:
+        return True
+    if default_expectation == "NotExpected" and planned_treatment == "Planned":
+        return True
+    return False
+
+
+@router.post("/requests/{request_id}/plan", response_model=ValidationPlanResponse, status_code=status.HTTP_201_CREATED)
+def create_validation_plan(
+    request_id: int,
+    plan_data: ValidationPlanCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Create a validation plan for a validation request.
+
+    The plan captures which validation components are planned or not planned,
+    with rationale for deviations from bank standards.
+    """
+    check_validator_or_admin(current_user)
+
+    # Get validation request
+    request = db.query(ValidationRequest).options(
+        joinedload(ValidationRequest.model_versions_assoc).joinedload(ValidationRequestModelVersion.model).joinedload(Model.risk_tier)
+    ).filter(ValidationRequest.request_id == request_id).first()
+
+    if not request:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Validation request {request_id} not found"
+        )
+
+    # Check if plan already exists
+    existing_plan = db.query(ValidationPlan).filter(ValidationPlan.request_id == request_id).first()
+    if existing_plan:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Validation plan already exists for this request. Use PATCH to update."
+        )
+
+    # Get model and risk tier
+    if not request.model_versions_assoc or len(request.model_versions_assoc) == 0:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Validation request must have at least one model associated"
+        )
+
+    # Use most conservative (highest risk) tier among all models in the validation project
+    # Risk tier hierarchy: TIER_1 (High) > TIER_2 (Medium) > TIER_3 (Low) > TIER_4 (Very Low)
+    tier_hierarchy = {"TIER_1": 1, "TIER_2": 2, "TIER_3": 3, "TIER_4": 4}
+    most_conservative_tier = "TIER_2"  # Default to medium
+    highest_risk_level = 4  # Start with lowest risk
+
+    for model_version_assoc in request.model_versions_assoc:
+        model = model_version_assoc.model
+        if model.risk_tier and model.risk_tier.code:
+            tier_code = model.risk_tier.code
+            risk_level = tier_hierarchy.get(tier_code, 2)
+            if risk_level < highest_risk_level:  # Lower number = higher risk
+                highest_risk_level = risk_level
+                most_conservative_tier = tier_code
+
+    risk_tier_code = most_conservative_tier
+    # Get first model for response metadata (model name, etc.)
+    first_model = request.model_versions_assoc[0].model
+
+    # Validate material deviation rationale
+    if plan_data.material_deviation_from_standard and not plan_data.overall_deviation_rationale:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="overall_deviation_rationale is required when material_deviation_from_standard is true"
+        )
+
+    # Create validation plan
+    new_plan = ValidationPlan(
+        request_id=request_id,
+        overall_scope_summary=plan_data.overall_scope_summary,
+        material_deviation_from_standard=plan_data.material_deviation_from_standard,
+        overall_deviation_rationale=plan_data.overall_deviation_rationale
+    )
+    db.add(new_plan)
+    db.flush()  # Get plan_id
+
+    # Get all component definitions
+    all_components = db.query(ValidationComponentDefinition).filter(
+        ValidationComponentDefinition.is_active == True
+    ).order_by(ValidationComponentDefinition.sort_order).all()
+
+    # Create component entries
+    # If components are provided in the request, use those; otherwise create defaults
+    if plan_data.components:
+        # User provided specific components
+        for comp_data in plan_data.components:
+            # Get component definition
+            comp_def = db.query(ValidationComponentDefinition).filter(
+                ValidationComponentDefinition.component_id == comp_data.component_id
+            ).first()
+
+            if not comp_def:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail=f"Component {comp_data.component_id} not found"
+                )
+
+            # Get default expectation for this tier
+            default_expectation = get_expectation_for_tier(comp_def, risk_tier_code)
+
+            # Calculate deviation
+            is_deviation = calculate_is_deviation(default_expectation, comp_data.planned_treatment)
+
+            # Validate rationale if deviation
+            if is_deviation and not comp_data.rationale:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Rationale is required for component {comp_def.component_code} because it deviates from the bank standard"
+                )
+
+            # Create plan component
+            plan_comp = ValidationPlanComponent(
+                plan_id=new_plan.plan_id,
+                component_id=comp_data.component_id,
+                default_expectation=default_expectation,
+                planned_treatment=comp_data.planned_treatment,
+                is_deviation=is_deviation,
+                rationale=comp_data.rationale,
+                additional_notes=comp_data.additional_notes
+            )
+            db.add(plan_comp)
+    else:
+        # Auto-create all components with defaults
+        for comp_def in all_components:
+            default_expectation = get_expectation_for_tier(comp_def, risk_tier_code)
+
+            # Default planned_treatment to match expectation
+            if default_expectation == "Required":
+                planned_treatment = "Planned"
+            elif default_expectation == "NotExpected":
+                planned_treatment = "NotPlanned"
+            else:  # IfApplicable
+                planned_treatment = "Planned"  # Default to planned, validator can change
+
+            plan_comp = ValidationPlanComponent(
+                plan_id=new_plan.plan_id,
+                component_id=comp_def.component_id,
+                default_expectation=default_expectation,
+                planned_treatment=planned_treatment,
+                is_deviation=False  # No deviation when using defaults
+            )
+            db.add(plan_comp)
+
+    db.commit()
+    db.refresh(new_plan)
+
+    # Build response with derived fields
+    response_data = ValidationPlanResponse.model_validate(new_plan)
+    response_data.model_id = first_model.model_id
+    response_data.model_name = first_model.model_name
+
+    # Find the risk tier label for the most conservative tier used for the plan
+    risk_tier_taxonomy = db.query(TaxonomyValue).filter(
+        TaxonomyValue.code == risk_tier_code
+    ).first()
+    response_data.risk_tier = risk_tier_taxonomy.label if risk_tier_taxonomy else "Unknown"
+
+    # Map risk tier to validation approach
+    tier_to_approach = {
+        "TIER_1": "Comprehensive",
+        "TIER_2": "Standard",
+        "TIER_3": "Conceptual",
+        "TIER_4": "Executive Summary",
+        # Legacy fallbacks
+        "HIGH": "Comprehensive",
+        "MEDIUM": "Standard",
+        "LOW": "Conceptual",
+        "VERY_LOW": "Executive Summary"
+    }
+    response_data.validation_approach = tier_to_approach.get(risk_tier_code, "Standard")
+
+    return response_data
+
+
+@router.get("/requests/{request_id}/plan", response_model=ValidationPlanResponse)
+def get_validation_plan(
+    request_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Get the validation plan for a validation request.
+    """
+    # Get validation request
+    request = db.query(ValidationRequest).options(
+        joinedload(ValidationRequest.model_versions_assoc).joinedload(ValidationRequestModelVersion.model).joinedload(Model.risk_tier)
+    ).filter(ValidationRequest.request_id == request_id).first()
+
+    if not request:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Validation request {request_id} not found"
+        )
+
+    # Get validation plan
+    plan = db.query(ValidationPlan).options(
+        joinedload(ValidationPlan.components).joinedload(ValidationPlanComponent.component_definition)
+    ).filter(ValidationPlan.request_id == request_id).first()
+
+    if not plan:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Validation plan not found for request {request_id}"
+        )
+
+    # Build response with derived fields
+    model = request.model_versions_assoc[0].model if request.model_versions_assoc else None
+    response_data = ValidationPlanResponse.model_validate(plan)
+
+    if model:
+        response_data.model_id = model.model_id
+        response_data.model_name = model.model_name
+        response_data.risk_tier = model.risk_tier.label if model.risk_tier else "Unknown"
+
+        risk_tier_code = model.risk_tier.code if model.risk_tier else "MEDIUM"
+        tier_to_approach = {
+            "HIGH": "Comprehensive",
+            "MEDIUM": "Standard",
+            "LOW": "Conceptual",
+            "VERY_LOW": "Executive Summary"
+        }
+        response_data.validation_approach = tier_to_approach.get(risk_tier_code, "Standard")
+
+    return response_data
+
+
+@router.patch("/requests/{request_id}/plan", response_model=ValidationPlanResponse)
+def update_validation_plan(
+    request_id: int,
+    plan_updates: ValidationPlanUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Update a validation plan.
+
+    Allows updating:
+    - Overall scope summary
+    - Material deviation flag and rationale
+    - Individual component planned treatments and rationales
+    """
+    check_validator_or_admin(current_user)
+
+    # Get validation request
+    request = db.query(ValidationRequest).options(
+        joinedload(ValidationRequest.model_versions_assoc).joinedload(ValidationRequestModelVersion.model).joinedload(Model.risk_tier)
+    ).filter(ValidationRequest.request_id == request_id).first()
+
+    if not request:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Validation request {request_id} not found"
+        )
+
+    # Get validation plan
+    plan = db.query(ValidationPlan).options(
+        joinedload(ValidationPlan.components).joinedload(ValidationPlanComponent.component_definition)
+    ).filter(ValidationPlan.request_id == request_id).first()
+
+    if not plan:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Validation plan not found for request {request_id}"
+        )
+
+    # Update plan header fields
+    if plan_updates.overall_scope_summary is not None:
+        plan.overall_scope_summary = plan_updates.overall_scope_summary
+
+    if plan_updates.material_deviation_from_standard is not None:
+        plan.material_deviation_from_standard = plan_updates.material_deviation_from_standard
+
+        # Validate rationale if material deviation
+        if plan.material_deviation_from_standard:
+            if plan_updates.overall_deviation_rationale:
+                plan.overall_deviation_rationale = plan_updates.overall_deviation_rationale
+            elif not plan.overall_deviation_rationale:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="overall_deviation_rationale is required when material_deviation_from_standard is true"
+                )
+        else:
+            plan.overall_deviation_rationale = plan_updates.overall_deviation_rationale
+    elif plan_updates.overall_deviation_rationale is not None:
+        plan.overall_deviation_rationale = plan_updates.overall_deviation_rationale
+
+    # Update component entries
+    if plan_updates.components:
+        # Get model risk tier for deviation calculation
+        model = request.model_versions_assoc[0].model if request.model_versions_assoc else None
+        risk_tier_code = model.risk_tier.code if (model and model.risk_tier) else "MEDIUM"
+
+        for comp_update in plan_updates.components:
+            # Find existing component (match by component_id in update with our plan components)
+            plan_comp = next(
+                (pc for pc in plan.components if pc.component_id == comp_update.component_id),
+                None
+            )
+
+            if not plan_comp:
+                # Component doesn't exist in plan yet - skip or error
+                continue
+
+            # Update fields
+            if comp_update.planned_treatment:
+                plan_comp.planned_treatment = comp_update.planned_treatment
+
+                # Recalculate deviation
+                plan_comp.is_deviation = calculate_is_deviation(
+                    plan_comp.default_expectation,
+                    comp_update.planned_treatment
+                )
+
+                # Validate rationale if deviation
+                if plan_comp.is_deviation:
+                    if comp_update.rationale:
+                        plan_comp.rationale = comp_update.rationale
+                    elif not plan_comp.rationale:
+                        comp_def = plan_comp.component_definition
+                        raise HTTPException(
+                            status_code=status.HTTP_400_BAD_REQUEST,
+                            detail=f"Rationale is required for component {comp_def.component_code} because it deviates from the bank standard"
+                        )
+                else:
+                    plan_comp.rationale = comp_update.rationale
+            elif comp_update.rationale is not None:
+                plan_comp.rationale = comp_update.rationale
+
+            if comp_update.additional_notes is not None:
+                plan_comp.additional_notes = comp_update.additional_notes
+
+    db.commit()
+    db.refresh(plan)
+
+    # Build response
+    model = request.model_versions_assoc[0].model if request.model_versions_assoc else None
+    response_data = ValidationPlanResponse.model_validate(plan)
+
+    if model:
+        response_data.model_id = model.model_id
+        response_data.model_name = model.model_name
+        response_data.risk_tier = model.risk_tier.label if model.risk_tier else "Unknown"
+
+        risk_tier_code = model.risk_tier.code if model.risk_tier else "MEDIUM"
+        tier_to_approach = {
+            "HIGH": "Comprehensive",
+            "MEDIUM": "Standard",
+            "LOW": "Conceptual",
+            "VERY_LOW": "Executive Summary"
+        }
+        response_data.validation_approach = tier_to_approach.get(risk_tier_code, "Standard")
+
+    return response_data
+
+
+@router.delete("/requests/{request_id}/plan", status_code=status.HTTP_204_NO_CONTENT)
+def delete_validation_plan(
+    request_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Delete a validation plan.
+    Only Validators and Admins can delete plans.
+    """
+    check_validator_or_admin(current_user)
+
+    # Get validation plan
+    plan = db.query(ValidationPlan).filter(ValidationPlan.request_id == request_id).first()
+
+    if not plan:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Validation plan not found for request {request_id}"
+        )
+
+    db.delete(plan)
+    db.commit()
+
+    return None
