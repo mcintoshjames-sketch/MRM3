@@ -735,10 +735,15 @@ def update_model(
 
     # Track changes for audit log
     changes_made = {}
+    risk_tier_changed = False
+    old_risk_tier_id = model.risk_tier_id
+
     for field, value in update_data.items():
         old_value = getattr(model, field, None)
         if old_value != value:
             changes_made[field] = {"old": old_value, "new": value}
+            if field == "risk_tier_id":
+                risk_tier_changed = True
         setattr(model, field, value)
 
     if user_ids_changed:
@@ -780,6 +785,17 @@ def update_model(
 
     db.commit()
     db.refresh(model)
+
+    # Recalculate validation plan expectations if risk tier changed
+    if risk_tier_changed and model.risk_tier:
+        from app.api.validation_workflow import recalculate_plan_expectations_for_model
+        plans_updated = recalculate_plan_expectations_for_model(
+            db=db,
+            model_id=model_id,
+            new_risk_tier_code=model.risk_tier.code
+        )
+        if plans_updated > 0:
+            changes_made["validation_plans_recalculated"] = plans_updated
 
     # Reload with relationships
     from app.models import ModelSubmissionComment

@@ -535,6 +535,7 @@ class ValidationPlanComponentCreate(ValidationPlanComponentBase):
 
 class ValidationPlanComponentUpdate(BaseModel):
     """Schema for updating a validation plan component."""
+    component_id: int  # Required to identify which component to update
     planned_treatment: Optional[str] = None
     rationale: Optional[str] = None
     additional_notes: Optional[str] = None

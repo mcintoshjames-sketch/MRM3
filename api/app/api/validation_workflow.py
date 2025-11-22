@@ -4,8 +4,12 @@ from dateutil.relativedelta import relativedelta
 from typing import List, Optional, Union, Dict
 import json
 from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import desc, or_, func
+from fpdf import FPDF
+import tempfile
+import os
 
 from app.core.database import get_db
 from app.core.deps import get_current_user
@@ -1372,11 +1376,29 @@ def update_validation_request_status(
             raise HTTPException(
                 status_code=400, detail="Cannot move to Review without assigned validators")
 
+        # Validate plan compliance (deviations must have rationale)
+        is_valid, validation_errors = validate_plan_compliance(db, request_id)
+        if not is_valid:
+            error_message = "Validation plan compliance issues:\n" + "\n".join(f"• {err}" for err in validation_errors)
+            raise HTTPException(
+                status_code=400,
+                detail=error_message
+            )
+
     if new_status_code == "PENDING_APPROVAL":
         # Must have an outcome created
         if not validation_request.outcome:
             raise HTTPException(
                 status_code=400, detail="Cannot move to Pending Approval without creating outcome")
+
+        # Validate plan compliance (deviations must have rationale)
+        is_valid, validation_errors = validate_plan_compliance(db, request_id)
+        if not is_valid:
+            error_message = "Validation plan compliance issues:\n" + "\n".join(f"• {err}" for err in validation_errors)
+            raise HTTPException(
+                status_code=400,
+                detail=error_message
+            )
 
         # If a reviewer is assigned, they must have signed off
         reviewer_assignment = db.query(ValidationAssignment).filter(
@@ -3357,6 +3379,120 @@ def calculate_is_deviation(default_expectation: str, planned_treatment: str) -> 
     return False
 
 
+def recalculate_plan_expectations_for_model(
+    db: Session,
+    model_id: int,
+    new_risk_tier_code: str
+) -> int:
+    """
+    Recalculate validation plan expectations when a model's risk tier changes.
+
+    This function:
+    1. Finds all unlocked validation plans for the given model
+    2. Recalculates default_expectation for each component based on new risk tier
+    3. Recalculates is_deviation flag
+    4. Updates the plans in the database
+
+    Returns the number of plans updated.
+    """
+    # Find all unlocked validation plans for this model
+    # A plan is unlocked if locked_at is NULL
+    plans = db.query(ValidationPlan).join(
+        ValidationRequest, ValidationPlan.request_id == ValidationRequest.request_id
+    ).join(
+        ValidationRequestModelVersion, ValidationRequest.request_id == ValidationRequestModelVersion.request_id
+    ).filter(
+        ValidationRequestModelVersion.model_id == model_id,
+        ValidationPlan.locked_at == None  # Only unlocked plans
+    ).options(
+        joinedload(ValidationPlan.components).joinedload(ValidationPlanComponent.component_definition)
+    ).all()
+
+    if not plans:
+        return 0
+
+    plans_updated = 0
+
+    # Map risk tier codes to expectation field names
+    tier_to_field = {
+        "HIGH": "expectation_high",
+        "MEDIUM": "expectation_medium",
+        "LOW": "expectation_low",
+        "VERY_LOW": "expectation_very_low"
+    }
+
+    expectation_field = tier_to_field.get(new_risk_tier_code, "expectation_medium")
+
+    for plan in plans:
+        components_updated = False
+
+        for component in plan.components:
+            comp_def = component.component_definition
+
+            # Get new default expectation based on new risk tier
+            old_default_expectation = component.default_expectation
+            new_default_expectation = getattr(comp_def, expectation_field, "NotExpected")
+
+            if old_default_expectation != new_default_expectation:
+                component.default_expectation = new_default_expectation
+
+                # Recalculate is_deviation
+                component.is_deviation = calculate_is_deviation(
+                    new_default_expectation,
+                    component.planned_treatment
+                )
+
+                components_updated = True
+
+        if components_updated:
+            plans_updated += 1
+
+    if plans_updated > 0:
+        db.commit()
+
+    return plans_updated
+
+
+def validate_plan_compliance(db: Session, request_id: int) -> tuple[bool, List[str]]:
+    """
+    Validate that a validation plan meets compliance requirements before submission.
+
+    Checks:
+    1. All components marked as deviation must have rationale
+    2. If material_deviation_from_standard is true, must have overall_deviation_rationale
+
+    Returns: (is_valid, list_of_error_messages)
+    """
+    errors = []
+
+    # Get the validation plan
+    plan = db.query(ValidationPlan).options(
+        joinedload(ValidationPlan.components)
+    ).filter(ValidationPlan.request_id == request_id).first()
+
+    if not plan:
+        # No plan exists - this is handled elsewhere
+        return True, []
+
+    # Check if material deviation has rationale
+    if plan.material_deviation_from_standard:
+        if not plan.overall_deviation_rationale or not plan.overall_deviation_rationale.strip():
+            errors.append(
+                "Material deviation from standard is marked, but no overall deviation rationale provided"
+            )
+
+    # Check all component deviations have rationale
+    for comp in plan.components:
+        if comp.is_deviation:
+            if not comp.rationale or not comp.rationale.strip():
+                errors.append(
+                    f"Component {comp.component_definition.component_code} ({comp.component_definition.component_title}) "
+                    f"is marked as deviation but has no rationale"
+                )
+
+    return len(errors) == 0, errors
+
+
 @router.post("/requests/{request_id}/plan", response_model=ValidationPlanResponse, status_code=status.HTTP_201_CREATED)
 def create_validation_plan(
     request_id: int,
@@ -3750,6 +3886,231 @@ def get_validation_plan(
     return response_data
 
 
+@router.get("/requests/{request_id}/plan/pdf")
+def export_validation_plan_pdf(
+    request_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Export validation plan as a professional PDF document.
+    """
+    # Get validation request
+    request = db.query(ValidationRequest).options(
+        joinedload(ValidationRequest.model_versions_assoc).joinedload(ValidationRequestModelVersion.model).joinedload(Model.risk_tier),
+        joinedload(ValidationRequest.validation_type)
+    ).filter(ValidationRequest.request_id == request_id).first()
+
+    if not request:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Validation request {request_id} not found"
+        )
+
+    # Get validation plan
+    plan = db.query(ValidationPlan).options(
+        joinedload(ValidationPlan.components).joinedload(ValidationPlanComponent.component_definition)
+    ).filter(ValidationPlan.request_id == request_id).first()
+
+    if not plan:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Validation plan not found for request {request_id}"
+        )
+
+    # Get model info
+    model = request.model_versions_assoc[0].model if request.model_versions_assoc else None
+    model_name = model.model_name if model else "Unknown Model"
+    risk_tier = model.risk_tier.label if model and model.risk_tier else "Unknown"
+
+    # Determine validation approach
+    risk_tier_code = model.risk_tier.code if model and model.risk_tier else "MEDIUM"
+    tier_to_approach = {
+        "HIGH": "Comprehensive",
+        "MEDIUM": "Standard",
+        "LOW": "Conceptual",
+        "VERY_LOW": "Executive Summary"
+    }
+    validation_approach = tier_to_approach.get(risk_tier_code, "Standard")
+
+    validation_type = request.validation_type.label if request.validation_type else "Unknown"
+
+    # Create PDF
+    class ValidationPlanPDF(FPDF):
+        def header(self):
+            self.set_font('Arial', 'B', 16)
+            self.cell(0, 10, 'Model Validation Plan', 0, 1, 'C')
+            self.ln(5)
+
+        def footer(self):
+            self.set_y(-15)
+            self.set_font('Arial', 'I', 8)
+            self.cell(0, 10, f'Page {self.page_no()}/{{nb}}', 0, 0, 'C')
+
+    pdf = ValidationPlanPDF()
+    pdf.alias_nb_pages()
+    pdf.add_page()
+    pdf.set_auto_page_break(auto=True, margin=15)
+
+    # Header Information
+    pdf.set_font('Arial', 'B', 12)
+    pdf.cell(0, 8, 'Validation Request Information', 0, 1)
+    pdf.ln(2)
+
+    pdf.set_font('Arial', '', 10)
+    info_data = [
+        ('Request ID:', str(request_id)),
+        ('Model Name:', model_name),
+        ('Risk Tier:', risk_tier),
+        ('Validation Type:', validation_type),
+        ('Validation Approach:', validation_approach),
+        ('Created:', plan.created_at.strftime('%Y-%m-%d') if plan.created_at else 'N/A'),
+        ('Last Updated:', plan.updated_at.strftime('%Y-%m-%d') if plan.updated_at else 'N/A')
+    ]
+
+    for label, value in info_data:
+        pdf.set_font('Arial', 'B', 10)
+        pdf.cell(50, 6, label, 0, 0)
+        pdf.set_font('Arial', '', 10)
+        pdf.cell(0, 6, value, 0, 1)
+
+    pdf.ln(5)
+
+    # Overall Scope Summary
+    if plan.overall_scope_summary:
+        pdf.set_font('Arial', 'B', 12)
+        pdf.cell(0, 8, 'Overall Scope Summary', 0, 1)
+        pdf.ln(2)
+        pdf.set_font('Arial', '', 10)
+        pdf.multi_cell(0, 5, plan.overall_scope_summary or 'N/A')
+        pdf.ln(3)
+
+    # Material Deviation Information
+    pdf.set_font('Arial', 'B', 12)
+    pdf.cell(0, 8, 'Material Deviation from Standard', 0, 1)
+    pdf.ln(2)
+    pdf.set_font('Arial', '', 10)
+    pdf.cell(0, 6, 'Yes' if plan.material_deviation_from_standard else 'No', 0, 1)
+
+    if plan.material_deviation_from_standard and plan.overall_deviation_rationale:
+        pdf.set_font('Arial', 'B', 10)
+        pdf.cell(0, 6, 'Rationale:', 0, 1)
+        pdf.set_font('Arial', '', 10)
+        pdf.multi_cell(0, 5, plan.overall_deviation_rationale)
+
+    pdf.ln(5)
+
+    # Validation Components by Section
+    pdf.set_font('Arial', 'B', 12)
+    pdf.cell(0, 8, 'Validation Components', 0, 1)
+    pdf.ln(3)
+
+    # Group components by section
+    components_by_section = {}
+    for comp in plan.components:
+        section = comp.component_definition.section_number
+        if section not in components_by_section:
+            components_by_section[section] = {
+                'title': comp.component_definition.section_title,
+                'components': []
+            }
+        components_by_section[section]['components'].append(comp)
+
+    # Render each section
+    for section_num in sorted(components_by_section.keys()):
+        section_data = components_by_section[section_num]
+
+        # Section header
+        pdf.set_font('Arial', 'B', 11)
+        pdf.cell(0, 7, f"Section {section_num}: {section_data['title']}", 0, 1)
+        pdf.ln(1)
+
+        # Table header
+        pdf.set_font('Arial', 'B', 9)
+        pdf.set_fill_color(200, 200, 200)
+        pdf.cell(30, 6, 'Code', 1, 0, 'C', True)
+        pdf.cell(50, 6, 'Component', 1, 0, 'C', True)
+        pdf.cell(30, 6, 'Expectation', 1, 0, 'C', True)
+        pdf.cell(30, 6, 'Treatment', 1, 0, 'C', True)
+        pdf.cell(50, 6, 'Deviation', 1, 1, 'C', True)
+
+        # Components
+        pdf.set_font('Arial', '', 8)
+        for comp in section_data['components']:
+            comp_def = comp.component_definition
+
+            # Component code
+            pdf.cell(30, 6, comp_def.component_code, 1, 0)
+
+            # Component title (truncate if too long)
+            title = comp_def.component_title[:30] + '...' if len(comp_def.component_title) > 30 else comp_def.component_title
+            pdf.cell(50, 6, title, 1, 0)
+
+            # Default expectation
+            pdf.cell(30, 6, comp.default_expectation, 1, 0)
+
+            # Planned treatment
+            treatment_map = {
+                'Planned': 'Planned',
+                'NotPlanned': 'Not Planned',
+                'NotApplicable': 'N/A'
+            }
+            treatment = treatment_map.get(comp.planned_treatment, comp.planned_treatment)
+            pdf.cell(30, 6, treatment, 1, 0)
+
+            # Deviation status
+            deviation_text = 'Yes' if comp.is_deviation else 'No'
+            if comp.is_deviation:
+                pdf.set_fill_color(255, 240, 200)
+                pdf.cell(50, 6, deviation_text, 1, 1, 'C', True)
+            else:
+                pdf.cell(50, 6, deviation_text, 1, 1, 'C')
+
+            # Add rationale if present
+            if comp.rationale and comp.rationale.strip():
+                pdf.set_font('Arial', 'I', 7)
+                pdf.set_x(40)
+                rationale_text = f"Rationale: {comp.rationale[:100]}..." if len(comp.rationale) > 100 else f"Rationale: {comp.rationale}"
+                pdf.multi_cell(150, 4, rationale_text)
+                pdf.set_font('Arial', '', 8)
+
+        pdf.ln(3)
+
+    # Summary statistics
+    total_components = len(plan.components)
+    planned_components = sum(1 for c in plan.components if c.planned_treatment == 'Planned')
+    deviations = sum(1 for c in plan.components if c.is_deviation)
+
+    pdf.ln(5)
+    pdf.set_font('Arial', 'B', 12)
+    pdf.cell(0, 8, 'Summary Statistics', 0, 1)
+    pdf.ln(2)
+
+    pdf.set_font('Arial', '', 10)
+    pdf.cell(0, 6, f'Total Components: {total_components}', 0, 1)
+    pdf.cell(0, 6, f'Planned Components: {planned_components}', 0, 1)
+    pdf.cell(0, 6, f'Total Deviations: {deviations}', 0, 1)
+
+    if total_components > 0:
+        deviation_rate = (deviations / total_components) * 100
+        pdf.cell(0, 6, f'Deviation Rate: {deviation_rate:.1f}%', 0, 1)
+
+    # Save PDF to temporary file
+    temp_file = tempfile.NamedTemporaryFile(delete=False, suffix='.pdf')
+    pdf.output(temp_file.name)
+    temp_file.close()
+
+    # Return as file response
+    filename = f"validation_plan_request_{request_id}_{model_name.replace(' ', '_')}.pdf"
+
+    return FileResponse(
+        temp_file.name,
+        media_type='application/pdf',
+        filename=filename,
+        background=lambda: os.unlink(temp_file.name)  # Clean up temp file after sending
+    )
+
+
 @router.patch("/requests/{request_id}/plan", response_model=ValidationPlanResponse)
 def update_validation_plan(
     request_id: int,
@@ -3887,12 +4248,22 @@ def delete_validation_plan(
 ):
     """
     Delete a validation plan.
-    Only Validators and Admins can delete plans.
+
+    Business Rules:
+    - Only Validators and Admins can delete plans
+    - Plan must be unlocked (locked_at is NULL)
+    - Once a plan is locked (in Review, Pending Approval, or Approved status), it cannot be deleted
+
+    Use Case:
+    - Validator realizes they need to start over before submitting for review
+    - Plan was created with wrong template or configuration
     """
     check_validator_or_admin(current_user)
 
-    # Get validation plan
-    plan = db.query(ValidationPlan).filter(ValidationPlan.request_id == request_id).first()
+    # Get validation plan with request info
+    plan = db.query(ValidationPlan).options(
+        joinedload(ValidationPlan.request)
+    ).filter(ValidationPlan.request_id == request_id).first()
 
     if not plan:
         raise HTTPException(
@@ -3900,6 +4271,34 @@ def delete_validation_plan(
             detail=f"Validation plan not found for request {request_id}"
         )
 
+    # Check if plan is locked
+    if plan.locked_at:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cannot delete a locked validation plan. Locked plans have been submitted for review or approval and must be preserved for regulatory compliance."
+        )
+
+    # Store plan info for audit log before deletion
+    plan_id = plan.plan_id
+    component_count = len(plan.components)
+
+    # Create audit log BEFORE deletion
+    audit_log = AuditLog(
+        entity_type="ValidationPlan",
+        entity_id=plan_id,
+        action="DELETE",
+        user_id=current_user.user_id,
+        changes={
+            "request_id": request_id,
+            "component_count": component_count,
+            "was_locked": False,
+            "reason": "Validation plan deleted before lock-in"
+        },
+        timestamp=datetime.utcnow()
+    )
+    db.add(audit_log)
+
+    # Delete plan (cascade will delete components)
     db.delete(plan)
     db.commit()
 
@@ -4033,3 +4432,140 @@ def publish_new_configuration(
     db.commit()
 
     return new_config
+
+
+@router.get("/compliance-report/deviation-trends")
+def get_deviation_trends_report(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Generate compliance report showing deviation trends across all validations.
+    Includes counts of deviations by component, risk tier, and over time.
+    """
+    # Get all validation plans with components
+    plans = db.query(ValidationPlan).options(
+        joinedload(ValidationPlan.components).joinedload(ValidationPlanComponent.component_definition),
+        joinedload(ValidationPlan.request).joinedload(ValidationRequest.model_versions)
+    ).all()
+
+    # Calculate deviation statistics
+    total_plans = len(plans)
+    total_components = 0
+    total_deviations = 0
+    plans_with_deviations = 0
+
+    deviation_by_component = {}  # component_code -> count
+    deviation_by_risk_tier = {"High": 0, "Medium": 0, "Low": 0, "Very Low": 0}
+    deviation_by_section = {}  # section_number -> count
+    deviations_over_time = {}  # month -> count
+
+    material_deviations_count = 0
+
+    # Detailed deviation records
+    deviation_records = []
+
+    for plan in plans:
+        has_deviation = False
+        total_components += len(plan.components)
+
+        # Track material deviations
+        if plan.material_deviation_from_standard:
+            material_deviations_count += 1
+
+        for comp in plan.components:
+            if comp.is_deviation:
+                has_deviation = True
+                total_deviations += 1
+
+                # By component
+                comp_code = comp.component_definition.component_code
+                deviation_by_component[comp_code] = deviation_by_component.get(comp_code, 0) + 1
+
+                # By section
+                section = comp.component_definition.section_number
+                deviation_by_section[section] = deviation_by_section.get(section, 0) + 1
+
+                # By risk tier (from associated model)
+                if plan.request and plan.request.model_versions:
+                    model_version = plan.request.model_versions[0]
+                    if model_version.model.risk_tier:
+                        risk_tier = model_version.model.risk_tier.label
+                        if risk_tier in ["Tier 1 (High)", "High"]:
+                            deviation_by_risk_tier["High"] += 1
+                        elif risk_tier in ["Tier 2 (Medium)", "Medium"]:
+                            deviation_by_risk_tier["Medium"] += 1
+                        elif risk_tier in ["Tier 3 (Low)", "Low"]:
+                            deviation_by_risk_tier["Low"] += 1
+                        else:
+                            deviation_by_risk_tier["Very Low"] += 1
+
+                # Over time (by month of plan creation)
+                if plan.request and plan.request.created_at:
+                    month_key = plan.request.created_at.strftime("%Y-%m")
+                    deviations_over_time[month_key] = deviations_over_time.get(month_key, 0) + 1
+
+                # Detailed record
+                model_name = "Unknown"
+                risk_tier = "Unknown"
+                if plan.request and plan.request.model_versions:
+                    model_version = plan.request.model_versions[0]
+                    model_name = model_version.model.model_name
+                    risk_tier = model_version.model.risk_tier.label if model_version.model.risk_tier else "Unknown"
+
+                deviation_records.append({
+                    "plan_id": plan.plan_id,
+                    "request_id": plan.request_id,
+                    "model_name": model_name,
+                    "risk_tier": risk_tier,
+                    "component_code": comp_code,
+                    "component_title": comp.component_definition.component_title,
+                    "section_number": comp.component_definition.section_number,
+                    "section_title": comp.component_definition.section_title,
+                    "rationale": comp.rationale,
+                    "created_at": plan.request.created_at.isoformat() if plan.request and plan.request.created_at else None
+                })
+
+        if has_deviation:
+            plans_with_deviations += 1
+
+    # Sort component deviations by frequency
+    top_deviation_components = sorted(
+        [{"component_code": k, "count": v} for k, v in deviation_by_component.items()],
+        key=lambda x: x["count"],
+        reverse=True
+    )[:10]  # Top 10
+
+    # Sort section deviations
+    deviation_by_section_list = sorted(
+        [{"section": k, "count": v} for k, v in deviation_by_section.items()],
+        key=lambda x: x["count"],
+        reverse=True
+    )
+
+    # Sort time series
+    deviations_timeline = sorted(
+        [{"month": k, "count": v} for k, v in deviations_over_time.items()],
+        key=lambda x: x["month"]
+    )
+
+    # Calculate deviation rate
+    deviation_rate = (total_deviations / total_components * 100) if total_components > 0 else 0
+    plan_deviation_rate = (plans_with_deviations / total_plans * 100) if total_plans > 0 else 0
+
+    return {
+        "summary": {
+            "total_validation_plans": total_plans,
+            "total_components_reviewed": total_components,
+            "total_deviations": total_deviations,
+            "plans_with_deviations": plans_with_deviations,
+            "plans_with_material_deviations": material_deviations_count,
+            "deviation_rate_percentage": round(deviation_rate, 2),
+            "plan_deviation_rate_percentage": round(plan_deviation_rate, 2)
+        },
+        "deviation_by_component": top_deviation_components,
+        "deviation_by_risk_tier": deviation_by_risk_tier,
+        "deviation_by_section": deviation_by_section_list,
+        "deviations_timeline": deviations_timeline,
+        "recent_deviations": sorted(deviation_records, key=lambda x: x["created_at"] or "", reverse=True)[:50]
+    }

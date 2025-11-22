@@ -20,15 +20,14 @@ const availableReports: Report[] = [
         icon: '🌍',
         category: 'Compliance'
     },
-    // Future reports can be added here
-    // {
-    //     id: 'validation-aging',
-    //     name: 'Validation Aging Report',
-    //     description: 'Shows validation requests aging by status and team workload.',
-    //     path: '/reports/validation-aging',
-    //     icon: '⏱️',
-    //     category: 'Validation'
-    // },
+    {
+        id: 'deviation-trends',
+        name: 'Deviation Trends Report',
+        description: 'Track validation component deviations across all validation projects. Shows deviation rates by component, risk tier, section, and trends over time.',
+        path: '/reports/deviation-trends',
+        icon: '📊',
+        category: 'Compliance'
+    },
 ];
 
 const ReportsPage: React.FC = () => {

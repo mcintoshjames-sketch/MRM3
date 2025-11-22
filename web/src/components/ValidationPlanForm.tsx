@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useImperativeHandle, forwardRef } from 'react';
 import api from '../api/client';
 
 interface ValidationComponentDefinition {
@@ -38,6 +38,7 @@ interface ValidationPlan {
     model_name?: string;
     risk_tier?: string;
     validation_approach?: string;
+    locked_at?: string | null;
 }
 
 interface TemplateSuggestion {
@@ -54,6 +55,11 @@ interface TemplateSuggestion {
     is_different_config: boolean;
 }
 
+export interface ValidationPlanFormHandle {
+    saveForm: () => Promise<boolean>;
+    hasUnsavedChanges: () => boolean;
+}
+
 interface Props {
     requestId: number;
     modelName?: string;
@@ -61,11 +67,13 @@ interface Props {
     onSave?: () => void;
 }
 
-const ValidationPlanForm: React.FC<Props> = ({ requestId, modelName, riskTier, onSave }) => {
+const ValidationPlanForm = forwardRef<ValidationPlanFormHandle, Props>(({ requestId, modelName, riskTier, onSave }, ref) => {
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
     const [plan, setPlan] = useState<ValidationPlan | null>(null);
     const [error, setError] = useState<string | null>(null);
+    const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+    const [saveSuccess, setSaveSuccess] = useState(false);
 
     // Template suggestion state
     const [templateSuggestions, setTemplateSuggestions] = useState<TemplateSuggestion[]>([]);
@@ -86,6 +94,27 @@ const ValidationPlanForm: React.FC<Props> = ({ requestId, modelName, riskTier, o
         fetchValidationPlan();
     }, [requestId]);
 
+    // Expose methods to parent via ref
+    useImperativeHandle(ref, () => ({
+        saveForm: async () => {
+            return await handleSaveInternal();
+        },
+        hasUnsavedChanges: () => hasUnsavedChanges
+    }));
+
+    // Block navigation when there are unsaved changes
+    useEffect(() => {
+        const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+            if (hasUnsavedChanges) {
+                e.preventDefault();
+                e.returnValue = ''; // Chrome requires returnValue to be set
+            }
+        };
+
+        window.addEventListener('beforeunload', handleBeforeUnload);
+        return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+    }, [hasUnsavedChanges]);
+
     const fetchValidationPlan = async () => {
         setLoading(true);
         setError(null);
@@ -95,6 +124,7 @@ const ValidationPlanForm: React.FC<Props> = ({ requestId, modelName, riskTier, o
             const response = await api.get(`/validation-workflow/requests/${requestId}/plan`);
             setPlan(response.data);
             setFormData(response.data);
+            setHasUnsavedChanges(false); // Reset dirty flag on load
         } catch (err: any) {
             if (err.response?.status === 404) {
                 // Plan doesn't exist yet - that's okay, we'll create one
@@ -164,9 +194,77 @@ const ValidationPlanForm: React.FC<Props> = ({ requestId, modelName, riskTier, o
         handleCreatePlan();
     };
 
-    const handleSave = async () => {
+    const handleExportPDF = async () => {
+        try {
+            // Call backend PDF export endpoint
+            const response = await api.get(`/validation-workflow/requests/${requestId}/plan/pdf`, {
+                responseType: 'blob'
+            });
+
+            // Create download link
+            const url = window.URL.createObjectURL(new Blob([response.data]));
+            const link = document.createElement('a');
+            link.href = url;
+
+            // Extract filename from Content-Disposition header or use default
+            const contentDisposition = response.headers['content-disposition'];
+            let filename = `validation_plan_request_${requestId}.pdf`;
+            if (contentDisposition) {
+                const filenameMatch = contentDisposition.match(/filename="?(.+)"?/i);
+                if (filenameMatch && filenameMatch[1]) {
+                    filename = filenameMatch[1];
+                }
+            }
+
+            link.setAttribute('download', filename);
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+            window.URL.revokeObjectURL(url);
+        } catch (err: any) {
+            console.error('Error exporting PDF:', err);
+            setError('Failed to export PDF');
+        }
+    };
+
+    const handleDeletePlan = async () => {
+        if (!window.confirm('Are you sure you want to delete this validation plan? This action cannot be undone.')) {
+            return;
+        }
+
         setSaving(true);
         setError(null);
+
+        try {
+            await api.delete(`/validation-workflow/requests/${requestId}/plan`);
+
+            // Reset to no plan state
+            setPlan(null);
+            setFormData({
+                request_id: requestId,
+                overall_scope_summary: '',
+                material_deviation_from_standard: false,
+                overall_deviation_rationale: '',
+                components: [],
+                model_name: modelName,
+                risk_tier: riskTier
+            });
+
+            if (onSave) onSave();
+        } catch (err: any) {
+            const errorMessage = err.response?.data?.detail || 'Failed to delete validation plan';
+            setError(errorMessage);
+            console.error('Error deleting validation plan:', err);
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    // Internal save function that returns success boolean
+    const handleSaveInternal = async (): Promise<boolean> => {
+        setSaving(true);
+        setError(null);
+        setSaveSuccess(false);
 
         try {
             // Validate deviations have rationale
@@ -197,8 +295,14 @@ const ValidationPlanForm: React.FC<Props> = ({ requestId, modelName, riskTier, o
             const response = await api.patch(`/validation-workflow/requests/${requestId}/plan`, updatePayload);
             setPlan(response.data);
             setFormData(response.data);
+            setHasUnsavedChanges(false); // Clear dirty flag on successful save
+            setSaveSuccess(true);
+
+            // Clear success message after 3 seconds
+            setTimeout(() => setSaveSuccess(false), 3000);
 
             if (onSave) onSave();
+            return true; // Success
         } catch (err: any) {
             if (err.message) {
                 setError(err.message);
@@ -206,12 +310,19 @@ const ValidationPlanForm: React.FC<Props> = ({ requestId, modelName, riskTier, o
                 setError(err.response?.data?.detail || 'Failed to save validation plan');
             }
             console.error('Error saving validation plan:', err);
+            return false; // Failure
         } finally {
             setSaving(false);
         }
     };
 
+    const handleSave = async () => {
+        await handleSaveInternal();
+    };
+
     const handleComponentChange = (componentId: number, field: string, value: string) => {
+        setHasUnsavedChanges(true);
+        setSaveSuccess(false);
         setFormData(prev => ({
             ...prev,
             components: prev.components.map(comp => {
@@ -389,7 +500,20 @@ const ValidationPlanForm: React.FC<Props> = ({ requestId, modelName, riskTier, o
 
     return (
         <div className="bg-white rounded-lg shadow-md p-6">
-            <h2 className="text-xl font-bold mb-6">Validation Plan</h2>
+            <div className="flex items-center justify-between mb-6">
+                <h2 className="text-xl font-bold">
+                    Validation Plan
+                    {hasUnsavedChanges && <span className="text-orange-600 ml-2">*</span>}
+                </h2>
+                <div className="text-sm">
+                    {hasUnsavedChanges && (
+                        <span className="text-orange-600 font-medium">Unsaved changes</span>
+                    )}
+                    {saveSuccess && (
+                        <span className="text-green-600 font-medium">✓ Saved successfully</span>
+                    )}
+                </div>
+            </div>
 
             {error && (
                 <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded text-red-800">
@@ -424,7 +548,11 @@ const ValidationPlanForm: React.FC<Props> = ({ requestId, modelName, riskTier, o
                     className="w-full border border-gray-300 rounded p-2 h-24"
                     placeholder="Describe the high-level scope of this validation..."
                     value={formData.overall_scope_summary || ''}
-                    onChange={(e) => setFormData({ ...formData, overall_scope_summary: e.target.value })}
+                    onChange={(e) => {
+                        setHasUnsavedChanges(true);
+                        setSaveSuccess(false);
+                        setFormData({ ...formData, overall_scope_summary: e.target.value });
+                    }}
                 />
             </div>
 
@@ -434,7 +562,11 @@ const ValidationPlanForm: React.FC<Props> = ({ requestId, modelName, riskTier, o
                     <input
                         type="checkbox"
                         checked={formData.material_deviation_from_standard}
-                        onChange={(e) => setFormData({ ...formData, material_deviation_from_standard: e.target.checked })}
+                        onChange={(e) => {
+                            setHasUnsavedChanges(true);
+                            setSaveSuccess(false);
+                            setFormData({ ...formData, material_deviation_from_standard: e.target.checked });
+                        }}
                         className="mr-2"
                     />
                     <span className="font-medium">Material Deviation from Standard</span>
@@ -448,7 +580,11 @@ const ValidationPlanForm: React.FC<Props> = ({ requestId, modelName, riskTier, o
                             className="w-full border border-gray-300 rounded p-2 h-20"
                             placeholder="Explain why this validation deviates materially from the standard approach..."
                             value={formData.overall_deviation_rationale || ''}
-                            onChange={(e) => setFormData({ ...formData, overall_deviation_rationale: e.target.value })}
+                            onChange={(e) => {
+                                setHasUnsavedChanges(true);
+                                setSaveSuccess(false);
+                                setFormData({ ...formData, overall_deviation_rationale: e.target.value });
+                            }}
                         />
                     </div>
                 )}
@@ -552,18 +688,39 @@ const ValidationPlanForm: React.FC<Props> = ({ requestId, modelName, riskTier, o
                 })}
             </div>
 
-            {/* Save Button */}
-            <div className="flex justify-end gap-3">
-                <button
-                    onClick={handleSave}
-                    disabled={saving}
-                    className="btn-primary"
-                >
-                    {saving ? 'Saving...' : 'Save Validation Plan'}
-                </button>
+            {/* Action Buttons */}
+            <div className="flex justify-between">
+                <div>
+                    {plan && !plan.locked_at && (
+                        <button
+                            onClick={handleDeletePlan}
+                            disabled={saving}
+                            className="px-4 py-2 border border-red-600 text-red-600 rounded hover:bg-red-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                            Delete Plan
+                        </button>
+                    )}
+                </div>
+                <div className="flex gap-3">
+                    <button
+                        onClick={handleExportPDF}
+                        className="px-4 py-2 border border-gray-300 rounded hover:bg-gray-50"
+                    >
+                        Export PDF
+                    </button>
+                    <button
+                        onClick={handleSave}
+                        disabled={saving}
+                        className="btn-primary"
+                    >
+                        {saving ? 'Saving...' : 'Save Validation Plan'}
+                    </button>
+                </div>
             </div>
         </div>
     );
-};
+});
+
+ValidationPlanForm.displayName = 'ValidationPlanForm';
 
 export default ValidationPlanForm;

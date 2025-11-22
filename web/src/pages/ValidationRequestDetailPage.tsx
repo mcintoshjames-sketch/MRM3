@@ -1,9 +1,9 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate, Link, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import api from '../api/client';
 import Layout from '../components/Layout';
-import ValidationPlanForm from '../components/ValidationPlanForm';
+import ValidationPlanForm, { ValidationPlanFormHandle } from '../components/ValidationPlanForm';
 
 interface TaxonomyValue {
     value_id: number;
@@ -142,6 +142,9 @@ export default function ValidationRequestDetailPage() {
     const [error, setError] = useState<string | null>(null);
     const [activeTab, setActiveTab] = useState<TabType>('overview');
     const [actionLoading, setActionLoading] = useState(false);
+
+    // Ref to validation plan form for checking unsaved changes
+    const validationPlanRef = useRef<ValidationPlanFormHandle>(null);
 
     // Form states
     const [showStatusModal, setShowStatusModal] = useState(false);
@@ -310,8 +313,43 @@ export default function ValidationRequestDetailPage() {
         }
     };
 
+    // Helper to check for unsaved plan changes before status transitions
+    const checkUnsavedPlanChanges = async (): Promise<boolean> => {
+        if (!validationPlanRef.current) return true; // No plan form, proceed
+
+        const hasUnsaved = validationPlanRef.current.hasUnsavedChanges();
+        if (!hasUnsaved) return true; // No unsaved changes, proceed
+
+        // Prompt user
+        const choice = window.confirm(
+            'You have unsaved changes in the validation plan.\n\n' +
+            'Click OK to save changes now, or Cancel to continue without saving (unsaved changes will be lost).'
+        );
+
+        if (choice) {
+            // User wants to save
+            const saveSuccess = await validationPlanRef.current.saveForm();
+            if (!saveSuccess) {
+                alert('Failed to save validation plan. Please fix any errors before changing status.');
+                return false;
+            }
+            return true; // Save succeeded, proceed
+        } else {
+            // User chose to discard changes
+            const confirmDiscard = window.confirm(
+                'Are you sure you want to discard your unsaved validation plan changes?'
+            );
+            return confirmDiscard; // Only proceed if user confirms discard
+        }
+    };
+
     const handleStatusUpdate = async () => {
         if (!newStatus.status_id) return;
+
+        // Check for unsaved plan changes first
+        const canProceed = await checkUnsavedPlanChanges();
+        if (!canProceed) return;
+
         setActionLoading(true);
         try {
             await api.patch(`/validation-workflow/requests/${id}/status`, {
@@ -563,6 +601,10 @@ export default function ValidationRequestDetailPage() {
             setError('Cannot complete work without creating a validation outcome. Please go to the Outcome tab and complete the validation outcome form.');
             return;
         }
+
+        // Check for unsaved plan changes
+        const canProceed = await checkUnsavedPlanChanges();
+        if (!canProceed) return;
 
         // Check if there's a reviewer assigned
         const hasReviewer = request.assignments.some(a => a.is_reviewer);
@@ -985,6 +1027,7 @@ export default function ValidationRequestDetailPage() {
 
                 {activeTab === 'plan' && request && (
                     <ValidationPlanForm
+                        ref={validationPlanRef}
                         requestId={request.request_id}
                         modelName={request.models[0]?.model_name}
                         riskTier={request.models[0]?.model_id ? 'Loading...' : undefined}
