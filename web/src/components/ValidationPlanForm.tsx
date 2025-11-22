@@ -40,6 +40,20 @@ interface ValidationPlan {
     validation_approach?: string;
 }
 
+interface TemplateSuggestion {
+    source_request_id: number;
+    source_plan_id: number;
+    validation_type: string;
+    model_names: string[];
+    completion_date: string | null;
+    validator_name: string | null;
+    component_count: number;
+    deviations_count: number;
+    config_id: number | null;
+    config_name: string | null;
+    is_different_config: boolean;
+}
+
 interface Props {
     requestId: number;
     modelName?: string;
@@ -52,6 +66,11 @@ const ValidationPlanForm: React.FC<Props> = ({ requestId, modelName, riskTier, o
     const [saving, setSaving] = useState(false);
     const [plan, setPlan] = useState<ValidationPlan | null>(null);
     const [error, setError] = useState<string | null>(null);
+
+    // Template suggestion state
+    const [templateSuggestions, setTemplateSuggestions] = useState<TemplateSuggestion[]>([]);
+    const [showTemplateModal, setShowTemplateModal] = useState(false);
+    const [selectedTemplate, setSelectedTemplate] = useState<number | null>(null);
 
     const [formData, setFormData] = useState<ValidationPlan>({
         request_id: requestId,
@@ -80,6 +99,8 @@ const ValidationPlanForm: React.FC<Props> = ({ requestId, modelName, riskTier, o
             if (err.response?.status === 404) {
                 // Plan doesn't exist yet - that's okay, we'll create one
                 setPlan(null);
+                // Fetch template suggestions if no plan exists
+                fetchTemplateSuggestions();
             } else {
                 setError('Failed to load validation plan');
                 console.error('Error loading validation plan:', err);
@@ -89,18 +110,37 @@ const ValidationPlanForm: React.FC<Props> = ({ requestId, modelName, riskTier, o
         }
     };
 
-    const handleCreatePlan = async () => {
+    const fetchTemplateSuggestions = async () => {
+        try {
+            const response = await api.get(`/validation-workflow/requests/${requestId}/plan/template-suggestions`);
+            if (response.data.has_suggestions && response.data.suggestions.length > 0) {
+                setTemplateSuggestions(response.data.suggestions);
+                setShowTemplateModal(true);
+            }
+        } catch (err: any) {
+            console.error('Error fetching template suggestions:', err);
+            // Don't show error to user - templating is optional
+        }
+    };
+
+    const handleCreatePlan = async (templatePlanId?: number) => {
         setSaving(true);
         setError(null);
 
         try {
-            // Create plan with empty components array - API will auto-create defaults
-            const response = await api.post(`/validation-workflow/requests/${requestId}/plan`, {
+            const payload: any = {
                 overall_scope_summary: formData.overall_scope_summary || '',
                 material_deviation_from_standard: false,
                 overall_deviation_rationale: '',
                 components: []
-            });
+            };
+
+            // If template was selected, include it
+            if (templatePlanId) {
+                payload.template_plan_id = templatePlanId;
+            }
+
+            const response = await api.post(`/validation-workflow/requests/${requestId}/plan`, payload);
 
             setPlan(response.data);
             setFormData(response.data);
@@ -112,6 +152,16 @@ const ValidationPlanForm: React.FC<Props> = ({ requestId, modelName, riskTier, o
         } finally {
             setSaving(false);
         }
+    };
+
+    const handleUseTemplate = (templatePlanId: number) => {
+        setShowTemplateModal(false);
+        handleCreatePlan(templatePlanId);
+    };
+
+    const handleCreateFromScratch = () => {
+        setShowTemplateModal(false);
+        handleCreatePlan();
     };
 
     const handleSave = async () => {
@@ -212,19 +262,128 @@ const ValidationPlanForm: React.FC<Props> = ({ requestId, modelName, riskTier, o
 
     if (!plan) {
         return (
-            <div className="bg-white rounded-lg shadow-md p-6">
-                <h2 className="text-xl font-bold mb-4">Validation Plan</h2>
-                <p className="text-gray-600 mb-4">
-                    No validation plan exists for this request yet. Create a plan to document which validation components will be performed.
-                </p>
-                <button
-                    onClick={handleCreatePlan}
-                    disabled={saving}
-                    className="btn-primary"
-                >
-                    {saving ? 'Creating...' : 'Create Validation Plan'}
-                </button>
-            </div>
+            <>
+                {/* Template Selection Modal */}
+                {showTemplateModal && (
+                    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+                        <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full mx-4 max-h-[90vh] overflow-y-auto">
+                            <div className="p-6">
+                                <h2 className="text-2xl font-bold mb-4">Use Previous Validation Plan as Template?</h2>
+                                <p className="text-gray-600 mb-6">
+                                    We found {templateSuggestions.length} previous validation plan{templateSuggestions.length > 1 ? 's' : ''} that could be used as a starting point for this validation.
+                                </p>
+
+                                {/* Template Suggestions */}
+                                <div className="space-y-4 mb-6">
+                                    {templateSuggestions.map((suggestion) => (
+                                        <div
+                                            key={suggestion.source_plan_id}
+                                            className={`border rounded-lg p-4 cursor-pointer transition ${
+                                                selectedTemplate === suggestion.source_plan_id
+                                                    ? 'border-blue-500 bg-blue-50'
+                                                    : 'border-gray-300 hover:border-blue-300'
+                                            }`}
+                                            onClick={() => setSelectedTemplate(suggestion.source_plan_id)}
+                                        >
+                                            {/* Configuration Warning */}
+                                            {suggestion.is_different_config && (
+                                                <div className="mb-3 p-3 bg-yellow-50 border border-yellow-200 rounded">
+                                                    <div className="flex items-start gap-2">
+                                                        <span className="text-yellow-600 text-xl">⚠️</span>
+                                                        <div className="text-sm text-yellow-800">
+                                                            <div className="font-semibold mb-1">Requirements Version Changed</div>
+                                                            <div>
+                                                                This template uses a different validation requirements configuration ({suggestion.config_name || 'Unknown'}).
+                                                                We'll automatically recalculate expectations using the current requirements, but review carefully.
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            )}
+
+                                            <div className="grid grid-cols-2 gap-4">
+                                                <div>
+                                                    <div className="text-sm text-gray-500">Validation Request</div>
+                                                    <div className="font-semibold">#{suggestion.source_request_id}</div>
+                                                </div>
+                                                <div>
+                                                    <div className="text-sm text-gray-500">Validation Type</div>
+                                                    <div className="font-semibold">{suggestion.validation_type}</div>
+                                                </div>
+                                                <div>
+                                                    <div className="text-sm text-gray-500">Models</div>
+                                                    <div className="font-semibold">{suggestion.model_names.join(', ')}</div>
+                                                </div>
+                                                <div>
+                                                    <div className="text-sm text-gray-500">Completed</div>
+                                                    <div className="font-semibold">
+                                                        {suggestion.completion_date ? suggestion.completion_date.split('T')[0] : 'N/A'}
+                                                    </div>
+                                                </div>
+                                                <div>
+                                                    <div className="text-sm text-gray-500">Validator</div>
+                                                    <div className="font-semibold">{suggestion.validator_name || 'N/A'}</div>
+                                                </div>
+                                                <div>
+                                                    <div className="text-sm text-gray-500">Components / Deviations</div>
+                                                    <div className="font-semibold">
+                                                        {suggestion.component_count} components, {suggestion.deviations_count} deviations
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+
+                                {/* Action Buttons */}
+                                <div className="flex justify-end gap-3">
+                                    <button
+                                        onClick={handleCreateFromScratch}
+                                        className="px-4 py-2 border border-gray-300 rounded hover:bg-gray-50"
+                                        disabled={saving}
+                                    >
+                                        Create from Scratch
+                                    </button>
+                                    <button
+                                        onClick={() => selectedTemplate && handleUseTemplate(selectedTemplate)}
+                                        disabled={!selectedTemplate || saving}
+                                        className="btn-primary"
+                                    >
+                                        {saving ? 'Creating...' : 'Use Selected Template'}
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                <div className="bg-white rounded-lg shadow-md p-6">
+                    <h2 className="text-xl font-bold mb-4">Validation Plan</h2>
+                    <p className="text-gray-600 mb-4">
+                        No validation plan exists for this request yet. Create a plan to document which validation components will be performed.
+                    </p>
+
+                    <div className="flex gap-3">
+                        <button
+                            onClick={() => handleCreatePlan()}
+                            disabled={saving}
+                            className="btn-primary"
+                        >
+                            {saving ? 'Creating...' : 'Create Validation Plan'}
+                        </button>
+
+                        {templateSuggestions.length > 0 && (
+                            <button
+                                onClick={() => setShowTemplateModal(true)}
+                                disabled={saving}
+                                className="px-4 py-2 border border-gray-300 rounded hover:bg-gray-50"
+                            >
+                                Use Template from Previous Validation
+                            </button>
+                        )}
+                    </div>
+                </div>
+            </>
         );
     }
 

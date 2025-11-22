@@ -710,6 +710,18 @@ class ValidationPlan(Base):
     material_deviation_from_standard: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     overall_deviation_rationale: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
+    # Configuration versioning (grandfathering support)
+    config_id: Mapped[Optional[int]] = mapped_column(
+        Integer, ForeignKey("component_definition_configurations.config_id", ondelete="SET NULL"), nullable=True,
+        comment="Configuration version this plan is linked to (locked when plan submitted for review)"
+    )
+    locked_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True,
+                                                            comment="When plan was locked (moved to Review/Pending Approval)")
+    locked_by_user_id: Mapped[Optional[int]] = mapped_column(
+        Integer, ForeignKey("users.user_id", ondelete="SET NULL"), nullable=True,
+        comment="User who triggered the lock (via status transition)"
+    )
+
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -718,6 +730,8 @@ class ValidationPlan(Base):
     components: Mapped[List["ValidationPlanComponent"]] = relationship(
         back_populates="plan", cascade="all, delete-orphan"
     )
+    configuration = relationship("ComponentDefinitionConfiguration", back_populates="validation_plans")
+    locked_by = relationship("User", foreign_keys=[locked_by_user_id])
 
 
 class ValidationPlanComponent(Base):
@@ -751,3 +765,70 @@ class ValidationPlanComponent(Base):
     # Relationships
     plan = relationship("ValidationPlan", back_populates="components")
     component_definition = relationship("ValidationComponentDefinition", back_populates="plan_components")
+
+
+class ComponentDefinitionConfiguration(Base):
+    """
+    Configuration version tracking for component definitions.
+    Each version represents a snapshot of validation standards at a point in time.
+    Enables grandfathering: locked plans reference the config that existed when they were submitted.
+    """
+    __tablename__ = "component_definition_configurations"
+
+    config_id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    config_name: Mapped[str] = mapped_column(String(200), nullable=False,
+                                               comment="e.g., '2025-11-22 Initial Configuration', 'Q2 2026 SR 11-7 Update'")
+    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True,
+                                                         comment="Details about this configuration version")
+    effective_date: Mapped[date] = mapped_column(Date, nullable=False,
+                                                   comment="When this configuration took effect")
+    created_by_user_id: Mapped[Optional[int]] = mapped_column(
+        Integer, ForeignKey("users.user_id", ondelete="SET NULL"), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow)
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True,
+                                              comment="Only one configuration is active at a time")
+
+    # Relationships
+    created_by = relationship("User", foreign_keys=[created_by_user_id])
+    config_items: Mapped[List["ComponentDefinitionConfigItem"]] = relationship(
+        back_populates="configuration", cascade="all, delete-orphan"
+    )
+    validation_plans: Mapped[List["ValidationPlan"]] = relationship(
+        back_populates="configuration"
+    )
+
+
+class ComponentDefinitionConfigItem(Base):
+    """
+    Snapshot of a specific component's expectations at a given configuration version.
+    Preserves historical standards for compliance auditing.
+    """
+    __tablename__ = "component_definition_config_items"
+
+    config_item_id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    config_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("component_definition_configurations.config_id", ondelete="CASCADE"), nullable=False
+    )
+    component_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("validation_component_definitions.component_id"), nullable=False
+    )
+
+    # Snapshot of expectations (Figure 3 matrix values at this version)
+    expectation_high: Mapped[str] = mapped_column(String(20), nullable=False)
+    expectation_medium: Mapped[str] = mapped_column(String(20), nullable=False)
+    expectation_low: Mapped[str] = mapped_column(String(20), nullable=False)
+    expectation_very_low: Mapped[str] = mapped_column(String(20), nullable=False)
+
+    # Metadata snapshot (preserves component info in case it changes)
+    section_number: Mapped[str] = mapped_column(String(10), nullable=False)
+    section_title: Mapped[str] = mapped_column(String(200), nullable=False)
+    component_code: Mapped[str] = mapped_column(String(20), nullable=False)
+    component_title: Mapped[str] = mapped_column(String(200), nullable=False)
+    is_test_or_analysis: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+
+    # Relationships
+    configuration = relationship("ComponentDefinitionConfiguration", back_populates="config_items")
+    component_definition = relationship("ValidationComponentDefinition")

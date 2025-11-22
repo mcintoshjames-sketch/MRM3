@@ -4,7 +4,7 @@ from datetime import datetime, date, timedelta
 from typing import Dict, List
 from app.core.database import SessionLocal
 from app.core.security import get_password_hash
-from app.models import User, UserRole, Vendor, EntraUser, Taxonomy, TaxonomyValue, ValidationWorkflowSLA, ValidationPolicy, Region, ValidationComponentDefinition
+from app.models import User, UserRole, Vendor, EntraUser, Taxonomy, TaxonomyValue, ValidationWorkflowSLA, ValidationPolicy, Region, ValidationComponentDefinition, ComponentDefinitionConfiguration, ComponentDefinitionConfigItem
 from app.models.model import Model
 
 
@@ -328,6 +328,57 @@ def seed_validation_components(db):
 
     db.commit()
     print(f"✓ Seeded {len(components)} validation component definitions")
+
+
+def seed_initial_component_configuration(db, admin_user):
+    """
+    Create initial configuration version by snapshotting current component definitions.
+    This is required for validation plan versioning and grandfathering.
+    """
+    # Check if configuration already exists
+    existing_config = db.query(ComponentDefinitionConfiguration).first()
+    if existing_config:
+        print(f"✓ Component configuration already exists (config_id: {existing_config.config_id})")
+        return existing_config
+
+    print("Creating initial component definition configuration...")
+
+    # Create initial configuration
+    initial_config = ComponentDefinitionConfiguration(
+        config_name="Initial SR 11-7 Configuration",
+        description="Baseline validation standards per SR 11-7. Created during system initialization.",
+        effective_date=date.today(),
+        created_by_user_id=admin_user.user_id if admin_user else None,
+        is_active=True
+    )
+    db.add(initial_config)
+    db.flush()  # Get config_id
+
+    # Snapshot all component definitions
+    components = db.query(ValidationComponentDefinition).filter_by(is_active=True).all()
+
+    for component in components:
+        config_item = ComponentDefinitionConfigItem(
+            config_id=initial_config.config_id,
+            component_id=component.component_id,
+            expectation_high=component.expectation_high,
+            expectation_medium=component.expectation_medium,
+            expectation_low=component.expectation_low,
+            expectation_very_low=component.expectation_very_low,
+            section_number=component.section_number,
+            section_title=component.section_title,
+            component_code=component.component_code,
+            component_title=component.component_title,
+            is_test_or_analysis=component.is_test_or_analysis,
+            sort_order=component.sort_order,
+            is_active=component.is_active
+        )
+        db.add(config_item)
+
+    db.commit()
+    print(f"✓ Created initial configuration (config_id: {initial_config.config_id}) with {len(components)} component snapshots")
+
+    return initial_config
 
 
 def seed_database():
@@ -927,6 +978,10 @@ def seed_database():
 
         # Seed validation component definitions (Figure 3 matrix)
         seed_validation_components(db)
+        db.commit()
+
+        # Create initial component configuration version (for grandfathering)
+        seed_initial_component_configuration(db, admin)
         db.commit()
 
         # Create validation workflow SLA configuration

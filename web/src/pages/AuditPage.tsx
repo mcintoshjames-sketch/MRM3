@@ -151,10 +151,51 @@ export default function AuditPage() {
         });
     };
 
+    const handleExportCSV = () => {
+        if (logs.length === 0) return;
+
+        // Create CSV content
+        const headers = ['Log ID', 'Timestamp', 'Entity Type', 'Entity ID', 'Action', 'User', 'User Email', 'Changes'];
+        const rows = logs.map(log => {
+            const changesStr = log.changes ? JSON.stringify(log.changes).replace(/"/g, '""') : '';
+            return [
+                log.log_id,
+                log.timestamp.split('T')[0] + ' ' + log.timestamp.split('T')[1].split('.')[0],
+                log.entity_type,
+                log.entity_id,
+                log.action,
+                log.user.full_name,
+                log.user.email,
+                `"${changesStr}"`
+            ].join(',');
+        });
+
+        const csv = [headers.join(','), ...rows].join('\n');
+
+        // Create and trigger download
+        const blob = new Blob([csv], { type: 'text/csv' });
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `audit_logs_${new Date().toISOString().split('T')[0]}.csv`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        window.URL.revokeObjectURL(url);
+    };
+
     return (
         <Layout>
             <div className="flex justify-between items-center mb-6">
                 <h2 className="text-2xl font-bold">Audit Logs</h2>
+                {logs.length > 0 && (
+                    <button
+                        onClick={handleExportCSV}
+                        className="btn-secondary"
+                    >
+                        Export CSV
+                    </button>
+                )}
             </div>
 
             {/* Filters */}

@@ -548,6 +548,10 @@ describe('NewPage', () => {
 | **Regional Version Scope (Phase 7)** | ✅ test_regional_versions.py (12 tests) | ✅ SubmitChangeModal + RegionalVersionsTable + ModelChangeRecordPage | 2025-11-21 |
 | **Deployment Tasks (Phase 8)** | ✅ test_deployment_tasks.py (8 tests) | ✅ MyDeploymentTasksPage | 2025-11-21 |
 | **Validation Plan (Phase 9)** | ✅ Manual API tests (component definitions, plan CRUD) | ✅ ValidationPlanForm component integrated | 2025-11-22 |
+| **Plan Versioning & Locking (Phase 9b)** | ✅ Manual tests (/tmp/test_lock_unlock.py) | ✅ Automatic locking/unlocking on status transitions | 2025-11-22 |
+| **Plan Templating (Phase 9c)** | ✅ Manual tests (/tmp/test_plan_templating.py) | ✅ ValidationPlanForm with template modal | 2025-11-22 |
+| **Component Definition Management (Phase 9d)** | ✅ API endpoints tested (configurations, component updates) | ✅ ComponentDefinitionsPage (Admin UI) | 2025-11-22 |
+| **Configuration History View (Phase 9e)** | ✅ Uses existing configuration API endpoints | ✅ ConfigurationHistoryPage (Admin UI) | 2025-11-22 |
 
 **Features Added:**
 - Development type (In-House / Third-Party)

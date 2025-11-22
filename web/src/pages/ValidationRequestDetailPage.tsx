@@ -136,6 +136,7 @@ export default function ValidationRequestDetailPage() {
     const [request, setRequest] = useState<ValidationRequestDetail | null>(null);
     const [relatedVersions, setRelatedVersions] = useState<ModelVersion[]>([]);
     const [assignmentAuditLogs, setAssignmentAuditLogs] = useState<AuditLog[]>([]);
+    const [approvalAuditLogs, setApprovalAuditLogs] = useState<AuditLog[]>([]);
     const [workflowSLA, setWorkflowSLA] = useState<WorkflowSLA | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -172,7 +173,8 @@ export default function ValidationRequestDetailPage() {
         effective_date: new Date().toISOString().split('T')[0],
         expiration_date: ''
     });
-    const [approvalUpdate, setApprovalUpdate] = useState({ approval_id: 0, status: '', comments: '' });
+    const [approvalUpdate, setApprovalUpdate] = useState({ approval_id: 0, status: '', comments: '', isProxyApproval: false, certificationEvidence: '', proxyCertified: false });
+    const [approvalValidationError, setApprovalValidationError] = useState<string | null>(null);
     const [showSignOffModal, setShowSignOffModal] = useState(false);
     const [signOffData, setSignOffData] = useState({ assignment_id: 0, comments: '' });
     const [editAssignment, setEditAssignment] = useState({
@@ -228,18 +230,20 @@ export default function ValidationRequestDetailPage() {
             setLoading(true);
             setError(null);
 
-            // Fetch request details, taxonomy options, users, assignment audit logs, and SLA config in parallel
-            const [requestRes, taxonomiesRes, usersRes, auditLogsRes, slaRes] = await Promise.all([
+            // Fetch request details, taxonomy options, users, assignment audit logs, approval audit logs, and SLA config in parallel
+            const [requestRes, taxonomiesRes, usersRes, assignmentAuditRes, approvalAuditRes, slaRes] = await Promise.all([
                 api.get(`/validation-workflow/requests/${id}`),
                 api.get('/taxonomies/'),
                 api.get('/auth/users'),
                 api.get(`/audit-logs/?entity_type=ValidationAssignment&entity_id=${id}&limit=100`),
+                api.get(`/audit-logs/?entity_type=ValidationApproval&entity_id=${id}&limit=100`),
                 api.get('/workflow-sla/validation').catch(() => ({ data: null })) // Gracefully handle if SLA not configured
             ]);
 
             setRequest(requestRes.data);
             setUsers(usersRes.data);
-            setAssignmentAuditLogs(auditLogsRes.data);
+            setAssignmentAuditLogs(assignmentAuditRes.data);
+            setApprovalAuditLogs(approvalAuditRes.data);
             setWorkflowSLA(slaRes.data);
 
             // Fetch model versions that link to this validation project
@@ -490,18 +494,40 @@ export default function ValidationRequestDetailPage() {
     };
 
     const handleApprovalUpdate = async () => {
+        setApprovalValidationError(null);
+
         if (!approvalUpdate.status) {
-            setError('Approval status is required');
+            setApprovalValidationError('Please select a decision (Approve or Reject)');
             return;
         }
+
+        // Validate proxy approval certification
+        if (approvalUpdate.isProxyApproval) {
+            if (!approvalUpdate.certificationEvidence.trim()) {
+                setApprovalValidationError('Authorization evidence is required. Please provide a reference to the documentation that evidences proper authorization.');
+                return;
+            }
+            if (!approvalUpdate.proxyCertified) {
+                setApprovalValidationError('You must certify that you have obtained proper authorization by checking the certification box.');
+                return;
+            }
+        }
+
         setActionLoading(true);
         try {
+            // Build comments with certification evidence if proxy approval
+            let finalComments = approvalUpdate.comments || '';
+            if (approvalUpdate.isProxyApproval && approvalUpdate.certificationEvidence) {
+                finalComments = `${finalComments}\n\n[PROXY APPROVAL - Authorization Evidence: ${approvalUpdate.certificationEvidence}]`.trim();
+            }
+
             await api.patch(`/validation-workflow/approvals/${approvalUpdate.approval_id}`, {
                 approval_status: approvalUpdate.status,
-                comments: approvalUpdate.comments || null
+                comments: finalComments || null
             });
             setShowApprovalModal(false);
-            setApprovalUpdate({ approval_id: 0, status: '', comments: '' });
+            setApprovalUpdate({ approval_id: 0, status: '', comments: '', isProxyApproval: false, certificationEvidence: '', proxyCertified: false });
+            setApprovalValidationError(null);
             fetchData();
         } catch (err: any) {
             setError(err.response?.data?.detail || 'Failed to update approval');
@@ -739,7 +765,7 @@ export default function ValidationRequestDetailPage() {
                             {tab}
                             {tab === 'assignments' && ` (${request.assignments.length})`}
                             {tab === 'approvals' && ` (${request.approvals.length})`}
-                            {tab === 'history' && ` (${request.status_history.length})`}
+                            {tab === 'history' && ` (${request.status_history.length + assignmentAuditLogs.length + approvalAuditLogs.length})`}
                         </button>
                     ))}
                 </nav>
@@ -1274,15 +1300,44 @@ export default function ValidationRequestDetailPage() {
                                                     {approval.approval_status}
                                                 </span>
                                                 {approval.approval_status === 'Pending' &&
-                                                    user?.user_id === approval.approver.user_id && (
+                                                    (user?.user_id === approval.approver.user_id || user?.role === 'Admin') && (
                                                         <button
                                                             onClick={() => {
-                                                                setApprovalUpdate({ approval_id: approval.approval_id, status: '', comments: '' });
+                                                                const isProxyApproval = user?.role === 'Admin' && user?.user_id !== approval.approver.user_id;
+                                                                setApprovalUpdate({
+                                                                    approval_id: approval.approval_id,
+                                                                    status: '',
+                                                                    comments: '',
+                                                                    isProxyApproval,
+                                                                    certificationEvidence: '',
+                                                                    proxyCertified: false
+                                                                });
                                                                 setShowApprovalModal(true);
                                                             }}
                                                             className="btn-primary text-xs"
                                                         >
-                                                            Submit
+                                                            {user?.role === 'Admin' && user?.user_id !== approval.approver.user_id ? 'Approve on Behalf' : 'Submit'}
+                                                        </button>
+                                                    )}
+                                                {(approval.approval_status === 'Approved' || approval.approval_status === 'Rejected') &&
+                                                    (user?.user_id === approval.approver.user_id || user?.role === 'Admin') && (
+                                                        <button
+                                                            onClick={async () => {
+                                                                if (window.confirm('Are you sure you want to withdraw this approval? This will reset it to Pending status.')) {
+                                                                    try {
+                                                                        await api.patch(`/validation-workflow/approvals/${approval.approval_id}`, {
+                                                                            approval_status: 'Pending',
+                                                                            comments: approval.comments
+                                                                        });
+                                                                        fetchData();
+                                                                    } catch (err: any) {
+                                                                        alert(err.response?.data?.detail || 'Failed to withdraw approval');
+                                                                    }
+                                                                }
+                                                            }}
+                                                            className="text-xs px-3 py-1 border border-gray-300 rounded hover:bg-gray-50"
+                                                        >
+                                                            Withdraw
                                                         </button>
                                                     )}
                                             </div>
@@ -1293,12 +1348,34 @@ export default function ValidationRequestDetailPage() {
                                                 {new Date(approval.approved_at).toLocaleString()}
                                             </div>
                                         )}
-                                        {approval.comments && (
-                                            <div className="mt-2 text-sm">
-                                                <span className="text-gray-500">Comments:</span>{' '}
-                                                <span className="text-gray-700">{approval.comments}</span>
-                                            </div>
-                                        )}
+                                        {approval.comments && (() => {
+                                            const proxyMatch = approval.comments.match(/\[PROXY APPROVAL - Authorization Evidence: (.+?)\]/);
+                                            const regularComments = approval.comments.replace(/\[PROXY APPROVAL - Authorization Evidence: .+?\]/g, '').trim();
+
+                                            return (
+                                                <>
+                                                    {proxyMatch && (
+                                                        <div className="mt-2 p-2 bg-yellow-50 border border-yellow-200 rounded">
+                                                            <div className="text-xs font-medium text-yellow-800 flex items-center gap-1">
+                                                                <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                                                                    <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
+                                                                </svg>
+                                                                Proxy Approval (Submitted by Admin on behalf)
+                                                            </div>
+                                                            <div className="text-xs text-yellow-700 mt-1">
+                                                                Authorization Evidence: {proxyMatch[1]}
+                                                            </div>
+                                                        </div>
+                                                    )}
+                                                    {regularComments && (
+                                                        <div className="mt-2 text-sm">
+                                                            <span className="text-gray-500">Comments:</span>{' '}
+                                                            <span className="text-gray-700">{regularComments}</span>
+                                                        </div>
+                                                    )}
+                                                </>
+                                            );
+                                        })()}
                                     </div>
                                 ))}
                             </div>
@@ -1309,13 +1386,13 @@ export default function ValidationRequestDetailPage() {
                 {activeTab === 'history' && (
                     <div>
                         <h3 className="text-lg font-bold mb-4">Activity History</h3>
-                        {request.status_history.length === 0 && assignmentAuditLogs.length === 0 ? (
+                        {request.status_history.length === 0 && assignmentAuditLogs.length === 0 && approvalAuditLogs.length === 0 ? (
                             <div className="text-gray-500 text-center py-8">
                                 No activity recorded.
                             </div>
                         ) : (
                             <div className="space-y-4">
-                                {/* Merge and sort status history and assignment audit logs */}
+                                {/* Merge and sort status history, assignment audit logs, and approval audit logs */}
                                 {[
                                     ...request.status_history.map((h) => ({
                                         type: 'status' as const,
@@ -1324,6 +1401,11 @@ export default function ValidationRequestDetailPage() {
                                     })),
                                     ...assignmentAuditLogs.map((a) => ({
                                         type: 'assignment' as const,
+                                        timestamp: a.timestamp,
+                                        data: a
+                                    })),
+                                    ...approvalAuditLogs.map((a) => ({
+                                        type: 'approval' as const,
                                         timestamp: a.timestamp,
                                         data: a
                                     }))
@@ -1363,7 +1445,7 @@ export default function ValidationRequestDetailPage() {
                                                     )}
                                                 </div>
                                             );
-                                        } else {
+                                        } else if (item.type === 'assignment') {
                                             const audit = item.data as AuditLog;
                                             const actionColors = {
                                                 'CREATE': 'border-green-500',
@@ -1443,7 +1525,68 @@ export default function ValidationRequestDetailPage() {
                                                     </div>
                                                 </div>
                                             );
+                                        } else if (item.type === 'approval') {
+                                            const audit = item.data as AuditLog;
+                                            const actionColors = {
+                                                'APPROVAL_SUBMITTED': 'border-green-500',
+                                                'APPROVAL_WITHDRAWN': 'border-orange-500'
+                                            };
+                                            const actionLabels = {
+                                                'APPROVAL_SUBMITTED': 'APPROVAL SUBMITTED',
+                                                'APPROVAL_WITHDRAWN': 'APPROVAL WITHDRAWN'
+                                            };
+                                            const isProxyApproval = audit.changes?.proxy_approval === true;
+                                            return (
+                                                <div key={`audit-${audit.log_id}`} className={`border-l-4 ${actionColors[audit.action as keyof typeof actionColors] || 'border-purple-500'} pl-4 py-2`}>
+                                                    <div className="flex items-center gap-2">
+                                                        <span className="text-xs font-semibold text-gray-700">
+                                                            {actionLabels[audit.action as keyof typeof actionLabels] || audit.action}
+                                                        </span>
+                                                        {isProxyApproval && (
+                                                            <span className="text-xs px-2 py-0.5 bg-yellow-100 text-yellow-800 rounded">
+                                                                Proxy Approval
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                    <div className="mt-2 text-sm">
+                                                        {audit.changes?.approver_role && (
+                                                            <div>
+                                                                <span className="text-gray-500">Approver Role:</span>{' '}
+                                                                <span className="font-medium">{audit.changes.approver_role}</span>
+                                                            </div>
+                                                        )}
+                                                        {audit.changes?.status && (
+                                                            <div>
+                                                                <span className="text-gray-500">Status:</span>{' '}
+                                                                <span className={`px-2 py-1 text-xs rounded ${
+                                                                    audit.changes.status === 'Approved' ? 'bg-green-100 text-green-800' :
+                                                                    audit.changes.status === 'Rejected' ? 'bg-red-100 text-red-800' :
+                                                                    'bg-gray-100 text-gray-800'
+                                                                }`}>
+                                                                    {audit.changes.status}
+                                                                </span>
+                                                            </div>
+                                                        )}
+                                                        {isProxyApproval && (
+                                                            <div className="mt-2 p-2 bg-yellow-50 border border-yellow-200 rounded">
+                                                                <div className="text-xs text-yellow-800">
+                                                                    <div><strong>Approved by:</strong> {audit.changes.approved_by_admin}</div>
+                                                                    <div><strong>On behalf of:</strong> {audit.changes.on_behalf_of}</div>
+                                                                </div>
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                    <div className="mt-2 text-sm">
+                                                        <span className="text-gray-500">By:</span>{' '}
+                                                        {audit.user.full_name}
+                                                    </div>
+                                                    <div className="text-xs text-gray-400">
+                                                        {new Date(audit.timestamp).toLocaleString()}
+                                                    </div>
+                                                </div>
+                                            );
                                         }
+                                        return null;
                                     })}
                             </div>
                         )}
@@ -1652,13 +1795,36 @@ export default function ValidationRequestDetailPage() {
             {showApprovalModal && (
                 <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
                     <div className="bg-white rounded-lg p-6 w-full max-w-md">
-                        <h3 className="text-lg font-bold mb-4">Submit Approval</h3>
+                        <h3 className="text-lg font-bold mb-4">
+                            {approvalUpdate.isProxyApproval ? 'Proxy Approval (On Behalf)' : 'Submit Approval'}
+                        </h3>
+
+                        {approvalUpdate.isProxyApproval && request && (
+                            <div className="mb-4 p-3 bg-yellow-50 border border-yellow-200 rounded">
+                                <p className="text-sm font-medium text-yellow-800">
+                                    You are approving on behalf of: {request.approvals.find(a => a.approval_id === approvalUpdate.approval_id)?.approver.full_name}
+                                </p>
+                                <p className="text-xs text-yellow-700 mt-1">
+                                    Certification required: You must attest that you have obtained proper authorization.
+                                </p>
+                            </div>
+                        )}
+
+                        {approvalValidationError && (
+                            <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded">
+                                <p className="text-sm text-red-800">{approvalValidationError}</p>
+                            </div>
+                        )}
+
                         <div className="mb-4">
                             <label className="block text-sm font-medium mb-2">Decision</label>
                             <select
                                 className="input-field"
                                 value={approvalUpdate.status}
-                                onChange={(e) => setApprovalUpdate({ ...approvalUpdate, status: e.target.value })}
+                                onChange={(e) => {
+                                    setApprovalUpdate({ ...approvalUpdate, status: e.target.value });
+                                    setApprovalValidationError(null);
+                                }}
                             >
                                 <option value="">Select Decision</option>
                                 <option value="Approved">Approve</option>
@@ -1675,15 +1841,61 @@ export default function ValidationRequestDetailPage() {
                                 placeholder="Provide any comments or feedback..."
                             />
                         </div>
+
+                        {approvalUpdate.isProxyApproval && (
+                            <>
+                                <div className="mb-4">
+                                    <label className="block text-sm font-medium mb-2">
+                                        Authorization Evidence <span className="text-red-500">*</span>
+                                    </label>
+                                    <input
+                                        type="text"
+                                        className="input-field"
+                                        value={approvalUpdate.certificationEvidence}
+                                        onChange={(e) => {
+                                            setApprovalUpdate({ ...approvalUpdate, certificationEvidence: e.target.value });
+                                            setApprovalValidationError(null);
+                                        }}
+                                        placeholder="e.g., Email dated 2025-11-20, Ticket #12345, Meeting notes..."
+                                    />
+                                    <p className="text-xs text-gray-500 mt-1">
+                                        Provide reference to documentation that evidences proper authorization
+                                    </p>
+                                </div>
+                                <div className="mb-4">
+                                    <label className="flex items-start gap-2">
+                                        <input
+                                            type="checkbox"
+                                            className="mt-1"
+                                            checked={approvalUpdate.proxyCertified}
+                                            onChange={(e) => {
+                                                setApprovalUpdate({ ...approvalUpdate, proxyCertified: e.target.checked });
+                                                setApprovalValidationError(null);
+                                            }}
+                                        />
+                                        <span className="text-sm font-medium">
+                                            I certify that I have obtained and evidenced proper authorization from the designated approver to submit this approval on their behalf. <span className="text-red-500">*</span>
+                                        </span>
+                                    </label>
+                                </div>
+                            </>
+                        )}
+
                         <div className="flex gap-2">
                             <button
                                 onClick={handleApprovalUpdate}
-                                disabled={actionLoading || !approvalUpdate.status}
+                                disabled={actionLoading}
                                 className="btn-primary"
                             >
                                 {actionLoading ? 'Submitting...' : 'Submit'}
                             </button>
-                            <button onClick={() => setShowApprovalModal(false)} className="btn-secondary">
+                            <button
+                                onClick={() => {
+                                    setShowApprovalModal(false);
+                                    setApprovalValidationError(null);
+                                }}
+                                className="btn-secondary"
+                            >
                                 Cancel
                             </button>
                         </div>

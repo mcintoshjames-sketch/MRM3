@@ -563,6 +563,7 @@ class ValidationPlanBase(BaseModel):
 class ValidationPlanCreate(ValidationPlanBase):
     """Schema for creating a validation plan."""
     components: List[ValidationPlanComponentCreate] = []
+    template_plan_id: Optional[int] = None  # Copy from this plan if provided
 
 
 class ValidationPlanUpdate(BaseModel):
@@ -581,6 +582,11 @@ class ValidationPlanResponse(ValidationPlanBase):
     created_at: datetime
     updated_at: datetime
 
+    # Versioning and locking fields
+    config_id: Optional[int] = None
+    locked_at: Optional[datetime] = None
+    locked_by_user_id: Optional[int] = None
+
     # Derived fields for UI convenience
     model_id: Optional[int] = None
     model_name: Optional[str] = None
@@ -589,3 +595,87 @@ class ValidationPlanResponse(ValidationPlanBase):
 
     class Config:
         from_attributes = True
+
+
+class PlanTemplateSuggestion(BaseModel):
+    """Suggestion for a previous plan to use as a template."""
+    source_request_id: int
+    source_plan_id: int
+    validation_type: str
+    model_names: List[str]
+    completion_date: Optional[str] = None
+    validator_name: Optional[str] = None
+    component_count: int
+    deviations_count: int
+    config_id: Optional[int] = None
+    config_name: Optional[str] = None
+    is_different_config: bool  # True if template uses different requirements version
+
+
+class PlanTemplateSuggestionsResponse(BaseModel):
+    """Response with template plan suggestions."""
+    has_suggestions: bool
+    suggestions: List[PlanTemplateSuggestion]
+
+
+# ==================== COMPONENT DEFINITION MANAGEMENT SCHEMAS ====================
+
+class ValidationComponentDefinitionUpdate(BaseModel):
+    """Schema for updating a component definition."""
+    expectation_high: Optional[str] = None
+    expectation_medium: Optional[str] = None
+    expectation_low: Optional[str] = None
+    expectation_very_low: Optional[str] = None
+    section_number: Optional[str] = None
+    section_title: Optional[str] = None
+    component_code: Optional[str] = None
+    component_title: Optional[str] = None
+    is_test_or_analysis: Optional[bool] = None
+    sort_order: Optional[int] = None
+    is_active: Optional[bool] = None
+
+
+class ConfigurationItemResponse(BaseModel):
+    """Response schema for a configuration item (component snapshot)."""
+    config_item_id: int
+    component_id: int
+    expectation_high: str
+    expectation_medium: str
+    expectation_low: str
+    expectation_very_low: str
+    section_number: str
+    section_title: str
+    component_code: str
+    component_title: str
+    is_test_or_analysis: bool
+    sort_order: int
+    is_active: bool
+
+    class Config:
+        from_attributes = True
+
+
+class ConfigurationResponse(BaseModel):
+    """Response schema for a configuration version."""
+    config_id: int
+    config_name: str
+    description: Optional[str]
+    effective_date: date
+    created_by_user_id: Optional[int]
+    created_at: datetime
+    is_active: bool
+
+    class Config:
+        from_attributes = True
+
+
+class ConfigurationDetailResponse(ConfigurationResponse):
+    """Detailed configuration response with component items."""
+    config_items: List[ConfigurationItemResponse]
+
+
+class ConfigurationPublishRequest(BaseModel):
+    """Request schema for publishing a new configuration version."""
+    config_name: str
+    description: Optional[str] = None
+    effective_date: Optional[date] = None  # Defaults to today if not provided

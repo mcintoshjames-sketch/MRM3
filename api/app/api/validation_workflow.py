@@ -14,7 +14,8 @@ from app.models import (
     ValidationRequest, ValidationRequestModelVersion, ValidationStatusHistory, ValidationAssignment,
     ValidationOutcome, ValidationReviewOutcome, ValidationApproval, ValidationGroupingMemory,
     ValidationPolicy, ModelRegion, Region,
-    ValidationComponentDefinition, ValidationPlan, ValidationPlanComponent
+    ValidationComponentDefinition, ValidationPlan, ValidationPlanComponent,
+    ComponentDefinitionConfiguration, ComponentDefinitionConfigItem
 )
 from app.schemas.validation import (
     ValidationRequestCreate, ValidationRequestUpdate, ValidationRequestStatusUpdate,
@@ -27,8 +28,10 @@ from app.schemas.validation import (
     ValidationReviewOutcomeCreate, ValidationReviewOutcomeUpdate, ValidationReviewOutcomeResponse,
     ValidationApprovalCreate, ValidationApprovalUpdate, ValidationApprovalResponse,
     ValidationStatusHistoryResponse,
-    ValidationComponentDefinitionResponse,
-    ValidationPlanCreate, ValidationPlanUpdate, ValidationPlanResponse
+    ValidationComponentDefinitionResponse, ValidationComponentDefinitionUpdate,
+    ValidationPlanCreate, ValidationPlanUpdate, ValidationPlanResponse,
+    PlanTemplateSuggestion, PlanTemplateSuggestionsResponse,
+    ConfigurationResponse, ConfigurationDetailResponse, ConfigurationItemResponse, ConfigurationPublishRequest
 )
 
 router = APIRouter()
@@ -1336,7 +1339,8 @@ def update_validation_request_status(
         joinedload(ValidationRequest.validation_type),
         joinedload(ValidationRequest.priority),
         joinedload(ValidationRequest.current_status),
-        joinedload(ValidationRequest.regions)
+        joinedload(ValidationRequest.regions),
+        joinedload(ValidationRequest.validation_plan)
     ).filter(ValidationRequest.request_id == request_id).first()
 
     if not validation_request:
@@ -1411,6 +1415,63 @@ def update_validation_request_status(
     )
     db.add(audit_log)
 
+    # ===== VALIDATION PLAN LOCKING/UNLOCKING LOGIC =====
+    # Lock plan when moving to Review or Pending Approval
+    # Unlock plan when sending back from locked status to editable status
+    if validation_request.validation_plan:
+        plan = validation_request.validation_plan
+
+        locked_statuses = ["REVIEW", "PENDING_APPROVAL", "APPROVED"]
+        editable_statuses = ["INTAKE", "PLANNING", "IN_PROGRESS"]
+
+        # LOCK: When moving TO Review/Pending Approval/Approved
+        if new_status_code in locked_statuses and not plan.locked_at:
+            active_config = db.query(ComponentDefinitionConfiguration).filter_by(is_active=True).first()
+
+            if active_config:
+                plan.config_id = active_config.config_id
+                plan.locked_at = datetime.utcnow()
+                plan.locked_by_user_id = current_user.user_id
+
+                # Audit log for plan lock
+                plan_lock_audit = AuditLog(
+                    entity_type="ValidationPlan",
+                    entity_id=plan.plan_id,
+                    action="LOCK",
+                    user_id=current_user.user_id,
+                    changes={
+                        "config_id": active_config.config_id,
+                        "config_name": active_config.config_name,
+                        "reason": f"Plan locked when validation moved to {new_status.label}",
+                        "old_status": old_status.label if old_status else None,
+                        "new_status": new_status.label
+                    },
+                    timestamp=datetime.utcnow()
+                )
+                db.add(plan_lock_audit)
+
+        # UNLOCK: When moving FROM locked status TO editable status (sendback scenario)
+        elif old_status_code in locked_statuses and new_status_code in editable_statuses and plan.locked_at:
+            # Unlock the plan (config_id stays to preserve what it was locked to)
+            plan.locked_at = None
+            plan.locked_by_user_id = None
+
+            # Audit log for plan unlock
+            plan_unlock_audit = AuditLog(
+                entity_type="ValidationPlan",
+                entity_id=plan.plan_id,
+                action="UNLOCK",
+                user_id=current_user.user_id,
+                changes={
+                    "reason": f"Plan unlocked when validation sent back to {new_status.label}",
+                    "previous_status": old_status.label if old_status else None,
+                    "new_status": new_status.label,
+                    "config_id_preserved": plan.config_id  # Still linked to original config
+                },
+                timestamp=datetime.utcnow()
+            )
+            db.add(plan_unlock_audit)
+
     # Auto-update linked model version statuses based on validation status
     update_version_statuses_for_validation(
         db, validation_request, new_status_code, current_user
@@ -1442,7 +1503,8 @@ def decline_validation_request(
         joinedload(ValidationRequest.validation_type),
         joinedload(ValidationRequest.priority),
         joinedload(ValidationRequest.current_status),
-        joinedload(ValidationRequest.regions)
+        joinedload(ValidationRequest.regions),
+        joinedload(ValidationRequest.validation_plan)
     ).filter(ValidationRequest.request_id == request_id).first()
 
     if not validation_request:
@@ -2313,46 +2375,64 @@ def submit_approval(
     if not approval:
         raise HTTPException(status_code=404, detail="Approval not found")
 
-    # Only the designated approver can submit approval
-    if current_user.user_id != approval.approver_id:
+    # Only the designated approver or Admin can update approval
+    if current_user.user_id != approval.approver_id and current_user.role != "Admin":
         raise HTTPException(
-            status_code=403, detail="Only the designated approver can submit this approval")
+            status_code=403, detail="Only the designated approver or Admin can update this approval")
 
     approval.approval_status = update_data.approval_status
     approval.comments = update_data.comments
 
     if update_data.approval_status in ["Approved", "Rejected"]:
         approval.approved_at = datetime.utcnow()
+    elif update_data.approval_status == "Pending":
+        # Clear approved_at when withdrawing approval
+        approval.approved_at = None
 
-    # Create audit log
+    # Create audit log with appropriate action type
+    if update_data.approval_status == "Pending":
+        action = "APPROVAL_WITHDRAWN"
+    else:
+        action = "APPROVAL_SUBMITTED"
+
+    # Check if this is a proxy approval (admin approving on behalf)
+    is_proxy_approval = current_user.role == "Admin" and current_user.user_id != approval.approver_id
+
+    changes_dict = {
+        "approval_id": approval_id,
+        "status": update_data.approval_status,
+        "approver_role": approval.approver_role
+    }
+
+    if is_proxy_approval:
+        changes_dict["proxy_approval"] = True
+        changes_dict["approved_by_admin"] = current_user.full_name
+        changes_dict["on_behalf_of"] = approval.approver.full_name
+
     audit_log = AuditLog(
         entity_type="ValidationApproval",
         entity_id=approval.request_id,
-        action="APPROVAL_SUBMITTED",
+        action=action,
         user_id=current_user.user_id,
-        changes={
-            "approval_id": approval_id,
-            "status": update_data.approval_status,
-            "approver_role": approval.approver_role
-        },
+        changes=changes_dict,
         timestamp=datetime.utcnow()
     )
     db.add(audit_log)
 
-    # Update validation request completion_date when approval is granted
-    if update_data.approval_status == "Approved":
-        # Calculate latest approval date for this validation request
+    # Update validation request completion_date based on approval status
+    validation_request = db.query(ValidationRequest).filter(
+        ValidationRequest.request_id == approval.request_id
+    ).first()
+
+    if validation_request:
+        # Recalculate completion_date based on all approvals
         latest_approval_date = db.query(func.max(ValidationApproval.approved_at)).filter(
             ValidationApproval.request_id == approval.request_id,
             ValidationApproval.approval_status == 'Approved'
         ).scalar()
 
-        if latest_approval_date:
-            validation_request = db.query(ValidationRequest).filter(
-                ValidationRequest.request_id == approval.request_id
-            ).first()
-            if validation_request:
-                validation_request.completion_date = latest_approval_date
+        # Set completion_date to latest approval date, or None if no approvals
+        validation_request.completion_date = latest_approval_date
 
     db.commit()
     db.refresh(approval)
@@ -3171,6 +3251,80 @@ def list_validation_component_definitions(
     return components
 
 
+@router.get("/component-definitions/{component_id}", response_model=ValidationComponentDefinitionResponse)
+def get_validation_component_definition(
+    component_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Get a single validation component definition by ID."""
+    component = db.query(ValidationComponentDefinition).filter(
+        ValidationComponentDefinition.component_id == component_id
+    ).first()
+
+    if not component:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Component definition {component_id} not found"
+        )
+
+    return component
+
+
+@router.patch("/component-definitions/{component_id}", response_model=ValidationComponentDefinitionResponse)
+def update_validation_component_definition(
+    component_id: int,
+    component_data: ValidationComponentDefinitionUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Update a validation component definition.
+
+    Admin only. Changes are not retroactive - existing plans are unaffected.
+    To make changes effective for new plans, publish a new configuration version.
+    """
+    check_admin(current_user)
+
+    component = db.query(ValidationComponentDefinition).filter(
+        ValidationComponentDefinition.component_id == component_id
+    ).first()
+
+    if not component:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Component definition {component_id} not found"
+        )
+
+    # Track changes for audit log
+    changes = {}
+    update_data = component_data.model_dump(exclude_unset=True)
+
+    for field, new_value in update_data.items():
+        old_value = getattr(component, field)
+        if old_value != new_value:
+            changes[field] = {"old": old_value, "new": new_value}
+            setattr(component, field, new_value)
+
+    if changes:
+        db.commit()
+        db.refresh(component)
+
+        # Audit log
+        audit_log = AuditLog(
+            entity_type="ValidationComponentDefinition",
+            entity_id=component.component_id,
+            action="UPDATE",
+            user_id=current_user.user_id,
+            changes=changes,
+            timestamp=datetime.utcnow()
+        )
+        db.add(audit_log)
+        db.commit()
+
+    return component
+
+
 def get_expectation_for_tier(component: ValidationComponentDefinition, risk_tier_code: str) -> str:
     """Helper to get expectation for a given risk tier."""
     tier_mapping = {
@@ -3286,7 +3440,7 @@ def create_validation_plan(
     ).order_by(ValidationComponentDefinition.sort_order).all()
 
     # Create component entries
-    # If components are provided in the request, use those; otherwise create defaults
+    # Priority: 1) explicit components, 2) template, 3) defaults
     if plan_data.components:
         # User provided specific components
         for comp_data in plan_data.components:
@@ -3325,6 +3479,67 @@ def create_validation_plan(
                 additional_notes=comp_data.additional_notes
             )
             db.add(plan_comp)
+
+    elif plan_data.template_plan_id:
+        # Copy from template plan
+        template_plan = db.query(ValidationPlan).options(
+            joinedload(ValidationPlan.components).joinedload(ValidationPlanComponent.component_definition),
+            joinedload(ValidationPlan.configuration)
+        ).filter(ValidationPlan.plan_id == plan_data.template_plan_id).first()
+
+        if not template_plan:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Template plan {plan_data.template_plan_id} not found"
+            )
+
+        # Copy high-level plan fields (if not already set by user)
+        if not new_plan.overall_scope_summary and template_plan.overall_scope_summary:
+            new_plan.overall_scope_summary = template_plan.overall_scope_summary
+        if template_plan.material_deviation_from_standard:
+            new_plan.material_deviation_from_standard = template_plan.material_deviation_from_standard
+            if template_plan.overall_deviation_rationale:
+                new_plan.overall_deviation_rationale = template_plan.overall_deviation_rationale
+
+        # Copy components from template
+        for template_comp in template_plan.components:
+            # Get current expectation for this component (from ACTIVE config, not template's config)
+            comp_def = template_comp.component_definition
+            default_expectation = get_expectation_for_tier(comp_def, risk_tier_code)
+
+            # Use template's planned_treatment and rationale
+            planned_treatment = template_comp.planned_treatment
+            rationale = template_comp.rationale
+
+            # Recalculate is_deviation based on CURRENT expectation
+            is_deviation = calculate_is_deviation(default_expectation, planned_treatment)
+
+            plan_comp = ValidationPlanComponent(
+                plan_id=new_plan.plan_id,
+                component_id=template_comp.component_id,
+                default_expectation=default_expectation,  # From ACTIVE config
+                planned_treatment=planned_treatment,      # From template
+                rationale=rationale,                      # From template
+                is_deviation=is_deviation                 # Recalculated
+            )
+            db.add(plan_comp)
+
+        # Audit log for template usage
+        audit_log = AuditLog(
+            entity_type="ValidationPlan",
+            entity_id=new_plan.plan_id,
+            action="CREATE_FROM_TEMPLATE",
+            user_id=current_user.user_id,
+            changes={
+                "template_plan_id": plan_data.template_plan_id,
+                "template_request_id": template_plan.request_id,
+                "template_config_id": template_plan.config_id,
+                "template_config_name": template_plan.configuration.config_name if template_plan.configuration else None
+            },
+            timestamp=datetime.utcnow()
+        )
+        db.add(audit_log)
+
     else:
         # Auto-create all components with defaults
         for comp_def in all_components:
@@ -3376,6 +3591,111 @@ def create_validation_plan(
     response_data.validation_approach = tier_to_approach.get(risk_tier_code, "Standard")
 
     return response_data
+
+
+@router.get("/requests/{request_id}/plan/template-suggestions", response_model=PlanTemplateSuggestionsResponse)
+def get_plan_template_suggestions(
+    request_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Get suggestions for previous validation plans that could be used as templates.
+
+    Returns plans from previous validations of the same Validation Type for the same models.
+    Warns if template uses a different configuration version (requirements changed).
+    """
+    # Get current validation request
+    current_request = db.query(ValidationRequest).options(
+        joinedload(ValidationRequest.validation_type),
+        joinedload(ValidationRequest.model_versions_assoc).joinedload(ValidationRequestModelVersion.model)
+    ).filter(ValidationRequest.request_id == request_id).first()
+
+    if not current_request:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Validation request {request_id} not found"
+        )
+
+    # Get active configuration for comparison
+    active_config = db.query(ComponentDefinitionConfiguration).filter_by(is_active=True).first()
+    active_config_id = active_config.config_id if active_config else None
+
+    # Extract model IDs from current request
+    current_model_ids = {assoc.model.model_id for assoc in current_request.model_versions_assoc if assoc.model}
+
+    if not current_model_ids:
+        return PlanTemplateSuggestionsResponse(has_suggestions=False, suggestions=[])
+
+    # Find previous validations with same validation type and overlapping models
+    # Must be APPROVED status and have a plan
+    validation_type_id = current_request.validation_type.value_id if current_request.validation_type else None
+
+    if not validation_type_id:
+        return PlanTemplateSuggestionsResponse(has_suggestions=False, suggestions=[])
+
+    # Query for potential template sources
+    potential_templates = db.query(ValidationRequest).options(
+        joinedload(ValidationRequest.validation_plan).joinedload(ValidationPlan.components),
+        joinedload(ValidationRequest.validation_plan).joinedload(ValidationPlan.configuration),
+        joinedload(ValidationRequest.model_versions_assoc).joinedload(ValidationRequestModelVersion.model),
+        joinedload(ValidationRequest.current_status),
+        joinedload(ValidationRequest.validation_type)
+    ).filter(
+        ValidationRequest.request_id != request_id,  # Not current request
+        ValidationRequest.validation_type_id == validation_type_id,  # Same validation type
+        ValidationRequest.current_status.has(code="APPROVED"),  # Only approved validations
+        ValidationRequest.validation_plan != None  # Has a plan
+    ).order_by(ValidationRequest.completion_date.desc()).limit(5).all()
+
+    suggestions = []
+
+    for template_request in potential_templates:
+        # Check if models overlap
+        template_model_ids = {assoc.model.model_id for assoc in template_request.model_versions_assoc if assoc.model}
+
+        if not current_model_ids.intersection(template_model_ids):
+            continue  # No overlapping models, skip
+
+        plan = template_request.validation_plan
+
+        # Count deviations
+        deviations_count = sum(1 for comp in plan.components if comp.is_deviation)
+
+        # Get primary validator name (first assigned validator)
+        validator_name = None
+        if template_request.assignments:
+            primary = next((a for a in template_request.assignments if a.is_primary), None)
+            if not primary and template_request.assignments:
+                primary = template_request.assignments[0]
+            if primary and primary.validator:
+                validator_name = primary.validator.full_name
+
+        # Check if config is different
+        template_config_id = plan.config_id
+        is_different_config = template_config_id != active_config_id if template_config_id and active_config_id else False
+
+        config_name = plan.configuration.config_name if plan.configuration else None
+
+        suggestion = PlanTemplateSuggestion(
+            source_request_id=template_request.request_id,
+            source_plan_id=plan.plan_id,
+            validation_type=template_request.validation_type.label if template_request.validation_type else "Unknown",
+            model_names=[assoc.model.model_name for assoc in template_request.model_versions_assoc if assoc.model],
+            completion_date=template_request.completion_date.isoformat() if template_request.completion_date else None,
+            validator_name=validator_name,
+            component_count=len(plan.components),
+            deviations_count=deviations_count,
+            config_id=template_config_id,
+            config_name=config_name,
+            is_different_config=is_different_config
+        )
+        suggestions.append(suggestion)
+
+    return PlanTemplateSuggestionsResponse(
+        has_suggestions=len(suggestions) > 0,
+        suggestions=suggestions
+    )
 
 
 @router.get("/requests/{request_id}/plan", response_model=ValidationPlanResponse)
@@ -3584,3 +3904,132 @@ def delete_validation_plan(
     db.commit()
 
     return None
+
+
+# ==================== CONFIGURATION MANAGEMENT ENDPOINTS ====================
+
+@router.get("/configurations", response_model=List[ConfigurationResponse])
+def list_configurations(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Get all configuration versions.
+
+    Configurations represent snapshots of validation requirements at different points in time.
+    They enable grandfathering: old plans reference the config that was active when they were locked.
+    """
+    configs = db.query(ComponentDefinitionConfiguration).order_by(
+        ComponentDefinitionConfiguration.effective_date.desc()
+    ).all()
+
+    return configs
+
+
+@router.get("/configurations/{config_id}", response_model=ConfigurationDetailResponse)
+def get_configuration_detail(
+    config_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Get detailed configuration with all component snapshots.
+
+    Shows the complete validation requirements matrix (Figure 3) as it existed
+    at the time this configuration was published.
+    """
+    config = db.query(ComponentDefinitionConfiguration).options(
+        joinedload(ComponentDefinitionConfiguration.config_items)
+    ).filter(ComponentDefinitionConfiguration.config_id == config_id).first()
+
+    if not config:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Configuration {config_id} not found"
+        )
+
+    return config
+
+
+@router.post("/configurations/publish", response_model=ConfigurationResponse, status_code=status.HTTP_201_CREATED)
+def publish_new_configuration(
+    config_data: ConfigurationPublishRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Publish a new configuration version (Admin only).
+
+    This creates a snapshot of the current component definitions and sets it as the active configuration.
+    The previous active configuration is marked inactive but preserved for historical reference.
+
+    Process:
+    1. Deactivate the current active configuration
+    2. Create new configuration header
+    3. Snapshot all current component definitions
+    4. Audit log the publication
+
+    Future validation plans will use this new configuration's expectations.
+    Existing locked plans remain linked to their original configuration (grandfathering).
+    """
+    check_admin(current_user)
+
+    # Deactivate current active config
+    current_active = db.query(ComponentDefinitionConfiguration).filter_by(is_active=True).first()
+    if current_active:
+        current_active.is_active = False
+
+    # Create new configuration
+    new_config = ComponentDefinitionConfiguration(
+        config_name=config_data.config_name,
+        description=config_data.description,
+        effective_date=config_data.effective_date or date.today(),
+        created_by_user_id=current_user.user_id,
+        is_active=True
+    )
+    db.add(new_config)
+    db.flush()  # Get config_id
+
+    # Snapshot all component definitions
+    components = db.query(ValidationComponentDefinition).filter_by(is_active=True).all()
+
+    for component in components:
+        config_item = ComponentDefinitionConfigItem(
+            config_id=new_config.config_id,
+            component_id=component.component_id,
+            expectation_high=component.expectation_high,
+            expectation_medium=component.expectation_medium,
+            expectation_low=component.expectation_low,
+            expectation_very_low=component.expectation_very_low,
+            section_number=component.section_number,
+            section_title=component.section_title,
+            component_code=component.component_code,
+            component_title=component.component_title,
+            is_test_or_analysis=component.is_test_or_analysis,
+            sort_order=component.sort_order,
+            is_active=component.is_active
+        )
+        db.add(config_item)
+
+    db.commit()
+    db.refresh(new_config)
+
+    # Audit log
+    audit_log = AuditLog(
+        entity_type="ComponentDefinitionConfiguration",
+        entity_id=new_config.config_id,
+        action="PUBLISH",
+        user_id=current_user.user_id,
+        changes={
+            "config_name": config_data.config_name,
+            "description": config_data.description,
+            "effective_date": str(config_data.effective_date or date.today()),
+            "component_count": len(components),
+            "previous_active_config_id": current_active.config_id if current_active else None
+        },
+        timestamp=datetime.utcnow()
+    )
+    db.add(audit_log)
+    db.commit()
+
+    return new_config
