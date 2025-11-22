@@ -19,6 +19,7 @@ from app.models.model_region import ModelRegion
 from app.models.validation_grouping import ValidationGroupingMemory
 from app.schemas.model import ModelCreate, ModelUpdate, ModelDetailResponse, ValidationGroupingSuggestion, ModelCreateResponse
 from app.schemas.submission_action import SubmissionAction, SubmissionFeedback, SubmissionCommentCreate
+from app.schemas.activity_timeline import ActivityTimelineItem, ActivityTimelineResponse
 
 router = APIRouter()
 
@@ -1288,3 +1289,273 @@ def resubmit_model(
     db.commit()
     db.refresh(model)
     return model
+
+
+@router.get("/{model_id}/activity-timeline", response_model=ActivityTimelineResponse)
+def get_model_activity_timeline(
+    model_id: int,
+    limit: int = 100,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Get comprehensive activity timeline for a model.
+
+    Includes:
+    - Model created/updated (audit logs)
+    - Versions created
+    - Validation requests created/status changes
+    - Validation approvals
+    - Delegates added/removed
+    - Comments added
+    - Deployment tasks confirmed
+    """
+    from app.core.rls import can_access_model
+    from app.models.model_delegate import ModelDelegate
+    from app.models.model_submission_comment import ModelSubmissionComment
+    from app.models.validation import ValidationRequest, ValidationStatusHistory, ValidationApproval
+    from app.models.version_deployment_task import VersionDeploymentTask
+
+    # Check model exists and user has access
+    model = db.query(Model).filter(Model.model_id == model_id).first()
+    if not model:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Model not found"
+        )
+
+    if not can_access_model(model, current_user, db):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not authorized to access this model"
+        )
+
+    activities = []
+
+    # 1. Model audit logs (created, updated)
+    model_audits = db.query(AuditLog).options(
+        joinedload(AuditLog.user)
+    ).filter(
+        AuditLog.entity_type == "Model",
+        AuditLog.entity_id == model_id
+    ).all()
+
+    for audit in model_audits:
+        icon = "📝"
+        title = f"Model {audit.action.lower()}"
+        if audit.action == "CREATE":
+            title = "Model created"
+            icon = "✨"
+        elif audit.action == "UPDATE":
+            title = "Model updated"
+            icon = "📝"
+        elif audit.action == "SUBMIT":
+            title = "Model submitted for approval"
+            icon = "📤"
+        elif audit.action == "APPROVE":
+            title = "Model approved"
+            icon = "✅"
+        elif audit.action == "REJECT":
+            title = "Model submission rejected"
+            icon = "❌"
+        elif audit.action == "RESUBMIT":
+            title = "Model resubmitted"
+            icon = "🔄"
+
+        activities.append(ActivityTimelineItem(
+            timestamp=audit.timestamp,
+            activity_type=f"model_{audit.action.lower()}",
+            title=title,
+            description=None,
+            user_name=audit.user.full_name if audit.user else None,
+            user_id=audit.user_id,
+            entity_type="Model",
+            entity_id=model_id,
+            icon=icon
+        ))
+
+    # 2. Model versions created
+    versions = db.query(ModelVersion).options(
+        joinedload(ModelVersion.created_by)
+    ).filter(
+        ModelVersion.model_id == model_id
+    ).all()
+
+    for version in versions:
+        scope_text = f" ({version.scope})" if version.scope != "GLOBAL" else ""
+        activities.append(ActivityTimelineItem(
+            timestamp=version.created_at,
+            activity_type="version_created",
+            title=f"Version {version.version_number} created{scope_text}",
+            description=version.change_description,
+            user_name=version.created_by.full_name if version.created_by else None,
+            user_id=version.created_by_id,
+            entity_type="ModelVersion",
+            entity_id=version.version_id,
+            icon="🚀"
+        ))
+
+    # 3. Validation requests for this model
+    validation_requests = db.query(ValidationRequest).options(
+        joinedload(ValidationRequest.requestor),
+        joinedload(ValidationRequest.current_status)
+    ).join(
+        ValidationRequest.models
+    ).filter(
+        Model.model_id == model_id
+    ).all()
+
+    for req in validation_requests:
+        activities.append(ActivityTimelineItem(
+            timestamp=req.created_at,
+            activity_type="validation_request_created",
+            title=f"Validation request #{req.request_id} created",
+            description=None,
+            user_name=req.requestor.full_name if req.requestor else None,
+            user_id=req.requestor_id,
+            entity_type="ValidationRequest",
+            entity_id=req.request_id,
+            icon="🔍"
+        ))
+
+        # Get status history for this request
+        status_history = db.query(ValidationStatusHistory).options(
+            joinedload(ValidationStatusHistory.changed_by),
+            joinedload(ValidationStatusHistory.new_status)
+        ).filter(
+            ValidationStatusHistory.request_id == req.request_id
+        ).all()
+
+        for history in status_history:
+            activities.append(ActivityTimelineItem(
+                timestamp=history.changed_at,
+                activity_type="validation_status_change",
+                title=f"Validation #{req.request_id} status changed to {history.new_status.label if history.new_status else 'Unknown'}",
+                description=history.change_reason,
+                user_name=history.changed_by.full_name if history.changed_by else None,
+                user_id=history.changed_by_id,
+                entity_type="ValidationRequest",
+                entity_id=req.request_id,
+                icon="🔄"
+            ))
+
+    # 4. Validation approvals
+    approvals = db.query(ValidationApproval).options(
+        joinedload(ValidationApproval.approver),
+        joinedload(ValidationApproval.request)
+    ).join(
+        ValidationApproval.request
+    ).join(
+        ValidationRequest.models
+    ).filter(
+        Model.model_id == model_id,
+        ValidationApproval.approved_at.isnot(None)
+    ).all()
+
+    for approval in approvals:
+        status_icon = "✅" if approval.approval_status == "Approved" else "❌"
+        activities.append(ActivityTimelineItem(
+            timestamp=approval.approved_at,
+            activity_type="validation_approval",
+            title=f"Validation #{approval.request_id} {approval.approval_status.lower()}",
+            description=approval.comments,
+            user_name=approval.approver.full_name if approval.approver else None,
+            user_id=approval.approver_id,
+            entity_type="ValidationApproval",
+            entity_id=approval.approval_id,
+            icon=status_icon
+        ))
+
+    # 5. Delegates added/removed
+    delegates = db.query(ModelDelegate).options(
+        joinedload(ModelDelegate.user),
+        joinedload(ModelDelegate.delegated_by),
+        joinedload(ModelDelegate.revoked_by)
+    ).filter(
+        ModelDelegate.model_id == model_id
+    ).all()
+
+    for delegate in delegates:
+        # Delegate added
+        activities.append(ActivityTimelineItem(
+            timestamp=delegate.delegated_at,
+            activity_type="delegate_added",
+            title=f"{delegate.user.full_name} added as delegate",
+            description=None,
+            user_name=delegate.delegated_by.full_name if delegate.delegated_by else None,
+            user_id=delegate.delegated_by_id,
+            entity_type="ModelDelegate",
+            entity_id=delegate.delegate_id,
+            icon="👤"
+        ))
+
+        # Delegate removed (if revoked)
+        if delegate.revoked_at:
+            activities.append(ActivityTimelineItem(
+                timestamp=delegate.revoked_at,
+                activity_type="delegate_removed",
+                title=f"{delegate.user.full_name} removed as delegate",
+                description=None,
+                user_name=delegate.revoked_by.full_name if delegate.revoked_by else None,
+                user_id=delegate.revoked_by_id,
+                entity_type="ModelDelegate",
+                entity_id=delegate.delegate_id,
+                icon="👤"
+            ))
+
+    # 6. Submission comments
+    comments = db.query(ModelSubmissionComment).options(
+        joinedload(ModelSubmissionComment.user)
+    ).filter(
+        ModelSubmissionComment.model_id == model_id
+    ).all()
+
+    for comment in comments:
+        activities.append(ActivityTimelineItem(
+            timestamp=comment.created_at,
+            activity_type="comment_added",
+            title=f"Comment added by {comment.user.full_name if comment.user else 'Unknown'}",
+            description=comment.comment_text[:100] + "..." if len(comment.comment_text) > 100 else comment.comment_text,
+            user_name=comment.user.full_name if comment.user else None,
+            user_id=comment.user_id,
+            entity_type="ModelSubmissionComment",
+            entity_id=comment.comment_id,
+            icon="💬"
+        ))
+
+    # 7. Deployment tasks confirmed
+    deployment_tasks = db.query(VersionDeploymentTask).options(
+        joinedload(VersionDeploymentTask.version),
+        joinedload(VersionDeploymentTask.confirmed_by),
+        joinedload(VersionDeploymentTask.region)
+    ).filter(
+        VersionDeploymentTask.model_id == model_id,
+        VersionDeploymentTask.confirmed_at.isnot(None)
+    ).all()
+
+    for task in deployment_tasks:
+        region_text = f" to {task.region.name}" if task.region else ""
+        activities.append(ActivityTimelineItem(
+            timestamp=task.confirmed_at,
+            activity_type="deployment_confirmed",
+            title=f"Version {task.version.version_number} deployed{region_text}",
+            description=task.confirmation_notes,
+            user_name=task.confirmed_by.full_name if task.confirmed_by else None,
+            user_id=task.confirmed_by_id,
+            entity_type="VersionDeploymentTask",
+            entity_id=task.task_id,
+            icon="🚀"
+        ))
+
+    # Sort all activities by timestamp (newest first)
+    activities.sort(key=lambda x: x.timestamp, reverse=True)
+
+    # Apply limit
+    activities = activities[:limit]
+
+    return ActivityTimelineResponse(
+        model_id=model_id,
+        model_name=model.model_name,
+        activities=activities,
+        total_count=len(activities)
+    )

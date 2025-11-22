@@ -137,6 +137,25 @@ interface RevalidationStatus {
     validation_team_sla_due_date: string | null;
 }
 
+interface ActivityTimelineItem {
+    timestamp: string;
+    activity_type: string;
+    title: string;
+    description: string | null;
+    user_name: string | null;
+    user_id: number | null;
+    entity_type: string | null;
+    entity_id: number | null;
+    icon: string;
+}
+
+interface ActivityTimelineResponse {
+    model_id: number;
+    model_name: string;
+    activities: ActivityTimelineItem[];
+    total_count: number;
+}
+
 export default function ModelDetailsPage() {
     const { id } = useParams<{ id: string }>();
     const navigate = useNavigate();
@@ -152,7 +171,7 @@ export default function ModelDetailsPage() {
     const [revalidationStatus, setRevalidationStatus] = useState<RevalidationStatus | null>(null);
     const [loading, setLoading] = useState(true);
     const [editing, setEditing] = useState(false);
-    const [activeTab, setActiveTab] = useState<'details' | 'versions' | 'delegates' | 'validations'>('details');
+    const [activeTab, setActiveTab] = useState<'details' | 'versions' | 'delegates' | 'validations' | 'activity'>('details');
     const [showSubmitChangeModal, setShowSubmitChangeModal] = useState(false);
     const [selectedVersion, setSelectedVersion] = useState<ModelVersion | null>(null);
     const [versionsRefreshTrigger, setVersionsRefreshTrigger] = useState(0);
@@ -165,6 +184,8 @@ export default function ModelDetailsPage() {
     const [sendBackComment, setSendBackComment] = useState('');
     const [resubmitComment, setResubmitComment] = useState('');
     const [submittingApproval, setSubmittingApproval] = useState(false);
+    const [activities, setActivities] = useState<ActivityTimelineItem[]>([]);
+    const [activitiesLoading, setActivitiesLoading] = useState(false);
     const [formData, setFormData] = useState({
         model_name: '',
         description: '',
@@ -184,6 +205,15 @@ export default function ModelDetailsPage() {
     useEffect(() => {
         fetchData();
     }, [id]);
+
+    // Poll activities when Activity tab is active
+    useEffect(() => {
+        if (activeTab === 'activity') {
+            fetchActivities();
+            const interval = setInterval(fetchActivities, 30000); // Poll every 30 seconds
+            return () => clearInterval(interval);
+        }
+    }, [activeTab, id]);
 
     const fetchData = async () => {
         try {
@@ -247,6 +277,19 @@ export default function ModelDetailsPage() {
             console.error('Failed to fetch model:', error);
         } finally {
             setLoading(false);
+        }
+    };
+
+    const fetchActivities = async () => {
+        if (!id) return;
+        setActivitiesLoading(true);
+        try {
+            const response = await api.get(`/models/${id}/activity-timeline`);
+            setActivities(response.data.activities);
+        } catch (error) {
+            console.error('Failed to fetch activities:', error);
+        } finally {
+            setActivitiesLoading(false);
         }
     };
 
@@ -411,6 +454,104 @@ export default function ModelDetailsPage() {
             alert(error.response?.data?.detail || 'Failed to resubmit record');
         } finally {
             setSubmittingApproval(false);
+        }
+    };
+
+    const getActivityIcon = (activityType: string) => {
+        const iconClass = "w-6 h-6";
+
+        switch(activityType) {
+            case 'model_created':
+                return (
+                    <svg className={iconClass} fill="currentColor" viewBox="0 0 20 20">
+                        <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-11a1 1 0 10-2 0v2H7a1 1 0 100 2h2v2a1 1 0 102 0v-2h2a1 1 0 100-2h-2V7z" clipRule="evenodd" />
+                    </svg>
+                );
+            case 'model_updated':
+                return (
+                    <svg className={iconClass} fill="currentColor" viewBox="0 0 20 20">
+                        <path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L3 14.172V17h2.828l8.38-8.379-2.83-2.828z" />
+                    </svg>
+                );
+            case 'model_submitted':
+            case 'model_resubmitted':
+                return (
+                    <svg className={iconClass} fill="currentColor" viewBox="0 0 20 20">
+                        <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-8.707l-3-3a1 1 0 00-1.414 0l-3 3a1 1 0 001.414 1.414L9 9.414V13a1 1 0 102 0V9.414l1.293 1.293a1 1 0 001.414-1.414z" clipRule="evenodd" />
+                    </svg>
+                );
+            case 'model_approved':
+                return (
+                    <svg className={iconClass} fill="currentColor" viewBox="0 0 20 20">
+                        <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                    </svg>
+                );
+            case 'model_rejected':
+                return (
+                    <svg className={iconClass} fill="currentColor" viewBox="0 0 20 20">
+                        <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+                    </svg>
+                );
+            case 'version_created':
+                return (
+                    <svg className={iconClass} fill="currentColor" viewBox="0 0 20 20">
+                        <path fillRule="evenodd" d="M6 2a2 2 0 00-2 2v12a2 2 0 002 2h8a2 2 0 002-2V7.414A2 2 0 0015.414 6L12 2.586A2 2 0 0010.586 2H6zm5 6a1 1 0 10-2 0v2H7a1 1 0 100 2h2v2a1 1 0 102 0v-2h2a1 1 0 100-2h-2V8z" clipRule="evenodd" />
+                    </svg>
+                );
+            case 'validation_request_created':
+                return (
+                    <svg className={iconClass} fill="currentColor" viewBox="0 0 20 20">
+                        <path fillRule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" clipRule="evenodd" />
+                    </svg>
+                );
+            case 'validation_status_change':
+                return (
+                    <svg className={iconClass} fill="currentColor" viewBox="0 0 20 20">
+                        <path fillRule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.008 9.057a1 1 0 011.276.61A5.002 5.002 0 0014.001 13H11a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0v-2.101a7.002 7.002 0 01-11.601-2.566 1 1 0 01.61-1.276z" clipRule="evenodd" />
+                    </svg>
+                );
+            case 'validation_approval':
+                return (
+                    <svg className={iconClass} fill="currentColor" viewBox="0 0 20 20">
+                        <path fillRule="evenodd" d="M6.267 3.455a3.066 3.066 0 001.745-.723 3.066 3.066 0 013.976 0 3.066 3.066 0 001.745.723 3.066 3.066 0 012.812 2.812c.051.643.304 1.254.723 1.745a3.066 3.066 0 010 3.976 3.066 3.066 0 00-.723 1.745 3.066 3.066 0 01-2.812 2.812 3.066 3.066 0 00-1.745.723 3.066 3.066 0 01-3.976 0 3.066 3.066 0 00-1.745-.723 3.066 3.066 0 01-2.812-2.812 3.066 3.066 0 00-.723-1.745 3.066 3.066 0 010-3.976 3.066 3.066 0 00.723-1.745 3.066 3.066 0 012.812-2.812zm7.44 5.252a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                    </svg>
+                );
+            case 'validation_rejection':
+                return (
+                    <svg className={iconClass} fill="currentColor" viewBox="0 0 20 20">
+                        <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM7 9a1 1 0 000 2h6a1 1 0 100-2H7z" clipRule="evenodd" />
+                    </svg>
+                );
+            case 'delegate_added':
+                return (
+                    <svg className={iconClass} fill="currentColor" viewBox="0 0 20 20">
+                        <path d="M8 9a3 3 0 100-6 3 3 0 000 6zM8 11a6 6 0 016 6H2a6 6 0 016-6zM16 7a1 1 0 10-2 0v1h-1a1 1 0 100 2h1v1a1 1 0 102 0v-1h1a1 1 0 100-2h-1V7z" />
+                    </svg>
+                );
+            case 'delegate_removed':
+                return (
+                    <svg className={iconClass} fill="currentColor" viewBox="0 0 20 20">
+                        <path d="M11 6a3 3 0 11-6 0 3 3 0 016 0zM14 17a6 6 0 00-12 0h12zM13 8a1 1 0 100 2h4a1 1 0 100-2h-4z" />
+                    </svg>
+                );
+            case 'comment_added':
+                return (
+                    <svg className={iconClass} fill="currentColor" viewBox="0 0 20 20">
+                        <path fillRule="evenodd" d="M18 10c0 3.866-3.582 7-8 7a8.841 8.841 0 01-4.083-.98L2 17l1.338-3.123C2.493 12.767 2 11.434 2 10c0-3.866 3.582-7 8-7s8 3.134 8 7zM7 9H5v2h2V9zm8 0h-2v2h2V9zM9 9h2v2H9V9z" clipRule="evenodd" />
+                    </svg>
+                );
+            case 'deployment_confirmed':
+                return (
+                    <svg className={iconClass} fill="currentColor" viewBox="0 0 20 20">
+                        <path fillRule="evenodd" d="M3 3a1 1 0 000 2v8a2 2 0 002 2h2.586l-1.293 1.293a1 1 0 101.414 1.414L10 15.414l2.293 2.293a1 1 0 001.414-1.414L12.414 15H15a2 2 0 002-2V5a1 1 0 100-2H3zm11 4a1 1 0 10-2 0v4a1 1 0 102 0V7zm-3 1a1 1 0 10-2 0v3a1 1 0 102 0V8zM8 9a1 1 0 00-2 0v2a1 1 0 102 0V9z" clipRule="evenodd" />
+                    </svg>
+                );
+            default:
+                return (
+                    <svg className={iconClass} fill="currentColor" viewBox="0 0 20 20">
+                        <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
+                    </svg>
+                );
         }
     };
 
@@ -725,6 +866,15 @@ export default function ModelDetailsPage() {
                                 }`}
                         >
                             Validation History ({validationRequests.filter(req => req.current_status !== 'Approved' && req.current_status !== 'Cancelled').length} active, {validationRequests.filter(req => req.current_status === 'Approved').length + validations.length} historical)
+                        </button>
+                        <button
+                            onClick={() => setActiveTab('activity')}
+                            className={`py-2 px-1 border-b-2 font-medium text-sm ${activeTab === 'activity'
+                                ? 'border-blue-500 text-blue-600'
+                                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                                }`}
+                        >
+                            Activity
                         </button>
                     </nav>
                 </div>
@@ -1307,7 +1457,7 @@ export default function ModelDetailsPage() {
                     modelOwnerId={model.owner_id}
                     currentUserId={user?.user_id || 0}
                 />
-            ) : (
+            ) : activeTab === 'validations' ? (
                 <div className="space-y-6">
                     {/* Revalidation Status */}
                     {revalidationStatus && revalidationStatus.status !== 'Never Validated' && revalidationStatus.status !== 'No Policy Configured' && (
@@ -1728,6 +1878,78 @@ export default function ModelDetailsPage() {
                                 </div>
                             );
                         })()}
+                    </div>
+                </div>
+            ) : (
+                <div className="bg-white p-6 rounded-lg shadow-md">
+                    <div className="flex justify-between items-center mb-6">
+                        <h3 className="text-xl font-bold">Activity Timeline</h3>
+                        <button
+                            onClick={fetchActivities}
+                            disabled={activitiesLoading}
+                            className="text-sm text-blue-600 hover:text-blue-800 disabled:opacity-50"
+                        >
+                            {activitiesLoading ? 'Refreshing...' : '🔄 Refresh'}
+                        </button>
+                    </div>
+
+                    {activitiesLoading && activities.length === 0 ? (
+                        <div className="text-center py-8 text-gray-500">
+                            Loading activities...
+                        </div>
+                    ) : activities.length === 0 ? (
+                        <div className="text-center py-8 text-gray-500">
+                            No activity recorded for this model yet.
+                        </div>
+                    ) : (
+                        <div className="space-y-4">
+                            {activities.map((activity, index) => (
+                                <div key={index} className="flex gap-4 pb-4 border-b last:border-b-0">
+                                    {/* Icon */}
+                                    <div className="flex-shrink-0 w-10 h-10 flex items-center justify-center bg-blue-50 rounded-full text-blue-600">
+                                        {getActivityIcon(activity.activity_type)}
+                                    </div>
+
+                                    {/* Content */}
+                                    <div className="flex-1 min-w-0">
+                                        <div className="flex items-start justify-between gap-2">
+                                            <div className="flex-1">
+                                                <h4 className="font-semibold text-gray-900">
+                                                    {activity.title}
+                                                </h4>
+                                                {activity.description && (
+                                                    <p className="text-sm text-gray-600 mt-1">
+                                                        {activity.description}
+                                                    </p>
+                                                )}
+                                                <div className="flex items-center gap-3 mt-2 text-xs text-gray-500">
+                                                    <span>{new Date(activity.timestamp).toLocaleString()}</span>
+                                                    {activity.user_name && (
+                                                        <>
+                                                            <span>•</span>
+                                                            <span>{activity.user_name}</span>
+                                                        </>
+                                                    )}
+                                                    {activity.entity_type && (
+                                                        <>
+                                                            <span>•</span>
+                                                            <span className="px-2 py-0.5 bg-gray-100 rounded">
+                                                                {activity.entity_type}
+                                                                {activity.entity_id && ` #${activity.entity_id}`}
+                                                            </span>
+                                                        </>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+
+                    <div className="mt-4 text-xs text-gray-500 text-center">
+                        Activity timeline updates automatically every 30 seconds
                     </div>
                 </div>
             )}
