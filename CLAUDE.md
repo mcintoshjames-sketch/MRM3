@@ -111,10 +111,6 @@ cd api && python -m pytest && cd ../web && pnpm test:run
   - `/vendors/` - CRUD for third-party model vendors
   - `/taxonomies/` - CRUD for configurable taxonomy values
   - `/audit-logs/` - Search and filter audit logs with pagination
-  - `/validations/` - CRUD for model validation records (role-based access)
-  - `/validations/policies/` - Admin-only validation policy configuration
-  - `/validations/dashboard/overdue` - Models overdue for validation
-  - `/validations/dashboard/pass-with-findings` - Validations needing recommendations
 - **Model Features**:
   - Development type: In-House or Third-Party
   - Owner (required), Developer (optional) - user lookups
@@ -147,7 +143,8 @@ cd api && python -m pytest && cd ../web && pnpm test:run
   - `/dashboard` - Admin dashboard (overdue validations, pass-with-findings alerts)
   - `/models` - Model list with CRUD + CSV export
   - `/models/:id` - Model details with edit functionality (includes taxonomy dropdowns)
-  - `/validations` - Validation records list with create form (Validator/Admin only)
+  - `/validation-workflow` - Validation request management with workflow states
+  - `/validation-workflow/:id` - Detailed validation request view
   - `/vendors` - Vendor management CRUD + CSV export
   - `/vendors/:id` - Vendor details with related models list
   - `/users` - User management CRUD with Entra directory lookup + CSV export
@@ -350,7 +347,6 @@ const { sortedData, requestSort, getSortIcon } = useTableSort<Validation>(valida
   - **ValidationRequest**: Main workflow entity tracking validation lifecycle
   - **ValidationStatusHistory**: Complete audit trail of status changes
   - **ValidationAssignment**: Validator assignments with independence checks
-  - **ValidationWorkComponent**: Track individual work areas (conceptual soundness, data quality, etc.)
   - **ValidationOutcome**: Final outcome - ONLY created after work is complete
   - **ValidationApproval**: Multi-stakeholder approval workflow
   - **ValidationPolicy**: Admin-configurable re-validation frequency by risk tier
@@ -368,15 +364,13 @@ const { sortedData, requestSort, getSortIcon } = useTableSort<Validation>(valida
 - **Business Rules**:
   - Status transitions enforce valid state machine (cannot skip stages)
   - Validator independence enforced (cannot be model owner/developer)
-  - Outcome entry only allowed when all work components are completed AND status >= Review
+  - Outcome entry only allowed when status >= Review
   - Request locked from editing once in Pending Approval or Approved status
   - Complete audit trail for compliance
 
-- **New Taxonomy Values**:
+- **Taxonomy Values**:
   - **Validation Priority**: Critical, High, Medium, Low
   - **Validation Request Status**: All 8 workflow states
-  - **Work Component Type**: Conceptual Soundness, Data Quality, Implementation Testing, Performance Testing, Documentation Review
-  - **Work Component Status**: Not Started, In Progress, Completed
   - **Overall Rating**: Fit for Purpose, Fit with Conditions, Not Fit for Purpose
 
 - **API Endpoints** (prefix: `/validation-workflow`):
@@ -386,7 +380,6 @@ const { sortedData, requestSort, getSortIcon } = useTableSort<Validation>(valida
   - `PATCH /requests/{id}` - Update request details
   - `PATCH /requests/{id}/status` - Update status with workflow validation
   - `POST /requests/{id}/assignments` - Assign validators with independence check
-  - `PATCH /components/{id}` - Update work component status/notes
   - `POST /requests/{id}/outcome` - Create outcome (only when work complete)
   - `POST /requests/{id}/approvals` - Add approval requirements
   - `PATCH /approvals/{id}` - Submit approval/rejection
@@ -395,12 +388,7 @@ const { sortedData, requestSort, getSortIcon } = useTableSort<Validation>(valida
 
 - **Frontend Routes**:
   - `/validation-workflow` - Main validation request list with workflow management
-  - Navigation updated to use new workflow page
-
-- **Legacy Support**:
-  - Old `/validations` endpoints still available (tagged as legacy)
-  - Old validation model and schemas retained for backwards compatibility
-  - Old frontend page accessible at `/validations` route
+  - `/validation-workflow/:id` - Detailed validation request view with full workflow UI
 
 - **Future Enhancements** (separate phases):
   - Detailed Findings and Issues tracking module

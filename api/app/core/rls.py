@@ -4,7 +4,7 @@ from sqlalchemy import or_
 from app.models.user import User
 from app.models.model import Model
 from app.models.model_delegate import ModelDelegate
-from app.models.validation import ValidationRequest, ValidationRequestModelVersion, Validation
+from app.models.validation import ValidationRequest, ValidationRequestModelVersion
 
 
 def can_see_all_data(user: User) -> bool:
@@ -147,48 +147,6 @@ def can_access_validation_request(request_id: int, user: User, db: Session) -> b
             return True
 
     return False
-
-
-def apply_legacy_validation_rls(query: Query, user: User, db: Session) -> Query:
-    """
-    Apply Row-Level Security to legacy Validation queries.
-
-    Users with "User" role can only see validations for models they have access to.
-    """
-    if can_see_all_data(user):
-        return query
-
-    # For "User" role, filter to only validations for models they have access to
-    return query.join(
-        Model,
-        Validation.model_id == Model.model_id
-    ).filter(
-        or_(
-            Model.owner_id == user.user_id,
-            Model.developer_id == user.user_id,
-            Model.delegates.any(
-                (ModelDelegate.user_id == user.user_id) &
-                (ModelDelegate.revoked_at == None)
-            )
-        )
-    )
-
-
-def can_access_legacy_validation(validation_id: int, user: User, db: Session) -> bool:
-    """
-    Check if a user can access a specific legacy validation.
-
-    Access is granted if user can access the associated model.
-    """
-    if can_see_all_data(user):
-        return True
-
-    validation = db.query(Validation).filter(
-        Validation.validation_id == validation_id).first()
-    if not validation:
-        return False
-
-    return can_access_model(validation.model_id, user, db)
 
 
 def can_modify_model(model_id: int, user: User, db: Session) -> bool:

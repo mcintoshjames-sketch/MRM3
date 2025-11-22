@@ -105,10 +105,6 @@ class Model(Base):
         "Region", foreign_keys=[wholly_owned_region_id])
     regulatory_categories: Mapped[List["TaxonomyValue"]] = relationship(
         "TaxonomyValue", secondary=model_regulatory_categories)
-    # Legacy validations - kept for backwards compatibility
-    validations: Mapped[List["Validation"]] = relationship(
-        "Validation", back_populates="model", cascade="all, delete-orphan", order_by="desc(Validation.validation_date)"
-    )
     # Regional metadata links
     model_regions: Mapped[List["ModelRegion"]] = relationship(
         "ModelRegion", back_populates="model", cascade="all, delete-orphan"

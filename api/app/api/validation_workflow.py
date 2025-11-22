@@ -2514,6 +2514,10 @@ def get_sla_violations(
 
     from app.models.validation import ValidationPolicy
 
+    # Pre-load all validation policies (once, not in loop)
+    policies = db.query(ValidationPolicy).all()
+    policy_lookup = {p.risk_tier_id: p for p in policies}
+
     # Get all active (non-terminal) validation requests with submission received
     requests = db.query(ValidationRequest).options(
         joinedload(ValidationRequest.models).joinedload(Model.risk_tier),
@@ -2538,10 +2542,8 @@ def get_sla_violations(
         if not model.risk_tier:
             continue
 
-        # Get validation policy for this risk tier
-        policy = db.query(ValidationPolicy).filter(
-            ValidationPolicy.risk_tier_id == model.risk_tier.value_id
-        ).first()
+        # Lookup validation policy from pre-loaded dict
+        policy = policy_lookup.get(model.risk_tier.value_id)
 
         if not policy:
             continue
@@ -2590,6 +2592,18 @@ def get_out_of_order_validations(
     check_admin(current_user)
 
     from app.models.model_version import ModelVersion
+    from collections import defaultdict
+
+    # Pre-load all model versions with production dates (once, not in loop)
+    all_versions = db.query(ModelVersion).filter(
+        ModelVersion.validation_request_id.isnot(None),
+        ModelVersion.production_date.isnot(None)
+    ).all()
+
+    # Group versions by validation_request_id for fast lookup
+    versions_by_request = defaultdict(list)
+    for version in all_versions:
+        versions_by_request[version.validation_request_id].append(version)
 
     # Get all validation requests with linked model versions
     requests = db.query(ValidationRequest).options(
@@ -2606,11 +2620,8 @@ def get_out_of_order_validations(
 
     for req in requests:
         model_names = [m.model_name for m in req.models] if req.models else []
-        # Find model versions linked to this validation request
-        versions = db.query(ModelVersion).filter(
-            ModelVersion.validation_request_id == req.request_id,
-            ModelVersion.production_date.isnot(None)
-        ).all()
+        # Get model versions from pre-loaded dict
+        versions = versions_by_request.get(req.request_id, [])
 
         for version in versions:
             # Check if target completion date is after production date
@@ -2845,7 +2856,16 @@ def get_overdue_submissions(
     today = date.today()
 
     # Find active revalidation requests without submissions
-    pending_requests = db.query(ValidationRequest).filter(
+    pending_requests = db.query(ValidationRequest).options(
+        joinedload(ValidationRequest.model_versions_assoc).joinedload(
+            ValidationRequestModelVersion.model
+        ).joinedload(Model.owner),
+        joinedload(ValidationRequest.model_versions_assoc).joinedload(
+            ValidationRequestModelVersion.model
+        ).joinedload(Model.risk_tier),
+        joinedload(ValidationRequest.current_status),
+        joinedload(ValidationRequest.validation_type)
+    ).filter(
         ValidationRequest.validation_type.has(TaxonomyValue.code.in_(["COMPREHENSIVE", "ANNUAL"])),
         ValidationRequest.submission_received_date.is_(None),
         ValidationRequest.current_status.has(TaxonomyValue.code.in_(["INTAKE", "PLANNING"]))
@@ -2906,7 +2926,16 @@ def get_overdue_validations(
     today = date.today()
 
     # Find active revalidation requests
-    active_requests = db.query(ValidationRequest).filter(
+    active_requests = db.query(ValidationRequest).options(
+        joinedload(ValidationRequest.model_versions_assoc).joinedload(
+            ValidationRequestModelVersion.model
+        ).joinedload(Model.owner),
+        joinedload(ValidationRequest.model_versions_assoc).joinedload(
+            ValidationRequestModelVersion.model
+        ).joinedload(Model.risk_tier),
+        joinedload(ValidationRequest.current_status),
+        joinedload(ValidationRequest.validation_type)
+    ).filter(
         ValidationRequest.validation_type.has(TaxonomyValue.code.in_(["COMPREHENSIVE", "ANNUAL"])),
         ValidationRequest.current_status.has(TaxonomyValue.code.notin_(["APPROVED", "CANCELLED"]))
     ).all()

@@ -6,7 +6,6 @@ from app.core.database import SessionLocal
 from app.core.security import get_password_hash
 from app.models import User, UserRole, Vendor, EntraUser, Taxonomy, TaxonomyValue, ValidationWorkflowSLA, ValidationPolicy, Region
 from app.models.model import Model
-from app.models.validation import Validation
 
 
 REGULATORY_CATEGORY_VALUES = [
@@ -56,95 +55,95 @@ REGULATORY_CATEGORY_VALUES = [
 
 
 MODEL_TYPE_VALUES = [
-    {"label": "Retail PD Model",
+    {"code": "RETAIL_PD", "label": "Retail PD Model",
         "description": "Predicts probability of default for retail exposures."},
-    {"label": "Wholesale PD Model",
+    {"code": "WHOLESALE_PD", "label": "Wholesale PD Model",
         "description": "Predicts probability of default for wholesale obligors."},
-    {"label": "LGD Model (Loss Given Default)",
+    {"code": "LGD", "label": "LGD Model (Loss Given Default)",
      "description": "Estimates loss severity conditional on default."},
-    {"label": "EAD / CCF Model (Exposure at Default / Credit Conversion Factor)",
+    {"code": "EAD_CCF", "label": "EAD / CCF Model (Exposure at Default / Credit Conversion Factor)",
      "description": "Estimates exposure or credit conversion factors at default."},
-    {"label": "Application Scorecard",
+    {"code": "APP_SCORECARD", "label": "Application Scorecard",
         "description": "Origination scorecard for approve/decline, limits, and pricing."},
-    {"label": "Behavioural Scorecard",
+    {"code": "BEHAV_SCORECARD", "label": "Behavioural Scorecard",
         "description": "Scores existing accounts based on recent behaviour."},
-    {"label": "Collections Scorecard",
+    {"code": "COLL_SCORECARD", "label": "Collections Scorecard",
         "description": "Prioritizes delinquent accounts for collections strategies."},
-    {"label": "Internal Rating Model – Obligor / Facility",
+    {"code": "INTERNAL_RATING", "label": "Internal Rating Model – Obligor / Facility",
         "description": "Assigns internal ratings mapped to PD/LGD bands."},
-    {"label": "Transition / Migration / Roll-Rate Model",
+    {"code": "TRANSITION_MATRIX", "label": "Transition / Migration / Roll-Rate Model",
         "description": "Projects migrations between delinquency or rating states."},
-    {"label": "Prepayment / Early Termination Model",
+    {"code": "PREPAYMENT", "label": "Prepayment / Early Termination Model",
         "description": "Predicts early payoff, refinance, or attrition."},
-    {"label": "Cure / Recovery Process Model",
+    {"code": "CURE_RECOVERY", "label": "Cure / Recovery Process Model",
         "description": "Models probability, timing, and magnitude of cure or recovery."},
-    {"label": "Pricing Model – Linear Instruments",
+    {"code": "PRICING_LINEAR", "label": "Pricing Model – Linear Instruments",
         "description": "Values bonds, swaps, forwards, and other linear instruments."},
-    {"label": "Pricing Model – Options & Exotics",
+    {"code": "PRICING_EXOTIC", "label": "Pricing Model – Options & Exotics",
         "description": "Values options and structured products using advanced methods."},
-    {"label": "Curve / Surface Construction Model",
+    {"code": "CURVE_CONSTRUCT", "label": "Curve / Surface Construction Model",
         "description": "Builds discount curves, credit curves, vol surfaces, and correlations."},
-    {"label": "VaR / Expected Shortfall (ES) Model",
+    {"code": "VAR_ES", "label": "VaR / Expected Shortfall (ES) Model",
      "description": "Computes market risk via VaR or ES methodologies."},
-    {"label": "Sensitivity / Greeks Aggregation Model",
+    {"code": "SENSITIVITY_AGG", "label": "Sensitivity / Greeks Aggregation Model",
         "description": "Aggregates position sensitivities for hedging or limits."},
-    {"label": "XVA Model (CVA / DVA / FVA / MVA)",
+    {"code": "XVA", "label": "XVA Model (CVA / DVA / FVA / MVA)",
      "description": "Calculates derivative valuation adjustments."},
-    {"label": "Risk Factor Simulation / Scenario Generator",
+    {"code": "RISK_SIMULATION", "label": "Risk Factor Simulation / Scenario Generator",
         "description": "Simulates joint paths of market risk factors."},
-    {"label": "Non-Maturity Deposit (NMD) Model",
+    {"code": "NMD", "label": "Non-Maturity Deposit (NMD) Model",
      "description": "Models NMD balances, stability, and rate sensitivity."},
-    {"label": "Liquidity Runoff / Survival Horizon Model",
+    {"code": "LIQUIDITY_RUNOFF", "label": "Liquidity Runoff / Survival Horizon Model",
         "description": "Projects stressed inflows/outflows and survival horizons."},
-    {"label": "Balance Sheet Evolution / Dynamic Balance Sheet Model",
+    {"code": "BAL_SHEET_DYN", "label": "Balance Sheet Evolution / Dynamic Balance Sheet Model",
         "description": "Simulates balance sheet composition under scenarios."},
-    {"label": "IRRBB Model (EVE / NII Simulation)",
+    {"code": "IRRBB", "label": "IRRBB Model (EVE / NII Simulation)",
      "description": "Projects EVE/NII impacts under rate scenarios."},
-    {"label": "Funds Transfer Pricing (FTP) Model",
+    {"code": "FTP", "label": "Funds Transfer Pricing (FTP) Model",
      "description": "Allocates funding and liquidity costs across products."},
-    {"label": "Lifetime Loss / Expected Credit Loss (ECL) Engine",
+    {"code": "ECL_ENGINE", "label": "Lifetime Loss / Expected Credit Loss (ECL) Engine",
      "description": "Combines components to produce lifetime expected losses."},
-    {"label": "Provision / Reserve Allocation Model",
+    {"code": "RESERVE_ALLOC", "label": "Provision / Reserve Allocation Model",
         "description": "Allocates allowance or reserves across portfolios."},
-    {"label": "Economic Capital / Unexpected Loss Model",
+    {"code": "ECON_CAPITAL", "label": "Economic Capital / Unexpected Loss Model",
         "description": "Computes economic capital via loss distributions and correlations."},
-    {"label": "Stress Testing Projection Model (Top-Down / Bottom-Up)",
+    {"code": "STRESS_TEST_PROJ", "label": "Stress Testing Projection Model (Top-Down / Bottom-Up)",
      "description": "Generates stressed projections of PPNR, losses, and capital."},
-    {"label": "Regulatory Metric Calculation Engine",
+    {"code": "REG_METRIC_CALC", "label": "Regulatory Metric Calculation Engine",
         "description": "Calculates regulatory ratios such as capital, leverage, or liquidity."},
-    {"label": "Transaction Monitoring / Alert Generation Model (AML)",
+    {"code": "AML_TXN_MON", "label": "Transaction Monitoring / Alert Generation Model (AML)",
      "description": "Scores transactions or accounts and issues AML alerts."},
-    {"label": "Customer Risk Rating (CRR) Model – AML/KYC",
+    {"code": "AML_CUST_RISK", "label": "Customer Risk Rating (CRR) Model – AML/KYC",
      "description": "Assigns inherent AML risk scores to customers."},
-    {"label": "Sanctions Screening Matching Model",
+    {"code": "SANCTIONS", "label": "Sanctions Screening Matching Model",
         "description": "Performs sanctions list matching and similarity scoring."},
-    {"label": "Fraud Detection Model",
+    {"code": "FRAUD", "label": "Fraud Detection Model",
         "description": "Detects fraudulent transactions or accounts across channels."},
-    {"label": "Fair Lending / Fairness Assessment Model",
+    {"code": "FAIR_LENDING", "label": "Fair Lending / Fairness Assessment Model",
         "description": "Quantifies disparate impact or bias in credit processes."},
-    {"label": "Operational Risk Capital Model (Loss Distribution Approach)",
+    {"code": "OP_RISK_CAP", "label": "Operational Risk Capital Model (Loss Distribution Approach)",
      "description": "Fits severity/frequency and computes op-risk capital."},
-    {"label": "Operational Risk Scenario Model",
+    {"code": "OP_RISK_SCEN", "label": "Operational Risk Scenario Model",
         "description": "Aggregates scenario-based operational risk losses."},
-    {"label": "Conduct Risk / Complaints Scoring Model",
+    {"code": "CONDUCT_RISK", "label": "Conduct Risk / Complaints Scoring Model",
         "description": "Scores complaints or events for conduct risk severity."},
-    {"label": "Vendor / Third-Party Risk Scoring Model",
+    {"code": "VENDOR_RISK", "label": "Vendor / Third-Party Risk Scoring Model",
         "description": "Scores third parties based on inherent risk and controls."},
-    {"label": "Propensity / Next-Best-Offer Model",
+    {"code": "PROPENSITY", "label": "Propensity / Next-Best-Offer Model",
         "description": "Predicts acceptance likelihood for offers or products."},
-    {"label": "Churn / Attrition Model",
+    {"code": "CHURN", "label": "Churn / Attrition Model",
         "description": "Predicts likelihood a customer will leave or reduce activity."},
-    {"label": "Pricing & Elasticity Model",
+    {"code": "PRICING_ELAST", "label": "Pricing & Elasticity Model",
         "description": "Estimates demand or margin sensitivity to pricing changes."},
-    {"label": "Segmentation / Clustering Model",
+    {"code": "SEGMENTATION", "label": "Segmentation / Clustering Model",
         "description": "Groups customers or exposures into segments."},
-    {"label": "Forecasting Model – Volumes / Revenues / KPIs",
+    {"code": "FORECAST_KPI", "label": "Forecasting Model – Volumes / Revenues / KPIs",
         "description": "Forecasts balances, volumes, revenues, or KPIs."},
-    {"label": "Aggregation / Composite Index Model",
+    {"code": "AGGREGATION", "label": "Aggregation / Composite Index Model",
         "description": "Combines multiple inputs into composite indices."},
-    {"label": "Mapping / Allocation Model",
+    {"code": "ALLOCATION", "label": "Mapping / Allocation Model",
         "description": "Allocates metrics between dimensions or entities."},
-    {"label": "Model Risk Scoring / Model Tiering Model",
+    {"code": "MRM_SCORING", "label": "Model Risk Scoring / Model Tiering Model",
         "description": "Scores models to determine tiering and validation intensity."},
 ]
 
@@ -617,73 +616,6 @@ def seed_database():
                     },
                 ]
             },
-            {
-                "name": "Targeted Scope",
-                "description": "Scope options for targeted validation reviews",
-                "is_system": True,
-                "values": [
-                    {
-                        "code": "FULL_SCOPE",
-                        "label": "Full Scope",
-                        "description": "End-to-end, independent review of the entire model lifecycle: conceptual soundness, data, assumptions, implementation, outcomes analysis, use/governance, and performance monitoring. Used for initial validations and periodic 'full refresh' reviews.",
-                        "sort_order": 1
-                    },
-                    {
-                        "code": "TARGETED_DATA_INPUTS",
-                        "label": "Targeted: Data & Inputs",
-                        "description": "Focused review of data and inputs only: source systems, lineage, data quality, transformations, sample representativeness, and controls over data extraction/loading. Does not re-cover methodology or outcomes except as needed to assess data adequacy.",
-                        "sort_order": 2
-                    },
-                    {
-                        "code": "TARGETED_METHODLOGY_ASSUMPTIONS",
-                        "label": "Targeted: Methodology & Assumptions",
-                        "description": "Focused review of conceptual soundness and assumptions: modelling approach, variable selection, segmentation, theoretical justification, expert judgment, parameterization, and key limitations. Does not systematically test code or implementation.",
-                        "sort_order": 3
-                    },
-                    {
-                        "code": "TARGETED_IMPLEMENTATION_CODE",
-                        "label": "Targeted: Implementation & Code",
-                        "description": "Focused review of the implementation: code, configuration, parameter files, environment, and integration against the approved model design. Emphasis on implementation errors, parameter mis-specification, and version control—not on re-deriving the model.",
-                        "sort_order": 4
-                    },
-                    {
-                        "code": "TARGETED_OUTCOMES_BENCHMARKING",
-                        "label": "Targeted: Outcomes & Benchmarking",
-                        "description": "Focused review of model outputs: back-testing, stability, discrimination, calibration, benchmarking against challenger models or benchmarks, and sensitivity analysis. Assumes methodology and implementation have already been vetted.",
-                        "sort_order": 5
-                    },
-                    {
-                        "code": "TARGETED_USE_GOVERNANCE_CONTROLS",
-                        "label": "Targeted: Use, Governance & Controls",
-                        "description": "Focused review of model use and governance: alignment with documented use case, adherence to usage constraints, override practices, documentation, roles/responsibilities, and control environment (including approvals and attestations).",
-                        "sort_order": 6
-                    },
-                    {
-                        "code": "PERFORMANCE_MONITORING_FRAMEWORK",
-                        "label": "Performance Monitoring Framework",
-                        "description": "Review of the performance monitoring design rather than the model itself: selected KPIs/KRIs, thresholds, frequency, sampling, reporting, and escalation triggers; assesses whether monitoring is sufficient to detect deterioration and misuse.",
-                        "sort_order": 7
-                    },
-                    {
-                        "code": "MODEL_CHANGE_FOCUSED",
-                        "label": "Model Change Focused",
-                        "description": "Review focused on a specific model change or release (e.g., parameter update, new segmentation, new feature set). Scope is limited to assessing the impact of that change and whether previously-validated elements remain valid.",
-                        "sort_order": 8
-                    },
-                    {
-                        "code": "FOLLOW_UP_ISSUE_REMEDIATION",
-                        "label": "Follow-up: Issue Remediation",
-                        "description": "Narrow review to confirm remediation of previously identified issues or findings. Tests whether agreed actions were implemented and whether they adequately address the original concern; does not re-perform the full validation.",
-                        "sort_order": 9
-                    },
-                    {
-                        "code": "THEMATIC_OR_PORTFOLIO_REVIEW",
-                        "label": "Thematic or Portfolio Review",
-                        "description": "Cross-model review focused on a thematic question across multiple models (e.g., treatment of macro variables, treatment of overrides, treatment of outliers). Depth per model is limited; emphasis is on consistency and systemic risk.",
-                        "sort_order": 10
-                    },
-                ]
-            },
             # New validation workflow taxonomies
             {
                 "name": "Validation Priority",
@@ -768,68 +700,6 @@ def seed_database():
                         "label": "Cancelled",
                         "description": "Terminated before completion - requires justification",
                         "sort_order": 8
-                    },
-                ]
-            },
-            {
-                "name": "Work Component Type",
-                "description": "Types of validation work components",
-                "is_system": True,
-                "values": [
-                    {
-                        "code": "CONCEPTUAL_SOUNDNESS",
-                        "label": "Conceptual Soundness Review",
-                        "description": "Assessment of model methodology, theoretical foundation, and assumptions",
-                        "sort_order": 1
-                    },
-                    {
-                        "code": "DATA_QUALITY",
-                        "label": "Data Quality Assessment",
-                        "description": "Evaluation of data sources, quality, completeness, and appropriateness",
-                        "sort_order": 2
-                    },
-                    {
-                        "code": "IMPLEMENTATION_TESTING",
-                        "label": "Implementation Testing",
-                        "description": "Verification of correct model implementation and coding",
-                        "sort_order": 3
-                    },
-                    {
-                        "code": "PERFORMANCE_TESTING",
-                        "label": "Performance Testing",
-                        "description": "Analysis of model performance, accuracy, and stability",
-                        "sort_order": 4
-                    },
-                    {
-                        "code": "DOCUMENTATION_REVIEW",
-                        "label": "Documentation Review",
-                        "description": "Assessment of model documentation completeness and accuracy",
-                        "sort_order": 5
-                    },
-                ]
-            },
-            {
-                "name": "Work Component Status",
-                "description": "Status of individual validation work components",
-                "is_system": True,
-                "values": [
-                    {
-                        "code": "NOT_STARTED",
-                        "label": "Not Started",
-                        "description": "Work on this component has not yet begun",
-                        "sort_order": 1
-                    },
-                    {
-                        "code": "IN_PROGRESS",
-                        "label": "In Progress",
-                        "description": "Work on this component is currently underway",
-                        "sort_order": 2
-                    },
-                    {
-                        "code": "COMPLETED",
-                        "label": "Completed",
-                        "description": "Work on this component has been finished",
-                        "sort_order": 3
                     },
                 ]
             },

@@ -291,15 +291,18 @@ export default function TaxonomyPage() {
                                         <div className="grid grid-cols-3 gap-4">
                                             <div className="mb-3">
                                                 <label htmlFor="val_code" className="block text-sm font-medium mb-1">
-                                                    Code
+                                                    Code {editingValue && <span className="text-xs text-gray-500">(immutable)</span>}
                                                 </label>
                                                 <input
                                                     id="val_code"
                                                     type="text"
-                                                    className="input-field"
+                                                    className={`input-field ${editingValue ? 'bg-gray-100 cursor-not-allowed' : ''}`}
                                                     value={valueFormData.code}
                                                     onChange={(e) => setValueFormData({ ...valueFormData, code: e.target.value })}
+                                                    disabled={!!editingValue}
+                                                    readOnly={!!editingValue}
                                                     required
+                                                    title={editingValue ? "Code cannot be changed after creation to maintain data integrity" : ""}
                                                 />
                                             </div>
                                             <div className="mb-3">
@@ -369,26 +372,23 @@ export default function TaxonomyPage() {
                                 {selectedTaxonomy.values.length === 0 ? (
                                     <p className="text-gray-500 text-sm">No values yet. Add values to this taxonomy.</p>
                                 ) : (
-                                    <div className="border rounded overflow-hidden">
-                                        <table className="min-w-full divide-y divide-gray-200 table-fixed">
+                                    <div className="border rounded overflow-x-auto">
+                                        <table className="min-w-full divide-y divide-gray-200">
                                             <thead className="bg-gray-50">
                                                 <tr>
-                                                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase w-16">
+                                                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase w-16">
                                                         Order
                                                     </th>
-                                                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase w-28">
+                                                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase w-32">
                                                         Code
                                                     </th>
-                                                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">
+                                                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
                                                         Label
                                                     </th>
-                                                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">
+                                                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
                                                         Description
                                                     </th>
-                                                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase w-20">
-                                                        Status
-                                                    </th>
-                                                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase w-28">
+                                                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase w-48">
                                                         Actions
                                                     </th>
                                                 </tr>
@@ -397,43 +397,58 @@ export default function TaxonomyPage() {
                                                 {selectedTaxonomy.values
                                                     .sort((a, b) => a.sort_order - b.sort_order)
                                                     .map((value) => (
-                                                        <tr key={value.value_id}>
-                                                            <td className="px-4 py-2 text-sm w-16">{value.sort_order}</td>
-                                                            <td className="px-4 py-2 text-sm font-mono w-28">{value.code}</td>
-                                                            <td className="px-4 py-2 text-sm font-medium">{value.label}</td>
-                                                            <td className="px-4 py-2 text-sm text-gray-600 truncate">
+                                                        <tr key={value.value_id} className={`hover:bg-gray-50 ${!value.is_active ? 'opacity-60' : ''}`}>
+                                                            <td className="px-4 py-3 text-sm text-center">{value.sort_order}</td>
+                                                            <td className="px-4 py-3 text-sm font-mono break-words">{value.code}</td>
+                                                            <td className="px-4 py-3 text-sm font-medium">
+                                                                <div className="flex items-center gap-2">
+                                                                    {value.label}
+                                                                    {!value.is_active && (
+                                                                        <span className="px-1.5 py-0.5 text-xs rounded bg-gray-200 text-gray-600">
+                                                                            Inactive
+                                                                        </span>
+                                                                    )}
+                                                                </div>
+                                                            </td>
+                                                            <td className="px-4 py-3 text-sm text-gray-600">
                                                                 {value.description || '-'}
                                                             </td>
-                                                            <td className="px-4 py-2">
-                                                                <span className={`px-2 py-1 text-xs rounded ${value.is_active
-                                                                    ? 'bg-green-100 text-green-800'
-                                                                    : 'bg-gray-100 text-gray-800'
-                                                                    }`}>
-                                                                    {value.is_active ? 'Active' : 'Inactive'}
-                                                                </span>
-                                                            </td>
-                                                            <td className="px-4 py-2">
-                                                                <button
-                                                                    onClick={() => handleEditValue(value)}
-                                                                    className="text-blue-600 hover:text-blue-800 text-sm mr-2"
-                                                                >
-                                                                    Edit
-                                                                </button>
-                                                                {isSystemProtectedValue(value) ? (
-                                                                    <span
-                                                                        className="text-gray-400 text-sm cursor-not-allowed"
-                                                                        title="This value is used by the system for auto-generated validation projects and cannot be deleted"
-                                                                    >
-                                                                        Delete
-                                                                    </span>
-                                                                ) : (
+                                                            <td className="px-4 py-3 whitespace-nowrap">
+                                                                <div className="flex items-center gap-2">
                                                                     <button
-                                                                        onClick={() => handleDeleteValue(value.value_id)}
-                                                                        className="text-red-600 hover:text-red-800 text-sm"
+                                                                        onClick={() => handleEditValue(value)}
+                                                                        className="inline-flex items-center px-3 py-1 bg-blue-100 text-blue-700 hover:bg-blue-200 rounded text-sm font-medium transition-colors"
+                                                                        title="Edit this value"
                                                                     >
-                                                                        Delete
+                                                                        <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                                                                        </svg>
+                                                                        Edit
                                                                     </button>
-                                                                )}
+                                                                    {isSystemProtectedValue(value) ? (
+                                                                        <button
+                                                                            disabled
+                                                                            className="inline-flex items-center px-3 py-1 bg-gray-100 text-gray-400 rounded text-sm font-medium cursor-not-allowed"
+                                                                            title="This value is used by the system for auto-generated validation projects and cannot be deleted"
+                                                                        >
+                                                                            <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                                                            </svg>
+                                                                            Delete
+                                                                        </button>
+                                                                    ) : (
+                                                                        <button
+                                                                            onClick={() => handleDeleteValue(value.value_id)}
+                                                                            className="inline-flex items-center px-3 py-1 bg-red-100 text-red-700 hover:bg-red-200 rounded text-sm font-medium transition-colors"
+                                                                            title="Delete this value"
+                                                                        >
+                                                                            <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                                                            </svg>
+                                                                            Delete
+                                                                        </button>
+                                                                    )}
+                                                                </div>
                                                             </td>
                                                         </tr>
                                                     ))}

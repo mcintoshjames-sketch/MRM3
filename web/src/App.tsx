@@ -11,7 +11,6 @@ import UserDetailsPage from './pages/UserDetailsPage';
 import TaxonomyPage from './pages/TaxonomyPage';
 import AuditPage from './pages/AuditPage';
 import AdminDashboardPage from './pages/AdminDashboardPage';
-import ValidationsPage from './pages/ValidationsPage';
 import ValidationWorkflowPage from './pages/ValidationWorkflowPage';
 import ValidationRequestDetailPage from './pages/ValidationRequestDetailPage';
 import ValidatorDashboardPage from './pages/ValidatorDashboardPage';
@@ -49,8 +48,6 @@ function App() {
             <Route path="/models" element={user ? <ModelsPage /> : <Navigate to="/login" />} />
             <Route path="/models/:model_id/versions/:version_id" element={user ? <ModelChangeRecordPage /> : <Navigate to="/login" />} />
             <Route path="/models/:id" element={user ? <ModelDetailsPage /> : <Navigate to="/login" />} />
-            <Route path="/validations" element={user ? <ValidationsPage /> : <Navigate to="/login" />} />
-            <Route path="/validations/new" element={user ? <ValidationsPage /> : <Navigate to="/login" />} />
             <Route path="/validation-workflow" element={user ? <ValidationWorkflowPage /> : <Navigate to="/login" />} />
             <Route path="/validation-workflow/new" element={user ? <ValidationWorkflowPage /> : <Navigate to="/login" />} />
             <Route path="/validation-workflow/:id" element={user ? <ValidationRequestDetailPage /> : <Navigate to="/login" />} />

@@ -192,17 +192,12 @@ def update_taxonomy_value(
 
     update_data = value_data.model_dump(exclude_unset=True)
 
-    # Check for code uniqueness if code is being updated
+    # Prevent code changes for data integrity
     if 'code' in update_data and update_data['code'] != value.code:
-        existing = db.query(TaxonomyValue).filter(
-            TaxonomyValue.taxonomy_id == value.taxonomy_id,
-            TaxonomyValue.code == update_data['code']
-        ).first()
-        if existing:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Value with this code already exists in this taxonomy"
-            )
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Code cannot be changed after creation to maintain data integrity. Please create a new value instead."
+        )
 
     for field, val in update_data.items():
         setattr(value, field, val)

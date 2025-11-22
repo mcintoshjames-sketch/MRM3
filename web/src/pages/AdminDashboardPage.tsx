@@ -4,16 +4,6 @@ import { useAuth } from '../contexts/AuthContext';
 import api from '../api/client';
 import Layout from '../components/Layout';
 
-interface PassWithFindingsValidation {
-    validation_id: number;
-    model_id: number;
-    model_name: string;
-    validation_date: string;
-    validator_name: string;
-    findings_summary: string | null;
-    has_recommendations: boolean;
-}
-
 interface SLAViolation {
     request_id: number;
     model_name: string;
@@ -106,7 +96,6 @@ interface PendingModelSubmission {
 
 export default function AdminDashboardPage() {
     const { user } = useAuth();
-    const [passWithFindings, setPassWithFindings] = useState<PassWithFindingsValidation[]>([]);
     const [slaViolations, setSlaViolations] = useState<SLAViolation[]>([]);
     const [outOfOrder, setOutOfOrder] = useState<OutOfOrderValidation[]>([]);
     const [pendingAssignments, setPendingAssignments] = useState<PendingAssignment[]>([]);
@@ -123,7 +112,6 @@ export default function AdminDashboardPage() {
     const fetchDashboardData = async () => {
         try {
             const [
-                findingsRes,
                 violationsRes,
                 outOfOrderRes,
                 pendingRes,
@@ -132,7 +120,6 @@ export default function AdminDashboardPage() {
                 upcomingRevalidationsRes,
                 pendingModelsRes
             ] = await Promise.all([
-                api.get('/validations/dashboard/pass-with-findings'),
                 api.get('/validation-workflow/dashboard/sla-violations'),
                 api.get('/validation-workflow/dashboard/out-of-order'),
                 api.get('/validation-workflow/dashboard/pending-assignments'),
@@ -141,7 +128,6 @@ export default function AdminDashboardPage() {
                 api.get('/validation-workflow/dashboard/upcoming-revalidations?days_ahead=90'),
                 api.get('/models/pending-submissions')
             ]);
-            setPassWithFindings(findingsRes.data);
             setSlaViolations(violationsRes.data);
             setOutOfOrder(outOfOrderRes.data);
             setPendingAssignments(pendingRes.data);
@@ -287,13 +273,6 @@ export default function AdminDashboardPage() {
                     <h3 className="text-xs font-medium text-gray-500 uppercase">Overdue Validations</h3>
                     <p className="text-3xl font-bold text-red-600 mt-2">{overdueValidations.length}</p>
                     <p className="text-xs text-gray-600 mt-1">Past validation due</p>
-                </div>
-                <div className="bg-white p-4 rounded-lg shadow-md">
-                    <h3 className="text-xs font-medium text-gray-500 uppercase">Pass with Findings</h3>
-                    <p className="text-3xl font-bold text-yellow-600 mt-2">
-                        {passWithFindings.filter(v => !v.has_recommendations).length}
-                    </p>
-                    <p className="text-xs text-gray-600 mt-1">Need recommendations</p>
                 </div>
                 <div className="bg-white p-4 rounded-lg shadow-md">
                     <h3 className="text-xs font-medium text-gray-500 uppercase">Quick Actions</h3>
@@ -516,76 +495,6 @@ export default function AdminDashboardPage() {
                     )}
                 </div>
             )}
-
-            {/* Pass with Findings Table */}
-            <div className="bg-white p-6 rounded-lg shadow-md">
-                <h3 className="text-lg font-bold mb-4">
-                    Validations with Findings ({passWithFindings.length})
-                </h3>
-                {passWithFindings.length === 0 ? (
-                    <p className="text-gray-500">No validations with findings requiring attention.</p>
-                ) : (
-                    <div className="overflow-x-auto">
-                        <table className="min-w-full divide-y divide-gray-200">
-                            <thead className="bg-gray-50">
-                                <tr>
-                                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">
-                                        Model
-                                    </th>
-                                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">
-                                        Validation Date
-                                    </th>
-                                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">
-                                        Validator
-                                    </th>
-                                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">
-                                        Findings Summary
-                                    </th>
-                                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">
-                                        Recommendations
-                                    </th>
-                                </tr>
-                            </thead>
-                            <tbody className="bg-white divide-y divide-gray-200">
-                                {passWithFindings.map((validation) => (
-                                    <tr key={validation.validation_id}>
-                                        <td className="px-4 py-3 whitespace-nowrap">
-                                            <Link
-                                                to={`/models/${validation.model_id}`}
-                                                className="text-blue-600 hover:text-blue-800 font-medium"
-                                            >
-                                                {validation.model_name}
-                                            </Link>
-                                        </td>
-                                        <td className="px-4 py-3 whitespace-nowrap text-sm">
-                                            {validation.validation_date}
-                                        </td>
-                                        <td className="px-4 py-3 whitespace-nowrap text-sm">
-                                            {validation.validator_name}
-                                        </td>
-                                        <td className="px-4 py-3 text-sm max-w-md">
-                                            <div className="truncate">
-                                                {validation.findings_summary || 'No summary provided'}
-                                            </div>
-                                        </td>
-                                        <td className="px-4 py-3 whitespace-nowrap">
-                                            {validation.has_recommendations ? (
-                                                <span className="px-2 py-1 text-xs rounded bg-green-100 text-green-800">
-                                                    Has Recommendations
-                                                </span>
-                                            ) : (
-                                                <span className="px-2 py-1 text-xs rounded bg-red-100 text-red-800">
-                                                    No Recommendations
-                                                </span>
-                                            )}
-                                        </td>
-                                    </tr>
-                                ))}
-                            </tbody>
-                        </table>
-                    </div>
-                )}
-            </div>
 
             {/* Revalidation Lifecycle Widgets */}
             <div className="mt-8 space-y-6">

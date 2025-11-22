@@ -13,7 +13,6 @@ from app.models.model_delegate import ModelDelegate
 from app.models.model_submission_comment import ModelSubmissionComment
 from app.models.model_change_taxonomy import ModelChangeCategory, ModelChangeType
 from app.models.validation import (
-    Validation,
     ValidationPolicy,
     ValidationWorkflowSLA,
     ValidationRequest,
@@ -44,8 +43,6 @@ __all__ = [
     "ModelSubmissionComment",
     "ModelChangeCategory",
     "ModelChangeType",
-    # Legacy validation
-    "Validation",
     # Validation policy
     "ValidationPolicy",
     "ValidationWorkflowSLA",
