@@ -6,6 +6,21 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Model Risk Management (MRM) inventory system with FastAPI backend, React/TypeScript frontend, and PostgreSQL database.
 
+## Keeping ARCHITECTURE.md Up To Date
+
+Whenever you make non-trivial changes to the structure, data model, or main flows:
+
+1. Open `ARCHITECTURE.md` in the repo.
+2. Ask Claude:
+
+   > Please re-sync `ARCHITECTURE.md` with the current codebase.
+   > - First, read `CLAUDE.md` and treat it as the source of truth for intent.
+   > - Then scan the repo for any changes to modules, data models, routes, and integrations.
+   > - Update only the sections that are now stale, keeping wording concise and high-signal.
+   > - Call out any places where the code and `CLAUDE.md` appear to disagree.
+
+3. Review Claude's edits and commit `CLAUDE.md` + `ARCHITECTURE.md` together.
+
 ## Common Commands
 
 ### Start All Services
