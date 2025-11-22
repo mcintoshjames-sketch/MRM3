@@ -17,7 +17,7 @@ export default function Layout({ children }: LayoutProps) {
     return (
         <div className="min-h-screen bg-gray-100 flex">
             {/* Side Panel */}
-            <aside className="w-64 bg-white shadow-lg flex flex-col">
+            <aside className="w-64 bg-white shadow-lg flex flex-col flex-shrink-0">
                 <div className="p-4 border-b">
                     <h1 className="text-xl font-bold text-blue-600">MRM System v3</h1>
                 </div>
@@ -28,10 +28,9 @@ export default function Layout({ children }: LayoutProps) {
                                 <NavLink
                                     to={user?.role === 'Admin' ? '/dashboard' : '/validator-dashboard'}
                                     className={({ isActive }) =>
-                                        `block px-4 py-2 rounded transition-colors ${
-                                            isActive
-                                                ? 'bg-blue-600 text-white'
-                                                : 'text-gray-700 hover:bg-gray-100'
+                                        `block px-4 py-2 rounded transition-colors ${isActive
+                                            ? 'bg-blue-600 text-white'
+                                            : 'text-gray-700 hover:bg-gray-100'
                                         }`
                                     }
                                 >
@@ -44,10 +43,9 @@ export default function Layout({ children }: LayoutProps) {
                                 <NavLink
                                     to="/my-dashboard"
                                     className={({ isActive }) =>
-                                        `block px-4 py-2 rounded transition-colors ${
-                                            isActive
-                                                ? 'bg-blue-600 text-white'
-                                                : 'text-gray-700 hover:bg-gray-100'
+                                        `block px-4 py-2 rounded transition-colors ${isActive
+                                            ? 'bg-blue-600 text-white'
+                                            : 'text-gray-700 hover:bg-gray-100'
                                         }`
                                     }
                                 >
@@ -59,10 +57,9 @@ export default function Layout({ children }: LayoutProps) {
                             <NavLink
                                 to="/models"
                                 className={({ isActive }) =>
-                                    `block px-4 py-2 rounded transition-colors ${
-                                        isActive
-                                            ? 'bg-blue-600 text-white'
-                                            : 'text-gray-700 hover:bg-gray-100'
+                                    `block px-4 py-2 rounded transition-colors ${isActive
+                                        ? 'bg-blue-600 text-white'
+                                        : 'text-gray-700 hover:bg-gray-100'
                                     }`
                                 }
                             >
@@ -73,10 +70,9 @@ export default function Layout({ children }: LayoutProps) {
                             <NavLink
                                 to="/validation-workflow"
                                 className={({ isActive }) =>
-                                    `block px-4 py-2 rounded transition-colors ${
-                                        isActive
-                                            ? 'bg-blue-600 text-white'
-                                            : 'text-gray-700 hover:bg-gray-100'
+                                    `block px-4 py-2 rounded transition-colors ${isActive
+                                        ? 'bg-blue-600 text-white'
+                                        : 'text-gray-700 hover:bg-gray-100'
                                     }`
                                 }
                             >
@@ -87,10 +83,9 @@ export default function Layout({ children }: LayoutProps) {
                             <NavLink
                                 to="/my-pending-submissions"
                                 className={({ isActive }) =>
-                                    `block px-4 py-2 rounded transition-colors ${
-                                        isActive
-                                            ? 'bg-blue-600 text-white'
-                                            : 'text-gray-700 hover:bg-gray-100'
+                                    `block px-4 py-2 rounded transition-colors ${isActive
+                                        ? 'bg-blue-600 text-white'
+                                        : 'text-gray-700 hover:bg-gray-100'
                                     }`
                                 }
                             >
@@ -101,10 +96,9 @@ export default function Layout({ children }: LayoutProps) {
                             <NavLink
                                 to="/my-deployment-tasks"
                                 className={({ isActive }) =>
-                                    `block px-4 py-2 rounded transition-colors ${
-                                        isActive
-                                            ? 'bg-blue-600 text-white'
-                                            : 'text-gray-700 hover:bg-gray-100'
+                                    `block px-4 py-2 rounded transition-colors ${isActive
+                                        ? 'bg-blue-600 text-white'
+                                        : 'text-gray-700 hover:bg-gray-100'
                                     }`
                                 }
                             >
@@ -115,10 +109,9 @@ export default function Layout({ children }: LayoutProps) {
                             <NavLink
                                 to="/vendors"
                                 className={({ isActive }) =>
-                                    `block px-4 py-2 rounded transition-colors ${
-                                        isActive
-                                            ? 'bg-blue-600 text-white'
-                                            : 'text-gray-700 hover:bg-gray-100'
+                                    `block px-4 py-2 rounded transition-colors ${isActive
+                                        ? 'bg-blue-600 text-white'
+                                        : 'text-gray-700 hover:bg-gray-100'
                                     }`
                                 }
                             >
@@ -129,10 +122,9 @@ export default function Layout({ children }: LayoutProps) {
                             <NavLink
                                 to="/users"
                                 className={({ isActive }) =>
-                                    `block px-4 py-2 rounded transition-colors ${
-                                        isActive
-                                            ? 'bg-blue-600 text-white'
-                                            : 'text-gray-700 hover:bg-gray-100'
+                                    `block px-4 py-2 rounded transition-colors ${isActive
+                                        ? 'bg-blue-600 text-white'
+                                        : 'text-gray-700 hover:bg-gray-100'
                                     }`
                                 }
                             >
@@ -143,10 +135,9 @@ export default function Layout({ children }: LayoutProps) {
                             <NavLink
                                 to="/taxonomy"
                                 className={({ isActive }) =>
-                                    `block px-4 py-2 rounded transition-colors ${
-                                        isActive
-                                            ? 'bg-blue-600 text-white'
-                                            : 'text-gray-700 hover:bg-gray-100'
+                                    `block px-4 py-2 rounded transition-colors ${isActive
+                                        ? 'bg-blue-600 text-white'
+                                        : 'text-gray-700 hover:bg-gray-100'
                                     }`
                                 }
                             >
@@ -157,10 +148,9 @@ export default function Layout({ children }: LayoutProps) {
                             <NavLink
                                 to="/reports"
                                 className={({ isActive }) =>
-                                    `block px-4 py-2 rounded transition-colors ${
-                                        isActive
-                                            ? 'bg-blue-600 text-white'
-                                            : 'text-gray-700 hover:bg-gray-100'
+                                    `block px-4 py-2 rounded transition-colors ${isActive
+                                        ? 'bg-blue-600 text-white'
+                                        : 'text-gray-700 hover:bg-gray-100'
                                     }`
                                 }
                             >
@@ -171,10 +161,9 @@ export default function Layout({ children }: LayoutProps) {
                             <NavLink
                                 to="/audit"
                                 className={({ isActive }) =>
-                                    `block px-4 py-2 rounded transition-colors ${
-                                        isActive
-                                            ? 'bg-blue-600 text-white'
-                                            : 'text-gray-700 hover:bg-gray-100'
+                                    `block px-4 py-2 rounded transition-colors ${isActive
+                                        ? 'bg-blue-600 text-white'
+                                        : 'text-gray-700 hover:bg-gray-100'
                                     }`
                                 }
                             >
@@ -187,10 +176,9 @@ export default function Layout({ children }: LayoutProps) {
                                     <NavLink
                                         to="/workflow-config"
                                         className={({ isActive }) =>
-                                            `block px-4 py-2 rounded transition-colors ${
-                                                isActive
-                                                    ? 'bg-blue-600 text-white'
-                                                    : 'text-gray-700 hover:bg-gray-100'
+                                            `block px-4 py-2 rounded transition-colors ${isActive
+                                                ? 'bg-blue-600 text-white'
+                                                : 'text-gray-700 hover:bg-gray-100'
                                             }`
                                         }
                                     >
@@ -201,10 +189,9 @@ export default function Layout({ children }: LayoutProps) {
                                     <NavLink
                                         to="/batch-delegates"
                                         className={({ isActive }) =>
-                                            `block px-4 py-2 rounded transition-colors ${
-                                                isActive
-                                                    ? 'bg-blue-600 text-white'
-                                                    : 'text-gray-700 hover:bg-gray-100'
+                                            `block px-4 py-2 rounded transition-colors ${isActive
+                                                ? 'bg-blue-600 text-white'
+                                                : 'text-gray-700 hover:bg-gray-100'
                                             }`
                                         }
                                     >
@@ -215,10 +202,9 @@ export default function Layout({ children }: LayoutProps) {
                                     <NavLink
                                         to="/regions"
                                         className={({ isActive }) =>
-                                            `block px-4 py-2 rounded transition-colors ${
-                                                isActive
-                                                    ? 'bg-blue-600 text-white'
-                                                    : 'text-gray-700 hover:bg-gray-100'
+                                            `block px-4 py-2 rounded transition-colors ${isActive
+                                                ? 'bg-blue-600 text-white'
+                                                : 'text-gray-700 hover:bg-gray-100'
                                             }`
                                         }
                                     >
@@ -229,14 +215,26 @@ export default function Layout({ children }: LayoutProps) {
                                     <NavLink
                                         to="/validation-policies"
                                         className={({ isActive }) =>
-                                            `block px-4 py-2 rounded transition-colors ${
-                                                isActive
-                                                    ? 'bg-blue-600 text-white'
-                                                    : 'text-gray-700 hover:bg-gray-100'
+                                            `block px-4 py-2 rounded transition-colors ${isActive
+                                                ? 'bg-blue-600 text-white'
+                                                : 'text-gray-700 hover:bg-gray-100'
                                             }`
                                         }
                                     >
                                         Validation Policies
+                                    </NavLink>
+                                </li>
+                                <li>
+                                    <NavLink
+                                        to="/analytics"
+                                        className={({ isActive }) =>
+                                            `block px-4 py-2 rounded transition-colors ${isActive
+                                                ? 'bg-blue-600 text-white'
+                                                : 'text-gray-700 hover:bg-gray-100'
+                                            }`
+                                        }
+                                    >
+                                        Advanced Analytics
                                     </NavLink>
                                 </li>
                             </>
@@ -259,7 +257,7 @@ export default function Layout({ children }: LayoutProps) {
             </aside>
 
             {/* Main Content */}
-            <main className="flex-1 p-6">
+            <main className="flex-1 p-6 overflow-x-hidden">
                 {children}
             </main>
         </div>
