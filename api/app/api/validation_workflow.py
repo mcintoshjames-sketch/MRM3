@@ -4446,7 +4446,10 @@ def get_deviation_trends_report(
     # Get all validation plans with components
     plans = db.query(ValidationPlan).options(
         joinedload(ValidationPlan.components).joinedload(ValidationPlanComponent.component_definition),
-        joinedload(ValidationPlan.request).joinedload(ValidationRequest.model_versions)
+        joinedload(ValidationPlan.request)
+        .joinedload(ValidationRequest.model_versions_assoc)
+        .joinedload(ValidationRequestModelVersion.model)
+        .joinedload(Model.risk_tier)
     ).all()
 
     # Calculate deviation statistics
@@ -4487,10 +4490,11 @@ def get_deviation_trends_report(
                 deviation_by_section[section] = deviation_by_section.get(section, 0) + 1
 
                 # By risk tier (from associated model)
-                if plan.request and plan.request.model_versions:
-                    model_version = plan.request.model_versions[0]
-                    if model_version.model.risk_tier:
-                        risk_tier = model_version.model.risk_tier.label
+                if plan.request and plan.request.model_versions_assoc:
+                    model_version_assoc = plan.request.model_versions_assoc[0]
+                    model = model_version_assoc.model if model_version_assoc else None
+                    if model and model.risk_tier:
+                        risk_tier = model.risk_tier.label
                         if risk_tier in ["Tier 1 (High)", "High"]:
                             deviation_by_risk_tier["High"] += 1
                         elif risk_tier in ["Tier 2 (Medium)", "Medium"]:
@@ -4508,10 +4512,12 @@ def get_deviation_trends_report(
                 # Detailed record
                 model_name = "Unknown"
                 risk_tier = "Unknown"
-                if plan.request and plan.request.model_versions:
-                    model_version = plan.request.model_versions[0]
-                    model_name = model_version.model.model_name
-                    risk_tier = model_version.model.risk_tier.label if model_version.model.risk_tier else "Unknown"
+                if plan.request and plan.request.model_versions_assoc:
+                    model_version_assoc = plan.request.model_versions_assoc[0]
+                    model = model_version_assoc.model if model_version_assoc else None
+                    if model:
+                        model_name = model.model_name
+                        risk_tier = model.risk_tier.label if model.risk_tier else "Unknown"
 
                 deviation_records.append({
                     "plan_id": plan.plan_id,
