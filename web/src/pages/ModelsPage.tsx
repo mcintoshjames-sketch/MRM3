@@ -544,10 +544,10 @@ export default function ModelsPage() {
                             value = model.row_approval_status || 'Approved';
                             break;
                         case 'created_at':
-                            value = new Date(model.created_at).toLocaleDateString();
+                            value = model.created_at.split('T')[0];
                             break;
                         case 'updated_at':
-                            value = new Date(model.updated_at).toLocaleDateString();
+                            value = model.updated_at.split('T')[0];
                             break;
                     }
                     // Escape quotes and commas for CSV

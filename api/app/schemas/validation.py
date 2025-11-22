@@ -73,6 +73,7 @@ class ValidationRequestBase(BaseModel):
     target_completion_date: date
     trigger_reason: Optional[str] = None
     region_ids: List[int] = []  # Support multiple regions
+    prior_validation_request_id: Optional[int] = None  # Link to previous validation for revalidations
 
 
 class ValidationRequestCreate(ValidationRequestBase):
@@ -374,6 +375,7 @@ class ValidationRequestResponse(BaseModel):
     approvals: List[ValidationApprovalResponse] = []  # Added for Phase 5: Smart Approver Assignment
     created_at: datetime
     updated_at: datetime
+    completion_date: Optional[datetime] = Field(None, description="Date when validation was completed (latest approval date)")
 
     # Revalidation Lifecycle Fields
     prior_validation_request_id: Optional[int] = None

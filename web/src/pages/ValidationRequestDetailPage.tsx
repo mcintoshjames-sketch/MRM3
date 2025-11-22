@@ -107,6 +107,7 @@ interface ValidationRequestDetail {
     current_status: TaxonomyValue;
     created_at: string;
     updated_at: string;
+    completion_date: string | null;
     assignments: ValidationAssignment[];
     status_history: ValidationStatusHistory[];
     approvals: ValidationApproval[];
@@ -146,6 +147,7 @@ export default function ValidationRequestDetailPage() {
     const [showEditAssignmentModal, setShowEditAssignmentModal] = useState(false);
     const [showOutcomeModal, setShowOutcomeModal] = useState(false);
     const [showApprovalModal, setShowApprovalModal] = useState(false);
+    const [showSubmissionModal, setShowSubmissionModal] = useState(false);
 
     const [statusOptions, setStatusOptions] = useState<TaxonomyValue[]>([]);
     const [ratingOptions, setRatingOptions] = useState<TaxonomyValue[]>([]);
@@ -159,6 +161,9 @@ export default function ValidationRequestDetailPage() {
         estimated_hours: '',
         independence_attestation: false
     });
+    const [submissionReceivedDate, setSubmissionReceivedDate] = useState(new Date().toISOString().split('T')[0]);
+    const [submissionNotes, setSubmissionNotes] = useState('');
+
     const [newOutcome, setNewOutcome] = useState({
         overall_rating_id: 0,
         executive_summary: '',
@@ -504,25 +509,20 @@ export default function ValidationRequestDetailPage() {
         }
     };
 
-    const handleBeginWork = async () => {
+    const handleMarkSubmissionReceived = async () => {
         if (!request) return;
-
-        // Find "In Progress" status
-        const inProgressStatus = statusOptions.find(s => s.code === 'IN_PROGRESS');
-        if (!inProgressStatus) {
-            setError('In Progress status not found');
-            return;
-        }
 
         setActionLoading(true);
         try {
-            await api.patch(`/validation-workflow/requests/${id}/status`, {
-                new_status_id: inProgressStatus.value_id,
-                change_reason: 'Beginning validation work'
+            await api.post(`/validation-workflow/requests/${id}/mark-submission`, {
+                submission_received_date: submissionReceivedDate,
+                notes: submissionNotes.trim() || null
             });
+            setShowSubmissionModal(false);
+            setSubmissionNotes('');
             await fetchData();
         } catch (err: any) {
-            setError(err.response?.data?.detail || 'Failed to begin work');
+            setError(err.response?.data?.detail || 'Failed to mark submission as received');
         } finally {
             setActionLoading(false);
         }
@@ -589,7 +589,8 @@ export default function ValidationRequestDetailPage() {
         const statusChangeDate = new Date(currentStatusEntry.changed_at);
         const now = new Date();
         const diffMs = now.getTime() - statusChangeDate.getTime();
-        return Math.floor(diffMs / (1000 * 60 * 60 * 24));
+        // Use Math.max to prevent negative days due to minor clock differences
+        return Math.max(0, Math.floor(diffMs / (1000 * 60 * 60 * 24)));
     };
 
     const getStageSLA = (stageName: string): number | null => {
@@ -681,17 +682,16 @@ export default function ValidationRequestDetailPage() {
                     </div>
                 </div>
                 <div className="flex gap-2">
-                    {/* Begin Work Button */}
-                    {isPrimaryValidator &&
-                        (request.current_status.code === 'INTAKE' || request.current_status.code === 'PLANNING') && (
-                            <button
-                                onClick={handleBeginWork}
-                                disabled={actionLoading}
-                                className="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700 disabled:opacity-50"
-                            >
-                                {actionLoading ? 'Starting...' : 'Begin Work'}
-                            </button>
-                        )}
+                    {/* Mark Submission Received Button */}
+                    {isPrimaryValidator && request.current_status.code === 'PLANNING' && (
+                        <button
+                            onClick={() => setShowSubmissionModal(true)}
+                            disabled={actionLoading}
+                            className="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700 disabled:opacity-50"
+                        >
+                            Mark Submission Received
+                        </button>
+                    )}
 
                     {/* Complete Work Button */}
                     {isPrimaryValidator && request.current_status.code === 'IN_PROGRESS' && (
@@ -806,6 +806,26 @@ export default function ValidationRequestDetailPage() {
                                     {request.current_status.label}
                                 </span>
                             </div>
+                            <div>
+                                <h4 className="text-sm font-medium text-gray-500 mb-1 flex items-center gap-1">
+                                    Date Approved
+                                    <span
+                                        className="inline-flex items-center justify-center w-4 h-4 rounded-full bg-gray-300 text-white text-xs cursor-help"
+                                        title="The date when the last required approval was obtained, marking the validation as complete"
+                                    >
+                                        <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+                                            <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
+                                        </svg>
+                                    </span>
+                                </h4>
+                                {request.completion_date ? (
+                                    <p className="text-lg">
+                                        {request.completion_date.split('T')[0]}
+                                    </p>
+                                ) : (
+                                    <p className="text-sm text-gray-400 italic">Not yet approved</p>
+                                )}
+                            </div>
                             {request.trigger_reason && (
                                 <div className="col-span-2">
                                     <h4 className="text-sm font-medium text-gray-500 mb-1">Trigger Reason</h4>
@@ -837,13 +857,13 @@ export default function ValidationRequestDetailPage() {
                                                     </div>
                                                     {version.production_date && (
                                                         <div className="text-sm text-gray-600">
-                                                            Production: {new Date(version.production_date).toLocaleDateString()}
+                                                            Production: {version.production_date.split('T')[0]}
                                                         </div>
                                                     )}
                                                 </div>
                                                 <p className="text-sm text-gray-700 mb-1">{version.change_description}</p>
                                                 <div className="text-xs text-gray-500">
-                                                    Created by {version.created_by_name} on {new Date(version.created_at).toLocaleDateString()}
+                                                    Created by {version.created_by_name} on {version.created_at.split('T')[0]}
                                                 </div>
                                             </div>
                                         ))}
@@ -1737,6 +1757,68 @@ export default function ValidationRequestDetailPage() {
                                 className="btn-secondary"
                             >
                                 Cancel
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Mark Submission Received Modal */}
+            {showSubmissionModal && (
+                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+                    <div className="bg-white rounded-lg p-6 w-full max-w-md">
+                        <h3 className="text-lg font-bold mb-4">Mark Submission Received</h3>
+                        <p className="text-sm text-gray-600 mb-4">
+                            Recording when the validation documentation was received will start the validation team's SLA timer
+                            and automatically transition this project to "In Progress" status.
+                        </p>
+
+                        <div className="mb-4">
+                            <label className="block text-sm font-medium text-gray-700 mb-1">
+                                Date Submission Received *
+                            </label>
+                            <input
+                                type="date"
+                                value={submissionReceivedDate}
+                                onChange={(e) => setSubmissionReceivedDate(e.target.value)}
+                                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                required
+                            />
+                            <p className="text-xs text-gray-500 mt-1">
+                                Confirm or adjust the date the submission was actually received
+                            </p>
+                        </div>
+
+                        <div className="mb-4">
+                            <label className="block text-sm font-medium text-gray-700 mb-1">
+                                Notes (Optional)
+                            </label>
+                            <textarea
+                                value={submissionNotes}
+                                onChange={(e) => setSubmissionNotes(e.target.value)}
+                                placeholder="Add any notes about the submission..."
+                                rows={3}
+                                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            />
+                        </div>
+
+                        <div className="flex justify-end gap-3">
+                            <button
+                                onClick={() => {
+                                    setShowSubmissionModal(false);
+                                    setSubmissionNotes('');
+                                }}
+                                className="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50"
+                                disabled={actionLoading}
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={handleMarkSubmissionReceived}
+                                className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 disabled:bg-gray-400"
+                                disabled={actionLoading || !submissionReceivedDate}
+                            >
+                                {actionLoading ? 'Processing...' : 'Confirm Receipt'}
                             </button>
                         </div>
                     </div>

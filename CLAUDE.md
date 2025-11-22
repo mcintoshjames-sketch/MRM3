@@ -128,6 +128,10 @@ cd api && python -m pytest && cd ../web && pnpm test:run
 - **HTTP Client**: Axios with centralized client in `src/api/client.ts`
 - **State**: React Context for auth (`src/contexts/AuthContext.tsx`)
 - **Layout**: Side panel navigation with Dashboard (Admin), Models, Validations, Vendors, Users, Taxonomy, Audit Logs
+- **Date Formatting**: All dates must display in ISO format (YYYY-MM-DD) like "2025-08-28", not locale format like "9/3/2025"
+  - Use `value.split('T')[0]` to extract date from ISO datetime strings
+  - Never use `toLocaleDateString()` - this creates inconsistent locale-based formatting
+  - Apply to all UI displays, CSV exports, and data tables
 - **Standard Table Features**: All table views must include:
   - **CSV Export**: Button to export displayed data as CSV file
   - Implementation: `utils/csvExport.ts` helper or inline generation

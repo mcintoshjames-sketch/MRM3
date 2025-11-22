@@ -148,7 +148,7 @@ const RegionalVersionsTable: React.FC<RegionalVersionsTableProps> = ({ modelId }
                     )}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                    {rv.deployed_at ? new Date(rv.deployed_at).toLocaleDateString() : '—'}
+                    {rv.deployed_at ? rv.deployed_at.split('T')[0] : '—'}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
                     {rv.is_regional_override ? (

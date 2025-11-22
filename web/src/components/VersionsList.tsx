@@ -197,10 +197,10 @@ const VersionsList: React.FC<VersionsListProps> = ({ modelId, refreshTrigger, on
                                 {version.change_description}
                             </td>
                             <td className="px-4 py-3 text-sm text-gray-600">
-                                {version.production_date ? new Date(version.production_date).toLocaleDateString() : '-'}
+                                {version.production_date ? version.production_date.split('T')[0] : '-'}
                             </td>
                             <td className="px-4 py-3 text-sm text-gray-600">
-                                {new Date(version.created_at).toLocaleDateString()}
+                                {version.created_at.split('T')[0]}
                                 {version.created_by_name && (
                                     <div className="text-xs text-gray-500">{version.created_by_name}</div>
                                 )}

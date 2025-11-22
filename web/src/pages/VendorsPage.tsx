@@ -213,7 +213,7 @@ export default function VendorsPage() {
                                         {vendor.contact_info || '-'}
                                     </td>
                                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                                        {new Date(vendor.created_at).toLocaleDateString()}
+                                        {vendor.created_at.split('T')[0]}
                                     </td>
                                     <td className="px-6 py-4 whitespace-nowrap">
                                         <Link

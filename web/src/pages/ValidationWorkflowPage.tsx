@@ -594,7 +594,7 @@ export default function ValidationWorkflowPage() {
                                                                         {versions.map((v: ModelVersion) => (
                                                                             <option key={v.version_id} value={v.version_id}>
                                                                                 {v.version_number} - {v.status}
-                                                                                {v.production_date ? ` (Implemented: ${new Date(v.production_date).toLocaleDateString()})` : ''}
+                                                                                {v.production_date ? ` (Implemented: ${v.production_date.split('T')[0]})` : ''}
                                                                             </option>
                                                                         ))}
                                                                     </select>

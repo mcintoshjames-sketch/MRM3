@@ -357,7 +357,7 @@ export default function AdminDashboardPage() {
                                         </p>
                                         {item.target_completion_date && (
                                             <p className="text-xs text-gray-500">
-                                                Target: {new Date(item.target_completion_date).toLocaleDateString()}
+                                                Target: {item.target_completion_date.split('T')[0]}
                                             </p>
                                         )}
                                     </div>
@@ -491,13 +491,13 @@ export default function AdminDashboardPage() {
                                             {item.model_name} - v{item.version_number}
                                         </Link>
                                         <p className="text-xs text-gray-600 mt-0.5">
-                                            Target completion: {new Date(item.target_completion_date).toLocaleDateString()}
+                                            Target completion: {item.target_completion_date.split('T')[0]}
                                             <span className="text-red-600 font-medium ml-1">
                                                 ({item.days_gap}d after production)
                                             </span>
                                         </p>
                                         <p className="text-xs text-gray-500">
-                                            Production date: {new Date(item.production_date).toLocaleDateString()}
+                                            Production date: {item.production_date.split('T')[0]}
                                         </p>
                                     </div>
                                 </div>

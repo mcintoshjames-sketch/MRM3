@@ -311,7 +311,7 @@ export default function UserDetailsPage() {
                                                     </span>
                                                 </td>
                                                 <td className="px-4 py-3 whitespace-nowrap text-sm">
-                                                    {new Date(assignment.assignment_date).toLocaleDateString()}
+                                                    {assignment.assignment_date.split('T')[0]}
                                                 </td>
                                                 <td className="px-4 py-3 whitespace-nowrap text-sm">
                                                     {assignment.actual_hours || 0} / {assignment.estimated_hours || '-'}

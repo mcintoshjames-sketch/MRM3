@@ -132,6 +132,11 @@ class ValidationRequest(Base):
         nullable=True,
         comment="Link to the previous validation that this revalidation follows"
     )
+    submission_due_date: Mapped[Optional[date]] = mapped_column(
+        Date,
+        nullable=True,
+        comment="Date by which model owner must submit documentation (locked at request creation)"
+    )
     submission_received_date: Mapped[Optional[date]] = mapped_column(
         Date,
         nullable=True,
@@ -209,8 +214,7 @@ class ValidationRequest(Base):
             return False
         return self.validation_type.code in ["COMPREHENSIVE", "ANNUAL"]
 
-    @property
-    def submission_due_date(self) -> Optional[date]:
+    def _calculate_submission_due_date(self) -> Optional[date]:
         """Calculate submission due date from prior validation + frequency."""
         if not self.is_periodic_revalidation or not self.prior_validation_request_id:
             return None
@@ -220,8 +224,8 @@ class ValidationRequest(Base):
         if not prior or prior.current_status.code != "APPROVED":
             return None
 
-        # Find when prior was approved (use updated_at as proxy for approval date)
-        prior_completed = prior.updated_at.date()
+        # Find when prior was approved (use completion_date or updated_at as proxy)
+        prior_completed = prior.completion_date.date() if prior.completion_date else prior.updated_at.date()
 
         # Get model to find risk tier
         if not self.model_versions_assoc or len(self.model_versions_assoc) == 0:
@@ -245,13 +249,29 @@ class ValidationRequest(Base):
         from dateutil.relativedelta import relativedelta
         return prior_completed + relativedelta(months=policy.frequency_months)
 
+    def get_submission_due_date(self) -> Optional[date]:
+        """
+        Get submission due date.
+        Uses stored value if available, otherwise calculates it.
+        This method should be used when you need the value and want to ensure it's calculated.
+        """
+        # Return stored value if it exists (note: this is now a column, not a property)
+        # The column is accessed via self.__dict__ to avoid infinite recursion
+        stored_value = self.__dict__.get('submission_due_date')
+        if stored_value is not None:
+            return stored_value
+
+        # Otherwise calculate it
+        return self._calculate_submission_due_date()
+
     @property
     def submission_grace_period_end(self) -> Optional[date]:
         """Calculate grace period end (submission_due + 3 months)."""
-        if not self.submission_due_date:
+        due_date = self.get_submission_due_date()
+        if not due_date:
             return None
         from dateutil.relativedelta import relativedelta
-        return self.submission_due_date + relativedelta(months=3)
+        return due_date + relativedelta(months=3)
 
     @property
     def model_validation_due_date(self) -> Optional[date]:
@@ -321,8 +341,9 @@ class ValidationRequest(Base):
         if not self.is_periodic_revalidation:
             return "N/A"
 
+        due_date = self.get_submission_due_date()
         if self.submission_received_date:
-            if self.submission_due_date and self.submission_received_date <= self.submission_due_date:
+            if due_date and self.submission_received_date <= due_date:
                 return "Submitted On Time"
             elif self.submission_grace_period_end and self.submission_received_date <= self.submission_grace_period_end:
                 return "Submitted In Grace Period"
@@ -330,9 +351,9 @@ class ValidationRequest(Base):
                 return "Submitted Late"
 
         today = date.today()
-        if not self.submission_due_date:
+        if not due_date:
             return "Unknown"
-        if today < self.submission_due_date:
+        if today < due_date:
             return "Not Yet Due"
         elif self.submission_grace_period_end and today <= self.submission_grace_period_end:
             return "Due (In Grace Period)"
@@ -362,7 +383,8 @@ class ValidationRequest(Base):
         if not self.model_validation_due_date:
             return "Unknown"
 
-        if self.submission_due_date and today <= self.submission_due_date:
+        due_date = self.get_submission_due_date()
+        if due_date and today <= due_date:
             return "On Track"
         elif self.submission_grace_period_end and today <= self.submission_grace_period_end:
             return "In Grace Period"
@@ -403,9 +425,10 @@ class ValidationRequest(Base):
     @property
     def days_until_submission_due(self) -> Optional[int]:
         """Days until submission due (negative if past)."""
-        if not self.submission_due_date:
+        due_date = self.get_submission_due_date()
+        if not due_date:
             return None
-        return (self.submission_due_date - date.today()).days
+        return (due_date - date.today()).days
 
     @property
     def days_until_model_validation_due(self) -> Optional[int]:

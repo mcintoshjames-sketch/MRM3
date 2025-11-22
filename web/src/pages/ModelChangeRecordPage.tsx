@@ -153,7 +153,7 @@ const ModelChangeRecordPage = () => {
               Model Change Record: Version {version.version_number}
             </h2>
             <p className="text-sm text-gray-500 mt-1">
-              Created {new Date(version.created_at).toLocaleDateString()} by {version.created_by_name || 'Unknown'}
+              Created {version.created_at.split('T')[0]} by {version.created_by_name || 'Unknown'}
             </p>
           </div>
           <span className={`px-4 py-2 rounded-full text-sm font-medium ${getStatusColor(version.status)}`}>
@@ -233,7 +233,7 @@ const ModelChangeRecordPage = () => {
               <label className="block text-sm font-medium text-gray-700 mb-1">Planned Production Date</label>
               <p className="text-gray-900">
                 {version.planned_production_date
-                  ? new Date(version.planned_production_date).toLocaleDateString()
+                  ? version.planned_production_date.split('T')[0]
                   : '—'}
               </p>
             </div>
@@ -241,7 +241,7 @@ const ModelChangeRecordPage = () => {
               <label className="block text-sm font-medium text-gray-700 mb-1">Actual Production Date</label>
               <p className="text-gray-900">
                 {version.actual_production_date
-                  ? new Date(version.actual_production_date).toLocaleDateString()
+                  ? version.actual_production_date.split('T')[0]
                   : '—'}
               </p>
             </div>
@@ -295,7 +295,7 @@ const ModelChangeRecordPage = () => {
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Target Completion</label>
                     <p className="text-gray-900">
-                      {new Date(validationRequest.target_completion_date).toLocaleDateString()}
+                      {validationRequest.target_completion_date.split('T')[0]}
                     </p>
                   </div>
                 </div>

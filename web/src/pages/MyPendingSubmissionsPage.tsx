@@ -2,7 +2,6 @@ import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import api from '../api/client';
 import Layout from '../components/Layout';
-import { useAuth } from '../contexts/AuthContext';
 
 interface PendingSubmission {
     request_id: number;
@@ -22,9 +21,9 @@ interface PendingSubmission {
 }
 
 export default function MyPendingSubmissionsPage() {
-    const { user } = useAuth();
     const [submissions, setSubmissions] = useState<PendingSubmission[]>([]);
     const [loading, setLoading] = useState(true);
+    const [filter, setFilter] = useState<'all' | 'overdue' | 'in_grace_period' | 'due_soon' | 'upcoming'>('all');
 
     useEffect(() => {
         fetchSubmissions();
@@ -67,6 +66,15 @@ export default function MyPendingSubmissionsPage() {
         }
     };
 
+    const getFilteredSubmissions = () => {
+        if (filter === 'all') {
+            return submissions;
+        }
+        return submissions.filter(s => s.urgency === filter);
+    };
+
+    const filteredSubmissions = getFilteredSubmissions();
+
     if (loading) {
         return (
             <Layout>
@@ -84,16 +92,58 @@ export default function MyPendingSubmissionsPage() {
                 <p className="mt-2 text-gray-600">
                     Revalidation documentation submissions needed for models you own
                 </p>
+                <p className="mt-1 text-sm text-gray-500">
+                    Showing submissions that are overdue or due within the next 90 days
+                </p>
             </div>
 
-            {submissions.length === 0 ? (
+            {/* Filter buttons */}
+            <div className="flex gap-2 mb-6">
+                <button
+                    onClick={() => setFilter('all')}
+                    className={`px-4 py-2 rounded ${filter === 'all' ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700'}`}
+                >
+                    All ({submissions.length})
+                </button>
+                <button
+                    onClick={() => setFilter('overdue')}
+                    className={`px-4 py-2 rounded ${filter === 'overdue' ? 'bg-red-600 text-white' : 'bg-gray-200 text-gray-700'}`}
+                >
+                    Overdue ({submissions.filter(s => s.urgency === 'overdue').length})
+                </button>
+                <button
+                    onClick={() => setFilter('in_grace_period')}
+                    className={`px-4 py-2 rounded ${filter === 'in_grace_period' ? 'bg-orange-600 text-white' : 'bg-gray-200 text-gray-700'}`}
+                >
+                    In Grace Period ({submissions.filter(s => s.urgency === 'in_grace_period').length})
+                </button>
+                <button
+                    onClick={() => setFilter('due_soon')}
+                    className={`px-4 py-2 rounded ${filter === 'due_soon' ? 'bg-yellow-600 text-white' : 'bg-gray-200 text-gray-700'}`}
+                >
+                    Due Soon ({submissions.filter(s => s.urgency === 'due_soon').length})
+                </button>
+                <button
+                    onClick={() => setFilter('upcoming')}
+                    className={`px-4 py-2 rounded ${filter === 'upcoming' ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700'}`}
+                >
+                    Upcoming ({submissions.filter(s => s.urgency === 'upcoming').length})
+                </button>
+            </div>
+
+            {filteredSubmissions.length === 0 ? (
                 <div className="bg-white rounded-lg shadow-md p-8 text-center">
                     <svg className="mx-auto h-12 w-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
                     </svg>
-                    <h3 className="mt-2 text-lg font-medium text-gray-900">No Pending Submissions</h3>
+                    <h3 className="mt-2 text-lg font-medium text-gray-900">
+                        {filter === 'all' ? 'No Pending Submissions' : `No ${getUrgencyLabel(filter)} Submissions`}
+                    </h3>
                     <p className="mt-1 text-sm text-gray-500">
-                        You don't have any revalidation submissions due at this time.
+                        {filter === 'all'
+                            ? 'You don\'t have any revalidation submissions due at this time.'
+                            : `You don't have any ${getUrgencyLabel(filter).toLowerCase()} submissions.`
+                        }
                     </p>
                 </div>
             ) : (
@@ -125,7 +175,7 @@ export default function MyPendingSubmissionsPage() {
                             </tr>
                         </thead>
                         <tbody className="bg-white divide-y divide-gray-200">
-                            {submissions.map((submission) => (
+                            {filteredSubmissions.map((submission) => (
                                 <tr key={submission.request_id} className="hover:bg-gray-50">
                                     <td className="px-6 py-4 whitespace-nowrap">
                                         <span className={`px-2 py-1 text-xs font-semibold rounded ${getUrgencyBadge(submission.urgency)}`}>
@@ -194,16 +244,24 @@ export default function MyPendingSubmissionsPage() {
                     {/* Summary Footer */}
                     <div className="bg-gray-50 px-6 py-3 border-t border-gray-200">
                         <div className="text-sm text-gray-600">
-                            <span className="font-medium">{submissions.length}</span> pending submission{submissions.length !== 1 ? 's' : ''} •
-                            <span className="ml-2 font-medium text-red-600">
-                                {submissions.filter(s => s.urgency === 'overdue').length}
-                            </span> overdue •
-                            <span className="ml-2 font-medium text-orange-600">
-                                {submissions.filter(s => s.urgency === 'in_grace_period').length}
-                            </span> in grace period •
-                            <span className="ml-2 font-medium text-yellow-600">
-                                {submissions.filter(s => s.urgency === 'due_soon').length}
-                            </span> due soon
+                            {filter !== 'all' ? (
+                                <>
+                                    Showing <span className="font-medium">{filteredSubmissions.length}</span> of <span className="font-medium">{submissions.length}</span> total submission{submissions.length !== 1 ? 's' : ''}
+                                </>
+                            ) : (
+                                <>
+                                    <span className="font-medium">{submissions.length}</span> total submission{submissions.length !== 1 ? 's' : ''} •
+                                    <span className="ml-2 font-medium text-red-600">
+                                        {submissions.filter(s => s.urgency === 'overdue').length}
+                                    </span> overdue •
+                                    <span className="ml-2 font-medium text-orange-600">
+                                        {submissions.filter(s => s.urgency === 'in_grace_period').length}
+                                    </span> in grace period •
+                                    <span className="ml-2 font-medium text-yellow-600">
+                                        {submissions.filter(s => s.urgency === 'due_soon').length}
+                                    </span> due soon
+                                </>
+                            )}
                         </div>
                     </div>
                 </div>
@@ -221,6 +279,10 @@ export default function MyPendingSubmissionsPage() {
                             As a model owner, you're responsible for submitting documentation when a revalidation is due.
                             You have a 3-month grace period after the submission due date. The validation must be completed
                             before the "Validation Due" date to maintain compliance.
+                        </p>
+                        <p className="mt-2 text-xs text-blue-700">
+                            <strong>Note:</strong> This page only shows submissions that are overdue or due within the next 90 days.
+                            Submissions due further in the future are not displayed.
                         </p>
                     </div>
                 </div>

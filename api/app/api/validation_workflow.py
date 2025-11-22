@@ -849,6 +849,7 @@ def create_validation_request(
         target_completion_date=request_data.target_completion_date,
         trigger_reason=request_data.trigger_reason,
         current_status_id=intake_status.value_id,
+        prior_validation_request_id=request_data.prior_validation_request_id,
         created_at=datetime.utcnow(),
         updated_at=datetime.utcnow()
     )
@@ -887,6 +888,12 @@ def create_validation_request(
 
     # Flush to populate relationships before auto-assigning approvers
     db.flush()
+
+    # Calculate and set submission_due_date for revalidation requests
+    # This locks in the due date at request creation time based on current policy
+    calculated_due_date = validation_request._calculate_submission_due_date()
+    if calculated_due_date:
+        validation_request.submission_due_date = calculated_due_date
 
     # Create initial status history entry
     create_status_history_entry(
@@ -2953,10 +2960,13 @@ def get_my_pending_submissions(
     - Owner
     - Developer
     - Delegate
+
+    Only returns submissions that are overdue or due within the next 90 days.
     """
     from app.models.model_delegate import ModelDelegate
 
     today = date.today()
+    ninety_days_out = today + timedelta(days=90)
 
     # Find revalidation requests for models accessible by current user
     # that are awaiting submission
@@ -3017,9 +3027,21 @@ def get_my_pending_submissions(
                 "urgency": urgency
             })
 
+    # Filter to only show submissions that are overdue or due within 90 days
+    filtered_results = []
+    for result in results:
+        if result["submission_due_date"]:
+            due_date = date.fromisoformat(result["submission_due_date"])
+            # Include if overdue or due within 90 days
+            if due_date <= ninety_days_out:
+                filtered_results.append(result)
+        else:
+            # Include submissions without a due date (can't determine if outside window)
+            filtered_results.append(result)
+
     # Sort by urgency (overdue first, then by days until due)
     urgency_order = {"overdue": 0, "in_grace_period": 1, "due_soon": 2, "upcoming": 3, "unknown": 4}
-    return sorted(results, key=lambda x: (urgency_order.get(x["urgency"], 4), x["days_until_submission_due"] or 999))
+    return sorted(filtered_results, key=lambda x: (urgency_order.get(x["urgency"], 4), x["days_until_submission_due"] or 999))
 
 
 @router.get("/models/{model_id}/revalidation-status")

@@ -220,7 +220,7 @@ const VersionDetailModal: React.FC<VersionDetailModalProps> = ({ version, onClos
                             />
                         ) : (
                             <p className="text-gray-700">
-                                {version.production_date ? new Date(version.production_date).toLocaleDateString() : 'Not set'}
+                                {version.production_date ? version.production_date.split('T')[0] : 'Not set'}
                             </p>
                         )}
                     </div>

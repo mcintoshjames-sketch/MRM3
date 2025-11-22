@@ -1,5 +1,4 @@
 import { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
 import Layout from '../components/Layout';
 import api from '../api/client';
 
@@ -191,9 +190,18 @@ const MyDeploymentTasksPage = () => {
             <p className="text-gray-500">Loading deployment tasks...</p>
           </div>
         ) : filteredTasks.length === 0 ? (
-          <div className="bg-white rounded-lg shadow p-8 text-center">
-            <p className="text-gray-500">
-              {filter === 'all' ? 'No pending deployment tasks' : `No ${filter.replace('-', ' ')} tasks`}
+          <div className="bg-white rounded-lg shadow-md p-8 text-center">
+            <svg className="mx-auto h-12 w-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            <h3 className="mt-2 text-lg font-medium text-gray-900">
+              {filter === 'all' ? 'No Pending Deployment Tasks' : `No ${filter.replace('-', ' ')} Tasks`.replace(/\b\w/g, l => l.toUpperCase())}
+            </h3>
+            <p className="mt-1 text-sm text-gray-500">
+              {filter === 'all'
+                ? 'You don\'t have any pending deployment confirmations at this time.'
+                : `You don't have any ${filter.replace('-', ' ')} deployment tasks.`
+              }
             </p>
           </div>
         ) : (
@@ -227,7 +235,7 @@ const MyDeploymentTasksPage = () => {
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <div className="text-sm text-gray-900">
-                        {new Date(task.planned_production_date).toLocaleDateString()}
+                        {task.planned_production_date.split('T')[0]}
                       </div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">

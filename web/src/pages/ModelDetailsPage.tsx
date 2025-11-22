@@ -298,7 +298,7 @@ export default function ModelDetailsPage() {
 
                 if (implDate < targetDate) {
                     warnings.push(
-                        `Active validation project (${request.validation_type}, target: ${targetDate.toLocaleDateString()}) has a target completion date after version ${version.version_number} implementation date (${implDate.toLocaleDateString()}). Consider expediting validation or using Interim Review.`
+                        `Active validation project (${request.validation_type}, target: ${request.target_completion_date.split('T')[0]}) has a target completion date after version ${version.version_number} implementation date (${version.production_date!.split('T')[0]}). Consider expediting validation or using Interim Review.`
                     );
                 }
             });
@@ -509,7 +509,7 @@ export default function ModelDetailsPage() {
                                 </p>
                                 {model.submitted_by_user && (
                                     <p className="text-xs text-gray-600 mt-1">
-                                        Submitted by {model.submitted_by_user.full_name} on {new Date(model.submitted_at!).toLocaleDateString()}
+                                        Submitted by {model.submitted_by_user.full_name} on {model.submitted_at!.split('T')[0]}
                                     </p>
                                 )}
                             </div>

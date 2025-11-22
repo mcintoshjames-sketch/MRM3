@@ -260,7 +260,7 @@ const DelegatesSection: React.FC<DelegatesSectionProps> = ({ modelId, modelOwner
                                 </td>
                                 <td className="px-4 py-3 text-sm text-gray-600">{delegate.delegated_by_name}</td>
                                 <td className="px-4 py-3 text-sm text-gray-600">
-                                    {new Date(delegate.delegated_at).toLocaleDateString()}
+                                    {delegate.delegated_at.split('T')[0]}
                                 </td>
                                 {canManageDelegates && (
                                     <td className="px-4 py-3 text-sm">

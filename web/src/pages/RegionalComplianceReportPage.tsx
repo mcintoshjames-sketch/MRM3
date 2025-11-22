@@ -145,12 +145,12 @@ const RegionalComplianceReportPage: React.FC = () => {
             record.model_id,
             record.model_name,
             record.deployed_version || 'Not Deployed',
-            record.deployment_date ? new Date(record.deployment_date).toLocaleDateString() : 'N/A',
+            record.deployment_date ? record.deployment_date.split('T')[0] : 'N/A',
             record.validation_status || 'N/A',
-            record.validation_completion_date ? new Date(record.validation_completion_date).toLocaleDateString() : 'N/A',
+            record.validation_completion_date ? record.validation_completion_date.split('T')[0] : 'N/A',
             record.regional_approver_name || 'N/A',
             record.regional_approval_status || 'N/A',
-            record.regional_approval_date ? new Date(record.regional_approval_date).toLocaleDateString() : 'N/A',
+            record.regional_approval_date ? record.regional_approval_date.split('T')[0] : 'N/A',
             record.is_deployed_without_validation ? 'No Validation' :
                 record.is_validation_approved ? 'Validated' :
                     record.is_validation_pending ? 'Pending' : 'Not Deployed'
@@ -345,7 +345,7 @@ const RegionalComplianceReportPage: React.FC = () => {
                                             </td>
                                             <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                                                 {record.deployment_date
-                                                    ? new Date(record.deployment_date).toLocaleDateString()
+                                                    ? record.deployment_date.split('T')[0]
                                                     : '-'}
                                             </td>
                                             <td className="px-6 py-4 whitespace-nowrap">
@@ -359,7 +359,7 @@ const RegionalComplianceReportPage: React.FC = () => {
                                             </td>
                                             <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                                                 {record.validation_completion_date
-                                                    ? new Date(record.validation_completion_date).toLocaleDateString()
+                                                    ? record.validation_completion_date.split('T')[0]
                                                     : '-'}
                                             </td>
                                             <td className="px-6 py-4">
@@ -383,7 +383,7 @@ const RegionalComplianceReportPage: React.FC = () => {
                                                             </div>
                                                             {record.regional_approval_date && (
                                                                 <div className="text-xs text-gray-500">
-                                                                    {new Date(record.regional_approval_date).toLocaleDateString()}
+                                                                    {record.regional_approval_date.split('T')[0]}
                                                                 </div>
                                                             )}
                                                         </div>

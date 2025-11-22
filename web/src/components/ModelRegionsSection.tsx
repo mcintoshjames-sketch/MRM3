@@ -272,7 +272,7 @@ export default function ModelRegionsSection({ modelId, whollyOwnedRegionId, whol
                                             </div>
                                         )}
                                         <div className="text-xs text-gray-400 mt-2">
-                                            Added {new Date(mr.created_at).toLocaleDateString()}
+                                            Added {mr.created_at.split('T')[0]}
                                         </div>
                                     </div>
                                     {whollyOwnedRegionId && mr.region_id === whollyOwnedRegionId ? (
