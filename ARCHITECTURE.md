@@ -1,0 +1,101 @@
+## Overview
+
+Model Risk Management inventory system with a FastAPI backend, React/TypeScript frontend, and PostgreSQL database. Supports model cataloging, validation workflow, regional deployment tracking, configurable taxonomies, and compliance reporting. Primary user roles: Admin (full control), Validator (workflow execution), Model Owner/Contributor (submit and track models), Regional/Global approvers (deployment approvals).
+
+## Tech Stack
+- Backend: FastAPI, SQLAlchemy 2.x ORM, Pydantic v2 schemas, Alembic migrations, JWT auth via python-jose, passlib/bcrypt for hashing.
+- Frontend: React 18 + TypeScript + Vite + TailwindCSS, react-router-dom v6, Axios client with auth interceptor.
+- Database: PostgreSQL (dockerized). In-memory SQLite used in tests.
+- Testing: pytest for API; vitest + React Testing Library + happy-dom for web.
+
+## Runtime & Deployment
+- Local/dev via `docker compose up --build` (see `docker-compose.yml`). Services: `db` (Postgres on 5433), `api` (Uvicorn on 8001), `web` (Vite dev server on 5174).
+- API entrypoint: `api/app/main.py` with CORS for localhost frontends.
+- Env/config: `api/app/core/config.py` (DATABASE_URL, SECRET_KEY, algorithm, token expiry) loaded via `.env`; frontend uses `VITE_API_URL`.
+- Migrations: Alembic in `api/alembic`; run inside container against hostname `db`.
+- Seeding: `python -m app.seed` invoked at container start to create admin user, taxonomy values, regions, validation policies, component definitions, and demo directory data.
+
+## Backend Architecture
+- Entry & middleware: `app/main.py` registers routers and CORS.
+- Routing modules (`app/api/`):
+  - `auth.py`: login, user CRUD, mock Microsoft Entra directory search/provisioning.
+  - `models.py`: model CRUD, regulatory metadata, cross-references to vendors, owners/developers, regulatory categories; RLS helpers in `app/core/rls.py`.
+  - `model_versions.py`, `model_change_taxonomy.py`: versioning, change type taxonomy, change history.
+  - `model_regions.py`, `regions.py`: normalized regions and model-region assignments.
+  - `model_delegates.py`: delegate assignments for models.
+  - `vendors.py`: vendor CRUD.
+  - `taxonomies.py`: taxonomy/category and value management.
+  - `validation_workflow.py`: end-to-end validation lifecycle (requests, status updates, assignments, outcomes, approvals, audit logging, component configurations, reports including deviation trends).
+  - `workflow_sla.py`: SLA configuration endpoints.
+  - `version_deployment_tasks.py`: deployment task tracking for model owners/approvers.
+  - `audit_logs.py`: audit log search/filter.
+  - `dashboard.py`: aging and workload summaries.
+  - `export_views.py`: CSV/export-friendly endpoints.
+  - `regional_compliance_report.py`: region-wise deployment & approval report.
+  - `analytics.py`, `saved_queries.py`: analytics aggregations and saved-query storage.
+- Core services:
+  - DB session management (`core/database.py`), auth dependency (`core/deps.py`), security utilities (`core/security.py`), row-level security filters (`core/rls.py`).
+  - PDF/report helpers in `validation_workflow.py` (FPDF) for generated artifacts.
+- Models (`app/models/`):
+  - Users & directory: `user.py`, `entra_user.py`, roles include Admin/Validator/Global Approver/Regional Approver/User.
+  - Catalog: `model.py`, `vendor.py`, `taxonomy.py`, `region.py`, `model_version.py`, `model_region.py`, `model_delegate.py`, `model_change_taxonomy.py`, `model_version_region.py`.
+  - Validation workflow: `validation.py` (ValidationRequest, ValidationStatusHistory, ValidationAssignment, ValidationOutcome, ValidationApproval, ValidationReviewOutcome, ValidationPlan, ValidationPlanComponent, ValidationComponentDefinition, ComponentDefinitionConfiguration/ConfigItem, ValidationPolicy, ValidationWorkflowSLA).
+  - Compliance/analytics: `audit_log.py`, `export_view.py`, `saved_query.py`, `version_deployment_task.py`, `validation_grouping.py`.
+- Schemas: mirrored Pydantic models in `app/schemas/` for requests/responses.
+- Authn/z: HTTP Bearer JWT tokens; `get_current_user` dependency enforces auth; role checks per endpoint; RLS utilities narrow visibility for non-privileged users.
+- Audit logging: `AuditLog` persisted on key workflows (model changes, approvals, component config publishes, etc.).
+- Reporting: Dedicated routers plus endpoints in `validation_workflow.py` for dashboard metrics and compliance reports (aging, workload, deviation trends).
+
+## Frontend Architecture
+- Entry: `src/main.tsx` mounts App within `AuthProvider` and `BrowserRouter`.
+- Routing (`src/App.tsx`): guarded routes for login, dashboards (`/dashboard`, `/validator-dashboard`, `/my-dashboard`), models (list/detail/change records), validation workflow (list/detail/new), vendors (list/detail), users (list/detail), taxonomy, audit logs, workflow configuration, batch delegates, regions, validation policies, component definitions, configuration history, reports hub (`/reports`), report detail pages (regional compliance, deviation trends), analytics, deployment tasks, pending submissions.
+- Shared pieces:
+  - Auth context (`src/contexts/AuthContext.tsx`) manages token/user; Axios client (`src/api/client.ts`) injects Bearer tokens and redirects on 401.
+  - Layout (`src/components/Layout.tsx`) provides navigation shell.
+  - Hooks/utilities: table sorting (`src/hooks/useTableSort.tsx`), CSV export helpers on pages.
+- Pages (`src/pages/`): feature-specific UIs aligned to backend modules (e.g., `ModelsPage.tsx`, `ValidationWorkflowPage.tsx`, `ValidationRequestDetailPage.tsx`, `VendorsPage.tsx`, `TaxonomyPage.tsx`, `AuditPage.tsx`, `WorkflowConfigurationPage.tsx`, `RegionalComplianceReportPage.tsx`, `DeviationTrendsReportPage.tsx`, `AnalyticsPage.tsx`, dashboards). Tables generally support sorting and CSV export; dates rendered via ISO splitting.
+- Styling: Tailwind classes via `index.css` and Vite config; iconography via emojis/SVG inline.
+
+## Data Model (conceptual)
+- User & EntraUser directory entries; roles drive permissions.
+- Model with vendor, owner/developer, taxonomy links (risk tier, validation type, etc.), regulatory categories, delegates, and region assignments via ModelRegion.
+- ModelVersion tracks version metadata, change types, production dates, scope (global/regional) and links to ValidationRequest.
+- ValidationRequest lifecycle with status history, assignments (validators), plan (components and deviations), approvals, outcomes/review outcomes, deployment tasks, and policies/SLA settings per risk tier.
+- Taxonomy/TaxonomyValue for configurable lists (risk tier, validation types, statuses, priorities, etc.).
+- Region and VersionDeploymentTask for regional deployment approvals.
+- AuditLog captures actions across entities.
+- SavedQuery/ExportView for analytics/reporting reuse.
+
+## Request & Data Flow
+1. Frontend calls Axios client -> FastAPI routes under `/auth`, `/models`, `/validation-workflow`, `/vendors`, `/taxonomies`, `/audit-logs`, `/regions`, `/model-versions`, `/model-change-taxonomy`, `/analytics`, `/saved-queries`, `/regional-compliance-report`, `/validation-workflow/compliance-report/*`, etc.
+2. `get_current_user` decodes JWT, routes apply role checks and RLS filters.
+3. SQLAlchemy ORM persists/fetches entities; Alembic manages schema migrations.
+4. Responses serialized via Pydantic schemas; frontend renders tables/cards with sorting/export.
+
+## Reporting & Analytics
+- Reports hub (`/reports`) lists available reports; detail pages for Regional Compliance and Deviation Trends (CSV export, refresh).
+- Backend report endpoints: `GET /regional-compliance-report/`, `GET /validation-workflow/compliance-report/deviation-trends`, plus dashboard reports (`/validation-workflow/dashboard/*`) and analytics aggregations (`/analytics`, saved queries).
+- Export views in `export_views.py` provide CSV-friendly datasets.
+
+## Security, Error Handling, Logging
+- JWT auth with token expiry; passwords hashed with bcrypt.
+- 401 handling: frontend interceptor removes token and redirects to `/login`.
+- Authorization enforced in routers via role checks (Admin/Validator/etc.) and row-level security filters for users.
+- Audit logging stored in `audit_logs` table; endpoints allow filtered retrieval.
+- Errors surfaced as FastAPI HTTPExceptions with detail; frontend shows inline errors or toasts per page implementations.
+
+## Configuration & Environments
+- Backend settings via environment or `.env` (DATABASE_URL, SECRET_KEY, ALGORITHM, ACCESS_TOKEN_EXPIRE_MINUTES). Defaults in `core/config.py`.
+- Frontend uses `VITE_API_URL` (defaults to `http://localhost:8001`); token stored in `localStorage`.
+- Docker compose wires service URLs/ports; migrations must run inside the container to reach hostname `db`.
+
+## Testing
+- Backend: pytest suite in `api/tests/` with fixtures (`conftest.py`). Run `cd api && python -m pytest`. Additional shell scripts (`test_*.sh`, `test_*.py`) for targeted flows.
+- Frontend: vitest in `web` (`pnpm test`, `pnpm test:run`, `pnpm test:coverage`).
+- Full regression helper: `run_tests.sh` executes backend then frontend suites.
+
+## Known Limitations & Technical Debt
+- No real SSO; Microsoft Entra integration is mocked via `auth.py`/`entra_user.py`.
+- Email/notification workflows are not implemented; approvals/assignments are in-app only.
+- Reporting is limited to currently implemented endpoints (regional compliance, deviation trends, dashboards); additional reports referenced in design docs are not yet present.
+- Background jobs/async tasks are absent; long-running work (PDF generation, exports) runs inline on request.
