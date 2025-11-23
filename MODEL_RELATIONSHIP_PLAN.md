@@ -43,6 +43,9 @@
   - (Future) Feed Frequency, Interface Type, Dependency Criticality (for metadata table) — can be seeded later.
 - **Constraints/validations**
   - Prevent self-reference (parent ≠ child; feeder ≠ consumer).
+  - **Single-parent rule**: A model can have at most ONE parent (enforced via unique constraint on child_model_id). Multiple children are allowed.
+    - Rationale: Ensures clear ownership, accountability, and governance hierarchy. Prevents ambiguous approval chains and conflicting validation requirements.
+    - If a model is used by multiple contexts, model this as a dependency (data flow), not hierarchy.
   - Optional guard to prevent cycles for hierarchy (e.g., child cannot ultimately be ancestor of parent); treat as future enhancement.
   - Effective/end date validation (end_date >= effective_date when both set).
 
@@ -103,7 +106,7 @@ Model Details page:
 
 **Database Models:**
 - Created `ModelHierarchy` table with parent-child relationships
-  - Constraints: self-reference prevention, unique constraint on (parent, child, type, effective_date), date range validation
+  - Constraints: self-reference prevention, **unique constraint on child_model_id (single parent rule)**, unique constraint on (parent, child, type, effective_date), date range validation
   - Foreign keys: parent_model_id, child_model_id → models.model_id (CASCADE)
   - Fields: relation_type_id, effective_date, end_date, notes
 - Created `ModelFeedDependency` table with feeder-consumer relationships
@@ -154,6 +157,7 @@ Model Details page:
 
 **Business Rules Enforced:**
 - Self-reference prevention (parent ≠ child, feeder ≠ consumer)
+- **Single-parent constraint**: Validates child doesn't already have an active parent before creating new hierarchy relationship
 - Uniqueness constraints
 - Date range validation (end_date >= effective_date)
 - Admin-only access for modifications
@@ -283,6 +287,7 @@ Model Details page:
 - **Improved model search**: Type-ahead filtering with clickable list interface (replaced basic dropdown)
 - **Enhanced autocomplete**: Results appear as you type, showing only matching models
 - Visual selection feedback with highlighted selected item
+- **Single-parent enforcement**: "Add Parent Model" button is disabled if model already has an active parent, with tooltip explaining the business rule
 - Loading states during form submission
 - Error messages displayed prominently in modal
 - Confirmation dialogs prevent accidental deletions

@@ -72,7 +72,8 @@ def list_children(
     # Filter by active status if requested
     if not include_inactive:
         query = query.filter(
-            (ModelHierarchy.end_date == None) | (ModelHierarchy.end_date >= func.current_date())
+            (ModelHierarchy.end_date == None) | (
+                ModelHierarchy.end_date >= func.current_date())
         )
 
     relationships = query.all()
@@ -121,7 +122,8 @@ def list_parents(
     # Filter by active status if requested
     if not include_inactive:
         query = query.filter(
-            (ModelHierarchy.end_date == None) | (ModelHierarchy.end_date >= func.current_date())
+            (ModelHierarchy.end_date == None) | (
+                ModelHierarchy.end_date >= func.current_date())
         )
 
     relationships = query.all()
@@ -164,7 +166,8 @@ def create_hierarchy(
         )
 
     # Verify child model exists
-    child_model = db.query(Model).filter(Model.model_id == hierarchy_data.child_model_id).first()
+    child_model = db.query(Model).filter(
+        Model.model_id == hierarchy_data.child_model_id).first()
     if not child_model:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -176,6 +179,22 @@ def create_hierarchy(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Model cannot be its own child (self-reference not allowed)"
+        )
+
+    # Check if child already has a parent (enforce single parent rule)
+    existing_parent = db.query(ModelHierarchy).filter(
+        ModelHierarchy.child_model_id == hierarchy_data.child_model_id,
+        (ModelHierarchy.end_date == None) | (
+            ModelHierarchy.end_date >= func.current_date())
+    ).first()
+
+    if existing_parent:
+        existing_parent_model = db.query(Model).filter(
+            Model.model_id == existing_parent.parent_model_id
+        ).first()
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Model '{child_model.model_name}' already has a parent model ('{existing_parent_model.model_name}'). A model can only have one parent for clear ownership and governance. Use dependencies to model data flow relationships."
         )
 
     # Verify relation type exists
@@ -252,8 +271,10 @@ def create_hierarchy(
         effective_date=hierarchy.effective_date,
         end_date=hierarchy.end_date,
         notes=hierarchy.notes,
-        parent_model=ModelInfo(model_id=parent_model.model_id, model_name=parent_model.model_name),
-        child_model=ModelInfo(model_id=child_model.model_id, model_name=child_model.model_name),
+        parent_model=ModelInfo(
+            model_id=parent_model.model_id, model_name=parent_model.model_name),
+        child_model=ModelInfo(model_id=child_model.model_id,
+                              model_name=child_model.model_name),
         relation_type=RelationTypeInfo(
             value_id=relation_type.value_id,
             code=relation_type.code,

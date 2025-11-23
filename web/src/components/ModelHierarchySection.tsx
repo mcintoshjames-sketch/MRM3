@@ -88,6 +88,7 @@ export default function ModelHierarchySection({ modelId, modelName }: Props) {
     };
 
     const isAdmin = user?.role === 'Admin';
+    const hasActiveParent = parents.length > 0;
 
     if (loading) {
         return (
@@ -115,7 +116,12 @@ export default function ModelHierarchySection({ modelId, modelName }: Props) {
                         <div className="mt-6 flex justify-center space-x-3">
                             <button
                                 onClick={handleAddParent}
-                                className="inline-flex items-center px-4 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50"
+                                disabled={hasActiveParent}
+                                className={`inline-flex items-center px-4 py-2 border shadow-sm text-sm font-medium rounded-md ${hasActiveParent
+                                        ? 'border-gray-200 text-gray-400 bg-gray-100 cursor-not-allowed'
+                                        : 'border-gray-300 text-gray-700 bg-white hover:bg-gray-50'
+                                    }`}
+                                title={hasActiveParent ? 'This model already has a parent. A model can only have one parent.' : 'Add parent model'}
                             >
                                 <svg className="-ml-1 mr-2 h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
@@ -157,15 +163,20 @@ export default function ModelHierarchySection({ modelId, modelName }: Props) {
                         <div className="flex justify-between items-center mb-4">
                             <h3 className="text-lg font-medium text-gray-900">Parent Models</h3>
                             {isAdmin && (
-                                <button
-                                    onClick={handleAddParent}
-                                    className="inline-flex items-center px-3 py-1.5 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50"
-                                >
-                                    <svg className="-ml-0.5 mr-1.5 h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                                    </svg>
-                                    Add Parent
-                                </button>
+                                <div className="flex flex-col items-end">
+                                    <button
+                                        onClick={handleAddParent}
+                                        disabled
+                                        className="inline-flex items-center px-3 py-1.5 border border-gray-200 shadow-sm text-sm font-medium rounded-md text-gray-400 bg-gray-100 cursor-not-allowed"
+                                        title="This model already has a parent. A model can only have one parent for clear ownership and governance."
+                                    >
+                                        <svg className="-ml-0.5 mr-1.5 h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                                        </svg>
+                                        Add Parent
+                                    </button>
+                                    <p className="mt-1 text-xs text-gray-500">A model can only have one parent</p>
+                                </div>
                             )}
                         </div>
                         <div className="bg-white shadow overflow-hidden sm:rounded-md">

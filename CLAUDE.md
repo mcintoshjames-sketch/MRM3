@@ -426,6 +426,10 @@ const { sortedData, requestSort, getSortIcon } = useTableSort<Validation>(valida
 
 - **Business Rules**:
   - Self-reference prevention (cannot link model to itself)
+  - **Single-parent constraint**: A model can have at most ONE parent model (enforced via unique constraint)
+    - Ensures clear ownership, accountability, and governance hierarchy
+    - Prevents ambiguous approval chains and conflicting validation requirements
+    - If a model is shared across contexts, use dependencies (data flow), not hierarchy
   - Cycle detection for dependencies (maintains DAG constraint)
   - Unique constraints on relationships
   - Date validation (end_date >= effective_date)
