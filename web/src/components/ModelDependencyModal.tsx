@@ -75,11 +75,11 @@ export default function ModelDependencyModal({
             }
 
             // Fetch data and set dependency_type_id after taxonomy values are loaded
-            fetchData();
+            fetchData(editData);
         }
     }, [isOpen, editData]);
 
-    const fetchData = async () => {
+    const fetchData = async (currentEditData?: DependencyRelation) => {
         try {
             const [modelsRes, taxonomiesRes] = await Promise.all([
                 api.get('/models'),
@@ -102,14 +102,15 @@ export default function ModelDependencyModal({
                 setDependencyTypes(taxonomyRes.data.values || []);
 
                 // In edit mode, set to the existing dependency_type_id
-                if (editData) {
-                    setDependencyTypeId(editData.dependency_type_id);
+                if (currentEditData) {
+                    console.log('Setting dependency type ID from editData:', currentEditData.dependency_type_id);
+                    setDependencyTypeId(currentEditData.dependency_type_id);
                 }
             }
         } catch (error) {
             console.error('Error fetching data:', error);
             // Only show error if we're in create mode and can't load models
-            if (!editData) {
+            if (!currentEditData) {
                 setError('Failed to load form data. Please try again.');
             }
         }

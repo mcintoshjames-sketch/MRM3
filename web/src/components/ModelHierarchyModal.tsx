@@ -72,11 +72,11 @@ export default function ModelHierarchyModal({
             }
 
             // Fetch data and set relation_type_id after taxonomy values are loaded
-            fetchData();
+            fetchData(editData);
         }
     }, [isOpen, editData]);
 
-    const fetchData = async () => {
+    const fetchData = async (currentEditData?: HierarchyRelation) => {
         try {
             const [modelsRes, taxonomiesRes] = await Promise.all([
                 api.get('/models'),
@@ -99,9 +99,10 @@ export default function ModelHierarchyModal({
                 setRelationTypes(taxonomyRes.data.values || []);
 
                 // Set relation type based on mode
-                if (editData) {
+                if (currentEditData) {
                     // In edit mode, set to the existing relation_type_id
-                    setRelationTypeId(editData.relation_type_id);
+                    console.log('Setting relation type ID from editData:', currentEditData.relation_type_id);
+                    setRelationTypeId(currentEditData.relation_type_id);
                 } else if (taxonomyRes.data.values && taxonomyRes.data.values.length > 0) {
                     // In create mode, auto-select SUB_MODEL if available
                     const subModelType = taxonomyRes.data.values.find((v: TaxonomyValue) => v.code === 'SUB_MODEL');
@@ -113,7 +114,7 @@ export default function ModelHierarchyModal({
         } catch (error) {
             console.error('Error fetching data:', error);
             // Only show error if we're in create mode and can't load models
-            if (!editData) {
+            if (!currentEditData) {
                 setError('Failed to load form data. Please try again.');
             }
         }
