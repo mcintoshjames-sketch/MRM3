@@ -1283,12 +1283,9 @@ export default function ModelsPage() {
                                 onChange={(e) => setFilters({ ...filters, include_sub_models: e.target.checked })}
                                 className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
                             />
-                            <label htmlFor="include-sub-models" className="text-sm font-medium text-gray-700">
+                            <label htmlFor="include-sub-models" className="text-sm font-medium text-gray-700 whitespace-nowrap">
                                 Include Sub-Models
                             </label>
-                            <span className="text-xs text-gray-500 italic">
-                                (Show child models in hierarchy)
-                            </span>
                         </div>
                     </div>
 
@@ -1398,10 +1395,10 @@ export default function ModelsPage() {
                                                 </button>
                                                 {model.row_approval_status && (
                                                     <span className={`px-2 py-0.5 rounded text-xs font-medium ${model.row_approval_status === 'pending'
-                                                            ? 'bg-blue-100 text-blue-800'
-                                                            : model.row_approval_status === 'needs_revision'
-                                                                ? 'bg-orange-100 text-orange-800'
-                                                                : 'bg-gray-100 text-gray-800'
+                                                        ? 'bg-blue-100 text-blue-800'
+                                                        : model.row_approval_status === 'needs_revision'
+                                                            ? 'bg-orange-100 text-orange-800'
+                                                            : 'bg-gray-100 text-gray-800'
                                                         }`}>
                                                         {model.row_approval_status === 'pending' ? 'Pending Approval' :
                                                             model.row_approval_status === 'needs_revision' ? 'Needs Revision' :
