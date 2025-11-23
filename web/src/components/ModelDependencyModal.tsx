@@ -57,9 +57,9 @@ export default function ModelDependencyModal({
     useEffect(() => {
         if (isOpen) {
             setError(''); // Clear any previous errors
-            fetchData();
+
+            // Set form values from editData before fetching (for non-dropdown fields)
             if (editData) {
-                setDependencyTypeId(editData.dependency_type_id);
                 setDescription(editData.description || '');
                 setEffectiveDate(editData.effective_date || '');
                 setEndDate(editData.end_date || '');
@@ -73,6 +73,9 @@ export default function ModelDependencyModal({
             } else {
                 resetForm();
             }
+
+            // Fetch data and set dependency_type_id after taxonomy values are loaded
+            fetchData();
         }
     }, [isOpen, editData]);
 
@@ -97,6 +100,11 @@ export default function ModelDependencyModal({
                 // Get full taxonomy with values
                 const taxonomyRes = await api.get(`/taxonomies/${dependencyTypeTaxonomy.taxonomy_id}`);
                 setDependencyTypes(taxonomyRes.data.values || []);
+
+                // In edit mode, set to the existing dependency_type_id
+                if (editData) {
+                    setDependencyTypeId(editData.dependency_type_id);
+                }
             }
         } catch (error) {
             console.error('Error fetching data:', error);

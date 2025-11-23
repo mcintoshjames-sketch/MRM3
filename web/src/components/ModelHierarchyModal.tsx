@@ -55,9 +55,9 @@ export default function ModelHierarchyModal({
     useEffect(() => {
         if (isOpen) {
             setError(''); // Clear any previous errors
-            fetchData();
+
+            // Set form values from editData before fetching (for non-dropdown fields)
             if (editData) {
-                setRelationTypeId(editData.relation_type_id);
                 setEffectiveDate(editData.effective_date || '');
                 setEndDate(editData.end_date || '');
                 setNotes(editData.notes || '');
@@ -70,6 +70,9 @@ export default function ModelHierarchyModal({
             } else {
                 resetForm();
             }
+
+            // Fetch data and set relation_type_id after taxonomy values are loaded
+            fetchData();
         }
     }, [isOpen, editData]);
 
@@ -94,8 +97,13 @@ export default function ModelHierarchyModal({
                 // Get full taxonomy with values
                 const taxonomyRes = await api.get(`/taxonomies/${hierarchyTypeTaxonomy.taxonomy_id}`);
                 setRelationTypes(taxonomyRes.data.values || []);
-                // Auto-select SUB_MODEL if available and not editing
-                if (!editData && taxonomyRes.data.values && taxonomyRes.data.values.length > 0) {
+
+                // Set relation type based on mode
+                if (editData) {
+                    // In edit mode, set to the existing relation_type_id
+                    setRelationTypeId(editData.relation_type_id);
+                } else if (taxonomyRes.data.values && taxonomyRes.data.values.length > 0) {
+                    // In create mode, auto-select SUB_MODEL if available
                     const subModelType = taxonomyRes.data.values.find((v: TaxonomyValue) => v.code === 'SUB_MODEL');
                     if (subModelType) {
                         setRelationTypeId(subModelType.value_id);
