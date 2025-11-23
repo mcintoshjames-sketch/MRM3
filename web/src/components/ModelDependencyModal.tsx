@@ -103,7 +103,6 @@ export default function ModelDependencyModal({
 
                 // In edit mode, set to the existing dependency_type_id
                 if (currentEditData) {
-                    console.log('Setting dependency type ID from editData:', currentEditData.dependency_type_id);
                     setDependencyTypeId(currentEditData.dependency_type_id);
                 }
             }

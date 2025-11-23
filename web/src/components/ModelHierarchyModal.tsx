@@ -101,7 +101,6 @@ export default function ModelHierarchyModal({
                 // Set relation type based on mode
                 if (currentEditData) {
                     // In edit mode, set to the existing relation_type_id
-                    console.log('Setting relation type ID from editData:', currentEditData.relation_type_id);
                     setRelationTypeId(currentEditData.relation_type_id);
                 } else if (taxonomyRes.data.values && taxonomyRes.data.values.length > 0) {
                     // In create mode, auto-select SUB_MODEL if available

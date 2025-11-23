@@ -59,7 +59,8 @@ def detect_cycle(
     If we can, adding feeder->consumer would create a cycle.
     """
     # Build adjacency list from existing dependencies (excluding the one being updated)
-    query = db.query(ModelFeedDependency).filter(ModelFeedDependency.is_active == True)
+    query = db.query(ModelFeedDependency).filter(
+        ModelFeedDependency.is_active == True)
     if exclude_dependency_id:
         query = query.filter(ModelFeedDependency.id != exclude_dependency_id)
 
@@ -131,7 +132,8 @@ def list_inbound_dependencies(
     if not include_inactive:
         query = query.filter(ModelFeedDependency.is_active == True)
         query = query.filter(
-            (ModelFeedDependency.end_date == None) | (ModelFeedDependency.end_date >= func.current_date())
+            (ModelFeedDependency.end_date == None) | (
+                ModelFeedDependency.end_date >= func.current_date())
         )
 
     dependencies = query.all()
@@ -144,6 +146,7 @@ def list_inbound_dependencies(
             model_id=dep.feeder_model.model_id,
             model_name=dep.feeder_model.model_name,
             dependency_type=dep.dependency_type.label if dep.dependency_type else "Unknown",
+            dependency_type_id=dep.dependency_type_id,
             description=dep.description,
             is_active=dep.is_active,
             effective_date=dep.effective_date,
@@ -183,7 +186,8 @@ def list_outbound_dependencies(
     if not include_inactive:
         query = query.filter(ModelFeedDependency.is_active == True)
         query = query.filter(
-            (ModelFeedDependency.end_date == None) | (ModelFeedDependency.end_date >= func.current_date())
+            (ModelFeedDependency.end_date == None) | (
+                ModelFeedDependency.end_date >= func.current_date())
         )
 
     dependencies = query.all()
@@ -196,6 +200,7 @@ def list_outbound_dependencies(
             model_id=dep.consumer_model.model_id,
             model_name=dep.consumer_model.model_name,
             dependency_type=dep.dependency_type.label if dep.dependency_type else "Unknown",
+            dependency_type_id=dep.dependency_type_id,
             description=dep.description,
             is_active=dep.is_active,
             effective_date=dep.effective_date,
@@ -229,7 +234,8 @@ def create_dependency(
         )
 
     # Verify consumer model exists
-    consumer_model = db.query(Model).filter(Model.model_id == dependency_data.consumer_model_id).first()
+    consumer_model = db.query(Model).filter(
+        Model.model_id == dependency_data.consumer_model_id).first()
     if not consumer_model:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -262,12 +268,15 @@ def create_dependency(
             )
 
     # CRITICAL: Check for cycles in dependency graph
-    has_cycle, cycle_path = detect_cycle(db, model_id, dependency_data.consumer_model_id)
+    has_cycle, cycle_path = detect_cycle(
+        db, model_id, dependency_data.consumer_model_id)
     if has_cycle:
         # Get model names for the cycle path
-        cycle_models = db.query(Model).filter(Model.model_id.in_(cycle_path)).all()
+        cycle_models = db.query(Model).filter(
+            Model.model_id.in_(cycle_path)).all()
         model_map = {m.model_id: m.model_name for m in cycle_models}
-        cycle_names = [model_map.get(mid, f"Model {mid}") for mid in cycle_path]
+        cycle_names = [model_map.get(
+            mid, f"Model {mid}") for mid in cycle_path]
 
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -337,8 +346,10 @@ def create_dependency(
         effective_date=dependency.effective_date,
         end_date=dependency.end_date,
         is_active=dependency.is_active,
-        feeder_model=ModelInfo(model_id=feeder_model.model_id, model_name=feeder_model.model_name),
-        consumer_model=ModelInfo(model_id=consumer_model.model_id, model_name=consumer_model.model_name),
+        feeder_model=ModelInfo(
+            model_id=feeder_model.model_id, model_name=feeder_model.model_name),
+        consumer_model=ModelInfo(
+            model_id=consumer_model.model_id, model_name=consumer_model.model_name),
         dependency_type=DependencyTypeInfo(
             value_id=dependency_type.value_id,
             code=dependency_type.code,
@@ -386,7 +397,8 @@ def update_dependency(
             )
 
     # Validate date range
-    new_effective = update_data.get("effective_date", dependency.effective_date)
+    new_effective = update_data.get(
+        "effective_date", dependency.effective_date)
     new_end = update_data.get("end_date", dependency.end_date)
     if new_end and new_effective and new_end < new_effective:
         raise HTTPException(

@@ -10,10 +10,14 @@ from pydantic import BaseModel, Field
 
 class ModelHierarchyBase(BaseModel):
     """Base model hierarchy schema."""
-    relation_type_id: int = Field(..., description="Taxonomy value ID for relationship type (e.g., SUB_MODEL)")
-    effective_date: Optional[date] = Field(None, description="Date when relationship became effective")
-    end_date: Optional[date] = Field(None, description="Date when relationship ended")
-    notes: Optional[str] = Field(None, max_length=500, description="Additional notes about the relationship")
+    relation_type_id: int = Field(
+        ..., description="Taxonomy value ID for relationship type (e.g., SUB_MODEL)")
+    effective_date: Optional[date] = Field(
+        None, description="Date when relationship became effective")
+    end_date: Optional[date] = Field(
+        None, description="Date when relationship ended")
+    notes: Optional[str] = Field(
+        None, max_length=500, description="Additional notes about the relationship")
 
 
 class ModelHierarchyCreate(ModelHierarchyBase):
@@ -63,16 +67,22 @@ class ModelHierarchyResponse(ModelHierarchyBase):
 
 class ModelFeedDependencyBase(BaseModel):
     """Base model feed dependency schema."""
-    dependency_type_id: int = Field(..., description="Taxonomy value ID for dependency type (e.g., INPUT_DATA, SCORE)")
-    description: Optional[str] = Field(None, max_length=500, description="Brief description of the dependency")
-    effective_date: Optional[date] = Field(None, description="Date when dependency became effective")
-    end_date: Optional[date] = Field(None, description="Date when dependency ended")
-    is_active: bool = Field(True, description="Whether the dependency is currently active")
+    dependency_type_id: int = Field(
+        ..., description="Taxonomy value ID for dependency type (e.g., INPUT_DATA, SCORE)")
+    description: Optional[str] = Field(
+        None, max_length=500, description="Brief description of the dependency")
+    effective_date: Optional[date] = Field(
+        None, description="Date when dependency became effective")
+    end_date: Optional[date] = Field(
+        None, description="Date when dependency ended")
+    is_active: bool = Field(
+        True, description="Whether the dependency is currently active")
 
 
 class ModelFeedDependencyCreate(ModelFeedDependencyBase):
     """Schema for creating a new model feed dependency."""
-    consumer_model_id: int = Field(..., description="ID of the consumer model (receives data)")
+    consumer_model_id: int = Field(...,
+                                   description="ID of the consumer model (receives data)")
 
 
 class ModelFeedDependencyUpdate(BaseModel):
@@ -116,8 +126,10 @@ class ModelHierarchySummary(BaseModel):
     model_id: int
     model_name: str
     relation_type: str
+    relation_type_id: int
     effective_date: Optional[date]
     end_date: Optional[date]
+    notes: Optional[str] = None
 
 
 class ModelDependencySummary(BaseModel):
@@ -126,6 +138,7 @@ class ModelDependencySummary(BaseModel):
     model_id: int
     model_name: str
     dependency_type: str
+    dependency_type_id: int
     description: Optional[str]
     is_active: bool
     effective_date: Optional[date]

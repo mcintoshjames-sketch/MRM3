@@ -86,8 +86,10 @@ def list_children(
             model_id=rel.child_model.model_id,
             model_name=rel.child_model.model_name,
             relation_type=rel.relation_type.label if rel.relation_type else "Unknown",
+            relation_type_id=rel.relation_type_id,
             effective_date=rel.effective_date,
-            end_date=rel.end_date
+            end_date=rel.end_date,
+            notes=rel.notes
         ))
 
     return result
@@ -136,8 +138,10 @@ def list_parents(
             model_id=rel.parent_model.model_id,
             model_name=rel.parent_model.model_name,
             relation_type=rel.relation_type.label if rel.relation_type else "Unknown",
+            relation_type_id=rel.relation_type_id,
             effective_date=rel.effective_date,
-            end_date=rel.end_date
+            end_date=rel.end_date,
+            notes=rel.notes
         ))
 
     return result
