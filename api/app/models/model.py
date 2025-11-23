@@ -134,3 +134,23 @@ class Model(Base):
     submission_comments: Mapped[List["ModelSubmissionComment"]] = relationship(
         "ModelSubmissionComment", back_populates="model", cascade="all, delete-orphan", order_by="ModelSubmissionComment.created_at"
     )
+
+    # Model hierarchy relationships
+    child_relationships: Mapped[List["ModelHierarchy"]] = relationship(
+        "ModelHierarchy", foreign_keys="ModelHierarchy.parent_model_id",
+        back_populates="parent_model", cascade="all, delete-orphan"
+    )
+    parent_relationships: Mapped[List["ModelHierarchy"]] = relationship(
+        "ModelHierarchy", foreign_keys="ModelHierarchy.child_model_id",
+        back_populates="child_model", cascade="all, delete-orphan"
+    )
+
+    # Model dependency relationships
+    outbound_dependencies: Mapped[List["ModelFeedDependency"]] = relationship(
+        "ModelFeedDependency", foreign_keys="ModelFeedDependency.feeder_model_id",
+        back_populates="feeder_model", cascade="all, delete-orphan"
+    )
+    inbound_dependencies: Mapped[List["ModelFeedDependency"]] = relationship(
+        "ModelFeedDependency", foreign_keys="ModelFeedDependency.consumer_model_id",
+        back_populates="consumer_model", cascade="all, delete-orphan"
+    )

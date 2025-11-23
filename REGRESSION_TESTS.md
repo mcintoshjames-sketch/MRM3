@@ -5,7 +5,7 @@ This document tracks the regression testing strategy and test coverage for itera
 ## Quick Reference
 
 ```bash
-# Run all backend tests (202 tests passing - all tests passing!)
+# Run all backend tests (256 tests passing - all tests passing!)
 cd api && python -m pytest
 
 # Run all frontend tests (128 tests passing)
@@ -272,6 +272,62 @@ cd web && pnpm test:coverage
 - [x] Cannot confirm task twice (idempotency)
 - [x] Cannot access other users' deployment tasks
 - [x] Cannot confirm other users' deployment tasks
+
+#### Model Hierarchy (`test_model_hierarchy.py`)
+- [x] List children when none exist
+- [x] List children with data (single child)
+- [x] List children with multiple children
+- [x] List children excludes inactive relationships by default
+- [x] List children includes inactive when requested
+- [x] List children of nonexistent model returns 404
+- [x] List children without auth fails (403)
+- [x] List parents when none exist
+- [x] List parents with data
+- [x] Create hierarchy relationship successfully (Admin only)
+- [x] Create hierarchy with effective and end dates
+- [x] Create hierarchy blocks self-reference (400)
+- [x] Create hierarchy validates date range (end >= effective)
+- [x] Create hierarchy blocks duplicate relationships
+- [x] Create hierarchy with nonexistent parent returns 404
+- [x] Create hierarchy with nonexistent child returns 404
+- [x] Create hierarchy as non-admin blocked (403)
+- [x] Create hierarchy creates audit log with parent/child names
+- [x] Update hierarchy notes
+- [x] Update hierarchy dates
+- [x] Update hierarchy as non-admin blocked (403)
+- [x] Update hierarchy creates audit log with changes
+- [x] Delete hierarchy successfully
+- [x] Delete hierarchy as non-admin blocked (403)
+- [x] Delete hierarchy creates audit log
+- [x] Delete nonexistent hierarchy returns 404
+
+#### Model Dependencies (`test_model_dependencies.py`)
+- [x] List inbound dependencies when none exist
+- [x] List inbound dependencies with data (feeders)
+- [x] List inbound dependencies excludes inactive by default
+- [x] List inbound dependencies includes inactive when requested
+- [x] List outbound dependencies when none exist
+- [x] List outbound dependencies with data (consumers)
+- [x] Create dependency successfully (Admin only)
+- [x] Create dependency with effective and end dates
+- [x] Create dependency blocks self-reference (400)
+- [x] Create dependency validates date range (end >= effective)
+- [x] Create dependency blocks duplicates
+- [x] Create dependency as non-admin blocked (403)
+- [x] Create dependency creates audit log with feeder/consumer names
+- [x] **Cycle detection: simple 2-node cycle blocked (A→B, then B→A)**
+- [x] **Cycle detection: 3-node cycle blocked (A→B→C, then C→A)**
+- [x] **Cycle detection: complex diamond cycle blocked (A→B, A→C, B→D, C→D, then D→A)**
+- [x] **Cycle detection: valid DAG allowed (diamond without cycle)**
+- [x] **Cycle detection: inactive dependencies ignored (doesn't block valid edges)**
+- [x] Update dependency description
+- [x] Update dependency is_active flag
+- [x] Update dependency as non-admin blocked (403)
+- [x] Update dependency creates audit log with changes
+- [x] Delete dependency successfully
+- [x] Delete dependency as non-admin blocked (403)
+- [x] Delete dependency creates audit log
+- [x] **Delete dependency allows previously blocked edges (cycle removal)**
 
 ### Frontend Component Tests (web/src/) - ✅ FULLY OPERATIONAL
 
@@ -552,6 +608,7 @@ describe('NewPage', () => {
 | **Plan Templating (Phase 9c)** | ✅ Manual tests (/tmp/test_plan_templating.py) | ✅ ValidationPlanForm with template modal | 2025-11-22 |
 | **Component Definition Management (Phase 9d)** | ✅ API endpoints tested (configurations, component updates) | ✅ ComponentDefinitionsPage (Admin UI) | 2025-11-22 |
 | **Configuration History View (Phase 9e)** | ✅ Uses existing configuration API endpoints | ✅ ConfigurationHistoryPage (Admin UI) | 2025-11-22 |
+| **Model Relationships (Phase 1-2)** | ✅ test_model_hierarchy.py (26 tests), test_model_dependencies.py (26 tests) | ⚠️ UI pending (Phase 3+) | 2025-11-23 |
 
 **Features Added:**
 - Development type (In-House / Third-Party)
@@ -574,9 +631,10 @@ describe('NewPage', () => {
 - **Model Submission Workflow** (Submission, Approval, Send Back, Resubmit, RLS, Dashboard Feed)
 - **Regional Version Scope (Phase 7)** (scope field: GLOBAL/REGIONAL, affected_region_ids tracking, planned/actual production dates, auto-validation for MAJOR changes, phased rollout support, regional deployment tracking)
 - **Deployment Task Ratification (Phase 8)** (deployment confirmation workflow, validation control with override mechanism, model owner/delegate assignment, compliance audit trail, MyDeploymentTasksPage)
+- **Model Relationships (Phase 1-2)** (parent-child hierarchy, feeder-consumer dependencies, DFS-based cycle detection for DAG enforcement, full CRUD with Admin access control, comprehensive audit logging, database constraints for self-reference prevention and date validation)
 
-**Total: 367 tests (239 backend + 128 frontend passing)**
-**Note**: 4 pre-existing errors in test_rls_banners.py (not related to Phase 7/8 changes)
+**Total: 384 tests (256 backend + 128 frontend passing)**
+**Note**: All backend tests passing, including 52 new model relationship tests with comprehensive cycle detection coverage.
 
 **Frontend Testing Debt:**
 - ValidationWorkflowPage component tests (~15 tests)

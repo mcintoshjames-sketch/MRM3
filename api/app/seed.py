@@ -958,6 +958,57 @@ def seed_database():
                         "sort_order": 7
                     },
                 ]
+            },
+            # Model relationship taxonomies
+            {
+                "name": "Model Hierarchy Type",
+                "description": "Types of hierarchical relationships between models",
+                "is_system": True,
+                "values": [
+                    {
+                        "code": "SUB_MODEL",
+                        "label": "Sub-Model",
+                        "description": "Child model that is a component or subset of a parent model",
+                        "sort_order": 1
+                    },
+                ]
+            },
+            {
+                "name": "Model Dependency Type",
+                "description": "Types of data dependencies between models (feeder/consumer relationships)",
+                "is_system": True,
+                "values": [
+                    {
+                        "code": "INPUT_DATA",
+                        "label": "Input Data",
+                        "description": "Feeder model provides raw data inputs to consumer model",
+                        "sort_order": 1
+                    },
+                    {
+                        "code": "SCORE",
+                        "label": "Score/Output",
+                        "description": "Feeder model provides calculated scores or predictions to consumer model",
+                        "sort_order": 2
+                    },
+                    {
+                        "code": "PARAMETER",
+                        "label": "Parameter",
+                        "description": "Feeder model provides configuration parameters or coefficients to consumer model",
+                        "sort_order": 3
+                    },
+                    {
+                        "code": "GOVERNANCE_SIGNAL",
+                        "label": "Governance Signal",
+                        "description": "Feeder model provides governance flags or override signals to consumer model",
+                        "sort_order": 4
+                    },
+                    {
+                        "code": "OTHER",
+                        "label": "Other",
+                        "description": "Other types of model dependencies not covered by standard categories",
+                        "sort_order": 5
+                    },
+                ]
             }
         ]
 
