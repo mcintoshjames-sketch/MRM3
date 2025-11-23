@@ -413,6 +413,49 @@ const { sortedData, requestSort, getSortIcon } = useTableSort<Validation>(valida
   - Email notifications for status changes
   - Bulk operations for periodic validation scheduling
 
+### Model Relationships & Dependencies
+- **Purpose**: Track model-to-model relationships (hierarchy and data dependencies) with DAG enforcement
+- **Core Architecture**:
+  - **ModelHierarchy**: Parent-child relationships (e.g., Enterprise Model → Sub-Models)
+  - **ModelFeedDependency**: Feeder-consumer data flow relationships with cycle detection
+  - **ModelDependencyMetadata**: Extended metadata (not yet exposed in UI)
+
+- **Relationship Types**:
+  - **Hierarchy**: SUB_MODEL (configurable via taxonomy)
+  - **Dependencies**: INPUT_DATA, SCORE, PARAMETER, GOVERNANCE_SIGNAL, OTHER
+
+- **Business Rules**:
+  - Self-reference prevention (cannot link model to itself)
+  - Cycle detection for dependencies (maintains DAG constraint)
+  - Unique constraints on relationships
+  - Date validation (end_date >= effective_date)
+  - Admin-only write access for modifications
+
+- **API Endpoints**:
+  - Hierarchy: `/models/{id}/hierarchy/parents`, `/models/{id}/hierarchy/children`
+  - Dependencies: `/models/{id}/dependencies/inbound`, `/models/{id}/dependencies/outbound`
+  - CRUD: `POST /models/{id}/hierarchy`, `PATCH /hierarchy/{id}`, `DELETE /hierarchy/{id}`
+  - CRUD: `POST /models/{id}/dependencies`, `PATCH /dependencies/{id}`, `DELETE /dependencies/{id}`
+
+- **Frontend Components**:
+  - `ModelHierarchySection` - Display and manage parent/child relationships (Phases 3-4 complete)
+  - `ModelDependenciesSection` - Display and manage inbound/outbound dependencies (Phases 3-4 complete)
+  - `ModelHierarchyModal` - Create/edit hierarchy relationships with validation
+  - `ModelDependencyModal` - Create/edit dependencies with cycle detection feedback
+
+- **Model Details Page Integration**:
+  - "Hierarchy" tab shows parent models and sub-models with CRUD operations (Admin only)
+  - "Dependencies" tab shows inbound (feeders) and outbound (consumers) with CRUD operations (Admin only)
+
+- **Phase Status** (see MODEL_RELATIONSHIP_PLAN.md for details):
+  - ✅ Phase 1: Database schema and taxonomies
+  - ✅ Phase 2: API endpoints with comprehensive tests (52 tests)
+  - ✅ Phase 3: UI read-only views
+  - ✅ Phase 4: UI write operations (modals, validation, admin controls)
+  - ⏳ Phase 5: Reporting (CSV exports, filters)
+  - ⏳ Phase 6: Lineage preview visualization
+  - ⏳ Phase 7: Advanced features (metadata fields, version-level links, map visualization)
+
 ### Mock Microsoft Entra Integration
 - **Purpose**: Simulates SSO integration with Microsoft Entra ID (Azure AD)
 - **Backend**:
