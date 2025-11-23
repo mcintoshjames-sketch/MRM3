@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import api from '../api/client';
 import Layout from '../components/Layout';
+import { useAuth } from '../contexts/AuthContext';
 
 interface PendingSubmission {
     request_id: number;
@@ -21,6 +22,7 @@ interface PendingSubmission {
 }
 
 export default function MyPendingSubmissionsPage() {
+    const { user } = useAuth();
     const [submissions, setSubmissions] = useState<PendingSubmission[]>([]);
     const [loading, setLoading] = useState(true);
     const [filter, setFilter] = useState<'all' | 'overdue' | 'in_grace_period' | 'due_soon' | 'upcoming'>('all');
@@ -276,9 +278,20 @@ export default function MyPendingSubmissionsPage() {
                     <div className="text-sm text-blue-800">
                         <p className="font-medium">About Revalidation Submissions</p>
                         <p className="mt-1">
-                            As a model owner, you're responsible for submitting documentation when a revalidation is due.
-                            You have a 3-month grace period after the submission due date. The validation must be completed
-                            before the "Validation Due" date to maintain compliance.
+                            {user?.role === 'Admin' ? (
+                                <>
+                                    This page shows all pending revalidation submissions across the organization.
+                                    Model owners are responsible for submitting documentation when a revalidation is due.
+                                    A 3-month grace period is provided after the submission due date. The validation must be completed
+                                    before the "Validation Due" date to maintain compliance.
+                                </>
+                            ) : (
+                                <>
+                                    As a model owner, you're responsible for submitting documentation when a revalidation is due.
+                                    You have a 3-month grace period after the submission due date. The validation must be completed
+                                    before the "Validation Due" date to maintain compliance.
+                                </>
+                            )}
                         </p>
                         <p className="mt-2 text-xs text-blue-700">
                             <strong>Note:</strong> This page only shows submissions that are overdue or due within the next 90 days.

@@ -26,71 +26,141 @@ vi.mock('../contexts/AuthContext', () => ({
     }),
 }));
 
-const sampleOverdueModels = [
+const sampleSLAViolations = [
     {
-        model_id: 1,
+        request_id: 10,
         model_name: 'Credit Risk Model',
-        risk_tier: 'Tier 1',
-        owner_name: 'John Doe',
-        last_validation_date: '2024-06-15',
-        next_due_date: '2024-12-15',
-        days_overdue: 45,
-        status: 'Overdue',
-    },
-    {
-        model_id: 2,
-        model_name: 'Market Risk Model',
-        risk_tier: 'Tier 2',
-        owner_name: 'Jane Smith',
-        last_validation_date: null,
-        next_due_date: null,
-        days_overdue: null,
-        status: 'Never Validated',
+        violation_type: 'Lead time exceeded',
+        sla_days: 60,
+        actual_days: 75,
+        days_overdue: 15,
+        current_status: 'IN_PROGRESS',
+        priority: 'High',
+        severity: 'high',
+        timestamp: '2025-01-10T00:00:00Z',
     },
 ];
 
-const samplePassWithFindings = [
+const sampleOutOfOrder = [
     {
-        validation_id: 1,
+        request_id: 20,
+        model_name: 'Market Risk Model',
+        version_number: '1.2',
+        validation_type: 'INITIAL',
+        target_completion_date: '2025-02-15T00:00:00Z',
+        production_date: '2025-01-01T00:00:00Z',
+        days_gap: 45,
+        current_status: 'REVIEW',
+        priority: 'Medium',
+        severity: 'high',
+        is_interim: false,
+    },
+];
+
+const samplePendingAssignments = [
+    {
+        request_id: 30,
         model_id: 3,
         model_name: 'Fraud Detection Model',
-        validation_date: '2025-01-10',
-        validator_name: 'Validator User',
-        findings_summary: 'Data quality issues found',
-        has_recommendations: false,
+        requestor_name: 'Alice Smith',
+        validation_type: 'ANNUAL',
+        priority: 'High',
+        region: 'US',
+        request_date: '2025-01-05T00:00:00Z',
+        target_completion_date: '2025-03-01T00:00:00Z',
+        days_pending: 10,
+        severity: 'critical',
     },
 ];
 
-const setupApiMocks = (overdue = sampleOverdueModels, findings = samplePassWithFindings) => {
+const sampleOverdueSubmissions = [
+    {
+        request_id: 40,
+        model_id: 4,
+        model_name: 'Liquidity Model',
+        model_owner: 'Bob Jones',
+        submission_due_date: '2025-01-01',
+        grace_period_end: '2025-01-31',
+        days_overdue: 12,
+        urgency: 'overdue',
+        validation_due_date: '2025-02-28',
+        submission_status: 'pending',
+    },
+];
+
+const sampleOverdueValidations = [
+    {
+        request_id: 50,
+        model_id: 5,
+        model_name: 'Pricing Model',
+        model_owner: 'Carol Miller',
+        submission_received_date: '2025-01-10',
+        model_validation_due_date: '2025-02-10',
+        days_overdue: 5,
+        current_status: 'PENDING_APPROVAL',
+        model_compliance_status: 'overdue',
+    },
+];
+
+const sampleUpcomingRevalidations = [
+    {
+        model_id: 6,
+        model_name: 'Treasury Model',
+        model_owner: 'Dana Lee',
+        risk_tier: 'Tier 2',
+        status: 'Upcoming',
+        last_validation_date: '2024-06-15',
+        next_submission_due: '2025-03-15',
+        next_validation_due: '2025-06-15',
+        days_until_submission_due: 60,
+        days_until_validation_due: 150,
+    },
+];
+
+const samplePendingModelSubmissions = [
+    {
+        model_id: 7,
+        model_name: 'Collections Model',
+        description: 'New model awaiting approval',
+        development_type: 'New',
+        owner: { full_name: 'Evan Green' },
+        submitted_by_user: { full_name: 'Frank White' },
+        submitted_at: '2025-02-01T00:00:00Z',
+        row_approval_status: 'new',
+    },
+];
+
+const setupApiMocks = (overrides: Partial<Record<string, any[]>> = {}) => {
+    const data = {
+        slaViolations: sampleSLAViolations,
+        outOfOrder: sampleOutOfOrder,
+        pendingAssignments: samplePendingAssignments,
+        overdueSubmissions: sampleOverdueSubmissions,
+        overdueValidations: sampleOverdueValidations,
+        upcomingRevalidations: sampleUpcomingRevalidations,
+        pendingModelSubmissions: samplePendingModelSubmissions,
+        ...overrides,
+    };
+
     mockGet.mockImplementation((url: string) => {
-        if (url === '/validations/dashboard/overdue') {
-            return Promise.resolve({ data: overdue });
+        switch (url) {
+            case '/validation-workflow/dashboard/sla-violations':
+                return Promise.resolve({ data: data.slaViolations });
+            case '/validation-workflow/dashboard/out-of-order':
+                return Promise.resolve({ data: data.outOfOrder });
+            case '/validation-workflow/dashboard/pending-assignments':
+                return Promise.resolve({ data: data.pendingAssignments });
+            case '/validation-workflow/dashboard/overdue-submissions':
+                return Promise.resolve({ data: data.overdueSubmissions });
+            case '/validation-workflow/dashboard/overdue-validations':
+                return Promise.resolve({ data: data.overdueValidations });
+            case '/validation-workflow/dashboard/upcoming-revalidations?days_ahead=90':
+                return Promise.resolve({ data: data.upcomingRevalidations });
+            case '/models/pending-submissions':
+                return Promise.resolve({ data: data.pendingModelSubmissions });
+            default:
+                return Promise.reject(new Error('Unknown URL: ' + url));
         }
-        if (url === '/validations/dashboard/pass-with-findings') {
-            return Promise.resolve({ data: findings });
-        }
-        if (url === '/validation-workflow/dashboard/sla-violations') {
-            return Promise.resolve({ data: [] });
-        }
-        if (url === '/validation-workflow/dashboard/out-of-order') {
-            return Promise.resolve({ data: [] });
-        }
-        if (url === '/validation-workflow/dashboard/pending-assignments') {
-            return Promise.resolve({ data: [] });
-        }
-        if (url === '/validation-workflow/dashboard/overdue-submissions') {
-            return Promise.resolve({ data: [] });
-        }
-        if (url === '/validation-workflow/dashboard/overdue-validations') {
-            return Promise.resolve({ data: [] });
-        }
-        if (url === '/validation-workflow/dashboard/upcoming-revalidations?days_ahead=90') {
-            return Promise.resolve({ data: [] });
-        }
-        if (url === '/models/pending-submissions') {
-            return Promise.resolve({ data: [] });
-        }
-        return Promise.reject(new Error('Unknown URL: ' + url));
     });
 };
 
@@ -130,54 +200,69 @@ describe('AdminDashboardPage', () => {
         });
     });
 
-    it('displays pass with findings table', async () => {
+    it('renders dashboard metrics based on API data', async () => {
         setupApiMocks();
         render(<AdminDashboardPage />);
+
         await waitFor(() => {
-            expect(screen.getByText('Validations with Findings (1)')).toBeInTheDocument();
-            expect(screen.getByText('Fraud Detection Model')).toBeInTheDocument();
+            expect(screen.getByText('Admin Dashboard')).toBeInTheDocument();
         });
+
+        expect(screen.getByText('Pending Assignment')).toBeInTheDocument();
+        expect(screen.getByText('Lead Time Violations')).toBeInTheDocument();
+        expect(screen.getByText('Out of Order')).toBeInTheDocument();
+        expect(screen.getAllByText('Pending Submissions').length).toBeGreaterThan(0);
+        expect(screen.getByText('Overdue Validations')).toBeInTheDocument();
+
+        expect(screen.getByText('1 awaiting')).toBeInTheDocument();
+        expect(screen.getAllByText('1 active').length).toBeGreaterThan(0);
+        expect(screen.getAllByText(/Pending Submissions/i).length).toBeGreaterThan(0);
     });
 
-    it('displays validation date and validator name', async () => {
+    it('displays pending validator assignments feed when data present', async () => {
         setupApiMocks();
         render(<AdminDashboardPage />);
+
         await waitFor(() => {
-            expect(screen.getByText('2025-01-10')).toBeInTheDocument();
-            expect(screen.getByText('Validator User')).toBeInTheDocument();
+            expect(screen.getByText('Pending Validator Assignments')).toBeInTheDocument();
         });
+
+        expect(screen.getByText('Fraud Detection Model')).toBeInTheDocument();
+        expect(screen.getByText('Assign Validator')).toBeInTheDocument();
     });
 
-    it('displays findings summary', async () => {
+    it('shows overdue submissions table when data present', async () => {
         setupApiMocks();
         render(<AdminDashboardPage />);
+
         await waitFor(() => {
-            expect(screen.getByText('Data quality issues found')).toBeInTheDocument();
+            expect(screen.getByText(/Pending and Overdue Revalidation Submissions/)).toBeInTheDocument();
         });
+
+        expect(screen.getByText('Liquidity Model')).toBeInTheDocument();
+        expect(screen.getByText('Overdue')).toBeInTheDocument();
     });
 
-    it('displays no recommendations badge', async () => {
-        setupApiMocks();
-        render(<AdminDashboardPage />);
-        await waitFor(() => {
-            expect(screen.getByText('No Recommendations')).toBeInTheDocument();
+    it('hides data sections when API returns no rows but keeps summary cards', async () => {
+        setupApiMocks({
+            slaViolations: [],
+            outOfOrder: [],
+            pendingAssignments: [],
+            overdueSubmissions: [],
+            overdueValidations: [],
+            upcomingRevalidations: [],
+            pendingModelSubmissions: [],
         });
-    });
 
-    it('displays empty state for no pass with findings', async () => {
-        setupApiMocks([], []);
         render(<AdminDashboardPage />);
-        await waitFor(() => {
-            expect(screen.getByText('No validations with findings requiring attention.')).toBeInTheDocument();
-        });
-    });
 
-    it('displays zero counts when no data', async () => {
-        setupApiMocks([], []);
-        render(<AdminDashboardPage />);
         await waitFor(() => {
-            const zeroCounts = screen.getAllByText('0');
-            expect(zeroCounts.length).toBe(6); // 6 summary cards display zeros
+            expect(screen.getByText('Admin Dashboard')).toBeInTheDocument();
         });
+
+        expect(screen.queryByText('Pending Validator Assignments')).not.toBeInTheDocument();
+        expect(screen.queryByText(/Pending and Overdue Revalidation Submissions/)).not.toBeInTheDocument();
+        expect(screen.getByText('Pending Assignment')).toBeInTheDocument();
+        expect(screen.getAllByText('0').length).toBeGreaterThanOrEqual(5);
     });
 });

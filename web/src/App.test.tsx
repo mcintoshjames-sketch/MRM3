@@ -16,8 +16,8 @@ vi.mock('./pages/ModelDetailsPage', () => ({
     default: () => <div data-testid="model-details-page">Model Details Page</div>
 }));
 
-vi.mock('./pages/ValidationsPage', () => ({
-    default: () => <div data-testid="validations-page">Validations Page</div>
+vi.mock('./pages/ValidationWorkflowPage', () => ({
+    default: () => <div data-testid="validation-workflow-page">Validation Workflow Page</div>
 }));
 
 vi.mock('./pages/VendorsPage', () => ({
@@ -93,13 +93,13 @@ describe('App Routing - Unauthenticated', () => {
         expect(screen.getByTestId('login-page')).toBeInTheDocument();
     });
 
-    it('redirects /validations to login', () => {
-        renderWithRouter('/validations');
+    it('redirects /validation-workflow to login', () => {
+        renderWithRouter('/validation-workflow');
         expect(screen.getByTestId('login-page')).toBeInTheDocument();
     });
 
-    it('redirects /validations/new to login', () => {
-        renderWithRouter('/validations/new');
+    it('redirects /validation-workflow/new to login', () => {
+        renderWithRouter('/validation-workflow/new');
         expect(screen.getByTestId('login-page')).toBeInTheDocument();
     });
 
@@ -132,19 +132,19 @@ describe('App Routing - Authenticated User', () => {
         expect(screen.getByTestId('model-details-page')).toBeInTheDocument();
     });
 
-    it('renders validations page at /validations', () => {
-        renderWithRouter('/validations');
-        expect(screen.getByTestId('validations-page')).toBeInTheDocument();
+    it('renders validation workflow page at /validation-workflow', () => {
+        renderWithRouter('/validation-workflow');
+        expect(screen.getByTestId('validation-workflow-page')).toBeInTheDocument();
     });
 
-    it('renders validations page at /validations/new', () => {
-        renderWithRouter('/validations/new');
-        expect(screen.getByTestId('validations-page')).toBeInTheDocument();
+    it('renders validation workflow page at /validation-workflow/new', () => {
+        renderWithRouter('/validation-workflow/new');
+        expect(screen.getByTestId('validation-workflow-page')).toBeInTheDocument();
     });
 
-    it('renders validations page with query params at /validations/new?model_id=1', () => {
-        renderWithRouter('/validations/new?model_id=1');
-        expect(screen.getByTestId('validations-page')).toBeInTheDocument();
+    it('renders validation workflow page with query params at /validation-workflow/new?model_id=1', () => {
+        renderWithRouter('/validation-workflow/new?model_id=1');
+        expect(screen.getByTestId('validation-workflow-page')).toBeInTheDocument();
     });
 
     it('renders vendors page at /vendors', () => {
@@ -257,8 +257,8 @@ describe('App Routing - Route Coverage', () => {
         { path: '/dashboard', testId: 'admin-dashboard-page', requiresAdmin: true },
         { path: '/models', testId: 'models-page', requiresAuth: true },
         { path: '/models/1', testId: 'model-details-page', requiresAuth: true },
-        { path: '/validations', testId: 'validations-page', requiresAuth: true },
-        { path: '/validations/new', testId: 'validations-page', requiresAuth: true },
+        { path: '/validation-workflow', testId: 'validation-workflow-page', requiresAuth: true },
+        { path: '/validation-workflow/new', testId: 'validation-workflow-page', requiresAuth: true },
         { path: '/vendors', testId: 'vendors-page', requiresAuth: true },
         { path: '/vendors/1', testId: 'vendor-details-page', requiresAuth: true },
         { path: '/users', testId: 'users-page', requiresAuth: true },
@@ -279,13 +279,13 @@ describe('App Routing - Route Coverage', () => {
 
 describe('App Routing - Link Targets Validation', () => {
     // These tests ensure that common navigation targets have corresponding routes
-    // This catches issues like the /validations/new missing route
+    // This catches issues like the /validation-workflow/new missing route
 
     const commonLinkTargets = [
         '/models',
         '/models/1',
-        '/validations',
-        '/validations/new',
+        '/validation-workflow',
+        '/validation-workflow/new',
         '/vendors',
         '/vendors/1',
         '/users',

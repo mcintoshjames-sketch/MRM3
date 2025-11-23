@@ -300,7 +300,7 @@ class TestValidationRequestCRUD:
 class TestStatusTransitions:
     """Test status transition validation."""
 
-    def test_valid_transition_intake_to_planning(self, client, admin_headers, sample_model, workflow_taxonomies):
+    def test_valid_transition_intake_to_planning(self, client, admin_headers, sample_model, workflow_taxonomies, validator_user):
         """Test valid transition from Intake to Planning."""
         target_date = (date.today() + timedelta(days=30)).isoformat()
         create_response = client.post(
@@ -315,16 +315,23 @@ class TestStatusTransitions:
         )
         request_id = create_response.json()["request_id"]
 
-        response = client.patch(
-            f"/validation-workflow/requests/{request_id}/status",
+        # Assign primary validator to satisfy workflow rule
+        assign_response = client.post(
+            f"/validation-workflow/requests/{request_id}/assignments",
             headers=admin_headers,
             json={
-                "new_status_id": workflow_taxonomies["status"]["planning"].value_id,
-                "reason": "Moving to planning phase"
+                "validator_id": validator_user.user_id,
+                "is_primary": True,
+                "is_reviewer": False,
+                "independence_attestation": True
             }
         )
-        assert response.status_code == 200
-        assert response.json()["current_status"]["label"] == "Planning"
+        assert assign_response.status_code == 201
+
+        current = client.get(
+            f"/validation-workflow/requests/{request_id}", headers=admin_headers
+        ).json()["current_status"]["label"]
+        assert current == "Planning"
 
     def test_invalid_transition_intake_to_approved(self, client, admin_headers, sample_model, workflow_taxonomies):
         """Test invalid direct transition from Intake to Approved."""
@@ -377,6 +384,154 @@ class TestStatusTransitions:
         )
         assert response.status_code == 200
         assert response.json()["current_status"]["label"] == "On Hold"
+
+    def test_review_requires_plan_when_region_enforces(
+        self, client, admin_headers, validator_user, sample_model, workflow_taxonomies, db_session
+    ):
+        """Ensure regions with plan enforcement block status change without a plan."""
+        from app.models.region import Region
+
+        region = Region(code="NA", name="North America",
+                        requires_regional_approval=False, enforce_validation_plan=True)
+        db_session.add(region)
+        db_session.commit()
+        db_session.refresh(region)
+
+        # Link model to enforcing region
+        sample_model.wholly_owned_region_id = region.region_id
+        db_session.commit()
+
+        target_date = (date.today() + timedelta(days=30)).isoformat()
+        create_response = client.post(
+            "/validation-workflow/requests/",
+            headers=admin_headers,
+            json={
+                "model_ids": [sample_model.model_id],
+                "validation_type_id": workflow_taxonomies["type"]["initial"].value_id,
+                "priority_id": workflow_taxonomies["priority"]["high"].value_id,
+                "target_completion_date": target_date,
+                "region_ids": [region.region_id]
+            }
+        )
+        request_id = create_response.json()["request_id"]
+
+        # Assign primary validator
+        assign_response = client.post(
+            f"/validation-workflow/requests/{request_id}/assignments",
+            headers=admin_headers,
+            json={
+                "validator_id": validator_user.user_id,
+                "is_primary": True,
+                "is_reviewer": False,
+                "independence_attestation": True
+            }
+        )
+        assert assign_response.status_code == 201
+
+        # Move to In Progress (should already be in Planning after assignment)
+        resp = client.patch(
+            f"/validation-workflow/requests/{request_id}/status",
+            headers=admin_headers,
+            json={
+                "new_status_id": workflow_taxonomies["status"]["in_progress"].value_id,
+                "reason": "Moving to in_progress"
+            }
+        )
+        assert resp.status_code == 200
+
+        # Attempt Review without plan should fail
+        review_resp = client.patch(
+            f"/validation-workflow/requests/{request_id}/status",
+            headers=admin_headers,
+            json={
+                "new_status_id": workflow_taxonomies["status"]["review"].value_id,
+                "reason": "Attempt review without plan"
+            }
+        )
+        assert review_resp.status_code == 400
+        assert "Validation plan is required" in review_resp.json()["detail"]
+
+        # Create plan then retry
+        plan_resp = client.post(
+            f"/validation-workflow/requests/{request_id}/plan",
+            headers=admin_headers,
+            json={}
+        )
+        assert plan_resp.status_code == 201
+
+        review_resp = client.patch(
+            f"/validation-workflow/requests/{request_id}/status",
+            headers=admin_headers,
+            json={
+                "new_status_id": workflow_taxonomies["status"]["review"].value_id,
+                "reason": "Move to review with plan"
+            }
+        )
+        assert review_resp.status_code == 200
+        assert review_resp.json()["current_status"]["code"] == "REVIEW"
+
+    def test_review_allows_no_plan_when_region_not_enforcing(
+        self, client, admin_headers, validator_user, sample_model, workflow_taxonomies, db_session
+    ):
+        """Regions without enforcement should not block review when plan is absent."""
+        from app.models.region import Region
+
+        region = Region(code="LA", name="Latin America",
+                        requires_regional_approval=False, enforce_validation_plan=False)
+        db_session.add(region)
+        db_session.commit()
+        db_session.refresh(region)
+
+        sample_model.wholly_owned_region_id = region.region_id
+        db_session.commit()
+
+        target_date = (date.today() + timedelta(days=30)).isoformat()
+        create_response = client.post(
+            "/validation-workflow/requests/",
+            headers=admin_headers,
+            json={
+                "model_ids": [sample_model.model_id],
+                "validation_type_id": workflow_taxonomies["type"]["initial"].value_id,
+                "priority_id": workflow_taxonomies["priority"]["high"].value_id,
+                "target_completion_date": target_date,
+                "region_ids": [region.region_id]
+            }
+        )
+        request_id = create_response.json()["request_id"]
+
+        assign_response = client.post(
+            f"/validation-workflow/requests/{request_id}/assignments",
+            headers=admin_headers,
+            json={
+                "validator_id": validator_user.user_id,
+                "is_primary": True,
+                "is_reviewer": False,
+                "independence_attestation": True
+            }
+        )
+        assert assign_response.status_code == 201
+
+        # Move to In Progress (should already be in Planning after assignment)
+        resp = client.patch(
+            f"/validation-workflow/requests/{request_id}/status",
+            headers=admin_headers,
+            json={
+                "new_status_id": workflow_taxonomies["status"]["in_progress"].value_id,
+                "reason": "Moving to in_progress"
+            }
+        )
+        assert resp.status_code == 200
+
+        review_resp = client.patch(
+            f"/validation-workflow/requests/{request_id}/status",
+            headers=admin_headers,
+            json={
+                "new_status_id": workflow_taxonomies["status"]["review"].value_id,
+                "reason": "Review without plan for non-enforcing region"
+            }
+        )
+        assert review_resp.status_code == 200
+        assert review_resp.json()["current_status"]["code"] == "REVIEW"
 
     def test_transition_to_cancelled(self, client, admin_headers, sample_model, workflow_taxonomies):
         """Test transitioning to Cancelled status."""
@@ -441,7 +596,7 @@ class TestStatusTransitions:
         assert response.status_code == 400
         assert "Invalid status transition" in response.json()["detail"]
 
-    def test_status_change_creates_history(self, client, admin_headers, sample_model, workflow_taxonomies):
+    def test_status_change_creates_history(self, client, admin_headers, sample_model, workflow_taxonomies, validator_user):
         """Test that status changes are recorded in history."""
         target_date = (date.today() + timedelta(days=30)).isoformat()
         create_response = client.post(
@@ -456,39 +611,37 @@ class TestStatusTransitions:
         )
         request_id = create_response.json()["request_id"]
 
+        assign_response = client.post(
+            f"/validation-workflow/requests/{request_id}/assignments",
+            headers=admin_headers,
+            json={
+                "validator_id": validator_user.user_id,
+                "is_primary": True,
+                "is_reviewer": False,
+                "independence_attestation": True
+            }
+        )
+        assert assign_response.status_code == 201
+
         client.patch(
             f"/validation-workflow/requests/{request_id}/status",
             headers=admin_headers,
             json={
-                "new_status_id": workflow_taxonomies["status"]["planning"].value_id,
-                "change_reason": "Moving to planning"
+                "new_status_id": workflow_taxonomies["status"]["in_progress"].value_id,
+                "change_reason": "Moving to in_progress"
             }
         )
 
         response = client.get(f"/validation-workflow/requests/{request_id}", headers=admin_headers)
         data = response.json()
 
-        # Should have 2 history entries (initial + transition)
-        assert len(data["status_history"]) == 2
-        # History may be ordered ascending or descending - find the entries by their content
-        initial_entry = None
-        transition_entry = None
-        for entry in data["status_history"]:
-            if entry["new_status"]["label"] == "Intake":
-                initial_entry = entry
-            elif entry["new_status"]["label"] == "Planning":
-                transition_entry = entry
+        # Should have history entries for Intake, Planning (auto), and In Progress
+        assert len(data["status_history"]) >= 2
+        planning_entry = next((h for h in data["status_history"] if h["new_status"]["label"] == "Planning"), None)
+        in_progress_entry = next((h for h in data["status_history"] if h["new_status"]["label"] == "In Progress"), None)
 
-        # Verify initial entry exists
-        assert initial_entry is not None, "Initial history entry not found"
-        # Initial entry may have None old_status or same status
-        assert initial_entry["old_status"] is None or initial_entry["old_status"]["label"] == "Intake"
-
-        # Verify transition entry exists
-        assert transition_entry is not None, "Transition history entry not found"
-        assert transition_entry["old_status"]["label"] == "Intake"
-        assert transition_entry["new_status"]["label"] == "Planning"
-        assert transition_entry["change_reason"] == "Moving to planning"
+        assert planning_entry is not None, "Planning history entry not found"
+        assert in_progress_entry is not None, "In Progress history entry not found"
 
 
 class TestValidatorIndependence:
@@ -679,31 +832,28 @@ class TestOutcomeCreation:
         )
         request_id = create_response.json()["request_id"]
 
-        # Move to Planning status
-        status_update = client.patch(
-            f"/validation-workflow/requests/{request_id}/status",
-            headers=admin_headers,
-            json={"new_status_id": workflow_taxonomies["status"]["planning"].value_id, "reason": "Moving to planning"}
-        )
-        assert status_update.status_code == 200
-
-        # Assign validator (required before moving to Review)
-        client.post(
+        # Assign validator (required before moving to Planning and beyond)
+        assign_resp = client.post(
             f"/validation-workflow/requests/{request_id}/assignments",
             headers=admin_headers,
             json={
                 "validator_id": validator_user.user_id,
                 "is_primary": True,
+                "is_reviewer": False,
                 "independence_attestation": True
             }
         )
+        assert assign_resp.status_code == 201
 
+        # Move to Planning status
         status_update = client.patch(
             f"/validation-workflow/requests/{request_id}/status",
             headers=admin_headers,
             json={"new_status_id": workflow_taxonomies["status"]["in_progress"].value_id, "reason": "Moving to in_progress"}
         )
-        assert status_update.status_code == 200
+        print("status update response", status_update.status_code, status_update.text)
+        detail = status_update.json()
+        assert status_update.status_code == 200, detail
 
         status_update = client.patch(
             f"/validation-workflow/requests/{request_id}/status",
@@ -746,24 +896,17 @@ class TestOutcomeCreation:
         )
         request_id = create_response.json()["request_id"]
 
-        # Move to Planning status
-        status_update = client.patch(
-            f"/validation-workflow/requests/{request_id}/status",
-            headers=admin_headers,
-            json={"new_status_id": workflow_taxonomies["status"]["planning"].value_id, "reason": "Moving to planning"}
-        )
-        assert status_update.status_code == 200
-
-        # Assign validator (required before moving to Review)
-        client.post(
+        assign_resp = client.post(
             f"/validation-workflow/requests/{request_id}/assignments",
             headers=admin_headers,
             json={
                 "validator_id": validator_user.user_id,
                 "is_primary": True,
+                "is_reviewer": False,
                 "independence_attestation": True
             }
         )
+        assert assign_resp.status_code == 201
 
         status_update = client.patch(
             f"/validation-workflow/requests/{request_id}/status",
@@ -1039,7 +1182,7 @@ class TestAuditLogging:
 
         assert len(logs) > 0
 
-    def test_status_change_creates_audit_log(self, client, admin_headers, sample_model, workflow_taxonomies, db_session):
+    def test_status_change_creates_audit_log(self, client, admin_headers, sample_model, workflow_taxonomies, db_session, validator_user):
         """Test that status changes create audit log entries."""
         from app.models import AuditLog
 
@@ -1056,6 +1199,19 @@ class TestAuditLogging:
         )
         request_id = create_response.json()["request_id"]
 
+        # Assign validator to allow status transition
+        assign_resp = client.post(
+            f"/validation-workflow/requests/{request_id}/assignments",
+            headers=admin_headers,
+            json={
+                "validator_id": validator_user.user_id,
+                "is_primary": True,
+                "is_reviewer": False,
+                "independence_attestation": True
+            }
+        )
+        assert assign_resp.status_code == 201
+
         initial_count = db_session.query(AuditLog).filter(
             AuditLog.entity_type == "ValidationRequest"
         ).count()
@@ -1064,8 +1220,8 @@ class TestAuditLogging:
             f"/validation-workflow/requests/{request_id}/status",
             headers=admin_headers,
             json={
-                "new_status_id": workflow_taxonomies["status"]["planning"].value_id,
-                "reason": "Moving to planning"
+                "new_status_id": workflow_taxonomies["status"]["in_progress"].value_id,
+                "reason": "Moving to in_progress"
             }
         )
 

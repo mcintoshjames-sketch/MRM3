@@ -1,5 +1,7 @@
 import { NavLink, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
+import { useState, useEffect } from 'react';
+import api from '../api/client';
 
 interface LayoutProps {
     children: React.ReactNode;
@@ -8,6 +10,43 @@ interface LayoutProps {
 export default function Layout({ children }: LayoutProps) {
     const { user, logout } = useAuth();
     const navigate = useNavigate();
+    const [pendingCounts, setPendingCounts] = useState({
+        submissions: 0,
+        deployments: 0
+    });
+
+    useEffect(() => {
+        const fetchPendingCounts = async () => {
+            try {
+                // Fetch pending submissions count
+                const submissionsRes = await api.get('/validation-workflow/my-pending-submissions');
+                const urgentSubmissions = submissionsRes.data.filter((s: any) =>
+                    s.urgency === 'overdue' || s.urgency === 'in_grace_period' || s.urgency === 'due_soon'
+                ).length;
+
+                // Fetch pending deployment tasks count
+                const deploymentsRes = await api.get('/deployment-tasks/my-tasks');
+                const pendingDeployments = deploymentsRes.data.filter((t: any) =>
+                    t.status === 'PENDING' && (t.days_until_due < 0 || t.days_until_due <= 7)
+                ).length;
+
+                setPendingCounts({
+                    submissions: urgentSubmissions,
+                    deployments: pendingDeployments
+                });
+            } catch (error) {
+                // Silently fail - badges will just show 0
+                console.error('Failed to fetch pending counts:', error);
+            }
+        };
+
+        if (user) {
+            fetchPendingCounts();
+            // Refresh counts every 5 minutes
+            const interval = setInterval(fetchPendingCounts, 5 * 60 * 1000);
+            return () => clearInterval(interval);
+        }
+    }, [user]);
 
     const handleLogout = () => {
         logout();
@@ -89,7 +128,18 @@ export default function Layout({ children }: LayoutProps) {
                                     }`
                                 }
                             >
-                                Pending Submissions
+                                {({ isActive }) => (
+                                    <div className="flex items-center justify-between">
+                                        <span>Pending Submissions</span>
+                                        {pendingCounts.submissions > 0 && (
+                                            <span className={`ml-2 px-2 py-0.5 text-xs font-bold rounded-full ${
+                                                isActive ? 'bg-white text-blue-600' : 'bg-red-500 text-white'
+                                            }`}>
+                                                {pendingCounts.submissions}
+                                            </span>
+                                        )}
+                                    </div>
+                                )}
                             </NavLink>
                         </li>
                         <li>
@@ -102,7 +152,18 @@ export default function Layout({ children }: LayoutProps) {
                                     }`
                                 }
                             >
-                                Pending Deployments
+                                {({ isActive }) => (
+                                    <div className="flex items-center justify-between">
+                                        <span>Pending Deployments</span>
+                                        {pendingCounts.deployments > 0 && (
+                                            <span className={`ml-2 px-2 py-0.5 text-xs font-bold rounded-full ${
+                                                isActive ? 'bg-white text-blue-600' : 'bg-red-500 text-white'
+                                            }`}>
+                                                {pendingCounts.deployments}
+                                            </span>
+                                        )}
+                                    </div>
+                                )}
                             </NavLink>
                         </li>
                         <li>

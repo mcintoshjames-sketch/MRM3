@@ -5,6 +5,7 @@ export interface Region {
     code: string;
     name: string;
     requires_regional_approval?: boolean; // Optional for backward compatibility
+    enforce_validation_plan?: boolean;
     created_at: string;
 }
 

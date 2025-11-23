@@ -14,7 +14,7 @@ import os
 from app.core.database import get_db
 from app.core.deps import get_current_user
 from app.models import (
-    User, Model, TaxonomyValue, Taxonomy, AuditLog,
+    User, Model, TaxonomyValue, Taxonomy, AuditLog, Region,
     ValidationRequest, ValidationRequestModelVersion, ValidationStatusHistory, ValidationAssignment,
     ValidationOutcome, ValidationReviewOutcome, ValidationApproval, ValidationGroupingMemory,
     ValidationPolicy, ModelRegion, Region,
@@ -1190,7 +1190,7 @@ def get_validation_request(
             status_code=404, detail="Validation request not found")
 
     validation_request = db.query(ValidationRequest).options(
-        joinedload(ValidationRequest.models),
+        joinedload(ValidationRequest.models).joinedload(Model.model_regions),
         joinedload(ValidationRequest.requestor),
         joinedload(ValidationRequest.validation_type),
         joinedload(ValidationRequest.priority),
@@ -1439,6 +1439,9 @@ def update_validation_request_status(
     old_status_code = old_status.code if old_status else None
     new_status_code = new_status.code
 
+    requires_plan, plan_region_codes = request_requires_validation_plan(
+        db, validation_request)
+
     # Validate transition
     if not check_valid_status_transition(old_status_code, new_status_code):
         raise HTTPException(
@@ -1479,7 +1482,12 @@ def update_validation_request_status(
                 status_code=400, detail="Cannot move to Review without assigned validators")
 
         # Validate plan compliance (deviations must have rationale)
-        is_valid, validation_errors = validate_plan_compliance(db, request_id)
+        is_valid, validation_errors = validate_plan_compliance(
+            db,
+            request_id,
+            require_plan=requires_plan,
+            required_region_codes=plan_region_codes
+        )
         if not is_valid:
             error_message = "Validation plan compliance issues:\n" + "\n".join(f"• {err}" for err in validation_errors)
             raise HTTPException(
@@ -1494,7 +1502,12 @@ def update_validation_request_status(
                 status_code=400, detail="Cannot move to Pending Approval without creating outcome")
 
         # Validate plan compliance (deviations must have rationale)
-        is_valid, validation_errors = validate_plan_compliance(db, request_id)
+        is_valid, validation_errors = validate_plan_compliance(
+            db,
+            request_id,
+            require_plan=requires_plan,
+            required_region_codes=plan_region_codes
+        )
         if not is_valid:
             error_message = "Validation plan compliance issues:\n" + "\n".join(f"• {err}" for err in validation_errors)
             raise HTTPException(
@@ -2178,7 +2191,7 @@ def reviewer_send_back(
 
     # Get In Progress status
     in_progress_status = db.query(TaxonomyValue).join(Taxonomy).filter(
-        Taxonomy.code == "validation_request_status",
+        Taxonomy.name == "Validation Request Status",
         TaxonomyValue.code == "IN_PROGRESS"
     ).first()
 
@@ -3672,13 +3685,19 @@ def recalculate_plan_expectations_for_model(
     return plans_updated
 
 
-def validate_plan_compliance(db: Session, request_id: int) -> tuple[bool, List[str]]:
+def validate_plan_compliance(
+    db: Session,
+    request_id: int,
+    require_plan: bool = False,
+    required_region_codes: Optional[List[str]] = None
+) -> tuple[bool, List[str]]:
     """
     Validate that a validation plan meets compliance requirements before submission.
 
     Checks:
     1. All components marked as deviation must have rationale
     2. If material_deviation_from_standard is true, must have overall_deviation_rationale
+    3. (Optional) Plan existence required when configured per-region
 
     Returns: (is_valid, list_of_error_messages)
     """
@@ -3690,8 +3709,13 @@ def validate_plan_compliance(db: Session, request_id: int) -> tuple[bool, List[s
     ).filter(ValidationPlan.request_id == request_id).first()
 
     if not plan:
-        # No plan exists - this is handled elsewhere
-        return True, []
+        if require_plan:
+            regions_list = ", ".join(required_region_codes or [])
+            if regions_list:
+                errors.append(f"Validation plan is required for regions: {regions_list}")
+            else:
+                errors.append("Validation plan is required for this validation request")
+        return len(errors) == 0, errors
 
     # Check if material deviation has rationale
     if plan.material_deviation_from_standard:
@@ -3710,6 +3734,44 @@ def validate_plan_compliance(db: Session, request_id: int) -> tuple[bool, List[s
                 )
 
     return len(errors) == 0, errors
+
+
+def get_request_region_ids(validation_request: ValidationRequest) -> List[int]:
+    """Collect relevant region IDs from a validation request (scope + model governance/deployments)."""
+    region_ids = set()
+
+    for region in validation_request.regions or []:
+        region_ids.add(region.region_id)
+
+    for model in validation_request.models or []:
+        if model.wholly_owned_region_id:
+            region_ids.add(model.wholly_owned_region_id)
+        for model_region in model.model_regions or []:
+            region_ids.add(model_region.region_id)
+
+    return list(region_ids)
+
+
+def request_requires_validation_plan(db: Session, validation_request: ValidationRequest) -> tuple[bool, List[str]]:
+    """
+    Determine if a validation plan is mandatory for this request based on region settings.
+
+    Returns (requires_plan, region_codes_requiring_plan)
+    """
+    region_ids = get_request_region_ids(validation_request)
+    if not region_ids:
+        return False, []
+
+    regions = db.query(Region).filter(
+        Region.region_id.in_(region_ids),
+        Region.enforce_validation_plan == True
+    ).all()
+
+    if not regions:
+        return False, []
+
+    region_codes = [r.code or str(r.region_id) for r in regions]
+    return True, region_codes
 
 
 @router.post("/requests/{request_id}/plan", response_model=ValidationPlanResponse, status_code=status.HTTP_201_CREATED)

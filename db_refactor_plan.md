@@ -9,6 +9,10 @@ Scope: Approval role normalization (taxonomy-backed), regional approval consiste
 - [x] Prefer `change_type_id` over legacy `change_type` (code-level preference, no schema change); rollback by reverting to legacy string reads.
 - [x] Clarify production date usage (planned/actual) and mark legacy field for deprecation in code comments; rollback by keeping existing accesses untouched.
 - [x] Ensure deployment tasks align `model_id` with the model of `version_id` during operations; rollback by removing the consistency check.
+
+### Progress Notes
+- Added per-region `enforce_validation_plan` flag (configurable via Regions API/UI) and gate status transitions on plan presence only when enabled for relevant regions.
+- Regions admin UI now surfaces the toggle; validation workflow status transitions and tests cover the enforcement path.
 - [ ] (Optional) Add FK index notes/plan for future migration; no action now.
 
 ### Notes

@@ -11,6 +11,10 @@ class RegionBase(BaseModel):
         default=False,
         description="Whether this region requires regional approver sign-off for validations"
     )
+    enforce_validation_plan: bool = Field(
+        default=False,
+        description="Whether validations in this region must include a validation plan"
+    )
 
 
 class RegionCreate(RegionBase):
@@ -23,6 +27,7 @@ class RegionUpdate(BaseModel):
     code: str | None = Field(None, max_length=10)
     name: str | None = Field(None, max_length=100)
     requires_regional_approval: bool | None = Field(None)
+    enforce_validation_plan: bool | None = Field(None)
 
 
 class Region(RegionBase):
