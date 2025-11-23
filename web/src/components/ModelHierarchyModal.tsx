@@ -54,6 +54,7 @@ export default function ModelHierarchyModal({
 
     useEffect(() => {
         if (isOpen) {
+            setError(''); // Clear any previous errors
             fetchData();
             if (editData) {
                 setRelationTypeId(editData.relation_type_id);
@@ -102,7 +103,10 @@ export default function ModelHierarchyModal({
             }
         } catch (error) {
             console.error('Error fetching data:', error);
-            setError('Failed to load form data');
+            // Only show error if we're in create mode and can't load models
+            if (!editData) {
+                setError('Failed to load form data. Please try again.');
+            }
         }
     };
 

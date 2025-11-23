@@ -56,6 +56,7 @@ export default function ModelDependencyModal({
 
     useEffect(() => {
         if (isOpen) {
+            setError(''); // Clear any previous errors
             fetchData();
             if (editData) {
                 setDependencyTypeId(editData.dependency_type_id);
@@ -98,7 +99,10 @@ export default function ModelDependencyModal({
             }
         } catch (error) {
             console.error('Error fetching data:', error);
-            setError('Failed to load form data');
+            // Only show error if we're in create mode and can't load models
+            if (!editData) {
+                setError('Failed to load form data. Please try again.');
+            }
         }
     };
 
