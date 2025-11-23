@@ -221,83 +221,84 @@ export default function ModelHierarchySection({ modelId, modelName }: Props) {
                                     </div>
                                 )}
                             </div>
-                            <div className="bg-white shadow overflow-hidden sm:rounded-md">
-                                <table className="min-w-full divide-y divide-gray-200">
-                                    <thead className="bg-gray-50">
-                                        <tr>
-                                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                                Parent Model
+                        </div>
+                        <div className="bg-white shadow overflow-hidden sm:rounded-md">
+                            <table className="min-w-full divide-y divide-gray-200">
+                                <thead className="bg-gray-50">
+                                    <tr>
+                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                            Parent Model
+                                        </th>
+                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                            Relationship Type
+                                        </th>
+                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                            Effective Date
+                                        </th>
+                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                            End Date
+                                        </th>
+                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                            Notes
+                                        </th>
+                                        {isAdmin && (
+                                            <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                                Actions
                                             </th>
-                                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                                Relationship Type
-                                            </th>
-                                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                                Effective Date
-                                            </th>
-                                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                                End Date
-                                            </th>
-                                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                                Notes
-                                            </th>
+                                        )}
+                                    </tr>
+                                </thead>
+                                <tbody className="bg-white divide-y divide-gray-200">
+                                    {parents.map((relation) => (
+                                        <tr key={relation.id} className="hover:bg-gray-50">
+                                            <td className="px-6 py-4 whitespace-nowrap">
+                                                <Link
+                                                    to={`/models/${relation.model_id}`}
+                                                    className="text-blue-600 hover:text-blue-800 hover:underline font-medium"
+                                                >
+                                                    {relation.model_name}
+                                                </Link>
+                                            </td>
+                                            <td className="px-6 py-4 whitespace-nowrap">
+                                                <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-blue-100 text-blue-800">
+                                                    {relation.relation_type}
+                                                </span>
+                                            </td>
+                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                                {relation.effective_date || '-'}
+                                            </td>
+                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                                {relation.end_date || '-'}
+                                            </td>
+                                            <td className="px-6 py-4 text-sm text-gray-500">
+                                                {relation.notes || '-'}
+                                            </td>
                                             {isAdmin && (
-                                                <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                                    Actions
-                                                </th>
+                                                <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                                                    <button
+                                                        onClick={() => handleEdit(relation, 'parent')}
+                                                        className="text-blue-600 hover:text-blue-900 mr-3"
+                                                    >
+                                                        Edit
+                                                    </button>
+                                                    <button
+                                                        onClick={() => handleDelete(relation.id)}
+                                                        className="text-red-600 hover:text-red-900"
+                                                    >
+                                                        Delete
+                                                    </button>
+                                                </td>
                                             )}
                                         </tr>
-                                    </thead>
-                                    <tbody className="bg-white divide-y divide-gray-200">
-                                        {parents.map((relation) => (
-                                            <tr key={relation.id} className="hover:bg-gray-50">
-                                                <td className="px-6 py-4 whitespace-nowrap">
-                                                    <Link
-                                                        to={`/models/${relation.model_id}`}
-                                                        className="text-blue-600 hover:text-blue-800 hover:underline font-medium"
-                                                    >
-                                                        {relation.model_name}
-                                                    </Link>
-                                                </td>
-                                                <td className="px-6 py-4 whitespace-nowrap">
-                                                    <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-blue-100 text-blue-800">
-                                                        {relation.relation_type}
-                                                    </span>
-                                                </td>
-                                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                                                    {relation.effective_date || '-'}
-                                                </td>
-                                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                                                    {relation.end_date || '-'}
-                                                </td>
-                                                <td className="px-6 py-4 text-sm text-gray-500">
-                                                    {relation.notes || '-'}
-                                                </td>
-                                                {isAdmin && (
-                                                    <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                                                        <button
-                                                            onClick={() => handleEdit(relation, 'parent')}
-                                                            className="text-blue-600 hover:text-blue-900 mr-3"
-                                                        >
-                                                            Edit
-                                                        </button>
-                                                        <button
-                                                            onClick={() => handleDelete(relation.id)}
-                                                            className="text-red-600 hover:text-red-900"
-                                                        >
-                                                            Delete
-                                                        </button>
-                                                    </td>
-                                                )}
-                                            </tr>
-                                        ))}
-                                    </tbody>
-                                </table>
-                            </div>
+                                    ))}
+                                </tbody>
+                            </table>
                         </div>
+                    </div>
                 )}
 
-                        {/* Child Models (Sub-Models) Section */}
-                        {hasChildren && (
+                {/* Child Models (Sub-Models) Section */}
+                {hasChildren && (
                     <div>
                         <div className="flex justify-between items-center mb-4">
                             <h3 className="text-lg font-medium text-gray-900">Sub-Models</h3>
@@ -322,6 +323,7 @@ export default function ModelHierarchySection({ modelId, modelName }: Props) {
                                         Add Sub-Model
                                     </button>
                                 )}
+                            </div>
                         </div>
                         <div className="bg-white shadow overflow-hidden sm:rounded-md">
                             <table className="min-w-full divide-y divide-gray-200">
@@ -409,5 +411,5 @@ export default function ModelHierarchySection({ modelId, modelName }: Props) {
                 editData={editData}
             />
         </>
-                );
+    );
 }
