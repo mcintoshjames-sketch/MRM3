@@ -402,7 +402,10 @@ Model Details page:
 - New `LineageViewer.tsx` component for visualizing complete data flow chains
 - Integrates with existing `/models/{id}/dependencies/lineage` API endpoint
 - Displays recursive upstream (feeders) and downstream (consumers) relationships
-- Tree-style indented layout showing depth and hierarchy
+- **Tree-like Visualization**: Uses CSS connectors and indentation to show clear parent-child relationships
+- Clickable model names linking to detail pages
+- Dependency type badges and descriptions
+- Color-coded: Green (upstream), Purple (downstream), Blue (center)
 
 **Features Implemented:**
 - **Direction Control**: Toggle between Upstream Only, Downstream Only, or Both
@@ -410,7 +413,7 @@ Model Details page:
 - **Include Inactive Toggle**: Option to show/hide inactive dependencies
 - **Center Model Display**: Highlighted current model in blue to show lineage context
 - **Recursive Tree Rendering**: 
-  - Each node indented by depth (24px per level)
+  - Visual connectors (vertical and horizontal lines) showing structure
   - Clickable model names linking to detail pages
   - Dependency type badges (INPUT_DATA, SCORE, etc.)
   - Description text for each dependency

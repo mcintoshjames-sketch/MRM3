@@ -58,33 +58,50 @@ export default function LineageViewer({ modelId, modelName }: Props) {
     };
 
     const renderNode = (node: LineageNode, isUpstream: boolean): JSX.Element => {
-        const indent = node.depth * 24; // 24px per depth level
         const children = isUpstream ? node.upstream : node.downstream;
+        const hasChildren = children && children.length > 0;
 
         return (
-            <div key={`${node.model_id}-${node.depth}`} style={{ marginLeft: `${indent}px` }}>
-                <div className="flex items-center py-2 border-b border-gray-100 hover:bg-gray-50">
-                    <div className="flex-1">
-                        <Link
-                            to={`/models/${node.model_id}`}
-                            className="text-blue-600 hover:text-blue-800 hover:underline font-medium"
-                        >
-                            {node.model_name}
-                        </Link>
-                        <span className="ml-2 px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800">
-                            {node.dependency_type}
-                        </span>
-                        {node.description && (
-                            <p className="text-sm text-gray-600 mt-1">{node.description}</p>
-                        )}
-                    </div>
-                    <div className="text-xs text-gray-500">
-                        Depth: {node.depth}
+            <div key={`${node.model_id}-${node.depth}`} className="relative">
+                {/* Node Card */}
+                <div className={`relative z-10 group transition-all duration-200`}>
+                    <div className={`flex items-start p-3 bg-white border rounded-lg shadow-sm hover:shadow-md transition-all ${isUpstream
+                        ? 'border-green-200 hover:border-green-400'
+                        : 'border-purple-200 hover:border-purple-400'
+                        }`}>
+                        <div className={`flex-shrink-0 mt-1.5 w-2.5 h-2.5 rounded-full ${isUpstream ? 'bg-green-400' : 'bg-purple-400'
+                            }`} />
+
+                        <div className="ml-3 flex-1 min-w-0">
+                            <div className="flex items-center justify-between gap-2">
+                                <Link
+                                    to={`/models/${node.model_id}`}
+                                    className="text-sm font-medium text-gray-900 hover:text-blue-600 truncate"
+                                >
+                                    {node.model_name}
+                                </Link>
+                                <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium whitespace-nowrap ${isUpstream ? 'bg-green-50 text-green-700' : 'bg-purple-50 text-purple-700'
+                                    }`}>
+                                    {node.dependency_type}
+                                </span>
+                            </div>
+                            {node.description && (
+                                <p className="text-xs text-gray-500 mt-1 line-clamp-2">{node.description}</p>
+                            )}
+                        </div>
                     </div>
                 </div>
-                {children && children.length > 0 && (
-                    <div>
-                        {children.map((child) => renderNode(child, isUpstream))}
+
+                {/* Children */}
+                {hasChildren && (
+                    <div className="ml-4 pl-8 border-l-2 border-gray-100 mt-3 space-y-3 pb-1">
+                        {children.map((child) => (
+                            <div key={`${child.model_id}-${child.depth}`} className="relative">
+                                {/* Horizontal Connector */}
+                                <div className="absolute -left-8 top-6 w-8 h-0.5 bg-gray-100"></div>
+                                {renderNode(child, isUpstream)}
+                            </div>
+                        ))}
                     </div>
                 )}
             </div>
@@ -131,10 +148,11 @@ export default function LineageViewer({ modelId, modelName }: Props) {
                 <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                         <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-2">
+                            <label htmlFor="direction-select-empty" className="block text-sm font-medium text-gray-700 mb-2">
                                 Direction
                             </label>
                             <select
+                                id="direction-select-empty"
                                 value={direction}
                                 onChange={(e) => setDirection(e.target.value as any)}
                                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500"
@@ -145,10 +163,11 @@ export default function LineageViewer({ modelId, modelName }: Props) {
                             </select>
                         </div>
                         <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-2">
+                            <label htmlFor="depth-select-empty" className="block text-sm font-medium text-gray-700 mb-2">
                                 Max Depth
                             </label>
                             <select
+                                id="depth-select-empty"
                                 value={maxDepth}
                                 onChange={(e) => setMaxDepth(Number(e.target.value))}
                                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500"
@@ -195,10 +214,11 @@ export default function LineageViewer({ modelId, modelName }: Props) {
             <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                     <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                        <label htmlFor="direction-select" className="block text-sm font-medium text-gray-700 mb-2">
                             Direction
                         </label>
                         <select
+                            id="direction-select"
                             value={direction}
                             onChange={(e) => setDirection(e.target.value as any)}
                             className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500"
@@ -209,10 +229,11 @@ export default function LineageViewer({ modelId, modelName }: Props) {
                         </select>
                     </div>
                     <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                        <label htmlFor="depth-select" className="block text-sm font-medium text-gray-700 mb-2">
                             Max Depth
                         </label>
                         <select
+                            id="depth-select"
                             value={maxDepth}
                             onChange={(e) => setMaxDepth(Number(e.target.value))}
                             className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500"
@@ -268,7 +289,7 @@ export default function LineageViewer({ modelId, modelName }: Props) {
                             Models that provide data to this model
                         </p>
                     </div>
-                    <div className="p-4">
+                    <div className="p-6 space-y-6">
                         {lineageData.upstream?.map((node) => renderNode(node, true))}
                     </div>
                 </div>
@@ -293,7 +314,7 @@ export default function LineageViewer({ modelId, modelName }: Props) {
                             Models that consume data from this model
                         </p>
                     </div>
-                    <div className="p-4">
+                    <div className="p-6 space-y-6">
                         {lineageData.downstream?.map((node) => renderNode(node, false))}
                     </div>
                 </div>
