@@ -91,11 +91,12 @@ export default function ModelHierarchyModal({
                 (t: any) => t.name === 'Model Hierarchy Type'
             );
             if (hierarchyTypeTaxonomy) {
-                const valuesRes = await api.get(`/taxonomies/${hierarchyTypeTaxonomy.taxonomy_id}/values`);
-                setRelationTypes(valuesRes.data);
+                // Get full taxonomy with values
+                const taxonomyRes = await api.get(`/taxonomies/${hierarchyTypeTaxonomy.taxonomy_id}`);
+                setRelationTypes(taxonomyRes.data.values || []);
                 // Auto-select SUB_MODEL if available and not editing
-                if (!editData && valuesRes.data.length > 0) {
-                    const subModelType = valuesRes.data.find((v: TaxonomyValue) => v.code === 'SUB_MODEL');
+                if (!editData && taxonomyRes.data.values && taxonomyRes.data.values.length > 0) {
+                    const subModelType = taxonomyRes.data.values.find((v: TaxonomyValue) => v.code === 'SUB_MODEL');
                     if (subModelType) {
                         setRelationTypeId(subModelType.value_id);
                     }

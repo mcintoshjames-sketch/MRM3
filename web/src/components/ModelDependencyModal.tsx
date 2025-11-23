@@ -94,8 +94,9 @@ export default function ModelDependencyModal({
                 (t: any) => t.name === 'Model Dependency Type'
             );
             if (dependencyTypeTaxonomy) {
-                const valuesRes = await api.get(`/taxonomies/${dependencyTypeTaxonomy.taxonomy_id}/values`);
-                setDependencyTypes(valuesRes.data);
+                // Get full taxonomy with values
+                const taxonomyRes = await api.get(`/taxonomies/${dependencyTypeTaxonomy.taxonomy_id}`);
+                setDependencyTypes(taxonomyRes.data.values || []);
             }
         } catch (error) {
             console.error('Error fetching data:', error);
