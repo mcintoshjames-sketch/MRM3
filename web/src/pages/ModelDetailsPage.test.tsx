@@ -111,32 +111,7 @@ const sampleTaxonomyDetails = {
     ],
 };
 
-const sampleValidations = [
-    {
-        validation_id: 1,
-        model_id: 1,
-        model_name: 'Credit Risk Model',
-        validation_date: '2025-01-15',
-        validator_name: 'Validator User',
-        validation_type: 'Initial',
-        outcome: 'Pass',
-        scope: 'Full Scope',
-        created_at: '2025-01-15T10:00:00Z',
-    },
-    {
-        validation_id: 2,
-        model_id: 1,
-        model_name: 'Credit Risk Model',
-        validation_date: '2025-01-10',
-        validator_name: 'Admin User',
-        validation_type: 'Annual Review',
-        outcome: 'Pass with Findings',
-        scope: 'Targeted Review',
-        created_at: '2025-01-10T10:00:00Z',
-    },
-];
-
-const setupApiMocks = (validations = sampleValidations, modelData = sampleModel) => {
+const setupApiMocks = (modelData = sampleModel) => {
     mockGet.mockImplementation((url: string) => {
         if (url === '/models/1') return Promise.resolve({ data: modelData });
         if (url === '/auth/users') return Promise.resolve({ data: sampleUsers });
@@ -145,7 +120,6 @@ const setupApiMocks = (validations = sampleValidations, modelData = sampleModel)
         if (url === '/models/1/regions') return Promise.resolve({ data: [] });
         if (url === '/taxonomies/') return Promise.resolve({ data: sampleTaxonomies });
         if (url === '/taxonomies/1') return Promise.resolve({ data: sampleTaxonomyDetails });
-        if (url === '/validations/?model_id=1') return Promise.resolve({ data: validations });
         if (url === '/validation-workflow/requests/?model_id=1') return Promise.resolve({ data: [] });
         if (url === '/models/1/versions') return Promise.resolve({ data: [] });
         if (url === '/models/1/revalidation-status') return Promise.resolve({ data: { status: 'Never Validated' } });
@@ -251,7 +225,7 @@ describe('ModelDetailsPage', () => {
         setupApiMocks();
         render(<ModelDetailsPage />);
         await waitFor(() => {
-            expect(screen.getByText(/Validation History \(0 active, 2 historical\)/)).toBeInTheDocument();
+            expect(screen.getByText(/Validation History \(0 active, 0 historical\)/)).toBeInTheDocument();
         });
     });
 
@@ -259,56 +233,24 @@ describe('ModelDetailsPage', () => {
         setupApiMocks();
         render(<ModelDetailsPage />);
         await waitFor(() => {
-            expect(screen.getByText(/Validation History \(0 active, 2 historical\)/)).toBeInTheDocument();
+            expect(screen.getByText(/Validation History \(0 active, 0 historical\)/)).toBeInTheDocument();
         });
 
-        fireEvent.click(screen.getByText(/Validation History \(0 active, 2 historical\)/));
+        fireEvent.click(screen.getByText(/Validation History \(0 active, 0 historical\)/));
 
         await waitFor(() => {
-            // Check for validation history table headers
-            expect(screen.getByText('Date')).toBeInTheDocument();
-            expect(screen.getByText('Validator')).toBeInTheDocument();
-            expect(screen.getByText('Type')).toBeInTheDocument();
-            expect(screen.getByText('Outcome')).toBeInTheDocument();
-            expect(screen.getByText('Scope')).toBeInTheDocument();
-        });
-    });
-
-    it('displays validation records in history tab', async () => {
-        setupApiMocks();
-        render(<ModelDetailsPage />);
-        await waitFor(() => {
-            fireEvent.click(screen.getByText(/Validation History \(0 active, 2 historical\)/));
-        });
-
-        await waitFor(() => {
-            expect(screen.getByText('2025-01-15')).toBeInTheDocument();
-            expect(screen.getByText('2025-01-10')).toBeInTheDocument();
-            expect(screen.getByText('Validator User')).toBeInTheDocument();
-            expect(screen.getByText('Initial')).toBeInTheDocument();
-            expect(screen.getByText('Annual Review')).toBeInTheDocument();
-            expect(screen.getByText('Pass')).toBeInTheDocument();
-            expect(screen.getByText('Pass with Findings')).toBeInTheDocument();
-        });
-    });
-
-    it('displays empty state when no validations', async () => {
-        setupApiMocks([]);
-        render(<ModelDetailsPage />);
-        await waitFor(() => {
-            fireEvent.click(screen.getByText(/Validation History \(0 active, 0 historical\)/));
-        });
-
-        await waitFor(() => {
+            // Should show empty state when no historical validations
             expect(screen.getByText('No historical validation records found for this model.')).toBeInTheDocument();
         });
     });
+
+
 
     it('displays new validation button in history tab', async () => {
         setupApiMocks();
         render(<ModelDetailsPage />);
         await waitFor(() => {
-            fireEvent.click(screen.getByText(/Validation History \(0 active, 2 historical\)/));
+            fireEvent.click(screen.getByText(/Validation History \(0 active, 0 historical\)/));
         });
 
         await waitFor(() => {
@@ -366,60 +308,7 @@ describe('ModelDetailsPage', () => {
         });
     });
 
-    it('displays model data even when validations fetch fails', async () => {
-        mockGet.mockImplementation((url: string) => {
-            if (url === '/models/1') return Promise.resolve({ data: sampleModel });
-            if (url === '/auth/users') return Promise.resolve({ data: sampleUsers });
-            if (url === '/vendors/') return Promise.resolve({ data: sampleVendors });
-            if (url === '/regions/') return Promise.resolve({ data: [] });
-            if (url === '/models/1/regions') return Promise.resolve({ data: [] });
-            if (url === '/taxonomies/') return Promise.resolve({ data: sampleTaxonomies });
-            if (url === '/taxonomies/1') return Promise.resolve({ data: sampleTaxonomyDetails });
-            if (url === '/validations/?model_id=1') return Promise.reject(new Error('Validations API error'));
-            if (url === '/validation-workflow/requests/?model_id=1') return Promise.resolve({ data: [] });
-            if (url === '/models/1/versions') return Promise.resolve({ data: [] });
-            if (url === '/models/1/revalidation-status') return Promise.resolve({ data: { status: 'Never Validated' } });
-            return Promise.reject(new Error(`Unknown URL: ${url}`));
-        });
 
-        render(<ModelDetailsPage />);
-
-        await waitFor(() => {
-            // Model should still display despite validation API failure
-            expect(screen.getByText('Credit Risk Model')).toBeInTheDocument();
-            expect(screen.getByText('Model Owner')).toBeInTheDocument();
-        });
-    });
-
-    it('shows empty validation history when validations fetch fails', async () => {
-        mockGet.mockImplementation((url: string) => {
-            if (url === '/models/1') return Promise.resolve({ data: sampleModel });
-            if (url === '/auth/users') return Promise.resolve({ data: sampleUsers });
-            if (url === '/vendors/') return Promise.resolve({ data: sampleVendors });
-            if (url === '/regions/') return Promise.resolve({ data: [] });
-            if (url === '/models/1/regions') return Promise.resolve({ data: [] });
-            if (url === '/taxonomies/') return Promise.resolve({ data: sampleTaxonomies });
-            if (url === '/taxonomies/1') return Promise.resolve({ data: sampleTaxonomyDetails });
-            if (url === '/validations/?model_id=1') return Promise.reject(new Error('Validations API error'));
-            if (url === '/validation-workflow/requests/?model_id=1') return Promise.resolve({ data: [] });
-            if (url === '/models/1/versions') return Promise.resolve({ data: [] });
-            if (url === '/models/1/revalidation-status') return Promise.resolve({ data: { status: 'Never Validated' } });
-            return Promise.reject(new Error(`Unknown URL: ${url}`));
-        });
-
-        render(<ModelDetailsPage />);
-
-        await waitFor(() => {
-            // Should show 0 validations since fetch failed
-            expect(screen.getByText(/Validation History \(0 active, 0 historical\)/)).toBeInTheDocument();
-        });
-
-        fireEvent.click(screen.getByText(/Validation History \(0 active, 0 historical\)/));
-
-        await waitFor(() => {
-            expect(screen.getByText('No historical validation records found for this model.')).toBeInTheDocument();
-        });
-    });
 
     it('displays third-party model with vendor', async () => {
         const thirdPartyModel = {
@@ -432,7 +321,7 @@ describe('ModelDetailsPage', () => {
                 contact_info: 'vendor@corp.com',
             },
         };
-        setupApiMocks(sampleValidations, thirdPartyModel as any);
+        setupApiMocks(thirdPartyModel as any);
 
         render(<ModelDetailsPage />);
 
@@ -447,7 +336,7 @@ describe('ModelDetailsPage', () => {
             ...sampleModel,
             users: [],
         };
-        setupApiMocks(sampleValidations, modelNoUsers);
+        setupApiMocks(modelNoUsers);
 
         render(<ModelDetailsPage />);
 

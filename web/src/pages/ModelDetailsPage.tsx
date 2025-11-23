@@ -90,18 +90,6 @@ interface Model {
     submission_comments: SubmissionComment[];
 }
 
-interface Validation {
-    validation_id: number;
-    model_id: number;
-    model_name: string;
-    validation_date: string;
-    validator_name: string;
-    validation_type: string;
-    outcome: string;
-    scope: string;
-    created_at: string;
-}
-
 interface ValidationRequest {
     request_id: number;
     model_id: number;
@@ -158,7 +146,6 @@ export default function ModelDetailsPage() {
     const [vendors, setVendors] = useState<Vendor[]>([]);
     const [regions, setRegions] = useState<Region[]>([]);
     const [taxonomies, setTaxonomies] = useState<Taxonomy[]>([]);
-    const [validations, setValidations] = useState<Validation[]>([]);
     const [validationRequests, setValidationRequests] = useState<ValidationRequest[]>([]);
     const [versions, setVersions] = useState<ModelVersion[]>([]);
     const [revalidationStatus, setRevalidationStatus] = useState<RevalidationStatus | null>(null);
@@ -247,22 +234,19 @@ export default function ModelDetailsPage() {
                 regulatory_category_ids: modelData.regulatory_categories.map((c: TaxonomyValue) => c.value_id)
             });
 
-            // Fetch validations and versions separately - this is optional and shouldn't break the page
+            // Fetch validation requests and versions separately - this is optional and shouldn't break the page
             try {
-                const [validationsRes, validationRequestsRes, versionsRes, revalidationRes] = await Promise.all([
-                    api.get(`/validations/?model_id=${id}`),
+                const [validationRequestsRes, versionsRes, revalidationRes] = await Promise.all([
                     api.get(`/validation-workflow/requests/?model_id=${id}`),
                     api.get(`/models/${id}/versions`),
                     api.get(`/models/${id}/revalidation-status`)
                 ]);
-                setValidations(validationsRes.data);
                 setValidationRequests(validationRequestsRes.data);
                 setVersions(versionsRes.data);
                 setRevalidationStatus(revalidationRes.data);
             } catch (validationError) {
-                console.error('Failed to fetch validations:', validationError);
-                // Keep validations as empty array - don't break the page
-                setValidations([]);
+                console.error('Failed to fetch validation data:', validationError);
+                // Keep as empty arrays - don't break the page
                 setValidationRequests([]);
                 setVersions([]);
                 setRevalidationStatus(null);
@@ -865,7 +849,7 @@ export default function ModelDetailsPage() {
                                 : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
                                 }`}
                         >
-                            Validation History ({validationRequests.filter(req => req.current_status !== 'Approved' && req.current_status !== 'Cancelled').length} active, {validationRequests.filter(req => req.current_status === 'Approved').length + validations.length} historical)
+                            Validation History ({validationRequests.filter(req => req.current_status !== 'Approved' && req.current_status !== 'Cancelled').length} active, {validationRequests.filter(req => req.current_status === 'Approved').length} historical)
                         </button>
                         <button
                             onClick={() => setActiveTab('activity')}
@@ -1736,19 +1720,17 @@ export default function ModelDetailsPage() {
                                 req.current_status === 'Approved' ||
                                 (showCancelledValidations && req.current_status === 'Cancelled')
                             );
-                            const totalHistorical = validations.length + historicalRequests.length;
 
-                            return totalHistorical === 0 ? (
+                            return historicalRequests.length === 0 ? (
                                 <div className="p-6 text-center text-gray-500">
                                     No historical validation records found for this model.
                                 </div>
                             ) : (
                                 <div>
-                                    {/* Workflow-based Validations */}
                                     {historicalRequests.length > 0 && (
-                                        <div className="border-b">
+                                        <div>
                                             <div className="px-4 py-2 bg-blue-50">
-                                                <h4 className="text-sm font-semibold text-gray-700">Workflow-based Validations</h4>
+                                                <h4 className="text-sm font-semibold text-gray-700">Historical Validations</h4>
                                             </div>
                                             <table className="min-w-full divide-y divide-gray-200">
                                                 <thead className="bg-gray-50">
@@ -1805,79 +1787,6 @@ export default function ModelDetailsPage() {
                                                             <td className="px-6 py-4 whitespace-nowrap">
                                                                 <Link
                                                                     to={`/validation-workflow/${request.request_id}`}
-                                                                    className="text-blue-600 hover:text-blue-800 text-sm"
-                                                                >
-                                                                    View Details
-                                                                </Link>
-                                                            </td>
-                                                        </tr>
-                                                    ))}
-                                                </tbody>
-                                            </table>
-                                        </div>
-                                    )}
-
-                                    {/* Legacy Validations */}
-                                    {validations.length > 0 && (
-                                        <div>
-                                            <div className="px-4 py-2 bg-gray-50">
-                                                <h4 className="text-sm font-semibold text-gray-700">Legacy Validation Records</h4>
-                                            </div>
-                                            <table className="min-w-full divide-y divide-gray-200">
-                                                <thead className="bg-gray-50">
-                                                    <tr>
-                                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
-                                                            Date
-                                                        </th>
-                                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
-                                                            Validator
-                                                        </th>
-                                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
-                                                            Type
-                                                        </th>
-                                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
-                                                            Outcome
-                                                        </th>
-                                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
-                                                            Scope
-                                                        </th>
-                                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
-                                                            Actions
-                                                        </th>
-                                                    </tr>
-                                                </thead>
-                                                <tbody className="bg-white divide-y divide-gray-200">
-                                                    {validations.map((validation) => (
-                                                        <tr key={validation.validation_id} className="hover:bg-gray-50">
-                                                            <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                                                                {validation.validation_date}
-                                                            </td>
-                                                            <td className="px-6 py-4 whitespace-nowrap text-sm">
-                                                                {validation.validator_name}
-                                                            </td>
-                                                            <td className="px-6 py-4 whitespace-nowrap">
-                                                                <span className="px-2 py-1 text-xs rounded bg-blue-100 text-blue-800">
-                                                                    {validation.validation_type}
-                                                                </span>
-                                                            </td>
-                                                            <td className="px-6 py-4 whitespace-nowrap">
-                                                                <span className={`px-2 py-1 text-xs rounded ${validation.outcome === 'Pass'
-                                                                    ? 'bg-green-100 text-green-800'
-                                                                    : validation.outcome === 'Pass with Findings'
-                                                                        ? 'bg-orange-100 text-orange-800'
-                                                                        : 'bg-red-100 text-red-800'
-                                                                    }`}>
-                                                                    {validation.outcome}
-                                                                </span>
-                                                            </td>
-                                                            <td className="px-6 py-4 whitespace-nowrap">
-                                                                <span className="px-2 py-1 text-xs rounded bg-purple-100 text-purple-800">
-                                                                    {validation.scope}
-                                                                </span>
-                                                            </td>
-                                                            <td className="px-6 py-4 whitespace-nowrap">
-                                                                <Link
-                                                                    to={`/validations/${validation.validation_id}`}
                                                                     className="text-blue-600 hover:text-blue-800 text-sm"
                                                                 >
                                                                     View Details

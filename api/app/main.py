@@ -32,9 +32,9 @@ app.include_router(audit_logs.router, prefix="/audit-logs",
 # Workflow-based validation endpoints
 app.include_router(validation_workflow.router,
                    prefix="/validation-workflow", tags=["validation-workflow"])
-# Validation policies (legacy endpoint)
+# Validation policies endpoint
 app.include_router(validation_policies.router,
-                   prefix="/validations/policies", tags=["validation-policies"])
+                   prefix="/validation-workflow/policies", tags=["validation-policies"])
 # Workflow SLA configuration
 app.include_router(workflow_sla.router,
                    prefix="/workflow-sla", tags=["workflow-sla"])

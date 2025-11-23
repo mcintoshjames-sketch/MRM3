@@ -39,7 +39,7 @@ export default function ValidationPoliciesPage() {
         try {
             setLoading(true);
             setError(null);
-            const response = await api.get('/validations/policies/');
+            const response = await api.get('/validation-workflow/policies/');
             // Sort by risk tier sort_order to maintain consistent ordering
             const sortedPolicies = [...response.data].sort((a, b) => {
                 return (a.risk_tier.sort_order || 0) - (b.risk_tier.sort_order || 0);
@@ -73,7 +73,7 @@ export default function ValidationPoliciesPage() {
 
     const handleUpdate = async (policyId: number) => {
         try {
-            await api.patch(`/validations/policies/${policyId}`, editFormData);
+            await api.patch(`/validation-workflow/policies/${policyId}`, editFormData);
             await fetchPolicies();
             cancelEditing();
         } catch (err) {
