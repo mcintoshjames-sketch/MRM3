@@ -1,7 +1,7 @@
 """Validation workflow API endpoints."""
 from datetime import datetime, date, timedelta
 from dateutil.relativedelta import relativedelta
-from typing import List, Optional, Union, Dict
+from typing import List, Optional, Union, Dict, Tuple
 import json
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from fastapi.responses import FileResponse
@@ -179,6 +179,72 @@ def get_taxonomy_value_by_code(db: Session, taxonomy_name: str, code: str) -> Ta
         raise HTTPException(
             status_code=404, detail=f"Taxonomy value '{code}' not found in '{taxonomy_name}'")
     return value
+
+
+def get_allowed_approval_roles(db: Session) -> List[str]:
+    """Fetch active approval role labels from the Approval Role taxonomy."""
+    taxonomy = db.query(Taxonomy).filter(
+        Taxonomy.name == "Approval Role"
+    ).first()
+    if not taxonomy:
+        return []
+
+    return [
+        value.label for value in db.query(TaxonomyValue)
+        .filter(TaxonomyValue.taxonomy_id == taxonomy.taxonomy_id, TaxonomyValue.is_active == True)
+        .order_by(TaxonomyValue.sort_order, TaxonomyValue.label)
+    ]
+
+
+def is_valid_approver_role(role: str, allowed_roles: List[str]) -> bool:
+    """Check if a role matches an allowed base role (supports region-coded prefixes)."""
+    if not allowed_roles:
+        return True  # Do not block if taxonomy not seeded
+
+    for base in allowed_roles:
+        if role == base:
+            return True
+        if role.startswith(f"{base} "):
+            return True
+        if role.startswith(f"{base}-"):
+            return True
+        if role.startswith(f"{base}("):
+            return True
+        if role.startswith(f"{base} -"):
+            return True
+    return False
+
+
+def validate_approver_role_or_raise(db: Session, approver_role: str):
+    """Validate approver role against Approval Role taxonomy."""
+    allowed_roles = get_allowed_approval_roles(db)
+    if not is_valid_approver_role(approver_role, allowed_roles):
+        raise HTTPException(
+            status_code=400,
+            detail=f"approver_role must align with Approval Role taxonomy values: {allowed_roles}"
+        )
+
+
+def normalize_region_fields_for_approval(
+    approval_type: str,
+    region_id: Optional[int],
+    represented_region_id: Optional[int]
+) -> Tuple[str, Optional[int], Optional[int]]:
+    """Ensure regional approvals carry region context and global approvals stay null."""
+    approval_type = approval_type or "Global"
+
+    if approval_type == "Regional":
+        if region_id is None:
+            raise HTTPException(
+                status_code=400,
+                detail="region_id is required when approval_type is 'Regional'"
+            )
+        represented_region_id = represented_region_id or region_id
+    else:
+        region_id = None
+        represented_region_id = None
+
+    return approval_type, region_id, represented_region_id
 
 
 def check_valid_status_transition(old_status_code: Optional[str], new_status_code: str) -> bool:
@@ -481,10 +547,14 @@ def auto_assign_approvers(
 
             for approver in regional_approvers:
                 if approver.user_id not in assigned_approver_ids:
+                    approver_role = f"Regional Approver ({region_code})"
+                    validate_approver_role_or_raise(db, approver_role)
                     approvals_to_create.append(ValidationApproval(
                         request_id=validation_request.request_id,
                         approver_id=approver.user_id,
-                        approver_role=f"Regional Approver ({region_code})",
+                        approver_role=approver_role,
+                        approval_type="Regional",
+                        region_id=wholly_owned_region_id,
                         is_required=True,
                         approval_status="Pending",
                         represented_region_id=wholly_owned_region_id,  # Snapshot region context
@@ -500,10 +570,13 @@ def auto_assign_approvers(
 
             for approver in global_approvers:
                 if approver.user_id not in assigned_approver_ids:
+                    approver_role = "Global Approver"
+                    validate_approver_role_or_raise(db, approver_role)
                     approvals_to_create.append(ValidationApproval(
                         request_id=validation_request.request_id,
                         approver_id=approver.user_id,
-                        approver_role="Global Approver",
+                        approver_role=approver_role,
+                        approval_type="Global",
                         is_required=True,
                         approval_status="Pending",
                         represented_region_id=None,  # Global approver - no specific region
@@ -523,10 +596,14 @@ def auto_assign_approvers(
 
                     for approver in regional_approvers:
                         if approver.user_id not in assigned_approver_ids:
+                            approver_role = f"Regional Approver ({region.code})"
+                            validate_approver_role_or_raise(db, approver_role)
                             approvals_to_create.append(ValidationApproval(
                                 request_id=validation_request.request_id,
                                 approver_id=approver.user_id,
-                                approver_role=f"Regional Approver ({region.code})",
+                                approver_role=approver_role,
+                                approval_type="Regional",
+                                region_id=region_id,
                                 is_required=True,
                                 approval_status="Pending",
                                 represented_region_id=region_id,  # Snapshot region context
@@ -1370,6 +1447,31 @@ def update_validation_request_status(
         )
 
     # Additional business rules
+
+    # BUSINESS RULE: Cannot move to or remain in active workflow statuses without a primary validator
+    # Active workflow statuses that require a primary validator
+    active_statuses_requiring_validator = ["PLANNING", "IN_PROGRESS", "REVIEW", "PENDING_APPROVAL"]
+
+    if new_status_code in active_statuses_requiring_validator:
+        # Check if there's a primary validator assigned
+        primary_assignment = db.query(ValidationAssignment).filter(
+            ValidationAssignment.request_id == request_id,
+            ValidationAssignment.is_primary == True
+        ).first()
+
+        if not primary_assignment:
+            stage_name = {
+                "PLANNING": "Planning",
+                "IN_PROGRESS": "In Progress",
+                "REVIEW": "Review",
+                "PENDING_APPROVAL": "Pending Approval"
+            }.get(new_status_code, new_status_code)
+
+            raise HTTPException(
+                status_code=400,
+                detail=f"Cannot move to {stage_name} stage without a primary validator assigned. Please assign a primary validator first."
+            )
+
     if new_status_code == "REVIEW":
         # Must have at least one assigned validator
         if not validation_request.assignments:
@@ -2032,6 +2134,102 @@ def reviewer_sign_off(
     return assignment
 
 
+@router.post("/assignments/{assignment_id}/send-back", response_model=ValidationRequestResponse)
+def reviewer_send_back(
+    assignment_id: int,
+    send_back_data: ReviewerSignOffRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Reviewer sends validation back to In Progress with comments for revisions."""
+    assignment = db.query(ValidationAssignment).options(
+        joinedload(ValidationAssignment.request).joinedload(ValidationRequest.current_status),
+        joinedload(ValidationAssignment.request).joinedload(ValidationRequest.models),
+        joinedload(ValidationAssignment.request).joinedload(ValidationRequest.requestor),
+        joinedload(ValidationAssignment.request).joinedload(ValidationRequest.validation_type),
+        joinedload(ValidationAssignment.request).joinedload(ValidationRequest.priority),
+        joinedload(ValidationAssignment.request).joinedload(ValidationRequest.regions),
+        joinedload(ValidationAssignment.request).joinedload(ValidationRequest.validation_plan)
+    ).filter(
+        ValidationAssignment.assignment_id == assignment_id
+    ).first()
+
+    if not assignment:
+        raise HTTPException(status_code=404, detail="Assignment not found")
+
+    # Only the assigned reviewer can send back
+    if not assignment.is_reviewer:
+        raise HTTPException(
+            status_code=400, detail="This assignment is not a reviewer role")
+
+    if current_user.user_id != assignment.validator_id:
+        raise HTTPException(
+            status_code=403, detail="Only the assigned reviewer can send back")
+
+    request = assignment.request
+
+    # Verify request is in Review status
+    current_status_code = request.current_status.code if request.current_status else None
+    if current_status_code != "REVIEW":
+        raise HTTPException(
+            status_code=400,
+            detail="Can only send back validations that are in Review status"
+        )
+
+    # Get In Progress status
+    in_progress_status = db.query(TaxonomyValue).join(Taxonomy).filter(
+        Taxonomy.code == "validation_request_status",
+        TaxonomyValue.code == "IN_PROGRESS"
+    ).first()
+
+    if not in_progress_status:
+        raise HTTPException(status_code=500, detail="In Progress status not found in taxonomy")
+
+    # Update validation request status to In Progress
+    old_status_id = request.current_status_id
+    request.current_status_id = in_progress_status.value_id
+    request.updated_at = datetime.utcnow()
+
+    # Record status history with reviewer comments
+    change_reason = f"Sent back by reviewer {current_user.full_name}"
+    if send_back_data.comments:
+        change_reason += f": {send_back_data.comments}"
+
+    create_status_history_entry(
+        db, request.request_id, old_status_id, in_progress_status.value_id,
+        current_user.user_id, change_reason
+    )
+
+    # Reset reviewer sign-off if it was set
+    if assignment.reviewer_signed_off:
+        assignment.reviewer_signed_off = False
+        assignment.reviewer_signed_off_at = None
+
+    # Store send-back comments
+    assignment.reviewer_sign_off_comments = send_back_data.comments
+
+    # Create audit log
+    audit_log = AuditLog(
+        entity_type="ValidationRequest",
+        entity_id=request.request_id,
+        action="REVIEWER_SEND_BACK",
+        user_id=current_user.user_id,
+        changes={
+            "assignment_id": assignment_id,
+            "reviewer": current_user.full_name,
+            "comments": send_back_data.comments,
+            "old_status": "Review",
+            "new_status": "In Progress"
+        },
+        timestamp=datetime.utcnow()
+    )
+    db.add(audit_log)
+
+    db.commit()
+    db.refresh(request)
+    return request
+
+
 # ==================== OUTCOME ENDPOINTS ====================
 
 @router.post("/requests/{request_id}/outcome", response_model=ValidationOutcomeResponse, status_code=status.HTTP_201_CREATED)
@@ -2365,13 +2563,24 @@ def create_approval_requirement(
     if not approver:
         raise HTTPException(status_code=404, detail="Approver user not found")
 
+    # Validate role against taxonomy and normalize region fields
+    validate_approver_role_or_raise(db, approval_data.approver_role)
+    approval_type, region_id, represented_region_id = normalize_region_fields_for_approval(
+        approval_data.approval_type,
+        approval_data.region_id,
+        approval_data.represented_region_id
+    )
+
     # Create approval record
     approval = ValidationApproval(
         request_id=request_id,
         approver_id=approval_data.approver_id,
         approver_role=approval_data.approver_role,
         is_required=approval_data.is_required,
+        approval_type=approval_type,
+        region_id=region_id,
         approval_status="Pending",
+        represented_region_id=represented_region_id,
         created_at=datetime.utcnow()
     )
     db.add(approval)
@@ -3144,7 +3353,9 @@ def get_my_pending_submissions(
 ):
     """
     Get pending submission requests for models accessible by the current user.
-    Shows revalidation requests awaiting documentation submission for models where user is:
+
+    For Admin users: Shows all pending submissions (system-wide oversight)
+    For non-Admin users: Shows revalidation requests for models where user is:
     - Owner
     - Developer
     - Delegate
@@ -3158,19 +3369,27 @@ def get_my_pending_submissions(
 
     # Find revalidation requests for models accessible by current user
     # that are awaiting submission
-    pending_requests = db.query(ValidationRequest).join(
+    query = db.query(ValidationRequest).join(
         ValidationRequestModelVersion
     ).join(
         Model
-    ).filter(
-        or_(
-            Model.owner_id == current_user.user_id,
-            Model.developer_id == current_user.user_id,
-            Model.delegates.any(
-                (ModelDelegate.user_id == current_user.user_id) &
-                (ModelDelegate.revoked_at == None)
+    )
+
+    # Admin users see all pending submissions; non-admin users see only their models
+    if current_user.role != 'Admin':
+        query = query.filter(
+            or_(
+                Model.owner_id == current_user.user_id,
+                Model.developer_id == current_user.user_id,
+                Model.delegates.any(
+                    (ModelDelegate.user_id == current_user.user_id) &
+                    (ModelDelegate.revoked_at == None)
+                )
             )
-        ),
+        )
+
+    # Apply common filters
+    pending_requests = query.filter(
         ValidationRequest.validation_type.has(TaxonomyValue.code.in_(["COMPREHENSIVE", "ANNUAL"])),
         ValidationRequest.submission_received_date.is_(None),
         ValidationRequest.current_status.has(TaxonomyValue.code.in_(["INTAKE", "PLANNING"]))

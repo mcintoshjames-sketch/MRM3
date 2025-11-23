@@ -2,6 +2,7 @@
 from typing import Any, List, Dict
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
+from sqlalchemy import text
 from pydantic import BaseModel
 
 from app.core.database import get_db

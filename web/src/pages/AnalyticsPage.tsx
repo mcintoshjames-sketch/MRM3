@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import Layout from '../components/Layout';
 import api from '../api/client';
 import { savedQueriesApi, SavedQuery } from '../api/savedQueries';

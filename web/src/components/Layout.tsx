@@ -89,7 +89,7 @@ export default function Layout({ children }: LayoutProps) {
                                     }`
                                 }
                             >
-                                My Pending Submissions
+                                Pending Submissions
                             </NavLink>
                         </li>
                         <li>
@@ -102,7 +102,7 @@ export default function Layout({ children }: LayoutProps) {
                                     }`
                                 }
                             >
-                                My Deployment Tasks
+                                Pending Deployments
                             </NavLink>
                         </li>
                         <li>

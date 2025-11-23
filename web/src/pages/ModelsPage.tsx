@@ -1,11 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useAuth } from '../contexts/AuthContext';
 import api from '../api/client';
 import Layout from '../components/Layout';
 import { useTableSort } from '../hooks/useTableSort';
 import MultiSelectDropdown from '../components/MultiSelectDropdown';
-import { regionsApi, Region } from '../api/regions';
+import { Region } from '../api/regions';
 import { exportViewsApi, ExportView } from '../api/exportViews';
 
 interface User {
@@ -50,7 +49,6 @@ interface Model {
 }
 
 export default function ModelsPage() {
-    const { user } = useAuth();
     const navigate = useNavigate();
     const [models, setModels] = useState<Model[]>([]);
     const [users, setUsers] = useState<User[]>([]);
@@ -134,8 +132,8 @@ export default function ModelsPage() {
     };
 
     // Combined views: default views + database views
-    const allViews = React.useMemo(() => {
-        const combined = { ...defaultViews };
+    const allViews: Record<string, any> = React.useMemo(() => {
+        const combined: Record<string, any> = { ...defaultViews };
         // Add database views
         dbViews.forEach(view => {
             combined[`db_${view.view_id}`] = {

@@ -88,9 +88,9 @@ export default function MyPendingSubmissionsPage() {
     return (
         <Layout>
             <div className="mb-6">
-                <h1 className="text-3xl font-bold text-gray-900">My Pending Submissions</h1>
+                <h1 className="text-3xl font-bold text-gray-900">Pending Submissions</h1>
                 <p className="mt-2 text-gray-600">
-                    Revalidation documentation submissions needed for models you own
+                    Revalidation documentation submissions needed for models
                 </p>
                 <p className="mt-1 text-sm text-gray-500">
                     Showing submissions that are overdue or due within the next 90 days

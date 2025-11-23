@@ -20,6 +20,17 @@ interface ValidationRequest {
     updated_at: string;
 }
 
+interface WorkflowSLA {
+    sla_id: number;
+    workflow_type: string;
+    assignment_days: number;
+    begin_work_days: number;
+    complete_work_days: number;
+    approval_days: number;
+    created_at: string;
+    updated_at: string;
+}
+
 interface ActivityItem {
     type: 'sent_back_review' | 'sent_back_approval' | 'approaching_deadline' | 'newly_assigned';
     request: ValidationRequest;
@@ -41,14 +52,28 @@ interface Assignment {
     actual_hours: number | null;
 }
 
+interface ReviewModalData {
+    request_id: number;
+    assignment_id: number;
+    model_names: string[];
+}
+
 export default function ValidatorDashboardPage() {
     const { user } = useAuth();
     const [myAssignments, setMyAssignments] = useState<ValidationRequest[]>([]);
     const [myReviews, setMyReviews] = useState<ValidationRequest[]>([]);
+    const [myReviewAssignments, setMyReviewAssignments] = useState<Map<number, number>>(new Map());
     const [pendingRequests, setPendingRequests] = useState<ValidationRequest[]>([]);
+    const [workflowSLA, setWorkflowSLA] = useState<WorkflowSLA | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [claimingId, setClaimingId] = useState<number | null>(null);
+
+    // Review modal state
+    const [reviewModal, setReviewModal] = useState<ReviewModalData | null>(null);
+    const [reviewComments, setReviewComments] = useState('');
+    const [reviewLoading, setReviewLoading] = useState(false);
+    const [reviewModalError, setReviewModalError] = useState<string | null>(null);
 
     useEffect(() => {
         fetchData();
@@ -59,14 +84,16 @@ export default function ValidatorDashboardPage() {
             setLoading(true);
             setError(null);
 
-            // Fetch all validation projects and detailed assignments
-            const [requestsRes, assignmentsRes] = await Promise.all([
+            // Fetch all validation projects, detailed assignments, and SLA configuration
+            const [requestsRes, assignmentsRes, slaRes] = await Promise.all([
                 api.get('/validation-workflow/requests/'),
-                api.get('/validation-workflow/assignments/')
+                api.get('/validation-workflow/assignments/'),
+                api.get('/workflow-sla/validation')
             ]);
 
             const allRequests: ValidationRequest[] = requestsRes.data;
             const allAssignments: Assignment[] = assignmentsRes.data;
+            setWorkflowSLA(slaRes.data);
 
             // Filter for my primary assignments
             const myWork = allRequests.filter(
@@ -83,6 +110,13 @@ export default function ValidatorDashboardPage() {
                 req => myReviewRequestIds.has(req.request_id) && req.current_status === 'Review'
             );
             setMyReviews(reviewWork);
+
+            // Create map of request_id to assignment_id for reviewer actions
+            const reviewAssignmentMap = new Map<number, number>();
+            myReviewerAssignments.forEach(a => {
+                reviewAssignmentMap.set(a.request_id, a.assignment_id);
+            });
+            setMyReviewAssignments(reviewAssignmentMap);
 
             // Filter for pending requests (Intake/Planning) that are unassigned
             const pending = allRequests.filter(
@@ -118,6 +152,56 @@ export default function ValidatorDashboardPage() {
             setError(err.response?.data?.detail || 'Failed to claim validation project');
         } finally {
             setClaimingId(null);
+        }
+    };
+
+    const openReviewModal = (req: ValidationRequest) => {
+        const assignmentId = myReviewAssignments.get(req.request_id);
+        if (!assignmentId) {
+            setError('Assignment ID not found for this review');
+            return;
+        }
+
+        setReviewModal({
+            request_id: req.request_id,
+            assignment_id: assignmentId,
+            model_names: req.model_names
+        });
+        setReviewComments('');
+        setReviewModalError(null); // Clear any previous modal errors
+    };
+
+    const handleReviewAction = async (action: 'sign-off' | 'send-back') => {
+        if (!reviewModal) return;
+
+        if (action === 'send-back' && !reviewComments.trim()) {
+            setReviewModalError('Please provide comments when sending back for revisions');
+            return;
+        }
+
+        try {
+            setReviewLoading(true);
+            setReviewModalError(null);
+
+            const endpoint = action === 'sign-off'
+                ? `/validation-workflow/assignments/${reviewModal.assignment_id}/sign-off`
+                : `/validation-workflow/assignments/${reviewModal.assignment_id}/send-back`;
+
+            await api.post(endpoint, {
+                comments: reviewComments || null
+            });
+
+            // Success - close modal and refresh data
+            setReviewModal(null);
+            setReviewComments('');
+            await fetchData();
+        } catch (err: any) {
+            console.error(`Failed to ${action}:`, err);
+            // Display error within the modal - do NOT close it
+            const errorMessage = err.response?.data?.detail || `Failed to ${action.replace('-', ' ')} review. Please try again.`;
+            setReviewModalError(errorMessage);
+        } finally {
+            setReviewLoading(false);
         }
     };
 
@@ -229,6 +313,74 @@ export default function ValidatorDashboardPage() {
     };
 
     const activityFeed = getActivityFeed();
+
+    // Calculate SLA time remaining for a validation request
+    const calculateSLARemaining = (req: ValidationRequest): {
+        daysRemaining: number;
+        severity: 'ok' | 'warning' | 'critical';
+        displayText: string;
+    } => {
+        if (!workflowSLA) {
+            return { daysRemaining: 0, severity: 'ok', displayText: 'N/A' };
+        }
+
+        let slaDays = 0;
+
+        // Map status to SLA days
+        switch (req.current_status) {
+            case 'Intake':
+            case 'Planning':
+                slaDays = workflowSLA.assignment_days;
+                break;
+            case 'In Progress':
+                slaDays = workflowSLA.complete_work_days;
+                break;
+            case 'Review':
+                slaDays = workflowSLA.complete_work_days; // Review uses complete_work_days
+                break;
+            case 'Pending Approval':
+                slaDays = workflowSLA.approval_days;
+                break;
+            default:
+                return { daysRemaining: 0, severity: 'ok', displayText: 'N/A' };
+        }
+
+        const daysRemaining = slaDays - req.days_in_status;
+
+        let severity: 'ok' | 'warning' | 'critical' = 'ok';
+        let displayText = '';
+
+        if (daysRemaining < 0) {
+            severity = 'critical';
+            displayText = `${Math.abs(daysRemaining)}d overdue`;
+        } else if (daysRemaining === 0) {
+            severity = 'critical';
+            displayText = 'Due today';
+        } else if (daysRemaining <= 2) {
+            severity = 'critical';
+            displayText = `${daysRemaining}d remaining`;
+        } else if (daysRemaining <= 5) {
+            severity = 'warning';
+            displayText = `${daysRemaining}d remaining`;
+        } else {
+            severity = 'ok';
+            displayText = `${daysRemaining}d remaining`;
+        }
+
+        return { daysRemaining, severity, displayText };
+    };
+
+    // Get SLA badge styling
+    const getSLABadge = (severity: 'ok' | 'warning' | 'critical'): string => {
+        switch (severity) {
+            case 'critical':
+                return 'bg-red-100 text-red-800';
+            case 'warning':
+                return 'bg-yellow-100 text-yellow-800';
+            case 'ok':
+                return 'bg-green-100 text-green-800';
+        }
+    };
 
     if (loading) {
         return (
@@ -469,63 +621,72 @@ export default function ValidatorDashboardPage() {
                                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Type</th>
                                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Priority</th>
                                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Primary Validator</th>
+                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">SLA Time Remaining</th>
                                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Target Date</th>
                                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
                                 </tr>
                             </thead>
                             <tbody className="bg-white divide-y divide-gray-200">
-                                {myReviews.map((req) => (
-                                    <tr key={req.request_id} className="hover:bg-gray-50">
-                                        <td className="px-6 py-4 whitespace-nowrap text-sm font-mono">
-                                            #{req.request_id}
-                                        </td>
-                                        <td className="px-6 py-4">
-                                            {req.model_ids.length === 1 ? (
-                                                <Link
-                                                    to={`/models/${req.model_ids[0]}`}
-                                                    className="font-medium text-blue-600 hover:text-blue-800"
+                                {myReviews.map((req) => {
+                                    const slaInfo = calculateSLARemaining(req);
+                                    return (
+                                        <tr key={req.request_id} className="hover:bg-gray-50">
+                                            <td className="px-6 py-4 whitespace-nowrap text-sm font-mono">
+                                                #{req.request_id}
+                                            </td>
+                                            <td className="px-6 py-4">
+                                                {req.model_ids.length === 1 ? (
+                                                    <Link
+                                                        to={`/models/${req.model_ids[0]}`}
+                                                        className="font-medium text-blue-600 hover:text-blue-800"
+                                                    >
+                                                        {req.model_names[0]}
+                                                    </Link>
+                                                ) : (
+                                                    <div className="space-y-1">
+                                                        {req.model_names.map((name, idx) => (
+                                                            <div key={idx}>
+                                                                <Link
+                                                                    to={`/models/${req.model_ids[idx]}`}
+                                                                    className="font-medium text-blue-600 hover:text-blue-800 text-sm"
+                                                                >
+                                                                    {name}
+                                                                </Link>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                )}
+                                            </td>
+                                            <td className="px-6 py-4 whitespace-nowrap text-sm">
+                                                {req.validation_type}
+                                            </td>
+                                            <td className="px-6 py-4 whitespace-nowrap">
+                                                <span className={`px-2 py-1 text-xs rounded ${getPriorityColor(req.priority)}`}>
+                                                    {req.priority}
+                                                </span>
+                                            </td>
+                                            <td className="px-6 py-4 whitespace-nowrap text-sm">
+                                                {req.primary_validator}
+                                            </td>
+                                            <td className="px-6 py-4 whitespace-nowrap">
+                                                <span className={`px-2 py-1 text-xs font-semibold rounded ${getSLABadge(slaInfo.severity)}`}>
+                                                    {slaInfo.displayText}
+                                                </span>
+                                            </td>
+                                            <td className="px-6 py-4 whitespace-nowrap text-sm">
+                                                {req.target_completion_date}
+                                            </td>
+                                            <td className="px-6 py-4 whitespace-nowrap">
+                                                <button
+                                                    onClick={() => openReviewModal(req)}
+                                                    className="bg-purple-600 text-white px-3 py-1 rounded text-sm hover:bg-purple-700"
                                                 >
-                                                    {req.model_names[0]}
-                                                </Link>
-                                            ) : (
-                                                <div className="space-y-1">
-                                                    {req.model_names.map((name, idx) => (
-                                                        <div key={idx}>
-                                                            <Link
-                                                                to={`/models/${req.model_ids[idx]}`}
-                                                                className="font-medium text-blue-600 hover:text-blue-800 text-sm"
-                                                            >
-                                                                {name}
-                                                            </Link>
-                                                        </div>
-                                                    ))}
-                                                </div>
-                                            )}
-                                        </td>
-                                        <td className="px-6 py-4 whitespace-nowrap text-sm">
-                                            {req.validation_type}
-                                        </td>
-                                        <td className="px-6 py-4 whitespace-nowrap">
-                                            <span className={`px-2 py-1 text-xs rounded ${getPriorityColor(req.priority)}`}>
-                                                {req.priority}
-                                            </span>
-                                        </td>
-                                        <td className="px-6 py-4 whitespace-nowrap text-sm">
-                                            {req.primary_validator}
-                                        </td>
-                                        <td className="px-6 py-4 whitespace-nowrap text-sm">
-                                            {req.target_completion_date}
-                                        </td>
-                                        <td className="px-6 py-4 whitespace-nowrap">
-                                            <Link
-                                                to={`/validation-workflow/${req.request_id}`}
-                                                className="bg-purple-600 text-white px-3 py-1 rounded text-sm hover:bg-purple-700"
-                                            >
-                                                Review Now
-                                            </Link>
-                                        </td>
-                                    </tr>
-                                ))}
+                                                    Complete Review
+                                                </button>
+                                            </td>
+                                        </tr>
+                                    );
+                                })}
                             </tbody>
                         </table>
                     </div>
@@ -663,6 +824,70 @@ export default function ValidatorDashboardPage() {
                     </Link>
                 </div>
             </div>
+
+            {/* Review Action Modal */}
+            {reviewModal && (
+                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+                    <div className="bg-white rounded-lg shadow-xl p-6 w-full max-w-lg">
+                        <h2 className="text-2xl font-bold mb-4">Complete Review</h2>
+
+                        {/* Error Display */}
+                        {reviewModalError && (
+                            <div className="mb-4 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded relative">
+                                <span className="block sm:inline">{reviewModalError}</span>
+                            </div>
+                        )}
+
+                        <div className="mb-4">
+                            <p className="text-sm text-gray-600 mb-2">
+                                <strong>Model(s):</strong> {reviewModal.model_names.join(', ')}
+                            </p>
+                        </div>
+
+                        <div className="mb-6">
+                            <label className="block text-sm font-medium text-gray-700 mb-2">
+                                Review Comments
+                            </label>
+                            <textarea
+                                value={reviewComments}
+                                onChange={(e) => setReviewComments(e.target.value)}
+                                placeholder="Enter your review comments..."
+                                rows={4}
+                                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-purple-500"
+                            />
+                            <p className="text-xs text-gray-500 mt-1">
+                                Required if sending back for revisions
+                            </p>
+                        </div>
+
+                        <div className="flex justify-between gap-3">
+                            <button
+                                onClick={() => setReviewModal(null)}
+                                className="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50"
+                                disabled={reviewLoading}
+                            >
+                                Cancel
+                            </button>
+                            <div className="flex gap-3">
+                                <button
+                                    onClick={() => handleReviewAction('send-back')}
+                                    className="px-4 py-2 bg-yellow-600 text-white rounded-md hover:bg-yellow-700 disabled:bg-gray-400"
+                                    disabled={reviewLoading}
+                                >
+                                    {reviewLoading ? 'Processing...' : 'Send Back for Revisions'}
+                                </button>
+                                <button
+                                    onClick={() => handleReviewAction('sign-off')}
+                                    className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 disabled:bg-gray-400"
+                                    disabled={reviewLoading}
+                                >
+                                    {reviewLoading ? 'Processing...' : 'Sign Off (Approve)'}
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
         </Layout>
     );
 }

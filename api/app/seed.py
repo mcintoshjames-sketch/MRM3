@@ -909,6 +909,55 @@ def seed_database():
                         "sort_order": 3
                     },
                 ]
+            },
+            {
+                "name": "Approval Role",
+                "description": "Roles eligible to approve validation requests; editable by Admins.",
+                "is_system": True,
+                "values": [
+                    {
+                        "code": "GLOBAL_APPROVER",
+                        "label": "Global Approver",
+                        "description": "Global approver role",
+                        "sort_order": 1
+                    },
+                    {
+                        "code": "REGIONAL_APPROVER",
+                        "label": "Regional Approver",
+                        "description": "Regional approver role (supports region-coded variants)",
+                        "sort_order": 2
+                    },
+                    {
+                        "code": "REGIONAL_VALIDATOR",
+                        "label": "Regional Validator",
+                        "description": "Regional validator role (supports region-coded variants)",
+                        "sort_order": 3
+                    },
+                    {
+                        "code": "MODEL_OWNER",
+                        "label": "Model Owner",
+                        "description": "Model owner approval",
+                        "sort_order": 4
+                    },
+                    {
+                        "code": "MODEL_RISK_COMMITTEE",
+                        "label": "Model Risk Committee",
+                        "description": "Committee-level approver",
+                        "sort_order": 5
+                    },
+                    {
+                        "code": "SENIOR_MANAGEMENT",
+                        "label": "Senior Management",
+                        "description": "Senior management approver",
+                        "sort_order": 6
+                    },
+                    {
+                        "code": "COMMITTEE",
+                        "label": "Committee",
+                        "description": "Generic committee approver",
+                        "sort_order": 7
+                    },
+                ]
             }
         ]
 

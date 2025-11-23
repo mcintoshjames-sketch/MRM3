@@ -106,11 +106,6 @@ export default function ModelRegionsSection({ modelId, whollyOwnedRegionId, whol
         }
     };
 
-    const getRegionName = (regionId: number) => {
-        const region = regions.find(r => r.region_id === regionId);
-        return region ? `${region.name} (${region.code})` : 'Unknown';
-    };
-
     const getUserName = (userId: number) => {
         const user = users.find(u => u.user_id === userId);
         return user ? user.full_name : 'Unknown';

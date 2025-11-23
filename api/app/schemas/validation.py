@@ -305,6 +305,17 @@ class ValidationApprovalBase(BaseModel):
     approver_id: int
     approver_role: str  # Validator, Validation Head, Model Owner, Risk Officer
     is_required: bool = True
+    approval_type: str = "Global"  # Global or Regional
+    region_id: Optional[int] = None
+    represented_region_id: Optional[int] = None
+
+    @field_validator("approval_type")
+    @classmethod
+    def validate_approval_type(cls, v):
+        allowed = ["Global", "Regional"]
+        if v not in allowed:
+            raise ValueError(f"approval_type must be one of {allowed}")
+        return v
 
 
 class ValidationApprovalCreate(ValidationApprovalBase):

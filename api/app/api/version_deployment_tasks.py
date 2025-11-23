@@ -52,6 +52,15 @@ def can_manage_task(task: VersionDeploymentTask, user: User, db: Session) -> boo
     return delegate is not None
 
 
+def ensure_task_model_alignment(task: VersionDeploymentTask):
+    """Ensure task.model_id matches the version's model_id to prevent silent drift."""
+    if task.version and task.model_id != task.version.model_id:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Deployment task model_id does not match the associated version's model."
+        )
+
+
 @router.get("/my-tasks", response_model=List[VersionDeploymentTaskSummary])
 def get_my_deployment_tasks(
     status: str = None,
@@ -61,7 +70,8 @@ def get_my_deployment_tasks(
     """
     Get deployment tasks for current user.
 
-    Includes tasks where user is:
+    For Admin users: Shows all deployment tasks (system-wide oversight)
+    For non-Admin users: Shows tasks where user is:
     - Assigned model owner, OR
     - Active delegate for the model
     """
@@ -73,19 +83,21 @@ def get_my_deployment_tasks(
         joinedload(VersionDeploymentTask.assigned_to)
     )
 
-    # Filter to tasks user can access
-    # Get all models where user is delegate
-    delegate_model_ids = db.query(ModelDelegate.model_id).filter(
-        ModelDelegate.user_id == current_user.user_id,
-        ModelDelegate.revoked_at == None
-    ).subquery()
+    # Admin users see all tasks; non-admin users see only their assigned tasks
+    if current_user.role != 'Admin':
+        # Filter to tasks user can access
+        # Get all models where user is delegate
+        delegate_model_ids = db.query(ModelDelegate.model_id).filter(
+            ModelDelegate.user_id == current_user.user_id,
+            ModelDelegate.revoked_at == None
+        ).subquery()
 
-    query = query.filter(
-        or_(
-            VersionDeploymentTask.assigned_to_id == current_user.user_id,
-            VersionDeploymentTask.model_id.in_(delegate_model_ids)
+        query = query.filter(
+            or_(
+                VersionDeploymentTask.assigned_to_id == current_user.user_id,
+                VersionDeploymentTask.model_id.in_(delegate_model_ids)
+            )
         )
-    )
 
     # Optional status filter
     if status:
@@ -101,6 +113,7 @@ def get_my_deployment_tasks(
     today = date.today()
 
     for task in tasks:
+        ensure_task_model_alignment(task)
         # Calculate days until due
         days_until_due = (task.planned_production_date - today).days
 
@@ -157,6 +170,8 @@ def get_deployment_task(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Not authorized to view this deployment task"
         )
+
+    ensure_task_model_alignment(task)
 
     # Get validation info if exists
     validation_request = None

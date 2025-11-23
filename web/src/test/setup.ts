@@ -1,5 +1,5 @@
 import '@testing-library/jest-dom';
-import { vi } from 'vitest';
+import { vi, beforeEach } from 'vitest';
 
 // Simple localStorage mock - no external dependencies
 const localStorageMock = (() => {

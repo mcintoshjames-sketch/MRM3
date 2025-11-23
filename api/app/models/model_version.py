@@ -15,7 +15,8 @@ class ModelVersion(Base):
         Integer, ForeignKey("models.model_id", ondelete="CASCADE"), nullable=False, index=True
     )
     version_number: Mapped[str] = mapped_column(String(50), nullable=False)
-    change_type: Mapped[str] = mapped_column(String(20), nullable=False)  # MINOR | MAJOR (legacy, kept for backward compat)
+    # Legacy string; prefer change_type_id for new writes/reads
+    change_type: Mapped[str] = mapped_column(String(20), nullable=False)
     change_type_id: Mapped[Optional[int]] = mapped_column(
         Integer, ForeignKey("model_change_types.change_type_id", ondelete="SET NULL"), nullable=True, index=True
     )
@@ -40,7 +41,7 @@ class ModelVersion(Base):
         Date, nullable=True, comment="Actual date when deployed to production"
     )
     production_date: Mapped[Optional[date]] = mapped_column(
-        Date, nullable=True, comment="Legacy field - maps to planned_production_date"
+        Date, nullable=True, comment="Legacy field - prefer planned/actual; maps to planned_production_date"
     )
 
     status: Mapped[str] = mapped_column(

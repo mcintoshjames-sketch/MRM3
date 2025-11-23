@@ -149,13 +149,6 @@ interface ActivityTimelineItem {
     icon: string;
 }
 
-interface ActivityTimelineResponse {
-    model_id: number;
-    model_name: string;
-    activities: ActivityTimelineItem[];
-    total_count: number;
-}
-
 export default function ModelDetailsPage() {
     const { id } = useParams<{ id: string }>();
     const navigate = useNavigate();

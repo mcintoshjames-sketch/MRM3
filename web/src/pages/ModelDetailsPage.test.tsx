@@ -432,7 +432,7 @@ describe('ModelDetailsPage', () => {
                 contact_info: 'vendor@corp.com',
             },
         };
-        setupApiMocks(sampleValidations, thirdPartyModel);
+        setupApiMocks(sampleValidations, thirdPartyModel as any);
 
         render(<ModelDetailsPage />);
 
