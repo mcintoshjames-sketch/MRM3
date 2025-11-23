@@ -396,14 +396,64 @@ Model Details page:
 
 ---
 
-### ⏳ Phase 6: Lineage Preview (Planned)
+### ✅ Phase 6: Lineage Preview (Completed 2025-11-23)
 
-**Planned Features:**
-- Text/table rendering of dependency chains
-- DAG traversal for upstream/downstream visualization
-- Simple lineage viewer
+**LineageViewer Component:**
+- New `LineageViewer.tsx` component for visualizing complete data flow chains
+- Integrates with existing `/models/{id}/dependencies/lineage` API endpoint
+- Displays recursive upstream (feeders) and downstream (consumers) relationships
+- Tree-style indented layout showing depth and hierarchy
 
-**Not Yet Implemented**
+**Features Implemented:**
+- **Direction Control**: Toggle between Upstream Only, Downstream Only, or Both
+- **Max Depth Control**: Configurable traversal depth (3, 5, 10, or 20 levels)
+- **Include Inactive Toggle**: Option to show/hide inactive dependencies
+- **Center Model Display**: Highlighted current model in blue to show lineage context
+- **Recursive Tree Rendering**: 
+  - Each node indented by depth (24px per level)
+  - Clickable model names linking to detail pages
+  - Dependency type badges (INPUT_DATA, SCORE, etc.)
+  - Description text for each dependency
+  - Depth indicator for each node
+- **Color-Coded Sections**:
+  - Green for upstream feeders (models that provide data)
+  - Purple for downstream consumers (models that receive data)
+  - Blue for the center model
+- **Loading & Error States**: Spinner animation and friendly error messages with retry
+
+**User Interface:**
+- Added "Lineage" tab to Model Details page (between Dependencies and Activity)
+- Controls panel at top for direction, max depth, and inactive filter
+- Automatically refetches data when controls change
+- Responsive grid layout for controls (3 columns on desktop, stacked on mobile)
+- Empty state messaging when no lineage exists
+
+**Technical Implementation:**
+- TypeScript interfaces for `LineageNode` and `LineageData`
+- Recursive `renderNode` function handles nested upstream/downstream traversal
+- API query parameters: `direction`, `max_depth`, `include_inactive`
+- React hooks: `useState` for controls, `useEffect` for auto-refetch
+- Tailwind CSS for styling with hover effects and color coding
+
+**Use Cases:**
+1. **Impact Analysis**: See all downstream models affected by changes to a feeder model
+2. **Root Cause Analysis**: Trace upstream to identify data source issues
+3. **Compliance Reporting**: Document complete data lineage for regulatory requirements
+4. **Architecture Understanding**: Visualize model interdependencies at a glance
+
+**Files Created:**
+- `web/src/components/LineageViewer.tsx` - Complete lineage visualization component
+
+**Files Modified:**
+- `web/src/pages/ModelDetailsPage.tsx` - Added Lineage tab and import
+
+**Testing Recommendations:**
+1. Navigate to Model #52 (Portfolio VaR Model) which has dependencies
+2. Click the "Lineage" tab
+3. Test direction controls (Upstream, Downstream, Both)
+4. Test max depth slider (observe how deep trees are cut off)
+5. Click on model names in the lineage to navigate
+6. Test with a model that has no dependencies (empty state)
 
 ---
 
