@@ -1,7 +1,7 @@
 """FastAPI application entry point."""
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.api import auth, models, vendors, taxonomies, audit_logs, validation_workflow, workflow_sla, regions, model_regions, model_versions, model_delegates, model_change_taxonomy, dashboard, export_views, version_deployment_tasks, regional_compliance_report, analytics, saved_queries
+from app.api import auth, models, vendors, taxonomies, audit_logs, validation_workflow, validation_policies, workflow_sla, regions, model_regions, model_versions, model_delegates, model_change_taxonomy, dashboard, export_views, version_deployment_tasks, regional_compliance_report, analytics, saved_queries
 
 app = FastAPI(title="MRM System v3", version="3.0.0")
 
@@ -32,6 +32,9 @@ app.include_router(audit_logs.router, prefix="/audit-logs",
 # Workflow-based validation endpoints
 app.include_router(validation_workflow.router,
                    prefix="/validation-workflow", tags=["validation-workflow"])
+# Validation policies (legacy endpoint)
+app.include_router(validation_policies.router,
+                   prefix="/validations/policies", tags=["validation-policies"])
 # Workflow SLA configuration
 app.include_router(workflow_sla.router,
                    prefix="/workflow-sla", tags=["workflow-sla"])
