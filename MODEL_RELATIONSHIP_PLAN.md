@@ -303,6 +303,11 @@ Model Details page:
   - Clear visual feedback for selected model
   - Better usability for large model inventories (100+ models)
 - Added client-side validation for required fields before API submission
+- **Fixed dropdown pre-population in edit mode**: API was returning summary schemas without ID fields
+  - Updated `ModelHierarchySummary` to include `relation_type_id` and `notes`
+  - Updated `ModelDependencySummary` to include `dependency_type_id`
+  - Modified all 4 list endpoints to return these fields
+  - Dropdowns now correctly pre-populate with current values when editing relationships
 
 **Files Modified:**
 - `web/src/components/ModelHierarchySection.tsx`
