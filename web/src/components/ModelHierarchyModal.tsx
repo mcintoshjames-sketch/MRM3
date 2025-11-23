@@ -87,7 +87,7 @@ export default function ModelHierarchyModal({
 
             // Find Model Hierarchy Type taxonomy
             const hierarchyTypeTaxonomy = taxonomiesRes.data.find(
-                (t: any) => t.code === 'MODEL_HIERARCHY_TYPE'
+                (t: any) => t.name === 'Model Hierarchy Type'
             );
             if (hierarchyTypeTaxonomy) {
                 const valuesRes = await api.get(`/taxonomies/${hierarchyTypeTaxonomy.taxonomy_id}/values`);
@@ -119,6 +119,19 @@ export default function ModelHierarchyModal({
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         setError('');
+
+        // Validate model selection for new relationships
+        if (!editData && !selectedModelId) {
+            setError(`Please select a ${relationshipType === 'parent' ? 'parent model' : 'sub-model'}`);
+            return;
+        }
+
+        // Validate relationship type
+        if (!relationTypeId) {
+            setError('Please select a relationship type');
+            return;
+        }
+
         setLoading(true);
 
         try {
@@ -218,25 +231,34 @@ export default function ModelHierarchyModal({
                             </label>
                             <input
                                 type="text"
-                                placeholder="Search models..."
+                                placeholder="Type to search models..."
                                 value={searchTerm}
                                 onChange={(e) => setSearchTerm(e.target.value)}
-                                className="w-full px-3 py-2 border border-gray-300 rounded-md mb-2"
+                                className="w-full px-3 py-2 border border-gray-300 rounded-md mb-2 focus:ring-blue-500 focus:border-blue-500"
                             />
-                            <select
-                                value={selectedModelId}
-                                onChange={(e) => setSelectedModelId(Number(e.target.value))}
-                                required
-                                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
-                                size={5}
-                            >
-                                <option value="">-- Select a model --</option>
-                                {filteredModels.map((model) => (
-                                    <option key={model.model_id} value={model.model_id}>
-                                        {model.model_name}
-                                    </option>
-                                ))}
-                            </select>
+                            <div className="border border-gray-300 rounded-md max-h-64 overflow-y-auto">
+                                {filteredModels.length === 0 ? (
+                                    <div className="px-3 py-2 text-gray-500 text-sm">
+                                        {searchTerm ? 'No models found matching your search' : 'Start typing to search...'}
+                                    </div>
+                                ) : (
+                                    filteredModels.map((model) => (
+                                        <div
+                                            key={model.model_id}
+                                            onClick={() => setSelectedModelId(model.model_id)}
+                                            className={`px-3 py-2 cursor-pointer hover:bg-blue-50 ${selectedModelId === model.model_id ? 'bg-blue-100 font-medium' : ''
+                                                }`}
+                                        >
+                                            {model.model_name}
+                                        </div>
+                                    ))
+                                )}
+                            </div>
+                            {selectedModelId && (
+                                <div className="mt-2 text-sm text-gray-600">
+                                    Selected: <span className="font-medium">{models.find(m => m.model_id === selectedModelId)?.model_name}</span>
+                                </div>
+                            )}
                         </div>
                     )}
 

@@ -280,11 +280,24 @@ Model Details page:
 **User Experience:**
 - Inline edit/delete buttons appear only for admins
 - Modals overlay with backdrop, keyboard accessible (Esc to close)
-- Search/filter for model selection in large inventories
+- **Improved model search**: Type-ahead filtering with clickable list interface (replaced basic dropdown)
+- **Enhanced autocomplete**: Results appear as you type, showing only matching models
+- Visual selection feedback with highlighted selected item
 - Loading states during form submission
 - Error messages displayed prominently in modal
 - Confirmation dialogs prevent accidental deletions
 - Success flows: modal closes, data refreshes automatically
+
+**Bug Fixes (2025-11-23):**
+- Fixed empty dropdown issue: Changed taxonomy lookup from non-existent `code` field to `name` field
+  - Was: `t.code === 'MODEL_HIERARCHY_TYPE'` → Now: `t.name === 'Model Hierarchy Type'`
+  - Was: `t.code === 'MODEL_DEPENDENCY_TYPE'` → Now: `t.name === 'Model Dependency Type'`
+- Improved model selection UX: Replaced `<select size={5}>` with searchable list component
+  - Type-ahead filtering with instant results
+  - Clickable list items with hover states
+  - Clear visual feedback for selected model
+  - Better usability for large model inventories (100+ models)
+- Added client-side validation for required fields before API submission
 
 **Files Modified:**
 - `web/src/components/ModelHierarchySection.tsx`
