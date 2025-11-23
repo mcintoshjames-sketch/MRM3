@@ -1,7 +1,7 @@
 """Model Version model for tracking model changes and versioning."""
 from datetime import datetime, date
 from typing import Optional, List
-from sqlalchemy import String, Integer, Text, DateTime, Date, ForeignKey
+from sqlalchemy import String, Integer, Text, DateTime, Date, ForeignKey, Boolean
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.models.base import Base
 
@@ -26,6 +26,13 @@ class ModelVersion(Base):
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime, nullable=False, default=datetime.utcnow
+    )
+
+    # Point-in-time compliance snapshot
+    change_requires_mv_approval: Mapped[Optional[bool]] = mapped_column(
+        Boolean,
+        nullable=True,
+        comment="Point-in-time snapshot: Did this change require MV approval at submission time?"
     )
 
     # Regional scope tracking

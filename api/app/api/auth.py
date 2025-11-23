@@ -13,11 +13,24 @@ from app.models.user import User
 from app.models.model import Model
 from app.models.entra_user import EntraUser
 from app.models.region import Region
+from app.models.audit_log import AuditLog
 from app.schemas.user import LoginRequest, Token, UserResponse, UserCreate, UserUpdate
 from app.schemas.entra_user import EntraUserResponse, EntraUserProvisionRequest
 from app.schemas.model import ModelDetailResponse
 
 router = APIRouter()
+
+
+def create_audit_log(db: Session, entity_type: str, entity_id: int, action: str, user_id: int, changes: dict = None):
+    """Create an audit log entry for user management operations."""
+    audit_log = AuditLog(
+        entity_type=entity_type,
+        entity_id=entity_id,
+        action=action,
+        user_id=user_id,
+        changes=changes
+    )
+    db.add(audit_log)
 
 
 @router.post("/login", response_model=Token)
@@ -130,6 +143,24 @@ def register(user_data: UserCreate, db: Session = Depends(get_db)):
         user.regions.extend(regions)
 
     db.add(user)
+    db.flush()  # Get user_id before creating audit log
+
+    # Create audit log for new user
+    # Note: For user creation, the new user is logged as performing their own creation
+    create_audit_log(
+        db=db,
+        entity_type="User",
+        entity_id=user.user_id,
+        action="CREATE",
+        user_id=user.user_id,  # Self-registration
+        changes={
+            "email": user_data.email,
+            "full_name": user_data.full_name,
+            "role": user_data.role,
+            "region_ids": user_data.region_ids or []
+        }
+    )
+
     db.commit()
     db.refresh(user)
 
@@ -164,13 +195,20 @@ def update_user(
                 detail="Email already registered"
             )
 
-    # Hash password if provided
+    # Track changes for audit log
+    changes = {}
+
+    # Hash password if provided (but don't log the actual password)
     if 'password' in update_data:
         update_data['password_hash'] = get_password_hash(update_data.pop('password'))
+        changes["password"] = "changed"  # Don't log actual password values
 
     # Handle region associations for Regional Approvers
+    region_ids_changed = False
     if 'region_ids' in update_data:
         region_ids = update_data.pop('region_ids')
+        old_region_ids = [r.region_id for r in user.regions]
+
         # Clear existing regions
         user.regions.clear()
         # Add new regions
@@ -178,8 +216,45 @@ def update_user(
             regions = db.query(Region).filter(Region.region_id.in_(region_ids)).all()
             user.regions.extend(regions)
 
+        if set(old_region_ids) != set(region_ids or []):
+            changes["region_ids"] = {
+                "old": old_region_ids,
+                "new": region_ids or []
+            }
+            region_ids_changed = True
+
+    # Track other field changes
     for field, value in update_data.items():
+        old_value = getattr(user, field, None)
+        if old_value != value:
+            # CRITICAL: Role changes affect permissions and access control
+            if field == "role":
+                changes["role"] = {
+                    "old": old_value,
+                    "new": value
+                }
+            elif field == "email":
+                changes["email"] = {
+                    "old": old_value,
+                    "new": value
+                }
+            elif field == "full_name":
+                changes["full_name"] = {
+                    "old": old_value,
+                    "new": value
+                }
         setattr(user, field, value)
+
+    # Create audit log if changes were made
+    if changes:
+        create_audit_log(
+            db=db,
+            entity_type="User",
+            entity_id=user_id,
+            action="UPDATE",
+            user_id=current_user.user_id,
+            changes=changes
+        )
 
     db.commit()
     db.refresh(user)
@@ -206,6 +281,20 @@ def delete_user(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Cannot delete your own account"
         )
+
+    # Create audit log before deletion
+    create_audit_log(
+        db=db,
+        entity_type="User",
+        entity_id=user_id,
+        action="DELETE",
+        user_id=current_user.user_id,
+        changes={
+            "email": user.email,
+            "full_name": user.full_name,
+            "role": user.role
+        }
+    )
 
     db.delete(user)
     db.commit()
@@ -313,6 +402,23 @@ def provision_entra_user(
                 detail="One or more invalid region IDs provided"
             )
         user.regions = regions
+
+    # Create audit log for Entra user provisioning
+    create_audit_log(
+        db=db,
+        entity_type="User",
+        entity_id=user.user_id,
+        action="PROVISION",
+        user_id=current_user.user_id,  # Admin who performed the provisioning
+        changes={
+            "email": entra_user.mail,
+            "full_name": entra_user.display_name,
+            "role": provision_data.role,
+            "entra_id": provision_data.entra_id,
+            "provisioned_from": "Microsoft Entra ID",
+            "region_ids": provision_data.region_ids or []
+        }
+    )
 
     db.commit()
     db.refresh(user)

@@ -77,6 +77,12 @@ class ModelVersionResponse(ModelVersionBase):
     scope: VersionScope
     affected_region_ids: Optional[List[int]] = None
 
+    # Point-in-time compliance snapshot
+    change_requires_mv_approval: Optional[bool] = Field(
+        None,
+        description="Point-in-time snapshot: Did this change require MV approval at submission time?"
+    )
+
     # Nested objects (optional, can be added later)
     created_by_name: Optional[str] = None
     change_type_name: Optional[str] = None  # L2 change type name (e.g., "New Model Development")

@@ -9,6 +9,7 @@ from app.core.database import get_db
 from app.core.deps import get_current_user
 from app.models.user import User
 from app.models.taxonomy import Taxonomy, TaxonomyValue
+from app.models.audit_log import AuditLog
 from app.schemas.taxonomy import (
     TaxonomyResponse,
     TaxonomyListResponse,
@@ -20,6 +21,18 @@ from app.schemas.taxonomy import (
 )
 
 router = APIRouter()
+
+
+def create_audit_log(db: Session, entity_type: str, entity_id: int, action: str, user_id: int, changes: dict = None):
+    """Create an audit log entry for taxonomy operations."""
+    audit_log = AuditLog(
+        entity_type=entity_type,
+        entity_id=entity_id,
+        action=action,
+        user_id=user_id,
+        changes=changes
+    )
+    db.add(audit_log)
 
 
 @router.get("/", response_model=List[TaxonomyListResponse])
@@ -69,6 +82,21 @@ def create_taxonomy(
         is_system=False
     )
     db.add(taxonomy)
+    db.flush()  # Get taxonomy_id before creating audit log
+
+    # Create audit log for new taxonomy
+    create_audit_log(
+        db=db,
+        entity_type="Taxonomy",
+        entity_id=taxonomy.taxonomy_id,
+        action="CREATE",
+        user_id=current_user.user_id,
+        changes={
+            "name": taxonomy_data.name,
+            "description": taxonomy_data.description
+        }
+    )
+
     db.commit()
     db.refresh(taxonomy)
     return taxonomy
@@ -100,8 +128,27 @@ def update_taxonomy(
                 detail="Taxonomy with this name already exists"
             )
 
+    # Track changes for audit log
+    changes = {}
     for field, value in update_data.items():
+        old_value = getattr(taxonomy, field, None)
+        if old_value != value:
+            changes[field] = {
+                "old": old_value,
+                "new": value
+            }
         setattr(taxonomy, field, value)
+
+    # Create audit log if changes were made
+    if changes:
+        create_audit_log(
+            db=db,
+            entity_type="Taxonomy",
+            entity_id=taxonomy_id,
+            action="UPDATE",
+            user_id=current_user.user_id,
+            changes=changes
+        )
 
     db.commit()
     db.refresh(taxonomy)
@@ -127,6 +174,19 @@ def delete_taxonomy(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Cannot delete system taxonomy"
         )
+
+    # Create audit log before deletion
+    create_audit_log(
+        db=db,
+        entity_type="Taxonomy",
+        entity_id=taxonomy_id,
+        action="DELETE",
+        user_id=current_user.user_id,
+        changes={
+            "name": taxonomy.name,
+            "description": taxonomy.description
+        }
+    )
 
     db.delete(taxonomy)
     db.commit()
@@ -170,6 +230,24 @@ def create_taxonomy_value(
         is_active=value_data.is_active
     )
     db.add(value)
+    db.flush()  # Get value_id before creating audit log
+
+    # Create audit log for new taxonomy value
+    create_audit_log(
+        db=db,
+        entity_type="TaxonomyValue",
+        entity_id=value.value_id,
+        action="CREATE",
+        user_id=current_user.user_id,
+        changes={
+            "taxonomy_id": taxonomy_id,
+            "taxonomy_name": taxonomy.name,
+            "code": value_data.code,
+            "label": value_data.label,
+            "is_active": value_data.is_active
+        }
+    )
+
     db.commit()
     db.refresh(value)
     return value
@@ -199,8 +277,27 @@ def update_taxonomy_value(
             detail="Code cannot be changed after creation to maintain data integrity. Please create a new value instead."
         )
 
+    # Track changes for audit log
+    changes = {}
     for field, val in update_data.items():
+        old_value = getattr(value, field, None)
+        if old_value != val:
+            changes[field] = {
+                "old": old_value,
+                "new": val
+            }
         setattr(value, field, val)
+
+    # Create audit log if changes were made
+    if changes:
+        create_audit_log(
+            db=db,
+            entity_type="TaxonomyValue",
+            entity_id=value_id,
+            action="UPDATE",
+            user_id=current_user.user_id,
+            changes=changes
+        )
 
     db.commit()
     db.refresh(value)
@@ -214,12 +311,28 @@ def delete_taxonomy_value(
     current_user: User = Depends(get_current_user)
 ):
     """Delete a taxonomy value."""
-    value = db.query(TaxonomyValue).filter(TaxonomyValue.value_id == value_id).first()
+    value = db.query(TaxonomyValue).options(
+        joinedload(TaxonomyValue.taxonomy)
+    ).filter(TaxonomyValue.value_id == value_id).first()
     if not value:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Taxonomy value not found"
         )
+
+    # Create audit log before deletion
+    create_audit_log(
+        db=db,
+        entity_type="TaxonomyValue",
+        entity_id=value_id,
+        action="DELETE",
+        user_id=current_user.user_id,
+        changes={
+            "taxonomy_name": value.taxonomy.name if value.taxonomy else None,
+            "code": value.code,
+            "label": value.label
+        }
+    )
 
     db.delete(value)
     db.commit()

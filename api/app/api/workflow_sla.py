@@ -6,9 +6,22 @@ from app.core.database import get_db
 from app.core.deps import get_current_user
 from app.models.user import User
 from app.models.validation import ValidationWorkflowSLA
+from app.models.audit_log import AuditLog
 from app.schemas.workflow_sla import WorkflowSLAResponse, WorkflowSLAUpdate
 
 router = APIRouter()
+
+
+def create_audit_log(db: Session, entity_type: str, entity_id: int, action: str, user_id: int, changes: dict = None):
+    """Create an audit log entry for workflow SLA configuration changes."""
+    audit_log = AuditLog(
+        entity_type=entity_type,
+        entity_id=entity_id,
+        action=action,
+        user_id=user_id,
+        changes=changes
+    )
+    db.add(audit_log)
 
 
 @router.get("/validation", response_model=WorkflowSLAResponse)
@@ -54,12 +67,53 @@ def update_validation_sla(
             detail="Validation workflow SLA configuration not found"
         )
 
-    # Update fields
-    sla.assignment_days = sla_data.assignment_days
-    sla.begin_work_days = sla_data.begin_work_days
-    sla.complete_work_days = sla_data.complete_work_days
-    sla.approval_days = sla_data.approval_days
+    # Track changes for audit log
+    changes = {}
+
+    if sla_data.assignment_days != sla.assignment_days:
+        # CRITICAL: Assignment SLA changes affect when violations are triggered
+        changes["assignment_days"] = {
+            "old": sla.assignment_days,
+            "new": sla_data.assignment_days
+        }
+        sla.assignment_days = sla_data.assignment_days
+
+    if sla_data.begin_work_days != sla.begin_work_days:
+        # CRITICAL: Begin work SLA changes affect when violations are triggered
+        changes["begin_work_days"] = {
+            "old": sla.begin_work_days,
+            "new": sla_data.begin_work_days
+        }
+        sla.begin_work_days = sla_data.begin_work_days
+
+    if sla_data.complete_work_days != sla.complete_work_days:
+        # CRITICAL: Complete work SLA changes affect when violations are triggered
+        changes["complete_work_days"] = {
+            "old": sla.complete_work_days,
+            "new": sla_data.complete_work_days
+        }
+        sla.complete_work_days = sla_data.complete_work_days
+
+    if sla_data.approval_days != sla.approval_days:
+        # CRITICAL: Approval SLA changes affect when violations are triggered
+        changes["approval_days"] = {
+            "old": sla.approval_days,
+            "new": sla_data.approval_days
+        }
+        sla.approval_days = sla_data.approval_days
+
     sla.updated_at = datetime.utcnow()
+
+    # Create audit log if changes were made
+    if changes:
+        create_audit_log(
+            db=db,
+            entity_type="ValidationWorkflowSLA",
+            entity_id=sla.sla_id,
+            action="UPDATE",
+            user_id=current_user.user_id,
+            changes=changes
+        )
 
     db.commit()
     db.refresh(sla)

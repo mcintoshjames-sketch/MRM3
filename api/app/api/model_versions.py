@@ -185,6 +185,22 @@ def create_model_version(
             detail=f"Version {version_number} already exists for this model"
         )
 
+    # Capture point-in-time snapshot of MV approval requirement
+    requires_mv_approval = None
+    if version_data.change_type_id:
+        # Look up current approval requirement from taxonomy
+        change_type_detail = db.query(ModelChangeType).filter(
+            ModelChangeType.change_type_id == version_data.change_type_id
+        ).first()
+        if change_type_detail:
+            requires_mv_approval = change_type_detail.requires_mv_approval
+    elif version_data.change_type == "MAJOR":
+        # Legacy fallback: MAJOR changes require approval
+        requires_mv_approval = True
+    elif version_data.change_type == "MINOR":
+        # Legacy fallback: MINOR changes do not require approval
+        requires_mv_approval = False
+
     # Create version with regional scope support
     new_version = ModelVersion(
         model_id=model_id,
@@ -197,7 +213,8 @@ def create_model_version(
         actual_production_date=version_data.actual_production_date,
         production_date=version_data.production_date or version_data.planned_production_date,  # Legacy field
         created_by_id=current_user.user_id,
-        status=VersionStatus.DRAFT
+        status=VersionStatus.DRAFT,
+        change_requires_mv_approval=requires_mv_approval  # Point-in-time snapshot
     )
 
     db.add(new_version)
@@ -475,6 +492,8 @@ def list_model_versions(
             "affected_region_ids": version.affected_region_ids,
             # Validation
             "validation_request_id": version.validation_request_id,
+            # Point-in-time compliance snapshot
+            "change_requires_mv_approval": version.change_requires_mv_approval,
             # Nested/populated fields
             "created_by_name": version.created_by.full_name if version.created_by else None,
             "change_type_name": version.change_type_detail.name if version.change_type_detail else None,
@@ -864,6 +883,8 @@ def get_version_details(
         "affected_region_ids": version.affected_region_ids,
         # Validation
         "validation_request_id": version.validation_request_id,
+        # Point-in-time compliance snapshot
+        "change_requires_mv_approval": version.change_requires_mv_approval,
         # Nested/populated fields
         "created_by_name": version.created_by.full_name if version.created_by else None,
         "change_type_name": version.change_type_detail.name if version.change_type_detail else None,
