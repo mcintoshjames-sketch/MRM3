@@ -87,6 +87,38 @@ export default function ModelHierarchySection({ modelId, modelName }: Props) {
         fetchHierarchyData();
     };
 
+    const exportToCSV = (data: HierarchyRelation[], type: 'parents' | 'children') => {
+        if (data.length === 0) {
+            alert('No data to export');
+            return;
+        }
+
+        const headers = ['Model Name', 'Relationship Type', 'Effective Date', 'End Date', 'Notes'];
+        const rows = data.map(relation => [
+            relation.model_name,
+            relation.relation_type,
+            relation.effective_date || '',
+            relation.end_date || '',
+            relation.notes || ''
+        ]);
+
+        const csvContent = [
+            headers.join(','),
+            ...rows.map(row => row.map(cell => `"${cell}"`).join(','))
+        ].join('\n');
+
+        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+        const link = document.createElement('a');
+        const url = URL.createObjectURL(blob);
+        const today = new Date().toISOString().split('T')[0];
+        link.setAttribute('href', url);
+        link.setAttribute('download', `model_${modelId}_${type}_${today}.csv`);
+        link.style.visibility = 'hidden';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    };
+
     const isAdmin = user?.role === 'Admin';
     const hasActiveParent = parents.length > 0;
 
@@ -118,8 +150,8 @@ export default function ModelHierarchySection({ modelId, modelName }: Props) {
                                 onClick={handleAddParent}
                                 disabled={hasActiveParent}
                                 className={`inline-flex items-center px-4 py-2 border shadow-sm text-sm font-medium rounded-md ${hasActiveParent
-                                        ? 'border-gray-200 text-gray-400 bg-gray-100 cursor-not-allowed'
-                                        : 'border-gray-300 text-gray-700 bg-white hover:bg-gray-50'
+                                    ? 'border-gray-200 text-gray-400 bg-gray-100 cursor-not-allowed'
+                                    : 'border-gray-300 text-gray-700 bg-white hover:bg-gray-50'
                                     }`}
                                 title={hasActiveParent ? 'This model already has a parent. A model can only have one parent.' : 'Add parent model'}
                             >
@@ -162,114 +194,134 @@ export default function ModelHierarchySection({ modelId, modelName }: Props) {
                     <div>
                         <div className="flex justify-between items-center mb-4">
                             <h3 className="text-lg font-medium text-gray-900">Parent Models</h3>
-                            {isAdmin && (
-                                <div className="flex flex-col items-end">
+                            <div className="flex space-x-2">
+                                <button
+                                    onClick={() => exportToCSV(parents, 'parents')}
+                                    className="inline-flex items-center px-3 py-1.5 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50"
+                                >
+                                    <svg className="-ml-0.5 mr-1.5 h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                    </svg>
+                                    Export CSV
+                                </button>
+                                {isAdmin && (
+                                    <div className="flex flex-col items-end">
+                                        <button
+                                            onClick={handleAddParent}
+                                            disabled
+                                            className="inline-flex items-center px-3 py-1.5 border border-gray-200 shadow-sm text-sm font-medium rounded-md text-gray-400 bg-gray-100 cursor-not-allowed"
+                                            title="This model already has a parent. A model can only have one parent for clear ownership and governance."
+                                        >
+                                            <svg className="-ml-0.5 mr-1.5 h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                                            </svg>
+                                            Add Parent
+                                        </button>
+                                        <p className="mt-1 text-xs text-gray-500">A model can only have one parent</p>
+                                    </div>
+                                )}
+                            </div>
+                            <div className="bg-white shadow overflow-hidden sm:rounded-md">
+                                <table className="min-w-full divide-y divide-gray-200">
+                                    <thead className="bg-gray-50">
+                                        <tr>
+                                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                                Parent Model
+                                            </th>
+                                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                                Relationship Type
+                                            </th>
+                                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                                Effective Date
+                                            </th>
+                                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                                End Date
+                                            </th>
+                                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                                Notes
+                                            </th>
+                                            {isAdmin && (
+                                                <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                                    Actions
+                                                </th>
+                                            )}
+                                        </tr>
+                                    </thead>
+                                    <tbody className="bg-white divide-y divide-gray-200">
+                                        {parents.map((relation) => (
+                                            <tr key={relation.id} className="hover:bg-gray-50">
+                                                <td className="px-6 py-4 whitespace-nowrap">
+                                                    <Link
+                                                        to={`/models/${relation.model_id}`}
+                                                        className="text-blue-600 hover:text-blue-800 hover:underline font-medium"
+                                                    >
+                                                        {relation.model_name}
+                                                    </Link>
+                                                </td>
+                                                <td className="px-6 py-4 whitespace-nowrap">
+                                                    <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-blue-100 text-blue-800">
+                                                        {relation.relation_type}
+                                                    </span>
+                                                </td>
+                                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                                    {relation.effective_date || '-'}
+                                                </td>
+                                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                                    {relation.end_date || '-'}
+                                                </td>
+                                                <td className="px-6 py-4 text-sm text-gray-500">
+                                                    {relation.notes || '-'}
+                                                </td>
+                                                {isAdmin && (
+                                                    <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                                                        <button
+                                                            onClick={() => handleEdit(relation, 'parent')}
+                                                            className="text-blue-600 hover:text-blue-900 mr-3"
+                                                        >
+                                                            Edit
+                                                        </button>
+                                                        <button
+                                                            onClick={() => handleDelete(relation.id)}
+                                                            className="text-red-600 hover:text-red-900"
+                                                        >
+                                                            Delete
+                                                        </button>
+                                                    </td>
+                                                )}
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                )}
+
+                        {/* Child Models (Sub-Models) Section */}
+                        {hasChildren && (
+                    <div>
+                        <div className="flex justify-between items-center mb-4">
+                            <h3 className="text-lg font-medium text-gray-900">Sub-Models</h3>
+                            <div className="flex space-x-2">
+                                <button
+                                    onClick={() => exportToCSV(children, 'children')}
+                                    className="inline-flex items-center px-3 py-1.5 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50"
+                                >
+                                    <svg className="-ml-0.5 mr-1.5 h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                    </svg>
+                                    Export CSV
+                                </button>
+                                {isAdmin && (
                                     <button
-                                        onClick={handleAddParent}
-                                        disabled
-                                        className="inline-flex items-center px-3 py-1.5 border border-gray-200 shadow-sm text-sm font-medium rounded-md text-gray-400 bg-gray-100 cursor-not-allowed"
-                                        title="This model already has a parent. A model can only have one parent for clear ownership and governance."
+                                        onClick={handleAddChild}
+                                        className="inline-flex items-center px-3 py-1.5 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50"
                                     >
                                         <svg className="-ml-0.5 mr-1.5 h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
                                         </svg>
-                                        Add Parent
+                                        Add Sub-Model
                                     </button>
-                                    <p className="mt-1 text-xs text-gray-500">A model can only have one parent</p>
-                                </div>
-                            )}
-                        </div>
-                        <div className="bg-white shadow overflow-hidden sm:rounded-md">
-                            <table className="min-w-full divide-y divide-gray-200">
-                                <thead className="bg-gray-50">
-                                    <tr>
-                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                            Parent Model
-                                        </th>
-                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                            Relationship Type
-                                        </th>
-                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                            Effective Date
-                                        </th>
-                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                            End Date
-                                        </th>
-                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                            Notes
-                                        </th>
-                                        {isAdmin && (
-                                            <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                                Actions
-                                            </th>
-                                        )}
-                                    </tr>
-                                </thead>
-                                <tbody className="bg-white divide-y divide-gray-200">
-                                    {parents.map((relation) => (
-                                        <tr key={relation.id} className="hover:bg-gray-50">
-                                            <td className="px-6 py-4 whitespace-nowrap">
-                                                <Link
-                                                    to={`/models/${relation.model_id}`}
-                                                    className="text-blue-600 hover:text-blue-800 hover:underline font-medium"
-                                                >
-                                                    {relation.model_name}
-                                                </Link>
-                                            </td>
-                                            <td className="px-6 py-4 whitespace-nowrap">
-                                                <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-blue-100 text-blue-800">
-                                                    {relation.relation_type}
-                                                </span>
-                                            </td>
-                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                                                {relation.effective_date || '-'}
-                                            </td>
-                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                                                {relation.end_date || '-'}
-                                            </td>
-                                            <td className="px-6 py-4 text-sm text-gray-500">
-                                                {relation.notes || '-'}
-                                            </td>
-                                            {isAdmin && (
-                                                <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                                                    <button
-                                                        onClick={() => handleEdit(relation, 'parent')}
-                                                        className="text-blue-600 hover:text-blue-900 mr-3"
-                                                    >
-                                                        Edit
-                                                    </button>
-                                                    <button
-                                                        onClick={() => handleDelete(relation.id)}
-                                                        className="text-red-600 hover:text-red-900"
-                                                    >
-                                                        Delete
-                                                    </button>
-                                                </td>
-                                            )}
-                                        </tr>
-                                    ))}
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
-                )}
-
-                {/* Child Models (Sub-Models) Section */}
-                {hasChildren && (
-                    <div>
-                        <div className="flex justify-between items-center mb-4">
-                            <h3 className="text-lg font-medium text-gray-900">Sub-Models</h3>
-                            {isAdmin && (
-                                <button
-                                    onClick={handleAddChild}
-                                    className="inline-flex items-center px-3 py-1.5 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50"
-                                >
-                                    <svg className="-ml-0.5 mr-1.5 h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                                    </svg>
-                                    Add Sub-Model
-                                </button>
-                            )}
+                                )}
                         </div>
                         <div className="bg-white shadow overflow-hidden sm:rounded-md">
                             <table className="min-w-full divide-y divide-gray-200">
@@ -357,5 +409,5 @@ export default function ModelHierarchySection({ modelId, modelName }: Props) {
                 editData={editData}
             />
         </>
-    );
+                );
 }

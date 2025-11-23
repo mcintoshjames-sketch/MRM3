@@ -88,6 +88,39 @@ export default function ModelDependenciesSection({ modelId, modelName }: Props) 
         fetchDependencyData();
     };
 
+    const exportToCSV = (data: DependencyRelation[], direction: 'inbound' | 'outbound') => {
+        if (data.length === 0) {
+            alert('No data to export');
+            return;
+        }
+
+        const headers = ['Model Name', 'Dependency Type', 'Description', 'Status', 'Effective Date', 'End Date'];
+        const rows = data.map(dep => [
+            dep.model_name,
+            dep.dependency_type,
+            dep.description || '',
+            dep.is_active ? 'Active' : 'Inactive',
+            dep.effective_date || '',
+            dep.end_date || ''
+        ]);
+
+        const csvContent = [
+            headers.join(','),
+            ...rows.map(row => row.map(cell => `"${cell}"`).join(','))
+        ].join('\n');
+
+        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+        const link = document.createElement('a');
+        const url = URL.createObjectURL(blob);
+        const today = new Date().toISOString().split('T')[0];
+        link.setAttribute('href', url);
+        link.setAttribute('download', `model_${modelId}_dependencies_${direction}_${today}.csv`);
+        link.style.visibility = 'hidden';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    };
+
     const isAdmin = user?.role === 'Admin';
 
     if (loading) {
@@ -164,103 +197,113 @@ export default function ModelDependenciesSection({ modelId, modelName }: Props) 
                                     Models that provide data to this model.
                                 </p>
                             </div>
-                            {isAdmin && (
+                            <div className="flex space-x-2">
                                 <button
-                                    onClick={handleAddInbound}
+                                    onClick={() => exportToCSV(inbound, 'inbound')}
                                     className="inline-flex items-center px-3 py-1.5 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50"
                                 >
                                     <svg className="-ml-0.5 mr-1.5 h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                                     </svg>
-                                    Add Inbound
+                                    Export CSV
                                 </button>
-                            )}
-                        </div>
-                        <div className="bg-white shadow overflow-hidden sm:rounded-md">
-                            <table className="min-w-full divide-y divide-gray-200">
-                                <thead className="bg-gray-50">
-                                    <tr>
-                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                            Feeder Model
-                                        </th>
-                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                            Dependency Type
-                                        </th>
-                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                            Description
-                                        </th>
-                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                            Status
-                                        </th>
-                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                            Effective Date
-                                        </th>
-                                        {isAdmin && (
-                                            <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                                Actions
+                                {isAdmin && (
+                                    <button
+                                        onClick={handleAddInbound}
+                                        className="inline-flex items-center px-3 py-1.5 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50"
+                                    >
+                                        <svg className="-ml-0.5 mr-1.5 h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                                        </svg>
+                                        Add Inbound
+                                    </button>
+                                )}
+                            </div>
+                            <div className="bg-white shadow overflow-hidden sm:rounded-md">
+                                <table className="min-w-full divide-y divide-gray-200">
+                                    <thead className="bg-gray-50">
+                                        <tr>
+                                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                                Feeder Model
                                             </th>
-                                        )}
-                                    </tr>
-                                </thead>
-                                <tbody className="bg-white divide-y divide-gray-200">
-                                    {inbound.map((dep) => (
-                                        <tr key={dep.id} className="hover:bg-gray-50">
-                                            <td className="px-6 py-4 whitespace-nowrap">
-                                                <Link
-                                                    to={`/models/${dep.model_id}`}
-                                                    className="text-blue-600 hover:text-blue-800 hover:underline font-medium"
-                                                >
-                                                    {dep.model_name}
-                                                </Link>
-                                            </td>
-                                            <td className="px-6 py-4 whitespace-nowrap">
-                                                <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-purple-100 text-purple-800">
-                                                    {dep.dependency_type}
-                                                </span>
-                                            </td>
-                                            <td className="px-6 py-4 text-sm text-gray-500">
-                                                {dep.description || '-'}
-                                            </td>
-                                            <td className="px-6 py-4 whitespace-nowrap">
-                                                {dep.is_active ? (
-                                                    <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800">
-                                                        Active
-                                                    </span>
-                                                ) : (
-                                                    <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-gray-100 text-gray-800">
-                                                        Inactive
-                                                    </span>
-                                                )}
-                                            </td>
-                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                                                {dep.effective_date || '-'}
-                                            </td>
+                                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                                Dependency Type
+                                            </th>
+                                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                                Description
+                                            </th>
+                                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                                Status
+                                            </th>
+                                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                                Effective Date
+                                            </th>
                                             {isAdmin && (
-                                                <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                                                    <button
-                                                        onClick={() => handleEdit(dep, 'inbound')}
-                                                        className="text-blue-600 hover:text-blue-900 mr-3"
-                                                    >
-                                                        Edit
-                                                    </button>
-                                                    <button
-                                                        onClick={() => handleDelete(dep.id)}
-                                                        className="text-red-600 hover:text-red-900"
-                                                    >
-                                                        Delete
-                                                    </button>
-                                                </td>
+                                                <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                                    Actions
+                                                </th>
                                             )}
                                         </tr>
-                                    ))}
-                                </tbody>
-                            </table>
+                                    </thead>
+                                    <tbody className="bg-white divide-y divide-gray-200">
+                                        {inbound.map((dep) => (
+                                            <tr key={dep.id} className="hover:bg-gray-50">
+                                                <td className="px-6 py-4 whitespace-nowrap">
+                                                    <Link
+                                                        to={`/models/${dep.model_id}`}
+                                                        className="text-blue-600 hover:text-blue-800 hover:underline font-medium"
+                                                    >
+                                                        {dep.model_name}
+                                                    </Link>
+                                                </td>
+                                                <td className="px-6 py-4 whitespace-nowrap">
+                                                    <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-purple-100 text-purple-800">
+                                                        {dep.dependency_type}
+                                                    </span>
+                                                </td>
+                                                <td className="px-6 py-4 text-sm text-gray-500">
+                                                    {dep.description || '-'}
+                                                </td>
+                                                <td className="px-6 py-4 whitespace-nowrap">
+                                                    {dep.is_active ? (
+                                                        <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800">
+                                                            Active
+                                                        </span>
+                                                    ) : (
+                                                        <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-gray-100 text-gray-800">
+                                                            Inactive
+                                                        </span>
+                                                    )}
+                                                </td>
+                                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                                    {dep.effective_date || '-'}
+                                                </td>
+                                                {isAdmin && (
+                                                    <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                                                        <button
+                                                            onClick={() => handleEdit(dep, 'inbound')}
+                                                            className="text-blue-600 hover:text-blue-900 mr-3"
+                                                        >
+                                                            Edit
+                                                        </button>
+                                                        <button
+                                                            onClick={() => handleDelete(dep.id)}
+                                                            className="text-red-600 hover:text-red-900"
+                                                        >
+                                                            Delete
+                                                        </button>
+                                                    </td>
+                                                )}
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
                         </div>
-                    </div>
                 )}
 
-                {/* Outbound Dependencies (Consumers) Section */}
-                {hasOutbound && (
+                        {/* Outbound Dependencies (Consumers) Section */}
+                        {hasOutbound && (
                     <div>
                         <div className="flex justify-between items-center mb-4">
                             <div>
@@ -271,17 +314,27 @@ export default function ModelDependenciesSection({ modelId, modelName }: Props) 
                                     Models that consume data from this model.
                                 </p>
                             </div>
-                            {isAdmin && (
+                            <div className="flex space-x-2">
                                 <button
-                                    onClick={handleAddOutbound}
+                                    onClick={() => exportToCSV(outbound, 'outbound')}
                                     className="inline-flex items-center px-3 py-1.5 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50"
                                 >
                                     <svg className="-ml-0.5 mr-1.5 h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                                     </svg>
-                                    Add Outbound
+                                    Export CSV
                                 </button>
-                            )}
+                                {isAdmin && (
+                                    <button
+                                        onClick={handleAddOutbound}
+                                        className="inline-flex items-center px-3 py-1.5 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50"
+                                    >
+                                        <svg className="-ml-0.5 mr-1.5 h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                                        </svg>
+                                        Add Outbound
+                                    </button>
+                                )}
                         </div>
                         <div className="bg-white shadow overflow-hidden sm:rounded-md">
                             <table className="min-w-full divide-y divide-gray-200">
@@ -377,5 +430,5 @@ export default function ModelDependenciesSection({ modelId, modelName }: Props) 
                 editData={editData}
             />
         </>
-    );
+                );
 }

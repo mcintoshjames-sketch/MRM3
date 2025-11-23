@@ -17,6 +17,7 @@ from app.models.taxonomy import TaxonomyValue
 from app.models.model_version import ModelVersion
 from app.models.model_region import ModelRegion
 from app.models.validation_grouping import ValidationGroupingMemory
+from app.models.model_hierarchy import ModelHierarchy
 from app.schemas.model import ModelCreate, ModelUpdate, ModelDetailResponse, ValidationGroupingSuggestion, ModelCreateResponse
 from app.schemas.submission_action import SubmissionAction, SubmissionFeedback, SubmissionCommentCreate
 from app.schemas.activity_timeline import ActivityTimelineItem, ActivityTimelineResponse
@@ -39,6 +40,7 @@ def create_audit_log(db: Session, entity_type: str, entity_id: int, action: str,
 
 @router.get("/", response_model=List[ModelDetailResponse])
 def list_models(
+    exclude_sub_models: bool = False,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
@@ -48,6 +50,9 @@ def list_models(
     Row-Level Security:
     - Admin, Validator, Global Approver, Regional Approver: See all models
     - User: Only see models where they are owner, developer, or delegate
+
+    Query Parameters:
+    - exclude_sub_models: If True, exclude models that are sub-models (children) in hierarchy
     """
     from app.core.rls import apply_model_rls
 
@@ -63,7 +68,8 @@ def list_models(
         joinedload(Model.model_regions).joinedload(ModelRegion.region),
         joinedload(Model.submitted_by_user),
         joinedload(Model.wholly_owned_region),  # For regional ownership models
-        joinedload(Model.ownership_type)  # For ownership taxonomy classification
+        # For ownership taxonomy classification
+        joinedload(Model.ownership_type)
         # Note: submission_comments intentionally excluded from list view for performance
         # They are only loaded in the detail endpoint where they're actually displayed
     )
@@ -71,7 +77,22 @@ def list_models(
     # Apply row-level security filtering
     query = apply_model_rls(query, current_user, db)
 
-    return query.all()
+    models = query.all()
+
+    # Filter out sub-models if requested
+    if exclude_sub_models:
+        # Get all model IDs that are children in active hierarchy relationships
+        from sqlalchemy import func
+        sub_model_ids = db.query(ModelHierarchy.child_model_id).filter(
+            (ModelHierarchy.end_date == None) | (
+                ModelHierarchy.end_date >= func.current_date())
+        ).distinct().all()
+        sub_model_ids = [row[0] for row in sub_model_ids]
+
+        # Filter out sub-models from results
+        models = [m for m in models if m.model_id not in sub_model_ids]
+
+    return models
 
 
 @router.post("/", response_model=ModelCreateResponse, status_code=status.HTTP_201_CREATED)
@@ -1531,7 +1552,8 @@ def get_model_activity_timeline(
             timestamp=comment.created_at,
             activity_type="comment_added",
             title=f"Comment added by {comment.user.full_name if comment.user else 'Unknown'}",
-            description=comment.comment_text[:100] + "..." if len(comment.comment_text) > 100 else comment.comment_text,
+            description=comment.comment_text[:100] + "..." if len(
+                comment.comment_text) > 100 else comment.comment_text,
             user_name=comment.user.full_name if comment.user else None,
             user_id=comment.user_id,
             entity_type="ModelSubmissionComment",

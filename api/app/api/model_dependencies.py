@@ -498,3 +498,131 @@ def delete_dependency(
     db.commit()
 
     return None
+
+
+@router.get("/models/{model_id}/dependencies/lineage", response_model=dict)
+def get_dependency_lineage(
+    model_id: int,
+    direction: str = "both",  # "upstream", "downstream", or "both"
+    max_depth: int = 10,
+    include_inactive: bool = False,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Trace the dependency lineage (data flow chain) for a model.
+
+    Returns upstream feeders, downstream consumers, or both in a structured format
+    showing the complete data flow chain. Useful for impact analysis and lineage visualization.
+
+    Parameters:
+    - direction: "upstream" (feeders), "downstream" (consumers), or "both"
+    - max_depth: Maximum depth to traverse (default 10, prevents infinite loops)
+    - include_inactive: Include inactive dependencies
+
+    Returns a dictionary with:
+    - model: The center model info
+    - upstream: List of upstream dependencies (models that feed this model)
+    - downstream: List of downstream dependencies (models that consume from this model)
+    """
+    # Verify model exists
+    model = db.query(Model).filter(Model.model_id == model_id).first()
+    if not model:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Model not found"
+        )
+
+    def trace_upstream(consumer_id: int, depth: int = 0, visited: Set[int] = None) -> List[dict]:
+        """Recursively trace upstream feeders."""
+        if visited is None:
+            visited = set()
+
+        if depth >= max_depth or consumer_id in visited:
+            return []
+
+        visited.add(consumer_id)
+
+        # Query feeder dependencies
+        query = db.query(ModelFeedDependency).options(
+            joinedload(ModelFeedDependency.feeder_model),
+            joinedload(ModelFeedDependency.dependency_type)
+        ).filter(ModelFeedDependency.consumer_model_id == consumer_id)
+
+        if not include_inactive:
+            query = query.filter(ModelFeedDependency.is_active == True)
+            query = query.filter(
+                (ModelFeedDependency.end_date == None) | (
+                    ModelFeedDependency.end_date >= func.current_date())
+            )
+
+        dependencies = query.all()
+
+        result = []
+        for dep in dependencies:
+            feeder_dict = {
+                "model_id": dep.feeder_model.model_id,
+                "model_name": dep.feeder_model.model_name,
+                "dependency_type": dep.dependency_type.label if dep.dependency_type else "Unknown",
+                "description": dep.description,
+                "depth": depth + 1,
+                "upstream": trace_upstream(dep.feeder_model.model_id, depth + 1, visited)
+            }
+            result.append(feeder_dict)
+
+        return result
+
+    def trace_downstream(feeder_id: int, depth: int = 0, visited: Set[int] = None) -> List[dict]:
+        """Recursively trace downstream consumers."""
+        if visited is None:
+            visited = set()
+
+        if depth >= max_depth or feeder_id in visited:
+            return []
+
+        visited.add(feeder_id)
+
+        # Query consumer dependencies
+        query = db.query(ModelFeedDependency).options(
+            joinedload(ModelFeedDependency.consumer_model),
+            joinedload(ModelFeedDependency.dependency_type)
+        ).filter(ModelFeedDependency.feeder_model_id == feeder_id)
+
+        if not include_inactive:
+            query = query.filter(ModelFeedDependency.is_active == True)
+            query = query.filter(
+                (ModelFeedDependency.end_date == None) | (
+                    ModelFeedDependency.end_date >= func.current_date())
+            )
+
+        dependencies = query.all()
+
+        result = []
+        for dep in dependencies:
+            consumer_dict = {
+                "model_id": dep.consumer_model.model_id,
+                "model_name": dep.consumer_model.model_name,
+                "dependency_type": dep.dependency_type.label if dep.dependency_type else "Unknown",
+                "description": dep.description,
+                "depth": depth + 1,
+                "downstream": trace_downstream(dep.consumer_model.model_id, depth + 1, visited)
+            }
+            result.append(consumer_dict)
+
+        return result
+
+    # Build response
+    response = {
+        "model": {
+            "model_id": model.model_id,
+            "model_name": model.model_name
+        }
+    }
+
+    if direction in ["upstream", "both"]:
+        response["upstream"] = trace_upstream(model_id)
+
+    if direction in ["downstream", "both"]:
+        response["downstream"] = trace_downstream(model_id)
+
+    return response

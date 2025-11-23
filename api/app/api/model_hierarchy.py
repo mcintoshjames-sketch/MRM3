@@ -425,3 +425,72 @@ def delete_hierarchy(
     db.commit()
 
     return None
+
+
+@router.get("/models/{model_id}/hierarchy/descendants", response_model=List[ModelHierarchySummary])
+def get_all_descendants(
+    model_id: int,
+    include_inactive: bool = False,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Recursively get all descendant (child, grandchild, etc.) models.
+
+    Returns a flat list of all descendants in the hierarchy tree.
+    Useful for reporting that needs to include all sub-models recursively.
+    """
+    # Verify model exists
+    model = db.query(Model).filter(Model.model_id == model_id).first()
+    if not model:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Model not found"
+        )
+
+    def get_descendants_recursive(parent_id: int, visited: set = None) -> List[ModelHierarchySummary]:
+        """Recursively fetch descendants, avoiding cycles."""
+        if visited is None:
+            visited = set()
+
+        if parent_id in visited:
+            return []  # Prevent infinite loops
+
+        visited.add(parent_id)
+
+        # Query direct children
+        query = db.query(ModelHierarchy).options(
+            joinedload(ModelHierarchy.child_model),
+            joinedload(ModelHierarchy.relation_type)
+        ).filter(ModelHierarchy.parent_model_id == parent_id)
+
+        # Filter by active status if requested
+        if not include_inactive:
+            query = query.filter(
+                (ModelHierarchy.end_date == None) | (
+                    ModelHierarchy.end_date >= func.current_date())
+            )
+
+        relationships = query.all()
+
+        result = []
+        for rel in relationships:
+            # Add this child
+            result.append(ModelHierarchySummary(
+                id=rel.id,
+                model_id=rel.child_model.model_id,
+                model_name=rel.child_model.model_name,
+                relation_type=rel.relation_type.label if rel.relation_type else "Unknown",
+                relation_type_id=rel.relation_type_id,
+                effective_date=rel.effective_date,
+                end_date=rel.end_date,
+                notes=rel.notes
+            ))
+
+            # Recursively get this child's descendants
+            result.extend(get_descendants_recursive(
+                rel.child_model.model_id, visited))
+
+        return result
+
+    return get_descendants_recursive(model_id)

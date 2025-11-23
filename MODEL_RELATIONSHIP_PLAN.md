@@ -340,15 +340,59 @@ Model Details page:
 
 ---
 
-### ⏳ Phase 5: Reporting (Planned)
+### ✅ Phase 5: Reporting (Completed 2025-11-23)
 
-**Planned Features:**
-- Model list filters: `include_sub_models` toggle
-- Report toggles for hierarchy expansion
-- CSV export for hierarchy and dependencies
-- Dependency chain reports
+**CSV Export Functionality:**
+- Added export buttons to `ModelHierarchySection` for parent and child relationships
+- Added export buttons to `ModelDependenciesSection` for inbound and outbound dependencies
+- Export includes all relevant fields: model names, types, dates, descriptions, status
+- Filename format: `model_{model_id}_{type}_{YYYY-MM-DD}.csv`
+- Export buttons appear alongside Add buttons in section headers
 
-**Not Yet Implemented**
+**Model List Filtering:**
+- Added `include_sub_models` checkbox filter to `ModelsPage`
+- Default behavior: Excludes sub-models from main model list (cleaner inventory view)
+- When enabled: Shows all models including those that are children in hierarchy
+- Filter integrates with existing multi-select filters (development type, status, owner, vendor, region)
+- Backend API endpoint (`GET /models/`) supports `exclude_sub_models` parameter
+- Automatically refetches data when filter changes
+
+**API Endpoints for Advanced Reporting:**
+- `GET /models/{id}/hierarchy/descendants` - Recursively fetch all descendants (children, grandchildren, etc.)
+  - Returns flat list of all sub-models in the tree
+  - Supports `include_inactive` parameter
+  - Prevents infinite loops with cycle detection
+  - Useful for "expand all sub-models" reporting feature
+  
+- `GET /models/{id}/dependencies/lineage` - Trace complete dependency chain for impact analysis
+  - Parameters: `direction` (upstream/downstream/both), `max_depth`, `include_inactive`
+  - Returns nested structure showing:
+    - Upstream feeders (models that provide data to this model)
+    - Downstream consumers (models that receive data from this model)
+  - Each node includes: model_id, model_name, dependency_type, description, depth
+  - Recursive traversal up to configurable max depth (default 10)
+  - Enables lineage visualization and impact analysis
+
+**Implementation Details:**
+- Frontend: Added exportToCSV functions with proper CSV formatting (quoted fields)
+- Frontend: `include_sub_models` state managed with useEffect for auto-refetch
+- Backend: Efficient sub-model filtering using single query for hierarchy child IDs
+- Backend: Recursive traversal with visited set to prevent cycles
+- Backend: Leverages existing RLS (row-level security) for access control
+
+**Files Modified:**
+- `web/src/components/ModelHierarchySection.tsx` - CSV export buttons
+- `web/src/components/ModelDependenciesSection.tsx` - CSV export buttons
+- `web/src/pages/ModelsPage.tsx` - Include sub-models filter with backend integration
+- `api/app/api/models.py` - Added exclude_sub_models parameter and filtering logic
+- `api/app/api/model_hierarchy.py` - Added /descendants endpoint
+- `api/app/api/model_dependencies.py` - Added /lineage endpoint
+
+**Usage Examples:**
+1. **CSV Export**: Click "Export CSV" button on any hierarchy/dependency section to download data
+2. **Sub-Models Filter**: Toggle "Include Sub-Models" checkbox on Models page to show/hide children
+3. **Hierarchy Expansion API**: `GET /models/46/hierarchy/descendants` - Get all sub-models under Enterprise Credit Risk Model
+4. **Lineage API**: `GET /models/52/dependencies/lineage?direction=both` - See full data flow for Portfolio VaR Model
 
 ---
 
