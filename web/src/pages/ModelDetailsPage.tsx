@@ -27,6 +27,23 @@ interface Vendor {
     contact_info: string;
 }
 
+interface ModelType {
+    type_id: number;
+    category_id: number;
+    name: string;
+    description: string | null;
+    sort_order: number;
+    is_active: boolean;
+}
+
+interface ModelTypeCategory {
+    category_id: number;
+    name: string;
+    description: string | null;
+    sort_order: number;
+    model_types: ModelType[];
+}
+
 interface TaxonomyValue {
     value_id: number;
     taxonomy_id: number;
@@ -85,7 +102,7 @@ interface Model {
     vendor: Vendor | null;
     risk_tier: TaxonomyValue | null;
     validation_type: TaxonomyValue | null;
-    model_type: TaxonomyValue | null;
+    model_type: ModelType | null;
     wholly_owned_region: Region | null;
     users: User[];
     regulatory_categories: TaxonomyValue[];
@@ -149,6 +166,7 @@ export default function ModelDetailsPage() {
     const [vendors, setVendors] = useState<Vendor[]>([]);
     const [regions, setRegions] = useState<Region[]>([]);
     const [taxonomies, setTaxonomies] = useState<Taxonomy[]>([]);
+    const [modelTypes, setModelTypes] = useState<ModelTypeCategory[]>([]);
     const [validationRequests, setValidationRequests] = useState<ValidationRequest[]>([]);
     const [versions, setVersions] = useState<ModelVersion[]>([]);
     const [revalidationStatus, setRevalidationStatus] = useState<RevalidationStatus | null>(null);
@@ -202,18 +220,20 @@ export default function ModelDetailsPage() {
     const fetchData = async () => {
         try {
             // Fetch critical model data first - these are required
-            const [modelRes, usersRes, vendorsRes, regionsRes, taxonomiesRes] = await Promise.all([
+            const [modelRes, usersRes, vendorsRes, regionsRes, taxonomiesRes, modelTypesRes] = await Promise.all([
                 api.get(`/models/${id}`),
                 api.get('/auth/users'),
                 api.get('/vendors/'),
                 api.get('/regions/'),
-                api.get('/taxonomies/')
+                api.get('/taxonomies/'),
+                api.get('/model-types/categories')
             ]);
             const modelData = modelRes.data;
             setModel(modelData);
             setUsers(usersRes.data);
             setVendors(vendorsRes.data);
             setRegions(regionsRes.data);
+            setModelTypes(modelTypesRes.data);
 
             // Fetch full taxonomy details for dropdowns
             const taxDetails = await Promise.all(
@@ -304,7 +324,6 @@ export default function ModelDetailsPage() {
 
     const getRiskTierTaxonomy = () => taxonomies.find(t => t.name === 'Model Risk Tier');
     const getValidationTypeTaxonomy = () => taxonomies.find(t => t.name === 'Validation Type');
-    const getModelTypeTaxonomy = () => taxonomies.find(t => t.name === 'Model Type');
     const getRegulatoryCategoryTaxonomy = () => taxonomies.find(t => t.name === 'Regulatory Category');
 
     // Check for out-of-order validation conditions
@@ -1143,30 +1162,31 @@ export default function ModelDetailsPage() {
                                 </div>
                             )}
 
-                            {getModelTypeTaxonomy() && (
-                                <div className="mb-4">
-                                    <label htmlFor="model_type_id" className="block text-sm font-medium mb-2">
-                                        Model Type
-                                    </label>
-                                    <select
-                                        id="model_type_id"
-                                        className="input-field"
-                                        value={formData.model_type_id || ''}
-                                        onChange={(e) => setFormData({
-                                            ...formData,
-                                            model_type_id: e.target.value ? parseInt(e.target.value) : null
-                                        })}
-                                    >
-                                        <option value="">Select Model Type</option>
-                                        {getModelTypeTaxonomy()?.values
-                                            .filter(v => v.is_active)
-                                            .sort((a, b) => a.sort_order - b.sort_order)
-                                            .map(v => (
-                                                <option key={v.value_id} value={v.value_id}>{v.label}</option>
+                            <div className="mb-4">
+                                <label htmlFor="model_type_id" className="block text-sm font-medium mb-2">
+                                    Model Type
+                                </label>
+                                <select
+                                    id="model_type_id"
+                                    className="input-field"
+                                    value={formData.model_type_id || ''}
+                                    onChange={(e) => setFormData({
+                                        ...formData,
+                                        model_type_id: e.target.value ? parseInt(e.target.value) : null
+                                    })}
+                                >
+                                    <option value="">Select Model Type</option>
+                                    {modelTypes.map(category => (
+                                        <optgroup key={category.category_id} label={category.name}>
+                                            {category.model_types.map(type => (
+                                                <option key={type.type_id} value={type.type_id}>
+                                                    {type.name}
+                                                </option>
                                             ))}
-                                    </select>
-                                </div>
-                            )}
+                                        </optgroup>
+                                    ))}
+                                </select>
+                            </div>
 
                             <div className="mb-4">
                                 <label htmlFor="wholly_owned_region_id" className="block text-sm font-medium mb-2">
@@ -1373,7 +1393,10 @@ export default function ModelDetailsPage() {
                             <h4 className="text-sm font-medium text-gray-500 mb-1">Model Type</h4>
                             {model.model_type ? (
                                 <span className="px-2 py-1 text-sm rounded bg-teal-100 text-teal-800">
-                                    {model.model_type.label}
+                                    {(() => {
+                                        const category = modelTypes.find(c => c.category_id === model.model_type?.category_id);
+                                        return category ? `${category.name} - ${model.model_type.name}` : model.model_type.name;
+                                    })()}
                                 </span>
                             ) : (
                                 <p className="text-lg">-</p>

@@ -50,9 +50,30 @@ interface ModelChangeCategory {
     change_types: ModelChangeType[];
 }
 
+// ============================================================================
+// TYPES - Model Type Taxonomy
+// ============================================================================
+
+interface ModelType {
+    type_id: number;
+    category_id: number;
+    name: string;
+    description: string | null;
+    sort_order: number;
+    is_active: boolean;
+}
+
+interface ModelTypeCategory {
+    category_id: number;
+    name: string;
+    description: string | null;
+    sort_order: number;
+    model_types: ModelType[];
+}
+
 export default function TaxonomyPage() {
     // Tab management
-    const [activeTab, setActiveTab] = useState<'general' | 'change-type'>('general');
+    const [activeTab, setActiveTab] = useState<'general' | 'change-type' | 'model-type'>('general');
 
     // General taxonomy state
     const [taxonomies, setTaxonomies] = useState<Taxonomy[]>([]);
@@ -93,13 +114,33 @@ export default function TaxonomyPage() {
         is_active: true
     });
 
+    // Model type taxonomy state
+    const [modelCategories, setModelCategories] = useState<ModelTypeCategory[]>([]);
+    const [selectedModelCategory, setSelectedModelCategory] = useState<ModelTypeCategory | null>(null);
+    const [showModelCategoryForm, setShowModelCategoryForm] = useState(false);
+    const [showModelTypeForm, setShowModelTypeForm] = useState(false);
+    const [editingModelType, setEditingModelType] = useState<ModelType | null>(null);
+    const [modelCategoryFormData, setModelCategoryFormData] = useState({
+        name: '',
+        description: '',
+        sort_order: 0
+    });
+    const [modelTypeFormData, setModelTypeFormData] = useState({
+        name: '',
+        description: '',
+        sort_order: 0,
+        is_active: true
+    });
+
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
         if (activeTab === 'general') {
             fetchTaxonomies();
-        } else {
+        } else if (activeTab === 'change-type') {
             fetchChangeCategories();
+        } else {
+            fetchModelCategories();
         }
     }, [activeTab]);
 
@@ -353,6 +394,136 @@ export default function TaxonomyPage() {
         }
     };
 
+    // ============================================================================
+    // MODEL TYPE TAXONOMY FUNCTIONS
+    // ============================================================================
+
+    const fetchModelCategories = async () => {
+        try {
+            const response = await api.get('/model-types/categories');
+            setModelCategories(response.data);
+            if (response.data.length > 0 && !selectedModelCategory) {
+                setSelectedModelCategory(response.data[0]);
+            }
+        } catch (error) {
+            console.error('Failed to fetch model categories:', error);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const selectModelCategory = (category: ModelTypeCategory) => {
+        setSelectedModelCategory(category);
+    };
+
+    const resetModelCategoryForm = () => {
+        setModelCategoryFormData({ name: '', description: '', sort_order: 0 });
+        setShowModelCategoryForm(false);
+    };
+
+    const resetModelTypeForm = () => {
+        setModelTypeFormData({
+            name: '',
+            description: '',
+            sort_order: 0,
+            is_active: true
+        });
+        setEditingModelType(null);
+        setShowModelTypeForm(false);
+    };
+
+    const handleModelCategorySubmit = async (e: React.FormEvent) => {
+        e.preventDefault();
+        try {
+            await api.post('/model-types/categories', modelCategoryFormData);
+            resetModelCategoryForm();
+            fetchModelCategories();
+        } catch (error: any) {
+            alert(error.response?.data?.detail || 'Failed to create category');
+            console.error('Failed to create category:', error);
+        }
+    };
+
+    const handleModelTypeSubmit = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!selectedModelCategory) return;
+
+        try {
+            if (editingModelType) {
+                await api.patch(`/model-types/types/${editingModelType.type_id}`, modelTypeFormData);
+            } else {
+                await api.post('/model-types/types', {
+                    ...modelTypeFormData,
+                    category_id: selectedModelCategory.category_id
+                });
+            }
+            resetModelTypeForm();
+            fetchModelCategories();
+        } catch (error: any) {
+            alert(error.response?.data?.detail || 'Failed to save model type');
+            console.error('Failed to save model type:', error);
+        }
+    };
+
+    const handleEditModelType = (type: ModelType) => {
+        setEditingModelType(type);
+        setModelTypeFormData({
+            name: type.name,
+            description: type.description || '',
+            sort_order: type.sort_order,
+            is_active: type.is_active
+        });
+        setShowModelTypeForm(true);
+    };
+
+    const handleDeleteModelType = async (typeId: number) => {
+        if (!confirm('Are you sure you want to delete this model type?')) return;
+
+        try {
+            await api.delete(`/model-types/types/${typeId}`);
+            fetchModelCategories();
+        } catch (error: any) {
+            const errorMessage = error.response?.data?.detail || 'Failed to delete model type';
+
+            // Check if it's a referential integrity error
+            if (error.response?.status === 409) {
+                const deactivate = confirm(
+                    `${errorMessage}\n\n` +
+                    `Would you like to deactivate this model type instead? ` +
+                    `This will hide it from the dropdown while preserving historical data.`
+                );
+
+                if (deactivate) {
+                    try {
+                        await api.patch(`/model-types/types/${typeId}`, {
+                            is_active: false
+                        });
+                        fetchModelCategories();
+                        alert('Model type has been deactivated successfully.');
+                    } catch (deactivateError: any) {
+                        alert(deactivateError.response?.data?.detail || 'Failed to deactivate model type');
+                    }
+                }
+            } else {
+                alert(errorMessage);
+            }
+            console.error('Failed to delete model type:', error);
+        }
+    };
+
+    const handleDeleteModelCategory = async (categoryId: number) => {
+        if (!confirm('Are you sure you want to delete this category and all its model types?')) return;
+
+        try {
+            await api.delete(`/model-types/categories/${categoryId}`);
+            setSelectedModelCategory(null);
+            fetchModelCategories();
+        } catch (error: any) {
+            alert(error.response?.data?.detail || 'Failed to delete category');
+            console.error('Failed to delete category:', error);
+        }
+    };
+
     if (loading) {
         return (
             <Layout>
@@ -373,23 +544,30 @@ export default function TaxonomyPage() {
                     <nav className="-mb-px flex space-x-8">
                         <button
                             onClick={() => setActiveTab('general')}
-                            className={`${
-                                activeTab === 'general'
-                                    ? 'border-blue-500 text-blue-600'
-                                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                            } whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm`}
+                            className={`${activeTab === 'general'
+                                ? 'border-blue-500 text-blue-600'
+                                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                                } whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm`}
                         >
                             General Taxonomies
                         </button>
                         <button
                             onClick={() => setActiveTab('change-type')}
-                            className={`${
-                                activeTab === 'change-type'
-                                    ? 'border-blue-500 text-blue-600'
-                                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                            } whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm`}
+                            className={`${activeTab === 'change-type'
+                                ? 'border-blue-500 text-blue-600'
+                                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                                } whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm`}
                         >
                             Change Type Taxonomy
+                        </button>
+                        <button
+                            onClick={() => setActiveTab('model-type')}
+                            className={`${activeTab === 'model-type'
+                                ? 'border-blue-500 text-blue-600'
+                                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                                } whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm`}
+                        >
+                            Model Type Taxonomy
                         </button>
                     </nav>
                 </div>
@@ -1027,6 +1205,281 @@ export default function TaxonomyPage() {
                             ) : (
                                 <div className="bg-white rounded-lg shadow-md p-6 text-center text-gray-500">
                                     Select a category to view and manage its change types.
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                </>
+            )}
+
+            {/* MODEL TYPE TAXONOMY TAB */}
+            {activeTab === 'model-type' && (
+                <>
+                    <div className="mb-6 flex justify-end">
+                        <button onClick={() => setShowModelCategoryForm(true)} className="btn-primary">
+                            + New Category
+                        </button>
+                    </div>
+
+                    {showModelCategoryForm && (
+                        <div className="bg-white p-6 rounded-lg shadow-md mb-6">
+                            <h3 className="text-lg font-bold mb-4">Create New Model Category</h3>
+                            <form onSubmit={handleModelCategorySubmit}>
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div className="mb-4">
+                                        <label htmlFor="mcat_name" className="block text-sm font-medium mb-2">
+                                            Name
+                                        </label>
+                                        <input
+                                            id="mcat_name"
+                                            type="text"
+                                            className="input-field"
+                                            value={modelCategoryFormData.name}
+                                            onChange={(e) => setModelCategoryFormData({ ...modelCategoryFormData, name: e.target.value })}
+                                            required
+                                        />
+                                    </div>
+                                    <div className="mb-4">
+                                        <label htmlFor="mcat_sort" className="block text-sm font-medium mb-2">
+                                            Sort Order
+                                        </label>
+                                        <input
+                                            id="mcat_sort"
+                                            type="number"
+                                            className="input-field"
+                                            value={modelCategoryFormData.sort_order}
+                                            onChange={(e) => setModelCategoryFormData({ ...modelCategoryFormData, sort_order: parseInt(e.target.value) })}
+                                            required
+                                        />
+                                    </div>
+                                </div>
+                                <div className="mb-4">
+                                    <label htmlFor="mcat_desc" className="block text-sm font-medium mb-2">
+                                        Description
+                                    </label>
+                                    <textarea
+                                        id="mcat_desc"
+                                        className="input-field"
+                                        rows={2}
+                                        value={modelCategoryFormData.description}
+                                        onChange={(e) => setModelCategoryFormData({ ...modelCategoryFormData, description: e.target.value })}
+                                    />
+                                </div>
+                                <div className="flex gap-2">
+                                    <button type="submit" className="btn-primary">Create</button>
+                                    <button type="button" onClick={resetModelCategoryForm} className="btn-secondary">
+                                        Cancel
+                                    </button>
+                                </div>
+                            </form>
+                        </div>
+                    )}
+
+                    <div className="grid grid-cols-4 gap-6">
+                        {/* Category list */}
+                        <div className="col-span-1">
+                            <div className="bg-white rounded-lg shadow-md p-4">
+                                <h3 className="font-bold mb-3">Categories</h3>
+                                <div className="space-y-2">
+                                    {modelCategories.length === 0 ? (
+                                        <p className="text-sm text-gray-500">No categories yet.</p>
+                                    ) : (
+                                        modelCategories.map((cat) => (
+                                            <button
+                                                key={cat.category_id}
+                                                onClick={() => selectModelCategory(cat)}
+                                                className={`w-full text-left px-3 py-2 rounded text-sm ${selectedModelCategory?.category_id === cat.category_id
+                                                    ? 'bg-blue-100 text-blue-800 font-medium'
+                                                    : 'hover:bg-gray-100'
+                                                    }`}
+                                            >
+                                                <div className="flex items-center justify-between">
+                                                    <span>{cat.name}</span>
+                                                    <span className="text-xs bg-gray-200 px-1 rounded">{cat.model_types.length}</span>
+                                                </div>
+                                            </button>
+                                        ))
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Selected category model types */}
+                        <div className="col-span-3">
+                            {selectedModelCategory ? (
+                                <div className="bg-white rounded-lg shadow-md p-6">
+                                    <div className="flex justify-between items-center mb-4">
+                                        <h3 className="text-xl font-bold">{selectedModelCategory.name}</h3>
+                                        <div className="flex gap-2">
+                                            <button
+                                                onClick={() => setShowModelTypeForm(true)}
+                                                className="btn-primary text-sm"
+                                            >
+                                                + Add Model Type
+                                            </button>
+                                            <button
+                                                onClick={() => handleDeleteModelCategory(selectedModelCategory.category_id)}
+                                                className="btn-secondary text-red-600 text-sm"
+                                            >
+                                                Delete Category
+                                            </button>
+                                        </div>
+                                    </div>
+                                    {selectedModelCategory.description && (
+                                        <p className="text-sm text-gray-600 mb-4">
+                                            {selectedModelCategory.description}
+                                        </p>
+                                    )}
+
+                                    {showModelTypeForm && (
+                                        <div className="bg-gray-50 p-4 rounded mb-4">
+                                            <h4 className="font-medium mb-3">
+                                                {editingModelType ? 'Edit Model Type' : 'Add New Model Type'}
+                                            </h4>
+                                            <form onSubmit={handleModelTypeSubmit}>
+                                                <div className="grid grid-cols-2 gap-4">
+                                                    <div className="mb-3">
+                                                        <label htmlFor="mtype_name" className="block text-sm font-medium mb-1">
+                                                            Name
+                                                        </label>
+                                                        <input
+                                                            id="mtype_name"
+                                                            type="text"
+                                                            className="input-field"
+                                                            value={modelTypeFormData.name}
+                                                            onChange={(e) => setModelTypeFormData({ ...modelTypeFormData, name: e.target.value })}
+                                                            required
+                                                        />
+                                                    </div>
+                                                    <div className="mb-3">
+                                                        <label htmlFor="mtype_sort" className="block text-sm font-medium mb-1">
+                                                            Sort Order
+                                                        </label>
+                                                        <input
+                                                            id="mtype_sort"
+                                                            type="number"
+                                                            className="input-field"
+                                                            value={modelTypeFormData.sort_order}
+                                                            onChange={(e) => setModelTypeFormData({ ...modelTypeFormData, sort_order: parseInt(e.target.value) })}
+                                                        />
+                                                    </div>
+                                                </div>
+                                                <div className="mb-3">
+                                                    <label htmlFor="mtype_desc" className="block text-sm font-medium mb-1">
+                                                        Description
+                                                    </label>
+                                                    <textarea
+                                                        id="mtype_desc"
+                                                        className="input-field"
+                                                        rows={2}
+                                                        value={modelTypeFormData.description}
+                                                        onChange={(e) => setModelTypeFormData({ ...modelTypeFormData, description: e.target.value })}
+                                                    />
+                                                </div>
+                                                <div className="mb-3">
+                                                    <label className="flex items-center gap-2">
+                                                        <input
+                                                            type="checkbox"
+                                                            checked={modelTypeFormData.is_active}
+                                                            onChange={(e) => setModelTypeFormData({ ...modelTypeFormData, is_active: e.target.checked })}
+                                                        />
+                                                        <span className="text-sm font-medium">Active</span>
+                                                    </label>
+                                                </div>
+                                                <div className="flex gap-2">
+                                                    <button type="submit" className="btn-primary text-sm">
+                                                        {editingModelType ? 'Update' : 'Add'}
+                                                    </button>
+                                                    <button type="button" onClick={resetModelTypeForm} className="btn-secondary text-sm">
+                                                        Cancel
+                                                    </button>
+                                                </div>
+                                            </form>
+                                        </div>
+                                    )}
+
+                                    <div className="mt-4">
+                                        <h4 className="font-medium mb-3">
+                                            Model Types ({selectedModelCategory.model_types.length})
+                                        </h4>
+                                        {selectedModelCategory.model_types.length === 0 ? (
+                                            <p className="text-gray-500 text-sm">No model types yet. Add model types to this category.</p>
+                                        ) : (
+                                            <div className="border rounded overflow-x-auto">
+                                                <table className="min-w-full divide-y divide-gray-200">
+                                                    <thead className="bg-gray-50">
+                                                        <tr>
+                                                            <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase w-16">
+                                                                Order
+                                                            </th>
+                                                            <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                                                                Name
+                                                            </th>
+                                                            <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                                                                Description
+                                                            </th>
+                                                            <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase w-24">
+                                                                Status
+                                                            </th>
+                                                            <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase w-48">
+                                                                Actions
+                                                            </th>
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody className="bg-white divide-y divide-gray-200">
+                                                        {selectedModelCategory.model_types
+                                                            .sort((a, b) => a.sort_order - b.sort_order)
+                                                            .map((type) => (
+                                                                <tr key={type.type_id} className={`hover:bg-gray-50 ${!type.is_active ? 'opacity-60' : ''}`}>
+                                                                    <td className="px-4 py-3 text-sm text-center">{type.sort_order}</td>
+                                                                    <td className="px-4 py-3 text-sm font-medium">{type.name}</td>
+                                                                    <td className="px-4 py-3 text-sm text-gray-600">
+                                                                        {type.description || '-'}
+                                                                    </td>
+                                                                    <td className="px-4 py-3 text-sm">
+                                                                        {type.is_active ? (
+                                                                            <span className="px-2 py-1 text-xs font-medium rounded bg-green-100 text-green-800">
+                                                                                Active
+                                                                            </span>
+                                                                        ) : (
+                                                                            <span className="px-2 py-1 text-xs font-medium rounded bg-gray-200 text-gray-600">
+                                                                                Inactive
+                                                                            </span>
+                                                                        )}
+                                                                    </td>
+                                                                    <td className="px-4 py-3 whitespace-nowrap">
+                                                                        <div className="flex items-center gap-2">
+                                                                            <button
+                                                                                onClick={() => handleEditModelType(type)}
+                                                                                className="inline-flex items-center px-3 py-1 bg-blue-100 text-blue-700 hover:bg-blue-200 rounded text-sm font-medium transition-colors"
+                                                                            >
+                                                                                <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                                                                                </svg>
+                                                                                Edit
+                                                                            </button>
+                                                                            <button
+                                                                                onClick={() => handleDeleteModelType(type.type_id)}
+                                                                                className="inline-flex items-center px-3 py-1 bg-red-100 text-red-700 hover:bg-red-200 rounded text-sm font-medium transition-colors"
+                                                                            >
+                                                                                <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                                                                </svg>
+                                                                                Delete
+                                                                            </button>
+                                                                        </div>
+                                                                    </td>
+                                                                </tr>
+                                                            ))}
+                                                    </tbody>
+                                                </table>
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            ) : (
+                                <div className="bg-white rounded-lg shadow-md p-6 text-center text-gray-500">
+                                    Select a category to view and manage its model types.
                                 </div>
                             )}
                         </div>

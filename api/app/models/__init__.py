@@ -12,6 +12,7 @@ from app.models.model_version_region import ModelVersionRegion
 from app.models.model_delegate import ModelDelegate
 from app.models.model_submission_comment import ModelSubmissionComment
 from app.models.model_change_taxonomy import ModelChangeCategory, ModelChangeType
+from app.models.model_type_taxonomy import ModelTypeCategory, ModelType
 from app.models.model_hierarchy import ModelHierarchy
 from app.models.model_feed_dependency import ModelFeedDependency
 from app.models.model_dependency_metadata import ModelDependencyMetadata
@@ -52,6 +53,8 @@ __all__ = [
     "ModelSubmissionComment",
     "ModelChangeCategory",
     "ModelChangeType",
+    "ModelTypeCategory",
+    "ModelType",
     "ModelHierarchy",
     "ModelFeedDependency",
     "ModelDependencyMetadata",

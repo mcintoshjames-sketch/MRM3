@@ -119,10 +119,13 @@ const setupApiMocks = (modelData = sampleModel) => {
         if (url === '/regions/') return Promise.resolve({ data: [] });
         if (url === '/models/1/regions') return Promise.resolve({ data: [] });
         if (url === '/taxonomies/') return Promise.resolve({ data: sampleTaxonomies });
+        if (url === '/model-types/categories') return Promise.resolve({ data: [] });
         if (url === '/taxonomies/1') return Promise.resolve({ data: sampleTaxonomyDetails });
         if (url === '/validation-workflow/requests/?model_id=1') return Promise.resolve({ data: [] });
         if (url === '/models/1/versions') return Promise.resolve({ data: [] });
         if (url === '/models/1/revalidation-status') return Promise.resolve({ data: { status: 'Never Validated' } });
+        if (url === '/validation-workflow/my-pending-submissions') return Promise.resolve({ data: [] });
+        if (url === '/deployment-tasks/my-tasks') return Promise.resolve({ data: [] });
         return Promise.reject(new Error(`Unknown URL: ${url}`));
     });
 };

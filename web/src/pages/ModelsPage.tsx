@@ -26,6 +26,23 @@ interface WhollyOwnedRegion {
     name: string;
 }
 
+interface ModelType {
+    type_id: number;
+    category_id: number;
+    name: string;
+    description: string | null;
+    sort_order: number;
+    is_active: boolean;
+}
+
+interface ModelTypeCategory {
+    category_id: number;
+    name: string;
+    description: string | null;
+    sort_order: number;
+    model_types: ModelType[];
+}
+
 interface Model {
     model_id: number;
     model_name: string;
@@ -37,6 +54,8 @@ interface Model {
     wholly_owned_region_id: number | null;
     wholly_owned_region: WhollyOwnedRegion | null;
     status: string;
+    model_type_id: number | null;
+    model_type: ModelType | null;
     created_at: string;
     updated_at: string;
     row_approval_status: string | null;
@@ -54,6 +73,7 @@ export default function ModelsPage() {
     const [users, setUsers] = useState<User[]>([]);
     const [vendors, setVendors] = useState<Vendor[]>([]);
     const [regions, setRegions] = useState<Region[]>([]);
+    const [modelTypes, setModelTypes] = useState<ModelTypeCategory[]>([]);
     const [loading, setLoading] = useState(true);
     const [showForm, setShowForm] = useState(false);
     const [formData, setFormData] = useState({
@@ -64,6 +84,7 @@ export default function ModelsPage() {
         developer_id: null as number | null,
         vendor_id: null as number | null,
         wholly_owned_region_id: null as number | null,
+        model_type_id: null as number | null,
         status: 'In Development',
         user_ids: [] as number[],
         region_ids: [] as number[],
@@ -244,17 +265,19 @@ export default function ModelsPage() {
                 params.append('exclude_sub_models', 'true');
             }
 
-            const [modelsRes, usersRes, vendorsRes, regionsRes, taxonomiesRes] = await Promise.all([
+            const [modelsRes, usersRes, vendorsRes, regionsRes, taxonomiesRes, modelTypesRes] = await Promise.all([
                 api.get(`/models/?${params.toString()}`),
                 api.get('/auth/users'),
                 api.get('/vendors/'),
                 api.get('/regions/'),
-                api.get('/taxonomies/')
+                api.get('/taxonomies/'),
+                api.get('/model-types/categories')
             ]);
             setModels(modelsRes.data);
             setUsers(usersRes.data);
             setVendors(vendorsRes.data);
             setRegions(regionsRes.data);
+            setModelTypes(modelTypesRes.data);
 
             // Fetch taxonomy values for validation types and priorities
             const taxonomyList = taxonomiesRes.data;
@@ -300,6 +323,7 @@ export default function ModelsPage() {
                 developer_id: formData.developer_id || null,
                 vendor_id: formData.vendor_id || null,
                 wholly_owned_region_id: formData.wholly_owned_region_id || null,
+                model_type_id: formData.model_type_id || null,
                 user_ids: formData.user_ids.length > 0 ? formData.user_ids : null,
                 region_ids: formData.region_ids.length > 0 ? formData.region_ids : null,
                 initial_version_number: formData.initial_version_number || null,
@@ -332,6 +356,7 @@ export default function ModelsPage() {
                 developer_id: null,
                 vendor_id: null,
                 wholly_owned_region_id: null,
+                model_type_id: null,
                 status: 'In Development',
                 user_ids: [],
                 region_ids: [],
@@ -711,6 +736,32 @@ export default function ModelsPage() {
                                         </select>
                                     </div>
                                 )}
+
+                                <div className="mb-4">
+                                    <label htmlFor="model_type_id" className="block text-sm font-medium mb-2">
+                                        Model Type
+                                    </label>
+                                    <select
+                                        id="model_type_id"
+                                        className="input-field"
+                                        value={formData.model_type_id || ''}
+                                        onChange={(e) => setFormData({
+                                            ...formData,
+                                            model_type_id: e.target.value ? parseInt(e.target.value) : null
+                                        })}
+                                    >
+                                        <option value="">Select Model Type</option>
+                                        {modelTypes.map(category => (
+                                            <optgroup key={category.category_id} label={category.name}>
+                                                {category.model_types.map(type => (
+                                                    <option key={type.type_id} value={type.type_id}>
+                                                        {type.name}
+                                                    </option>
+                                                ))}
+                                            </optgroup>
+                                        ))}
+                                    </select>
+                                </div>
 
                                 <div className="mb-4">
                                     <label htmlFor="wholly_owned_region_id" className="block text-sm font-medium mb-2">

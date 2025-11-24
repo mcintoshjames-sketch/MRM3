@@ -23,6 +23,7 @@ from app.schemas.model_version import (
     ModelVersionResponse,
     VersionStatus,
 )
+from fpdf import FPDF
 
 router = APIRouter()
 
@@ -358,7 +359,8 @@ def create_model_version(
                     TaxonomyValue.taxonomy
                 ).filter(
                     TaxonomyValue.code == "INTAKE",
-                    TaxonomyValue.taxonomy.has(name="Validation Request Status")
+                    TaxonomyValue.taxonomy.has(
+                        name="Validation Request Status")
                 ).first()
 
                 # Create validation request (without model_id - uses association table)
@@ -465,7 +467,8 @@ def list_model_versions(
         joinedload(ModelVersion.change_type_detail).joinedload(
             ModelChangeType.category),
         joinedload(ModelVersion.created_by),
-        joinedload(ModelVersion.affected_regions_assoc)  # Eager-load for affected_region_ids property
+        # Eager-load for affected_region_ids property
+        joinedload(ModelVersion.affected_regions_assoc)
     ).filter(
         ModelVersion.model_id == model_id
     ).order_by(desc(ModelVersion.created_at)).all()
@@ -780,7 +783,8 @@ def export_model_versions_csv(
         joinedload(ModelVersion.change_type_detail).joinedload(
             ModelChangeType.category),
         joinedload(ModelVersion.created_by),
-        joinedload(ModelVersion.affected_regions_assoc)  # Eager-load for affected_region_ids property
+        # Eager-load for affected_region_ids property
+        joinedload(ModelVersion.affected_regions_assoc)
     ).filter(
         ModelVersion.model_id == model_id
     ).order_by(desc(ModelVersion.created_at)).all()
@@ -833,6 +837,182 @@ def export_model_versions_csv(
     )
 
 
+@router.get("/models/{model_id}/versions/export/pdf")
+def export_model_versions_pdf(
+    model_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Export all versions for a model to PDF.
+    """
+    from app.core.rls import can_access_model
+
+    # Check RLS access
+    if not can_access_model(model_id, current_user, db):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Model not found"
+        )
+
+    # Verify model exists
+    model = db.query(Model).filter(Model.model_id == model_id).first()
+    if not model:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Model not found"
+        )
+
+    # Get all versions with relationships
+    versions = db.query(ModelVersion).options(
+        joinedload(ModelVersion.change_type_detail).joinedload(
+            ModelChangeType.category),
+        joinedload(ModelVersion.created_by),
+        joinedload(ModelVersion.affected_regions_assoc)
+    ).filter(
+        ModelVersion.model_id == model_id
+    ).order_by(desc(ModelVersion.created_at)).all()
+
+    # Create PDF
+    try:
+        from app.models.region import Region
+
+        # Fetch regions for lookup
+        all_regions = db.query(Region).all()
+        region_map = {r.region_id: r.code for r in all_regions}
+
+        class PDF(FPDF):
+            def header(self):
+                self.set_font('Helvetica', 'B', 15)
+                # Sanitize model name for Latin-1 encoding
+                model_name = model.model_name.encode(
+                    'latin-1', 'replace').decode('latin-1')
+                self.cell(
+                    0, 10, f'Model Change Log: {model_name}', 0, 1, 'C')
+                self.set_font('Helvetica', 'I', 10)
+                self.cell(
+                    0, 10, f'Generated on {date.today().strftime("%Y-%m-%d")}', 0, 1, 'C')
+                self.ln(5)
+
+            def footer(self):
+                self.set_y(-15)
+                self.set_font('Helvetica', 'I', 8)
+                self.cell(0, 10, f'Page {self.page_no()}/{{nb}}', 0, 0, 'C')
+
+        pdf = PDF()
+        pdf.alias_nb_pages()
+        pdf.add_page()
+        pdf.set_font("Helvetica", size=10)
+
+        # Table Header
+        headers = ["Ver", "Type", "Status", "Description", "Date", "User"]
+        widths = [15, 25, 25, 75, 25, 25]
+
+        pdf.set_fill_color(200, 220, 255)
+        pdf.set_font("Helvetica", 'B', 8)
+        for i, header in enumerate(headers):
+            pdf.cell(widths[i], 6, header, 1, 0, 'C', True)
+        pdf.ln()
+
+        # Table Rows
+        pdf.set_font("Helvetica", size=8)
+        for version in versions:
+            # Calculate description text with regions
+            description_text = version.change_description or ""
+            if version.scope == "REGIONAL":
+                region_codes = []
+                for assoc in version.affected_regions_assoc:
+                    r_code = region_map.get(assoc.region_id, "Unknown")
+                    region_codes.append(r_code)
+                region_codes.sort()
+                if region_codes:
+                    description_text = f"[Regions: {', '.join(region_codes)}]\n{description_text}"
+
+            # Sanitize description
+            description_text = description_text.encode(
+                'latin-1', 'replace').decode('latin-1')
+
+            # Calculate row height based on description
+            # Use dry_run to calculate lines
+            lines = pdf.multi_cell(
+                widths[3], 5, description_text, dry_run=True, output='LINES')
+            num_lines = len(lines)
+            row_height = max(6, num_lines * 5)
+
+            # Check page break
+            if pdf.get_y() + row_height > pdf.page_break_trigger:
+                pdf.add_page()
+                # Re-draw header
+                pdf.set_fill_color(200, 220, 255)
+                pdf.set_font("Helvetica", 'B', 8)
+                for i, header in enumerate(headers):
+                    pdf.cell(widths[i], 6, header, 1, 0, 'C', True)
+                pdf.ln()
+                pdf.set_font("Helvetica", size=8)
+
+            # Sanitize other fields
+            v_num = str(version.version_number).encode(
+                'latin-1', 'replace').decode('latin-1')
+
+            change_type = version.change_type
+            if version.change_type_detail:
+                change_type = version.change_type_detail.name
+            change_type = change_type.encode(
+                'latin-1', 'replace').decode('latin-1')
+
+            status_text = version.status.encode(
+                'latin-1', 'replace').decode('latin-1')
+
+            prod_date = version.production_date or version.created_at.date()
+
+            user_name = version.created_by.full_name if version.created_by else "Unknown"
+            user_name = user_name.encode(
+                'latin-1', 'replace').decode('latin-1')
+
+            # Draw cells
+            # Save current position
+            x_start = pdf.get_x()
+            y_start = pdf.get_y()
+
+            pdf.cell(widths[0], row_height, v_num, 1, 0, 'C')
+            pdf.cell(widths[1], row_height, change_type[:15], 1, 0, 'C')
+            pdf.cell(widths[2], row_height, status_text, 1, 0, 'C')
+
+            # Description (MultiCell)
+            x_desc = pdf.get_x()
+            y_desc = pdf.get_y()
+
+            # Draw text
+            pdf.multi_cell(widths[3], 5, description_text, border=0, align='L')
+
+            # Draw border
+            pdf.rect(x_desc, y_desc, widths[3], row_height)
+
+            # Move to next column
+            pdf.set_xy(x_desc + widths[3], y_desc)
+
+            pdf.cell(widths[4], row_height, str(prod_date), 1, 0, 'C')
+            pdf.cell(widths[5], row_height, user_name[:15],
+                     1, 1, 'C')  # ln=1 to move to next line
+
+        # Output PDF
+        pdf_bytes = pdf.output()
+
+        filename = f"model_{model_id}_changelog_{date.today().strftime('%Y-%m-%d')}.pdf"
+
+        return StreamingResponse(
+            io.BytesIO(pdf_bytes),
+            media_type="application/pdf",
+            headers={"Content-Disposition": f"attachment; filename={filename}"}
+        )
+    except Exception as e:
+        print(f"Error generating PDF: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to generate PDF: {str(e)}"
+        )
+
+
 @router.get("/versions/{version_id}", response_model=ModelVersionResponse)
 def get_version_details(
     version_id: int,
@@ -847,7 +1027,8 @@ def get_version_details(
             ModelChangeType.category),
         joinedload(ModelVersion.created_by),
         joinedload(ModelVersion.model),
-        joinedload(ModelVersion.affected_regions_assoc)  # Eager-load for affected_region_ids property
+        # Eager-load for affected_region_ids property
+        joinedload(ModelVersion.affected_regions_assoc)
     ).filter(ModelVersion.version_id == version_id).first()
 
     if not version:
@@ -1050,7 +1231,8 @@ def get_regional_versions(
             "deployed_at": mr.deployed_at,
             "deployment_notes": mr.deployment_notes,
             "is_same_as_global": is_same_as_global,
-            "is_regional_override": mr.version_id is not None  # True if region has specific version
+            # True if region has specific version
+            "is_regional_override": mr.version_id is not None
         })
 
     return {

@@ -158,6 +158,10 @@ const setupApiMocks = (overrides: Partial<Record<string, any[]>> = {}) => {
                 return Promise.resolve({ data: data.upcomingRevalidations });
             case '/models/pending-submissions':
                 return Promise.resolve({ data: data.pendingModelSubmissions });
+            case '/validation-workflow/my-pending-submissions':
+                return Promise.resolve({ data: [] });
+            case '/deployment-tasks/my-tasks':
+                return Promise.resolve({ data: [] });
             default:
                 return Promise.reject(new Error('Unknown URL: ' + url));
         }

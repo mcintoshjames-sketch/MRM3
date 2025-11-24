@@ -63,7 +63,7 @@ class Model(Base):
     validation_type_id: Mapped[Optional[int]] = mapped_column(
         Integer, ForeignKey("taxonomy_values.value_id"), nullable=True)
     model_type_id: Mapped[Optional[int]] = mapped_column(
-        Integer, ForeignKey("taxonomy_values.value_id"), nullable=True)
+        Integer, ForeignKey("model_types.type_id"), nullable=True)
     ownership_type_id: Mapped[Optional[int]] = mapped_column(
         Integer, ForeignKey("taxonomy_values.value_id"), nullable=True)
     wholly_owned_region_id: Mapped[Optional[int]] = mapped_column(
@@ -97,8 +97,8 @@ class Model(Base):
         "TaxonomyValue", foreign_keys=[risk_tier_id])
     validation_type: Mapped[Optional["TaxonomyValue"]] = relationship(
         "TaxonomyValue", foreign_keys=[validation_type_id])
-    model_type: Mapped[Optional["TaxonomyValue"]] = relationship(
-        "TaxonomyValue", foreign_keys=[model_type_id])
+    model_type: Mapped[Optional["ModelType"]] = relationship(
+        "ModelType", foreign_keys=[model_type_id])
     ownership_type: Mapped[Optional["TaxonomyValue"]] = relationship(
         "TaxonomyValue", foreign_keys=[ownership_type_id])
     wholly_owned_region: Mapped[Optional["Region"]] = relationship(

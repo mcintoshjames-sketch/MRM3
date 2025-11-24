@@ -4,7 +4,7 @@ from datetime import datetime, date, timedelta
 from typing import Dict, List
 from app.core.database import SessionLocal
 from app.core.security import get_password_hash
-from app.models import User, UserRole, Vendor, EntraUser, Taxonomy, TaxonomyValue, ValidationWorkflowSLA, ValidationPolicy, Region, ValidationComponentDefinition, ComponentDefinitionConfiguration, ComponentDefinitionConfigItem
+from app.models import User, UserRole, Vendor, EntraUser, Taxonomy, TaxonomyValue, ValidationWorkflowSLA, ValidationPolicy, Region, ValidationComponentDefinition, ComponentDefinitionConfiguration, ComponentDefinitionConfigItem, ModelTypeCategory, ModelType, ValidationRequest, ValidationOutcome, ValidationRequestModelVersion
 from app.models.model import Model
 
 
@@ -148,6 +148,92 @@ MODEL_TYPE_VALUES = [
 ]
 
 
+MODEL_TYPE_HIERARCHY = {
+    "taxonomy_name": "Model Risk Management (MRM) Model Types",
+    "structure": "Hierarchical (L1 Category -> L2 Sub-types)",
+    "categories": [
+        {
+            "l1_name": "Capital",
+            "description": "Models primarily used to calculate regulatory capital requirements, including risk-weighted assets (RWA) and minimum capital ratios under frameworks like Basel III and US rules (e.g., 12 CFR 3). These focus on quantifying credit, market, and operational risks for compliance reporting, without incorporating scenario-based stresses.",
+            "l2_subtypes": [
+                "Credit Risk – Retail (PD, LGD, EAD)",
+                "Credit Risk – Wholesale (PD, LGD, EAD)",
+                "Credit Risk – Counterparty",
+                "Market Risk Capital",
+                "Operational Risk Capital",
+                "Economic / ICAAP Capital",
+                "Consolidated Capital Engine"
+            ]
+        },
+        {
+            "l1_name": "Liquidity Risk",
+            "description": "Models designed to measure, monitor, and manage liquidity positions, including projections of cash flows, funding needs, and compliance with ratios like the Liquidity Coverage Ratio (LCR) or Net Stable Funding Ratio (NSFR). These emphasize behavioral assumptions about deposits, wholesale funding, and contingent liabilities under normal conditions.",
+            "l2_subtypes": [
+                "LCR / NSFR Calculation",
+                "Cash-Flow and Funding Projections",
+                "Collateral and Margin Optimisation",
+                "Deposit Behavioural Models",
+                "ALM and Banking-Book Interest-Rate Risk"
+            ]
+        },
+        {
+            "l1_name": "Stress Testing",
+            "description": "Models applied to simulate adverse economic scenarios for assessing institutional resilience, as required by regulations like the Dodd-Frank Act Stress Tests (DFAST) or Comprehensive Capital Analysis and Review (CCAR). These integrate inputs from other model types but focus on scenario generation, loss projection, and post-stress capital/liquidity outcomes.",
+            "l2_subtypes": [
+                "Enterprise-wide EWST/CCAR/DFAST",
+                "Credit Stress Projection",
+                "Market and Liquidity Stress",
+                "Macroeconomic Scenario Generator"
+            ]
+        },
+        {
+            "l1_name": "Market and Pricing",
+            "description": "Models for valuing financial instruments, estimating market risks, and supporting trading decisions, focusing on price discovery, volatility, and fair value under current market conditions. These do not include regulatory capital calculations or stress applications.",
+            "l2_subtypes": [
+                "Instrument Valuation and Fair-Value",
+                "Curves, Surfaces and Vol-Cubes",
+                "Market Risk Metrics (Non-Capital)",
+                "Algorithmic and Quant Trading"
+            ]
+        },
+        {
+            "l1_name": "Credit Risk Management",
+            "description": "Models for day-to-day credit decisions, portfolio monitoring, and loss estimation outside of regulatory capital or stress contexts, including underwriting, scoring, and allowance calculations (e.g., under CECL standards).",
+            "l2_subtypes": [
+                "Underwriting / Adjudication",
+                "Account and Portfolio Management",
+                "Allowance and Loss Provisioning (IFRS 9 and CECL)",
+                "Internal PD / LGD / EAD (Non-Capital)",
+                "Collections and Recovery",
+                "Wealth and Insurance Credit Models"
+            ]
+        },
+        {
+            "l1_name": "Operational Risk and Financial Crime",
+            "description": "Models to quantify and mitigate non-financial risks from internal processes, people, systems, or external events, including detection of irregularities like fraud or money laundering.",
+            "l2_subtypes": [
+                "Fraud Detection and Prevention",
+                "AML and Sanctions Monitoring",
+                "Cybersecurity and Information-Security Risk",
+                "Operational Loss Quantification"
+            ]
+        },
+        {
+            "l1_name": "Compliance and Other Decision-Support",
+            "description": "Models for ensuring adherence to laws, regulations, and internal policies, or supporting non-risk business decisions like forecasting, marketing, or asset management. This catch-all category covers qualitative-quantitative hybrids not fitting elsewhere.",
+            "l2_subtypes": [
+                "Regulatory Compliance Analytics",
+                "Marketing and Customer Analytics",
+                "Strategic and Executive Decision Support",
+                "Financial Reporting and Accounting",
+                "Investment and Advisory (Non-Credit)",
+                "Other or Unclassified"
+            ]
+        }
+    ]
+}
+
+
 def _code_from_label(label: str) -> str:
     """Create a deterministic code from a taxonomy label."""
     slug = re.sub(r"[^A-Za-z0-9]+", "_", label).strip("_")
@@ -229,7 +315,8 @@ def seed_validation_components(db):
     # Check if already seeded
     existing_count = db.query(ValidationComponentDefinition).count()
     if existing_count > 0:
-        print(f"✓ Validation component definitions already seeded ({existing_count} components)")
+        print(
+            f"✓ Validation component definitions already seeded ({existing_count} components)")
         return
 
     print("Seeding validation component definitions...")
@@ -338,7 +425,8 @@ def seed_initial_component_configuration(db, admin_user):
     # Check if configuration already exists
     existing_config = db.query(ComponentDefinitionConfiguration).first()
     if existing_config:
-        print(f"✓ Component configuration already exists (config_id: {existing_config.config_id})")
+        print(
+            f"✓ Component configuration already exists (config_id: {existing_config.config_id})")
         return existing_config
 
     print("Creating initial component definition configuration...")
@@ -355,7 +443,8 @@ def seed_initial_component_configuration(db, admin_user):
     db.flush()  # Get config_id
 
     # Snapshot all component definitions
-    components = db.query(ValidationComponentDefinition).filter_by(is_active=True).all()
+    components = db.query(ValidationComponentDefinition).filter_by(
+        is_active=True).all()
 
     for component in components:
         config_item = ComponentDefinitionConfigItem(
@@ -376,7 +465,8 @@ def seed_initial_component_configuration(db, admin_user):
         db.add(config_item)
 
     db.commit()
-    print(f"✓ Created initial configuration (config_id: {initial_config.config_id}) with {len(components)} component snapshots")
+    print(
+        f"✓ Created initial configuration (config_id: {initial_config.config_id}) with {len(components)} component snapshots")
 
     return initial_config
 
@@ -1186,7 +1276,15 @@ def seed_database():
             TaxonomyValue.code == "PASS"
         ).first()
 
-        if tier_2 and tier_3 and initial_val_type and annual_val_type and pass_outcome and admin and validator:
+        # New taxonomy values for ValidationRequest
+        medium_priority = db.query(TaxonomyValue).filter(
+            TaxonomyValue.code == "MEDIUM").first()
+        approved_status = db.query(TaxonomyValue).filter(
+            TaxonomyValue.code == "APPROVED").first()
+        fit_for_purpose = db.query(TaxonomyValue).filter(
+            TaxonomyValue.code == "FIT_FOR_PURPOSE").first()
+
+        if tier_2 and tier_3 and initial_val_type and annual_val_type and pass_outcome and admin and validator and medium_priority and approved_status and fit_for_purpose:
             # Calculate strategic dates for Tier 2 (18 month frequency, 90 day lead time)
             # Total overdue threshold: 18 months + 3 months grace + 90 days = ~21.5 months
             today = date.today()
@@ -1208,17 +1306,34 @@ def seed_database():
                 db.flush()
 
                 # Add validation from 24 months ago
-                validation_a = Validation(
-                    model_id=model_a.model_id,
-                    validator_id=validator.user_id,
+                val_date = today - timedelta(days=24*30)
+                req = ValidationRequest(
+                    requestor_id=admin.user_id,
                     validation_type_id=annual_val_type.value_id,
-                    outcome_id=pass_outcome.value_id,
-                    validation_date=today -
-                    timedelta(days=24*30),  # 24 months ago
-                    findings_summary="Annual validation completed. Model performing as expected.",
-                    created_at=datetime.utcnow()
+                    priority_id=medium_priority.value_id,
+                    target_completion_date=val_date,
+                    current_status_id=approved_status.value_id,
+                    created_at=val_date - timedelta(days=30),
+                    updated_at=val_date,
+                    completion_date=datetime.combine(
+                        val_date, datetime.min.time())
                 )
-                db.add(validation_a)
+                db.add(req)
+                db.flush()
+
+                db.add(ValidationRequestModelVersion(
+                    request_id=req.request_id, model_id=model_a.model_id))
+
+                outcome = ValidationOutcome(
+                    request_id=req.request_id,
+                    overall_rating_id=fit_for_purpose.value_id,
+                    executive_summary="Annual validation completed. Model performing as expected.",
+                    recommended_review_frequency=18,
+                    effective_date=val_date,
+                    created_at=val_date
+                )
+                db.add(outcome)
+
                 print(
                     "✓ Created 'Demo: Overdue Model' (24 months since last validation - OVERDUE)")
 
@@ -1239,17 +1354,34 @@ def seed_database():
                 db.flush()
 
                 # Add validation from 20 months ago
-                validation_b = Validation(
-                    model_id=model_b.model_id,
-                    validator_id=validator.user_id,
+                val_date = today - timedelta(days=20*30)
+                req = ValidationRequest(
+                    requestor_id=admin.user_id,
                     validation_type_id=annual_val_type.value_id,
-                    outcome_id=pass_outcome.value_id,
-                    validation_date=today -
-                    timedelta(days=20*30),  # 20 months ago
-                    findings_summary="Annual validation completed.",
-                    created_at=datetime.utcnow()
+                    priority_id=medium_priority.value_id,
+                    target_completion_date=val_date,
+                    current_status_id=approved_status.value_id,
+                    created_at=val_date - timedelta(days=30),
+                    updated_at=val_date,
+                    completion_date=datetime.combine(
+                        val_date, datetime.min.time())
                 )
-                db.add(validation_b)
+                db.add(req)
+                db.flush()
+
+                db.add(ValidationRequestModelVersion(
+                    request_id=req.request_id, model_id=model_b.model_id))
+
+                outcome = ValidationOutcome(
+                    request_id=req.request_id,
+                    overall_rating_id=fit_for_purpose.value_id,
+                    executive_summary="Annual validation completed.",
+                    recommended_review_frequency=18,
+                    effective_date=val_date,
+                    created_at=val_date
+                )
+                db.add(outcome)
+
                 print(
                     "✓ Created 'Demo: Submission Overdue' (20 months - submission grace passed)")
 
@@ -1270,17 +1402,34 @@ def seed_database():
                 db.flush()
 
                 # Add validation from 17 months ago
-                validation_c = Validation(
-                    model_id=model_c.model_id,
-                    validator_id=validator.user_id,
+                val_date = today - timedelta(days=17*30)
+                req = ValidationRequest(
+                    requestor_id=admin.user_id,
                     validation_type_id=annual_val_type.value_id,
-                    outcome_id=pass_outcome.value_id,
-                    validation_date=today -
-                    timedelta(days=17*30),  # 17 months ago
-                    findings_summary="Annual validation completed.",
-                    created_at=datetime.utcnow()
+                    priority_id=medium_priority.value_id,
+                    target_completion_date=val_date,
+                    current_status_id=approved_status.value_id,
+                    created_at=val_date - timedelta(days=30),
+                    updated_at=val_date,
+                    completion_date=datetime.combine(
+                        val_date, datetime.min.time())
                 )
-                db.add(validation_c)
+                db.add(req)
+                db.flush()
+
+                db.add(ValidationRequestModelVersion(
+                    request_id=req.request_id, model_id=model_c.model_id))
+
+                outcome = ValidationOutcome(
+                    request_id=req.request_id,
+                    overall_rating_id=fit_for_purpose.value_id,
+                    executive_summary="Annual validation completed.",
+                    recommended_review_frequency=18,
+                    effective_date=val_date,
+                    created_at=val_date
+                )
+                db.add(outcome)
+
                 print(
                     "✓ Created 'Demo: Due Soon' (17 months - submission due within 1 month)")
 
@@ -1317,17 +1466,34 @@ def seed_database():
                 db.flush()
 
                 # Add recent validation
-                validation_e = Validation(
-                    model_id=model_e.model_id,
-                    validator_id=validator.user_id,
+                val_date = today - timedelta(days=6*30)
+                req = ValidationRequest(
+                    requestor_id=admin.user_id,
                     validation_type_id=annual_val_type.value_id,
-                    outcome_id=pass_outcome.value_id,
-                    validation_date=today -
-                    timedelta(days=6*30),  # 6 months ago
-                    findings_summary="Annual validation completed. Model is compliant.",
-                    created_at=datetime.utcnow()
+                    priority_id=medium_priority.value_id,
+                    target_completion_date=val_date,
+                    current_status_id=approved_status.value_id,
+                    created_at=val_date - timedelta(days=30),
+                    updated_at=val_date,
+                    completion_date=datetime.combine(
+                        val_date, datetime.min.time())
                 )
-                db.add(validation_e)
+                db.add(req)
+                db.flush()
+
+                db.add(ValidationRequestModelVersion(
+                    request_id=req.request_id, model_id=model_e.model_id))
+
+                outcome = ValidationOutcome(
+                    request_id=req.request_id,
+                    overall_rating_id=fit_for_purpose.value_id,
+                    executive_summary="Annual validation completed. Model is compliant.",
+                    recommended_review_frequency=18,
+                    effective_date=val_date,
+                    created_at=val_date
+                )
+                db.add(outcome)
+
                 print(
                     "✓ Created 'Demo: Compliant Model' (6 months - well within compliance)")
 
@@ -1337,6 +1503,9 @@ def seed_database():
             print(
                 "⚠ Missing required taxonomy values or users - skipping demo data creation\n")
 
+        # Seed Model Type Hierarchy
+        seed_model_type_taxonomy(db)
+
         print("Seeding completed successfully!")
 
     except Exception as e:
@@ -1345,6 +1514,53 @@ def seed_database():
         raise
     finally:
         db.close()
+
+
+def seed_model_type_taxonomy(db):
+    """Seed the hierarchical model type taxonomy."""
+    print("Seeding model type taxonomy...")
+
+    for i, cat_data in enumerate(MODEL_TYPE_HIERARCHY["categories"], 1):
+        # Create or update category
+        category = db.query(ModelTypeCategory).filter(
+            ModelTypeCategory.name == cat_data["l1_name"]
+        ).first()
+
+        if not category:
+            category = ModelTypeCategory(
+                name=cat_data["l1_name"],
+                description=cat_data["description"],
+                sort_order=i
+            )
+            db.add(category)
+            db.flush()
+            print(f"✓ Created category: {category.name}")
+        else:
+            category.description = cat_data["description"]
+            category.sort_order = i
+            print(f"✓ Updated category: {category.name}")
+
+        # Create or update types
+        for j, type_name in enumerate(cat_data["l2_subtypes"], 1):
+            model_type = db.query(ModelType).filter(
+                ModelType.name == type_name,
+                ModelType.category_id == category.category_id
+            ).first()
+
+            if not model_type:
+                model_type = ModelType(
+                    category_id=category.category_id,
+                    name=type_name,
+                    sort_order=j,
+                    is_active=True
+                )
+                db.add(model_type)
+            else:
+                model_type.sort_order = j
+                model_type.is_active = True
+
+    db.commit()
+    print("✓ Model type taxonomy seeded")
 
 
 if __name__ == "__main__":

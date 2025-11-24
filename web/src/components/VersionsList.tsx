@@ -15,6 +15,7 @@ const VersionsList: React.FC<VersionsListProps> = ({ modelId, refreshTrigger, on
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [exportingCSV, setExportingCSV] = useState(false);
+    const [exportingPDF, setExportingPDF] = useState(false);
 
     const loadVersions = async () => {
         try {
@@ -109,6 +110,17 @@ const VersionsList: React.FC<VersionsListProps> = ({ modelId, refreshTrigger, on
         }
     };
 
+    const handleExportPDF = async () => {
+        try {
+            setExportingPDF(true);
+            await versionsApi.exportPDF(modelId);
+        } catch (err: any) {
+            alert(err.response?.data?.detail || 'Failed to export PDF');
+        } finally {
+            setExportingPDF(false);
+        }
+    };
+
     const canApprove = user?.role === 'Validator' || user?.role === 'Admin';
 
     if (loading) return <div className="p-4">Loading versions...</div>;
@@ -121,7 +133,7 @@ const VersionsList: React.FC<VersionsListProps> = ({ modelId, refreshTrigger, on
     return (
         <div>
             {/* Header with Export Button */}
-            <div className="flex justify-end mb-3">
+            <div className="flex justify-end mb-3 gap-2">
                 <button
                     onClick={handleExportCSV}
                     disabled={exportingCSV}
@@ -129,117 +141,124 @@ const VersionsList: React.FC<VersionsListProps> = ({ modelId, refreshTrigger, on
                 >
                     {exportingCSV ? 'Exporting...' : 'Export to CSV'}
                 </button>
+                <button
+                    onClick={handleExportPDF}
+                    disabled={exportingPDF}
+                    className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 disabled:bg-red-400 text-sm"
+                >
+                    {exportingPDF ? 'Exporting...' : 'Export to PDF'}
+                </button>
             </div>
 
             <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-200">
-                <thead className="bg-gray-50">
-                    <tr>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Version</th>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Type</th>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Validation</th>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Description</th>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Implementation Date</th>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Created</th>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
-                    </tr>
-                </thead>
-                <tbody className="bg-white divide-y divide-gray-200">
-                    {versions.map((version) => (
-                        <tr
-                            key={version.version_id}
-                            onClick={() => onVersionClick && onVersionClick(version)}
-                            className="hover:bg-gray-50 cursor-pointer"
-                        >
-                            <td className="px-4 py-3 text-sm font-medium">
-                                <Link
-                                    to={`/models/${modelId}/versions/${version.version_id}`}
-                                    onClick={(e) => e.stopPropagation()}
-                                    className="text-blue-600 hover:text-blue-800 hover:underline font-medium"
-                                >
-                                    {version.version_number}
-                                </Link>
-                            </td>
-                            <td className="px-4 py-3 text-sm">
-                                {version.change_type_name ? (
-                                    <div>
-                                        <div className="font-medium text-gray-900">{version.change_type_name}</div>
-                                        {version.change_category_name && (
-                                            <div className="text-xs text-gray-500">{version.change_category_name}</div>
-                                        )}
-                                        <div className="mt-1">{getChangeTypeBadge(version.change_type)}</div>
-                                    </div>
-                                ) : (
-                                    getChangeTypeBadge(version.change_type)
-                                )}
-                            </td>
-                            <td className="px-4 py-3 text-sm">{getStatusBadge(version.status)}</td>
-                            <td className="px-4 py-3 text-sm">
-                                {version.validation_request_id ? (
-                                    <Link
-                                        to={`/validation-workflow/${version.validation_request_id}`}
-                                        onClick={(e) => e.stopPropagation()}
-                                        className="text-blue-600 hover:text-blue-800 hover:underline text-xs"
-                                    >
-                                        Request #{version.validation_request_id}
-                                        {version.validation_type === 'INTERIM' && (
-                                            <span className="ml-1 px-1.5 py-0.5 bg-yellow-100 text-yellow-800 rounded text-xs font-medium">
-                                                INTERIM
-                                            </span>
-                                        )}
-                                    </Link>
-                                ) : (
-                                    <span className="text-xs text-gray-400">-</span>
-                                )}
-                            </td>
-                            <td className="px-4 py-3 text-sm text-gray-600 max-w-xs truncate" title={version.change_description}>
-                                {version.change_description}
-                            </td>
-                            <td className="px-4 py-3 text-sm text-gray-600">
-                                {version.production_date ? version.production_date.split('T')[0] : '-'}
-                            </td>
-                            <td className="px-4 py-3 text-sm text-gray-600">
-                                {version.created_at.split('T')[0]}
-                                {version.created_by_name && (
-                                    <div className="text-xs text-gray-500">{version.created_by_name}</div>
-                                )}
-                            </td>
-                            <td className="px-4 py-3 text-sm">
-                                <div className="flex gap-2">
-                                    {version.status === 'IN_VALIDATION' && canApprove && (
-                                        <button
-                                            onClick={(e) => handleApprove(e, version.version_id)}
-                                            className="text-green-600 hover:text-green-800 font-medium"
-                                        >
-                                            Approve
-                                        </button>
-                                    )}
-                                    {version.status === 'APPROVED' && (
-                                        <button
-                                            onClick={(e) => handleActivate(e, version.version_id)}
-                                            className="text-blue-600 hover:text-blue-800 font-medium"
-                                        >
-                                            Activate
-                                        </button>
-                                    )}
-                                    {version.status === 'DRAFT' && (
-                                        <button
-                                            onClick={(e) => handleDelete(e, version.version_id)}
-                                            className="text-red-600 hover:text-red-800 font-medium"
-                                        >
-                                            Delete
-                                        </button>
-                                    )}
-                                    {version.status === 'ACTIVE' && (
-                                        <span className="text-xs text-gray-500 italic">Current</span>
-                                    )}
-                                </div>
-                            </td>
+                <table className="min-w-full divide-y divide-gray-200">
+                    <thead className="bg-gray-50">
+                        <tr>
+                            <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Version</th>
+                            <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Type</th>
+                            <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+                            <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Validation</th>
+                            <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Description</th>
+                            <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Implementation Date</th>
+                            <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Created</th>
+                            <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
                         </tr>
-                    ))}
-                </tbody>
-            </table>
+                    </thead>
+                    <tbody className="bg-white divide-y divide-gray-200">
+                        {versions.map((version) => (
+                            <tr
+                                key={version.version_id}
+                                onClick={() => onVersionClick && onVersionClick(version)}
+                                className="hover:bg-gray-50 cursor-pointer"
+                            >
+                                <td className="px-4 py-3 text-sm font-medium">
+                                    <Link
+                                        to={`/models/${modelId}/versions/${version.version_id}`}
+                                        onClick={(e) => e.stopPropagation()}
+                                        className="text-blue-600 hover:text-blue-800 hover:underline font-medium"
+                                    >
+                                        {version.version_number}
+                                    </Link>
+                                </td>
+                                <td className="px-4 py-3 text-sm">
+                                    {version.change_type_name ? (
+                                        <div>
+                                            <div className="font-medium text-gray-900">{version.change_type_name}</div>
+                                            {version.change_category_name && (
+                                                <div className="text-xs text-gray-500">{version.change_category_name}</div>
+                                            )}
+                                            <div className="mt-1">{getChangeTypeBadge(version.change_type)}</div>
+                                        </div>
+                                    ) : (
+                                        getChangeTypeBadge(version.change_type)
+                                    )}
+                                </td>
+                                <td className="px-4 py-3 text-sm">{getStatusBadge(version.status)}</td>
+                                <td className="px-4 py-3 text-sm">
+                                    {version.validation_request_id ? (
+                                        <Link
+                                            to={`/validation-workflow/${version.validation_request_id}`}
+                                            onClick={(e) => e.stopPropagation()}
+                                            className="text-blue-600 hover:text-blue-800 hover:underline text-xs"
+                                        >
+                                            Request #{version.validation_request_id}
+                                            {version.validation_type === 'INTERIM' && (
+                                                <span className="ml-1 px-1.5 py-0.5 bg-yellow-100 text-yellow-800 rounded text-xs font-medium">
+                                                    INTERIM
+                                                </span>
+                                            )}
+                                        </Link>
+                                    ) : (
+                                        <span className="text-xs text-gray-400">-</span>
+                                    )}
+                                </td>
+                                <td className="px-4 py-3 text-sm text-gray-600 max-w-xs truncate" title={version.change_description}>
+                                    {version.change_description}
+                                </td>
+                                <td className="px-4 py-3 text-sm text-gray-600">
+                                    {version.production_date ? version.production_date.split('T')[0] : '-'}
+                                </td>
+                                <td className="px-4 py-3 text-sm text-gray-600">
+                                    {version.created_at.split('T')[0]}
+                                    {version.created_by_name && (
+                                        <div className="text-xs text-gray-500">{version.created_by_name}</div>
+                                    )}
+                                </td>
+                                <td className="px-4 py-3 text-sm">
+                                    <div className="flex gap-2">
+                                        {version.status === 'IN_VALIDATION' && canApprove && (
+                                            <button
+                                                onClick={(e) => handleApprove(e, version.version_id)}
+                                                className="text-green-600 hover:text-green-800 font-medium"
+                                            >
+                                                Approve
+                                            </button>
+                                        )}
+                                        {version.status === 'APPROVED' && (
+                                            <button
+                                                onClick={(e) => handleActivate(e, version.version_id)}
+                                                className="text-blue-600 hover:text-blue-800 font-medium"
+                                            >
+                                                Activate
+                                            </button>
+                                        )}
+                                        {version.status === 'DRAFT' && (
+                                            <button
+                                                onClick={(e) => handleDelete(e, version.version_id)}
+                                                className="text-red-600 hover:text-red-800 font-medium"
+                                            >
+                                                Delete
+                                            </button>
+                                        )}
+                                        {version.status === 'ACTIVE' && (
+                                            <span className="text-xs text-gray-500 italic">Current</span>
+                                        )}
+                                    </div>
+                                </td>
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
             </div>
         </div>
     );

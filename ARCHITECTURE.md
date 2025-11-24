@@ -25,6 +25,7 @@ Model Risk Management inventory system with a FastAPI backend, React/TypeScript 
   - `model_delegates.py`: delegate assignments for models.
   - `model_hierarchy.py`: parent-child model relationships (e.g., sub-models).
   - `model_dependencies.py`: feeder-consumer data flow relationships with DFS-based cycle detection to maintain DAG constraint.
+  - `model_types.py`: hierarchical model type classification (categories and types).
   - `vendors.py`: vendor CRUD.
   - `taxonomies.py`: taxonomy/category and value management.
   - `validation_workflow.py`: end-to-end validation lifecycle (requests, status updates, assignments, outcomes, approvals, audit logging, component configurations, reports including deviation trends).
@@ -40,7 +41,7 @@ Model Risk Management inventory system with a FastAPI backend, React/TypeScript 
   - PDF/report helpers in `validation_workflow.py` (FPDF) for generated artifacts.
 - Models (`app/models/`):
   - Users & directory: `user.py`, `entra_user.py`, roles include Admin/Validator/Global Approver/Regional Approver/User.
-  - Catalog: `model.py`, `vendor.py`, `taxonomy.py`, `region.py`, `model_version.py`, `model_region.py`, `model_delegate.py`, `model_change_taxonomy.py`, `model_version_region.py`.
+  - Catalog: `model.py`, `vendor.py`, `taxonomy.py`, `region.py`, `model_version.py`, `model_region.py`, `model_delegate.py`, `model_change_taxonomy.py`, `model_version_region.py`, `model_type.py` (ModelType, ModelTypeCategory).
   - Model relationships: `model_hierarchy.py` (parent-child links with effective/end dates), `model_feed_dependency.py` (feeder-consumer data flows with active status tracking), `model_dependency_metadata.py` (extended metadata for dependencies, not yet exposed in UI).
   - Validation workflow: `validation.py` (ValidationRequest, ValidationStatusHistory, ValidationAssignment, ValidationOutcome, ValidationApproval, ValidationReviewOutcome, ValidationPlan, ValidationPlanComponent, ValidationComponentDefinition, ComponentDefinitionConfiguration/ConfigItem, ValidationPolicy, ValidationWorkflowSLA).
   - Compliance/analytics: `audit_log.py`, `export_view.py`, `saved_query.py`, `version_deployment_task.py`, `validation_grouping.py`.
@@ -62,6 +63,7 @@ Model Risk Management inventory system with a FastAPI backend, React/TypeScript 
 ## Data Model (conceptual)
 - User & EntraUser directory entries; roles drive permissions.
 - Model with vendor, owner/developer, taxonomy links (risk tier, validation type, etc.), regulatory categories, delegates, and region assignments via ModelRegion.
+- **Model Types**: Hierarchical classification with Categories (e.g., "Financial", "Operational") and Types (e.g., "Credit Risk", "Fraud Detection").
 - **Model Relationships** (Admin-managed with full audit logging):
   - **ModelHierarchy**: Parent-child relationships (e.g., sub-models) with relation type taxonomy, effective/end dates, and notes. Prevents self-reference via database constraints.
   - **ModelFeedDependency**: Feeder-consumer data flow relationships with dependency type taxonomy, description, effective/end dates, and is_active flag. **Cycle detection enforced**: DFS algorithm prevents creation of circular dependencies to maintain DAG (Directed Acyclic Graph) constraint. Includes detailed error reporting with cycle path and model names.
@@ -74,7 +76,7 @@ Model Risk Management inventory system with a FastAPI backend, React/TypeScript 
 - SavedQuery/ExportView for analytics/reporting reuse.
 
 ## Request & Data Flow
-1. Frontend calls Axios client -> FastAPI routes under `/auth`, `/models`, `/validation-workflow`, `/vendors`, `/taxonomies`, `/audit-logs`, `/regions`, `/model-versions`, `/model-change-taxonomy`, `/analytics`, `/saved-queries`, `/regional-compliance-report`, `/validation-workflow/compliance-report/*`, `/models/{id}/hierarchy/*`, `/models/{id}/dependencies/*`, etc.
+1. Frontend calls Axios client -> FastAPI routes under `/auth`, `/models`, `/validation-workflow`, `/vendors`, `/taxonomies`, `/model-types`, `/audit-logs`, `/regions`, `/model-versions`, `/model-change-taxonomy`, `/analytics`, `/saved-queries`, `/regional-compliance-report`, `/validation-workflow/compliance-report/*`, `/models/{id}/hierarchy/*`, `/models/{id}/dependencies/*`, etc.
 2. `get_current_user` decodes JWT, routes apply role checks and RLS filters.
 3. SQLAlchemy ORM persists/fetches entities; Alembic manages schema migrations. **Model relationships enforce business rules**: cycle detection prevents circular dependencies, self-reference constraints prevent invalid links, date range validation ensures data integrity.
 4. Responses serialized via Pydantic schemas; frontend renders tables/cards with sorting/export.

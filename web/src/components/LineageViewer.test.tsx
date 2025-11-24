@@ -83,10 +83,11 @@ describe('LineageViewer', () => {
             // Check downstream section
             expect(screen.getByText('Downstream Dependencies (Consumers)')).toBeInTheDocument();
             expect(screen.getByText('Consumer Model')).toBeInTheDocument();
-        });
-    });
 
-    it('handles empty lineage', async () => {
+            // Check export button
+            expect(screen.getByText('Export PDF')).toBeInTheDocument();
+        });
+    }); it('handles empty lineage', async () => {
         mockGet.mockResolvedValue({
             data: {
                 model: { model_id: 1, model_name: 'Center Model' },

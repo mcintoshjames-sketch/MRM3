@@ -7,6 +7,7 @@ from app.schemas.vendor import VendorResponse
 from app.schemas.taxonomy import TaxonomyValueResponse
 from app.schemas.region import Region
 from app.schemas.model_submission_comment import ModelSubmissionCommentResponse
+from app.schemas.model_type_taxonomy import ModelTypeResponse
 
 if TYPE_CHECKING:
     pass
@@ -104,7 +105,7 @@ class ModelDetailResponse(ModelResponse):
     vendor: Optional[VendorResponse] = None
     risk_tier: Optional[TaxonomyValueResponse] = None
     validation_type: Optional[TaxonomyValueResponse] = None
-    model_type: Optional[TaxonomyValueResponse] = None
+    model_type: Optional[ModelTypeResponse] = None
     ownership_type: Optional[TaxonomyValueResponse] = None
     wholly_owned_region: Optional[Region] = None
     users: List[UserResponse] = []
@@ -161,7 +162,7 @@ class ModelCreateResponse(BaseModel):
     vendor: Optional[VendorResponse] = None
     risk_tier: Optional[TaxonomyValueResponse] = None
     validation_type: Optional[TaxonomyValueResponse] = None
-    model_type: Optional[TaxonomyValueResponse] = None
+    model_type: Optional[ModelTypeResponse] = None
     ownership_type: Optional[TaxonomyValueResponse] = None
     wholly_owned_region: Optional[Any] = None
     users: List[UserResponse] = []

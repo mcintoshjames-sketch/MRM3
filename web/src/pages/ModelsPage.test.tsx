@@ -83,12 +83,15 @@ const sampleModels = [
 // Helper to setup standard API mocks
 const setupApiMocks = (models = sampleModels) => {
     mockGet.mockImplementation((url: string) => {
-        if (url === '/models/') return Promise.resolve({ data: models });
+        if (url.startsWith('/models/')) return Promise.resolve({ data: models });
         if (url === '/auth/users') return Promise.resolve({ data: sampleUsers });
         if (url === '/vendors/') return Promise.resolve({ data: sampleVendors });
         if (url === '/regions/') return Promise.resolve({ data: [] });
         if (url === '/taxonomies/') return Promise.resolve({ data: [] });
+        if (url === '/model-types/categories') return Promise.resolve({ data: [] });
         if (url === '/export-views/?entity_type=models') return Promise.resolve({ data: [] });
+        if (url === '/validation-workflow/my-pending-submissions') return Promise.resolve({ data: [] });
+        if (url === '/deployment-tasks/my-tasks') return Promise.resolve({ data: [] });
         return Promise.reject(new Error('Unknown URL: ' + url));
     });
 };
@@ -103,7 +106,7 @@ describe('ModelsPage', () => {
     });
 
     it('displays loading state initially', () => {
-        mockGet.mockImplementation(() => new Promise(() => {})); // Never resolves
+        mockGet.mockImplementation(() => new Promise(() => { })); // Never resolves
         render(<ModelsPage />);
         expect(screen.getByText('Loading...')).toBeInTheDocument();
     });

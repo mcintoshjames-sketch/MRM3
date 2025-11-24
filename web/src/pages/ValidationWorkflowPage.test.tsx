@@ -151,6 +151,8 @@ const setupApiMocks = (options: {
                 },
             });
         }
+        if (url === '/validation-workflow/my-pending-submissions') return Promise.resolve({ data: [] });
+        if (url === '/deployment-tasks/my-tasks') return Promise.resolve({ data: [] });
         return Promise.reject(new Error(`Unknown URL: ${url}`));
     });
 

@@ -18,6 +18,9 @@ from app.schemas.model_relationships import (
     ModelInfo,
     DependencyTypeInfo,
 )
+import io
+from fastapi.responses import StreamingResponse
+from fpdf import FPDF
 
 router = APIRouter()
 
@@ -526,7 +529,8 @@ def get_dependency_lineage(
     - downstream: List of downstream dependencies (models that consume from this model)
     """
     # Verify model exists
-    model = db.query(Model).filter(Model.model_id == model_id).first()
+    model = db.query(Model).options(joinedload(Model.owner)).filter(
+        Model.model_id == model_id).first()
     if not model:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -545,7 +549,8 @@ def get_dependency_lineage(
 
         # Query feeder dependencies
         query = db.query(ModelFeedDependency).options(
-            joinedload(ModelFeedDependency.feeder_model),
+            joinedload(ModelFeedDependency.feeder_model).joinedload(
+                Model.owner),
             joinedload(ModelFeedDependency.dependency_type)
         ).filter(ModelFeedDependency.consumer_model_id == consumer_id)
 
@@ -563,6 +568,7 @@ def get_dependency_lineage(
             feeder_dict = {
                 "model_id": dep.feeder_model.model_id,
                 "model_name": dep.feeder_model.model_name,
+                "owner_name": dep.feeder_model.owner.full_name if dep.feeder_model.owner else "Unknown",
                 "dependency_type": dep.dependency_type.label if dep.dependency_type else "Unknown",
                 "description": dep.description,
                 "depth": depth + 1,
@@ -584,7 +590,8 @@ def get_dependency_lineage(
 
         # Query consumer dependencies
         query = db.query(ModelFeedDependency).options(
-            joinedload(ModelFeedDependency.consumer_model),
+            joinedload(ModelFeedDependency.consumer_model).joinedload(
+                Model.owner),
             joinedload(ModelFeedDependency.dependency_type)
         ).filter(ModelFeedDependency.feeder_model_id == feeder_id)
 
@@ -602,6 +609,7 @@ def get_dependency_lineage(
             consumer_dict = {
                 "model_id": dep.consumer_model.model_id,
                 "model_name": dep.consumer_model.model_name,
+                "owner_name": dep.consumer_model.owner.full_name if dep.consumer_model.owner else "Unknown",
                 "dependency_type": dep.dependency_type.label if dep.dependency_type else "Unknown",
                 "description": dep.description,
                 "depth": depth + 1,
@@ -615,7 +623,8 @@ def get_dependency_lineage(
     response = {
         "model": {
             "model_id": model.model_id,
-            "model_name": model.model_name
+            "model_name": model.model_name,
+            "owner_name": model.owner.full_name if model.owner else "Unknown"
         }
     }
 
@@ -626,3 +635,200 @@ def get_dependency_lineage(
         response["downstream"] = trace_downstream(model_id)
 
     return response
+
+
+class LineagePDF(FPDF):
+    def header(self):
+        self.set_font('helvetica', 'B', 16)
+        self.cell(0, 10, 'End-to-End Model Lineage Paths', border=False,
+                  align='C', new_x="LMARGIN", new_y="NEXT")
+        self.ln(5)
+
+    def footer(self):
+        self.set_y(-15)
+        self.set_font('helvetica', 'I', 8)
+        self.cell(0, 10, f'Page {self.page_no()}/{{nb}}', align='C')
+
+    def draw_path(self, path, path_idx):
+        self.set_font("helvetica", 'B', 12)
+        self.set_text_color(0, 0, 0)
+        self.cell(0, 10, f"Path #{path_idx}", new_x="LMARGIN", new_y="NEXT")
+        self.ln(2)
+
+        # Settings
+        box_w = 50
+        box_h = 25  # Increased height for extra info
+        gap = 10
+        margin = self.l_margin
+        page_w = self.w - 2 * margin
+
+        x = margin
+        y = self.get_y()
+
+        max_x = margin + page_w - box_w
+
+        for i, node in enumerate(path):
+            # Check if we need to wrap to next line
+            if x > max_x:
+                x = margin
+                y += box_h + gap + 10  # Extra space for row gap
+
+                # Check page break
+                if y + box_h > self.h - 20:
+                    self.add_page()
+                    y = self.get_y()
+
+            # Determine style based on node type
+            is_center = node.get('is_center', False)
+
+            if is_center:
+                self.set_fill_color(235, 248, 255)  # Blue-50
+                self.set_draw_color(66, 153, 225)   # Blue-500
+                self.set_line_width(0.5)
+            elif i < len(path) and not node.get('is_center') and any(n.get('is_center') for n in path[i+1:]):
+                # Upstream (before center)
+                self.set_fill_color(240, 253, 244)  # Green-50
+                self.set_draw_color(74, 222, 128)   # Green-400
+                self.set_line_width(0.3)
+            else:
+                # Downstream (after center)
+                self.set_fill_color(250, 245, 255)  # Purple-50
+                self.set_draw_color(192, 132, 252)  # Purple-400
+                self.set_line_width(0.3)
+
+            # Draw Box
+            self.rect(x, y, box_w, box_h, style='FD')
+
+            # Text
+            self.set_xy(x + 1, y + 2)
+            self.set_font("helvetica", 'B', 8)
+            self.set_text_color(0, 0, 0)
+
+            # Truncate name
+            name = node['model_name']
+            if len(name) > 25:
+                name = name[:22] + "..."
+            self.cell(box_w - 2, 5, name, align='C')
+
+            # Type
+            self.set_xy(x + 1, y + 8)
+            self.set_font("helvetica", '', 7)
+            self.set_text_color(80, 80, 80)
+            dep_type = node.get('dependency_type', 'Center')
+            self.cell(box_w - 2, 4, f"[{dep_type}]", align='C')
+
+            # ID & Owner
+            self.set_xy(x + 1, y + 13)
+            self.set_font("helvetica", '', 6)
+            self.cell(box_w - 2, 3, f"ID: {node['model_id']}", align='C')
+
+            self.set_xy(x + 1, y + 17)
+            owner = node.get('owner_name', 'Unknown')
+            if len(owner) > 25:
+                owner = owner[:22] + "..."
+            self.cell(box_w - 2, 3, f"Owner: {owner}", align='C')
+
+            # Draw Arrow to next node
+            if i < len(path) - 1:
+                next_x = x + box_w + gap
+                # If next node wraps, don't draw right arrow
+                if x + box_w + gap <= max_x:
+                    mid_y = y + box_h / 2
+                    self.set_draw_color(100, 100, 100)
+                    self.set_line_width(0.3)  # Standardize arrow thickness
+                    self.line(x + box_w, mid_y, x + box_w + gap, mid_y)
+                    # Arrow head
+                    self.line(x + box_w + gap - 2, mid_y -
+                              2, x + box_w + gap, mid_y)
+                    self.line(x + box_w + gap - 2, mid_y +
+                              2, x + box_w + gap, mid_y)
+
+            x += box_w + gap
+
+        self.set_y(y + box_h + 15)
+        if self.get_y() > self.h - 30:
+            self.add_page()
+
+
+@router.get("/models/{model_id}/dependencies/lineage/pdf")
+def export_lineage_pdf(
+    model_id: int,
+    direction: str = "both",
+    max_depth: int = 10,
+    include_inactive: bool = False,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Generate a PDF report of the dependency lineage as end-to-end paths.
+    """
+    # Fetch lineage data
+    lineage_data = get_dependency_lineage(
+        model_id=model_id,
+        direction=direction,
+        max_depth=max_depth,
+        include_inactive=include_inactive,
+        db=db,
+        current_user=current_user
+    )
+
+    # Helper to collect upstream paths (from root to parent)
+    def collect_upstream_paths(nodes):
+        if not nodes:
+            return [[]]
+        paths = []
+        for node in nodes:
+            # Recursive call
+            parent_paths = collect_upstream_paths(node.get('upstream', []))
+            for p_path in parent_paths:
+                # Append current node
+                paths.append(p_path + [node])
+        return paths
+
+    # Helper to collect downstream paths (from child to leaf)
+    def collect_downstream_paths(nodes):
+        if not nodes:
+            return [[]]
+        paths = []
+        for node in nodes:
+            # Recursive call
+            child_paths = collect_downstream_paths(node.get('downstream', []))
+            for c_path in child_paths:
+                # Prepend current node
+                paths.append([node] + c_path)
+        return paths
+
+    # Generate all paths
+    u_paths = collect_upstream_paths(lineage_data.get('upstream', []))
+    d_paths = collect_downstream_paths(lineage_data.get('downstream', []))
+
+    # Mark center model
+    center_node = lineage_data['model'].copy()
+    center_node['is_center'] = True
+    center_node['dependency_type'] = 'Center'
+
+    full_paths = []
+    for u in u_paths:
+        for d in d_paths:
+            full_paths.append(u + [center_node] + d)
+
+    # Create PDF in Landscape
+    pdf = LineagePDF(orientation='L', unit='mm', format='A4')
+    pdf.add_page()
+
+    # Draw paths
+    for idx, path in enumerate(full_paths, 1):
+        pdf.draw_path(path, idx)
+
+    # Output
+    pdf_bytes = pdf.output()
+    buffer = io.BytesIO(pdf_bytes)
+    buffer.seek(0)
+
+    filename = f"lineage_chain_{model_id}.pdf"
+
+    return StreamingResponse(
+        buffer,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f"attachment; filename={filename}"}
+    )
