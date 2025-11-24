@@ -17,6 +17,7 @@ from app.models.model_hierarchy import ModelHierarchy
 from app.models.model_feed_dependency import ModelFeedDependency
 from app.models.model_dependency_metadata import ModelDependencyMetadata
 from app.models.conditional_approval import ApproverRole, ConditionalApprovalRule, RuleRequiredApprover
+from app.models.fry import FryReport, FrySchedule, FryMetricGroup, FryLineItem
 from app.models.validation import (
     ValidationPolicy,
     ValidationWorkflowSLA,
@@ -63,6 +64,11 @@ __all__ = [
     "ApproverRole",
     "ConditionalApprovalRule",
     "RuleRequiredApprover",
+    # FRY 14 Reporting
+    "FryReport",
+    "FrySchedule",
+    "FryMetricGroup",
+    "FryLineItem",
     # Validation policy
     "ValidationPolicy",
     "ValidationWorkflowSLA",

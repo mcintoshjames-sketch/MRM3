@@ -618,8 +618,8 @@ class ValidationApproval(Base):
     request_id: Mapped[int] = mapped_column(
         Integer, ForeignKey("validation_requests.request_id", ondelete="CASCADE"), nullable=False
     )
-    approver_id: Mapped[int] = mapped_column(
-        Integer, ForeignKey("users.user_id"), nullable=False
+    approver_id: Mapped[Optional[int]] = mapped_column(
+        Integer, ForeignKey("users.user_id"), nullable=True
     )
     # Validator, Validation Head, Model Owner, Risk Officer
     approver_role: Mapped[str] = mapped_column(String(100), nullable=False)

@@ -45,14 +45,15 @@ def db_session():
 
 @pytest.fixture(scope="function")
 def client(db_session):
-    """Test client with database override."""
+    """Test client with database override.
+
+    Note: db_session already created tables, so we don't need to create them again.
+    """
     app.dependency_overrides[get_db] = override_get_db
-    Base.metadata.create_all(bind=engine)
 
     with TestClient(app) as test_client:
         yield test_client
 
-    Base.metadata.drop_all(bind=engine)
     app.dependency_overrides.clear()
 
 
@@ -189,8 +190,10 @@ def taxonomy_values(db_session):
     val_type_tax = Taxonomy(name="Validation Type", is_system=True)
     outcome_tax = Taxonomy(name="Validation Outcome", is_system=True)
     scope_tax = Taxonomy(name="Validation Scope", is_system=True)
+    priority_tax = Taxonomy(name="Validation Priority", is_system=True)
+    status_tax = Taxonomy(name="Validation Request Status", is_system=True)
 
-    db_session.add_all([risk_tier_tax, val_type_tax, outcome_tax, scope_tax])
+    db_session.add_all([risk_tier_tax, val_type_tax, outcome_tax, scope_tax, priority_tax, status_tax])
     db_session.flush()
 
     # Create values
@@ -202,8 +205,16 @@ def taxonomy_values(db_session):
     pass_findings = TaxonomyValue(taxonomy_id=outcome_tax.taxonomy_id, code="PASS_WITH_FINDINGS", label="Pass with Findings", sort_order=2)
     fail_outcome = TaxonomyValue(taxonomy_id=outcome_tax.taxonomy_id, code="FAIL", label="Fail", sort_order=3)
     full_scope = TaxonomyValue(taxonomy_id=scope_tax.taxonomy_id, code="FULL_SCOPE", label="Full Scope", sort_order=1)
+    priority_high = TaxonomyValue(taxonomy_id=priority_tax.taxonomy_id, code="HIGH", label="High", sort_order=1)
+    priority_medium = TaxonomyValue(taxonomy_id=priority_tax.taxonomy_id, code="MEDIUM", label="Medium", sort_order=2)
+    status_intake = TaxonomyValue(taxonomy_id=status_tax.taxonomy_id, code="INTAKE", label="Intake", sort_order=1)
+    status_planning = TaxonomyValue(taxonomy_id=status_tax.taxonomy_id, code="PLANNING", label="Planning", sort_order=2)
+    status_in_progress = TaxonomyValue(taxonomy_id=status_tax.taxonomy_id, code="IN_PROGRESS", label="In Progress", sort_order=3)
+    status_review = TaxonomyValue(taxonomy_id=status_tax.taxonomy_id, code="REVIEW", label="Review", sort_order=4)
+    status_pending_approval = TaxonomyValue(taxonomy_id=status_tax.taxonomy_id, code="PENDING_APPROVAL", label="Pending Approval", sort_order=5)
+    status_approved = TaxonomyValue(taxonomy_id=status_tax.taxonomy_id, code="APPROVED", label="Approved", sort_order=6)
 
-    db_session.add_all([tier1, tier2, initial, annual, pass_outcome, pass_findings, fail_outcome, full_scope])
+    db_session.add_all([tier1, tier2, initial, annual, pass_outcome, pass_findings, fail_outcome, full_scope, priority_high, priority_medium, status_intake, status_planning, status_in_progress, status_review, status_pending_approval, status_approved])
     db_session.commit()
 
     return {
@@ -214,5 +225,13 @@ def taxonomy_values(db_session):
         "pass": pass_outcome,
         "pass_with_findings": pass_findings,
         "fail": fail_outcome,
-        "full_scope": full_scope
+        "full_scope": full_scope,
+        "priority_high": priority_high,
+        "priority_medium": priority_medium,
+        "status_intake": status_intake,
+        "status_planning": status_planning,
+        "status_in_progress": status_in_progress,
+        "status_review": status_review,
+        "status_pending_approval": status_pending_approval,
+        "status_approved": status_approved
     }

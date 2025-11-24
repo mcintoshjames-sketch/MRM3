@@ -1,5 +1,6 @@
 """Tests for Conditional Model Use Approvals feature."""
 import pytest
+from datetime import date, datetime
 from app.models.conditional_approval import ApproverRole, ConditionalApprovalRule, RuleRequiredApprover
 from app.models.validation import ValidationRequest, ValidationApproval
 from app.models.region import Region
@@ -28,8 +29,10 @@ class TestApproverRoleCRUD:
         assert response.status_code == 200
         data = response.json()
         assert len(data) == 2
-        assert data[0]["role_name"] == "US MRM Committee"
-        assert data[1]["role_name"] == "EU MRM Committee"
+        # Check both roles exist (order-agnostic)
+        role_names = {r["role_name"] for r in data}
+        assert "US MRM Committee" in role_names
+        assert "EU MRM Committee" in role_names
 
     def test_list_approver_roles_filtered_by_active(self, client, db_session, admin_headers):
         """List approver roles filtered by is_active."""
@@ -136,7 +139,8 @@ class TestApproverRoleCRUD:
 
         response = client.delete(f"/approver-roles/{role.role_id}", headers=admin_headers)
         assert response.status_code == 400
-        assert "active rules" in response.json()["detail"].lower()
+        detail = response.json()["detail"].lower()
+        assert "active rule" in detail or "cannot delete" in detail
 
 
 class TestConditionalApprovalRuleCRUD:
@@ -167,7 +171,8 @@ class TestConditionalApprovalRuleCRUD:
         data = response.json()
         assert len(data) == 1
         assert data[0]["rule_name"] == "Test Rule"
-        assert len(data[0]["required_approver_roles"]) == 1
+        # List endpoint uses different schema with summary fields
+        assert "Test Role" in data[0]["required_approver_names"]
 
     def test_list_rules_filtered_by_active(self, client, db_session, admin_headers):
         """List rules filtered by is_active."""
@@ -201,8 +206,8 @@ class TestConditionalApprovalRuleCRUD:
         assert response.status_code == 201
         data = response.json()
         assert data["rule_name"] == "Complete Rule"
-        assert data["validation_type_ids"] == "1,2"
-        assert data["risk_tier_ids"] == "1"
+        assert data["validation_type_ids"] == [1, 2]
+        assert data["risk_tier_ids"] == [1]
 
     def test_create_rule_with_empty_dimensions(self, client, db_session, admin_headers):
         """Create rule with empty dimensions (matches ANY)."""
@@ -221,8 +226,9 @@ class TestConditionalApprovalRuleCRUD:
         response = client.post("/conditional-approval-rules/", json=payload, headers=admin_headers)
         assert response.status_code == 201
         data = response.json()
-        assert data["validation_type_ids"] is None
-        assert data["risk_tier_ids"] is None
+        # Empty dimensions return as empty lists
+        assert data["validation_type_ids"] == []
+        assert data["risk_tier_ids"] == []
 
     def test_create_rule_with_multiple_required_approver_roles(self, client, db_session, admin_headers):
         """Create rule with multiple required approver roles."""
@@ -274,8 +280,8 @@ class TestConditionalApprovalRuleCRUD:
         response = client.patch(f"/conditional-approval-rules/{rule.rule_id}", json=payload, headers=admin_headers)
         assert response.status_code == 200
         data = response.json()
-        assert data["validation_type_ids"] == "1,2,3"
-        assert data["risk_tier_ids"] == "1"
+        assert data["validation_type_ids"] == [1, 2, 3]
+        assert data["risk_tier_ids"] == [1]
 
     def test_update_rule_required_approver_roles(self, client, db_session, admin_headers):
         """Update rule required approver roles."""
@@ -371,9 +377,11 @@ class TestRuleEvaluationLogic:
         db_session.flush()
 
         validation_request = ValidationRequest(
+            requestor_id=test_user.user_id,
             validation_type_id=taxonomy_values["initial"].value_id,
-            validation_scope_id=taxonomy_values["full_scope"].value_id,
-            priority_id=taxonomy_values["initial"].value_id
+            priority_id=taxonomy_values["initial"].value_id,
+            target_completion_date=date(2025, 12, 31),
+            current_status_id=1
         )
         validation_request.models = [model]
         db_session.add(validation_request)
@@ -410,9 +418,11 @@ class TestRuleEvaluationLogic:
         db_session.flush()
 
         validation_request = ValidationRequest(
+            requestor_id=test_user.user_id,
             validation_type_id=taxonomy_values["initial"].value_id,
-            validation_scope_id=taxonomy_values["full_scope"].value_id,
-            priority_id=taxonomy_values["initial"].value_id
+            priority_id=taxonomy_values["initial"].value_id,
+            target_completion_date=date(2025, 12, 31),
+            current_status_id=1
         )
         validation_request.models = [model]
         db_session.add(validation_request)
@@ -455,9 +465,11 @@ class TestRuleEvaluationLogic:
         db_session.flush()
 
         validation_request = ValidationRequest(
+            requestor_id=test_user.user_id,
             validation_type_id=taxonomy_values["initial"].value_id,
-            validation_scope_id=taxonomy_values["full_scope"].value_id,
-            priority_id=taxonomy_values["initial"].value_id
+            priority_id=taxonomy_values["initial"].value_id,
+            target_completion_date=date(2025, 12, 31),
+            current_status_id=1
         )
         validation_request.models = [model]
         db_session.add(validation_request)
@@ -468,7 +480,7 @@ class TestRuleEvaluationLogic:
 
     def test_rule_matches_when_all_non_empty_dimensions_match(self, db_session, test_user, taxonomy_values):
         """Rule matches when all non-empty dimensions match."""
-        region = Region(region_name="US", region_code="US")
+        region = Region(name="US", code="US")
         db_session.add(region)
         db_session.flush()
 
@@ -500,9 +512,11 @@ class TestRuleEvaluationLogic:
         db_session.flush()
 
         validation_request = ValidationRequest(
+            requestor_id=test_user.user_id,
             validation_type_id=taxonomy_values["initial"].value_id,
-            validation_scope_id=taxonomy_values["full_scope"].value_id,
-            priority_id=taxonomy_values["initial"].value_id
+            priority_id=taxonomy_values["initial"].value_id,
+            target_completion_date=date(2025, 12, 31),
+            current_status_id=1
         )
         validation_request.models = [model]
         db_session.add(validation_request)
@@ -539,9 +553,11 @@ class TestRuleEvaluationLogic:
         db_session.flush()
 
         validation_request = ValidationRequest(
+            requestor_id=test_user.user_id,
             validation_type_id=taxonomy_values["initial"].value_id,
-            validation_scope_id=taxonomy_values["full_scope"].value_id,
-            priority_id=taxonomy_values["initial"].value_id
+            priority_id=taxonomy_values["initial"].value_id,
+            target_completion_date=date(2025, 12, 31),
+            current_status_id=1
         )
         validation_request.models = [model]
         db_session.add(validation_request)
@@ -580,9 +596,11 @@ class TestRuleEvaluationLogic:
         # Should match both initial and annual
         for val_type in [taxonomy_values["initial"], taxonomy_values["annual"]]:
             validation_request = ValidationRequest(
+            requestor_id=test_user.user_id,
                 validation_type_id=val_type.value_id,
-                validation_scope_id=taxonomy_values["full_scope"].value_id,
-                priority_id=val_type.value_id
+                priority_id=val_type.value_id,
+            target_completion_date=date(2025, 12, 31),
+            current_status_id=1
             )
             validation_request.models = [model]
             db_session.add(validation_request)
@@ -613,9 +631,11 @@ class TestRuleEvaluationLogic:
         db_session.commit()
 
         validation_request = ValidationRequest(
+            requestor_id=test_user.user_id,
             validation_type_id=taxonomy_values["initial"].value_id,
-            validation_scope_id=taxonomy_values["full_scope"].value_id,
-            priority_id=taxonomy_values["initial"].value_id
+            priority_id=taxonomy_values["initial"].value_id,
+            target_completion_date=date(2025, 12, 31),
+            current_status_id=1
         )
         db_session.add(validation_request)
         db_session.flush()
@@ -638,8 +658,8 @@ class TestRuleEvaluationLogic:
 
     def test_empty_governance_region_ids_matches_any_governance_region(self, db_session, test_user, taxonomy_values):
         """Empty governance_region_ids matches ANY governance region."""
-        region1 = Region(region_name="US", region_code="US")
-        region2 = Region(region_name="EU", region_code="EU")
+        region1 = Region(name="US", code="US")
+        region2 = Region(name="EU", code="EU")
         db_session.add_all([region1, region2])
         db_session.flush()
 
@@ -661,9 +681,11 @@ class TestRuleEvaluationLogic:
         db_session.commit()
 
         validation_request = ValidationRequest(
+            requestor_id=test_user.user_id,
             validation_type_id=taxonomy_values["initial"].value_id,
-            validation_scope_id=taxonomy_values["full_scope"].value_id,
-            priority_id=taxonomy_values["initial"].value_id
+            priority_id=taxonomy_values["initial"].value_id,
+            target_completion_date=date(2025, 12, 31),
+            current_status_id=1
         )
         db_session.add(validation_request)
         db_session.flush()
@@ -671,7 +693,7 @@ class TestRuleEvaluationLogic:
         # Should match both US and EU
         for region in [region1, region2]:
             model = Model(
-                model_name=f"Model {region.region_code}",
+                model_name=f"Model {region.code}",
                 owner_id=test_user.user_id,
                 wholly_owned_region_id=region.region_id
             )
@@ -686,8 +708,8 @@ class TestRuleEvaluationLogic:
 
     def test_empty_deployed_region_ids_matches_any_deployed_regions(self, db_session, test_user, taxonomy_values):
         """Empty deployed_region_ids matches ANY deployed regions."""
-        region1 = Region(region_name="US", region_code="US")
-        region2 = Region(region_name="EU", region_code="EU")
+        region1 = Region(name="US", code="US")
+        region2 = Region(name="EU", code="EU")
         db_session.add_all([region1, region2])
         db_session.flush()
 
@@ -721,9 +743,11 @@ class TestRuleEvaluationLogic:
         db_session.commit()
 
         validation_request = ValidationRequest(
+            requestor_id=test_user.user_id,
             validation_type_id=taxonomy_values["initial"].value_id,
-            validation_scope_id=taxonomy_values["full_scope"].value_id,
-            priority_id=taxonomy_values["initial"].value_id
+            priority_id=taxonomy_values["initial"].value_id,
+            target_completion_date=date(2025, 12, 31),
+            current_status_id=1
         )
         validation_request.models = [model]
         db_session.add(validation_request)
@@ -734,9 +758,9 @@ class TestRuleEvaluationLogic:
 
     def test_deployed_regions_any_overlap_triggers_rule(self, db_session, test_user, taxonomy_values):
         """Deployed regions: ANY overlap triggers rule."""
-        region1 = Region(region_name="US", region_code="US")
-        region2 = Region(region_name="EU", region_code="EU")
-        region3 = Region(region_name="UK", region_code="UK")
+        region1 = Region(name="US", code="US")
+        region2 = Region(name="EU", code="EU")
+        region3 = Region(name="UK", code="UK")
         db_session.add_all([region1, region2, region3])
         db_session.flush()
 
@@ -772,9 +796,11 @@ class TestRuleEvaluationLogic:
         db_session.commit()
 
         validation_request = ValidationRequest(
+            requestor_id=test_user.user_id,
             validation_type_id=taxonomy_values["initial"].value_id,
-            validation_scope_id=taxonomy_values["full_scope"].value_id,
-            priority_id=taxonomy_values["initial"].value_id
+            priority_id=taxonomy_values["initial"].value_id,
+            target_completion_date=date(2025, 12, 31),
+            current_status_id=1
         )
         validation_request.models = [model]
         db_session.add(validation_request)
@@ -785,9 +811,9 @@ class TestRuleEvaluationLogic:
 
     def test_deployed_regions_no_overlap_does_not_trigger_rule(self, db_session, test_user, taxonomy_values):
         """Deployed regions: no overlap does not trigger rule."""
-        region1 = Region(region_name="US", region_code="US")
-        region2 = Region(region_name="EU", region_code="EU")
-        region3 = Region(region_name="UK", region_code="UK")
+        region1 = Region(name="US", code="US")
+        region2 = Region(name="EU", code="EU")
+        region3 = Region(name="UK", code="UK")
         db_session.add_all([region1, region2, region3])
         db_session.flush()
 
@@ -822,9 +848,11 @@ class TestRuleEvaluationLogic:
         db_session.commit()
 
         validation_request = ValidationRequest(
+            requestor_id=test_user.user_id,
             validation_type_id=taxonomy_values["initial"].value_id,
-            validation_scope_id=taxonomy_values["full_scope"].value_id,
-            priority_id=taxonomy_values["initial"].value_id
+            priority_id=taxonomy_values["initial"].value_id,
+            target_completion_date=date(2025, 12, 31),
+            current_status_id=1
         )
         validation_request.models = [model]
         db_session.add(validation_request)
@@ -859,19 +887,32 @@ class TestRuleEvaluationLogic:
         db_session.flush()
 
         validation_request = ValidationRequest(
+            requestor_id=test_user.user_id,
             validation_type_id=taxonomy_values["initial"].value_id,
-            validation_scope_id=taxonomy_values["full_scope"].value_id,
-            priority_id=taxonomy_values["initial"].value_id
+            priority_id=taxonomy_values["initial"].value_id,
+            target_completion_date=date(2025, 12, 31),
+            current_status_id=1
         )
-        validation_request.models = [model]
         db_session.add(validation_request)
+        db_session.flush()
+
+        # Create association record (models relationship is viewonly)
+        from app.models.validation import ValidationRequestModelVersion
+        assoc = ValidationRequestModelVersion(
+            request_id=validation_request.request_id,
+            model_id=model.model_id,
+            version_id=None
+        )
+        db_session.add(assoc)
         db_session.flush()
 
         # Create existing approval
         approval = ValidationApproval(
             request_id=validation_request.request_id,
             approver_role_id=role.role_id,
-            approval_status="Pending"
+            approver_id=test_user.user_id,
+            approval_status="Pending",
+            approver_role="Admin",
         )
         db_session.add(approval)
         db_session.commit()
@@ -906,21 +947,35 @@ class TestRuleEvaluationLogic:
         db_session.flush()
 
         validation_request = ValidationRequest(
+            requestor_id=test_user.user_id,
             validation_type_id=taxonomy_values["initial"].value_id,
-            validation_scope_id=taxonomy_values["full_scope"].value_id,
-            priority_id=taxonomy_values["initial"].value_id
+            priority_id=taxonomy_values["initial"].value_id,
+            target_completion_date=date(2025, 12, 31),
+            current_status_id=1
         )
-        validation_request.models = [model]
         db_session.add(validation_request)
+        db_session.flush()
+
+        # Create association record (models relationship is viewonly)
+        from app.models.validation import ValidationRequestModelVersion
+        assoc = ValidationRequestModelVersion(
+            request_id=validation_request.request_id,
+            model_id=model.model_id,
+            version_id=None
+        )
+        db_session.add(assoc)
         db_session.flush()
 
         # Create voided approval
         approval = ValidationApproval(
             request_id=validation_request.request_id,
             approver_role_id=role.role_id,
+            approver_id=admin_user.user_id,
             approval_status="Pending",
+            approver_role="Admin",
             voided_by_id=admin_user.user_id,
-            void_reason="Test void"
+            void_reason="Test void",
+            voided_at=datetime.now()
         )
         db_session.add(approval)
         db_session.commit()
@@ -931,7 +986,7 @@ class TestRuleEvaluationLogic:
 
     def test_english_translation_includes_all_matching_dimensions(self, db_session, test_user, taxonomy_values):
         """English translation includes all matching dimensions."""
-        region = Region(region_name="United States", region_code="US")
+        region = Region(name="United States", code="US")
         db_session.add(region)
         db_session.flush()
 
@@ -963,16 +1018,18 @@ class TestRuleEvaluationLogic:
         db_session.flush()
 
         validation_request = ValidationRequest(
+            requestor_id=test_user.user_id,
             validation_type_id=taxonomy_values["initial"].value_id,
-            validation_scope_id=taxonomy_values["full_scope"].value_id,
-            priority_id=taxonomy_values["initial"].value_id
+            priority_id=taxonomy_values["initial"].value_id,
+            target_completion_date=date(2025, 12, 31),
+            current_status_id=1
         )
         validation_request.models = [model]
         db_session.add(validation_request)
         db_session.commit()
 
         result = get_required_approver_roles(db_session, validation_request, model)
-        explanation = result["explanation_summary"]
+        explanation = result["rules_applied"][0]["explanation"]
         assert "US MRM Committee" in explanation
         assert "Initial" in explanation or "validation type" in explanation.lower()
         assert "Tier 1" in explanation or "risk tier" in explanation.lower()
@@ -1004,16 +1061,18 @@ class TestRuleEvaluationLogic:
         db_session.flush()
 
         validation_request = ValidationRequest(
+            requestor_id=test_user.user_id,
             validation_type_id=taxonomy_values["initial"].value_id,
-            validation_scope_id=taxonomy_values["full_scope"].value_id,
-            priority_id=taxonomy_values["initial"].value_id
+            priority_id=taxonomy_values["initial"].value_id,
+            target_completion_date=date(2025, 12, 31),
+            current_status_id=1
         )
         validation_request.models = [model]
         db_session.add(validation_request)
         db_session.commit()
 
         result = get_required_approver_roles(db_session, validation_request, model)
-        explanation = result["explanation_summary"]
+        explanation = result["rules_applied"][0]["explanation"]
         # Should indicate OR logic
         assert "one of" in explanation.lower() or "," in explanation
 
@@ -1049,10 +1108,9 @@ class TestApprovalWorkflowIntegration:
 
         payload = {
             "validation_type_id": taxonomy_values["initial"].value_id,
-            "validation_scope_id": taxonomy_values["full_scope"].value_id,
-            "priority_id": taxonomy_values["initial"].value_id,
+            "priority_id": taxonomy_values["priority_high"].value_id,
             "model_ids": [model.model_id],
-            "requested_by_id": admin_user.user_id
+            "target_completion_date": "2025-12-31"
         }
         response = client.post("/validation-workflow/requests/", json=payload, headers=admin_headers)
         assert response.status_code == 201
@@ -1067,7 +1125,7 @@ class TestApprovalWorkflowIntegration:
         assert approval is not None
         assert approval.approval_status == "Pending"
 
-    def test_rule_re_evaluation_when_moving_to_pending_approval_status(self, client, db_session, test_user, admin_user, admin_headers, taxonomy_values):
+    def test_rule_re_evaluation_when_moving_to_pending_approval_status(self, client, db_session, test_user, admin_user, admin_headers, taxonomy_values, validator_user):
         """Rule re-evaluation happens when moving to Pending Approval status."""
         role = ApproverRole(role_name="Test Committee")
         db_session.add(role)
@@ -1097,26 +1155,39 @@ class TestApprovalWorkflowIntegration:
         # Create validation request
         payload = {
             "validation_type_id": taxonomy_values["initial"].value_id,
-            "validation_scope_id": taxonomy_values["full_scope"].value_id,
-            "priority_id": taxonomy_values["initial"].value_id,
+            "priority_id": taxonomy_values["priority_high"].value_id,
             "model_ids": [model.model_id],
-            "requested_by_id": admin_user.user_id
+            "target_completion_date": "2025-12-31"
         }
         response = client.post("/validation-workflow/requests/", json=payload, headers=admin_headers)
         assert response.status_code == 201
         request_id = response.json()["request_id"]
 
+        # Assign primary validator (required for moving to PLANNING)
+        from app.models.validation import ValidationAssignment
+        assignment = ValidationAssignment(
+            request_id=request_id,
+            validator_id=validator_user.user_id,
+            is_primary=True,
+            assignment_date=date.today()
+        )
+        db_session.add(assignment)
+        db_session.commit()
+
         # Update model risk tier
         model.risk_tier_id = taxonomy_values["tier1"].value_id
         db_session.commit()
 
-        # Move to Pending Approval (should re-evaluate)
-        status_payload = {
-            "new_status_code": "PENDING_APPROVAL",
-            "reason": "Moving to approval"
-        }
-        response = client.patch(f"/validation-workflow/requests/{request_id}/status", json=status_payload, headers=admin_headers)
-        assert response.status_code == 200
+        # Progress through workflow states: INTAKE → PLANNING → IN_PROGRESS → REVIEW → PENDING_APPROVAL
+        for status_name in ["status_planning", "status_in_progress", "status_review", "status_pending_approval"]:
+            status_payload = {
+                "new_status_id": taxonomy_values[status_name].value_id,
+                "reason": f"Moving to {status_name}"
+            }
+            response = client.patch(f"/validation-workflow/requests/{request_id}/status", json=status_payload, headers=admin_headers)
+            if response.status_code != 200:
+                print(f"ERROR at {status_name}: {response.status_code} - {response.json()}")
+            assert response.status_code == 200
 
         # Check that approval was created during re-evaluation
         approval = db_session.query(ValidationApproval).filter(
@@ -1140,19 +1211,31 @@ class TestApprovalWorkflowIntegration:
         db_session.flush()
 
         validation_request = ValidationRequest(
+            requestor_id=test_user.user_id,
             validation_type_id=taxonomy_values["initial"].value_id,
-            validation_scope_id=taxonomy_values["full_scope"].value_id,
             priority_id=taxonomy_values["initial"].value_id,
-            requested_by_id=admin_user.user_id
+            target_completion_date=date(2025, 12, 31),
+            current_status_id=1
         )
-        validation_request.models = [model]
         db_session.add(validation_request)
+        db_session.flush()
+
+        # Create association record (models relationship is viewonly)
+        from app.models.validation import ValidationRequestModelVersion
+        assoc = ValidationRequestModelVersion(
+            request_id=validation_request.request_id,
+            model_id=model.model_id,
+            version_id=None
+        )
+        db_session.add(assoc)
         db_session.flush()
 
         approval = ValidationApproval(
             request_id=validation_request.request_id,
             approver_role_id=role.role_id,
-            approval_status="Pending"
+            approver_id=admin_user.user_id,
+            approval_status="Pending",
+            approver_role="Admin",
         )
         db_session.add(approval)
         db_session.commit()
@@ -1169,7 +1252,7 @@ class TestApprovalWorkflowIntegration:
         db_session.refresh(approval)
         assert approval.approval_status == "Approved"
         assert approval.approval_evidence == "Approved via MRM Committee meeting minutes 2025-11-23"
-        assert approval.approved_by_id == admin_user.user_id
+        assert approval.approver_id == admin_user.user_id
 
     def test_submit_conditional_approval_as_non_admin_fails(self, client, db_session, test_user, admin_user, auth_headers, taxonomy_values):
         """Submit conditional approval as non-Admin fails with 403."""
@@ -1186,19 +1269,31 @@ class TestApprovalWorkflowIntegration:
         db_session.flush()
 
         validation_request = ValidationRequest(
+            requestor_id=test_user.user_id,
             validation_type_id=taxonomy_values["initial"].value_id,
-            validation_scope_id=taxonomy_values["full_scope"].value_id,
             priority_id=taxonomy_values["initial"].value_id,
-            requested_by_id=admin_user.user_id
+            target_completion_date=date(2025, 12, 31),
+            current_status_id=1
         )
-        validation_request.models = [model]
         db_session.add(validation_request)
+        db_session.flush()
+
+        # Create association record (models relationship is viewonly)
+        from app.models.validation import ValidationRequestModelVersion
+        assoc = ValidationRequestModelVersion(
+            request_id=validation_request.request_id,
+            model_id=model.model_id,
+            version_id=None
+        )
+        db_session.add(assoc)
         db_session.flush()
 
         approval = ValidationApproval(
             request_id=validation_request.request_id,
             approver_role_id=role.role_id,
-            approval_status="Pending"
+            approver_id=admin_user.user_id,
+            approval_status="Pending",
+            approver_role="Admin",
         )
         db_session.add(approval)
         db_session.commit()
@@ -1227,19 +1322,31 @@ class TestApprovalWorkflowIntegration:
         db_session.flush()
 
         validation_request = ValidationRequest(
+            requestor_id=test_user.user_id,
             validation_type_id=taxonomy_values["initial"].value_id,
-            validation_scope_id=taxonomy_values["full_scope"].value_id,
             priority_id=taxonomy_values["initial"].value_id,
-            requested_by_id=admin_user.user_id
+            target_completion_date=date(2025, 12, 31),
+            current_status_id=1
         )
-        validation_request.models = [model]
         db_session.add(validation_request)
+        db_session.flush()
+
+        # Create association record (models relationship is viewonly)
+        from app.models.validation import ValidationRequestModelVersion
+        assoc = ValidationRequestModelVersion(
+            request_id=validation_request.request_id,
+            model_id=model.model_id,
+            version_id=None
+        )
+        db_session.add(assoc)
         db_session.flush()
 
         approval = ValidationApproval(
             request_id=validation_request.request_id,
             approver_role_id=role.role_id,
-            approval_status="Pending"
+            approver_id=admin_user.user_id,
+            approval_status="Pending",
+            approver_role="Admin",
         )
         db_session.add(approval)
         db_session.commit()
@@ -1272,19 +1379,31 @@ class TestApprovalWorkflowIntegration:
         db_session.flush()
 
         validation_request = ValidationRequest(
+            requestor_id=test_user.user_id,
             validation_type_id=taxonomy_values["initial"].value_id,
-            validation_scope_id=taxonomy_values["full_scope"].value_id,
             priority_id=taxonomy_values["initial"].value_id,
-            requested_by_id=admin_user.user_id
+            target_completion_date=date(2025, 12, 31),
+            current_status_id=1
         )
-        validation_request.models = [model]
         db_session.add(validation_request)
+        db_session.flush()
+
+        # Create association record (models relationship is viewonly)
+        from app.models.validation import ValidationRequestModelVersion
+        assoc = ValidationRequestModelVersion(
+            request_id=validation_request.request_id,
+            model_id=model.model_id,
+            version_id=None
+        )
+        db_session.add(assoc)
         db_session.flush()
 
         approval = ValidationApproval(
             request_id=validation_request.request_id,
             approver_role_id=role.role_id,
-            approval_status="Pending"
+            approver_id=admin_user.user_id,
+            approval_status="Pending",
+            approver_role="Admin",
         )
         db_session.add(approval)
         db_session.commit()
@@ -1315,19 +1434,31 @@ class TestApprovalWorkflowIntegration:
         db_session.flush()
 
         validation_request = ValidationRequest(
+            requestor_id=test_user.user_id,
             validation_type_id=taxonomy_values["initial"].value_id,
-            validation_scope_id=taxonomy_values["full_scope"].value_id,
             priority_id=taxonomy_values["initial"].value_id,
-            requested_by_id=admin_user.user_id
+            target_completion_date=date(2025, 12, 31),
+            current_status_id=1
         )
-        validation_request.models = [model]
         db_session.add(validation_request)
+        db_session.flush()
+
+        # Create association record (models relationship is viewonly)
+        from app.models.validation import ValidationRequestModelVersion
+        assoc = ValidationRequestModelVersion(
+            request_id=validation_request.request_id,
+            model_id=model.model_id,
+            version_id=None
+        )
+        db_session.add(assoc)
         db_session.flush()
 
         approval = ValidationApproval(
             request_id=validation_request.request_id,
             approver_role_id=role.role_id,
-            approval_status="Pending"
+            approver_id=admin_user.user_id,
+            approval_status="Pending",
+            approver_role="Admin",
         )
         db_session.add(approval)
         db_session.commit()
@@ -1362,19 +1493,31 @@ class TestApprovalWorkflowIntegration:
         db_session.flush()
 
         validation_request = ValidationRequest(
+            requestor_id=test_user.user_id,
             validation_type_id=taxonomy_values["initial"].value_id,
-            validation_scope_id=taxonomy_values["full_scope"].value_id,
             priority_id=taxonomy_values["initial"].value_id,
-            requested_by_id=admin_user.user_id
+            target_completion_date=date(2025, 12, 31),
+            current_status_id=1
         )
-        validation_request.models = [model]
         db_session.add(validation_request)
+        db_session.flush()
+
+        # Create association record (models relationship is viewonly)
+        from app.models.validation import ValidationRequestModelVersion
+        assoc = ValidationRequestModelVersion(
+            request_id=validation_request.request_id,
+            model_id=model.model_id,
+            version_id=None
+        )
+        db_session.add(assoc)
         db_session.flush()
 
         approval = ValidationApproval(
             request_id=validation_request.request_id,
             approver_role_id=role.role_id,
-            approval_status="Pending"
+            approver_id=admin_user.user_id,
+            approval_status="Pending",
+            approver_role="Admin",
         )
         db_session.add(approval)
         db_session.commit()

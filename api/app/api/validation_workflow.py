@@ -663,7 +663,8 @@ def evaluate_and_create_conditional_approvals(
         model: The primary model being validated (or first model if multi-model)
     """
     # Evaluate rules and get required approver roles
-    evaluation_result = get_required_approver_roles(db, validation_request, model)
+    evaluation_result = get_required_approver_roles(
+        db, validation_request, model)
 
     # If no roles required, nothing to do
     if not evaluation_result["required_roles"]:
@@ -682,11 +683,13 @@ def evaluate_and_create_conditional_approvals(
         approval = ValidationApproval(
             request_id=validation_request.request_id,
             approver_role_id=role_id,
+            approver_id=None,  # Will be set when Admin submits approval
+            approver_role="Conditional",
+            approval_type="Conditional",
             approval_status="Pending",
-            approval_date=None,
+            is_required=True,
             comments=f"Conditional approval required from {required_role['role_name']}",
-            created_at=datetime.utcnow(),
-            updated_at=datetime.utcnow()
+            created_at=datetime.utcnow()
         )
         db.add(approval)
 
@@ -760,18 +763,22 @@ def calculate_model_revalidation_status(model: Model, db: Session) -> Dict:
 
     # Calculate dates
     last_completed = last_validation.updated_at.date()
-    submission_due = last_completed + relativedelta(months=policy.frequency_months)
+    submission_due = last_completed + \
+        relativedelta(months=policy.frequency_months)
     grace_period_end = submission_due + relativedelta(months=3)
-    validation_due = grace_period_end + timedelta(days=policy.model_change_lead_time_days)
+    validation_due = grace_period_end + \
+        timedelta(days=policy.model_change_lead_time_days)
 
     # Check if active revalidation request exists
     active_request = db.query(ValidationRequest).join(
         ValidationRequestModelVersion
     ).filter(
         ValidationRequestModelVersion.model_id == model.model_id,
-        ValidationRequest.validation_type.has(TaxonomyValue.code.in_(["COMPREHENSIVE", "ANNUAL"])),
+        ValidationRequest.validation_type.has(
+            TaxonomyValue.code.in_(["COMPREHENSIVE", "ANNUAL"])),
         ValidationRequest.prior_validation_request_id == last_validation.request_id,
-        ValidationRequest.current_status.has(TaxonomyValue.code.notin_(["APPROVED", "CANCELLED"]))
+        ValidationRequest.current_status.has(
+            TaxonomyValue.code.notin_(["APPROVED", "CANCELLED"]))
     ).first()
 
     today = date.today()
@@ -854,7 +861,8 @@ def get_models_needing_revalidation(
                 results.append(revalidation_status)
 
     # Sort by submission due date (None values go to end)
-    results.sort(key=lambda x: x["next_submission_due"] if x["next_submission_due"] else date.max)
+    results.sort(key=lambda x: x["next_submission_due"]
+                 if x["next_submission_due"] else date.max)
 
     return results
 
@@ -1078,7 +1086,8 @@ def create_validation_request(
     # Use first model as primary model for rule evaluation
     primary_model = models[0] if models else None
     if primary_model:
-        evaluate_and_create_conditional_approvals(db, validation_request, primary_model)
+        evaluate_and_create_conditional_approvals(
+            db, validation_request, primary_model)
 
     db.commit()
 
@@ -1125,7 +1134,8 @@ def list_validation_requests(
         joinedload(ValidationRequest.regions),
         joinedload(ValidationRequest.assignments).joinedload(
             ValidationAssignment.validator),
-        joinedload(ValidationRequest.status_history)  # Eager-load for days_in_status calculation
+        # Eager-load for days_in_status calculation
+        joinedload(ValidationRequest.status_history)
     )
 
     # Apply Row-Level Security BEFORE other filters
@@ -1139,7 +1149,8 @@ def list_validation_requests(
     if model_id:
         if rls_applied:
             # RLS already joined ValidationRequestModelVersion, just add filter
-            query = query.filter(ValidationRequestModelVersion.model_id == model_id)
+            query = query.filter(
+                ValidationRequestModelVersion.model_id == model_id)
         else:
             # Privileged user - need to join the association table
             query = query.join(validation_request_models).filter(
@@ -1504,7 +1515,24 @@ def update_validation_request_status(
         db, validation_request)
 
     # Validate transition
-    if not check_valid_status_transition(old_status_code, new_status_code):
+    # Special case: Allow IN_PROGRESS -> PENDING_APPROVAL if no reviewer assigned
+    if old_status_code == "IN_PROGRESS" and new_status_code == "PENDING_APPROVAL":
+        # Check if there's a reviewer assigned
+        reviewer_assignment = db.query(ValidationAssignment).filter(
+            ValidationAssignment.request_id == request_id,
+            ValidationAssignment.is_reviewer == True
+        ).first()
+
+        # If no reviewer, allow the direct transition (skip REVIEW stage)
+        if not reviewer_assignment:
+            pass  # Allow this transition
+        else:
+            # Reviewer exists, must go through REVIEW first
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid status transition from '{old_status_code}' to '{new_status_code}'. A reviewer is assigned, so work must go through REVIEW stage first."
+            )
+    elif not check_valid_status_transition(old_status_code, new_status_code):
         raise HTTPException(
             status_code=400,
             detail=f"Invalid status transition from '{old_status_code}' to '{new_status_code}'"
@@ -1514,7 +1542,8 @@ def update_validation_request_status(
 
     # BUSINESS RULE: Cannot move to or remain in active workflow statuses without a primary validator
     # Active workflow statuses that require a primary validator
-    active_statuses_requiring_validator = ["PLANNING", "IN_PROGRESS", "REVIEW", "PENDING_APPROVAL"]
+    active_statuses_requiring_validator = [
+        "PLANNING", "IN_PROGRESS", "REVIEW", "PENDING_APPROVAL"]
 
     if new_status_code in active_statuses_requiring_validator:
         # Check if there's a primary validator assigned
@@ -1550,7 +1579,8 @@ def update_validation_request_status(
             required_region_codes=plan_region_codes
         )
         if not is_valid:
-            error_message = "Validation plan compliance issues:\n" + "\n".join(f"• {err}" for err in validation_errors)
+            error_message = "Validation plan compliance issues:\n" + \
+                "\n".join(f"• {err}" for err in validation_errors)
             raise HTTPException(
                 status_code=400,
                 detail=error_message
@@ -1570,7 +1600,8 @@ def update_validation_request_status(
             required_region_codes=plan_region_codes
         )
         if not is_valid:
-            error_message = "Validation plan compliance issues:\n" + "\n".join(f"• {err}" for err in validation_errors)
+            error_message = "Validation plan compliance issues:\n" + \
+                "\n".join(f"• {err}" for err in validation_errors)
             raise HTTPException(
                 status_code=400,
                 detail=error_message
@@ -1592,7 +1623,8 @@ def update_validation_request_status(
         models = validation_request.models
         primary_model = models[0] if models else None
         if primary_model:
-            evaluate_and_create_conditional_approvals(db, validation_request, primary_model)
+            evaluate_and_create_conditional_approvals(
+                db, validation_request, primary_model)
 
     # Update status
     old_status_id = validation_request.current_status_id
@@ -1631,7 +1663,8 @@ def update_validation_request_status(
 
         # LOCK: When moving TO Review/Pending Approval/Approved
         if new_status_code in locked_statuses and not plan.locked_at:
-            active_config = db.query(ComponentDefinitionConfiguration).filter_by(is_active=True).first()
+            active_config = db.query(ComponentDefinitionConfiguration).filter_by(
+                is_active=True).first()
 
             if active_config:
                 plan.config_id = active_config.config_id
@@ -2224,13 +2257,20 @@ def reviewer_send_back(
 ):
     """Reviewer sends validation back to In Progress with comments for revisions."""
     assignment = db.query(ValidationAssignment).options(
-        joinedload(ValidationAssignment.request).joinedload(ValidationRequest.current_status),
-        joinedload(ValidationAssignment.request).joinedload(ValidationRequest.models),
-        joinedload(ValidationAssignment.request).joinedload(ValidationRequest.requestor),
-        joinedload(ValidationAssignment.request).joinedload(ValidationRequest.validation_type),
-        joinedload(ValidationAssignment.request).joinedload(ValidationRequest.priority),
-        joinedload(ValidationAssignment.request).joinedload(ValidationRequest.regions),
-        joinedload(ValidationAssignment.request).joinedload(ValidationRequest.validation_plan)
+        joinedload(ValidationAssignment.request).joinedload(
+            ValidationRequest.current_status),
+        joinedload(ValidationAssignment.request).joinedload(
+            ValidationRequest.models),
+        joinedload(ValidationAssignment.request).joinedload(
+            ValidationRequest.requestor),
+        joinedload(ValidationAssignment.request).joinedload(
+            ValidationRequest.validation_type),
+        joinedload(ValidationAssignment.request).joinedload(
+            ValidationRequest.priority),
+        joinedload(ValidationAssignment.request).joinedload(
+            ValidationRequest.regions),
+        joinedload(ValidationAssignment.request).joinedload(
+            ValidationRequest.validation_plan)
     ).filter(
         ValidationAssignment.assignment_id == assignment_id
     ).first()
@@ -2264,7 +2304,8 @@ def reviewer_send_back(
     ).first()
 
     if not in_progress_status:
-        raise HTTPException(status_code=500, detail="In Progress status not found in taxonomy")
+        raise HTTPException(
+            status_code=500, detail="In Progress status not found in taxonomy")
 
     # Update validation request status to In Progress
     old_status_id = request.current_status_id
@@ -2343,7 +2384,7 @@ def create_outcome(
     if status_code not in ["IN_PROGRESS", "REVIEW", "PENDING_APPROVAL", "APPROVED"]:
         raise HTTPException(
             status_code=400,
-            detail="Outcome can only be created after work has begun (In Progress or later)"
+            detail="Outcome can only be created after work has begun. Please 'Mark Submission Received' to move out of the Planning stage."
         )
 
     # Verify overall rating exists
@@ -2701,6 +2742,35 @@ def submit_approval(
         # Clear approved_at when withdrawing approval
         approval.approved_at = None
 
+        # If this is a conditional approval being withdrawn, also clear model use_approval_date
+        if approval.approver_role_id:
+            validation_request = db.query(ValidationRequest).options(
+                joinedload(ValidationRequest.models)
+            ).filter(
+                ValidationRequest.request_id == approval.request_id
+            ).first()
+
+            if validation_request:
+                for model in validation_request.models:
+                    if model.use_approval_date:
+                        # Clear the approval date since conditional approvals are no longer all complete
+                        model.use_approval_date = None
+
+                        # Create audit log for model approval reversal
+                        model_audit = AuditLog(
+                            entity_type="Model",
+                            entity_id=model.model_id,
+                            action="CONDITIONAL_APPROVAL_REVERTED",
+                            user_id=current_user.user_id,
+                            changes={
+                                "reason": "Conditional approval withdrawn",
+                                "validation_request_id": approval.request_id,
+                                "approval_id": approval_id
+                            },
+                            timestamp=datetime.utcnow()
+                        )
+                        db.add(model_audit)
+
     # Create audit log with appropriate action type
     if update_data.approval_status == "Pending":
         action = "APPROVAL_WITHDRAWN"
@@ -2817,7 +2887,8 @@ def get_aging_report(
         joinedload(ValidationRequest.current_status),
         joinedload(ValidationRequest.models),
         joinedload(ValidationRequest.priority),
-        joinedload(ValidationRequest.status_history)  # For days_in_status calculation
+        # For days_in_status calculation
+        joinedload(ValidationRequest.status_history)
     ).all()
 
     aging_data = []
@@ -2985,7 +3056,8 @@ def get_sla_violations(
         lead_time_days = policy.model_change_lead_time_days
 
         # Calculate days since submission
-        days_since_submission = (now.date() - req.submission_received_date).days
+        days_since_submission = (
+            now.date() - req.submission_received_date).days
 
         # Check if lead time has been exceeded
         if days_since_submission > lead_time_days:
@@ -3300,9 +3372,11 @@ def get_overdue_submissions(
         joinedload(ValidationRequest.current_status),
         joinedload(ValidationRequest.validation_type)
     ).filter(
-        ValidationRequest.validation_type.has(TaxonomyValue.code.in_(["COMPREHENSIVE", "ANNUAL"])),
+        ValidationRequest.validation_type.has(
+            TaxonomyValue.code.in_(["COMPREHENSIVE", "ANNUAL"])),
         ValidationRequest.submission_received_date.is_(None),
-        ValidationRequest.current_status.has(TaxonomyValue.code.in_(["INTAKE", "PLANNING"]))
+        ValidationRequest.current_status.has(
+            TaxonomyValue.code.in_(["INTAKE", "PLANNING"]))
     ).all()
 
     results = []
@@ -3319,7 +3393,8 @@ def get_overdue_submissions(
 
                 # Calculate days overdue and urgency
                 if is_past_grace:
-                    days_overdue = (today - req.submission_grace_period_end).days
+                    days_overdue = (
+                        today - req.submission_grace_period_end).days
                     urgency = "overdue"  # Past grace period
                 else:
                     days_overdue = (today - req.submission_due_date).days
@@ -3370,8 +3445,10 @@ def get_overdue_validations(
         joinedload(ValidationRequest.current_status),
         joinedload(ValidationRequest.validation_type)
     ).filter(
-        ValidationRequest.validation_type.has(TaxonomyValue.code.in_(["COMPREHENSIVE", "ANNUAL"])),
-        ValidationRequest.current_status.has(TaxonomyValue.code.notin_(["APPROVED", "CANCELLED"]))
+        ValidationRequest.validation_type.has(
+            TaxonomyValue.code.in_(["COMPREHENSIVE", "ANNUAL"])),
+        ValidationRequest.current_status.has(
+            TaxonomyValue.code.notin_(["APPROVED", "CANCELLED"]))
     ).all()
 
     results = []
@@ -3406,7 +3483,8 @@ def get_overdue_validations(
 
 @router.get("/dashboard/upcoming-revalidations")
 def get_upcoming_revalidations(
-    days_ahead: int = Query(90, description="Look ahead this many days for upcoming revalidations"),
+    days_ahead: int = Query(
+        90, description="Look ahead this many days for upcoming revalidations"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
@@ -3471,9 +3549,11 @@ def get_my_pending_submissions(
 
     # Apply common filters
     pending_requests = query.filter(
-        ValidationRequest.validation_type.has(TaxonomyValue.code.in_(["COMPREHENSIVE", "ANNUAL"])),
+        ValidationRequest.validation_type.has(
+            TaxonomyValue.code.in_(["COMPREHENSIVE", "ANNUAL"])),
         ValidationRequest.submission_received_date.is_(None),
-        ValidationRequest.current_status.has(TaxonomyValue.code.in_(["INTAKE", "PLANNING"]))
+        ValidationRequest.current_status.has(
+            TaxonomyValue.code.in_(["INTAKE", "PLANNING"]))
     ).all()
 
     results = []
@@ -3528,7 +3608,8 @@ def get_my_pending_submissions(
             filtered_results.append(result)
 
     # Sort by urgency (overdue first, then by days until due)
-    urgency_order = {"overdue": 0, "in_grace_period": 1, "due_soon": 2, "upcoming": 3, "unknown": 4}
+    urgency_order = {"overdue": 0, "in_grace_period": 1,
+                     "due_soon": 2, "upcoming": 3, "unknown": 4}
     return sorted(filtered_results, key=lambda x: (urgency_order.get(x["urgency"], 4), x["days_until_submission_due"] or 999))
 
 
@@ -3705,7 +3786,8 @@ def recalculate_plan_expectations_for_model(
         ValidationRequestModelVersion.model_id == model_id,
         ValidationPlan.locked_at == None  # Only unlocked plans
     ).options(
-        joinedload(ValidationPlan.components).joinedload(ValidationPlanComponent.component_definition)
+        joinedload(ValidationPlan.components).joinedload(
+            ValidationPlanComponent.component_definition)
     ).all()
 
     if not plans:
@@ -3721,7 +3803,8 @@ def recalculate_plan_expectations_for_model(
         "VERY_LOW": "expectation_very_low"
     }
 
-    expectation_field = tier_to_field.get(new_risk_tier_code, "expectation_medium")
+    expectation_field = tier_to_field.get(
+        new_risk_tier_code, "expectation_medium")
 
     for plan in plans:
         components_updated = False
@@ -3731,7 +3814,8 @@ def recalculate_plan_expectations_for_model(
 
             # Get new default expectation based on new risk tier
             old_default_expectation = component.default_expectation
-            new_default_expectation = getattr(comp_def, expectation_field, "NotExpected")
+            new_default_expectation = getattr(
+                comp_def, expectation_field, "NotExpected")
 
             if old_default_expectation != new_default_expectation:
                 component.default_expectation = new_default_expectation
@@ -3780,9 +3864,11 @@ def validate_plan_compliance(
         if require_plan:
             regions_list = ", ".join(required_region_codes or [])
             if regions_list:
-                errors.append(f"Validation plan is required for regions: {regions_list}")
+                errors.append(
+                    f"Validation plan is required for regions: {regions_list}")
             else:
-                errors.append("Validation plan is required for this validation request")
+                errors.append(
+                    "Validation plan is required for this validation request")
         return len(errors) == 0, errors
 
     # Check if material deviation has rationale
@@ -3859,7 +3945,8 @@ def create_validation_plan(
 
     # Get validation request
     request = db.query(ValidationRequest).options(
-        joinedload(ValidationRequest.model_versions_assoc).joinedload(ValidationRequestModelVersion.model).joinedload(Model.risk_tier)
+        joinedload(ValidationRequest.model_versions_assoc).joinedload(
+            ValidationRequestModelVersion.model).joinedload(Model.risk_tier)
     ).filter(ValidationRequest.request_id == request_id).first()
 
     if not request:
@@ -3869,7 +3956,8 @@ def create_validation_plan(
         )
 
     # Check if plan already exists
-    existing_plan = db.query(ValidationPlan).filter(ValidationPlan.request_id == request_id).first()
+    existing_plan = db.query(ValidationPlan).filter(
+        ValidationPlan.request_id == request_id).first()
     if existing_plan:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -3941,10 +4029,12 @@ def create_validation_plan(
                 )
 
             # Get default expectation for this tier
-            default_expectation = get_expectation_for_tier(comp_def, risk_tier_code)
+            default_expectation = get_expectation_for_tier(
+                comp_def, risk_tier_code)
 
             # Calculate deviation
-            is_deviation = calculate_is_deviation(default_expectation, comp_data.planned_treatment)
+            is_deviation = calculate_is_deviation(
+                default_expectation, comp_data.planned_treatment)
 
             # Validate rationale if deviation
             if is_deviation and not comp_data.rationale:
@@ -3968,7 +4058,8 @@ def create_validation_plan(
     elif plan_data.template_plan_id:
         # Copy from template plan
         template_plan = db.query(ValidationPlan).options(
-            joinedload(ValidationPlan.components).joinedload(ValidationPlanComponent.component_definition),
+            joinedload(ValidationPlan.components).joinedload(
+                ValidationPlanComponent.component_definition),
             joinedload(ValidationPlan.configuration)
         ).filter(ValidationPlan.plan_id == plan_data.template_plan_id).first()
 
@@ -3990,14 +4081,16 @@ def create_validation_plan(
         for template_comp in template_plan.components:
             # Get current expectation for this component (from ACTIVE config, not template's config)
             comp_def = template_comp.component_definition
-            default_expectation = get_expectation_for_tier(comp_def, risk_tier_code)
+            default_expectation = get_expectation_for_tier(
+                comp_def, risk_tier_code)
 
             # Use template's planned_treatment and rationale
             planned_treatment = template_comp.planned_treatment
             rationale = template_comp.rationale
 
             # Recalculate is_deviation based on CURRENT expectation
-            is_deviation = calculate_is_deviation(default_expectation, planned_treatment)
+            is_deviation = calculate_is_deviation(
+                default_expectation, planned_treatment)
 
             plan_comp = ValidationPlanComponent(
                 plan_id=new_plan.plan_id,
@@ -4028,7 +4121,8 @@ def create_validation_plan(
     else:
         # Auto-create all components with defaults
         for comp_def in all_components:
-            default_expectation = get_expectation_for_tier(comp_def, risk_tier_code)
+            default_expectation = get_expectation_for_tier(
+                comp_def, risk_tier_code)
 
             # Default planned_treatment to match expectation
             if default_expectation == "Required":
@@ -4073,7 +4167,8 @@ def create_validation_plan(
         "LOW": "Conceptual",
         "VERY_LOW": "Executive Summary"
     }
-    response_data.validation_approach = tier_to_approach.get(risk_tier_code, "Standard")
+    response_data.validation_approach = tier_to_approach.get(
+        risk_tier_code, "Standard")
 
     return response_data
 
@@ -4093,7 +4188,8 @@ def get_plan_template_suggestions(
     # Get current validation request
     current_request = db.query(ValidationRequest).options(
         joinedload(ValidationRequest.validation_type),
-        joinedload(ValidationRequest.model_versions_assoc).joinedload(ValidationRequestModelVersion.model)
+        joinedload(ValidationRequest.model_versions_assoc).joinedload(
+            ValidationRequestModelVersion.model)
     ).filter(ValidationRequest.request_id == request_id).first()
 
     if not current_request:
@@ -4103,11 +4199,13 @@ def get_plan_template_suggestions(
         )
 
     # Get active configuration for comparison
-    active_config = db.query(ComponentDefinitionConfiguration).filter_by(is_active=True).first()
+    active_config = db.query(ComponentDefinitionConfiguration).filter_by(
+        is_active=True).first()
     active_config_id = active_config.config_id if active_config else None
 
     # Extract model IDs from current request
-    current_model_ids = {assoc.model.model_id for assoc in current_request.model_versions_assoc if assoc.model}
+    current_model_ids = {
+        assoc.model.model_id for assoc in current_request.model_versions_assoc if assoc.model}
 
     if not current_model_ids:
         return PlanTemplateSuggestionsResponse(has_suggestions=False, suggestions=[])
@@ -4121,15 +4219,19 @@ def get_plan_template_suggestions(
 
     # Query for potential template sources
     potential_templates = db.query(ValidationRequest).options(
-        joinedload(ValidationRequest.validation_plan).joinedload(ValidationPlan.components),
-        joinedload(ValidationRequest.validation_plan).joinedload(ValidationPlan.configuration),
-        joinedload(ValidationRequest.model_versions_assoc).joinedload(ValidationRequestModelVersion.model),
+        joinedload(ValidationRequest.validation_plan).joinedload(
+            ValidationPlan.components),
+        joinedload(ValidationRequest.validation_plan).joinedload(
+            ValidationPlan.configuration),
+        joinedload(ValidationRequest.model_versions_assoc).joinedload(
+            ValidationRequestModelVersion.model),
         joinedload(ValidationRequest.current_status),
         joinedload(ValidationRequest.validation_type)
     ).filter(
         ValidationRequest.request_id != request_id,  # Not current request
         ValidationRequest.validation_type_id == validation_type_id,  # Same validation type
-        ValidationRequest.current_status.has(code="APPROVED"),  # Only approved validations
+        ValidationRequest.current_status.has(
+            code="APPROVED"),  # Only approved validations
         ValidationRequest.validation_plan != None  # Has a plan
     ).order_by(ValidationRequest.completion_date.desc()).limit(5).all()
 
@@ -4137,7 +4239,8 @@ def get_plan_template_suggestions(
 
     for template_request in potential_templates:
         # Check if models overlap
-        template_model_ids = {assoc.model.model_id for assoc in template_request.model_versions_assoc if assoc.model}
+        template_model_ids = {
+            assoc.model.model_id for assoc in template_request.model_versions_assoc if assoc.model}
 
         if not current_model_ids.intersection(template_model_ids):
             continue  # No overlapping models, skip
@@ -4145,12 +4248,14 @@ def get_plan_template_suggestions(
         plan = template_request.validation_plan
 
         # Count deviations
-        deviations_count = sum(1 for comp in plan.components if comp.is_deviation)
+        deviations_count = sum(
+            1 for comp in plan.components if comp.is_deviation)
 
         # Get primary validator name (first assigned validator)
         validator_name = None
         if template_request.assignments:
-            primary = next((a for a in template_request.assignments if a.is_primary), None)
+            primary = next(
+                (a for a in template_request.assignments if a.is_primary), None)
             if not primary and template_request.assignments:
                 primary = template_request.assignments[0]
             if primary and primary.validator:
@@ -4166,8 +4271,10 @@ def get_plan_template_suggestions(
             source_request_id=template_request.request_id,
             source_plan_id=plan.plan_id,
             validation_type=template_request.validation_type.label if template_request.validation_type else "Unknown",
-            model_names=[assoc.model.model_name for assoc in template_request.model_versions_assoc if assoc.model],
-            completion_date=template_request.completion_date.isoformat() if template_request.completion_date else None,
+            model_names=[
+                assoc.model.model_name for assoc in template_request.model_versions_assoc if assoc.model],
+            completion_date=template_request.completion_date.isoformat(
+            ) if template_request.completion_date else None,
             validator_name=validator_name,
             component_count=len(plan.components),
             deviations_count=deviations_count,
@@ -4194,7 +4301,8 @@ def get_validation_plan(
     """
     # Get validation request
     request = db.query(ValidationRequest).options(
-        joinedload(ValidationRequest.model_versions_assoc).joinedload(ValidationRequestModelVersion.model).joinedload(Model.risk_tier)
+        joinedload(ValidationRequest.model_versions_assoc).joinedload(
+            ValidationRequestModelVersion.model).joinedload(Model.risk_tier)
     ).filter(ValidationRequest.request_id == request_id).first()
 
     if not request:
@@ -4205,7 +4313,8 @@ def get_validation_plan(
 
     # Get validation plan
     plan = db.query(ValidationPlan).options(
-        joinedload(ValidationPlan.components).joinedload(ValidationPlanComponent.component_definition)
+        joinedload(ValidationPlan.components).joinedload(
+            ValidationPlanComponent.component_definition)
     ).filter(ValidationPlan.request_id == request_id).first()
 
     if not plan:
@@ -4230,7 +4339,8 @@ def get_validation_plan(
             "LOW": "Conceptual",
             "VERY_LOW": "Executive Summary"
         }
-        response_data.validation_approach = tier_to_approach.get(risk_tier_code, "Standard")
+        response_data.validation_approach = tier_to_approach.get(
+            risk_tier_code, "Standard")
 
     return response_data
 
@@ -4246,7 +4356,8 @@ def export_validation_plan_pdf(
     """
     # Get validation request
     request = db.query(ValidationRequest).options(
-        joinedload(ValidationRequest.model_versions_assoc).joinedload(ValidationRequestModelVersion.model).joinedload(Model.risk_tier),
+        joinedload(ValidationRequest.model_versions_assoc).joinedload(
+            ValidationRequestModelVersion.model).joinedload(Model.risk_tier),
         joinedload(ValidationRequest.validation_type)
     ).filter(ValidationRequest.request_id == request_id).first()
 
@@ -4258,7 +4369,8 @@ def export_validation_plan_pdf(
 
     # Get validation plan
     plan = db.query(ValidationPlan).options(
-        joinedload(ValidationPlan.components).joinedload(ValidationPlanComponent.component_definition)
+        joinedload(ValidationPlan.components).joinedload(
+            ValidationPlanComponent.component_definition)
     ).filter(ValidationPlan.request_id == request_id).first()
 
     if not plan:
@@ -4313,8 +4425,10 @@ def export_validation_plan_pdf(
         ('Risk Tier:', risk_tier),
         ('Validation Type:', validation_type),
         ('Validation Approach:', validation_approach),
-        ('Created:', plan.created_at.strftime('%Y-%m-%d') if plan.created_at else 'N/A'),
-        ('Last Updated:', plan.updated_at.strftime('%Y-%m-%d') if plan.updated_at else 'N/A')
+        ('Created:', plan.created_at.strftime(
+            '%Y-%m-%d') if plan.created_at else 'N/A'),
+        ('Last Updated:', plan.updated_at.strftime(
+            '%Y-%m-%d') if plan.updated_at else 'N/A')
     ]
 
     for label, value in info_data:
@@ -4392,7 +4506,8 @@ def export_validation_plan_pdf(
             pdf.cell(30, 6, comp_def.component_code, 1, 0)
 
             # Component title (truncate if too long)
-            title = comp_def.component_title[:30] + '...' if len(comp_def.component_title) > 30 else comp_def.component_title
+            title = comp_def.component_title[:30] + '...' if len(
+                comp_def.component_title) > 30 else comp_def.component_title
             pdf.cell(50, 6, title, 1, 0)
 
             # Default expectation
@@ -4404,7 +4519,8 @@ def export_validation_plan_pdf(
                 'NotPlanned': 'Not Planned',
                 'NotApplicable': 'N/A'
             }
-            treatment = treatment_map.get(comp.planned_treatment, comp.planned_treatment)
+            treatment = treatment_map.get(
+                comp.planned_treatment, comp.planned_treatment)
             pdf.cell(30, 6, treatment, 1, 0)
 
             # Deviation status
@@ -4419,7 +4535,8 @@ def export_validation_plan_pdf(
             if comp.rationale and comp.rationale.strip():
                 pdf.set_font('Arial', 'I', 7)
                 pdf.set_x(40)
-                rationale_text = f"Rationale: {comp.rationale[:100]}..." if len(comp.rationale) > 100 else f"Rationale: {comp.rationale}"
+                rationale_text = f"Rationale: {comp.rationale[:100]}..." if len(
+                    comp.rationale) > 100 else f"Rationale: {comp.rationale}"
                 pdf.multi_cell(150, 4, rationale_text)
                 pdf.set_font('Arial', '', 8)
 
@@ -4427,7 +4544,8 @@ def export_validation_plan_pdf(
 
     # Summary statistics
     total_components = len(plan.components)
-    planned_components = sum(1 for c in plan.components if c.planned_treatment == 'Planned')
+    planned_components = sum(
+        1 for c in plan.components if c.planned_treatment == 'Planned')
     deviations = sum(1 for c in plan.components if c.is_deviation)
 
     pdf.ln(5)
@@ -4456,7 +4574,8 @@ def export_validation_plan_pdf(
         temp_file.name,
         media_type='application/pdf',
         filename=filename,
-        background=lambda: os.unlink(temp_file.name)  # Clean up temp file after sending
+        # Clean up temp file after sending
+        background=lambda: os.unlink(temp_file.name)
     )
 
 
@@ -4479,7 +4598,8 @@ def update_validation_plan(
 
     # Get validation request
     request = db.query(ValidationRequest).options(
-        joinedload(ValidationRequest.model_versions_assoc).joinedload(ValidationRequestModelVersion.model).joinedload(Model.risk_tier)
+        joinedload(ValidationRequest.model_versions_assoc).joinedload(
+            ValidationRequestModelVersion.model).joinedload(Model.risk_tier)
     ).filter(ValidationRequest.request_id == request_id).first()
 
     if not request:
@@ -4490,7 +4610,8 @@ def update_validation_plan(
 
     # Get validation plan
     plan = db.query(ValidationPlan).options(
-        joinedload(ValidationPlan.components).joinedload(ValidationPlanComponent.component_definition)
+        joinedload(ValidationPlan.components).joinedload(
+            ValidationPlanComponent.component_definition)
     ).filter(ValidationPlan.request_id == request_id).first()
 
     if not plan:
@@ -4524,12 +4645,14 @@ def update_validation_plan(
     if plan_updates.components:
         # Get model risk tier for deviation calculation
         model = request.model_versions_assoc[0].model if request.model_versions_assoc else None
-        risk_tier_code = model.risk_tier.code if (model and model.risk_tier) else "MEDIUM"
+        risk_tier_code = model.risk_tier.code if (
+            model and model.risk_tier) else "MEDIUM"
 
         for comp_update in plan_updates.components:
             # Find existing component (match by component_id in update with our plan components)
             plan_comp = next(
-                (pc for pc in plan.components if pc.component_id == comp_update.component_id),
+                (pc for pc in plan.components if pc.component_id ==
+                 comp_update.component_id),
                 None
             )
 
@@ -4584,7 +4707,8 @@ def update_validation_plan(
             "LOW": "Conceptual",
             "VERY_LOW": "Executive Summary"
         }
-        response_data.validation_approach = tier_to_approach.get(risk_tier_code, "Standard")
+        response_data.validation_approach = tier_to_approach.get(
+            risk_tier_code, "Standard")
 
     return response_data
 
@@ -4723,7 +4847,8 @@ def publish_new_configuration(
     check_admin(current_user)
 
     # Deactivate current active config
-    current_active = db.query(ComponentDefinitionConfiguration).filter_by(is_active=True).first()
+    current_active = db.query(ComponentDefinitionConfiguration).filter_by(
+        is_active=True).first()
     if current_active:
         current_active.is_active = False
 
@@ -4739,7 +4864,8 @@ def publish_new_configuration(
     db.flush()  # Get config_id
 
     # Snapshot all component definitions
-    components = db.query(ValidationComponentDefinition).filter_by(is_active=True).all()
+    components = db.query(ValidationComponentDefinition).filter_by(
+        is_active=True).all()
 
     for component in components:
         config_item = ComponentDefinitionConfigItem(
@@ -4794,7 +4920,8 @@ def get_deviation_trends_report(
     """
     # Get all validation plans with components
     plans = db.query(ValidationPlan).options(
-        joinedload(ValidationPlan.components).joinedload(ValidationPlanComponent.component_definition),
+        joinedload(ValidationPlan.components).joinedload(
+            ValidationPlanComponent.component_definition),
         joinedload(ValidationPlan.request)
         .joinedload(ValidationRequest.model_versions_assoc)
         .joinedload(ValidationRequestModelVersion.model)
@@ -4832,11 +4959,13 @@ def get_deviation_trends_report(
 
                 # By component
                 comp_code = comp.component_definition.component_code
-                deviation_by_component[comp_code] = deviation_by_component.get(comp_code, 0) + 1
+                deviation_by_component[comp_code] = deviation_by_component.get(
+                    comp_code, 0) + 1
 
                 # By section
                 section = comp.component_definition.section_number
-                deviation_by_section[section] = deviation_by_section.get(section, 0) + 1
+                deviation_by_section[section] = deviation_by_section.get(
+                    section, 0) + 1
 
                 # By risk tier (from associated model)
                 if plan.request and plan.request.model_versions_assoc:
@@ -4856,7 +4985,8 @@ def get_deviation_trends_report(
                 # Over time (by month of plan creation)
                 if plan.request and plan.request.created_at:
                     month_key = plan.request.created_at.strftime("%Y-%m")
-                    deviations_over_time[month_key] = deviations_over_time.get(month_key, 0) + 1
+                    deviations_over_time[month_key] = deviations_over_time.get(
+                        month_key, 0) + 1
 
                 # Detailed record
                 model_name = "Unknown"
@@ -4886,7 +5016,8 @@ def get_deviation_trends_report(
 
     # Sort component deviations by frequency
     top_deviation_components = sorted(
-        [{"component_code": k, "count": v} for k, v in deviation_by_component.items()],
+        [{"component_code": k, "count": v}
+            for k, v in deviation_by_component.items()],
         key=lambda x: x["count"],
         reverse=True
     )[:10]  # Top 10
@@ -4905,8 +5036,10 @@ def get_deviation_trends_report(
     )
 
     # Calculate deviation rate
-    deviation_rate = (total_deviations / total_components * 100) if total_components > 0 else 0
-    plan_deviation_rate = (plans_with_deviations / total_plans * 100) if total_plans > 0 else 0
+    deviation_rate = (total_deviations / total_components *
+                      100) if total_components > 0 else 0
+    plan_deviation_rate = (plans_with_deviations /
+                           total_plans * 100) if total_plans > 0 else 0
 
     return {
         "summary": {
@@ -4965,7 +5098,8 @@ def get_conditional_approvals_evaluation(
     primary_model = models[0]
 
     # Evaluate rules
-    evaluation_result = get_required_approver_roles(db, validation_request, primary_model)
+    evaluation_result = get_required_approver_roles(
+        db, validation_request, primary_model)
 
     return ConditionalApprovalsEvaluationResponse(
         required_roles=evaluation_result["required_roles"],
@@ -5034,15 +5168,20 @@ def submit_conditional_approval(
     # Update approval
     approval.approval_status = approval_data.approval_status
     approval.approver_id = current_user.user_id  # Admin who submitted the approval
-    approval.approval_date = datetime.utcnow()
+    approval.approved_at = datetime.utcnow()
     approval.approval_evidence = approval_data.approval_evidence
     approval.comments = approval_data.comments
-    approval.updated_at = datetime.utcnow()
+
+    # Flush to ensure the update is visible in subsequent queries
+    db.flush()
 
     # If this was the last pending conditional approval and status is "Approved",
     # update model.use_approval_date
     if approval_data.approval_status == "Approved":
-        validation_request = db.query(ValidationRequest).filter(
+        from sqlalchemy.orm import joinedload
+        validation_request = db.query(ValidationRequest).options(
+            joinedload(ValidationRequest.models)
+        ).filter(
             ValidationRequest.request_id == approval.request_id
         ).first()
 
@@ -5050,11 +5189,13 @@ def submit_conditional_approval(
             # Check if all conditional approvals are now approved
             all_conditional_approvals = db.query(ValidationApproval).filter(
                 ValidationApproval.request_id == approval.request_id,
-                ValidationApproval.approver_role_id.isnot(None),  # Only conditional approvals
+                ValidationApproval.approver_role_id.isnot(
+                    None),  # Only conditional approvals
                 ValidationApproval.voided_at.is_(None)  # Not voided
             ).all()
 
-            all_approved = all([a.approval_status == "Approved" for a in all_conditional_approvals])
+            all_approved = all(
+                [a.approval_status == "Approved" for a in all_conditional_approvals])
 
             if all_approved:
                 # Update use_approval_date for all models in this validation
@@ -5130,6 +5271,37 @@ def void_approval_requirement(
     approval.voided_at = datetime.utcnow()
     approval.updated_at = datetime.utcnow()
 
+    # If model was previously approved, clear the use_approval_date
+    # because conditional approvals are no longer all complete
+    from sqlalchemy.orm import joinedload
+    validation_request = db.query(ValidationRequest).options(
+        joinedload(ValidationRequest.models)
+    ).filter(
+        ValidationRequest.request_id == approval.request_id
+    ).first()
+
+    if validation_request:
+        # Check if any models have use_approval_date set
+        for model in validation_request.models:
+            if model.use_approval_date:
+                # Clear the approval date since approvals are no longer complete
+                model.use_approval_date = None
+
+                # Create audit log for model approval reversal
+                model_audit = AuditLog(
+                    entity_type="Model",
+                    entity_id=model.model_id,
+                    action="CONDITIONAL_APPROVAL_REVERTED",
+                    user_id=current_user.user_id,
+                    changes={
+                        "reason": f"Conditional approval voided: {void_data.void_reason}",
+                        "validation_request_id": approval.request_id,
+                        "voided_approval_id": approval_id
+                    },
+                    timestamp=datetime.utcnow()
+                )
+                db.add(model_audit)
+
     # Create audit log
     audit_log = AuditLog(
         entity_type="ValidationApproval",
@@ -5171,15 +5343,18 @@ def get_pending_conditional_approvals(
 
     # Query validation approvals for conditional requirements that are pending
     pending_approvals = db.query(ValidationApproval).filter(
-        ValidationApproval.approver_role_id.isnot(None),  # Conditional approval
+        ValidationApproval.approver_role_id.isnot(
+            None),  # Conditional approval
         ValidationApproval.voided_at.is_(None),  # Not voided
         or_(
             ValidationApproval.approval_status == 'Pending',
             ValidationApproval.approval_status.is_(None)
         )
     ).options(
-        joinedload(ValidationApproval.request).joinedload(ValidationRequest.model_versions_assoc).joinedload(ValidationRequestModelVersion.model),
-        joinedload(ValidationApproval.request).joinedload(ValidationRequest.validation_type),
+        joinedload(ValidationApproval.request).joinedload(
+            ValidationRequest.model_versions_assoc).joinedload(ValidationRequestModelVersion.model),
+        joinedload(ValidationApproval.request).joinedload(
+            ValidationRequest.validation_type),
         joinedload(ValidationApproval.approver_role_ref)
     ).all()
 
@@ -5220,14 +5395,16 @@ def get_pending_conditional_approvals(
         })
 
     # Sort by days pending (oldest first)
-    results = sorted(requests_map.values(), key=lambda x: x["days_pending"], reverse=True)
+    results = sorted(requests_map.values(),
+                     key=lambda x: x["days_pending"], reverse=True)
 
     return results
 
 
 @router.get("/dashboard/recent-approvals")
 def get_recent_approvals(
-    days_back: int = Query(30, description="Look back this many days for recent approvals"),
+    days_back: int = Query(
+        30, description="Look back this many days for recent approvals"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):

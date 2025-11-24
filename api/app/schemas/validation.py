@@ -341,7 +341,7 @@ class ValidationApprovalResponse(BaseModel):
     """Response schema for validation approval."""
     approval_id: int
     request_id: int
-    approver: UserSummary
+    approver: Optional[UserSummary] = None  # None for conditional approvals until submitted
     approver_role: str
     is_required: bool
     approval_status: str
