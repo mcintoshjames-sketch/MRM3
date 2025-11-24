@@ -4,6 +4,7 @@ import { useAuth } from '../contexts/AuthContext';
 import api from '../api/client';
 import Layout from '../components/Layout';
 import ValidationPlanForm, { ValidationPlanFormHandle } from '../components/ValidationPlanForm';
+import ConditionalApprovalsSection from '../components/ConditionalApprovalsSection';
 
 interface TaxonomyValue {
     value_id: number;
@@ -1422,6 +1423,15 @@ export default function ValidationRequestDetailPage() {
                                     </div>
                                 ))}
                             </div>
+                        )}
+
+                        {/* Conditional Model Use Approvals Section */}
+                        {user && (
+                            <ConditionalApprovalsSection
+                                requestId={request.request_id}
+                                userRole={user.role}
+                                onUpdate={fetchData}
+                            />
                         )}
                     </div>
                 )}

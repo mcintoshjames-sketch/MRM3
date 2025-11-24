@@ -659,12 +659,34 @@ class ValidationApproval(Base):
         DateTime, nullable=False, default=datetime.utcnow
     )
 
+    # Conditional model use approval fields
+    approver_role_id: Mapped[Optional[int]] = mapped_column(
+        Integer, ForeignKey("approver_roles.role_id", ondelete="SET NULL"), nullable=True, index=True,
+        comment="FK to approver_roles (for conditional approvals); NULL for traditional approvals"
+    )
+    approval_evidence: Mapped[Optional[str]] = mapped_column(
+        Text, nullable=True,
+        comment="Description of approval evidence (meeting minutes, email, etc.)"
+    )
+
+    # Voiding fields (Admin can void approval requirements)
+    voided_by_id: Mapped[Optional[int]] = mapped_column(
+        Integer, ForeignKey("users.user_id", ondelete="SET NULL"), nullable=True
+    )
+    void_reason: Mapped[Optional[str]] = mapped_column(
+        Text, nullable=True,
+        comment="Reason why this approval requirement was voided by Admin"
+    )
+    voided_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+
     # Relationships
     request = relationship("ValidationRequest", back_populates="approvals")
     approver = relationship("User", foreign_keys=[approver_id])
     unlinked_by = relationship("User", foreign_keys=[unlinked_by_id])
+    voided_by = relationship("User", foreign_keys=[voided_by_id])
     region = relationship("Region", foreign_keys=[region_id])  # Region for regional approvals
     represented_region = relationship("Region", foreign_keys=[represented_region_id])  # Historical role context
+    approver_role_ref = relationship("ApproverRole", foreign_keys=[approver_role_id])  # Conditional approval role
 
 
 class ValidationComponentDefinition(Base):

@@ -16,6 +16,7 @@ from app.models.model_type_taxonomy import ModelTypeCategory, ModelType
 from app.models.model_hierarchy import ModelHierarchy
 from app.models.model_feed_dependency import ModelFeedDependency
 from app.models.model_dependency_metadata import ModelDependencyMetadata
+from app.models.conditional_approval import ApproverRole, ConditionalApprovalRule, RuleRequiredApprover
 from app.models.validation import (
     ValidationPolicy,
     ValidationWorkflowSLA,
@@ -58,6 +59,10 @@ __all__ = [
     "ModelHierarchy",
     "ModelFeedDependency",
     "ModelDependencyMetadata",
+    # Conditional model use approvals
+    "ApproverRole",
+    "ConditionalApprovalRule",
+    "RuleRequiredApprover",
     # Validation policy
     "ValidationPolicy",
     "ValidationWorkflowSLA",

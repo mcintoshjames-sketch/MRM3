@@ -13,6 +13,7 @@ import os
 
 from app.core.database import get_db
 from app.core.deps import get_current_user
+from app.core.rule_evaluation import get_required_approver_roles
 from app.models import (
     User, Model, TaxonomyValue, Taxonomy, AuditLog, Region,
     ValidationRequest, ValidationRequestModelVersion, ValidationStatusHistory, ValidationAssignment,
@@ -36,6 +37,13 @@ from app.schemas.validation import (
     ValidationPlanCreate, ValidationPlanUpdate, ValidationPlanResponse,
     PlanTemplateSuggestion, PlanTemplateSuggestionsResponse,
     ConfigurationResponse, ConfigurationDetailResponse, ConfigurationItemResponse, ConfigurationPublishRequest
+)
+from app.schemas.conditional_approval import (
+    ConditionalApprovalsEvaluationResponse,
+    SubmitConditionalApprovalRequest,
+    SubmitConditionalApprovalResponse,
+    VoidApprovalRequirementRequest,
+    VoidApprovalRequirementResponse
 )
 
 router = APIRouter()
@@ -636,6 +644,53 @@ def auto_assign_approvers(
         db.add(audit_log)
 
 
+def evaluate_and_create_conditional_approvals(
+    db: Session,
+    validation_request: ValidationRequest,
+    model: Model
+):
+    """
+    Evaluate conditional approval rules and create ValidationApproval records
+    for each required approver role.
+
+    This function is called:
+    1. When a validation request is created
+    2. When a validation request moves to "Pending Approval" status (to handle null risk tiers)
+
+    Args:
+        db: Database session
+        validation_request: The validation request being evaluated
+        model: The primary model being validated (or first model if multi-model)
+    """
+    # Evaluate rules and get required approver roles
+    evaluation_result = get_required_approver_roles(db, validation_request, model)
+
+    # If no roles required, nothing to do
+    if not evaluation_result["required_roles"]:
+        return
+
+    # For each required role, create or update ValidationApproval record
+    for required_role in evaluation_result["required_roles"]:
+        role_id = required_role["role_id"]
+        existing_approval = required_role.get("approval_id")
+
+        # If approval already exists (and not voided), skip
+        if existing_approval:
+            continue
+
+        # Create new conditional approval requirement
+        approval = ValidationApproval(
+            request_id=validation_request.request_id,
+            approver_role_id=role_id,
+            approval_status="Pending",
+            approval_date=None,
+            comments=f"Conditional approval required from {required_role['role_name']}",
+            created_at=datetime.utcnow(),
+            updated_at=datetime.utcnow()
+        )
+        db.add(approval)
+
+
 # ==================== REVALIDATION LIFECYCLE HELPERS ====================
 
 def calculate_model_revalidation_status(model: Model, db: Session) -> Dict:
@@ -1018,6 +1073,12 @@ def create_validation_request(
 
     # Auto-assign approvers based on validation scope (Phase 5)
     auto_assign_approvers(db, validation_request, current_user)
+
+    # Evaluate conditional approval rules and create approval requirements
+    # Use first model as primary model for rule evaluation
+    primary_model = models[0] if models else None
+    if primary_model:
+        evaluate_and_create_conditional_approvals(db, validation_request, primary_model)
 
     db.commit()
 
@@ -1525,6 +1586,13 @@ def update_validation_request_status(
                 status_code=400,
                 detail="Reviewer must sign off before moving to Pending Approval"
             )
+
+        # Re-evaluate conditional approval rules (handles null risk tiers at request creation)
+        # Use first model as primary model for rule evaluation
+        models = validation_request.models
+        primary_model = models[0] if models else None
+        if primary_model:
+            evaluate_and_create_conditional_approvals(db, validation_request, primary_model)
 
     # Update status
     old_status_id = validation_request.current_status_id
@@ -4856,3 +4924,386 @@ def get_deviation_trends_report(
         "deviations_timeline": deviations_timeline,
         "recent_deviations": sorted(deviation_records, key=lambda x: x["created_at"] or "", reverse=True)[:50]
     }
+
+
+# ==================== CONDITIONAL MODEL USE APPROVALS ====================
+
+@router.get("/requests/{request_id}/conditional-approvals", response_model=ConditionalApprovalsEvaluationResponse)
+def get_conditional_approvals_evaluation(
+    request_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Get conditional approval evaluation for a validation request.
+
+    Returns:
+        - required_roles: List of required approver roles with their approval status
+        - rules_applied: List of rules that matched and why
+        - explanation_summary: English summary of approval requirements
+    """
+    # Get validation request with models
+    validation_request = db.query(ValidationRequest).options(
+        joinedload(ValidationRequest.models)
+    ).filter(ValidationRequest.request_id == request_id).first()
+
+    if not validation_request:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Validation request not found"
+        )
+
+    # Use first model as primary model for rule evaluation
+    models = validation_request.models
+    if not models:
+        return ConditionalApprovalsEvaluationResponse(
+            required_roles=[],
+            rules_applied=[],
+            explanation_summary="No models associated with this validation request"
+        )
+
+    primary_model = models[0]
+
+    # Evaluate rules
+    evaluation_result = get_required_approver_roles(db, validation_request, primary_model)
+
+    return ConditionalApprovalsEvaluationResponse(
+        required_roles=evaluation_result["required_roles"],
+        rules_applied=evaluation_result["rules_applied"],
+        explanation_summary=evaluation_result["explanation_summary"]
+    )
+
+
+@router.post("/approvals/{approval_id}/submit-conditional", response_model=SubmitConditionalApprovalResponse)
+def submit_conditional_approval(
+    approval_id: int,
+    approval_data: SubmitConditionalApprovalRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Submit conditional approval (Admin only).
+
+    Any Admin can approve on behalf of any approver role by providing:
+    - approver_role_id: The role being approved
+    - approval_status: "Approved" or "Rejected"
+    - approval_evidence: Description of evidence (meeting minutes, email, etc.)
+    - comments: Optional additional comments
+    """
+    # Check Admin permission
+    check_admin(current_user)
+
+    # Get the approval requirement
+    approval = db.query(ValidationApproval).filter(
+        ValidationApproval.approval_id == approval_id
+    ).first()
+
+    if not approval:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Approval requirement not found"
+        )
+
+    # Verify this is a conditional approval (has approver_role_id)
+    if not approval.approver_role_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="This is not a conditional approval requirement"
+        )
+
+    # Verify the approver_role_id matches (if provided)
+    if approval.approver_role_id != approval_data.approver_role_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Approver role ID does not match the approval requirement"
+        )
+
+    # Check if already approved or voided
+    if approval.voided_at:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="This approval requirement has been voided"
+        )
+
+    if approval.approval_status in ("Approved", "Rejected"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"This approval has already been {approval.approval_status.lower()}"
+        )
+
+    # Update approval
+    approval.approval_status = approval_data.approval_status
+    approval.approver_id = current_user.user_id  # Admin who submitted the approval
+    approval.approval_date = datetime.utcnow()
+    approval.approval_evidence = approval_data.approval_evidence
+    approval.comments = approval_data.comments
+    approval.updated_at = datetime.utcnow()
+
+    # If this was the last pending conditional approval and status is "Approved",
+    # update model.use_approval_date
+    if approval_data.approval_status == "Approved":
+        validation_request = db.query(ValidationRequest).filter(
+            ValidationRequest.request_id == approval.request_id
+        ).first()
+
+        if validation_request:
+            # Check if all conditional approvals are now approved
+            all_conditional_approvals = db.query(ValidationApproval).filter(
+                ValidationApproval.request_id == approval.request_id,
+                ValidationApproval.approver_role_id.isnot(None),  # Only conditional approvals
+                ValidationApproval.voided_at.is_(None)  # Not voided
+            ).all()
+
+            all_approved = all([a.approval_status == "Approved" for a in all_conditional_approvals])
+
+            if all_approved:
+                # Update use_approval_date for all models in this validation
+                for model in validation_request.models:
+                    model.use_approval_date = datetime.utcnow()
+
+    # Create audit log
+    audit_log = AuditLog(
+        entity_type="ValidationApproval",
+        entity_id=approval_id,
+        action="CONDITIONAL_APPROVAL_SUBMIT",
+        user_id=current_user.user_id,
+        changes={
+            "approver_role_id": approval_data.approver_role_id,
+            "approval_status": approval_data.approval_status,
+            "approval_evidence": approval_data.approval_evidence
+        },
+        timestamp=datetime.utcnow()
+    )
+    db.add(audit_log)
+
+    db.commit()
+
+    return SubmitConditionalApprovalResponse(
+        approval_id=approval_id,
+        message=f"Conditional approval {approval_data.approval_status.lower()} successfully"
+    )
+
+
+@router.post("/approvals/{approval_id}/void", response_model=VoidApprovalRequirementResponse)
+def void_approval_requirement(
+    approval_id: int,
+    void_data: VoidApprovalRequirementRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Void a conditional approval requirement (Admin only).
+
+    Allows Admin to cancel an approval requirement with justification.
+    """
+    # Check Admin permission
+    check_admin(current_user)
+
+    # Get the approval requirement
+    approval = db.query(ValidationApproval).filter(
+        ValidationApproval.approval_id == approval_id
+    ).first()
+
+    if not approval:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Approval requirement not found"
+        )
+
+    # Verify this is a conditional approval (has approver_role_id)
+    if not approval.approver_role_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="This is not a conditional approval requirement"
+        )
+
+    # Check if already voided
+    if approval.voided_at:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="This approval requirement has already been voided"
+        )
+
+    # Void the approval
+    approval.voided_by_id = current_user.user_id
+    approval.void_reason = void_data.void_reason
+    approval.voided_at = datetime.utcnow()
+    approval.updated_at = datetime.utcnow()
+
+    # Create audit log
+    audit_log = AuditLog(
+        entity_type="ValidationApproval",
+        entity_id=approval_id,
+        action="CONDITIONAL_APPROVAL_VOID",
+        user_id=current_user.user_id,
+        changes={
+            "void_reason": void_data.void_reason
+        },
+        timestamp=datetime.utcnow()
+    )
+    db.add(audit_log)
+
+    db.commit()
+
+    return VoidApprovalRequirementResponse(
+        approval_id=approval_id,
+        message="Approval requirement voided successfully"
+    )
+
+
+@router.get("/dashboard/pending-conditional-approvals")
+def get_pending_conditional_approvals(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Get validation requests with pending conditional approval requirements.
+
+    Returns list of validation requests that have:
+    - At least one conditional approval requirement (approver_role_id not null)
+    - At least one requirement with status = 'Pending' or null
+    - Not voided
+
+    Ordered by days pending (oldest first).
+    Admin only.
+    """
+    check_admin(current_user)
+
+    # Query validation approvals for conditional requirements that are pending
+    pending_approvals = db.query(ValidationApproval).filter(
+        ValidationApproval.approver_role_id.isnot(None),  # Conditional approval
+        ValidationApproval.voided_at.is_(None),  # Not voided
+        or_(
+            ValidationApproval.approval_status == 'Pending',
+            ValidationApproval.approval_status.is_(None)
+        )
+    ).options(
+        joinedload(ValidationApproval.request).joinedload(ValidationRequest.model_versions_assoc).joinedload(ValidationRequestModelVersion.model),
+        joinedload(ValidationApproval.request).joinedload(ValidationRequest.validation_type),
+        joinedload(ValidationApproval.approver_role_ref)
+    ).all()
+
+    # Group by request_id to avoid duplicates
+    requests_map = {}
+    for approval in pending_approvals:
+        req = approval.request
+        req_id = req.request_id
+
+        if req_id not in requests_map:
+            # Get model info
+            model_name = "Unknown Model"
+            model_id = None
+            if req.model_versions_assoc and len(req.model_versions_assoc) > 0:
+                model = req.model_versions_assoc[0].model
+                model_name = model.model_name
+                model_id = model.model_id
+
+            # Calculate days pending
+            days_pending = (datetime.utcnow() - approval.created_at).days
+
+            requests_map[req_id] = {
+                "request_id": req_id,
+                "model_id": model_id,
+                "model_name": model_name,
+                "validation_type": req.validation_type.label if req.validation_type else "Unknown",
+                "pending_approver_roles": [],
+                "days_pending": days_pending,
+                "created_at": req.created_at.isoformat() if req.created_at else None
+            }
+
+        # Add this pending approval to the list
+        requests_map[req_id]["pending_approver_roles"].append({
+            "approval_id": approval.approval_id,
+            "approver_role_id": approval.approver_role_id,
+            "approver_role_name": approval.approver_role_ref.role_name if approval.approver_role_ref else "Unknown",
+            "days_pending": (datetime.utcnow() - approval.created_at).days
+        })
+
+    # Sort by days pending (oldest first)
+    results = sorted(requests_map.values(), key=lambda x: x["days_pending"], reverse=True)
+
+    return results
+
+
+@router.get("/dashboard/recent-approvals")
+def get_recent_approvals(
+    days_back: int = Query(30, description="Look back this many days for recent approvals"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Get recently approved models (models that received final approval).
+
+    For non-Admin users: Returns models where they are owner, developer, or assigned validator.
+    For Admin users: Returns all recently approved models.
+
+    Looks for models where Model.use_approval_date was set in the last N days.
+    """
+    from app.models.model_delegate import ModelDelegate
+
+    cutoff_date = datetime.utcnow() - timedelta(days=days_back)
+
+    # Query models with recent use_approval_date
+    query = db.query(Model).filter(
+        Model.use_approval_date.isnot(None),
+        Model.use_approval_date >= cutoff_date
+    )
+
+    # For non-Admin users, filter to their models
+    if current_user.role not in ('Admin', 'Validator'):
+        query = query.filter(
+            or_(
+                Model.owner_id == current_user.user_id,
+                Model.developer_id == current_user.user_id,
+                Model.delegates.any(
+                    (ModelDelegate.user_id == current_user.user_id) &
+                    (ModelDelegate.revoked_at == None)
+                )
+            )
+        )
+
+    # For validators, show models from validations they performed
+    if current_user.role == 'Validator':
+        # Find validation requests where this user was assigned as validator
+        validator_requests = db.query(ValidationRequest.request_id).join(
+            ValidationAssignment
+        ).filter(
+            ValidationAssignment.validator_id == current_user.user_id
+        ).subquery()
+
+        # Get model IDs from those requests
+        validator_model_ids = db.query(Model.model_id).join(
+            ValidationRequestModelVersion
+        ).filter(
+            ValidationRequestModelVersion.request_id.in_(validator_requests)
+        ).subquery()
+
+        # Add to query
+        query = query.filter(Model.model_id.in_(validator_model_ids))
+
+    models = query.options(
+        joinedload(Model.owner),
+        joinedload(Model.developer)
+    ).order_by(desc(Model.use_approval_date)).limit(50).all()
+
+    results = []
+    for model in models:
+        # Find the validation request that resulted in this approval
+        validation_req = db.query(ValidationRequest).join(
+            ValidationRequestModelVersion
+        ).filter(
+            ValidationRequestModelVersion.model_id == model.model_id
+        ).order_by(desc(ValidationRequest.created_at)).first()
+
+        results.append({
+            "model_id": model.model_id,
+            "model_name": model.model_name,
+            "owner_name": model.owner.full_name if model.owner else "Unknown",
+            "developer_name": model.developer.full_name if model.developer else None,
+            "use_approval_date": model.use_approval_date.isoformat() if model.use_approval_date else None,
+            "validation_request_id": validation_req.request_id if validation_req else None,
+            "validation_type": validation_req.validation_type.label if validation_req and validation_req.validation_type else "Unknown",
+            "days_ago": (datetime.utcnow() - model.use_approval_date).days if model.use_approval_date else None
+        })
+
+    return results

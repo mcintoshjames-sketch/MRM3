@@ -94,6 +94,21 @@ interface PendingModelSubmission {
     row_approval_status: string;
 }
 
+interface PendingConditionalApproval {
+    request_id: number;
+    model_id: number;
+    model_name: string;
+    validation_type: string;
+    pending_approver_roles: Array<{
+        approval_id: number;
+        approver_role_id: number;
+        approver_role_name: string;
+        days_pending: number;
+    }>;
+    days_pending: number;
+    created_at: string;
+}
+
 export default function AdminDashboardPage() {
     const { user } = useAuth();
     const [slaViolations, setSlaViolations] = useState<SLAViolation[]>([]);
@@ -103,6 +118,7 @@ export default function AdminDashboardPage() {
     const [overdueValidations, setOverdueValidations] = useState<OverdueValidation[]>([]);
     const [upcomingRevalidations, setUpcomingRevalidations] = useState<UpcomingRevalidation[]>([]);
     const [pendingModelSubmissions, setPendingModelSubmissions] = useState<PendingModelSubmission[]>([]);
+    const [pendingConditionalApprovals, setPendingConditionalApprovals] = useState<PendingConditionalApproval[]>([]);
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
@@ -118,7 +134,8 @@ export default function AdminDashboardPage() {
                 overdueSubmissionsRes,
                 overdueValidationsRes,
                 upcomingRevalidationsRes,
-                pendingModelsRes
+                pendingModelsRes,
+                conditionalApprovalsRes
             ] = await Promise.all([
                 api.get('/validation-workflow/dashboard/sla-violations'),
                 api.get('/validation-workflow/dashboard/out-of-order'),
@@ -126,7 +143,8 @@ export default function AdminDashboardPage() {
                 api.get('/validation-workflow/dashboard/overdue-submissions'),
                 api.get('/validation-workflow/dashboard/overdue-validations'),
                 api.get('/validation-workflow/dashboard/upcoming-revalidations?days_ahead=90'),
-                api.get('/models/pending-submissions')
+                api.get('/models/pending-submissions'),
+                api.get('/validation-workflow/dashboard/pending-conditional-approvals')
             ]);
             setSlaViolations(violationsRes.data);
             setOutOfOrder(outOfOrderRes.data);
@@ -135,6 +153,7 @@ export default function AdminDashboardPage() {
             setOverdueValidations(overdueValidationsRes.data);
             setUpcomingRevalidations(upcomingRevalidationsRes.data);
             setPendingModelSubmissions(pendingModelsRes.data);
+            setPendingConditionalApprovals(conditionalApprovalsRes.data);
         } catch (error) {
             console.error('Failed to fetch dashboard data:', error);
         } finally {
@@ -242,6 +261,75 @@ export default function AdminDashboardPage() {
                             >
                                 View all {pendingModelSubmissions.length} pending records &rarr;
                             </Link>
+                        </div>
+                    )}
+                </div>
+            )}
+
+            {/* Pending Conditional Approvals Widget */}
+            {pendingConditionalApprovals.length > 0 && (
+                <div className="bg-white p-4 rounded-lg shadow mb-6">
+                    <div className="flex items-center gap-2 mb-3 pb-2 border-b">
+                        <svg className="w-4 h-4 text-purple-500" fill="currentColor" viewBox="0 0 20 20">
+                            <path fillRule="evenodd" d="M6.267 3.455a3.066 3.066 0 001.745-.723 3.066 3.066 0 013.976 0 3.066 3.066 0 001.745.723 3.066 3.066 0 012.812 2.812c.051.643.304 1.254.723 1.745a3.066 3.066 0 010 3.976 3.066 3.066 0 00-.723 1.745 3.066 3.066 0 01-2.812 2.812 3.066 3.066 0 00-1.745.723 3.066 3.066 0 01-3.976 0 3.066 3.066 0 00-1.745-.723 3.066 3.066 0 01-2.812-2.812 3.066 3.066 0 00-.723-1.745 3.066 3.066 0 010-3.976 3.066 3.066 0 00.723-1.745 3.066 3.066 0 012.812-2.812zm7.44 5.252a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                        </svg>
+                        <h3 className="text-sm font-semibold text-gray-700">Pending Conditional Approvals</h3>
+                        <span className="text-xs text-gray-500 ml-auto">{pendingConditionalApprovals.length} awaiting</span>
+                    </div>
+                    <div className="space-y-2 max-h-64 overflow-y-auto">
+                        {pendingConditionalApprovals.slice(0, 5).map((item) => (
+                            <div
+                                key={item.request_id}
+                                className="border-l-3 pl-3 py-2 hover:bg-gray-50 rounded-r"
+                                style={{
+                                    borderLeftWidth: '3px',
+                                    borderLeftColor: item.days_pending > 14 ? '#9333ea' : item.days_pending > 7 ? '#a855f7' : '#c084fc'
+                                }}
+                            >
+                                <div className="flex items-start justify-between gap-2">
+                                    <div className="flex-1 min-w-0">
+                                        <div className="flex items-center gap-2 mb-1">
+                                            <span className={`px-1.5 py-0.5 text-xs font-medium rounded ${
+                                                item.days_pending > 14 ? 'bg-purple-100 text-purple-700' :
+                                                item.days_pending > 7 ? 'bg-purple-50 text-purple-600' :
+                                                'bg-purple-50 text-purple-500'
+                                            }`}>
+                                                {item.validation_type}
+                                            </span>
+                                            <Link
+                                                to={`/models/${item.model_id}`}
+                                                className="text-xs font-medium text-gray-900 hover:text-blue-600 hover:underline truncate"
+                                            >
+                                                {item.model_name}
+                                            </Link>
+                                        </div>
+                                        <div className="text-xs text-gray-600 space-y-0.5">
+                                            {item.pending_approver_roles.map((role) => (
+                                                <div key={role.approval_id} className="flex items-center gap-1">
+                                                    <span className="text-purple-600 font-medium">{role.approver_role_name}</span>
+                                                    <span className="text-gray-400">•</span>
+                                                    <span>{role.days_pending} {role.days_pending === 1 ? 'day' : 'days'} pending</span>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                    <div className="flex-shrink-0">
+                                        <Link
+                                            to={`/validation-workflow/${item.request_id}?tab=approvals`}
+                                            className="inline-flex items-center px-3 py-1.5 text-xs font-medium text-white bg-purple-600 hover:bg-purple-700 rounded transition-colors"
+                                        >
+                                            Approve
+                                        </Link>
+                                    </div>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                    {pendingConditionalApprovals.length > 5 && (
+                        <div className="mt-3 pt-2 border-t text-center">
+                            <span className="text-xs text-gray-500">
+                                Showing 5 of {pendingConditionalApprovals.length} pending approvals
+                            </span>
                         </div>
                     )}
                 </div>

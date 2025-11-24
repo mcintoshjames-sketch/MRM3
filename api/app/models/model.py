@@ -84,6 +84,11 @@ class Model(Base):
         DateTime, nullable=True,
         comment="Timestamp when model was first submitted")
 
+    # Conditional model use approval tracking
+    use_approval_date: Mapped[Optional[datetime]] = mapped_column(
+        DateTime, nullable=True,
+        comment="Timestamp when model was approved for use (last required approval granted)")
+
     # Relationships
     owner: Mapped["User"] = relationship("User", foreign_keys=[owner_id])
     developer: Mapped[Optional["User"]] = relationship(

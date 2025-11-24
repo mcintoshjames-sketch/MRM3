@@ -4,7 +4,7 @@ from datetime import datetime, date, timedelta
 from typing import Dict, List
 from app.core.database import SessionLocal
 from app.core.security import get_password_hash
-from app.models import User, UserRole, Vendor, EntraUser, Taxonomy, TaxonomyValue, ValidationWorkflowSLA, ValidationPolicy, Region, ValidationComponentDefinition, ComponentDefinitionConfiguration, ComponentDefinitionConfigItem, ModelTypeCategory, ModelType, ValidationRequest, ValidationOutcome, ValidationRequestModelVersion
+from app.models import User, UserRole, Vendor, EntraUser, Taxonomy, TaxonomyValue, ValidationWorkflowSLA, ValidationPolicy, Region, ValidationComponentDefinition, ComponentDefinitionConfiguration, ComponentDefinitionConfigItem, ModelTypeCategory, ModelType, ValidationRequest, ValidationOutcome, ValidationRequestModelVersion, ApproverRole, ConditionalApprovalRule, RuleRequiredApprover
 from app.models.model import Model
 
 
@@ -1506,6 +1506,9 @@ def seed_database():
         # Seed Model Type Hierarchy
         seed_model_type_taxonomy(db)
 
+        # Seed Conditional Approvals
+        seed_conditional_approvals(db)
+
         print("Seeding completed successfully!")
 
     except Exception as e:
@@ -1514,6 +1517,171 @@ def seed_database():
         raise
     finally:
         db.close()
+
+
+def seed_conditional_approvals(db):
+    """Seed sample approver roles and conditional approval rules for UAT."""
+    print("Seeding conditional approvals...")
+
+    # Create sample approver roles
+    sample_roles = [
+        {
+            "role_name": "US Model Risk Management Committee",
+            "description": "US Model Risk Committee responsible for approving high-risk model use in US wholly-owned regions",
+            "is_active": True
+        },
+        {
+            "role_name": "UK Model Risk Management Committee",
+            "description": "UK Model Risk Committee responsible for approving high-risk model use in UK regions",
+            "is_active": True
+        },
+        {
+            "role_name": "EU Model Risk Management Committee",
+            "description": "EU Model Risk Committee responsible for approving high-risk model use in EU regions",
+            "is_active": True
+        },
+        {
+            "role_name": "Global Model Risk Officer",
+            "description": "Global oversight for critical Tier 1 models across all regions",
+            "is_active": True
+        },
+        {
+            "role_name": "Chief Risk Officer",
+            "description": "CRO approval required for CCAR/DFAST models and high-risk stress testing models",
+            "is_active": True
+        }
+    ]
+
+    role_id_map = {}
+    for role_data in sample_roles:
+        existing = db.query(ApproverRole).filter(
+            ApproverRole.role_name == role_data["role_name"]
+        ).first()
+
+        if not existing:
+            role = ApproverRole(**role_data)
+            db.add(role)
+            db.flush()
+            role_id_map[role_data["role_name"]] = role.role_id
+            print(f"✓ Created approver role: {role_data['role_name']}")
+        else:
+            role_id_map[role_data["role_name"]] = existing.role_id
+            print(f"✓ Approver role already exists: {role_data['role_name']}")
+
+    db.commit()
+
+    # Get taxonomy values and regions for rule conditions
+    validation_type_taxonomy = db.query(Taxonomy).filter(
+        Taxonomy.name == "Validation Type"
+    ).first()
+
+    risk_tier_taxonomy = db.query(Taxonomy).filter(
+        Taxonomy.name == "Model Risk Tier"
+    ).first()
+
+    if not validation_type_taxonomy or not risk_tier_taxonomy:
+        print("⚠ Missing required taxonomies for conditional approval rules")
+        return
+
+    # Get specific taxonomy values
+    initial_validation = db.query(TaxonomyValue).filter(
+        TaxonomyValue.taxonomy_id == validation_type_taxonomy.taxonomy_id,
+        TaxonomyValue.code == "INITIAL"
+    ).first()
+
+    tier1_high = db.query(TaxonomyValue).filter(
+        TaxonomyValue.taxonomy_id == risk_tier_taxonomy.taxonomy_id,
+        TaxonomyValue.code == "TIER_1"
+    ).first()
+
+    # Get regions
+    us_region = db.query(Region).filter(Region.code == "US").first()
+    uk_region = db.query(Region).filter(Region.code == "UK").first()
+    eu_region = db.query(Region).filter(Region.code == "EU").first()
+
+    if not all([initial_validation, tier1_high, us_region, uk_region, eu_region]):
+        print("⚠ Missing required taxonomy values or regions for conditional approval rules")
+        return
+
+    # Create sample conditional approval rules
+    sample_rules = [
+        {
+            "rule_name": "US High Risk Initial Validation Approval",
+            "description": "Requires US MRM Committee approval for initial validation of Tier 1 (High Risk) models in US region",
+            "is_active": True,
+            "validation_type_ids": str(initial_validation.value_id),
+            "risk_tier_ids": str(tier1_high.value_id),
+            "governance_region_ids": str(us_region.region_id),
+            "deployed_region_ids": str(us_region.region_id),
+            "required_approver_roles": ["US Model Risk Management Committee"]
+        },
+        {
+            "rule_name": "UK High Risk Initial Validation Approval",
+            "description": "Requires UK MRM Committee approval for initial validation of Tier 1 (High Risk) models in UK region",
+            "is_active": True,
+            "validation_type_ids": str(initial_validation.value_id),
+            "risk_tier_ids": str(tier1_high.value_id),
+            "governance_region_ids": str(uk_region.region_id),
+            "deployed_region_ids": str(uk_region.region_id),
+            "required_approver_roles": ["UK Model Risk Management Committee"]
+        },
+        {
+            "rule_name": "EU High Risk Initial Validation Approval",
+            "description": "Requires EU MRM Committee approval for initial validation of Tier 1 (High Risk) models in EU region",
+            "is_active": True,
+            "validation_type_ids": str(initial_validation.value_id),
+            "risk_tier_ids": str(tier1_high.value_id),
+            "governance_region_ids": str(eu_region.region_id),
+            "deployed_region_ids": str(eu_region.region_id),
+            "required_approver_roles": ["EU Model Risk Management Committee"]
+        },
+        {
+            "rule_name": "Global Tier 1 Model Oversight",
+            "description": "Requires Global Model Risk Officer approval for all Tier 1 (High Risk) initial validations regardless of region",
+            "is_active": True,
+            "validation_type_ids": str(initial_validation.value_id),
+            "risk_tier_ids": str(tier1_high.value_id),
+            "governance_region_ids": None,  # ANY region
+            "deployed_region_ids": None,  # ANY region
+            "required_approver_roles": ["Global Model Risk Officer"]
+        }
+    ]
+
+    for rule_data in sample_rules:
+        existing = db.query(ConditionalApprovalRule).filter(
+            ConditionalApprovalRule.rule_name == rule_data["rule_name"]
+        ).first()
+
+        if existing:
+            print(f"✓ Conditional approval rule already exists: {rule_data['rule_name']}")
+            continue
+
+        # Create rule
+        rule = ConditionalApprovalRule(
+            rule_name=rule_data["rule_name"],
+            description=rule_data["description"],
+            is_active=rule_data["is_active"],
+            validation_type_ids=rule_data["validation_type_ids"],
+            risk_tier_ids=rule_data["risk_tier_ids"],
+            governance_region_ids=rule_data["governance_region_ids"],
+            deployed_region_ids=rule_data["deployed_region_ids"]
+        )
+        db.add(rule)
+        db.flush()
+
+        # Add required approver roles
+        for approver_role_name in rule_data["required_approver_roles"]:
+            if approver_role_name in role_id_map:
+                assoc = RuleRequiredApprover(
+                    rule_id=rule.rule_id,
+                    approver_role_id=role_id_map[approver_role_name]
+                )
+                db.add(assoc)
+
+        print(f"✓ Created conditional approval rule: {rule_data['rule_name']}")
+
+    db.commit()
+    print("✓ Conditional approvals seeded")
 
 
 def seed_model_type_taxonomy(db):

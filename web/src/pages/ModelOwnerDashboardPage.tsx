@@ -25,10 +25,22 @@ interface MySubmission {
     row_approval_status: string;
 }
 
+interface RecentApproval {
+    model_id: number;
+    model_name: string;
+    owner_name: string;
+    developer_name: string | null;
+    use_approval_date: string;
+    validation_request_id: number | null;
+    validation_type: string;
+    days_ago: number;
+}
+
 export default function ModelOwnerDashboardPage() {
     const { user } = useAuth();
     const [newsFeed, setNewsFeed] = useState<NewsFeedItem[]>([]);
     const [mySubmissions, setMySubmissions] = useState<MySubmission[]>([]);
+    const [recentApprovals, setRecentApprovals] = useState<RecentApproval[]>([]);
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
@@ -37,12 +49,14 @@ export default function ModelOwnerDashboardPage() {
 
     const fetchDashboardData = async () => {
         try {
-            const [feedRes, submissionsRes] = await Promise.all([
+            const [feedRes, submissionsRes, approvalsRes] = await Promise.all([
                 api.get('/dashboard/news-feed'),
-                api.get('/models/my-submissions')
+                api.get('/models/my-submissions'),
+                api.get('/validation-workflow/dashboard/recent-approvals?days_back=30')
             ]);
             setNewsFeed(feedRes.data);
             setMySubmissions(submissionsRes.data);
+            setRecentApprovals(approvalsRes.data);
         } catch (error) {
             console.error('Failed to fetch dashboard data:', error);
         } finally {
@@ -201,6 +215,74 @@ export default function ModelOwnerDashboardPage() {
                                             </Link>
                                         )}
                                     </div>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            )}
+
+            {/* Recently Approved Models Widget */}
+            {recentApprovals.length > 0 && (
+                <div className="bg-white p-4 rounded-lg shadow mb-6">
+                    <div className="flex items-center gap-2 mb-3 pb-2 border-b">
+                        <svg className="w-4 h-4 text-green-500" fill="currentColor" viewBox="0 0 20 20">
+                            <path fillRule="evenodd" d="M6.267 3.455a3.066 3.066 0 001.745-.723 3.066 3.066 0 013.976 0 3.066 3.066 0 001.745.723 3.066 3.066 0 012.812 2.812c.051.643.304 1.254.723 1.745a3.066 3.066 0 010 3.976 3.066 3.066 0 00-.723 1.745 3.066 3.066 0 01-2.812 2.812 3.066 3.066 0 00-1.745.723 3.066 3.066 0 01-3.976 0 3.066 3.066 0 00-1.745-.723 3.066 3.066 0 01-2.812-2.812 3.066 3.066 0 00-.723-1.745 3.066 3.066 0 010-3.976 3.066 3.066 0 00.723-1.745 3.066 3.066 0 012.812-2.812zm7.44 5.252a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                        </svg>
+                        <h3 className="text-sm font-semibold text-gray-700">Recently Approved Models</h3>
+                        <span className="text-xs text-gray-500 ml-auto">Last 30 days</span>
+                    </div>
+                    <div className="space-y-2 max-h-64 overflow-y-auto">
+                        {recentApprovals.slice(0, 10).map((approval) => (
+                            <div
+                                key={approval.model_id}
+                                className="border-l-3 pl-3 py-2 hover:bg-gray-50 rounded-r"
+                                style={{
+                                    borderLeftWidth: '3px',
+                                    borderLeftColor: '#10b981'
+                                }}
+                            >
+                                <div className="flex items-start justify-between gap-2">
+                                    <div className="flex-1 min-w-0">
+                                        <div className="flex items-center gap-2 mb-1">
+                                            <Link
+                                                to={`/models/${approval.model_id}`}
+                                                className="text-sm font-medium text-gray-900 hover:text-blue-600 hover:underline truncate"
+                                            >
+                                                {approval.model_name}
+                                            </Link>
+                                            <span className="text-xs px-1.5 py-0.5 bg-green-100 text-green-700 rounded font-medium">
+                                                Approved
+                                            </span>
+                                        </div>
+                                        <div className="text-xs text-gray-600">
+                                            <div>{approval.validation_type}</div>
+                                            <div className="flex items-center gap-1 mt-0.5">
+                                                <span>Owner: {approval.owner_name}</span>
+                                                {approval.developer_name && (
+                                                    <>
+                                                        <span className="text-gray-400">•</span>
+                                                        <span>Developer: {approval.developer_name}</span>
+                                                    </>
+                                                )}
+                                            </div>
+                                            <div className="text-gray-400 mt-0.5">
+                                                Approved {approval.days_ago === 0 ? 'today' :
+                                                         approval.days_ago === 1 ? 'yesterday' :
+                                                         `${approval.days_ago} days ago`}
+                                            </div>
+                                        </div>
+                                    </div>
+                                    {approval.validation_request_id && (
+                                        <div className="flex-shrink-0">
+                                            <Link
+                                                to={`/validation-workflow/${approval.validation_request_id}`}
+                                                className="inline-flex items-center px-2 py-1 text-xs font-medium text-green-700 bg-green-50 hover:bg-green-100 rounded transition-colors"
+                                            >
+                                                View
+                                            </Link>
+                                        </div>
+                                    )}
                                 </div>
                             </div>
                         ))}
