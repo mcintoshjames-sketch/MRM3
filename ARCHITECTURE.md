@@ -33,6 +33,9 @@ Model Risk Management inventory system with a FastAPI backend, React/TypeScript 
   - `version_deployment_tasks.py`: deployment task tracking for model owners/approvers.
   - `approver_roles.py`: approver role/committee CRUD for additional model use approvals.
   - `conditional_approval_rules.py`: configurable rule management with English translation preview (additional approvals).
+  - `map_applications.py`: search/retrieve applications from MAP (Managed Application Portfolio) inventory.
+  - `model_applications.py`: model-application relationship CRUD with soft delete support.
+  - `overdue_commentary.py`: overdue revalidation commentary CRUD (create, supersede, get history) for tracking explanations on overdue validations.
   - `audit_logs.py`: audit log search/filter.
   - `dashboard.py`: aging and workload summaries.
   - `export_views.py`: CSV/export-friendly endpoints.
@@ -46,7 +49,9 @@ Model Risk Management inventory system with a FastAPI backend, React/TypeScript 
   - Catalog: `model.py`, `vendor.py`, `taxonomy.py`, `region.py`, `model_version.py`, `model_region.py`, `model_delegate.py`, `model_change_taxonomy.py`, `model_version_region.py`, `model_type.py` (ModelType, ModelTypeCategory).
   - Model relationships: `model_hierarchy.py` (parent-child links with effective/end dates), `model_feed_dependency.py` (feeder-consumer data flows with active status tracking), `model_dependency_metadata.py` (extended metadata for dependencies, not yet exposed in UI).
   - Validation workflow: `validation.py` (ValidationRequest, ValidationStatusHistory, ValidationAssignment, ValidationOutcome, ValidationApproval, ValidationReviewOutcome, ValidationPlan, ValidationPlanComponent, ValidationComponentDefinition, ComponentDefinitionConfiguration/ConfigItem, ValidationPolicy, ValidationWorkflowSLA).
+  - Overdue commentary: `overdue_revalidation_comment.py` (OverdueRevalidationComment - tracks explanations for overdue submissions/validations with supersession chain).
 - Additional approvals: `conditional_approval.py` (ApproverRole, ConditionalApprovalRule, RuleRequiredApprover).
+  - MAP Applications: `map_application.py` (mock application inventory), `model_application.py` (model-application links with relationship types).
   - Compliance/analytics: `audit_log.py`, `export_view.py`, `saved_query.py`, `version_deployment_task.py`, `validation_grouping.py`.
 - Schemas: mirrored Pydantic models in `app/schemas/` for requests/responses.
 - Authn/z: HTTP Bearer JWT tokens; `get_current_user` dependency enforces auth; role checks per endpoint; RLS utilities narrow visibility for non-privileged users.
@@ -60,7 +65,7 @@ Model Risk Management inventory system with a FastAPI backend, React/TypeScript 
   - Auth context (`src/contexts/AuthContext.tsx`) manages token/user; Axios client (`src/api/client.ts`) injects Bearer tokens and redirects on 401.
   - Layout (`src/components/Layout.tsx`) provides navigation shell.
   - Hooks/utilities: table sorting (`src/hooks/useTableSort.tsx`), CSV export helpers on pages.
-- Pages (`src/pages/`): feature-specific UIs aligned to backend modules (e.g., `ModelsPage.tsx`, `ValidationWorkflowPage.tsx`, `ValidationRequestDetailPage.tsx`, `VendorsPage.tsx`, `TaxonomyPage.tsx`, `AuditPage.tsx`, `WorkflowConfigurationPage.tsx`, `ApproverRolesPage.tsx`, `ConditionalApprovalRulesPage.tsx`, `RegionalComplianceReportPage.tsx`, `DeviationTrendsReportPage.tsx`, `AnalyticsPage.tsx`, dashboards). Tables generally support sorting and CSV export; dates rendered via ISO splitting.
+- Pages (`src/pages/`): feature-specific UIs aligned to backend modules (e.g., `ModelsPage.tsx`, `ValidationWorkflowPage.tsx`, `ValidationRequestDetailPage.tsx`, `VendorsPage.tsx`, `TaxonomyPage.tsx`, `AuditPage.tsx`, `WorkflowConfigurationPage.tsx`, `ApproverRolesPage.tsx`, `ConditionalApprovalRulesPage.tsx`, `RegionalComplianceReportPage.tsx`, `DeviationTrendsReportPage.tsx`, `OverdueRevalidationReportPage.tsx`, `AnalyticsPage.tsx`, dashboards). Tables generally support sorting and CSV export; dates rendered via ISO splitting.
 - Styling: Tailwind classes via `index.css` and Vite config; iconography via emojis/SVG inline.
 
 ## Data Model (conceptual)
@@ -74,7 +79,8 @@ Model Risk Management inventory system with a FastAPI backend, React/TypeScript 
 - ModelVersion tracks version metadata, change types, production dates, scope (global/regional) and links to ValidationRequest.
 - ValidationRequest lifecycle with status history, assignments (validators), plan (components and deviations), approvals (traditional + conditional), outcomes/review outcomes, deployment tasks, and policies/SLA settings per risk tier.
 - **Conditional Model Use Approvals**: ApproverRole (committees/roles), ConditionalApprovalRule (configurable rules based on validation type, risk tier, governance region, deployed regions), RuleRequiredApprover (many-to-many link). ValidationApproval extended with approver_role_id, approval_evidence, voiding fields. Model extended with use_approval_date timestamp.
-- Taxonomy/TaxonomyValue for configurable lists (risk tier, validation types, statuses, priorities, **Model Hierarchy Type, Model Dependency Type**, etc.).
+- Taxonomy/TaxonomyValue for configurable lists (risk tier, validation types, statuses, priorities, **Model Hierarchy Type, Model Dependency Type, Application Relationship Type**, etc.).
+- MapApplication (mock MAP inventory) and ModelApplication (model-application links with relationship type, effective/end dates for soft delete).
 - Region and VersionDeploymentTask for regional deployment approvals.
 - AuditLog captures actions across entities including relationship changes and conditional approval actions.
 - SavedQuery/ExportView for analytics/reporting reuse.
@@ -86,8 +92,12 @@ Model Risk Management inventory system with a FastAPI backend, React/TypeScript 
 4. Responses serialized via Pydantic schemas; frontend renders tables/cards with sorting/export.
 
 ## Reporting & Analytics
-- Reports hub (`/reports`) lists available reports; detail pages for Regional Compliance and Deviation Trends (CSV export, refresh).
-- Backend report endpoints: `GET /regional-compliance-report/`, `GET /validation-workflow/compliance-report/deviation-trends`, plus dashboard reports (`/validation-workflow/dashboard/*`) and analytics aggregations (`/analytics`, saved queries).
+- Reports hub (`/reports`) lists available reports; detail pages for Regional Compliance, Deviation Trends, and Overdue Revalidation (CSV export, refresh).
+- Backend report endpoints:
+  - `GET /regional-compliance-report/` - Regional deployment and compliance
+  - `GET /validation-workflow/compliance-report/deviation-trends` - Deviation trends
+  - `GET /overdue-revalidation-report/` - Overdue items with commentary status (supports filters: overdue_type, comment_status, risk_tier, days_overdue_min, needs_update_only)
+  - Dashboard reports (`/validation-workflow/dashboard/*`) and analytics aggregations (`/analytics`, saved queries)
 - Export views in `export_views.py` provide CSV-friendly datasets.
 
 ## Conditional Model Use Approvals
@@ -123,6 +133,62 @@ Model Risk Management inventory system with a FastAPI backend, React/TypeScript 
 - `app/api/conditional_approval_rules.py` - Additional approval rule CRUD with preview endpoint
   - `app/api/validation_workflow.py` - Integrated evaluation and approval submission
 - **Audit Logging**: CONDITIONAL_APPROVAL_SUBMIT and CONDITIONAL_APPROVAL_VOID actions tracked with evidence/reason
+
+## MAP Applications & Model-Application Relationships
+- **Purpose**: Track supporting applications from the organization's Managed Application Portfolio (MAP) that are integral to a model's end-to-end process.
+- **Data Model**:
+  - **MapApplication**: Mock application inventory simulating integration with external MAP system. Fields: application_code, application_name, description, owner_name/email, department, technology_stack, criticality_tier, status, external_url.
+  - **ModelApplication**: Junction table linking models to applications with relationship metadata. Fields: model_id, application_id, relationship_type_id (taxonomy), description, effective_date, end_date (soft delete), created_by_user_id.
+- **Relationship Types** (taxonomy): DATA_SOURCE, EXECUTION, OUTPUT_CONSUMER, MONITORING, REPORTING, DATA_STORAGE, ORCHESTRATION, VALIDATION, OTHER.
+- **Permissions**: Admin, Validator, model owner, and model developer can manage application links.
+- **Soft Delete**: Removing a link sets end_date rather than deleting the record, preserving historical relationships.
+- **API Endpoints**:
+  - `GET /map/applications` - Search MAP inventory with filters (search, department, status, criticality)
+  - `GET /map/applications/{id}` - Get application details
+  - `GET /map/departments` - List available departments
+  - `GET /models/{id}/applications` - List model's linked applications (optional include_inactive)
+  - `POST /models/{id}/applications` - Add application link
+  - `DELETE /models/{id}/applications/{app_id}` - Soft delete application link
+- **Frontend**: "Applications" tab on Model Details page with search modal and relationship management.
+- **Testing**: 20 tests in `tests/test_map_applications.py` covering MAP search, model-application CRUD, permissions, and soft delete.
+
+## Overdue Revalidation Commentary
+- **Purpose**: Track and explain delays in model revalidation submissions and validation completion. Enables MRM teams to monitor overdue items with documented explanations and target dates.
+- **Commentary Types**:
+  - **PRE_SUBMISSION**: For delays in model documentation submission (before validation work starts). Responsibility: Model owner, developer, or delegate.
+  - **VALIDATION_IN_PROGRESS**: For delays in validation completion (after submission received). Responsibility: Assigned validator.
+- **Data Model**:
+  - **OverdueRevalidationComment**: Tracks explanations with supersession chain. Fields: validation_request_id, overdue_type, reason_comment, target_date, created_by_user_id, created_at, is_current, superseded_at, superseded_by_comment_id.
+  - New comments automatically supersede previous current comment (is_current=False, superseded_by_comment_id set).
+- **Staleness Detection**:
+  - Comment is stale if older than 45 days OR if target_date has passed without resolution.
+  - Stale comments trigger "Update required" alerts in UI.
+- **Computed Completion Dates**:
+  - PRE_SUBMISSION: target_submission_date + SLA lead_time_days
+  - POST_SUBMISSION: validation_request.target_completion_date
+- **Authorization Rules**:
+  - Admin: Can submit on anyone's behalf for both types
+  - PRE_SUBMISSION: Model owner, developer, or active delegate
+  - VALIDATION_IN_PROGRESS: Assigned validator only
+- **API Endpoints** (prefix: `/validation-workflow`):
+  - `GET /requests/{id}/overdue-commentary` - Get current commentary with staleness check
+  - `POST /requests/{id}/overdue-commentary` - Create/supersede commentary
+  - `GET /requests/{id}/overdue-commentary/history` - Full comment history
+  - `GET /models/{id}/overdue-commentary` - Convenience endpoint for model's latest request
+  - `GET /dashboard/my-overdue-items` - User-specific overdue items with commentary status
+- **Dashboard Integration**:
+  - `GET /dashboard/overdue-submissions` and `GET /dashboard/overdue-validations` enhanced with commentary fields: comment_status, latest_comment, latest_comment_date, target_date, needs_comment_update.
+- **Frontend Components**:
+  - `OverdueCommentaryModal.tsx`: Form for submitting/updating explanations with comment history
+  - `OverdueAlertBanner.tsx`: Reusable alert component for overdue status display
+  - Overdue alert banners on ModelDetailsPage and ValidationRequestDetailPage show commentary status and "Provide Explanation" buttons
+  - AdminDashboardPage enhancements:
+    - "My Overdue Items" section: Personal task list showing items where the current user is responsible for providing explanations
+    - Commentary status columns in Overdue Submissions and Overdue Validations tables
+    - Color-coded badges: Current (green), Stale (yellow), Missing (red)
+    - "Add Commentary" buttons for items needing updates
+    - Commentary modal integration for quick updates without leaving dashboard
+- **Testing**: 36 tests total (23 core in `test_overdue_commentary.py`, 13 dashboard integration in `test_dashboard_commentary.py`)
 
 ## Security, Error Handling, Logging
 - JWT auth with token expiry; passwords hashed with bcrypt.

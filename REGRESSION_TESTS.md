@@ -5,7 +5,9 @@ This document tracks the regression testing strategy and test coverage for itera
 ## Quick Reference
 
 ```bash
-# Run all backend tests (256 tests passing - all tests passing!)
+# Run all backend tests (337 tests total, ~333 passing)
+# Note: A few pre-existing test failures in conditional_approvals and model_submission_workflow
+# Added: 36 tests for Overdue Revalidation Commentary (23 core + 13 dashboard integration)
 cd api && python -m pytest
 
 # Run all frontend tests (128 tests passing)
@@ -234,6 +236,46 @@ cd web && pnpm test:coverage
 - [x] Support for models without validation policies
 - [x] Handle models with no validation history
 
+#### Overdue Revalidation Commentary (`test_overdue_commentary.py`)
+- [x] Get overdue commentary for validation request
+- [x] Get returns 404 for non-existent request
+- [x] Create commentary successfully as admin
+- [x] Create commentary successfully as model owner (PRE_SUBMISSION)
+- [x] Create commentary successfully as validator (VALIDATION_IN_PROGRESS)
+- [x] Create returns 403 for unauthorized user
+- [x] Create validates target date is in future
+- [x] Create requires valid overdue_type for request state
+- [x] Commentary supersedes previous comment
+- [x] Get commentary history returns all comments
+- [x] Stale detection: Comment older than 45 days
+- [x] Stale detection: Target date passed
+- [x] Model-level convenience endpoint retrieves latest request commentary
+- [x] Admin can submit on anyone's behalf (PRE_SUBMISSION)
+- [x] Admin can submit on anyone's behalf (VALIDATION_IN_PROGRESS)
+- [x] Delegates can submit PRE_SUBMISSION commentary
+- [x] Cannot submit PRE_SUBMISSION after submission received
+- [x] Cannot submit VALIDATION_IN_PROGRESS before submission received
+- [x] Computed completion date based on validation stage
+- [x] PRE_SUBMISSION completion = target_date + lead_time
+- [x] POST_SUBMISSION completion = validation target_completion_date
+- [x] Comment staleness threshold configurable (45 days)
+- [x] User lookup returns proper names in commentary
+
+#### Dashboard Commentary Integration (`test_dashboard_commentary.py`)
+- [x] Overdue submissions includes commentary fields
+- [x] Overdue submissions shows no comment status correctly
+- [x] Overdue submissions shows current comment status
+- [x] Overdue submissions shows stale comment status
+- [x] Overdue validations includes commentary fields
+- [x] Overdue validations shows no comment status correctly
+- [x] My overdue items endpoint returns user-specific items
+- [x] My overdue items shows PRE_SUBMISSION for model owners
+- [x] My overdue items shows VALIDATION_IN_PROGRESS for validators
+- [x] My overdue items includes commentary status
+- [x] My overdue items filters by current user's responsibilities
+- [x] Commentary needs_comment_update flag calculation
+- [x] Commentary target date reflects latest comment
+
 #### Model Submission Workflow (`test_model_submission_workflow.py`)
 - [x] Admin creating model is auto-approved
 - [x] User creating model is pending approval
@@ -328,6 +370,28 @@ cd web && pnpm test:coverage
 - [x] Delete dependency as non-admin blocked (403)
 - [x] Delete dependency creates audit log
 - [x] **Delete dependency allows previously blocked edges (cycle removal)**
+
+#### MAP Applications (`test_map_applications.py`)
+- [x] List MAP applications when empty
+- [x] List MAP applications with data (active only by default)
+- [x] Search MAP applications by name
+- [x] Search MAP applications by code
+- [x] Filter MAP applications by department
+- [x] Filter MAP applications by status
+- [x] Filter MAP applications by criticality tier
+- [x] Get specific MAP application by ID
+- [x] Get non-existent MAP application returns 404
+- [x] List available departments
+- [x] Unauthenticated access denied
+- [x] List model applications when empty
+- [x] Add application link to model
+- [x] Add duplicate application link fails (409 Conflict)
+- [x] List model applications with data
+- [x] Remove application link (soft delete - sets end_date)
+- [x] Include inactive shows ended relationships
+- [x] Non-owner/non-admin cannot add application link (403)
+- [x] Adding application to non-existent model returns 404
+- [x] Adding non-existent application returns 404
 
 ### Frontend Component Tests (web/src/) - ✅ FULLY OPERATIONAL
 

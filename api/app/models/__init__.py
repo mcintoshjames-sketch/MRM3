@@ -41,6 +41,7 @@ from app.models.validation import (
 from app.models.validation_grouping import ValidationGroupingMemory
 from app.models.export_view import ExportView
 from app.models.version_deployment_task import VersionDeploymentTask
+from app.models.overdue_comment import OverdueRevalidationComment
 
 __all__ = [
     "User", "UserRole", "user_regions",
@@ -94,5 +95,7 @@ __all__ = [
     "ComponentDefinitionConfigItem",
     "ValidationGroupingMemory",
     "ExportView",
-    "VersionDeploymentTask"
+    "VersionDeploymentTask",
+    # Overdue revalidation comments
+    "OverdueRevalidationComment"
 ]

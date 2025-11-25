@@ -293,7 +293,7 @@ const ModelChangeRecordPage = () => {
                     <p className="text-gray-900">{validationRequest.priority.label}</p>
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Target Completion</label>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Original Target Date</label>
                     <p className="text-gray-900">
                       {validationRequest.target_completion_date.split('T')[0]}
                     </p>

@@ -3,6 +3,8 @@ import { Link } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import api from '../api/client';
 import Layout from '../components/Layout';
+import { overdueCommentaryApi, MyOverdueItem } from '../api/overdueCommentary';
+import OverdueCommentaryModal, { OverdueType } from '../components/OverdueCommentaryModal';
 
 interface SLAViolation {
     request_id: number;
@@ -56,6 +58,12 @@ interface OverdueSubmission {
     urgency: string;
     validation_due_date: string;
     submission_status: string;
+    // Commentary fields
+    comment_status: 'CURRENT' | 'STALE' | 'MISSING';
+    latest_comment: string | null;
+    latest_comment_date: string | null;
+    target_submission_date: string | null;
+    needs_comment_update: boolean;
 }
 
 interface OverdueValidation {
@@ -68,6 +76,12 @@ interface OverdueValidation {
     days_overdue: number;
     current_status: string;
     model_compliance_status: string;
+    // Commentary fields
+    comment_status: 'CURRENT' | 'STALE' | 'MISSING';
+    latest_comment: string | null;
+    latest_comment_date: string | null;
+    target_completion_date: string | null;
+    needs_comment_update: boolean;
 }
 
 interface UpcomingRevalidation {
@@ -119,7 +133,14 @@ export default function AdminDashboardPage() {
     const [upcomingRevalidations, setUpcomingRevalidations] = useState<UpcomingRevalidation[]>([]);
     const [pendingModelSubmissions, setPendingModelSubmissions] = useState<PendingModelSubmission[]>([]);
     const [pendingAdditionalApprovals, setPendingAdditionalApprovals] = useState<PendingAdditionalApproval[]>([]);
+    const [myOverdueItems, setMyOverdueItems] = useState<MyOverdueItem[]>([]);
     const [loading, setLoading] = useState(true);
+
+    // Commentary modal state
+    const [showCommentaryModal, setShowCommentaryModal] = useState(false);
+    const [commentaryModalRequestId, setCommentaryModalRequestId] = useState<number | null>(null);
+    const [commentaryModalType, setCommentaryModalType] = useState<OverdueType>('PRE_SUBMISSION');
+    const [commentaryModalModelName, setCommentaryModalModelName] = useState<string>('');
 
     useEffect(() => {
         fetchDashboardData();
@@ -135,7 +156,8 @@ export default function AdminDashboardPage() {
                 overdueValidationsRes,
                 upcomingRevalidationsRes,
                 pendingModelsRes,
-                conditionalApprovalsRes
+                conditionalApprovalsRes,
+                myOverdueRes
             ] = await Promise.all([
                 api.get('/validation-workflow/dashboard/sla-violations'),
                 api.get('/validation-workflow/dashboard/out-of-order'),
@@ -144,7 +166,8 @@ export default function AdminDashboardPage() {
                 api.get('/validation-workflow/dashboard/overdue-validations'),
                 api.get('/validation-workflow/dashboard/upcoming-revalidations?days_ahead=90'),
                 api.get('/models/pending-submissions'),
-                api.get('/validation-workflow/dashboard/pending-additional-approvals')
+                api.get('/validation-workflow/dashboard/pending-additional-approvals'),
+                overdueCommentaryApi.getMyOverdueItems()
             ]);
             setSlaViolations(violationsRes.data);
             setOutOfOrder(outOfOrderRes.data);
@@ -154,10 +177,49 @@ export default function AdminDashboardPage() {
             setUpcomingRevalidations(upcomingRevalidationsRes.data);
             setPendingModelSubmissions(pendingModelsRes.data);
             setPendingAdditionalApprovals(conditionalApprovalsRes.data);
+            setMyOverdueItems(myOverdueRes);
         } catch (error) {
             console.error('Failed to fetch dashboard data:', error);
         } finally {
             setLoading(false);
+        }
+    };
+
+    const openCommentaryModal = (requestId: number, overdueType: OverdueType, modelName: string) => {
+        setCommentaryModalRequestId(requestId);
+        setCommentaryModalType(overdueType);
+        setCommentaryModalModelName(modelName);
+        setShowCommentaryModal(true);
+    };
+
+    const handleCommentarySuccess = () => {
+        fetchDashboardData();
+    };
+
+    // Get badge style for commentary status
+    const getCommentStatusBadge = (status: 'CURRENT' | 'STALE' | 'MISSING') => {
+        switch (status) {
+            case 'CURRENT':
+                return 'bg-green-100 text-green-800';
+            case 'STALE':
+                return 'bg-yellow-100 text-yellow-800';
+            case 'MISSING':
+                return 'bg-red-100 text-red-800';
+            default:
+                return 'bg-gray-100 text-gray-800';
+        }
+    };
+
+    const getCommentStatusLabel = (status: 'CURRENT' | 'STALE' | 'MISSING') => {
+        switch (status) {
+            case 'CURRENT':
+                return 'Current';
+            case 'STALE':
+                return 'Stale';
+            case 'MISSING':
+                return 'Missing';
+            default:
+                return status;
         }
     };
 
@@ -374,6 +436,109 @@ export default function AdminDashboardPage() {
                     </div>
                 </div>
             </div>
+
+            {/* My Overdue Items - Items requiring current user's attention */}
+            {myOverdueItems.length > 0 && (
+                <div className="bg-white p-4 rounded-lg shadow mb-6 border-l-4 border-orange-500">
+                    <div className="flex items-center gap-2 mb-3 pb-2 border-b">
+                        <svg className="w-5 h-5 text-orange-500" fill="currentColor" viewBox="0 0 20 20">
+                            <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                        </svg>
+                        <h3 className="text-lg font-bold text-gray-900">My Overdue Items</h3>
+                        <span className="bg-orange-100 text-orange-700 text-xs font-medium px-2 py-0.5 rounded ml-auto">
+                            {myOverdueItems.filter(i => i.needs_comment_update).length} need commentary
+                        </span>
+                    </div>
+                    <p className="text-sm text-gray-600 mb-3">Items where you are responsible for providing delay explanations</p>
+                    <div className="overflow-x-auto">
+                        <table className="min-w-full divide-y divide-gray-200">
+                            <thead className="bg-gray-50">
+                                <tr>
+                                    <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Type</th>
+                                    <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Model</th>
+                                    <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Your Role</th>
+                                    <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Days Overdue</th>
+                                    <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Commentary</th>
+                                    <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Target Date</th>
+                                    <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody className="bg-white divide-y divide-gray-200">
+                                {myOverdueItems.map((item) => (
+                                    <tr
+                                        key={`${item.request_id}-${item.overdue_type}`}
+                                        className={`hover:bg-orange-50 ${item.needs_comment_update ? 'bg-orange-50' : ''}`}
+                                    >
+                                        <td className="px-3 py-2 whitespace-nowrap">
+                                            <span className={`px-2 py-1 text-xs font-semibold rounded ${
+                                                item.overdue_type === 'PRE_SUBMISSION'
+                                                    ? 'bg-yellow-100 text-yellow-800'
+                                                    : 'bg-red-100 text-red-800'
+                                            }`}>
+                                                {item.overdue_type === 'PRE_SUBMISSION' ? 'Submission' : 'Validation'}
+                                            </span>
+                                        </td>
+                                        <td className="px-3 py-2 whitespace-nowrap">
+                                            <Link
+                                                to={`/models/${item.model_id}`}
+                                                className="text-blue-600 hover:text-blue-800 font-medium text-sm"
+                                            >
+                                                {item.model_name}
+                                            </Link>
+                                            {item.risk_tier && (
+                                                <span className="ml-1 text-xs text-gray-500">({item.risk_tier})</span>
+                                            )}
+                                        </td>
+                                        <td className="px-3 py-2 whitespace-nowrap text-sm">
+                                            <span className="px-2 py-1 text-xs font-medium rounded bg-gray-100 text-gray-700 capitalize">
+                                                {item.user_role}
+                                            </span>
+                                        </td>
+                                        <td className="px-3 py-2 whitespace-nowrap">
+                                            <span className="px-2 py-1 text-xs font-semibold rounded bg-orange-100 text-orange-800">
+                                                {item.days_overdue} days
+                                            </span>
+                                        </td>
+                                        <td className="px-3 py-2 whitespace-nowrap">
+                                            <div className="flex flex-col gap-1">
+                                                <span className={`px-2 py-1 text-xs font-semibold rounded inline-block w-fit ${getCommentStatusBadge(item.comment_status)}`}>
+                                                    {getCommentStatusLabel(item.comment_status)}
+                                                </span>
+                                                {item.latest_comment && (
+                                                    <span className="text-xs text-gray-500 truncate max-w-32" title={item.latest_comment}>
+                                                        "{item.latest_comment.substring(0, 25)}..."
+                                                    </span>
+                                                )}
+                                            </div>
+                                        </td>
+                                        <td className="px-3 py-2 whitespace-nowrap text-sm">
+                                            {item.target_date ? item.target_date.split('T')[0] : <span className="text-gray-400">-</span>}
+                                        </td>
+                                        <td className="px-3 py-2 whitespace-nowrap">
+                                            <div className="flex gap-2">
+                                                <Link
+                                                    to={`/validation-workflow/${item.request_id}`}
+                                                    className="text-blue-600 hover:text-blue-800 text-xs"
+                                                >
+                                                    View
+                                                </Link>
+                                                {item.needs_comment_update && (
+                                                    <button
+                                                        onClick={() => openCommentaryModal(item.request_id, item.overdue_type, item.model_name)}
+                                                        className="px-2 py-1 text-xs font-medium text-white bg-orange-600 hover:bg-orange-700 rounded"
+                                                    >
+                                                        Add Commentary
+                                                    </button>
+                                                )}
+                                            </div>
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            )}
 
             {/* Pending Validator Assignments Feed */}
             {pendingAssignments.length > 0 && (
@@ -607,9 +772,9 @@ export default function AdminDashboardPage() {
                                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Model</th>
                                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Owner</th>
                                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Submission Due</th>
-                                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Grace Period End</th>
                                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Days Late</th>
-                                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Validation Due</th>
+                                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Commentary</th>
+                                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Target Date</th>
                                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
                                 </tr>
                             </thead>
@@ -617,7 +782,7 @@ export default function AdminDashboardPage() {
                                 {overdueSubmissions.map((submission) => (
                                     <tr
                                         key={submission.request_id}
-                                        className="hover:bg-orange-50"
+                                        className={`hover:bg-orange-50 ${submission.needs_comment_update ? 'bg-red-50' : ''}`}
                                     >
                                         <td className="px-4 py-3 whitespace-nowrap">
                                             <span className={`px-2 py-1 text-xs font-semibold rounded ${
@@ -638,7 +803,6 @@ export default function AdminDashboardPage() {
                                         </td>
                                         <td className="px-4 py-3 whitespace-nowrap text-sm">{submission.model_owner}</td>
                                         <td className="px-4 py-3 whitespace-nowrap text-sm">{submission.submission_due_date}</td>
-                                        <td className="px-4 py-3 whitespace-nowrap text-sm">{submission.grace_period_end}</td>
                                         <td className="px-4 py-3 whitespace-nowrap">
                                             <span className={`px-2 py-1 text-xs font-semibold rounded ${
                                                 submission.urgency === 'overdue'
@@ -648,14 +812,38 @@ export default function AdminDashboardPage() {
                                                 {submission.days_overdue} days
                                             </span>
                                         </td>
-                                        <td className="px-4 py-3 whitespace-nowrap text-sm">{submission.validation_due_date}</td>
                                         <td className="px-4 py-3 whitespace-nowrap">
-                                            <Link
-                                                to={`/validation-workflow/${submission.request_id}`}
-                                                className="text-blue-600 hover:text-blue-800 text-sm"
-                                            >
-                                                View Request
-                                            </Link>
+                                            <div className="flex flex-col gap-1">
+                                                <span className={`px-2 py-1 text-xs font-semibold rounded inline-block w-fit ${getCommentStatusBadge(submission.comment_status)}`}>
+                                                    {getCommentStatusLabel(submission.comment_status)}
+                                                </span>
+                                                {submission.latest_comment && (
+                                                    <span className="text-xs text-gray-500 truncate max-w-32" title={submission.latest_comment}>
+                                                        "{submission.latest_comment.substring(0, 30)}..."
+                                                    </span>
+                                                )}
+                                            </div>
+                                        </td>
+                                        <td className="px-4 py-3 whitespace-nowrap text-sm">
+                                            {submission.target_submission_date || <span className="text-gray-400">-</span>}
+                                        </td>
+                                        <td className="px-4 py-3 whitespace-nowrap">
+                                            <div className="flex gap-2">
+                                                <Link
+                                                    to={`/validation-workflow/${submission.request_id}`}
+                                                    className="text-blue-600 hover:text-blue-800 text-sm"
+                                                >
+                                                    View
+                                                </Link>
+                                                {submission.needs_comment_update && (
+                                                    <button
+                                                        onClick={() => openCommentaryModal(submission.request_id, 'PRE_SUBMISSION', submission.model_name)}
+                                                        className="text-orange-600 hover:text-orange-800 text-sm font-medium"
+                                                    >
+                                                        Add Commentary
+                                                    </button>
+                                                )}
+                                            </div>
                                         </td>
                                     </tr>
                                 ))}
@@ -683,16 +871,17 @@ export default function AdminDashboardPage() {
                                 <tr>
                                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Model</th>
                                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Owner</th>
-                                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Submission Received</th>
                                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Validation Due</th>
                                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Days Overdue</th>
                                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+                                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Commentary</th>
+                                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Target Date</th>
                                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
                                 </tr>
                             </thead>
                             <tbody className="bg-white divide-y divide-gray-200">
                                 {overdueValidations.map((validation) => (
-                                    <tr key={validation.request_id} className="hover:bg-red-50">
+                                    <tr key={validation.request_id} className={`hover:bg-red-50 ${validation.needs_comment_update ? 'bg-red-50' : ''}`}>
                                         <td className="px-4 py-3 whitespace-nowrap">
                                             <Link
                                                 to={`/models/${validation.model_id}`}
@@ -702,9 +891,6 @@ export default function AdminDashboardPage() {
                                             </Link>
                                         </td>
                                         <td className="px-4 py-3 whitespace-nowrap text-sm">{validation.model_owner}</td>
-                                        <td className="px-4 py-3 whitespace-nowrap text-sm">
-                                            {validation.submission_received_date || <span className="text-gray-400">Not received</span>}
-                                        </td>
                                         <td className="px-4 py-3 whitespace-nowrap text-sm">{validation.model_validation_due_date}</td>
                                         <td className="px-4 py-3 whitespace-nowrap">
                                             <span className="px-2 py-1 text-xs font-semibold rounded bg-red-100 text-red-800">
@@ -713,12 +899,37 @@ export default function AdminDashboardPage() {
                                         </td>
                                         <td className="px-4 py-3 whitespace-nowrap text-sm">{validation.current_status}</td>
                                         <td className="px-4 py-3 whitespace-nowrap">
-                                            <Link
-                                                to={`/validation-workflow/${validation.request_id}`}
-                                                className="text-blue-600 hover:text-blue-800 text-sm"
-                                            >
-                                                View Request
-                                            </Link>
+                                            <div className="flex flex-col gap-1">
+                                                <span className={`px-2 py-1 text-xs font-semibold rounded inline-block w-fit ${getCommentStatusBadge(validation.comment_status)}`}>
+                                                    {getCommentStatusLabel(validation.comment_status)}
+                                                </span>
+                                                {validation.latest_comment && (
+                                                    <span className="text-xs text-gray-500 truncate max-w-32" title={validation.latest_comment}>
+                                                        "{validation.latest_comment.substring(0, 30)}..."
+                                                    </span>
+                                                )}
+                                            </div>
+                                        </td>
+                                        <td className="px-4 py-3 whitespace-nowrap text-sm">
+                                            {validation.target_completion_date || <span className="text-gray-400">-</span>}
+                                        </td>
+                                        <td className="px-4 py-3 whitespace-nowrap">
+                                            <div className="flex gap-2">
+                                                <Link
+                                                    to={`/validation-workflow/${validation.request_id}`}
+                                                    className="text-blue-600 hover:text-blue-800 text-sm"
+                                                >
+                                                    View
+                                                </Link>
+                                                {validation.needs_comment_update && (
+                                                    <button
+                                                        onClick={() => openCommentaryModal(validation.request_id, 'VALIDATION_IN_PROGRESS', validation.model_name)}
+                                                        className="text-red-600 hover:text-red-800 text-sm font-medium"
+                                                    >
+                                                        Add Commentary
+                                                    </button>
+                                                )}
+                                            </div>
                                         </td>
                                     </tr>
                                 ))}
@@ -790,6 +1001,20 @@ export default function AdminDashboardPage() {
                     </div>
                 )}
             </div>
+
+            {/* Commentary Modal */}
+            {showCommentaryModal && commentaryModalRequestId && (
+                <OverdueCommentaryModal
+                    requestId={commentaryModalRequestId}
+                    overdueType={commentaryModalType}
+                    modelName={commentaryModalModelName}
+                    onClose={() => {
+                        setShowCommentaryModal(false);
+                        setCommentaryModalRequestId(null);
+                    }}
+                    onSuccess={handleCommentarySuccess}
+                />
+            )}
         </Layout>
     );
 }

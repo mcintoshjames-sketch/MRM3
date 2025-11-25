@@ -30,6 +30,7 @@ import DeviationTrendsReportPage from './pages/DeviationTrendsReportPage';
 import ApproverRolesPage from './pages/ApproverRolesPage';
 import ConditionalApprovalRulesPage from './pages/ConditionalApprovalRulesPage';
 import FryConfigPage from './pages/FryConfigPage';
+import OverdueRevalidationReportPage from './pages/OverdueRevalidationReportPage';
 
 function App() {
     const { user, loading } = useAuth();
@@ -77,6 +78,7 @@ function App() {
             <Route path="/reports" element={user ? <ReportsPage /> : <Navigate to="/login" />} />
             <Route path="/reports/regional-compliance" element={user ? <RegionalComplianceReportPage /> : <Navigate to="/login" />} />
             <Route path="/reports/deviation-trends" element={user ? <DeviationTrendsReportPage /> : <Navigate to="/login" />} />
+            <Route path="/reports/overdue-revalidation" element={user ? <OverdueRevalidationReportPage /> : <Navigate to="/login" />} />
             <Route path="/analytics" element={user ? <AnalyticsPage /> : <Navigate to="/login" />} />
             <Route path="/" element={<Navigate to={getDefaultRoute()} />} />
         </Routes>

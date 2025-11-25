@@ -28,6 +28,14 @@ const availableReports: Report[] = [
         icon: '📊',
         category: 'Compliance'
     },
+    {
+        id: 'overdue-revalidation',
+        name: 'Overdue Revalidation Report',
+        description: 'Comprehensive view of all overdue model revalidations including submission delays and validation delays. Tracks commentary status, responsible parties, and target dates for regulatory oversight.',
+        path: '/reports/overdue-revalidation',
+        icon: '⏰',
+        category: 'Operations'
+    },
 ];
 
 const ReportsPage: React.FC = () => {

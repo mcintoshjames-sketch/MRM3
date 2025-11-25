@@ -3,6 +3,25 @@ import { Link } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import api from '../api/client';
 import Layout from '../components/Layout';
+import OverdueCommentaryModal, { OverdueType } from '../components/OverdueCommentaryModal';
+
+interface OverdueItem {
+    overdue_type: 'PRE_SUBMISSION' | 'VALIDATION_IN_PROGRESS';
+    request_id: number;
+    model_id: number;
+    model_name: string;
+    risk_tier: string | null;
+    due_date: string;
+    grace_period_end: string | null;
+    days_overdue: number;
+    urgency: 'overdue' | 'in_grace_period';
+    current_status: string;
+    comment_status: 'CURRENT' | 'STALE' | 'MISSING';
+    latest_comment: string | null;
+    latest_comment_date: string | null;
+    target_date: string | null;
+    needs_comment_update: boolean;
+}
 
 interface NewsFeedItem {
     id: number;
@@ -41,7 +60,12 @@ export default function ModelOwnerDashboardPage() {
     const [newsFeed, setNewsFeed] = useState<NewsFeedItem[]>([]);
     const [mySubmissions, setMySubmissions] = useState<MySubmission[]>([]);
     const [recentApprovals, setRecentApprovals] = useState<RecentApproval[]>([]);
+    const [overdueItems, setOverdueItems] = useState<OverdueItem[]>([]);
     const [loading, setLoading] = useState(true);
+
+    // Commentary modal state
+    const [showCommentaryModal, setShowCommentaryModal] = useState(false);
+    const [selectedOverdueItem, setSelectedOverdueItem] = useState<OverdueItem | null>(null);
 
     useEffect(() => {
         fetchDashboardData();
@@ -49,18 +73,42 @@ export default function ModelOwnerDashboardPage() {
 
     const fetchDashboardData = async () => {
         try {
-            const [feedRes, submissionsRes, approvalsRes] = await Promise.all([
+            const [feedRes, submissionsRes, approvalsRes, overdueRes] = await Promise.all([
                 api.get('/dashboard/news-feed'),
                 api.get('/models/my-submissions'),
-                api.get('/validation-workflow/dashboard/recent-approvals?days_back=30')
+                api.get('/validation-workflow/dashboard/recent-approvals?days_back=30'),
+                api.get('/validation-workflow/my-overdue-items')
             ]);
             setNewsFeed(feedRes.data);
             setMySubmissions(submissionsRes.data);
             setRecentApprovals(approvalsRes.data);
+            setOverdueItems(overdueRes.data);
         } catch (error) {
             console.error('Failed to fetch dashboard data:', error);
         } finally {
             setLoading(false);
+        }
+    };
+
+    const openCommentaryModal = (item: OverdueItem) => {
+        setSelectedOverdueItem(item);
+        setShowCommentaryModal(true);
+    };
+
+    const handleCommentarySuccess = () => {
+        fetchDashboardData();
+    };
+
+    const getCommentStatusBadge = (status: string) => {
+        switch (status) {
+            case 'CURRENT':
+                return <span className="px-2 py-0.5 text-xs font-medium bg-green-100 text-green-700 rounded">Current</span>;
+            case 'STALE':
+                return <span className="px-2 py-0.5 text-xs font-medium bg-yellow-100 text-yellow-700 rounded">Stale</span>;
+            case 'MISSING':
+                return <span className="px-2 py-0.5 text-xs font-medium bg-red-100 text-red-700 rounded">Missing</span>;
+            default:
+                return null;
         }
     };
 
@@ -124,7 +172,7 @@ export default function ModelOwnerDashboardPage() {
             </div>
 
             {/* Summary Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
                 <div className="bg-white p-4 rounded-lg shadow-md">
                     <h3 className="text-xs font-medium text-gray-500 uppercase">My Records</h3>
                     <p className="text-3xl font-bold text-blue-600 mt-2">{mySubmissions.length}</p>
@@ -138,17 +186,104 @@ export default function ModelOwnerDashboardPage() {
                     <p className="text-xs text-gray-600 mt-1">Requires your attention</p>
                 </div>
                 <div className="bg-white p-4 rounded-lg shadow-md">
+                    <h3 className="text-xs font-medium text-gray-500 uppercase">Overdue Items</h3>
+                    <p className={`text-3xl font-bold mt-2 ${overdueItems.length > 0 ? 'text-red-600' : 'text-green-600'}`}>
+                        {overdueItems.length}
+                    </p>
+                    <p className="text-xs text-gray-600 mt-1">
+                        {overdueItems.filter(i => i.needs_comment_update).length} need commentary
+                    </p>
+                </div>
+                <div className="bg-white p-4 rounded-lg shadow-md">
                     <h3 className="text-xs font-medium text-gray-500 uppercase">Quick Actions</h3>
                     <div className="mt-2 space-y-1">
                         <Link to="/models" className="block text-blue-600 hover:text-blue-800 text-xs">
                             View My Models &rarr;
                         </Link>
-                        <Link to="/models" className="block text-blue-600 hover:text-blue-800 text-xs">
-                            Create New Model &rarr;
+                        <Link to="/my-pending-submissions" className="block text-blue-600 hover:text-blue-800 text-xs">
+                            My Pending Submissions &rarr;
                         </Link>
                     </div>
                 </div>
             </div>
+
+            {/* My Overdue Items - Alert Section */}
+            {overdueItems.length > 0 && (
+                <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-6">
+                    <div className="flex items-center gap-2 mb-3 pb-2 border-b border-red-200">
+                        <svg className="w-5 h-5 text-red-500" fill="currentColor" viewBox="0 0 20 20">
+                            <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                        </svg>
+                        <h3 className="text-sm font-semibold text-red-800">My Overdue Items</h3>
+                        <span className="text-xs text-red-600 ml-auto">
+                            {overdueItems.filter(i => i.needs_comment_update).length} need commentary update
+                        </span>
+                    </div>
+                    <p className="text-xs text-red-700 mb-3">
+                        The following items are overdue and require your attention. Please provide an explanation and target date.
+                    </p>
+                    <div className="space-y-2">
+                        {overdueItems.map((item) => (
+                            <div
+                                key={`${item.overdue_type}-${item.request_id}`}
+                                className="bg-white border border-red-100 rounded p-3"
+                            >
+                                <div className="flex items-start justify-between gap-2">
+                                    <div className="flex-1 min-w-0">
+                                        <div className="flex items-center gap-2 mb-1 flex-wrap">
+                                            <span className={`px-1.5 py-0.5 text-xs font-medium rounded ${
+                                                item.overdue_type === 'PRE_SUBMISSION'
+                                                    ? 'bg-orange-100 text-orange-700'
+                                                    : 'bg-purple-100 text-purple-700'
+                                            }`}>
+                                                {item.overdue_type === 'PRE_SUBMISSION' ? 'Submission Overdue' : 'Validation Overdue'}
+                                            </span>
+                                            <span className="text-xs text-red-600 font-medium">
+                                                {item.days_overdue} days overdue
+                                            </span>
+                                            {getCommentStatusBadge(item.comment_status)}
+                                        </div>
+                                        <Link
+                                            to={`/validation-workflow/${item.request_id}`}
+                                            className="text-sm font-medium text-gray-900 hover:text-blue-600 hover:underline"
+                                        >
+                                            {item.model_name}
+                                        </Link>
+                                        <div className="text-xs text-gray-600 mt-1">
+                                            <span>Due: {item.due_date}</span>
+                                            {item.grace_period_end && (
+                                                <span className="ml-2">Grace Period End: {item.grace_period_end}</span>
+                                            )}
+                                        </div>
+                                        {item.latest_comment && (
+                                            <div className="text-xs text-gray-500 mt-1 italic">
+                                                Latest: "{item.latest_comment.substring(0, 100)}..."
+                                            </div>
+                                        )}
+                                        {item.target_date && (
+                                            <div className="text-xs text-blue-600 mt-1">
+                                                Target: {item.target_date}
+                                            </div>
+                                        )}
+                                    </div>
+                                    <div className="flex-shrink-0">
+                                        <button
+                                            onClick={() => openCommentaryModal(item)}
+                                            className={`inline-flex items-center px-3 py-1.5 text-xs font-medium rounded transition-colors ${
+                                                item.needs_comment_update
+                                                    ? 'bg-red-600 text-white hover:bg-red-700'
+                                                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                                            }`}
+                                        >
+                                            {item.needs_comment_update ? 'Add Comment' : 'Update Comment'}
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            )}
 
             {/* My Pending Records */}
             {mySubmissions.length > 0 && (
@@ -335,6 +470,21 @@ export default function ModelOwnerDashboardPage() {
                     </div>
                 )}
             </div>
+
+            {/* Commentary Modal */}
+            {showCommentaryModal && selectedOverdueItem && (
+                <OverdueCommentaryModal
+                    requestId={selectedOverdueItem.request_id}
+                    overdueType={selectedOverdueItem.overdue_type as OverdueType}
+                    modelName={selectedOverdueItem.model_name}
+                    currentComment={null}
+                    onClose={() => {
+                        setShowCommentaryModal(false);
+                        setSelectedOverdueItem(null);
+                    }}
+                    onSuccess={handleCommentarySuccess}
+                />
+            )}
         </Layout>
     );
 }

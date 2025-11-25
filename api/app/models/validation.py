@@ -211,6 +211,12 @@ class ValidationRequest(Base):
         back_populates="request", uselist=False, cascade="all, delete-orphan"
     )
 
+    # One-to-many relationship with overdue comments
+    overdue_comments: Mapped[List["OverdueRevalidationComment"]] = relationship(
+        back_populates="validation_request", cascade="all, delete-orphan",
+        order_by="desc(OverdueRevalidationComment.created_at)"
+    )
+
     # Computed properties for revalidation lifecycle
     @property
     def is_periodic_revalidation(self) -> bool:

@@ -5,6 +5,8 @@ import api from '../api/client';
 import Layout from '../components/Layout';
 import ValidationPlanForm, { ValidationPlanFormHandle } from '../components/ValidationPlanForm';
 import ConditionalApprovalsSection from '../components/ConditionalApprovalsSection';
+import OverdueCommentaryModal, { OverdueType } from '../components/OverdueCommentaryModal';
+import { overdueCommentaryApi, CurrentOverdueCommentaryResponse } from '../api/overdueCommentary';
 
 interface TaxonomyValue {
     value_id: number;
@@ -110,6 +112,7 @@ interface ValidationRequestDetail {
     created_at: string;
     updated_at: string;
     completion_date: string | null;
+    submission_received_date: string | null;  // Date when model documentation was submitted
     assignments: ValidationAssignment[];
     status_history: ValidationStatusHistory[];
     approvals: ValidationApproval[];
@@ -138,6 +141,7 @@ export default function ValidationRequestDetailPage() {
     const [relatedVersions, setRelatedVersions] = useState<ModelVersion[]>([]);
     const [assignmentAuditLogs, setAssignmentAuditLogs] = useState<AuditLog[]>([]);
     const [approvalAuditLogs, setApprovalAuditLogs] = useState<AuditLog[]>([]);
+    const [commentaryAuditLogs, setCommentaryAuditLogs] = useState<AuditLog[]>([]);
     const [workflowSLA, setWorkflowSLA] = useState<WorkflowSLA | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -181,6 +185,9 @@ export default function ValidationRequestDetailPage() {
     const [approvalValidationError, setApprovalValidationError] = useState<string | null>(null);
     const [showSignOffModal, setShowSignOffModal] = useState(false);
     const [signOffData, setSignOffData] = useState({ assignment_id: 0, comments: '' });
+    const [overdueCommentary, setOverdueCommentary] = useState<CurrentOverdueCommentaryResponse | null>(null);
+    const [showCommentaryModal, setShowCommentaryModal] = useState(false);
+    const [commentaryModalType, setCommentaryModalType] = useState<OverdueType>('VALIDATION_IN_PROGRESS');
     const [editAssignment, setEditAssignment] = useState({
         assignment_id: 0,
         is_primary: false,
@@ -229,18 +236,69 @@ export default function ValidationRequestDetailPage() {
         }
     }, [showAssignmentModal, request]);
 
+    // Fetch overdue commentary when request is loaded
+    useEffect(() => {
+        const fetchOverdueCommentary = async () => {
+            if (request?.request_id) {
+                try {
+                    const response = await overdueCommentaryApi.getForRequest(request.request_id);
+                    setOverdueCommentary(response);
+                } catch (error) {
+                    console.error('Failed to fetch overdue commentary:', error);
+                }
+            }
+        };
+        fetchOverdueCommentary();
+    }, [request?.request_id]);
+
+    const handleOpenCommentaryModal = (type: OverdueType) => {
+        setCommentaryModalType(type);
+        setShowCommentaryModal(true);
+    };
+
+    const handleCommentarySuccess = async () => {
+        // Refresh commentary data
+        if (request?.request_id) {
+            try {
+                const response = await overdueCommentaryApi.getForRequest(request.request_id);
+                setOverdueCommentary(response);
+            } catch (error) {
+                console.error('Failed to refresh commentary:', error);
+            }
+        }
+    };
+
+    // Check if this validation request is overdue
+    const isOverdueValidation = () => {
+        if (!request) return false;
+        const targetDate = new Date(request.target_completion_date);
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        return targetDate < today && !['Approved', 'Cancelled'].includes(request.current_status.label);
+    };
+
+    const getOverdueDays = () => {
+        if (!request) return 0;
+        const targetDate = new Date(request.target_completion_date);
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const diffTime = today.getTime() - targetDate.getTime();
+        return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    };
+
     const fetchData = async () => {
         try {
             setLoading(true);
             setError(null);
 
-            // Fetch request details, taxonomy options, users, assignment audit logs, approval audit logs, and SLA config in parallel
-            const [requestRes, taxonomiesRes, usersRes, assignmentAuditRes, approvalAuditRes, slaRes] = await Promise.all([
+            // Fetch request details, taxonomy options, users, assignment audit logs, approval audit logs, commentary audit logs, and SLA config in parallel
+            const [requestRes, taxonomiesRes, usersRes, assignmentAuditRes, approvalAuditRes, commentaryAuditRes, slaRes] = await Promise.all([
                 api.get(`/validation-workflow/requests/${id}`),
                 api.get('/taxonomies/'),
                 api.get('/auth/users'),
                 api.get(`/audit-logs/?entity_type=ValidationAssignment&entity_id=${id}&limit=100`),
                 api.get(`/audit-logs/?entity_type=ValidationApproval&entity_id=${id}&limit=100`),
+                api.get(`/audit-logs/?entity_type=ValidationRequest&entity_id=${id}&limit=100`),
                 api.get('/workflow-sla/validation').catch(() => ({ data: null })) // Gracefully handle if SLA not configured
             ]);
 
@@ -248,6 +306,11 @@ export default function ValidationRequestDetailPage() {
             setUsers(usersRes.data);
             setAssignmentAuditLogs(assignmentAuditRes.data);
             setApprovalAuditLogs(approvalAuditRes.data);
+            // Filter commentary audit logs to only include overdue commentary entries
+            const commentaryLogs = commentaryAuditRes.data.filter((log: AuditLog) =>
+                log.action === 'overdue_commentary_created' || log.action === 'overdue_commentary_updated'
+            );
+            setCommentaryAuditLogs(commentaryLogs);
             setWorkflowSLA(slaRes.data);
 
             // Fetch model versions that link to this validation project
@@ -842,6 +905,56 @@ export default function ValidationRequestDetailPage() {
                 </div>
             )}
 
+            {/* Overdue Validation Alert Banner */}
+            {isOverdueValidation() && (
+                <div className="bg-red-50 border-l-4 border-red-500 p-4 mb-6">
+                    <div className="flex items-start">
+                        <svg className="h-5 w-5 text-red-600 mt-0.5 mr-3" fill="currentColor" viewBox="0 0 20 20">
+                            <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+                        </svg>
+                        <div className="flex-1">
+                            <h3 className="text-sm font-bold text-red-800">Validation Overdue</h3>
+                            <p className="text-sm text-red-700 mt-1">
+                                This validation is <strong>{getOverdueDays()} days overdue</strong>.
+                                Target completion was {request.target_completion_date.split('T')[0]}.
+                            </p>
+                            {/* Commentary Status */}
+                            {overdueCommentary && (
+                                <div className="mt-3 pt-3 border-t border-red-200">
+                                    {overdueCommentary.has_current_comment && overdueCommentary.current_comment ? (
+                                        <div className="text-sm">
+                                            <p className="text-red-800">
+                                                <span className="font-medium">Current explanation:</span>{' '}
+                                                <span className="italic">"{overdueCommentary.current_comment.reason_comment}"</span>
+                                            </p>
+                                            <p className="text-red-700 text-xs mt-1">
+                                                Target: {overdueCommentary.current_comment.target_date.split('T')[0]} •
+                                                By: {overdueCommentary.current_comment.created_by_user.full_name}
+                                                {overdueCommentary.is_stale && (
+                                                    <span className="ml-2 text-red-900 font-medium">
+                                                        ⚠ Update required: {overdueCommentary.stale_reason}
+                                                    </span>
+                                                )}
+                                            </p>
+                                        </div>
+                                    ) : (
+                                        <p className="text-sm text-red-800 font-medium">
+                                            ⚠ No explanation provided for this delay
+                                        </p>
+                                    )}
+                                    <button
+                                        onClick={() => handleOpenCommentaryModal('VALIDATION_IN_PROGRESS')}
+                                        className="mt-2 px-3 py-1 bg-red-600 text-white text-sm rounded hover:bg-red-700"
+                                    >
+                                        {overdueCommentary.has_current_comment ? 'Update Explanation' : 'Provide Explanation'}
+                                    </button>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            )}
+
             {/* Tabs */}
             <div className="border-b border-gray-200 mb-6">
                 <nav className="-mb-px flex space-x-8">
@@ -870,7 +983,7 @@ export default function ValidationRequestDetailPage() {
                             {tab}
                             {tab === 'assignments' && ` (${request.assignments.length})`}
                             {tab === 'approvals' && ` (${request.approvals.length})`}
-                            {tab === 'history' && ` (${request.status_history.length + assignmentAuditLogs.length + approvalAuditLogs.length})`}
+                            {tab === 'history' && ` (${request.status_history.length + assignmentAuditLogs.length + approvalAuditLogs.length + commentaryAuditLogs.length})`}
                         </button>
                     ))}
                 </nav>
@@ -924,8 +1037,54 @@ export default function ValidationRequestDetailPage() {
                                 <p className="text-lg">{request.request_date}</p>
                             </div>
                             <div>
-                                <h4 className="text-sm font-medium text-gray-500 mb-1">Target Completion</h4>
+                                <h4 className="text-sm font-medium text-gray-500 mb-1 flex items-center gap-1">
+                                    Original Target Date
+                                    <span
+                                        className="inline-flex items-center justify-center w-4 h-4 rounded-full bg-gray-300 text-white text-xs cursor-help"
+                                        title="The original target completion date calculated from policy (submission grace period + lead time)"
+                                    >
+                                        <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+                                            <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
+                                        </svg>
+                                    </span>
+                                </h4>
                                 <p className="text-lg">{request.target_completion_date}</p>
+                            </div>
+                            {overdueCommentary?.computed_completion_date && (
+                                <div>
+                                    <h4 className="text-sm font-medium text-gray-500 mb-1 flex items-center gap-1">
+                                        Latest Target Date
+                                        <span
+                                            className="inline-flex items-center justify-center w-4 h-4 rounded-full bg-gray-300 text-white text-xs cursor-help"
+                                            title={overdueCommentary.overdue_type === 'PRE_SUBMISSION'
+                                                ? "Projected validation completion date (owner's submission target + policy lead time)"
+                                                : "Validator's estimated completion date"}
+                                        >
+                                            <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+                                                <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
+                                            </svg>
+                                        </span>
+                                    </h4>
+                                    <p className="text-lg text-amber-600 font-medium">{overdueCommentary.computed_completion_date}</p>
+                                </div>
+                            )}
+                            <div>
+                                <h4 className="text-sm font-medium text-gray-500 mb-1 flex items-center gap-1">
+                                    Documentation Submitted
+                                    <span
+                                        className="inline-flex items-center justify-center w-4 h-4 rounded-full bg-gray-300 text-white text-xs cursor-help"
+                                        title="The date when the model owner submitted model development documentation to the validation team"
+                                    >
+                                        <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+                                            <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
+                                        </svg>
+                                    </span>
+                                </h4>
+                                {request.submission_received_date ? (
+                                    <p className="text-lg">{request.submission_received_date.split('T')[0]}</p>
+                                ) : (
+                                    <p className="text-sm text-gray-400 italic">Not yet submitted</p>
+                                )}
                             </div>
                             <div>
                                 <h4 className="text-sm font-medium text-gray-500 mb-1">Requestor</h4>
@@ -1512,13 +1671,13 @@ export default function ValidationRequestDetailPage() {
                 {activeTab === 'history' && (
                     <div>
                         <h3 className="text-lg font-bold mb-4">Activity History</h3>
-                        {request.status_history.length === 0 && assignmentAuditLogs.length === 0 && approvalAuditLogs.length === 0 ? (
+                        {request.status_history.length === 0 && assignmentAuditLogs.length === 0 && approvalAuditLogs.length === 0 && commentaryAuditLogs.length === 0 ? (
                             <div className="text-gray-500 text-center py-8">
                                 No activity recorded.
                             </div>
                         ) : (
                             <div className="space-y-4">
-                                {/* Merge and sort status history, assignment audit logs, and approval audit logs */}
+                                {/* Merge and sort status history, assignment audit logs, approval audit logs, and commentary audit logs */}
                                 {[
                                     ...request.status_history.map((h) => ({
                                         type: 'status' as const,
@@ -1532,6 +1691,11 @@ export default function ValidationRequestDetailPage() {
                                     })),
                                     ...approvalAuditLogs.map((a) => ({
                                         type: 'approval' as const,
+                                        timestamp: a.timestamp,
+                                        data: a
+                                    })),
+                                    ...commentaryAuditLogs.map((a) => ({
+                                        type: 'commentary' as const,
                                         timestamp: a.timestamp,
                                         data: a
                                     }))
@@ -1699,6 +1863,45 @@ export default function ValidationRequestDetailPage() {
                                                                     <div><strong>Approved by:</strong> {audit.changes.approved_by_admin}</div>
                                                                     <div><strong>On behalf of:</strong> {audit.changes.on_behalf_of}</div>
                                                                 </div>
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                    <div className="mt-2 text-sm">
+                                                        <span className="text-gray-500">By:</span>{' '}
+                                                        {audit.user.full_name}
+                                                    </div>
+                                                    <div className="text-xs text-gray-400">
+                                                        {new Date(audit.timestamp).toLocaleString()}
+                                                    </div>
+                                                </div>
+                                            );
+                                        } else if (item.type === 'commentary') {
+                                            const audit = item.data as AuditLog;
+                                            const isUpdate = audit.action === 'overdue_commentary_updated';
+                                            const overdueTypeLabel = audit.changes?.overdue_type === 'PRE_SUBMISSION'
+                                                ? 'Pre-Submission'
+                                                : 'Validation In Progress';
+                                            return (
+                                                <div key={`commentary-${audit.log_id}`} className="border-l-4 border-amber-500 pl-4 py-2">
+                                                    <div className="flex items-center gap-2">
+                                                        <span className="text-xs font-semibold text-amber-700">
+                                                            {isUpdate ? 'OVERDUE COMMENTARY UPDATED' : 'OVERDUE COMMENTARY ADDED'}
+                                                        </span>
+                                                        <span className="text-xs px-2 py-0.5 bg-amber-100 text-amber-800 rounded">
+                                                            {overdueTypeLabel}
+                                                        </span>
+                                                    </div>
+                                                    <div className="mt-2 text-sm">
+                                                        {audit.changes?.target_date && (
+                                                            <div>
+                                                                <span className="text-gray-500">Target Date:</span>{' '}
+                                                                <span className="font-medium">{audit.changes.target_date}</span>
+                                                            </div>
+                                                        )}
+                                                        {audit.changes?.reason_comment && (
+                                                            <div className="mt-1">
+                                                                <span className="text-gray-500">Reason:</span>{' '}
+                                                                <span className="text-gray-700">{audit.changes.reason_comment}</span>
                                                             </div>
                                                         )}
                                                     </div>
@@ -2171,6 +2374,18 @@ export default function ValidationRequestDetailPage() {
                         </div>
                     </div>
                 </div>
+            )}
+
+            {/* Overdue Commentary Modal */}
+            {showCommentaryModal && request && (
+                <OverdueCommentaryModal
+                    requestId={request.request_id}
+                    overdueType={commentaryModalType}
+                    modelName={request.models?.[0]?.model_name}
+                    currentComment={overdueCommentary?.current_comment}
+                    onClose={() => setShowCommentaryModal(false)}
+                    onSuccess={handleCommentarySuccess}
+                />
             )}
         </Layout>
     );

@@ -1,5 +1,5 @@
 """Validation workflow API endpoints."""
-from datetime import datetime, date, timedelta
+from datetime import datetime, date, timedelta, timezone
 from dateutil.relativedelta import relativedelta
 from typing import List, Optional, Union, Dict, Tuple
 import json
@@ -20,8 +20,10 @@ from app.models import (
     ValidationOutcome, ValidationReviewOutcome, ValidationApproval, ValidationGroupingMemory,
     ValidationPolicy, ModelRegion, Region,
     ValidationComponentDefinition, ValidationPlan, ValidationPlanComponent,
-    ComponentDefinitionConfiguration, ComponentDefinitionConfigItem
+    ComponentDefinitionConfiguration, ComponentDefinitionConfigItem,
+    OverdueRevalidationComment
 )
+from app.models.model_delegate import ModelDelegate
 from app.schemas.validation import (
     ValidationRequestCreate, ValidationRequestUpdate, ValidationRequestStatusUpdate,
     ValidationRequestDecline, ValidationRequestMarkSubmission, ValidationApprovalUnlink,
@@ -67,6 +69,71 @@ def check_admin(user: User):
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only Admins can perform this action"
         )
+
+
+# Staleness threshold for overdue comments (matches overdue_commentary.py)
+COMMENT_STALENESS_DAYS = 45
+
+
+def get_commentary_status_for_request(
+    db: Session,
+    request_id: int,
+    overdue_type: str
+) -> dict:
+    """
+    Get commentary status for a validation request.
+
+    Returns dict with:
+    - comment_status: 'CURRENT' | 'STALE' | 'MISSING'
+    - latest_comment: str | None
+    - latest_comment_date: str | None
+    - target_date_from_comment: date | None
+    - needs_comment_update: bool
+    """
+    # Get current comment for this request
+    current_comment = db.query(OverdueRevalidationComment).filter(
+        OverdueRevalidationComment.validation_request_id == request_id,
+        OverdueRevalidationComment.is_current == True
+    ).first()
+
+    if not current_comment:
+        return {
+            "comment_status": "MISSING",
+            "latest_comment": None,
+            "latest_comment_date": None,
+            "target_date_from_comment": None,
+            "stale_reason": None,
+            "needs_comment_update": True
+        }
+
+    # Check staleness
+    today = date.today()
+    # Use timezone-aware datetime to match the database field
+    now_utc = datetime.now(timezone.utc)
+    # Make comparison timezone-aware
+    created_at = current_comment.created_at
+    if created_at.tzinfo is None:
+        created_at = created_at.replace(tzinfo=timezone.utc)
+    comment_age = (now_utc - created_at).days
+    is_stale = False
+    stale_reason = None
+
+    if comment_age > COMMENT_STALENESS_DAYS:
+        is_stale = True
+        stale_reason = f"Comment is {comment_age} days old (exceeds {COMMENT_STALENESS_DAYS}-day freshness requirement)"
+    elif current_comment.target_date < today:
+        is_stale = True
+        days_past = (today - current_comment.target_date).days
+        stale_reason = f"Target date has passed ({days_past} days ago) - update required"
+
+    return {
+        "comment_status": "STALE" if is_stale else "CURRENT",
+        "latest_comment": current_comment.reason_comment,
+        "latest_comment_date": current_comment.created_at.isoformat() if current_comment.created_at else None,
+        "target_date_from_comment": current_comment.target_date,
+        "stale_reason": stale_reason,
+        "needs_comment_update": is_stale
+    }
 
 
 def check_target_completion_date_warnings(
@@ -3398,6 +3465,186 @@ def submit_documentation(
     }
 
 
+@router.get("/my-overdue-items")
+def get_my_overdue_items(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Get overdue SUBMISSION items for the current user's models.
+    Returns only PRE_SUBMISSION overdue items where the current user
+    is the model owner - i.e., models awaiting documentation submission.
+
+    Note: VALIDATION_IN_PROGRESS overdue items are NOT returned here.
+    Once the model owner submits documentation, the validation team
+    is responsible for completing the validation and providing any
+    overdue commentary via a separate validator endpoint.
+
+    Available to all authenticated users.
+    """
+    today = date.today()
+    results = []
+
+    # Part 1: Find overdue SUBMISSIONS for user's models
+    pending_requests = db.query(ValidationRequest).options(
+        joinedload(ValidationRequest.model_versions_assoc).joinedload(
+            ValidationRequestModelVersion.model
+        ).joinedload(Model.owner),
+        joinedload(ValidationRequest.model_versions_assoc).joinedload(
+            ValidationRequestModelVersion.model
+        ).joinedload(Model.risk_tier),
+        joinedload(ValidationRequest.current_status),
+        joinedload(ValidationRequest.validation_type)
+    ).filter(
+        ValidationRequest.validation_type.has(
+            TaxonomyValue.code.in_(["COMPREHENSIVE", "ANNUAL"])),
+        ValidationRequest.submission_received_date.is_(None),
+        ValidationRequest.current_status.has(
+            TaxonomyValue.code.in_(["INTAKE", "PLANNING"]))
+    ).all()
+
+    for req in pending_requests:
+        # Check if past due or past grace
+        is_past_due = req.submission_due_date and today > req.submission_due_date
+        is_past_grace = req.submission_grace_period_end and today > req.submission_grace_period_end
+
+        if is_past_due or is_past_grace:
+            if req.model_versions_assoc and len(req.model_versions_assoc) > 0:
+                model_assoc = req.model_versions_assoc[0]
+                model = model_assoc.model
+
+                # Only include if current user is the model owner
+                if model.owner_id != current_user.user_id:
+                    continue
+
+                # Calculate days overdue and urgency
+                if is_past_grace:
+                    days_overdue = (today - req.submission_grace_period_end).days
+                    urgency = "overdue"
+                else:
+                    days_overdue = (today - req.submission_due_date).days
+                    urgency = "in_grace_period"
+
+                # Get commentary status
+                commentary = get_commentary_status_for_request(
+                    db, req.request_id, "PRE_SUBMISSION"
+                )
+
+                results.append({
+                    "overdue_type": "PRE_SUBMISSION",
+                    "request_id": req.request_id,
+                    "model_id": model.model_id,
+                    "model_name": model.model_name,
+                    "risk_tier": model.risk_tier.label if model.risk_tier else None,
+                    "due_date": req.submission_due_date,
+                    "grace_period_end": req.submission_grace_period_end,
+                    "days_overdue": days_overdue,
+                    "urgency": urgency,
+                    "current_status": req.current_status.label if req.current_status else "Unknown",
+                    "comment_status": commentary["comment_status"],
+                    "latest_comment": commentary["latest_comment"],
+                    "latest_comment_date": commentary["latest_comment_date"],
+                    "target_date": commentary["target_date_from_comment"],
+                    "needs_comment_update": commentary["needs_comment_update"]
+                })
+
+    # Note: VALIDATION_IN_PROGRESS overdue items are NOT shown to model owners.
+    # Once the model owner has submitted documentation, the validation team
+    # (validators) are responsible for providing overdue commentary.
+    # Validators see their overdue items via /my-validator-overdue-items endpoint.
+
+    # Sort by urgency then days overdue
+    return sorted(results, key=lambda x: (0 if x["urgency"] == "overdue" else 1, -x["days_overdue"]))
+
+
+@router.get("/my-validator-overdue-items")
+def get_my_validator_overdue_items(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Get overdue VALIDATION items for validations assigned to the current user.
+    Returns only VALIDATION_IN_PROGRESS overdue items where the current user
+    is an assigned validator - i.e., validations they're working on that are
+    past their target completion date.
+
+    Note: PRE_SUBMISSION overdue items are NOT returned here.
+    Those are the responsibility of model owners/developers and
+    are shown via the /my-overdue-items endpoint.
+
+    Available to all authenticated users (primarily validators).
+    """
+    today = date.today()
+    results = []
+
+    # Find validations where:
+    # 1. Current user is an assigned validator
+    # 2. Documentation has been submitted (submission_received_date is set)
+    # 3. Validation is past target completion date
+    # 4. Validation is not yet approved/cancelled
+    assigned_requests = db.query(ValidationRequest).options(
+        joinedload(ValidationRequest.model_versions_assoc).joinedload(
+            ValidationRequestModelVersion.model
+        ).joinedload(Model.risk_tier),
+        joinedload(ValidationRequest.current_status),
+        joinedload(ValidationRequest.validation_type),
+        joinedload(ValidationRequest.assignments).joinedload(ValidationAssignment.validator)
+    ).filter(
+        ValidationRequest.validation_type.has(
+            TaxonomyValue.code.in_(["COMPREHENSIVE", "ANNUAL"])),
+        ValidationRequest.submission_received_date.isnot(None),  # Submitted
+        ValidationRequest.current_status.has(
+            TaxonomyValue.code.notin_(["APPROVED", "CANCELLED"]))
+    ).all()
+
+    for req in assigned_requests:
+        # Check if current user is an assigned validator for this request
+        is_assigned = any(
+            assignment.validator_id == current_user.user_id
+            for assignment in req.assignments
+        )
+        if not is_assigned:
+            continue
+
+        # Check if past validation due date
+        if not (req.model_validation_due_date and today > req.model_validation_due_date):
+            continue
+
+        # Get model info
+        if not req.model_versions_assoc:
+            continue
+        model_assoc = req.model_versions_assoc[0]
+        model = model_assoc.model
+
+        days_overdue = (today - req.model_validation_due_date).days
+
+        # Get commentary status
+        commentary = get_commentary_status_for_request(
+            db, req.request_id, "VALIDATION_IN_PROGRESS"
+        )
+
+        results.append({
+            "overdue_type": "VALIDATION_IN_PROGRESS",
+            "request_id": req.request_id,
+            "model_id": model.model_id,
+            "model_name": model.model_name,
+            "risk_tier": model.risk_tier.label if model.risk_tier else None,
+            "due_date": req.model_validation_due_date,
+            "grace_period_end": None,
+            "days_overdue": days_overdue,
+            "urgency": "overdue",
+            "current_status": req.current_status.label if req.current_status else "Unknown",
+            "comment_status": commentary["comment_status"],
+            "latest_comment": commentary["latest_comment"],
+            "latest_comment_date": commentary["latest_comment_date"],
+            "target_date": commentary["target_date_from_comment"],
+            "needs_comment_update": commentary["needs_comment_update"]
+        })
+
+    # Sort by days overdue (most urgent first)
+    return sorted(results, key=lambda x: -x["days_overdue"])
+
+
 @router.get("/dashboard/overdue-submissions")
 def get_overdue_submissions(
     db: Session = Depends(get_db),
@@ -3454,6 +3701,11 @@ def get_overdue_submissions(
                     days_overdue = (today - req.submission_due_date).days
                     urgency = "in_grace_period"  # Past due but in grace
 
+                # Get commentary status for pre-submission overdue
+                commentary = get_commentary_status_for_request(
+                    db, req.request_id, "PRE_SUBMISSION"
+                )
+
                 results.append({
                     "request_id": req.request_id,
                     "model_id": model.model_id,
@@ -3466,7 +3718,13 @@ def get_overdue_submissions(
                     "urgency": urgency,
                     "validation_due_date": req.model_validation_due_date,
                     "submission_status": req.submission_status,
-                    "current_status": req.current_status.label if req.current_status else "Unknown"
+                    "current_status": req.current_status.label if req.current_status else "Unknown",
+                    # Commentary fields
+                    "comment_status": commentary["comment_status"],
+                    "latest_comment": commentary["latest_comment"],
+                    "latest_comment_date": commentary["latest_comment_date"],
+                    "target_submission_date": commentary["target_date_from_comment"].isoformat() if commentary["target_date_from_comment"] else None,
+                    "needs_comment_update": commentary["needs_comment_update"]
                 })
 
     # Sort by urgency (overdue first) then by days overdue
@@ -3517,6 +3775,11 @@ def get_overdue_validations(
 
                 days_overdue = (today - req.model_validation_due_date).days
 
+                # Get commentary status for validation in progress overdue
+                commentary = get_commentary_status_for_request(
+                    db, req.request_id, "VALIDATION_IN_PROGRESS"
+                )
+
                 results.append({
                     "request_id": req.request_id,
                     "model_id": model.model_id,
@@ -3528,11 +3791,165 @@ def get_overdue_validations(
                     "model_validation_due_date": req.model_validation_due_date,
                     "days_overdue": days_overdue,
                     "model_compliance_status": req.model_compliance_status,
-                    "current_status": req.current_status.label if req.current_status else "Unknown"
+                    "current_status": req.current_status.label if req.current_status else "Unknown",
+                    # Commentary fields
+                    "comment_status": commentary["comment_status"],
+                    "latest_comment": commentary["latest_comment"],
+                    "latest_comment_date": commentary["latest_comment_date"],
+                    "target_completion_date": commentary["target_date_from_comment"].isoformat() if commentary["target_date_from_comment"] else None,
+                    "needs_comment_update": commentary["needs_comment_update"]
                 })
 
     # Sort by days overdue (most overdue first)
     return sorted(results, key=lambda x: x["days_overdue"], reverse=True)
+
+
+@router.get("/dashboard/my-overdue-items")
+def get_my_overdue_items(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Get overdue items the current user is responsible for.
+
+    Returns:
+    - Pre-submission overdue items where user is model owner, developer, or delegate
+    - In-progress validation overdue items where user is assigned validator
+
+    Available to all users (filtered to their responsibilities).
+    """
+    today = date.today()
+    results = []
+
+    # PART 1: Pre-submission overdue (user is owner/developer/delegate)
+    # Get models where user is owner or developer
+    user_model_ids = db.query(Model.model_id).filter(
+        or_(
+            Model.owner_id == current_user.user_id,
+            Model.developer_id == current_user.user_id
+        )
+    ).all()
+    user_model_ids = [m[0] for m in user_model_ids]
+
+    # Also get models where user is a delegate
+    delegate_model_ids = db.query(ModelDelegate.model_id).filter(
+        ModelDelegate.user_id == current_user.user_id,
+        ModelDelegate.revoked_at.is_(None)
+    ).all()
+    delegate_model_ids = [m[0] for m in delegate_model_ids]
+
+    # Combine all model IDs
+    responsible_model_ids = list(set(user_model_ids + delegate_model_ids))
+
+    if responsible_model_ids:
+        # Find pre-submission overdue requests for these models
+        pre_sub_requests = db.query(ValidationRequest).options(
+            joinedload(ValidationRequest.model_versions_assoc).joinedload(
+                ValidationRequestModelVersion.model
+            ).joinedload(Model.owner),
+            joinedload(ValidationRequest.model_versions_assoc).joinedload(
+                ValidationRequestModelVersion.model
+            ).joinedload(Model.risk_tier),
+            joinedload(ValidationRequest.current_status)
+        ).join(
+            ValidationRequestModelVersion
+        ).filter(
+            ValidationRequestModelVersion.model_id.in_(responsible_model_ids),
+            ValidationRequest.submission_received_date.is_(None),
+            ValidationRequest.current_status.has(
+                TaxonomyValue.code.in_(["INTAKE", "PLANNING"]))
+        ).all()
+
+        for req in pre_sub_requests:
+            is_past_due = req.submission_due_date and today > req.submission_due_date
+            is_past_grace = req.submission_grace_period_end and today > req.submission_grace_period_end
+
+            if is_past_due or is_past_grace:
+                if req.model_versions_assoc and len(req.model_versions_assoc) > 0:
+                    model = req.model_versions_assoc[0].model
+
+                    if is_past_grace:
+                        days_overdue = (today - req.submission_grace_period_end).days
+                    else:
+                        days_overdue = (today - req.submission_due_date).days
+
+                    # Get commentary status
+                    commentary = get_commentary_status_for_request(
+                        db, req.request_id, "PRE_SUBMISSION"
+                    )
+
+                    # Determine user's role for this item
+                    user_role = "delegate"
+                    if model.owner_id == current_user.user_id:
+                        user_role = "owner"
+                    elif model.developer_id == current_user.user_id:
+                        user_role = "developer"
+
+                    results.append({
+                        "overdue_type": "PRE_SUBMISSION",
+                        "request_id": req.request_id,
+                        "model_id": model.model_id,
+                        "model_name": model.model_name,
+                        "risk_tier": model.risk_tier.label if model.risk_tier else None,
+                        "days_overdue": days_overdue,
+                        "due_date": req.submission_due_date,
+                        "user_role": user_role,
+                        "current_status": req.current_status.label if req.current_status else "Unknown",
+                        "comment_status": commentary["comment_status"],
+                        "latest_comment": commentary["latest_comment"],
+                        "latest_comment_date": commentary["latest_comment_date"],
+                        "target_date": commentary["target_date_from_comment"].isoformat() if commentary["target_date_from_comment"] else None,
+                        "needs_comment_update": commentary["needs_comment_update"]
+                    })
+
+    # PART 2: Validation in-progress overdue (user is assigned validator)
+    validator_requests = db.query(ValidationRequest).options(
+        joinedload(ValidationRequest.model_versions_assoc).joinedload(
+            ValidationRequestModelVersion.model
+        ).joinedload(Model.owner),
+        joinedload(ValidationRequest.model_versions_assoc).joinedload(
+            ValidationRequestModelVersion.model
+        ).joinedload(Model.risk_tier),
+        joinedload(ValidationRequest.current_status)
+    ).join(
+        ValidationAssignment
+    ).filter(
+        ValidationAssignment.validator_id == current_user.user_id,
+        ValidationRequest.current_status.has(
+            TaxonomyValue.code.notin_(["APPROVED", "CANCELLED"]))
+    ).all()
+
+    for req in validator_requests:
+        if req.model_validation_due_date and today > req.model_validation_due_date:
+            if req.model_versions_assoc and len(req.model_versions_assoc) > 0:
+                model = req.model_versions_assoc[0].model
+
+                days_overdue = (today - req.model_validation_due_date).days
+
+                # Get commentary status
+                commentary = get_commentary_status_for_request(
+                    db, req.request_id, "VALIDATION_IN_PROGRESS"
+                )
+
+                results.append({
+                    "overdue_type": "VALIDATION_IN_PROGRESS",
+                    "request_id": req.request_id,
+                    "model_id": model.model_id,
+                    "model_name": model.model_name,
+                    "risk_tier": model.risk_tier.label if model.risk_tier else None,
+                    "days_overdue": days_overdue,
+                    "due_date": req.model_validation_due_date,
+                    "user_role": "validator",
+                    "current_status": req.current_status.label if req.current_status else "Unknown",
+                    "comment_status": commentary["comment_status"],
+                    "latest_comment": commentary["latest_comment"],
+                    "latest_comment_date": commentary["latest_comment_date"],
+                    "target_date": commentary["target_date_from_comment"].isoformat() if commentary["target_date_from_comment"] else None,
+                    "needs_comment_update": commentary["needs_comment_update"]
+                })
+
+    # Sort by needs_comment_update first (items needing update at top), then by days_overdue
+    return sorted(results, key=lambda x: (0 if x["needs_comment_update"] else 1, -x["days_overdue"]))
 
 
 @router.get("/dashboard/upcoming-revalidations")

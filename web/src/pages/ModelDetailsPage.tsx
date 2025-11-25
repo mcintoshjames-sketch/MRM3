@@ -12,8 +12,10 @@ import ModelHierarchySection from '../components/ModelHierarchySection';
 import ModelDependenciesSection from '../components/ModelDependenciesSection';
 import ModelApplicationsSection from '../components/ModelApplicationsSection';
 import LineageViewer from '../components/LineageViewer';
+import OverdueCommentaryModal, { OverdueType } from '../components/OverdueCommentaryModal';
 import { useAuth } from '../contexts/AuthContext';
 import { ModelVersion } from '../api/versions';
+import { overdueCommentaryApi, CurrentOverdueCommentaryResponse } from '../api/overdueCommentary';
 
 interface User {
     user_id: number;
@@ -190,6 +192,9 @@ export default function ModelDetailsPage() {
     const [activities, setActivities] = useState<ActivityTimelineItem[]>([]);
     const [activitiesLoading, setActivitiesLoading] = useState(false);
     const [editError, setEditError] = useState<string | null>(null);
+    const [overdueCommentary, setOverdueCommentary] = useState<CurrentOverdueCommentaryResponse | null>(null);
+    const [showCommentaryModal, setShowCommentaryModal] = useState(false);
+    const [commentaryModalType, setCommentaryModalType] = useState<OverdueType>('PRE_SUBMISSION');
     const [formData, setFormData] = useState({
         model_name: '',
         description: '',
@@ -219,6 +224,41 @@ export default function ModelDetailsPage() {
             return () => clearInterval(interval);
         }
     }, [activeTab, id]);
+
+    // Fetch overdue commentary when there's an active overdue validation request
+    useEffect(() => {
+        const fetchOverdueCommentary = async () => {
+            if (revalidationStatus?.active_request_id &&
+                (revalidationStatus.status.includes('Overdue') ||
+                 (revalidationStatus.days_until_validation_due !== null && revalidationStatus.days_until_validation_due < 0) ||
+                 (revalidationStatus.days_until_submission_due !== null && revalidationStatus.days_until_submission_due < 0))) {
+                try {
+                    const response = await overdueCommentaryApi.getForRequest(revalidationStatus.active_request_id);
+                    setOverdueCommentary(response);
+                } catch (error) {
+                    console.error('Failed to fetch overdue commentary:', error);
+                }
+            }
+        };
+        fetchOverdueCommentary();
+    }, [revalidationStatus]);
+
+    const handleOpenCommentaryModal = (type: OverdueType) => {
+        setCommentaryModalType(type);
+        setShowCommentaryModal(true);
+    };
+
+    const handleCommentarySuccess = async () => {
+        // Refresh commentary data
+        if (revalidationStatus?.active_request_id) {
+            try {
+                const response = await overdueCommentaryApi.getForRequest(revalidationStatus.active_request_id);
+                setOverdueCommentary(response);
+            } catch (error) {
+                console.error('Failed to refresh commentary:', error);
+            }
+        }
+    };
 
     const fetchData = async () => {
         try {
@@ -944,6 +984,38 @@ export default function ModelDetailsPage() {
                                             </Link>
                                         )}
                                     </p>
+                                    {/* Commentary Status */}
+                                    {revalidationStatus.active_request_id && overdueCommentary && (
+                                        <div className="mt-3 pt-3 border-t border-red-200">
+                                            {overdueCommentary.has_current_comment && overdueCommentary.current_comment ? (
+                                                <div className="text-sm">
+                                                    <p className="text-red-800">
+                                                        <span className="font-medium">Current explanation:</span>{' '}
+                                                        <span className="italic">"{overdueCommentary.current_comment.reason_comment}"</span>
+                                                    </p>
+                                                    <p className="text-red-700 text-xs mt-1">
+                                                        Target: {overdueCommentary.current_comment.target_date.split('T')[0]} •
+                                                        By: {overdueCommentary.current_comment.created_by_user.full_name}
+                                                        {overdueCommentary.is_stale && (
+                                                            <span className="ml-2 text-red-900 font-medium">
+                                                                ⚠ Update required: {overdueCommentary.stale_reason}
+                                                            </span>
+                                                        )}
+                                                    </p>
+                                                </div>
+                                            ) : (
+                                                <p className="text-sm text-red-800 font-medium">
+                                                    ⚠ No explanation provided for this delay
+                                                </p>
+                                            )}
+                                            <button
+                                                onClick={() => handleOpenCommentaryModal('VALIDATION_IN_PROGRESS')}
+                                                className="mt-2 px-3 py-1 bg-red-600 text-white text-sm rounded hover:bg-red-700"
+                                            >
+                                                {overdueCommentary.has_current_comment ? 'Update Explanation' : 'Provide Explanation'}
+                                            </button>
+                                        </div>
+                                    )}
                                 </div>
                             </div>
                         </div>
@@ -993,6 +1065,38 @@ export default function ModelDetailsPage() {
                                             </Link>
                                         )}
                                     </p>
+                                    {/* Commentary Status for Pre-Submission */}
+                                    {revalidationStatus.active_request_id && overdueCommentary && (
+                                        <div className="mt-3 pt-3 border-t border-yellow-200">
+                                            {overdueCommentary.has_current_comment && overdueCommentary.current_comment ? (
+                                                <div className="text-sm">
+                                                    <p className="text-yellow-800">
+                                                        <span className="font-medium">Current explanation:</span>{' '}
+                                                        <span className="italic">"{overdueCommentary.current_comment.reason_comment}"</span>
+                                                    </p>
+                                                    <p className="text-yellow-700 text-xs mt-1">
+                                                        Target submission: {overdueCommentary.current_comment.target_date.split('T')[0]} •
+                                                        By: {overdueCommentary.current_comment.created_by_user.full_name}
+                                                        {overdueCommentary.is_stale && (
+                                                            <span className="ml-2 text-yellow-900 font-medium">
+                                                                ⚠ Update required: {overdueCommentary.stale_reason}
+                                                            </span>
+                                                        )}
+                                                    </p>
+                                                </div>
+                                            ) : (
+                                                <p className="text-sm text-yellow-800 font-medium">
+                                                    ⚠ No explanation provided for this delay
+                                                </p>
+                                            )}
+                                            <button
+                                                onClick={() => handleOpenCommentaryModal('PRE_SUBMISSION')}
+                                                className="mt-2 px-3 py-1 bg-yellow-600 text-white text-sm rounded hover:bg-yellow-700"
+                                            >
+                                                {overdueCommentary.has_current_comment ? 'Update Explanation' : 'Provide Explanation'}
+                                            </button>
+                                        </div>
+                                    )}
                                 </div>
                             </div>
                         </div>
@@ -2012,6 +2116,18 @@ export default function ModelDetailsPage() {
                         setVersionsRefreshTrigger(prev => prev + 1);
                         setSelectedVersion(null);
                     }}
+                />
+            )}
+
+            {/* Overdue Commentary Modal */}
+            {showCommentaryModal && revalidationStatus?.active_request_id && (
+                <OverdueCommentaryModal
+                    requestId={revalidationStatus.active_request_id}
+                    overdueType={commentaryModalType}
+                    modelName={model?.model_name}
+                    currentComment={overdueCommentary?.current_comment}
+                    onClose={() => setShowCommentaryModal(false)}
+                    onSuccess={handleCommentarySuccess}
                 />
             )}
         </Layout>
