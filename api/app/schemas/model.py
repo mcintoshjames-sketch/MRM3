@@ -34,6 +34,7 @@ class ModelCreate(ModelBase):
     region_ids: Optional[List[int]] = None
     initial_version_number: Optional[str] = None
     initial_implementation_date: Optional[date] = None
+    is_model: bool = True  # True for models, False for non-models
     # Auto-create validation request fields
     auto_create_validation: bool = False
     validation_request_type_id: Optional[int] = None
@@ -64,6 +65,7 @@ class ModelUpdate(BaseModel):
     status: Optional[str] = None
     user_ids: Optional[List[int]] = None
     regulatory_category_ids: Optional[List[int]] = None
+    is_model: Optional[bool] = None  # True for models, False for non-models
 
 
 class ModelResponse(ModelBase):
@@ -78,6 +80,7 @@ class ModelResponse(ModelBase):
     wholly_owned_region_id: Optional[int] = None
     created_at: datetime
     updated_at: datetime
+    is_model: bool = True  # True for models, False for non-models
     # Row approval workflow fields
     row_approval_status: Optional[str] = None
     submitted_by_user_id: Optional[int] = None
@@ -151,6 +154,7 @@ class ModelCreateResponse(BaseModel):
     wholly_owned_region_id: Optional[int] = None
     created_at: datetime
     updated_at: datetime
+    is_model: bool = True  # True for models, False for non-models
     # Row approval workflow fields
     row_approval_status: Optional[str] = None
     submitted_by_user_id: Optional[int] = None

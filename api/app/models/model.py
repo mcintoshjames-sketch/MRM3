@@ -2,7 +2,7 @@
 import enum
 from datetime import datetime
 from typing import Optional, List
-from sqlalchemy import String, Integer, Text, DateTime, ForeignKey, Table, Column
+from sqlalchemy import String, Integer, Text, DateTime, ForeignKey, Table, Column, Boolean
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.models.base import Base
 
@@ -88,6 +88,11 @@ class Model(Base):
     use_approval_date: Mapped[Optional[datetime]] = mapped_column(
         DateTime, nullable=True,
         comment="Timestamp when model was approved for use (last required approval granted)")
+
+    # Model vs Non-Model classification
+    is_model: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True,
+        comment="True for actual models, False for non-model tools/applications")
 
     # Relationships
     owner: Mapped["User"] = relationship("User", foreign_keys=[owner_id])

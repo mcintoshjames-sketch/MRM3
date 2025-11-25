@@ -97,6 +97,7 @@ interface Model {
     row_approval_status: string | null;
     submitted_by_user_id: number | null;
     submitted_at: string | null;
+    is_model: boolean;
     owner: User;
     developer: User | null;
     vendor: Vendor | null;
@@ -201,7 +202,8 @@ export default function ModelDetailsPage() {
         wholly_owned_region_id: null as number | null,
         status: 'In Development',
         user_ids: [] as number[],
-        regulatory_category_ids: [] as number[]
+        regulatory_category_ids: [] as number[],
+        is_model: true
     });
 
     useEffect(() => {
@@ -254,7 +256,8 @@ export default function ModelDetailsPage() {
                 wholly_owned_region_id: modelData.wholly_owned_region_id,
                 status: modelData.status,
                 user_ids: modelData.users.map((u: User) => u.user_id),
-                regulatory_category_ids: modelData.regulatory_categories.map((c: TaxonomyValue) => c.value_id)
+                regulatory_category_ids: modelData.regulatory_categories.map((c: TaxonomyValue) => c.value_id),
+                is_model: modelData.is_model ?? true
             });
 
             // Fetch validation requests and versions separately - this is optional and shouldn't break the page
@@ -1038,6 +1041,33 @@ export default function ModelDetailsPage() {
                             </div>
 
                             <div className="mb-4">
+                                <label className="block text-sm font-medium mb-2">Classification</label>
+                                <div className="flex items-center gap-4">
+                                    <label className="flex items-center gap-2 cursor-pointer">
+                                        <input
+                                            type="radio"
+                                            name="is_model"
+                                            checked={formData.is_model === true}
+                                            onChange={() => setFormData({ ...formData, is_model: true })}
+                                            className="w-4 h-4 text-blue-600"
+                                        />
+                                        <span className="text-sm">Model</span>
+                                    </label>
+                                    <label className="flex items-center gap-2 cursor-pointer">
+                                        <input
+                                            type="radio"
+                                            name="is_model"
+                                            checked={formData.is_model === false}
+                                            onChange={() => setFormData({ ...formData, is_model: false })}
+                                            className="w-4 h-4 text-blue-600"
+                                        />
+                                        <span className="text-sm">Non-Model</span>
+                                    </label>
+                                </div>
+                                <p className="text-xs text-gray-500 mt-1">Non-models are tools/applications that use quantitative methods but don't meet the regulatory definition of a model</p>
+                            </div>
+
+                            <div className="mb-4">
                                 <label htmlFor="owner_id" className="block text-sm font-medium mb-2">
                                     Owner
                                 </label>
@@ -1356,6 +1386,15 @@ export default function ModelDetailsPage() {
                                 : 'bg-purple-100 text-purple-800'
                                 }`}>
                                 {model.development_type}
+                            </span>
+                        </div>
+                        <div>
+                            <h4 className="text-sm font-medium text-gray-500 mb-1">Classification</h4>
+                            <span className={`px-2 py-1 text-sm rounded ${model.is_model
+                                ? 'bg-blue-100 text-blue-800'
+                                : 'bg-gray-200 text-gray-700'
+                                }`}>
+                                {model.is_model ? 'Model' : 'Non-Model'}
                             </span>
                         </div>
                         <div>

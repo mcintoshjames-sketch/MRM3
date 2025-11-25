@@ -61,6 +61,7 @@ interface Model {
     updated_at: string;
     row_approval_status: string | null;
     submitted_at: string | null;
+    is_model: boolean;
     owner: User;
     developer: User | null;
     vendor: Vendor | null;
@@ -92,12 +93,14 @@ export default function ModelsPage() {
         region_ids: [] as number[],
         initial_version_number: '' as string,
         initial_implementation_date: '' as string,
+        is_model: true,
         auto_create_validation: false,
         validation_request_type_id: 0,
         validation_request_priority_id: 0,
         validation_request_target_date: '' as string,
         validation_request_trigger_reason: '' as string
     });
+    const [includeNonModels, setIncludeNonModels] = useState(false);
     const [userSearchTerm, setUserSearchTerm] = useState('');
     const [validationTypes, setValidationTypes] = useState<any[]>([]);
     const [validationPriorities, setValidationPriorities] = useState<any[]>([]);
@@ -153,6 +156,7 @@ export default function ModelsPage() {
             region_ids: [],
             initial_version_number: '',
             initial_implementation_date: '',
+            is_model: true,
             auto_create_validation: false,
             validation_request_type_id: 0,
             validation_request_priority_id: 0,
@@ -292,6 +296,11 @@ export default function ModelsPage() {
             }
         }
 
+        // Model/Non-Model classification filter - exclude non-models unless checkbox is checked
+        if (!includeNonModels && model.is_model === false) {
+            return false;
+        }
+
         return true;
     });
 
@@ -423,6 +432,7 @@ export default function ModelsPage() {
                 region_ids: [],
                 initial_version_number: '',
                 initial_implementation_date: '',
+                is_model: true,
                 auto_create_validation: false,
                 validation_request_type_id: 0,
                 validation_request_priority_id: 0,
@@ -741,6 +751,33 @@ export default function ModelsPage() {
                                         <option value="In-House">In-House</option>
                                         <option value="Third-Party">Third-Party</option>
                                     </select>
+                                </div>
+
+                                <div className="mb-4">
+                                    <label className="block text-sm font-medium mb-2">Classification</label>
+                                    <div className="flex items-center gap-4">
+                                        <label className="flex items-center gap-2 cursor-pointer">
+                                            <input
+                                                type="radio"
+                                                name="is_model"
+                                                checked={formData.is_model === true}
+                                                onChange={() => setFormData({ ...formData, is_model: true })}
+                                                className="w-4 h-4 text-blue-600"
+                                            />
+                                            <span className="text-sm">Model</span>
+                                        </label>
+                                        <label className="flex items-center gap-2 cursor-pointer">
+                                            <input
+                                                type="radio"
+                                                name="is_model"
+                                                checked={formData.is_model === false}
+                                                onChange={() => setFormData({ ...formData, is_model: false })}
+                                                className="w-4 h-4 text-blue-600"
+                                            />
+                                            <span className="text-sm">Non-Model</span>
+                                        </label>
+                                    </div>
+                                    <p className="text-xs text-gray-500 mt-1">Non-models are tools/applications that use quantitative methods but don't meet the regulatory definition of a model</p>
                                 </div>
 
                                 <div className="mb-4">
@@ -1386,8 +1423,22 @@ export default function ModelsPage() {
                             onChange={(values) => setFilters({ ...filters, region_ids: values as number[] })}
                         />
 
+                        {/* Include Non-Models Toggle */}
+                        <div className="flex items-center space-x-2 pt-5">
+                            <input
+                                type="checkbox"
+                                id="include-non-models"
+                                checked={includeNonModels}
+                                onChange={(e) => setIncludeNonModels(e.target.checked)}
+                                className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                            />
+                            <label htmlFor="include-non-models" className="text-sm font-medium text-gray-700 whitespace-nowrap">
+                                Include Non-Models
+                            </label>
+                        </div>
+
                         {/* Include Sub-Models Toggle */}
-                        <div className="flex items-center space-x-2 pt-1">
+                        <div className="flex items-center space-x-2 pt-5">
                             <input
                                 type="checkbox"
                                 id="include-sub-models"
@@ -1408,15 +1459,18 @@ export default function ModelsPage() {
                             <span className="font-semibold">{models.length}</span> models
                         </div>
                         <button
-                            onClick={() => setFilters({
-                                search: '',
-                                development_types: [],
-                                statuses: [],
-                                owner_ids: [],
-                                vendor_ids: [],
-                                region_ids: [],
-                                include_sub_models: false
-                            })}
+                            onClick={() => {
+                                setFilters({
+                                    search: '',
+                                    development_types: [],
+                                    statuses: [],
+                                    owner_ids: [],
+                                    vendor_ids: [],
+                                    region_ids: [],
+                                    include_sub_models: false
+                                });
+                                setIncludeNonModels(false);
+                            }}
                             className="text-sm text-blue-600 hover:text-blue-800"
                         >
                             Clear Filters
@@ -1507,6 +1561,11 @@ export default function ModelsPage() {
                                                 >
                                                     {model.model_name}
                                                 </button>
+                                                {!model.is_model && (
+                                                    <span className="px-2 py-0.5 rounded text-xs font-medium bg-gray-200 text-gray-700">
+                                                        Non-Model
+                                                    </span>
+                                                )}
                                                 {model.row_approval_status && (
                                                     <span className={`px-2 py-0.5 rounded text-xs font-medium ${model.row_approval_status === 'pending'
                                                         ? 'bg-blue-100 text-blue-800'
