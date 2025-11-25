@@ -31,8 +31,8 @@ Model Risk Management inventory system with a FastAPI backend, React/TypeScript 
   - `validation_workflow.py`: end-to-end validation lifecycle (requests, status updates, assignments, outcomes, approvals, audit logging, component configurations, reports including deviation trends).
   - `workflow_sla.py`: SLA configuration endpoints.
   - `version_deployment_tasks.py`: deployment task tracking for model owners/approvers.
-  - `approver_roles.py`: approver role/committee CRUD for conditional model use approvals.
-  - `conditional_approval_rules.py`: configurable rule management with English translation preview.
+  - `approver_roles.py`: approver role/committee CRUD for additional model use approvals.
+  - `conditional_approval_rules.py`: configurable rule management with English translation preview (additional approvals).
   - `audit_logs.py`: audit log search/filter.
   - `dashboard.py`: aging and workload summaries.
   - `export_views.py`: CSV/export-friendly endpoints.
@@ -46,7 +46,7 @@ Model Risk Management inventory system with a FastAPI backend, React/TypeScript 
   - Catalog: `model.py`, `vendor.py`, `taxonomy.py`, `region.py`, `model_version.py`, `model_region.py`, `model_delegate.py`, `model_change_taxonomy.py`, `model_version_region.py`, `model_type.py` (ModelType, ModelTypeCategory).
   - Model relationships: `model_hierarchy.py` (parent-child links with effective/end dates), `model_feed_dependency.py` (feeder-consumer data flows with active status tracking), `model_dependency_metadata.py` (extended metadata for dependencies, not yet exposed in UI).
   - Validation workflow: `validation.py` (ValidationRequest, ValidationStatusHistory, ValidationAssignment, ValidationOutcome, ValidationApproval, ValidationReviewOutcome, ValidationPlan, ValidationPlanComponent, ValidationComponentDefinition, ComponentDefinitionConfiguration/ConfigItem, ValidationPolicy, ValidationWorkflowSLA).
-  - Conditional approvals: `conditional_approval.py` (ApproverRole, ConditionalApprovalRule, RuleRequiredApprover).
+- Additional approvals: `conditional_approval.py` (ApproverRole, ConditionalApprovalRule, RuleRequiredApprover).
   - Compliance/analytics: `audit_log.py`, `export_view.py`, `saved_query.py`, `version_deployment_task.py`, `validation_grouping.py`.
 - Schemas: mirrored Pydantic models in `app/schemas/` for requests/responses.
 - Authn/z: HTTP Bearer JWT tokens; `get_current_user` dependency enforces auth; role checks per endpoint; RLS utilities narrow visibility for non-privileged users.
@@ -55,7 +55,7 @@ Model Risk Management inventory system with a FastAPI backend, React/TypeScript 
 
 ## Frontend Architecture
 - Entry: `src/main.tsx` mounts App within `AuthProvider` and `BrowserRouter`.
-- Routing (`src/App.tsx`): guarded routes for login, dashboards (`/dashboard`, `/validator-dashboard`, `/my-dashboard`), models (list/detail/change records), validation workflow (list/detail/new), vendors (list/detail), users (list/detail), taxonomy, audit logs, workflow configuration, batch delegates, regions, validation policies, component definitions, configuration history, approver roles, conditional approval rules, reports hub (`/reports`), report detail pages (regional compliance, deviation trends), analytics, deployment tasks, pending submissions.
+- Routing (`src/App.tsx`): guarded routes for login, dashboards (`/dashboard`, `/validator-dashboard`, `/my-dashboard`), models (list/detail/change records), validation workflow (list/detail/new), vendors (list/detail), users (list/detail), taxonomy, audit logs, workflow configuration, batch delegates, regions, validation policies, component definitions, configuration history, approver roles, additional approval rules, reports hub (`/reports`), report detail pages (regional compliance, deviation trends), analytics, deployment tasks, pending submissions.
 - Shared pieces:
   - Auth context (`src/contexts/AuthContext.tsx`) manages token/user; Axios client (`src/api/client.ts`) injects Bearer tokens and redirects on 401.
   - Layout (`src/components/Layout.tsx`) provides navigation shell.
@@ -115,12 +115,12 @@ Model Risk Management inventory system with a FastAPI backend, React/TypeScript 
 - **English Translation**: Rules automatically generate human-readable explanations (e.g., "US Model Risk Management Committee approval required because validation type is Initial Validation AND model inherent risk tier is High (Tier 1) AND model governance region is US wholly-owned")
 - **UI Components**:
   - `/approver-roles` - Admin management of approver roles/committees (CRUD with soft delete)
-  - `/conditional-approval-rules` - Admin management of rules with live English preview
+  - `/additional-approval-rules` - Admin management of rules with live English preview
   - ValidationRequestDetailPage Approvals tab - Shows required approvals, applied rules, submit/void actions
 - **Backend Components**:
   - `app/core/rule_evaluation.py` - Rule matching and English translation logic
   - `app/api/approver_roles.py` - Approver role CRUD endpoints
-  - `app/api/conditional_approval_rules.py` - Rule CRUD with preview endpoint
+- `app/api/conditional_approval_rules.py` - Additional approval rule CRUD with preview endpoint
   - `app/api/validation_workflow.py` - Integrated evaluation and approval submission
 - **Audit Logging**: CONDITIONAL_APPROVAL_SUBMIT and CONDITIONAL_APPROVAL_VOID actions tracked with evidence/reason
 

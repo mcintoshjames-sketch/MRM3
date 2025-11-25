@@ -105,13 +105,17 @@ def create_model(
     # Check if user is Admin
     is_admin = current_user.role == "Admin"
 
-    # Non-Admin users must include themselves as a model user
+    # Non-Admin users must include themselves as owner, developer, or model user
     if not is_admin:
         user_ids = model_data.user_ids or []
-        if current_user.user_id not in user_ids:
+        is_owner = model_data.owner_id == current_user.user_id
+        is_developer = model_data.developer_id == current_user.user_id
+        is_model_user = current_user.user_id in user_ids
+
+        if not (is_owner or is_developer or is_model_user):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="You must include yourself as a model user when creating a model. Please add yourself to the 'Model Users' list."
+                detail="You must include yourself as the Owner, Developer, or a Model User when creating a model."
             )
 
     # Validate vendor requirement for third-party models

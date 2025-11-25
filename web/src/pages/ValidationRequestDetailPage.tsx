@@ -642,6 +642,33 @@ export default function ValidationRequestDetailPage() {
         }
     };
 
+    // Handle sending validation back from Pending Approval to In Progress
+    const handleSendBackToInProgress = async () => {
+        if (!request) return;
+
+        const reason = prompt('Enter reason for sending back to In Progress:');
+        if (!reason) return;
+
+        const inProgressStatus = statusOptions.find(s => s.code === 'IN_PROGRESS');
+        if (!inProgressStatus) {
+            setError('IN_PROGRESS status not found');
+            return;
+        }
+
+        setActionLoading(true);
+        try {
+            await api.patch(`/validation-workflow/requests/${id}/status`, {
+                new_status_id: inProgressStatus.value_id,
+                change_reason: reason
+            });
+            await fetchData();
+        } catch (err: any) {
+            setError(err.response?.data?.detail || 'Failed to send back to In Progress');
+        } finally {
+            setActionLoading(false);
+        }
+    };
+
     const canEditRequest = user?.role === 'Admin' || user?.role === 'Validator';
     const isPrimaryValidator = request && user && request.assignments.some(
         a => a.is_primary && a.validator.user_id === user.user_id
@@ -774,6 +801,28 @@ export default function ValidationRequestDetailPage() {
                         </button>
                     )}
 
+                    {/* Admin Progress Work Button (Admin only, when in In Progress) */}
+                    {user?.role === 'Admin' && request.current_status.code === 'IN_PROGRESS' && (
+                        <button
+                            onClick={handleCompleteWork}
+                            disabled={actionLoading}
+                            className="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700 disabled:opacity-50"
+                        >
+                            {actionLoading ? 'Progressing...' : 'Progress to Review'}
+                        </button>
+                    )}
+
+                    {/* Send Back to In Progress Button (Admin only, when in Pending Approval) */}
+                    {user?.role === 'Admin' && request.current_status.code === 'PENDING_APPROVAL' && (
+                        <button
+                            onClick={handleSendBackToInProgress}
+                            disabled={actionLoading}
+                            className="bg-orange-600 text-white px-4 py-2 rounded hover:bg-orange-700 disabled:opacity-50"
+                        >
+                            {actionLoading ? 'Sending Back...' : 'Send Back to In Progress'}
+                        </button>
+                    )}
+
                     {/* Update Status Button (for admins/validators) */}
                     {canEditRequest && (
                         <button
@@ -799,7 +848,20 @@ export default function ValidationRequestDetailPage() {
                     {(['overview', 'plan', 'assignments', 'outcome', 'approvals', 'history'] as TabType[]).map((tab) => (
                         <button
                             key={tab}
-                            onClick={() => setActiveTab(tab)}
+                            onClick={() => {
+                                // Prevent navigating away from the plan tab if there are unsaved changes
+                                if (
+                                    activeTab === 'plan' &&
+                                    tab !== 'plan' &&
+                                    validationPlanRef.current?.hasUnsavedChanges()
+                                ) {
+                                    const confirmLeave = window.confirm(
+                                        'You have unsaved changes in the validation plan. Leaving will discard them. Continue?'
+                                    );
+                                    if (!confirmLeave) return;
+                                }
+                                setActiveTab(tab);
+                            }}
                             className={`py-2 px-1 border-b-2 font-medium text-sm capitalize ${activeTab === tab
                                 ? 'border-blue-500 text-blue-600'
                                 : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
@@ -1332,18 +1394,29 @@ export default function ValidationRequestDetailPage() {
                                     <div key={approval.approval_id} className="border rounded-lg p-4">
                                         <div className="flex justify-between items-start">
                                             <div>
-                                                <p className="font-medium">{approval.approver.full_name}</p>
-                                                <p className="text-sm text-gray-500">{approval.approver.email}</p>
+                                                {approval.approver ? (
+                                                    <>
+                                                        <p className="font-medium">{approval.approver.full_name}</p>
+                                                        <p className="text-sm text-gray-500">{approval.approver.email}</p>
+                                                    </>
+                                                ) : (
+                                                    <p className="font-medium text-orange-600">Pending Assignment</p>
+                                                )}
                                                 <p className="text-xs text-gray-400">
                                                     Role: {approval.approver_role}
                                                     {approval.is_required && ' (Required)'}
                                                 </p>
+                                                {approval.comments && (
+                                                    <p className="text-sm text-gray-600 mt-1 italic">
+                                                        "{approval.comments}"
+                                                    </p>
+                                                )}
                                             </div>
                                             <div className="flex items-center gap-2">
                                                 <span className={`px-2 py-1 text-xs rounded ${getApprovalStatusColor(approval.approval_status)}`}>
                                                     {approval.approval_status}
                                                 </span>
-                                                {approval.approval_status === 'Pending' &&
+                                                {approval.approval_status === 'Pending' && approval.approver &&
                                                     (user?.user_id === approval.approver.user_id || user?.role === 'Admin') && (
                                                         <button
                                                             onClick={() => {
@@ -1363,7 +1436,7 @@ export default function ValidationRequestDetailPage() {
                                                             {user?.role === 'Admin' && user?.user_id !== approval.approver.user_id ? 'Approve on Behalf' : 'Submit'}
                                                         </button>
                                                     )}
-                                                {(approval.approval_status === 'Approved' || approval.approval_status === 'Rejected') &&
+                                                {(approval.approval_status === 'Approved' || approval.approval_status === 'Rejected') && approval.approver &&
                                                     (user?.user_id === approval.approver.user_id || user?.role === 'Admin') && (
                                                         <button
                                                             onClick={async () => {
@@ -1855,7 +1928,7 @@ export default function ValidationRequestDetailPage() {
                         {approvalUpdate.isProxyApproval && request && (
                             <div className="mb-4 p-3 bg-yellow-50 border border-yellow-200 rounded">
                                 <p className="text-sm font-medium text-yellow-800">
-                                    You are approving on behalf of: {request.approvals.find(a => a.approval_id === approvalUpdate.approval_id)?.approver.full_name}
+                                    You are approving on behalf of: {request.approvals.find(a => a.approval_id === approvalUpdate.approval_id)?.approver?.full_name || 'Unassigned Approver'}
                                 </p>
                                 <p className="text-xs text-yellow-700 mt-1">
                                     Certification required: You must attest that you have obtained proper authorization.

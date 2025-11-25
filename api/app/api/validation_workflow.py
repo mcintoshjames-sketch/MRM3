@@ -264,7 +264,7 @@ def check_valid_status_transition(old_status_code: Optional[str], new_status_cod
         "PLANNING": ["IN_PROGRESS", "CANCELLED", "ON_HOLD"],
         "IN_PROGRESS": ["REVIEW", "CANCELLED", "ON_HOLD"],
         "REVIEW": ["PENDING_APPROVAL", "IN_PROGRESS", "CANCELLED", "ON_HOLD"],
-        "PENDING_APPROVAL": ["APPROVED", "REVIEW", "CANCELLED", "ON_HOLD"],
+        "PENDING_APPROVAL": ["APPROVED", "REVIEW", "IN_PROGRESS", "CANCELLED", "ON_HOLD"],
         "APPROVED": [],  # Terminal state
         "ON_HOLD": ["INTAKE", "PLANNING", "IN_PROGRESS", "REVIEW", "PENDING_APPROVAL", "CANCELLED"],
         "CANCELLED": [],  # Terminal state
@@ -688,7 +688,7 @@ def evaluate_and_create_conditional_approvals(
             approval_type="Conditional",
             approval_status="Pending",
             is_required=True,
-            comments=f"Conditional approval required from {required_role['role_name']}",
+            comments=f"Additional approval required from {required_role['role_name']}",
             created_at=datetime.utcnow()
         )
         db.add(approval)
@@ -1619,12 +1619,12 @@ def update_validation_request_status(
             )
 
         # Re-evaluate conditional approval rules (handles null risk tiers at request creation)
-        # Use first model as primary model for rule evaluation
+        # Evaluate rules for ALL models in the validation request
         models = validation_request.models
-        primary_model = models[0] if models else None
-        if primary_model:
-            evaluate_and_create_conditional_approvals(
-                db, validation_request, primary_model)
+        if models:
+            for model in models:
+                evaluate_and_create_conditional_approvals(
+                    db, validation_request, model)
 
     # Update status
     old_status_id = validation_request.current_status_id
@@ -1709,6 +1709,60 @@ def update_validation_request_status(
                 timestamp=datetime.utcnow()
             )
             db.add(plan_unlock_audit)
+
+    # ===== VOID CONDITIONAL APPROVALS WHEN SENDING BACK =====
+    # When moving FROM PENDING_APPROVAL TO IN_PROGRESS, void all conditional approvals
+    if old_status_code == "PENDING_APPROVAL" and new_status_code == "IN_PROGRESS":
+        # Void all pending conditional approvals for this validation request
+        conditional_approvals = db.query(ValidationApproval).filter(
+            ValidationApproval.request_id == request_id,
+            ValidationApproval.approval_type == "Conditional",
+            ValidationApproval.approval_status == "Pending",
+            ValidationApproval.voided_by_id.is_(None)
+        ).all()
+
+        for approval in conditional_approvals:
+            approval.voided_by_id = current_user.user_id
+            approval.void_reason = f"Validation sent back to In Progress from Pending Approval: {status_update.change_reason or 'No reason provided'}"
+            approval.voided_at = datetime.utcnow()
+            approval.updated_at = datetime.utcnow()
+
+            # Create audit log for each voided approval
+            void_audit = AuditLog(
+                entity_type="ValidationApproval",
+                entity_id=approval.approval_id,
+                action="VOID",
+                user_id=current_user.user_id,
+                changes={
+                    "reason": approval.void_reason,
+                    "approval_type": "Conditional",
+                    "approver_role_id": approval.approver_role_id,
+                    "request_id": request_id,
+                    "status_change": f"{old_status.label} → {new_status.label}"
+                },
+                timestamp=datetime.utcnow()
+            )
+            db.add(void_audit)
+
+        # Also clear model use_approval_date if any models were approved
+        for model in validation_request.models:
+            if model.use_approval_date:
+                model.use_approval_date = None
+
+                # Create audit log for model approval reversal
+                model_audit = AuditLog(
+                    entity_type="Model",
+                    entity_id=model.model_id,
+                    action="CONDITIONAL_APPROVAL_REVERTED",
+                    user_id=current_user.user_id,
+                    changes={
+                        "reason": f"Validation sent back to In Progress: {status_update.change_reason or 'No reason provided'}",
+                        "validation_request_id": request_id,
+                        "status_change": f"{old_status.label} → {new_status.label}"
+                    },
+                    timestamp=datetime.utcnow()
+                )
+                db.add(model_audit)
 
     # Auto-update linked model version statuses based on validation status
     update_version_statuses_for_validation(
@@ -5061,14 +5115,14 @@ def get_deviation_trends_report(
 
 # ==================== CONDITIONAL MODEL USE APPROVALS ====================
 
-@router.get("/requests/{request_id}/conditional-approvals", response_model=ConditionalApprovalsEvaluationResponse)
+@router.get("/requests/{request_id}/additional-approvals", response_model=ConditionalApprovalsEvaluationResponse)
 def get_conditional_approvals_evaluation(
     request_id: int,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
     """
-    Get conditional approval evaluation for a validation request.
+    Get additional approval evaluation for a validation request.
 
     Returns:
         - required_roles: List of required approver roles with their approval status
@@ -5108,7 +5162,7 @@ def get_conditional_approvals_evaluation(
     )
 
 
-@router.post("/approvals/{approval_id}/submit-conditional", response_model=SubmitConditionalApprovalResponse)
+@router.post("/approvals/{approval_id}/submit-additional", response_model=SubmitConditionalApprovalResponse)
 def submit_conditional_approval(
     approval_id: int,
     approval_data: SubmitConditionalApprovalRequest,
@@ -5116,7 +5170,7 @@ def submit_conditional_approval(
     current_user: User = Depends(get_current_user)
 ):
     """
-    Submit conditional approval (Admin only).
+    Submit additional approval (Admin only).
 
     Any Admin can approve on behalf of any approver role by providing:
     - approver_role_id: The role being approved
@@ -5138,11 +5192,11 @@ def submit_conditional_approval(
             detail="Approval requirement not found"
         )
 
-    # Verify this is a conditional approval (has approver_role_id)
+    # Verify this is an additional approval (has approver_role_id)
     if not approval.approver_role_id:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="This is not a conditional approval requirement"
+            detail="This is not an additional approval requirement"
         )
 
     # Verify the approver_role_id matches (if provided)
@@ -5175,7 +5229,7 @@ def submit_conditional_approval(
     # Flush to ensure the update is visible in subsequent queries
     db.flush()
 
-    # If this was the last pending conditional approval and status is "Approved",
+    # If this was the last pending additional approval and status is "Approved",
     # update model.use_approval_date
     if approval_data.approval_status == "Approved":
         from sqlalchemy.orm import joinedload
@@ -5186,11 +5240,11 @@ def submit_conditional_approval(
         ).first()
 
         if validation_request:
-            # Check if all conditional approvals are now approved
+            # Check if all additional approvals are now approved
             all_conditional_approvals = db.query(ValidationApproval).filter(
                 ValidationApproval.request_id == approval.request_id,
                 ValidationApproval.approver_role_id.isnot(
-                    None),  # Only conditional approvals
+                    None),  # Only additional approvals
                 ValidationApproval.voided_at.is_(None)  # Not voided
             ).all()
 
@@ -5221,7 +5275,7 @@ def submit_conditional_approval(
 
     return SubmitConditionalApprovalResponse(
         approval_id=approval_id,
-        message=f"Conditional approval {approval_data.approval_status.lower()} successfully"
+        message=f"Additional approval {approval_data.approval_status.lower()} successfully"
     )
 
 
@@ -5233,7 +5287,7 @@ def void_approval_requirement(
     current_user: User = Depends(get_current_user)
 ):
     """
-    Void a conditional approval requirement (Admin only).
+    Void an additional approval requirement (Admin only).
 
     Allows Admin to cancel an approval requirement with justification.
     """
@@ -5251,11 +5305,11 @@ def void_approval_requirement(
             detail="Approval requirement not found"
         )
 
-    # Verify this is a conditional approval (has approver_role_id)
+    # Verify this is an additional approval (has approver_role_id)
     if not approval.approver_role_id:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="This is not a conditional approval requirement"
+            detail="This is not an additional approval requirement"
         )
 
     # Check if already voided
@@ -5272,7 +5326,7 @@ def void_approval_requirement(
     approval.updated_at = datetime.utcnow()
 
     # If model was previously approved, clear the use_approval_date
-    # because conditional approvals are no longer all complete
+    # because additional approvals are no longer all complete
     from sqlalchemy.orm import joinedload
     validation_request = db.query(ValidationRequest).options(
         joinedload(ValidationRequest.models)
@@ -5294,7 +5348,7 @@ def void_approval_requirement(
                     action="CONDITIONAL_APPROVAL_REVERTED",
                     user_id=current_user.user_id,
                     changes={
-                        "reason": f"Conditional approval voided: {void_data.void_reason}",
+                        "reason": f"Additional approval voided: {void_data.void_reason}",
                         "validation_request_id": approval.request_id,
                         "voided_approval_id": approval_id
                     },
@@ -5323,7 +5377,7 @@ def void_approval_requirement(
     )
 
 
-@router.get("/dashboard/pending-conditional-approvals")
+@router.get("/dashboard/pending-additional-approvals")
 def get_pending_conditional_approvals(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
@@ -5344,7 +5398,7 @@ def get_pending_conditional_approvals(
     # Query validation approvals for conditional requirements that are pending
     pending_approvals = db.query(ValidationApproval).filter(
         ValidationApproval.approver_role_id.isnot(
-            None),  # Conditional approval
+            None),  # Additional approval
         ValidationApproval.voided_at.is_(None),  # Not voided
         or_(
             ValidationApproval.approval_status == 'Pending',

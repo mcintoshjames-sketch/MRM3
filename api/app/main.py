@@ -56,8 +56,8 @@ app.include_router(saved_queries.router,
 app.include_router(model_hierarchy.router, tags=["model-hierarchy"])
 app.include_router(model_dependencies.router, tags=["model-dependencies"])
 # Conditional model use approvals
-app.include_router(approver_roles.router, tags=["conditional-approvals"])
-app.include_router(conditional_approval_rules.router, tags=["conditional-approvals"])
+app.include_router(approver_roles.router, tags=["additional-approvals"])
+app.include_router(conditional_approval_rules.router, tags=["additional-approvals"])
 # FRY 14 Reporting configuration
 app.include_router(fry.router, tags=["fry-reporting"])
 

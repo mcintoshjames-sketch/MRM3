@@ -48,10 +48,10 @@ export default function ConditionalApprovalsSection({ requestId, userRole, onUpd
 
     const fetchEvaluation = async () => {
         try {
-            const response = await api.get(`/validation-workflow/requests/${requestId}/conditional-approvals`);
+            const response = await api.get(`/validation-workflow/requests/${requestId}/additional-approvals`);
             setEvaluation(response.data);
         } catch (err: any) {
-            console.error('Failed to fetch conditional approvals:', err);
+            console.error('Failed to fetch additional approvals:', err);
             setEvaluation({
                 required_roles: [],
                 rules_applied: [],
@@ -74,7 +74,7 @@ export default function ConditionalApprovalsSection({ requestId, userRole, onUpd
         }
 
         try {
-            await api.post(`/validation-workflow/approvals/${selectedApprovalId}/submit-conditional`, {
+            await api.post(`/validation-workflow/approvals/${selectedApprovalId}/submit-additional`, {
                 approver_role_id: selectedRoleId,
                 approval_status: approvalData.approval_status,
                 approval_evidence: approvalData.approval_evidence,
@@ -95,7 +95,7 @@ export default function ConditionalApprovalsSection({ requestId, userRole, onUpd
             fetchEvaluation();
             onUpdate();
         } catch (err: any) {
-            setError(err.response?.data?.detail || 'Failed to submit conditional approval');
+            setError(err.response?.data?.detail || 'Failed to submit additional approval');
         }
     };
 
@@ -129,16 +129,16 @@ export default function ConditionalApprovalsSection({ requestId, userRole, onUpd
     };
 
     if (loading) {
-        return <div className="text-center py-4">Loading conditional approvals...</div>;
+        return <div className="text-center py-4">Loading additional approvals...</div>;
     }
 
     if (!evaluation || evaluation.required_roles.length === 0) {
-        return null; // Don't show section if no conditional approvals required
+        return null; // Don't show section if no additional approvals required
     }
 
     return (
         <div className="mt-8 border-t pt-6">
-            <h3 className="text-lg font-bold mb-4">Conditional Model Use Approvals</h3>
+            <h3 className="text-lg font-bold mb-4">Additional Model Use Approvals</h3>
 
             {/* Explanation Summary */}
             {evaluation.explanation_summary && (
@@ -229,7 +229,7 @@ export default function ConditionalApprovalsSection({ requestId, userRole, onUpd
             {showApprovalModal && (
                 <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
                     <div className="bg-white rounded-lg p-6 max-w-2xl w-full max-h-[90vh] overflow-y-auto">
-                        <h3 className="text-lg font-bold mb-4">Submit Conditional Approval</h3>
+                        <h3 className="text-lg font-bold mb-4">Submit Additional Approval</h3>
 
                         {error && (
                             <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">

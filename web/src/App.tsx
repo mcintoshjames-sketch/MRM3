@@ -29,6 +29,7 @@ import ConfigurationHistoryPage from './pages/ConfigurationHistoryPage';
 import DeviationTrendsReportPage from './pages/DeviationTrendsReportPage';
 import ApproverRolesPage from './pages/ApproverRolesPage';
 import ConditionalApprovalRulesPage from './pages/ConditionalApprovalRulesPage';
+import FryConfigPage from './pages/FryConfigPage';
 
 function App() {
     const { user, loading } = useAuth();
@@ -58,12 +59,12 @@ function App() {
             <Route path="/validation-workflow/:id" element={user ? <ValidationRequestDetailPage /> : <Navigate to="/login" />} />
             <Route path="/my-pending-submissions" element={user ? <MyPendingSubmissionsPage /> : <Navigate to="/login" />} />
             <Route path="/my-deployment-tasks" element={user ? <MyDeploymentTasksPage /> : <Navigate to="/login" />} />
-            <Route path="/vendors" element={user ? <VendorsPage /> : <Navigate to="/login" />} />
-            <Route path="/vendors/:id" element={user ? <VendorDetailsPage /> : <Navigate to="/login" />} />
-            <Route path="/users" element={user ? <UsersPage /> : <Navigate to="/login" />} />
-            <Route path="/users/:id" element={user ? <UserDetailsPage /> : <Navigate to="/login" />} />
-            <Route path="/taxonomy" element={user ? <TaxonomyPage /> : <Navigate to="/login" />} />
-            <Route path="/audit" element={user ? <AuditPage /> : <Navigate to="/login" />} />
+            <Route path="/vendors" element={user?.role === 'Admin' || user?.role === 'Validator' ? <VendorsPage /> : <Navigate to="/models" />} />
+            <Route path="/vendors/:id" element={user?.role === 'Admin' || user?.role === 'Validator' ? <VendorDetailsPage /> : <Navigate to="/models" />} />
+            <Route path="/users" element={user?.role === 'Admin' || user?.role === 'Validator' ? <UsersPage /> : <Navigate to="/models" />} />
+            <Route path="/users/:id" element={user?.role === 'Admin' || user?.role === 'Validator' ? <UserDetailsPage /> : <Navigate to="/models" />} />
+            <Route path="/taxonomy" element={user?.role === 'Admin' || user?.role === 'Validator' ? <TaxonomyPage /> : <Navigate to="/models" />} />
+            <Route path="/audit" element={user?.role === 'Admin' || user?.role === 'Validator' ? <AuditPage /> : <Navigate to="/models" />} />
             <Route path="/workflow-config" element={user?.role === 'Admin' ? <WorkflowConfigurationPage /> : <Navigate to="/models" />} />
             <Route path="/batch-delegates" element={user?.role === 'Admin' ? <BatchDelegatesPage /> : <Navigate to="/models" />} />
             <Route path="/regions" element={user?.role === 'Admin' ? <RegionsPage /> : <Navigate to="/models" />} />
@@ -71,7 +72,8 @@ function App() {
             <Route path="/component-definitions" element={user?.role === 'Admin' ? <ComponentDefinitionsPage /> : <Navigate to="/models" />} />
             <Route path="/configuration-history" element={user?.role === 'Admin' ? <ConfigurationHistoryPage /> : <Navigate to="/models" />} />
             <Route path="/approver-roles" element={user?.role === 'Admin' ? <ApproverRolesPage /> : <Navigate to="/models" />} />
-            <Route path="/conditional-approval-rules" element={user?.role === 'Admin' ? <ConditionalApprovalRulesPage /> : <Navigate to="/models" />} />
+            <Route path="/additional-approval-rules" element={user?.role === 'Admin' ? <ConditionalApprovalRulesPage /> : <Navigate to="/models" />} />
+            <Route path="/fry-config" element={user?.role === 'Admin' ? <FryConfigPage /> : <Navigate to="/models" />} />
             <Route path="/reports" element={user ? <ReportsPage /> : <Navigate to="/login" />} />
             <Route path="/reports/regional-compliance" element={user ? <RegionalComplianceReportPage /> : <Navigate to="/login" />} />
             <Route path="/reports/deviation-trends" element={user ? <DeviationTrendsReportPage /> : <Navigate to="/login" />} />

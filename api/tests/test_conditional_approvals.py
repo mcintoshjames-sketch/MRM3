@@ -148,7 +148,7 @@ class TestConditionalApprovalRuleCRUD:
 
     def test_list_rules_when_empty(self, client, admin_headers):
         """List rules when database is empty."""
-        response = client.get("/conditional-approval-rules/", headers=admin_headers)
+        response = client.get("/additional-approval-rules/", headers=admin_headers)
         assert response.status_code == 200
         assert response.json() == []
 
@@ -166,7 +166,7 @@ class TestConditionalApprovalRuleCRUD:
         db_session.add(assoc)
         db_session.commit()
 
-        response = client.get("/conditional-approval-rules/", headers=admin_headers)
+        response = client.get("/additional-approval-rules/", headers=admin_headers)
         assert response.status_code == 200
         data = response.json()
         assert len(data) == 1
@@ -181,7 +181,7 @@ class TestConditionalApprovalRuleCRUD:
         db_session.add_all([rule1, rule2])
         db_session.commit()
 
-        response = client.get("/conditional-approval-rules/?is_active=true", headers=admin_headers)
+        response = client.get("/additional-approval-rules/?is_active=true", headers=admin_headers)
         assert response.status_code == 200
         data = response.json()
         assert len(data) == 1
@@ -202,7 +202,7 @@ class TestConditionalApprovalRuleCRUD:
             "deployed_region_ids": [1, 2],
             "required_approver_role_ids": [role.role_id]
         }
-        response = client.post("/conditional-approval-rules/", json=payload, headers=admin_headers)
+        response = client.post("/additional-approval-rules/", json=payload, headers=admin_headers)
         assert response.status_code == 201
         data = response.json()
         assert data["rule_name"] == "Complete Rule"
@@ -223,7 +223,7 @@ class TestConditionalApprovalRuleCRUD:
             "deployed_region_ids": None,
             "required_approver_role_ids": [role.role_id]
         }
-        response = client.post("/conditional-approval-rules/", json=payload, headers=admin_headers)
+        response = client.post("/additional-approval-rules/", json=payload, headers=admin_headers)
         assert response.status_code == 201
         data = response.json()
         # Empty dimensions return as empty lists
@@ -241,7 +241,7 @@ class TestConditionalApprovalRuleCRUD:
             "rule_name": "Multi-Approver Rule",
             "required_approver_role_ids": [role1.role_id, role2.role_id]
         }
-        response = client.post("/conditional-approval-rules/", json=payload, headers=admin_headers)
+        response = client.post("/additional-approval-rules/", json=payload, headers=admin_headers)
         assert response.status_code == 201
         data = response.json()
         assert len(data["required_approver_roles"]) == 2
@@ -256,7 +256,7 @@ class TestConditionalApprovalRuleCRUD:
             "rule_name": "Test Rule",
             "required_approver_role_ids": [role.role_id]
         }
-        response = client.post("/conditional-approval-rules/", json=payload, headers=auth_headers)
+        response = client.post("/additional-approval-rules/", json=payload, headers=auth_headers)
         assert response.status_code == 403
 
     def test_update_rule_dimensions(self, client, db_session, admin_headers):
@@ -277,7 +277,7 @@ class TestConditionalApprovalRuleCRUD:
             "validation_type_ids": [1, 2, 3],
             "risk_tier_ids": [1]
         }
-        response = client.patch(f"/conditional-approval-rules/{rule.rule_id}", json=payload, headers=admin_headers)
+        response = client.patch(f"/additional-approval-rules/{rule.rule_id}", json=payload, headers=admin_headers)
         assert response.status_code == 200
         data = response.json()
         assert data["validation_type_ids"] == [1, 2, 3]
@@ -299,7 +299,7 @@ class TestConditionalApprovalRuleCRUD:
         db_session.commit()
 
         payload = {"required_approver_role_ids": [role2.role_id]}
-        response = client.patch(f"/conditional-approval-rules/{rule.rule_id}", json=payload, headers=admin_headers)
+        response = client.patch(f"/additional-approval-rules/{rule.rule_id}", json=payload, headers=admin_headers)
         assert response.status_code == 200
         data = response.json()
         assert len(data["required_approver_roles"]) == 1
@@ -319,7 +319,7 @@ class TestConditionalApprovalRuleCRUD:
         db_session.add(assoc)
         db_session.commit()
 
-        response = client.delete(f"/conditional-approval-rules/{rule.rule_id}", headers=admin_headers)
+        response = client.delete(f"/additional-approval-rules/{rule.rule_id}", headers=admin_headers)
         assert response.status_code == 200
 
         db_session.refresh(rule)
@@ -338,7 +338,7 @@ class TestConditionalApprovalRuleCRUD:
             "deployed_region_ids": None,
             "required_approver_role_ids": [role.role_id]
         }
-        response = client.post("/conditional-approval-rules/preview", json=payload, headers=admin_headers)
+        response = client.post("/additional-approval-rules/preview", json=payload, headers=admin_headers)
         assert response.status_code == 200
         data = response.json()
         assert "translation" in data
@@ -357,7 +357,7 @@ class TestConditionalApprovalRuleCRUD:
             "deployed_region_ids": None,
             "required_approver_role_ids": [role.role_id]
         }
-        response = client.post("/conditional-approval-rules/preview", json=payload, headers=admin_headers)
+        response = client.post("/additional-approval-rules/preview", json=payload, headers=admin_headers)
         assert response.status_code == 200
         data = response.json()
         assert "Global Officer" in data["translation"]
@@ -1246,7 +1246,7 @@ class TestApprovalWorkflowIntegration:
             "approval_evidence": "Approved via MRM Committee meeting minutes 2025-11-23",
             "comments": "All conditions met"
         }
-        response = client.post(f"/validation-workflow/approvals/{approval.approval_id}/submit-conditional", json=payload, headers=admin_headers)
+        response = client.post(f"/validation-workflow/approvals/{approval.approval_id}/submit-additional", json=payload, headers=admin_headers)
         assert response.status_code == 200
 
         db_session.refresh(approval)
@@ -1303,7 +1303,7 @@ class TestApprovalWorkflowIntegration:
             "approval_status": "Approved",
             "approval_evidence": "Test evidence"
         }
-        response = client.post(f"/validation-workflow/approvals/{approval.approval_id}/submit-conditional", json=payload, headers=auth_headers)
+        response = client.post(f"/validation-workflow/approvals/{approval.approval_id}/submit-additional", json=payload, headers=auth_headers)
         assert response.status_code == 403
 
     def test_submit_approval_updates_model_use_approval_date_when_all_complete(self, client, db_session, test_user, admin_user, admin_headers, taxonomy_values):
@@ -1358,7 +1358,7 @@ class TestApprovalWorkflowIntegration:
             "approval_status": "Approved",
             "approval_evidence": "Test evidence"
         }
-        response = client.post(f"/validation-workflow/approvals/{approval.approval_id}/submit-conditional", json=payload, headers=admin_headers)
+        response = client.post(f"/validation-workflow/approvals/{approval.approval_id}/submit-additional", json=payload, headers=admin_headers)
         assert response.status_code == 200
 
         db_session.refresh(model)
@@ -1527,7 +1527,7 @@ class TestApprovalWorkflowIntegration:
             "approval_status": "Approved",
             "approval_evidence": "Test evidence"
         }
-        response = client.post(f"/validation-workflow/approvals/{approval.approval_id}/submit-conditional", json=payload, headers=admin_headers)
+        response = client.post(f"/validation-workflow/approvals/{approval.approval_id}/submit-additional", json=payload, headers=admin_headers)
         assert response.status_code == 200
 
         # Check audit log

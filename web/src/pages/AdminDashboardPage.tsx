@@ -94,7 +94,7 @@ interface PendingModelSubmission {
     row_approval_status: string;
 }
 
-interface PendingConditionalApproval {
+interface PendingAdditionalApproval {
     request_id: number;
     model_id: number;
     model_name: string;
@@ -118,7 +118,7 @@ export default function AdminDashboardPage() {
     const [overdueValidations, setOverdueValidations] = useState<OverdueValidation[]>([]);
     const [upcomingRevalidations, setUpcomingRevalidations] = useState<UpcomingRevalidation[]>([]);
     const [pendingModelSubmissions, setPendingModelSubmissions] = useState<PendingModelSubmission[]>([]);
-    const [pendingConditionalApprovals, setPendingConditionalApprovals] = useState<PendingConditionalApproval[]>([]);
+    const [pendingAdditionalApprovals, setPendingAdditionalApprovals] = useState<PendingAdditionalApproval[]>([]);
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
@@ -144,7 +144,7 @@ export default function AdminDashboardPage() {
                 api.get('/validation-workflow/dashboard/overdue-validations'),
                 api.get('/validation-workflow/dashboard/upcoming-revalidations?days_ahead=90'),
                 api.get('/models/pending-submissions'),
-                api.get('/validation-workflow/dashboard/pending-conditional-approvals')
+                api.get('/validation-workflow/dashboard/pending-additional-approvals')
             ]);
             setSlaViolations(violationsRes.data);
             setOutOfOrder(outOfOrderRes.data);
@@ -153,7 +153,7 @@ export default function AdminDashboardPage() {
             setOverdueValidations(overdueValidationsRes.data);
             setUpcomingRevalidations(upcomingRevalidationsRes.data);
             setPendingModelSubmissions(pendingModelsRes.data);
-            setPendingConditionalApprovals(conditionalApprovalsRes.data);
+            setPendingAdditionalApprovals(conditionalApprovalsRes.data);
         } catch (error) {
             console.error('Failed to fetch dashboard data:', error);
         } finally {
@@ -266,18 +266,18 @@ export default function AdminDashboardPage() {
                 </div>
             )}
 
-            {/* Pending Conditional Approvals Widget */}
-            {pendingConditionalApprovals.length > 0 && (
+            {/* Pending Additional Approvals Widget */}
+            {pendingAdditionalApprovals.length > 0 && (
                 <div className="bg-white p-4 rounded-lg shadow mb-6">
                     <div className="flex items-center gap-2 mb-3 pb-2 border-b">
                         <svg className="w-4 h-4 text-purple-500" fill="currentColor" viewBox="0 0 20 20">
                             <path fillRule="evenodd" d="M6.267 3.455a3.066 3.066 0 001.745-.723 3.066 3.066 0 013.976 0 3.066 3.066 0 001.745.723 3.066 3.066 0 012.812 2.812c.051.643.304 1.254.723 1.745a3.066 3.066 0 010 3.976 3.066 3.066 0 00-.723 1.745 3.066 3.066 0 01-2.812 2.812 3.066 3.066 0 00-1.745.723 3.066 3.066 0 01-3.976 0 3.066 3.066 0 00-1.745-.723 3.066 3.066 0 01-2.812-2.812 3.066 3.066 0 00-.723-1.745 3.066 3.066 0 010-3.976 3.066 3.066 0 00.723-1.745 3.066 3.066 0 012.812-2.812zm7.44 5.252a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
                         </svg>
-                        <h3 className="text-sm font-semibold text-gray-700">Pending Conditional Approvals</h3>
-                        <span className="text-xs text-gray-500 ml-auto">{pendingConditionalApprovals.length} awaiting</span>
+                        <h3 className="text-sm font-semibold text-gray-700">Pending Additional Approvals</h3>
+                        <span className="text-xs text-gray-500 ml-auto">{pendingAdditionalApprovals.length} awaiting</span>
                     </div>
                     <div className="space-y-2 max-h-64 overflow-y-auto">
-                        {pendingConditionalApprovals.slice(0, 5).map((item) => (
+                        {pendingAdditionalApprovals.slice(0, 5).map((item) => (
                             <div
                                 key={item.request_id}
                                 className="border-l-3 pl-3 py-2 hover:bg-gray-50 rounded-r"
@@ -325,10 +325,10 @@ export default function AdminDashboardPage() {
                             </div>
                         ))}
                     </div>
-                    {pendingConditionalApprovals.length > 5 && (
+                    {pendingAdditionalApprovals.length > 5 && (
                         <div className="mt-3 pt-2 border-t text-center">
                             <span className="text-xs text-gray-500">
-                                Showing 5 of {pendingConditionalApprovals.length} pending approvals
+                                Showing 5 of {pendingAdditionalApprovals.length} pending approvals
                             </span>
                         </div>
                     )}

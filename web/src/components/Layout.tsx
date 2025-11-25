@@ -166,45 +166,49 @@ export default function Layout({ children }: LayoutProps) {
                                 )}
                             </NavLink>
                         </li>
-                        <li>
-                            <NavLink
-                                to="/vendors"
-                                className={({ isActive }) =>
-                                    `block px-4 py-2 rounded transition-colors ${isActive
-                                        ? 'bg-blue-600 text-white'
-                                        : 'text-gray-700 hover:bg-gray-100'
-                                    }`
-                                }
-                            >
-                                Vendors
-                            </NavLink>
-                        </li>
-                        <li>
-                            <NavLink
-                                to="/users"
-                                className={({ isActive }) =>
-                                    `block px-4 py-2 rounded transition-colors ${isActive
-                                        ? 'bg-blue-600 text-white'
-                                        : 'text-gray-700 hover:bg-gray-100'
-                                    }`
-                                }
-                            >
-                                Users
-                            </NavLink>
-                        </li>
-                        <li>
-                            <NavLink
-                                to="/taxonomy"
-                                className={({ isActive }) =>
-                                    `block px-4 py-2 rounded transition-colors ${isActive
-                                        ? 'bg-blue-600 text-white'
-                                        : 'text-gray-700 hover:bg-gray-100'
-                                    }`
-                                }
-                            >
-                                Taxonomy
-                            </NavLink>
-                        </li>
+                        {(user?.role === 'Admin' || user?.role === 'Validator') && (
+                            <>
+                                <li>
+                                    <NavLink
+                                        to="/vendors"
+                                        className={({ isActive }) =>
+                                            `block px-4 py-2 rounded transition-colors ${isActive
+                                                ? 'bg-blue-600 text-white'
+                                                : 'text-gray-700 hover:bg-gray-100'
+                                            }`
+                                        }
+                                    >
+                                        Vendors
+                                    </NavLink>
+                                </li>
+                                <li>
+                                    <NavLink
+                                        to="/users"
+                                        className={({ isActive }) =>
+                                            `block px-4 py-2 rounded transition-colors ${isActive
+                                                ? 'bg-blue-600 text-white'
+                                                : 'text-gray-700 hover:bg-gray-100'
+                                            }`
+                                        }
+                                    >
+                                        Users
+                                    </NavLink>
+                                </li>
+                                <li>
+                                    <NavLink
+                                        to="/taxonomy"
+                                        className={({ isActive }) =>
+                                            `block px-4 py-2 rounded transition-colors ${isActive
+                                                ? 'bg-blue-600 text-white'
+                                                : 'text-gray-700 hover:bg-gray-100'
+                                            }`
+                                        }
+                                    >
+                                        Taxonomy
+                                    </NavLink>
+                                </li>
+                            </>
+                        )}
                         <li>
                             <NavLink
                                 to="/reports"
@@ -218,19 +222,21 @@ export default function Layout({ children }: LayoutProps) {
                                 Reports
                             </NavLink>
                         </li>
-                        <li>
-                            <NavLink
-                                to="/audit"
-                                className={({ isActive }) =>
-                                    `block px-4 py-2 rounded transition-colors ${isActive
-                                        ? 'bg-blue-600 text-white'
-                                        : 'text-gray-700 hover:bg-gray-100'
-                                    }`
-                                }
-                            >
-                                Audit Logs
-                            </NavLink>
-                        </li>
+                        {(user?.role === 'Admin' || user?.role === 'Validator') && (
+                            <li>
+                                <NavLink
+                                    to="/audit"
+                                    className={({ isActive }) =>
+                                        `block px-4 py-2 rounded transition-colors ${isActive
+                                            ? 'bg-blue-600 text-white'
+                                            : 'text-gray-700 hover:bg-gray-100'
+                                        }`
+                                    }
+                                >
+                                    Audit Logs
+                                </NavLink>
+                            </li>
+                        )}
                         {user?.role === 'Admin' && (
                             <>
                                 <li>
@@ -326,7 +332,7 @@ export default function Layout({ children }: LayoutProps) {
                                 </li>
                                 <li>
                                     <NavLink
-                                        to="/conditional-approval-rules"
+                                        to="/additional-approval-rules"
                                         className={({ isActive }) =>
                                             `block px-4 py-2 rounded transition-colors ${isActive
                                                 ? 'bg-blue-600 text-white'
@@ -334,7 +340,20 @@ export default function Layout({ children }: LayoutProps) {
                                             }`
                                         }
                                     >
-                                        Conditional Approvals
+                                        Additional Approvals
+                                    </NavLink>
+                                </li>
+                                <li>
+                                    <NavLink
+                                        to="/fry-config"
+                                        className={({ isActive }) =>
+                                            `block px-4 py-2 rounded transition-colors ${isActive
+                                                ? 'bg-blue-600 text-white'
+                                                : 'text-gray-700 hover:bg-gray-100'
+                                            }`
+                                        }
+                                    >
+                                        FRY 14 Configuration
                                     </NavLink>
                                 </li>
                                 <li>

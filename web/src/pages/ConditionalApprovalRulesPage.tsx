@@ -86,7 +86,7 @@ export default function ConditionalApprovalRulesPage() {
     const fetchData = async () => {
         try {
             const [rulesRes, rolesRes, regionsRes] = await Promise.all([
-                api.get('/conditional-approval-rules/'),
+                api.get('/additional-approval-rules/'),
                 api.get('/approver-roles/?is_active=true'),
                 api.get('/regions/')
             ]);
@@ -122,7 +122,7 @@ export default function ConditionalApprovalRulesPage() {
 
     const fetchRules = async () => {
         try {
-            const response = await api.get('/conditional-approval-rules/');
+            const response = await api.get('/additional-approval-rules/');
             setRules(response.data);
         } catch (error) {
             console.error('Failed to fetch rules:', error);
@@ -131,7 +131,7 @@ export default function ConditionalApprovalRulesPage() {
 
     const fetchPreview = async () => {
         try {
-            const response = await api.post('/conditional-approval-rules/preview', {
+            const response = await api.post('/additional-approval-rules/preview', {
                 validation_type_ids: formData.validation_type_ids.length > 0 ? formData.validation_type_ids : null,
                 risk_tier_ids: formData.risk_tier_ids.length > 0 ? formData.risk_tier_ids : null,
                 governance_region_ids: formData.governance_region_ids.length > 0 ? formData.governance_region_ids : null,
@@ -174,21 +174,21 @@ export default function ConditionalApprovalRulesPage() {
 
         try {
             if (editingRule) {
-                await api.patch(`/conditional-approval-rules/${editingRule.rule_id}`, formData);
+                await api.patch(`/additional-approval-rules/${editingRule.rule_id}`, formData);
             } else {
-                await api.post('/conditional-approval-rules/', formData);
+                await api.post('/additional-approval-rules/', formData);
             }
             resetForm();
             fetchRules();
         } catch (err: any) {
-            setError(err.response?.data?.detail || 'Failed to save conditional approval rule');
+            setError(err.response?.data?.detail || 'Failed to save additional approval rule');
         }
     };
 
     const handleEdit = async (rule: ConditionalApprovalRule) => {
         try {
             // Fetch full rule details
-            const response = await api.get(`/conditional-approval-rules/${rule.rule_id}`);
+            const response = await api.get(`/additional-approval-rules/${rule.rule_id}`);
             const ruleDetail: ConditionalApprovalRuleDetail = response.data;
 
             setEditingRule(ruleDetail);
@@ -212,7 +212,7 @@ export default function ConditionalApprovalRulesPage() {
         if (!confirm('Are you sure you want to deactivate this rule? It will no longer be evaluated for new validations.')) return;
 
         try {
-            await api.delete(`/conditional-approval-rules/${ruleId}`);
+            await api.delete(`/additional-approval-rules/${ruleId}`);
             fetchRules();
         } catch (err: any) {
             alert(err.response?.data?.detail || 'Failed to deactivate rule');
@@ -244,7 +244,7 @@ export default function ConditionalApprovalRulesPage() {
             <Layout>
                 <div className="text-center py-12">
                     <h2 className="text-2xl font-bold text-gray-800">Access Denied</h2>
-                    <p className="text-gray-600 mt-2">Only administrators can manage conditional approval rules.</p>
+                    <p className="text-gray-600 mt-2">Only administrators can manage additional approval rules.</p>
                 </div>
             </Layout>
         );
@@ -262,7 +262,7 @@ export default function ConditionalApprovalRulesPage() {
         <Layout>
             <div className="flex justify-between items-center mb-6">
                 <div>
-                    <h2 className="text-2xl font-bold">Conditional Approval Rules</h2>
+                    <h2 className="text-2xl font-bold">Additional Approval Rules</h2>
                     <p className="text-gray-600 text-sm mt-1">
                         Define rules that determine when additional approvals are required for model use
                     </p>
@@ -275,7 +275,7 @@ export default function ConditionalApprovalRulesPage() {
             {showForm && (
                 <div className="bg-white p-6 rounded-lg shadow-md mb-6">
                     <h3 className="text-lg font-bold mb-4">
-                        {editingRule ? 'Edit Conditional Approval Rule' : 'Create New Conditional Approval Rule'}
+                        {editingRule ? 'Edit Additional Approval Rule' : 'Create New Additional Approval Rule'}
                     </h3>
 
                     {error && (
@@ -502,7 +502,7 @@ export default function ConditionalApprovalRulesPage() {
                         {rules.length === 0 ? (
                             <tr>
                                 <td colSpan={5} className="px-6 py-4 text-center text-gray-500">
-                                    No conditional approval rules defined. Click "Add Rule" to create one.
+                                    No additional approval rules defined. Click "Add Rule" to create one.
                                 </td>
                             </tr>
                         ) : (

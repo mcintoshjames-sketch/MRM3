@@ -5,6 +5,7 @@ import { regionsApi, Region } from '../api/regions';
 import Layout from '../components/Layout';
 import MultiSelectDropdown from '../components/MultiSelectDropdown';
 import ValidationWarningModal from '../components/ValidationWarningModal';
+import { useTableSort } from '../hooks/useTableSort';
 
 interface ValidationRequest {
     request_id: number;
@@ -20,6 +21,7 @@ interface ValidationRequest {
     primary_validator: string | null;
     regions?: Region[];  // Support multiple regions
     created_at: string;
+    updated_at: string;
 }
 
 interface Model {
@@ -144,6 +146,13 @@ export default function ValidationWorkflowPage() {
 
         return true;
     });
+
+    // Add table sorting (default to updated_at descending to show most recently modified first)
+    const { sortedData, requestSort, getSortIcon } = useTableSort<ValidationRequest>(
+        filteredRequests,
+        'updated_at',
+        'desc'
+    );
 
     // Auto-open form and pre-populate model_ids from query params
     useEffect(() => {
@@ -915,45 +924,110 @@ export default function ValidationWorkflowPage() {
                 </div>
             </div>
 
-            <div className="bg-white rounded-lg shadow-md overflow-hidden">
+            <div className="bg-white rounded-lg shadow-md overflow-x-auto">
                 <table className="min-w-full divide-y divide-gray-200">
                     <thead className="bg-gray-50">
                         <tr>
-                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">ID</th>
+                            <th
+                                className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100"
+                                onClick={() => requestSort('request_id')}
+                            >
+                                <div className="flex items-center gap-2">
+                                    ID
+                                    {getSortIcon('request_id')}
+                                </div>
+                            </th>
                             <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Model</th>
-                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Type</th>
+                            <th
+                                className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100"
+                                onClick={() => requestSort('validation_type')}
+                            >
+                                <div className="flex items-center gap-2">
+                                    Type
+                                    {getSortIcon('validation_type')}
+                                </div>
+                            </th>
                             <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Region</th>
-                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Priority</th>
-                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
-                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Days in Status</th>
-                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Target Date</th>
-                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Validator</th>
-                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
+                            <th
+                                className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100"
+                                onClick={() => requestSort('priority')}
+                            >
+                                <div className="flex items-center gap-2">
+                                    Priority
+                                    {getSortIcon('priority')}
+                                </div>
+                            </th>
+                            <th
+                                className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100"
+                                onClick={() => requestSort('current_status')}
+                            >
+                                <div className="flex items-center gap-2">
+                                    Status
+                                    {getSortIcon('current_status')}
+                                </div>
+                            </th>
+                            <th
+                                className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100"
+                                onClick={() => requestSort('days_in_status')}
+                            >
+                                <div className="flex items-center gap-2">
+                                    Days in Status
+                                    {getSortIcon('days_in_status')}
+                                </div>
+                            </th>
+                            <th
+                                className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100"
+                                onClick={() => requestSort('target_completion_date')}
+                            >
+                                <div className="flex items-center gap-2">
+                                    Target Date
+                                    {getSortIcon('target_completion_date')}
+                                </div>
+                            </th>
+                            <th
+                                className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100"
+                                onClick={() => requestSort('updated_at')}
+                            >
+                                <div className="flex items-center gap-2">
+                                    Last Modified
+                                    {getSortIcon('updated_at')}
+                                </div>
+                            </th>
+                            <th
+                                className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100"
+                                onClick={() => requestSort('primary_validator')}
+                            >
+                                <div className="flex items-center gap-2">
+                                    Validator
+                                    {getSortIcon('primary_validator')}
+                                </div>
+                            </th>
                         </tr>
                     </thead>
                     <tbody className="bg-white divide-y divide-gray-200">
-                        {filteredRequests.length === 0 ? (
+                        {sortedData.length === 0 ? (
                             <tr>
                                 <td colSpan={10} className="px-6 py-4 text-center text-gray-500">
                                     No validation projects found. Click "New Validation Project" to create one.
                                 </td>
                             </tr>
                         ) : (
-                            filteredRequests.map((req) => (
+                            sortedData.map((req) => (
                                 <tr key={req.request_id} className="hover:bg-gray-50">
-                                    <td className="px-6 py-4 whitespace-nowrap text-sm font-mono">
-                                        #{req.request_id}
+                                    <td className="px-6 py-4 whitespace-nowrap text-sm">
+                                        <Link
+                                            to={`/validation-workflow/${req.request_id}`}
+                                            className="font-mono text-blue-600 hover:text-blue-800 hover:underline"
+                                        >
+                                            #{req.request_id}
+                                        </Link>
                                     </td>
                                     <td className="px-6 py-4">
                                         <div className="flex flex-wrap gap-1">
                                             {req.model_names.map((name, idx) => (
-                                                <Link
-                                                    key={req.model_ids[idx]}
-                                                    to={`/models/${req.model_ids[idx]}`}
-                                                    className="font-medium text-blue-600 hover:text-blue-800 text-sm"
-                                                >
+                                                <span key={req.model_ids[idx]} className="text-sm text-gray-900">
                                                     {name}{idx < req.model_names.length - 1 ? ',' : ''}
-                                                </Link>
+                                                </span>
                                             ))}
                                         </div>
                                     </td>
@@ -991,16 +1065,11 @@ export default function ValidationWorkflowPage() {
                                     <td className="px-6 py-4 whitespace-nowrap text-sm">
                                         {req.target_completion_date}
                                     </td>
+                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+                                        {req.updated_at ? req.updated_at.split('T')[0] : 'N/A'}
+                                    </td>
                                     <td className="px-6 py-4 whitespace-nowrap text-sm">
                                         {req.primary_validator || <span className="text-gray-400">Unassigned</span>}
-                                    </td>
-                                    <td className="px-6 py-4 whitespace-nowrap">
-                                        <Link
-                                            to={`/validation-workflow/${req.request_id}`}
-                                            className="text-blue-600 hover:text-blue-800 text-sm"
-                                        >
-                                            View Details
-                                        </Link>
                                     </td>
                                 </tr>
                             ))

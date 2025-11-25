@@ -613,9 +613,11 @@ export default function ModelDetailsPage() {
                             <button onClick={() => { setEditError(null); setEditing(true); }} className="btn-primary">
                                 Edit Model
                             </button>
-                            <button onClick={handleDelete} className="btn-secondary text-red-600">
-                                Delete
-                            </button>
+                            {(user?.role === 'Admin' || user?.role === 'Validator') && (
+                                <button onClick={handleDelete} className="btn-secondary text-red-600">
+                                    Delete
+                                </button>
+                            )}
                         </>
                     )}
                 </div>

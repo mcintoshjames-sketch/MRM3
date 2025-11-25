@@ -177,7 +177,7 @@ export default function ApproverRolesPage() {
                                 <span className="text-sm font-medium">Active</span>
                             </label>
                             <p className="text-xs text-gray-500 mt-1">
-                                Inactive roles cannot be used in new conditional approval rules
+                                Inactive roles cannot be used in new additional approval rules
                             </p>
                         </div>
 

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import api from '../api/client';
+import { useAuth } from '../contexts/AuthContext';
 import Layout from '../components/Layout';
 import { useTableSort } from '../hooks/useTableSort';
 import MultiSelectDropdown from '../components/MultiSelectDropdown';
@@ -69,6 +70,7 @@ interface Model {
 
 export default function ModelsPage() {
     const navigate = useNavigate();
+    const { user } = useAuth();
     const [models, setModels] = useState<Model[]>([]);
     const [users, setUsers] = useState<User[]>([]);
     const [vendors, setVendors] = useState<Vendor[]>([]);
@@ -99,6 +101,65 @@ export default function ModelsPage() {
     const [userSearchTerm, setUserSearchTerm] = useState('');
     const [validationTypes, setValidationTypes] = useState<any[]>([]);
     const [validationPriorities, setValidationPriorities] = useState<any[]>([]);
+
+    // Check if form has unsaved changes
+    const formIsDirty = showForm && (
+        formData.model_name !== '' ||
+        formData.description !== '' ||
+        formData.owner_id !== 0 ||
+        formData.developer_id !== null ||
+        formData.vendor_id !== null ||
+        formData.wholly_owned_region_id !== null ||
+        formData.model_type_id !== null ||
+        formData.user_ids.length > 0 ||
+        formData.region_ids.length > 0 ||
+        formData.initial_version_number !== '' ||
+        formData.initial_implementation_date !== '' ||
+        formData.auto_create_validation ||
+        formData.validation_request_trigger_reason !== ''
+    );
+
+    // Warn on browser refresh/close
+    useEffect(() => {
+        const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+            if (formIsDirty) {
+                e.preventDefault();
+                e.returnValue = '';
+            }
+        };
+
+        window.addEventListener('beforeunload', handleBeforeUnload);
+        return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+    }, [formIsDirty]);
+
+    const handleCancelForm = () => {
+        if (formIsDirty) {
+            if (!confirm('You have unsaved changes. Are you sure you want to close this form? Your changes will be lost.')) {
+                return;
+            }
+        }
+        setShowForm(false);
+        setFormData({
+            model_name: '',
+            description: '',
+            development_type: 'In-House',
+            owner_id: 0,
+            developer_id: null,
+            vendor_id: null,
+            wholly_owned_region_id: null,
+            model_type_id: null,
+            status: 'In Development',
+            user_ids: [],
+            region_ids: [],
+            initial_version_number: '',
+            initial_implementation_date: '',
+            auto_create_validation: false,
+            validation_request_type_id: 0,
+            validation_request_priority_id: 0,
+            validation_request_target_date: '',
+            validation_request_trigger_reason: ''
+        });
+    };
     const [showExportModal, setShowExportModal] = useState(false);
     const [showSaveViewModal, setShowSaveViewModal] = useState(false);
     const [newViewName, setNewViewName] = useState('');
@@ -1019,7 +1080,7 @@ export default function ModelsPage() {
 
                             <div className="flex gap-2">
                                 <button type="submit" className="btn-primary">Create</button>
-                                <button type="button" onClick={() => setShowForm(false)} className="btn-secondary">
+                                <button type="button" onClick={handleCancelForm} className="btn-secondary">
                                     Cancel
                                 </button>
                             </div>
@@ -1423,7 +1484,9 @@ export default function ModelsPage() {
                                         {getSortIcon('status')}
                                     </div>
                                 </th>
-                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
+                                {(user?.role === 'Admin' || user?.role === 'Validator') && (
+                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
+                                )}
                             </tr>
                         </thead>
                         <tbody className="bg-white divide-y divide-gray-200">
@@ -1508,14 +1571,16 @@ export default function ModelsPage() {
                                                 {model.status}
                                             </span>
                                         </td>
-                                        <td className="px-6 py-4 whitespace-nowrap">
-                                            <button
-                                                onClick={() => handleDelete(model.model_id)}
-                                                className="text-red-600 hover:text-red-800 text-sm"
-                                            >
-                                                Delete
-                                            </button>
-                                        </td>
+                                        {(user?.role === 'Admin' || user?.role === 'Validator') && (
+                                            <td className="px-6 py-4 whitespace-nowrap">
+                                                <button
+                                                    onClick={() => handleDelete(model.model_id)}
+                                                    className="text-red-600 hover:text-red-800 text-sm"
+                                                >
+                                                    Delete
+                                                </button>
+                                            </td>
+                                        )}
                                     </tr>
                                 ))
                             )}

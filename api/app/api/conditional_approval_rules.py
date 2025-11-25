@@ -21,7 +21,7 @@ from app.schemas.conditional_approval import (
     ApproverRoleResponse
 )
 
-router = APIRouter(prefix="/conditional-approval-rules", tags=["Conditional Approval Rules"])
+router = APIRouter(prefix="/additional-approval-rules", tags=["Additional Approval Rules"])
 
 
 def _build_rule_translation(db: Session, rule: ConditionalApprovalRule) -> str:

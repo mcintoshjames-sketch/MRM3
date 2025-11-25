@@ -160,16 +160,16 @@ For each rule that applies, generate text like:
 - `DELETE /approver-roles/{id}` - Soft delete (set is_active=false, Admin only)
 
 ### ConditionalApprovalRule Management
-- `GET /conditional-approval-rules/` - List all rules (filter by is_active)
-- `POST /conditional-approval-rules/` - Create new rule (Admin only)
-- `GET /conditional-approval-rules/{id}` - Get rule details with English translation
-- `PATCH /conditional-approval-rules/{id}` - Update rule (Admin only)
-- `DELETE /conditional-approval-rules/{id}` - Soft delete (Admin only)
-- `POST /conditional-approval-rules/preview` - Preview rule translation before saving
+- `GET /additional-approval-rules/` - List all rules (filter by is_active)
+- `POST /additional-approval-rules/` - Create new rule (Admin only)
+- `GET /additional-approval-rules/{id}` - Get rule details with English translation
+- `PATCH /additional-approval-rules/{id}` - Update rule (Admin only)
+- `DELETE /additional-approval-rules/{id}` - Soft delete (Admin only)
+- `POST /additional-approval-rules/preview` - Preview rule translation before saving
 
 ### Conditional Approvals
-- `GET /validation-workflow/requests/{id}/conditional-approvals` - Get required approvals for validation
-- `POST /validation-workflow/approvals/{id}/submit-conditional` - Admin submits conditional approval with evidence
+- `GET /validation-workflow/requests/{id}/additional-approvals` - Get required approvals for validation
+- `POST /validation-workflow/approvals/{id}/submit-additional` - Admin submits additional approval with evidence
 - `POST /validation-workflow/approvals/{id}/void` - Admin voids approval requirement with reason
 
 ## UI Components
@@ -180,7 +180,7 @@ For each rule that applies, generate text like:
    - Create/Edit modal
    - Deactivate button
 
-2. **ConditionalApprovalRulesPage** (`/conditional-approval-rules`)
+2. **ConditionalApprovalRulesPage** (`/additional-approval-rules`)
    - List view with rule name, conditions summary, required approvers
    - Create/Edit form with:
      - Name, description, active toggle

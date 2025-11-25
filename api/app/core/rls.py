@@ -172,9 +172,19 @@ def can_modify_model(model_id: int, user: User, db: Session) -> bool:
 
     # For approved models (row_approval_status IS NULL), check standard permissions
     if model.row_approval_status is None:
-        # Strict governance: Non-admins cannot edit approved models directly.
-        # They must create a new version or use a specific change request workflow.
-        return False
+        # Check if user is owner or developer
+        if model.owner_id == user.user_id or model.developer_id == user.user_id:
+            return True
+
+        # Check if user is an active delegate with can_submit_changes permission
+        delegate = db.query(ModelDelegate).filter(
+            ModelDelegate.model_id == model_id,
+            ModelDelegate.user_id == user.user_id,
+            ModelDelegate.revoked_at == None,
+            ModelDelegate.can_submit_changes == True
+        ).first()
+
+        return delegate is not None
 
     # Rejected models cannot be edited (must be deleted and recreated)
     return False
