@@ -10,6 +10,7 @@ import DelegatesSection from '../components/DelegatesSection';
 import RegionalVersionsTable from '../components/RegionalVersionsTable';
 import ModelHierarchySection from '../components/ModelHierarchySection';
 import ModelDependenciesSection from '../components/ModelDependenciesSection';
+import ModelApplicationsSection from '../components/ModelApplicationsSection';
 import LineageViewer from '../components/LineageViewer';
 import { useAuth } from '../contexts/AuthContext';
 import { ModelVersion } from '../api/versions';
@@ -173,7 +174,7 @@ export default function ModelDetailsPage() {
     const [revalidationStatus, setRevalidationStatus] = useState<RevalidationStatus | null>(null);
     const [loading, setLoading] = useState(true);
     const [editing, setEditing] = useState(false);
-    const [activeTab, setActiveTab] = useState<'details' | 'versions' | 'delegates' | 'validations' | 'hierarchy' | 'dependencies' | 'lineage' | 'activity'>('details');
+    const [activeTab, setActiveTab] = useState<'details' | 'versions' | 'delegates' | 'validations' | 'hierarchy' | 'dependencies' | 'applications' | 'lineage' | 'activity'>('details');
     const [showSubmitChangeModal, setShowSubmitChangeModal] = useState(false);
     const [selectedVersion, setSelectedVersion] = useState<ModelVersion | null>(null);
     const [versionsRefreshTrigger, setVersionsRefreshTrigger] = useState(0);
@@ -890,6 +891,15 @@ export default function ModelDetailsPage() {
                                 }`}
                         >
                             Dependencies
+                        </button>
+                        <button
+                            onClick={() => setActiveTab('applications')}
+                            className={`py-2 px-1 border-b-2 font-medium text-sm ${activeTab === 'applications'
+                                ? 'border-blue-500 text-blue-600'
+                                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                                }`}
+                        >
+                            Applications
                         </button>
                         <button
                             onClick={() => setActiveTab('lineage')}
@@ -1896,6 +1906,16 @@ export default function ModelDetailsPage() {
                 <ModelHierarchySection modelId={model.model_id} modelName={model.model_name} />
             ) : activeTab === 'dependencies' ? (
                 <ModelDependenciesSection modelId={model.model_id} modelName={model.model_name} />
+            ) : activeTab === 'applications' ? (
+                <ModelApplicationsSection
+                    modelId={model.model_id}
+                    canEdit={
+                        user?.role === 'Admin' ||
+                        user?.role === 'Validator' ||
+                        user?.user_id === model.owner_id ||
+                        user?.user_id === model.developer_id
+                    }
+                />
             ) : activeTab === 'lineage' ? (
                 <LineageViewer modelId={model.model_id} modelName={model.model_name} />
             ) : (

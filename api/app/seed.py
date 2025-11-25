@@ -4,7 +4,7 @@ from datetime import datetime, date, timedelta
 from typing import Dict, List
 from app.core.database import SessionLocal
 from app.core.security import get_password_hash
-from app.models import User, UserRole, Vendor, EntraUser, Taxonomy, TaxonomyValue, ValidationWorkflowSLA, ValidationPolicy, Region, ValidationComponentDefinition, ComponentDefinitionConfiguration, ComponentDefinitionConfigItem, ModelTypeCategory, ModelType, ValidationRequest, ValidationOutcome, ValidationRequestModelVersion, ApproverRole, ConditionalApprovalRule, RuleRequiredApprover
+from app.models import User, UserRole, Vendor, EntraUser, Taxonomy, TaxonomyValue, ValidationWorkflowSLA, ValidationPolicy, Region, ValidationComponentDefinition, ComponentDefinitionConfiguration, ComponentDefinitionConfigItem, ModelTypeCategory, ModelType, ValidationRequest, ValidationOutcome, ValidationRequestModelVersion, ApproverRole, ConditionalApprovalRule, RuleRequiredApprover, MapApplication
 from app.models.model import Model
 
 
@@ -1099,6 +1099,68 @@ def seed_database():
                         "sort_order": 5
                     },
                 ]
+            },
+            # Model-Application relationship taxonomy
+            {
+                "name": "Application Relationship Type",
+                "description": "Types of relationships between models and supporting applications from MAP",
+                "is_system": True,
+                "values": [
+                    {
+                        "code": "DATA_SOURCE",
+                        "label": "Data Source",
+                        "description": "Application provides input data to the model",
+                        "sort_order": 1
+                    },
+                    {
+                        "code": "EXECUTION",
+                        "label": "Execution Platform",
+                        "description": "Application runs or hosts the model",
+                        "sort_order": 2
+                    },
+                    {
+                        "code": "OUTPUT_CONSUMER",
+                        "label": "Output Consumer",
+                        "description": "Application consumes model outputs or scores",
+                        "sort_order": 3
+                    },
+                    {
+                        "code": "MONITORING",
+                        "label": "Monitoring/Alerting",
+                        "description": "Application monitors model performance",
+                        "sort_order": 4
+                    },
+                    {
+                        "code": "REPORTING",
+                        "label": "Reporting/Dashboard",
+                        "description": "Application displays model results",
+                        "sort_order": 5
+                    },
+                    {
+                        "code": "DATA_STORAGE",
+                        "label": "Data Storage",
+                        "description": "Application stores model data or results",
+                        "sort_order": 6
+                    },
+                    {
+                        "code": "ORCHESTRATION",
+                        "label": "Workflow/Orchestration",
+                        "description": "Application orchestrates model execution",
+                        "sort_order": 7
+                    },
+                    {
+                        "code": "VALIDATION",
+                        "label": "Validation Support",
+                        "description": "Application supports model validation process",
+                        "sort_order": 8
+                    },
+                    {
+                        "code": "OTHER",
+                        "label": "Other",
+                        "description": "Other relationship type",
+                        "sort_order": 9
+                    },
+                ]
             }
         ]
 
@@ -1506,6 +1568,9 @@ def seed_database():
         # Seed Model Type Hierarchy
         seed_model_type_taxonomy(db)
 
+        # Seed MAP Applications (Mock Managed Application Portfolio)
+        seed_map_applications(db)
+
         # Seed Conditional Approvals
         seed_conditional_approvals(db)
 
@@ -1517,6 +1582,221 @@ def seed_database():
         raise
     finally:
         db.close()
+
+
+def seed_map_applications(db):
+    """Seed mock Managed Application Portfolio (MAP) applications."""
+    print("Seeding MAP applications...")
+
+    # Check if already seeded
+    existing_count = db.query(MapApplication).count()
+    if existing_count > 0:
+        print(f"✓ MAP applications already seeded ({existing_count} applications)")
+        return
+
+    # Mock applications typical of a financial services organization
+    applications = [
+        {
+            "application_code": "APP-EDW-001",
+            "application_name": "Enterprise Data Warehouse",
+            "description": "Central repository for enterprise data including market data, positions, and risk metrics",
+            "owner_name": "Jane Smith",
+            "owner_email": "jane.smith@contoso.com",
+            "department": "Data Engineering",
+            "technology_stack": "Snowflake/AWS",
+            "criticality_tier": "Critical",
+            "status": "Active",
+            "external_url": "https://map.contoso.com/app/APP-EDW-001"
+        },
+        {
+            "application_code": "APP-RAP-001",
+            "application_name": "Risk Analytics Platform",
+            "description": "Enterprise platform for risk model execution, scoring, and analytics",
+            "owner_name": "Michael Chen",
+            "owner_email": "michael.chen@contoso.com",
+            "department": "Model Risk",
+            "technology_stack": "Python/Kubernetes",
+            "criticality_tier": "Critical",
+            "status": "Active",
+            "external_url": "https://map.contoso.com/app/APP-RAP-001"
+        },
+        {
+            "application_code": "APP-BBG-001",
+            "application_name": "Bloomberg Data Feed",
+            "description": "Market data integration from Bloomberg terminals and APIs",
+            "owner_name": "Sarah Johnson",
+            "owner_email": "sarah.johnson@contoso.com",
+            "department": "Market Data",
+            "technology_stack": "Bloomberg API/Java",
+            "criticality_tier": "Critical",
+            "status": "Active",
+            "external_url": "https://map.contoso.com/app/APP-BBG-001"
+        },
+        {
+            "application_code": "APP-MRD-001",
+            "application_name": "Model Results Dashboard",
+            "description": "Business intelligence dashboards displaying model outputs and performance metrics",
+            "owner_name": "David Wilson",
+            "owner_email": "david.wilson@contoso.com",
+            "department": "Business Intelligence",
+            "technology_stack": "Tableau/React",
+            "criticality_tier": "High",
+            "status": "Active",
+            "external_url": "https://map.contoso.com/app/APP-MRD-001"
+        },
+        {
+            "application_code": "APP-AMS-001",
+            "application_name": "Alert Management System",
+            "description": "Centralized alerting and incident management for model operations",
+            "owner_name": "Lisa Anderson",
+            "owner_email": "lisa.anderson@contoso.com",
+            "department": "Operations",
+            "technology_stack": "ServiceNow/Python",
+            "criticality_tier": "High",
+            "status": "Active",
+            "external_url": "https://map.contoso.com/app/APP-AMS-001"
+        },
+        {
+            "application_code": "APP-PMS-001",
+            "application_name": "Portfolio Management System",
+            "description": "Enterprise portfolio management and position tracking system",
+            "owner_name": "Robert Taylor",
+            "owner_email": "robert.taylor@contoso.com",
+            "department": "Trading",
+            "technology_stack": "Java/Oracle",
+            "criticality_tier": "Critical",
+            "status": "Active",
+            "external_url": "https://map.contoso.com/app/APP-PMS-001"
+        },
+        {
+            "application_code": "APP-TES-001",
+            "application_name": "Trade Execution System",
+            "description": "Low-latency trade execution and order management platform",
+            "owner_name": "James Martinez",
+            "owner_email": "james.martinez@contoso.com",
+            "department": "Trading",
+            "technology_stack": "C++/Low-Latency",
+            "criticality_tier": "Critical",
+            "status": "Active",
+            "external_url": "https://map.contoso.com/app/APP-TES-001"
+        },
+        {
+            "application_code": "APP-RRP-001",
+            "application_name": "Regulatory Reporting Platform",
+            "description": "Automated regulatory report generation for FR Y-14, CCAR, and other filings",
+            "owner_name": "Emily Davis",
+            "owner_email": "emily.davis@contoso.com",
+            "department": "Compliance",
+            "technology_stack": "Python/SQL Server",
+            "criticality_tier": "Critical",
+            "status": "Active",
+            "external_url": "https://map.contoso.com/app/APP-RRP-001"
+        },
+        {
+            "application_code": "APP-DQM-001",
+            "application_name": "Data Quality Monitor",
+            "description": "Automated data quality monitoring and validation framework",
+            "owner_name": "Chris Brown",
+            "owner_email": "chris.brown@contoso.com",
+            "department": "Data Governance",
+            "technology_stack": "Great Expectations/Python",
+            "criticality_tier": "Medium",
+            "status": "Active",
+            "external_url": "https://map.contoso.com/app/APP-DQM-001"
+        },
+        {
+            "application_code": "APP-MSO-001",
+            "application_name": "Model Scheduler/Orchestrator",
+            "description": "Workflow orchestration for model execution schedules and dependencies",
+            "owner_name": "Amanda White",
+            "owner_email": "amanda.white@contoso.com",
+            "department": "Model Operations",
+            "technology_stack": "Airflow/AWS",
+            "criticality_tier": "High",
+            "status": "Active",
+            "external_url": "https://map.contoso.com/app/APP-MSO-001"
+        },
+        {
+            "application_code": "APP-CRM-001",
+            "application_name": "Credit Risk Manager",
+            "description": "Credit risk assessment and exposure management platform",
+            "owner_name": "Thomas Lee",
+            "owner_email": "thomas.lee@contoso.com",
+            "department": "Credit Risk",
+            "technology_stack": "SAS/Oracle",
+            "criticality_tier": "Critical",
+            "status": "Active",
+            "external_url": "https://map.contoso.com/app/APP-CRM-001"
+        },
+        {
+            "application_code": "APP-FVS-001",
+            "application_name": "Fair Value System",
+            "description": "Fair value calculation and financial reporting system",
+            "owner_name": "Jennifer Garcia",
+            "owner_email": "jennifer.garcia@contoso.com",
+            "department": "Accounting",
+            "technology_stack": "Python/PostgreSQL",
+            "criticality_tier": "High",
+            "status": "Active",
+            "external_url": "https://map.contoso.com/app/APP-FVS-001"
+        },
+        {
+            "application_code": "APP-STR-001",
+            "application_name": "Stress Testing Runner",
+            "description": "Grid computing platform for CCAR/DFAST stress testing scenarios",
+            "owner_name": "Kevin Harris",
+            "owner_email": "kevin.harris@contoso.com",
+            "department": "Risk Management",
+            "technology_stack": "Python/Grid Computing",
+            "criticality_tier": "Critical",
+            "status": "Active",
+            "external_url": "https://map.contoso.com/app/APP-STR-001"
+        },
+        {
+            "application_code": "APP-LMS-001",
+            "application_name": "Limit Management System",
+            "description": "Real-time limit monitoring and breach management",
+            "owner_name": "Michelle Clark",
+            "owner_email": "michelle.clark@contoso.com",
+            "department": "Risk Management",
+            "technology_stack": "Java/Oracle",
+            "criticality_tier": "High",
+            "status": "Active",
+            "external_url": "https://map.contoso.com/app/APP-LMS-001"
+        },
+        {
+            "application_code": "APP-RDL-001",
+            "application_name": "Reference Data Library",
+            "description": "Master data management for securities, counterparties, and entities",
+            "owner_name": "Daniel Moore",
+            "owner_email": "daniel.moore@contoso.com",
+            "department": "Data Management",
+            "technology_stack": "MDM/SQL Server",
+            "criticality_tier": "High",
+            "status": "Active",
+            "external_url": "https://map.contoso.com/app/APP-RDL-001"
+        },
+    ]
+
+    for app_data in applications:
+        app = MapApplication(
+            application_code=app_data["application_code"],
+            application_name=app_data["application_name"],
+            description=app_data["description"],
+            owner_name=app_data["owner_name"],
+            owner_email=app_data["owner_email"],
+            department=app_data["department"],
+            technology_stack=app_data["technology_stack"],
+            criticality_tier=app_data["criticality_tier"],
+            status=app_data["status"],
+            external_url=app_data["external_url"],
+            created_at=datetime.utcnow(),
+            updated_at=datetime.utcnow()
+        )
+        db.add(app)
+
+    db.commit()
+    print(f"✓ Created {len(applications)} MAP applications")
 
 
 def seed_conditional_approvals(db):

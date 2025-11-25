@@ -164,3 +164,8 @@ class Model(Base):
         "ModelFeedDependency", foreign_keys="ModelFeedDependency.consumer_model_id",
         back_populates="consumer_model", cascade="all, delete-orphan"
     )
+
+    # Supporting applications from MAP
+    applications: Mapped[List["ModelApplication"]] = relationship(
+        "ModelApplication", back_populates="model", cascade="all, delete-orphan"
+    )

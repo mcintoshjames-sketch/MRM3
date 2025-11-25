@@ -1,7 +1,7 @@
 """FastAPI application entry point."""
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.api import auth, models, vendors, taxonomies, audit_logs, validation_workflow, validation_policies, workflow_sla, regions, model_regions, model_versions, model_delegates, model_change_taxonomy, model_types, dashboard, export_views, version_deployment_tasks, regional_compliance_report, analytics, saved_queries, model_hierarchy, model_dependencies, approver_roles, conditional_approval_rules, fry
+from app.api import auth, models, vendors, taxonomies, audit_logs, validation_workflow, validation_policies, workflow_sla, regions, model_regions, model_versions, model_delegates, model_change_taxonomy, model_types, dashboard, export_views, version_deployment_tasks, regional_compliance_report, analytics, saved_queries, model_hierarchy, model_dependencies, approver_roles, conditional_approval_rules, fry, map_applications, model_applications
 
 app = FastAPI(title="MRM System v3", version="3.0.0")
 
@@ -60,6 +60,9 @@ app.include_router(approver_roles.router, tags=["additional-approvals"])
 app.include_router(conditional_approval_rules.router, tags=["additional-approvals"])
 # FRY 14 Reporting configuration
 app.include_router(fry.router, tags=["fry-reporting"])
+# MAP Applications (Managed Application Portfolio)
+app.include_router(map_applications.router, tags=["map-applications"])
+app.include_router(model_applications.router, tags=["model-applications"])
 
 
 @app.get("/")
