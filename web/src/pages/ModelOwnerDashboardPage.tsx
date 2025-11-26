@@ -55,12 +55,24 @@ interface RecentApproval {
     days_ago: number;
 }
 
+interface PendingDecommissioningReview {
+    request_id: number;
+    model_id: number;
+    model_name: string;
+    status: string;
+    reason: string | null;
+    last_production_date: string;
+    created_at: string;
+    created_by_name: string | null;
+}
+
 export default function ModelOwnerDashboardPage() {
     const { user } = useAuth();
     const [newsFeed, setNewsFeed] = useState<NewsFeedItem[]>([]);
     const [mySubmissions, setMySubmissions] = useState<MySubmission[]>([]);
     const [recentApprovals, setRecentApprovals] = useState<RecentApproval[]>([]);
     const [overdueItems, setOverdueItems] = useState<OverdueItem[]>([]);
+    const [pendingDecomReviews, setPendingDecomReviews] = useState<PendingDecommissioningReview[]>([]);
     const [loading, setLoading] = useState(true);
 
     // Commentary modal state
@@ -73,16 +85,18 @@ export default function ModelOwnerDashboardPage() {
 
     const fetchDashboardData = async () => {
         try {
-            const [feedRes, submissionsRes, approvalsRes, overdueRes] = await Promise.all([
+            const [feedRes, submissionsRes, approvalsRes, overdueRes, decomReviewsRes] = await Promise.all([
                 api.get('/dashboard/news-feed'),
                 api.get('/models/my-submissions'),
                 api.get('/validation-workflow/dashboard/recent-approvals?days_back=30'),
-                api.get('/validation-workflow/my-overdue-items')
+                api.get('/validation-workflow/my-overdue-items'),
+                api.get('/decommissioning/my-pending-owner-reviews')
             ]);
             setNewsFeed(feedRes.data);
             setMySubmissions(submissionsRes.data);
             setRecentApprovals(approvalsRes.data);
             setOverdueItems(overdueRes.data);
+            setPendingDecomReviews(decomReviewsRes.data);
         } catch (error) {
             console.error('Failed to fetch dashboard data:', error);
         } finally {
@@ -125,7 +139,16 @@ export default function ModelOwnerDashboardPage() {
         return `${Math.floor(diffDays / 30)} months ago`;
     };
 
-    const getActionIcon = (action: string | null) => {
+    const getActionIcon = (action: string | null, type?: string) => {
+        // Decommissioning events get a purple archive icon
+        if (type === 'decommissioning') {
+            return (
+                <svg className="w-4 h-4 text-purple-500" fill="currentColor" viewBox="0 0 20 20">
+                    <path d="M4 3a2 2 0 100 4h12a2 2 0 100-4H4z" />
+                    <path fillRule="evenodd" d="M3 8h14v7a2 2 0 01-2 2H5a2 2 0 01-2-2V8zm5 3a1 1 0 011-1h2a1 1 0 110 2H9a1 1 0 01-1-1z" clipRule="evenodd" />
+                </svg>
+            );
+        }
         switch (action) {
             case 'approved':
                 return (
@@ -277,6 +300,71 @@ export default function ModelOwnerDashboardPage() {
                                         >
                                             {item.needs_comment_update ? 'Add Comment' : 'Update Comment'}
                                         </button>
+                                    </div>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            )}
+
+            {/* Pending Decommissioning Reviews */}
+            {pendingDecomReviews.length > 0 && (
+                <div className="bg-purple-50 border border-purple-200 rounded-lg p-4 mb-6">
+                    <div className="flex items-center gap-2 mb-3 pb-2 border-b border-purple-200">
+                        <svg className="w-5 h-5 text-purple-500" fill="currentColor" viewBox="0 0 20 20">
+                            <path d="M4 3a2 2 0 100 4h12a2 2 0 100-4H4z" />
+                            <path fillRule="evenodd" d="M3 8h14v7a2 2 0 01-2 2H5a2 2 0 01-2-2V8zm5 3a1 1 0 011-1h2a1 1 0 110 2H9a1 1 0 01-1-1z" clipRule="evenodd" />
+                        </svg>
+                        <h3 className="text-sm font-semibold text-purple-800">Pending Decommissioning Reviews</h3>
+                        <span className="text-xs text-purple-600 ml-auto">
+                            {pendingDecomReviews.length} awaiting your approval
+                        </span>
+                    </div>
+                    <p className="text-xs text-purple-700 mb-3">
+                        The following decommissioning requests require your approval as the model owner.
+                    </p>
+                    <div className="space-y-2">
+                        {pendingDecomReviews.map((request) => (
+                            <div
+                                key={request.request_id}
+                                className="bg-white border border-purple-100 rounded p-3"
+                            >
+                                <div className="flex items-start justify-between gap-2">
+                                    <div className="flex-1 min-w-0">
+                                        <div className="flex items-center gap-2 mb-1 flex-wrap">
+                                            <span className="px-1.5 py-0.5 text-xs font-medium rounded bg-purple-100 text-purple-700">
+                                                Owner Review Required
+                                            </span>
+                                            {request.reason && (
+                                                <span className="text-xs text-gray-600">
+                                                    Reason: {request.reason}
+                                                </span>
+                                            )}
+                                        </div>
+                                        <Link
+                                            to={`/models/${request.model_id}/decommission`}
+                                            className="text-sm font-medium text-gray-900 hover:text-purple-600 hover:underline"
+                                        >
+                                            {request.model_name}
+                                        </Link>
+                                        <div className="text-xs text-gray-600 mt-1">
+                                            <span>Last Production: {request.last_production_date}</span>
+                                            {request.created_by_name && (
+                                                <span className="ml-2">• Requested by: {request.created_by_name}</span>
+                                            )}
+                                        </div>
+                                        <div className="text-xs text-gray-400 mt-0.5">
+                                            Submitted: {request.created_at.split('T')[0]}
+                                        </div>
+                                    </div>
+                                    <div className="flex-shrink-0">
+                                        <Link
+                                            to={`/models/${request.model_id}/decommission`}
+                                            className="inline-flex items-center px-3 py-1.5 text-xs font-medium text-white bg-purple-600 hover:bg-purple-700 rounded transition-colors"
+                                        >
+                                            Review
+                                        </Link>
                                     </div>
                                 </div>
                             </div>
@@ -444,11 +532,13 @@ export default function ModelOwnerDashboardPage() {
                                 key={item.id}
                                 className="flex items-start gap-3 p-2 hover:bg-gray-50 rounded"
                             >
-                                {getActionIcon(item.action)}
+                                {getActionIcon(item.action, item.type)}
                                 <div className="flex-1 min-w-0">
                                     <p className="text-sm text-gray-800">
                                         <span className="font-medium">{item.user_name}</span>
-                                        {item.action && (
+                                        {item.type === 'decommissioning' ? (
+                                            <span className="text-gray-600"> on </span>
+                                        ) : item.action && (
                                             <span className="text-gray-600">
                                                 {' '}{item.action === 'approved' ? 'approved' :
                                                       item.action === 'sent_back' ? 'sent back' :

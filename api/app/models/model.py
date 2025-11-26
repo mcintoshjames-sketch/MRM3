@@ -148,6 +148,10 @@ class Model(Base):
     submission_comments: Mapped[List["ModelSubmissionComment"]] = relationship(
         "ModelSubmissionComment", back_populates="model", cascade="all, delete-orphan", order_by="ModelSubmissionComment.created_at"
     )
+    # Model name change history
+    name_history: Mapped[List["ModelNameHistory"]] = relationship(
+        "ModelNameHistory", back_populates="model", cascade="all, delete-orphan", order_by="ModelNameHistory.changed_at.desc()"
+    )
 
     # Model hierarchy relationships
     child_relationships: Mapped[List["ModelHierarchy"]] = relationship(

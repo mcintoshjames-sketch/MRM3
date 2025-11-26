@@ -18,9 +18,13 @@ from app.models.model_version import ModelVersion
 from app.models.model_region import ModelRegion
 from app.models.validation_grouping import ValidationGroupingMemory
 from app.models.model_hierarchy import ModelHierarchy
-from app.schemas.model import ModelCreate, ModelUpdate, ModelDetailResponse, ValidationGroupingSuggestion, ModelCreateResponse
+from app.schemas.model import (
+    ModelCreate, ModelUpdate, ModelDetailResponse, ValidationGroupingSuggestion, ModelCreateResponse,
+    ModelNameHistoryItem, ModelNameHistoryResponse, NameChangeStatistics
+)
 from app.schemas.submission_action import SubmissionAction, SubmissionFeedback, SubmissionCommentCreate
 from app.schemas.activity_timeline import ActivityTimelineItem, ActivityTimelineResponse
+from app.models.model_name_history import ModelNameHistory
 
 router = APIRouter()
 
@@ -423,6 +427,94 @@ def create_model(
 # ============================================================================
 
 
+@router.get("/name-changes/stats", response_model=NameChangeStatistics)
+def get_name_change_statistics(
+    start_date: date = None,
+    end_date: date = None,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Get statistics on model name changes.
+
+    Query Parameters:
+    - start_date: Filter changes on or after this date (YYYY-MM-DD)
+    - end_date: Filter changes on or before this date (YYYY-MM-DD)
+
+    Returns:
+    - Total models with name changes (all time)
+    - Models with name changes in last 90 days
+    - Models with name changes in last 30 days
+    - Total number of name changes
+    - Recent name changes (filtered by date range if provided)
+    """
+    from sqlalchemy import func, distinct
+
+    now = datetime.utcnow()
+    ninety_days_ago = now - timedelta(days=90)
+    thirty_days_ago = now - timedelta(days=30)
+
+    # Total models that have ever had a name change
+    total_models_with_changes = db.query(
+        func.count(distinct(ModelNameHistory.model_id))
+    ).scalar() or 0
+
+    # Models with name changes in last 90 days
+    models_changed_90 = db.query(
+        func.count(distinct(ModelNameHistory.model_id))
+    ).filter(
+        ModelNameHistory.changed_at >= ninety_days_ago
+    ).scalar() or 0
+
+    # Models with name changes in last 30 days
+    models_changed_30 = db.query(
+        func.count(distinct(ModelNameHistory.model_id))
+    ).filter(
+        ModelNameHistory.changed_at >= thirty_days_ago
+    ).scalar() or 0
+
+    # Total name changes
+    total_changes = db.query(func.count(ModelNameHistory.history_id)).scalar() or 0
+
+    # Build query for recent changes with optional date filtering
+    changes_query = db.query(ModelNameHistory).options(
+        joinedload(ModelNameHistory.changed_by)
+    )
+
+    if start_date:
+        changes_query = changes_query.filter(
+            ModelNameHistory.changed_at >= datetime.combine(start_date, datetime.min.time())
+        )
+    if end_date:
+        changes_query = changes_query.filter(
+            ModelNameHistory.changed_at <= datetime.combine(end_date, datetime.max.time())
+        )
+
+    recent = changes_query.order_by(ModelNameHistory.changed_at.desc()).limit(100).all()
+
+    recent_changes = [
+        ModelNameHistoryItem(
+            history_id=h.history_id,
+            model_id=h.model_id,
+            old_name=h.old_name,
+            new_name=h.new_name,
+            changed_by_id=h.changed_by_id,
+            changed_by_name=h.changed_by.full_name if h.changed_by else None,
+            changed_at=h.changed_at,
+            change_reason=h.change_reason
+        )
+        for h in recent
+    ]
+
+    return NameChangeStatistics(
+        total_models_with_changes=total_models_with_changes,
+        models_changed_last_90_days=models_changed_90,
+        models_changed_last_30_days=models_changed_30,
+        total_name_changes=total_changes,
+        recent_changes=recent_changes
+    )
+
+
 @router.get("/pending-submissions", response_model=List[ModelDetailResponse])
 def get_pending_submissions(
     db: Session = Depends(get_db),
@@ -763,12 +855,18 @@ def update_model(
     risk_tier_changed = False
     old_risk_tier_id = model.risk_tier_id
 
+    # Track name change specifically for history
+    old_model_name = model.model_name
+    name_changed = False
+
     for field, value in update_data.items():
         old_value = getattr(model, field, None)
         if old_value != value:
             changes_made[field] = {"old": old_value, "new": value}
             if field == "risk_tier_id":
                 risk_tier_changed = True
+            if field == "model_name":
+                name_changed = True
         setattr(model, field, value)
 
     if user_ids_changed:
@@ -807,6 +905,17 @@ def update_model(
             user_id=current_user.user_id,
             changes=changes_made
         )
+
+    # Create name history record if name changed
+    if name_changed:
+        name_history = ModelNameHistory(
+            model_id=model_id,
+            old_name=old_model_name,
+            new_name=model.model_name,
+            changed_by_id=current_user.user_id,
+            changed_at=datetime.utcnow()
+        )
+        db.add(name_history)
 
     db.commit()
     db.refresh(model)
@@ -1366,7 +1475,7 @@ def get_model_activity_timeline(
             detail="Model not found"
         )
 
-    if not can_access_model(model, current_user, db):
+    if not can_access_model(model.model_id, current_user, db):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Not authorized to access this model"
@@ -1702,4 +1811,60 @@ def get_model_activity_timeline(
         model_name=model.model_name,
         activities=activities,
         total_count=len(activities)
+    )
+
+
+@router.get("/{model_id}/name-history", response_model=ModelNameHistoryResponse)
+def get_model_name_history(
+    model_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Get the name change history for a specific model.
+
+    Returns all name changes in reverse chronological order.
+    """
+    from app.core.rls import can_access_model
+
+    # Check model exists and user has access
+    model = db.query(Model).filter(Model.model_id == model_id).first()
+    if not model:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Model not found"
+        )
+
+    if not can_access_model(model.model_id, current_user, db):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not authorized to access this model"
+        )
+
+    # Get name history
+    history = db.query(ModelNameHistory).options(
+        joinedload(ModelNameHistory.changed_by)
+    ).filter(
+        ModelNameHistory.model_id == model_id
+    ).order_by(ModelNameHistory.changed_at.desc()).all()
+
+    history_items = [
+        ModelNameHistoryItem(
+            history_id=h.history_id,
+            model_id=h.model_id,
+            old_name=h.old_name,
+            new_name=h.new_name,
+            changed_by_id=h.changed_by_id,
+            changed_by_name=h.changed_by.full_name if h.changed_by else None,
+            changed_at=h.changed_at,
+            change_reason=h.change_reason
+        )
+        for h in history
+    ]
+
+    return ModelNameHistoryResponse(
+        model_id=model_id,
+        current_name=model.model_name,
+        history=history_items,
+        total_changes=len(history_items)
     )

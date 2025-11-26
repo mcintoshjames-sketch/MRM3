@@ -240,6 +240,9 @@ The Stage 1 approval implements a **dual-gate pattern** when the requestor is no
 - [x] Model owner navigation access (my-pending-owner-reviews)
 - [x] Downstream dependency warning on DecommissioningRequestPage
 - [x] "Initiate Decommissioning" button in Decommissioning tab
+- [x] Searchable replacement model dropdown
+- [x] Decommissioning activity in Model Owner Dashboard news feed
+- [x] Pending owner reviews section in Model Owner Dashboard
 - [ ] Frontend tests for decommissioning pages
 - [x] Update ARCHITECTURE.md
 
@@ -257,7 +260,10 @@ The Stage 1 approval implements a **dual-gate pattern** when the requestor is no
 
 ### Modified
 - `api/app/models/__init__.py` - Export decommissioning models
+- `api/app/models/taxonomy.py` - Add order_by to taxonomy values relationship for sorted dropdown display
 - `api/app/main.py` - Register decommissioning router
+- `api/app/api/dashboard.py` - Add decommissioning activity to Model Owner Dashboard news feed
 - `web/src/App.tsx` - Add decommissioning routes (`/models/:id/decommission`, `/pending-decommissioning`)
 - `web/src/pages/ModelDetailsPage.tsx` - Add Decommissioning tab and alert banner
+- `web/src/pages/ModelOwnerDashboardPage.tsx` - Add purple icon and handling for decommissioning feed items
 - `web/src/components/Layout.tsx` - Add pending decommissioning count and navigation link

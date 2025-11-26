@@ -182,3 +182,36 @@ class ModelCreateResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+# Model Name History Schemas
+class ModelNameHistoryItem(BaseModel):
+    """Response schema for a single name change record."""
+    history_id: int
+    model_id: int
+    old_name: str
+    new_name: str
+    changed_by_id: Optional[int] = None
+    changed_by_name: Optional[str] = None
+    changed_at: datetime
+    change_reason: Optional[str] = None
+
+    class Config:
+        from_attributes = True
+
+
+class ModelNameHistoryResponse(BaseModel):
+    """Response schema for name history of a model."""
+    model_id: int
+    current_name: str
+    history: List[ModelNameHistoryItem]
+    total_changes: int
+
+
+class NameChangeStatistics(BaseModel):
+    """Response schema for name change statistics."""
+    total_models_with_changes: int
+    models_changed_last_90_days: int
+    models_changed_last_30_days: int
+    total_name_changes: int
+    recent_changes: List[ModelNameHistoryItem]

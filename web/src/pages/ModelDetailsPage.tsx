@@ -174,6 +174,17 @@ interface ActivityTimelineItem {
     icon: string;
 }
 
+interface NameHistoryItem {
+    history_id: number;
+    model_id: number;
+    old_name: string;
+    new_name: string;
+    changed_by_id: number | null;
+    changed_by_name: string | null;
+    changed_at: string;
+    change_reason: string | null;
+}
+
 export default function ModelDetailsPage() {
     const { id } = useParams<{ id: string }>();
     const navigate = useNavigate();
@@ -209,6 +220,8 @@ export default function ModelDetailsPage() {
     const [overdueCommentary, setOverdueCommentary] = useState<CurrentOverdueCommentaryResponse | null>(null);
     const [showCommentaryModal, setShowCommentaryModal] = useState(false);
     const [commentaryModalType, setCommentaryModalType] = useState<OverdueType>('PRE_SUBMISSION');
+    const [nameHistory, setNameHistory] = useState<NameHistoryItem[]>([]);
+    const [showNameHistory, setShowNameHistory] = useState(false);
     const [formData, setFormData] = useState({
         model_name: '',
         description: '',
@@ -317,16 +330,18 @@ export default function ModelDetailsPage() {
 
             // Fetch validation requests and versions separately - this is optional and shouldn't break the page
             try {
-                const [validationRequestsRes, versionsRes, revalidationRes, decommissioningRes] = await Promise.all([
+                const [validationRequestsRes, versionsRes, revalidationRes, decommissioningRes, nameHistoryRes] = await Promise.all([
                     api.get(`/validation-workflow/requests/?model_id=${id}`),
                     api.get(`/models/${id}/versions`),
                     api.get(`/models/${id}/revalidation-status`),
-                    api.get(`/decommissioning/?model_id=${id}`)
+                    api.get(`/decommissioning/?model_id=${id}`),
+                    api.get(`/models/${id}/name-history`)
                 ]);
                 setValidationRequests(validationRequestsRes.data);
                 setVersions(versionsRes.data);
                 setRevalidationStatus(revalidationRes.data);
                 setDecommissioningRequests(decommissioningRes.data);
+                setNameHistory(nameHistoryRes.data.history || []);
             } catch (validationError) {
                 console.error('Failed to fetch validation data:', validationError);
                 // Keep as empty arrays - don't break the page
@@ -334,6 +349,7 @@ export default function ModelDetailsPage() {
                 setVersions([]);
                 setRevalidationStatus(null);
                 setDecommissioningRequests([]);
+                setNameHistory([]);
             }
         } catch (error) {
             console.error('Failed to fetch model:', error);
@@ -1663,6 +1679,54 @@ export default function ModelDetailsPage() {
                             whollyOwnedRegion={model.wholly_owned_region}
                         />
                     </div>
+
+                    {/* Name History Section */}
+                    {nameHistory.length > 0 && (
+                        <div className="mt-6 bg-gray-50 p-4 rounded-lg border border-gray-200">
+                            <button
+                                onClick={() => setShowNameHistory(!showNameHistory)}
+                                className="flex items-center justify-between w-full text-left"
+                            >
+                                <h4 className="text-sm font-medium text-gray-700 flex items-center gap-2">
+                                    <svg className="w-4 h-4 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                    </svg>
+                                    Name History ({nameHistory.length} change{nameHistory.length !== 1 ? 's' : ''})
+                                </h4>
+                                <svg
+                                    className={`w-5 h-5 text-gray-500 transform transition-transform ${showNameHistory ? 'rotate-180' : ''}`}
+                                    fill="none"
+                                    viewBox="0 0 24 24"
+                                    stroke="currentColor"
+                                >
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                                </svg>
+                            </button>
+                            {showNameHistory && (
+                                <div className="mt-3 space-y-2">
+                                    {nameHistory.map((item) => (
+                                        <div key={item.history_id} className="bg-white p-3 rounded border border-gray-200 text-sm">
+                                            <div className="flex items-center gap-2 text-gray-600">
+                                                <span className="font-medium text-gray-900">{item.old_name}</span>
+                                                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" />
+                                                </svg>
+                                                <span className="font-medium text-gray-900">{item.new_name}</span>
+                                            </div>
+                                            <div className="mt-1 text-xs text-gray-500">
+                                                Changed by {item.changed_by_name || 'Unknown'} on {item.changed_at.split('T')[0]}
+                                            </div>
+                                            {item.change_reason && (
+                                                <div className="mt-1 text-xs text-gray-500 italic">
+                                                    Reason: {item.change_reason}
+                                                </div>
+                                            )}
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    )}
                 </div>
             ) : activeTab === 'versions' ? (
                 <div className="space-y-6">
@@ -2049,6 +2113,71 @@ export default function ModelDetailsPage() {
                 />
             ) : activeTab === 'lineage' ? (
                 <LineageViewer modelId={model.model_id} modelName={model.model_name} />
+            ) : activeTab === 'activity' ? (
+                <div className="bg-white p-6 rounded-lg shadow-md">
+                    <div className="flex justify-between items-center mb-6">
+                        <h3 className="text-xl font-bold">Activity Timeline</h3>
+                        <button
+                            onClick={fetchActivities}
+                            disabled={activitiesLoading}
+                            className="text-sm text-blue-600 hover:text-blue-800 disabled:opacity-50"
+                        >
+                            {activitiesLoading ? 'Refreshing...' : '🔄 Refresh'}
+                        </button>
+                    </div>
+
+                    {activitiesLoading && activities.length === 0 ? (
+                        <div className="text-center py-8 text-gray-500">
+                            Loading activities...
+                        </div>
+                    ) : activities.length === 0 ? (
+                        <div className="text-center py-8 text-gray-500">
+                            No activity recorded for this model yet.
+                        </div>
+                    ) : (
+                        <div className="space-y-4">
+                            {activities.map((activity, index) => (
+                                <div key={index} className="flex gap-4 pb-4 border-b last:border-b-0">
+                                    <div className="flex-shrink-0 w-10 h-10 flex items-center justify-center bg-blue-50 rounded-full text-blue-600">
+                                        {getActivityIcon(activity.activity_type)}
+                                    </div>
+                                    <div className="flex-1 min-w-0">
+                                        <div className="flex items-start justify-between gap-2">
+                                            <div className="flex-1">
+                                                <h4 className="font-semibold text-gray-900">
+                                                    {activity.title}
+                                                </h4>
+                                                {activity.description && (
+                                                    <p className="text-sm text-gray-600 mt-1">
+                                                        {activity.description}
+                                                    </p>
+                                                )}
+                                                <div className="flex items-center gap-3 mt-2 text-xs text-gray-500">
+                                                    <span>{new Date(activity.timestamp).toLocaleString()}</span>
+                                                    {activity.user_name && (
+                                                        <>
+                                                            <span>•</span>
+                                                            <span>{activity.user_name}</span>
+                                                        </>
+                                                    )}
+                                                    {activity.entity_type && (
+                                                        <>
+                                                            <span>•</span>
+                                                            <span className="px-2 py-0.5 bg-gray-100 rounded">
+                                                                {activity.entity_type}
+                                                                {activity.entity_id && ` #${activity.entity_id}`}
+                                                            </span>
+                                                        </>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                </div>
             ) : activeTab === 'decommissioning' ? (
                 <div className="bg-white p-6 rounded-lg shadow-md">
                     <div className="flex justify-between items-center mb-6">
@@ -2130,79 +2259,7 @@ export default function ModelDetailsPage() {
                         </div>
                     )}
                 </div>
-            ) : (
-                <div className="bg-white p-6 rounded-lg shadow-md">
-                    <div className="flex justify-between items-center mb-6">
-                        <h3 className="text-xl font-bold">Activity Timeline</h3>
-                        <button
-                            onClick={fetchActivities}
-                            disabled={activitiesLoading}
-                            className="text-sm text-blue-600 hover:text-blue-800 disabled:opacity-50"
-                        >
-                            {activitiesLoading ? 'Refreshing...' : '🔄 Refresh'}
-                        </button>
-                    </div>
-
-                    {activitiesLoading && activities.length === 0 ? (
-                        <div className="text-center py-8 text-gray-500">
-                            Loading activities...
-                        </div>
-                    ) : activities.length === 0 ? (
-                        <div className="text-center py-8 text-gray-500">
-                            No activity recorded for this model yet.
-                        </div>
-                    ) : (
-                        <div className="space-y-4">
-                            {activities.map((activity, index) => (
-                                <div key={index} className="flex gap-4 pb-4 border-b last:border-b-0">
-                                    {/* Icon */}
-                                    <div className="flex-shrink-0 w-10 h-10 flex items-center justify-center bg-blue-50 rounded-full text-blue-600">
-                                        {getActivityIcon(activity.activity_type)}
-                                    </div>
-
-                                    {/* Content */}
-                                    <div className="flex-1 min-w-0">
-                                        <div className="flex items-start justify-between gap-2">
-                                            <div className="flex-1">
-                                                <h4 className="font-semibold text-gray-900">
-                                                    {activity.title}
-                                                </h4>
-                                                {activity.description && (
-                                                    <p className="text-sm text-gray-600 mt-1">
-                                                        {activity.description}
-                                                    </p>
-                                                )}
-                                                <div className="flex items-center gap-3 mt-2 text-xs text-gray-500">
-                                                    <span>{new Date(activity.timestamp).toLocaleString()}</span>
-                                                    {activity.user_name && (
-                                                        <>
-                                                            <span>•</span>
-                                                            <span>{activity.user_name}</span>
-                                                        </>
-                                                    )}
-                                                    {activity.entity_type && (
-                                                        <>
-                                                            <span>•</span>
-                                                            <span className="px-2 py-0.5 bg-gray-100 rounded">
-                                                                {activity.entity_type}
-                                                                {activity.entity_id && ` #${activity.entity_id}`}
-                                                            </span>
-                                                        </>
-                                                    )}
-                                                </div>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-                            ))}
-                        </div>
-                    )}
-
-                    <div className="mt-4 text-xs text-gray-500 text-center">
-                        Activity timeline updates automatically every 30 seconds
-                    </div>
-                </div>
-            )}
+            ) : null}
 
             {/* Submit Change Modal */}
             {showSubmitChangeModal && model && (

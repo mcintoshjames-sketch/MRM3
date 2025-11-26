@@ -11,6 +11,7 @@ from app.models.model_version import ModelVersion
 from app.models.model_version_region import ModelVersionRegion
 from app.models.model_delegate import ModelDelegate
 from app.models.model_submission_comment import ModelSubmissionComment
+from app.models.model_name_history import ModelNameHistory
 from app.models.model_change_taxonomy import ModelChangeCategory, ModelChangeType
 from app.models.model_type_taxonomy import ModelTypeCategory, ModelType
 from app.models.model_hierarchy import ModelHierarchy
@@ -61,6 +62,7 @@ __all__ = [
     "ModelVersionRegion",
     "ModelDelegate",
     "ModelSubmissionComment",
+    "ModelNameHistory",
     "ModelChangeCategory",
     "ModelChangeType",
     "ModelTypeCategory",

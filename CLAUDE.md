@@ -53,6 +53,8 @@ pnpm build        # Production build (runs tsc first)
 pnpm preview      # Preview production build
 ```
 
+**IMPORTANT**: Do NOT run `pnpm build` to check for TypeScript errors - it often freezes. Instead, use `npx tsc --noEmit` for type checking, which is faster and more reliable.
+
 ### Seeding
 Database is automatically seeded via `python -m app.seed` when docker-compose starts:
 - Default admin: `admin@example.com` / `admin123`

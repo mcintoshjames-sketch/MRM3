@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import Layout from '../components/Layout';
 import api from '../api/client';
@@ -131,6 +131,11 @@ const DecommissioningRequestPage = () => {
   const [replacementCurrentDate, setReplacementCurrentDate] = useState<string | null>(null);
   const [gapDays, setGapDays] = useState<number | null>(null);
 
+  // Replacement model search state
+  const [replacementSearch, setReplacementSearch] = useState('');
+  const [showReplacementDropdown, setShowReplacementDropdown] = useState(false);
+  const replacementDropdownRef = useRef<HTMLDivElement>(null);
+
   // Validator review modal state
   const [showReviewModal, setShowReviewModal] = useState(false);
   const [reviewApproved, setReviewApproved] = useState(true);
@@ -142,6 +147,9 @@ const DecommissioningRequestPage = () => {
   const [ownerReviewApproved, setOwnerReviewApproved] = useState(true);
   const [ownerReviewComment, setOwnerReviewComment] = useState('');
   const [ownerReviewSubmitting, setOwnerReviewSubmitting] = useState(false);
+  const [ownerReviewAcknowledged, setOwnerReviewAcknowledged] = useState(false);
+  const [ownerDateOverride, setOwnerDateOverride] = useState<string | null>(null);
+  const [retirementCertified, setRetirementCertified] = useState(false);
 
   // Approval modal state
   const [approvalModal, setApprovalModal] = useState<Approval | null>(null);
@@ -157,6 +165,17 @@ const DecommissioningRequestPage = () => {
   useEffect(() => {
     fetchData();
   }, [modelId]);
+
+  // Click outside handler for replacement model dropdown
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (replacementDropdownRef.current && !replacementDropdownRef.current.contains(event.target as Node)) {
+        setShowReplacementDropdown(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   useEffect(() => {
     // Calculate gap when dates change
@@ -237,17 +256,28 @@ const DecommissioningRequestPage = () => {
     }
   };
 
-  const handleReplacementChange = (value: string) => {
-    const id = value ? parseInt(value) : null;
-    setReplacementModelId(id);
+  const selectReplacementModel = (selectedModel: ModelListItem) => {
+    setReplacementModelId(selectedModel.model_id);
+    setReplacementSearch(selectedModel.model_name);
+    setShowReplacementDropdown(false);
     setReplacementImplDate('');
     setReplacementHasDate(null);
     setReplacementCurrentDate(null);
-
-    if (id) {
-      checkReplacementImplementationDate(id);
-    }
+    checkReplacementImplementationDate(selectedModel.model_id);
   };
+
+  const clearReplacementModel = () => {
+    setReplacementModelId(null);
+    setReplacementSearch('');
+    setReplacementHasDate(null);
+    setReplacementCurrentDate(null);
+    setReplacementImplDate('');
+  };
+
+  // Filter models based on search query
+  const filteredModels = allModels
+    .filter(m => m.model_id !== modelId)
+    .filter(m => m.model_name.toLowerCase().includes(replacementSearch.toLowerCase()));
 
   const selectedReason = reasons.find(r => r.value_id === reasonId);
   const requiresReplacement = selectedReason && REASONS_REQUIRING_REPLACEMENT.includes(selectedReason.code);
@@ -330,11 +360,6 @@ const DecommissioningRequestPage = () => {
   };
 
   const handleOwnerReview = async () => {
-    if (!ownerReviewComment.trim()) {
-      alert('Comment is required');
-      return;
-    }
-
     try {
       setOwnerReviewSubmitting(true);
       await api.post(`/decommissioning/${existingRequest?.request_id}/owner-review`, {
@@ -421,6 +446,21 @@ const DecommissioningRequestPage = () => {
       case 'WITHDRAWN': return 'bg-gray-100 text-gray-800';
       default: return 'bg-gray-100 text-gray-800';
     }
+  };
+
+  // Helper to determine if the effective last production date is in the future
+  const getEffectiveLastProductionDate = () => {
+    return ownerDateOverride || existingRequest?.last_production_date;
+  };
+
+  const isLastProductionDateInFuture = () => {
+    const effectiveDate = getEffectiveLastProductionDate();
+    if (!effectiveDate) return false;
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const prodDate = new Date(effectiveDate);
+    prodDate.setHours(0, 0, 0, 0);
+    return prodDate > today;
   };
 
   if (loading) {
@@ -518,23 +558,78 @@ const DecommissioningRequestPage = () => {
               </div>
 
               {/* Replacement Model */}
-              <div>
+              <div ref={replacementDropdownRef} className="relative">
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Replacement Model {requiresReplacement && '*'}
                 </label>
-                <select
-                  value={replacementModelId || ''}
-                  onChange={(e) => handleReplacementChange(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  required={requiresReplacement}
-                >
-                  <option value="">No replacement</option>
-                  {allModels
-                    .filter(m => m.model_id !== modelId)
-                    .map((m) => (
-                      <option key={m.model_id} value={m.model_id}>{m.model_name}</option>
-                    ))}
-                </select>
+                <div className="relative">
+                  <input
+                    type="text"
+                    value={replacementSearch}
+                    onChange={(e) => {
+                      setReplacementSearch(e.target.value);
+                      setShowReplacementDropdown(true);
+                      // If user clears the search, also clear the selection
+                      if (!e.target.value) {
+                        clearReplacementModel();
+                      }
+                    }}
+                    onFocus={() => setShowReplacementDropdown(true)}
+                    placeholder="Search for a model..."
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                  {replacementModelId && (
+                    <button
+                      type="button"
+                      onClick={clearReplacementModel}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                    >
+                      <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </button>
+                  )}
+                </div>
+                {showReplacementDropdown && (
+                  <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg max-h-60 overflow-auto">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        clearReplacementModel();
+                        setShowReplacementDropdown(false);
+                      }}
+                      className="w-full px-3 py-2 text-left text-gray-500 hover:bg-gray-100"
+                    >
+                      No replacement
+                    </button>
+                    {filteredModels.length === 0 ? (
+                      <div className="px-3 py-2 text-gray-500 text-sm">
+                        No models found
+                      </div>
+                    ) : (
+                      filteredModels.slice(0, 50).map((m) => (
+                        <button
+                          key={m.model_id}
+                          type="button"
+                          onClick={() => selectReplacementModel(m)}
+                          className={`w-full px-3 py-2 text-left hover:bg-blue-50 ${
+                            replacementModelId === m.model_id ? 'bg-blue-100 text-blue-800' : ''
+                          }`}
+                        >
+                          {m.model_name}
+                        </button>
+                      ))
+                    )}
+                    {filteredModels.length > 50 && (
+                      <div className="px-3 py-2 text-gray-400 text-xs text-center border-t">
+                        Showing first 50 results. Type more to narrow search.
+                      </div>
+                    )}
+                  </div>
+                )}
+                {requiresReplacement && !replacementModelId && (
+                  <input type="hidden" required value="" />
+                )}
                 {replacementHasDate === true && replacementCurrentDate && (
                   <p className="text-sm text-green-600 mt-1">
                     Implementation date: {replacementCurrentDate}
@@ -961,6 +1056,9 @@ const DecommissioningRequestPage = () => {
                     setShowOwnerReviewModal(true);
                     setOwnerReviewApproved(true);
                     setOwnerReviewComment('');
+                    setOwnerReviewAcknowledged(false);
+                    setOwnerDateOverride(null);
+                    setRetirementCertified(false);
                   }}
                   className="px-4 py-2 bg-purple-600 text-white rounded-md hover:bg-purple-700"
                 >
@@ -1050,8 +1148,8 @@ const DecommissioningRequestPage = () => {
 
       {/* Owner Review Modal */}
       {showOwnerReviewModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg shadow-xl p-6 w-full max-w-lg">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg shadow-xl p-6 w-full max-w-2xl max-h-[90vh] overflow-y-auto">
             <h2 className="text-2xl font-bold mb-4">Model Owner Review</h2>
 
             <p className="text-gray-600 mb-4">
@@ -1065,7 +1163,12 @@ const DecommissioningRequestPage = () => {
                   <input
                     type="radio"
                     checked={ownerReviewApproved}
-                    onChange={() => setOwnerReviewApproved(true)}
+                    onChange={() => {
+                      setOwnerReviewApproved(true);
+                      setOwnerReviewAcknowledged(false);
+                      setOwnerDateOverride(null);
+                      setRetirementCertified(false);
+                    }}
                     className="mr-2"
                   />
                   Approve
@@ -1074,7 +1177,12 @@ const DecommissioningRequestPage = () => {
                   <input
                     type="radio"
                     checked={!ownerReviewApproved}
-                    onChange={() => setOwnerReviewApproved(false)}
+                    onChange={() => {
+                      setOwnerReviewApproved(false);
+                      setOwnerReviewAcknowledged(false);
+                      setOwnerDateOverride(null);
+                      setRetirementCertified(false);
+                    }}
                     className="mr-2"
                   />
                   Reject
@@ -1082,23 +1190,135 @@ const DecommissioningRequestPage = () => {
               </div>
             </div>
 
+            {/* Assertion language and date handling for approval */}
+            {ownerReviewApproved && (
+              <>
+                {/* Last Production Date handling */}
+                <div className="mb-4 p-3 bg-gray-50 border border-gray-200 rounded-md">
+                  <div className="flex items-center justify-between mb-2">
+                    <p className="text-sm text-gray-600">
+                      <strong>Last Production Date:</strong> {getEffectiveLastProductionDate()}
+                      {ownerDateOverride && (
+                        <span className="ml-2 text-amber-600">(overridden from {existingRequest?.last_production_date})</span>
+                      )}
+                    </p>
+                    {ownerDateOverride && (
+                      <button
+                        type="button"
+                        onClick={() => setOwnerDateOverride(null)}
+                        className="px-2 py-1 text-xs font-medium text-amber-700 bg-amber-100 hover:bg-amber-200 rounded transition-colors"
+                      >
+                        Reset to Original
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Future date warning and override option */}
+                  {isLastProductionDateInFuture() && (
+                    <div className="mt-3 p-3 bg-amber-50 border border-amber-200 rounded">
+                      <div className="flex items-start gap-2 mb-2">
+                        <svg className="h-5 w-5 text-amber-600 flex-shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                        </svg>
+                        <div>
+                          <p className="text-sm text-amber-800 font-medium">
+                            The last production date is in the future.
+                          </p>
+                          <p className="text-sm text-amber-700 mt-1">
+                            By approving now, you authorize the planned decommissioning. You will need to return and certify the final retirement once the model has been deactivated on or after the last production date.
+                          </p>
+                        </div>
+                      </div>
+                      <div className="mt-3">
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          Override Last Production Date (optional)
+                        </label>
+                        <input
+                          type="date"
+                          value={ownerDateOverride || ''}
+                          onChange={(e) => setOwnerDateOverride(e.target.value || null)}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-amber-500 text-sm"
+                        />
+                        <p className="text-xs text-gray-500 mt-1">
+                          If the proposed date is incorrect, you may override it here.
+                        </p>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Past/today date - retirement certification */}
+                  {!isLastProductionDateInFuture() && (
+                    <div className="mt-3 p-3 bg-green-50 border border-green-200 rounded">
+                      <label className="flex items-start gap-2 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={retirementCertified}
+                          onChange={(e) => setRetirementCertified(e.target.checked)}
+                          className="mt-0.5"
+                        />
+                        <div>
+                          <span className="text-sm text-green-800 font-medium">
+                            I certify that this model has been retired and is no longer in use *
+                          </span>
+                          <p className="text-xs text-green-700 mt-1">
+                            By checking this box, you confirm that the model has been deactivated in production and is no longer processing transactions or generating outputs.
+                          </p>
+                        </div>
+                      </label>
+                    </div>
+                  )}
+                </div>
+
+                {/* General approval certifications */}
+                <div className="mb-4 p-3 bg-purple-50 border border-purple-200 rounded-md">
+                  <p className="text-sm text-purple-800 font-medium mb-2">
+                    By approving this request, I certify that:
+                  </p>
+                  <ul className="text-sm text-purple-700 list-disc list-inside space-y-1 mb-3">
+                    <li>I have reviewed the decommissioning rationale and agree the model should be retired</li>
+                    <li>I understand the downstream impacts have been assessed and consumers notified</li>
+                    <li>I concur with the proposed last production date and any gap analysis provided</li>
+                    <li>I acknowledge this model will no longer be available for use after retirement</li>
+                  </ul>
+                  <label className="flex items-start gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={ownerReviewAcknowledged}
+                      onChange={(e) => setOwnerReviewAcknowledged(e.target.checked)}
+                      className="mt-0.5"
+                    />
+                    <span className="text-sm text-purple-800 font-medium">
+                      I acknowledge and accept these certifications *
+                    </span>
+                  </label>
+                </div>
+              </>
+            )}
+
             <div className="mb-4">
               <label className="block text-sm font-medium text-gray-700 mb-1">
-                Comment *
+                Comment (optional)
               </label>
               <textarea
                 value={ownerReviewComment}
                 onChange={(e) => setOwnerReviewComment(e.target.value)}
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-purple-500"
-                rows={4}
-                placeholder="Provide your review comments..."
-                required
+                rows={2}
+                placeholder={ownerReviewApproved
+                  ? "Provide any additional comments regarding your approval..."
+                  : "Please explain the reason for rejection..."
+                }
               />
             </div>
 
             <div className="flex justify-end gap-3">
               <button
-                onClick={() => setShowOwnerReviewModal(false)}
+                onClick={() => {
+                  setShowOwnerReviewModal(false);
+                  setOwnerReviewAcknowledged(false);
+                  setOwnerDateOverride(null);
+                  setRetirementCertified(false);
+                }}
                 className="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50"
                 disabled={ownerReviewSubmitting}
               >
@@ -1106,7 +1326,11 @@ const DecommissioningRequestPage = () => {
               </button>
               <button
                 onClick={handleOwnerReview}
-                disabled={ownerReviewSubmitting || !ownerReviewComment.trim()}
+                disabled={
+                  ownerReviewSubmitting ||
+                  (ownerReviewApproved && !ownerReviewAcknowledged) ||
+                  (ownerReviewApproved && !isLastProductionDateInFuture() && !retirementCertified)
+                }
                 className={`px-4 py-2 text-white rounded-md ${ownerReviewApproved ? 'bg-green-600 hover:bg-green-700' : 'bg-red-600 hover:bg-red-700'} disabled:bg-gray-400`}
               >
                 {ownerReviewSubmitting ? 'Submitting...' : ownerReviewApproved ? 'Approve' : 'Reject'}

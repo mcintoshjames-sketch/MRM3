@@ -36,6 +36,14 @@ const availableReports: Report[] = [
         icon: '⏰',
         category: 'Operations'
     },
+    {
+        id: 'name-changes',
+        name: 'Model Name Changes Report',
+        description: 'Track all model name changes over time with statistics on changes in the last 30/90 days. Useful for audit trails and identifying frequent naming updates.',
+        path: '/reports/name-changes',
+        icon: '📝',
+        category: 'Operations'
+    },
 ];
 
 const ReportsPage: React.FC = () => {
