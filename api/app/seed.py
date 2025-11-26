@@ -1262,27 +1262,31 @@ def seed_database():
         ).first()
 
         if risk_tier_taxonomy:
-            # Define per-tier policies: lead time days and re-validation frequency
+            # Define per-tier policies: frequency, grace period, and lead time
             tier_policies = {
                 "TIER_1": {
                     "frequency_months": 12,
+                    "grace_period_months": 2,  # Shorter grace for high-risk
                     "model_change_lead_time_days": 120,
-                    "description": "High-risk models require annual re-validation and 120-day lead time for model changes"
+                    "description": "High-risk models require annual re-validation, 2-month grace period, and 120-day lead time for validation completion"
                 },
                 "TIER_2": {
                     "frequency_months": 18,
+                    "grace_period_months": 3,
                     "model_change_lead_time_days": 90,
-                    "description": "Medium-risk models require re-validation every 18 months and 90-day lead time for model changes"
+                    "description": "Medium-risk models require re-validation every 18 months, 3-month grace period, and 90-day lead time for validation completion"
                 },
                 "TIER_3": {
                     "frequency_months": 24,
+                    "grace_period_months": 3,
                     "model_change_lead_time_days": 60,
-                    "description": "Low-risk models require re-validation every 24 months and 60-day lead time for model changes"
+                    "description": "Low-risk models require re-validation every 24 months, 3-month grace period, and 60-day lead time for validation completion"
                 },
                 "TIER_4": {
                     "frequency_months": 36,
+                    "grace_period_months": 4,  # Longer grace for low-risk
                     "model_change_lead_time_days": 45,
-                    "description": "Very low-risk models require re-validation every 36 months and 45-day lead time for model changes"
+                    "description": "Very low-risk models require re-validation every 36 months, 4-month grace period, and 45-day lead time for validation completion"
                 },
             }
 
@@ -1301,6 +1305,7 @@ def seed_database():
                         policy = ValidationPolicy(
                             risk_tier_id=tier_value.value_id,
                             frequency_months=policy_config["frequency_months"],
+                            grace_period_months=policy_config["grace_period_months"],
                             model_change_lead_time_days=policy_config["model_change_lead_time_days"],
                             description=policy_config["description"],
                             created_at=datetime.utcnow(),

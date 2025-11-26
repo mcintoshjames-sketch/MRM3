@@ -68,6 +68,7 @@ def create_validation_policy(
     policy = ValidationPolicy(
         risk_tier_id=policy_data.risk_tier_id,
         frequency_months=policy_data.frequency_months,
+        grace_period_months=policy_data.grace_period_months,
         model_change_lead_time_days=policy_data.model_change_lead_time_days,
         description=policy_data.description,
         created_at=datetime.utcnow(),
@@ -87,6 +88,7 @@ def create_validation_policy(
         changes={
             "risk_tier_id": policy_data.risk_tier_id,
             "frequency_months": policy_data.frequency_months,
+            "grace_period_months": policy_data.grace_period_months,
             "model_change_lead_time_days": policy_data.model_change_lead_time_days,
             "description": policy_data.description
         }
@@ -135,6 +137,14 @@ def update_validation_policy(
             "new": policy_data.model_change_lead_time_days
         }
         policy.model_change_lead_time_days = policy_data.model_change_lead_time_days
+
+    if policy_data.grace_period_months is not None and policy_data.grace_period_months != policy.grace_period_months:
+        # CRITICAL: Grace period changes affect overdue calculations and compliance reporting
+        changes["grace_period_months"] = {
+            "old": policy.grace_period_months,
+            "new": policy_data.grace_period_months
+        }
+        policy.grace_period_months = policy_data.grace_period_months
 
     if policy_data.description is not None and policy_data.description != policy.description:
         changes["description"] = {
@@ -189,6 +199,7 @@ def delete_validation_policy(
         changes={
             "risk_tier_id": policy.risk_tier_id,
             "frequency_months": policy.frequency_months,
+            "grace_period_months": policy.grace_period_months,
             "model_change_lead_time_days": policy.model_change_lead_time_days
         }
     )

@@ -14,6 +14,7 @@ interface ValidationPolicy {
     risk_tier_id: number;
     risk_tier: TaxonomyValue;
     frequency_months: number;
+    grace_period_months: number;
     model_change_lead_time_days: number;
     description: string | null;
     created_at: string;
@@ -27,6 +28,7 @@ export default function ValidationPoliciesPage() {
     const [editingPolicy, setEditingPolicy] = useState<number | null>(null);
     const [editFormData, setEditFormData] = useState({
         frequency_months: 12,
+        grace_period_months: 3,
         model_change_lead_time_days: 90,
         description: ''
     });
@@ -57,6 +59,7 @@ export default function ValidationPoliciesPage() {
         setEditingPolicy(policy.policy_id);
         setEditFormData({
             frequency_months: policy.frequency_months,
+            grace_period_months: policy.grace_period_months,
             model_change_lead_time_days: policy.model_change_lead_time_days,
             description: policy.description || ''
         });
@@ -66,6 +69,7 @@ export default function ValidationPoliciesPage() {
         setEditingPolicy(null);
         setEditFormData({
             frequency_months: 12,
+            grace_period_months: 3,
             model_change_lead_time_days: 90,
             description: ''
         });
@@ -117,7 +121,10 @@ export default function ValidationPoliciesPage() {
                                 Re-Validation Frequency
                             </th>
                             <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
-                                Model Change Lead Time
+                                Grace Period
+                            </th>
+                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                                Completion Lead Time
                             </th>
                             <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
                                 Description
@@ -130,7 +137,7 @@ export default function ValidationPoliciesPage() {
                     <tbody className="bg-white divide-y divide-gray-200">
                         {policies.length === 0 ? (
                             <tr>
-                                <td colSpan={5} className="px-6 py-4 text-center text-gray-500">
+                                <td colSpan={6} className="px-6 py-4 text-center text-gray-500">
                                     No validation policies configured. Run the seed script to create default policies.
                                 </td>
                             </tr>
@@ -158,6 +165,22 @@ export default function ValidationPoliciesPage() {
                                                         onChange={(e) => setEditFormData({
                                                             ...editFormData,
                                                             frequency_months: parseInt(e.target.value)
+                                                        })}
+                                                        className="w-24 px-2 py-1 border border-gray-300 rounded"
+                                                    />
+                                                    <span className="text-sm text-gray-600">months</span>
+                                                </div>
+                                            </td>
+                                            <td className="px-6 py-4">
+                                                <div className="flex items-center gap-2">
+                                                    <input
+                                                        type="number"
+                                                        min="1"
+                                                        max="12"
+                                                        value={editFormData.grace_period_months}
+                                                        onChange={(e) => setEditFormData({
+                                                            ...editFormData,
+                                                            grace_period_months: parseInt(e.target.value)
                                                         })}
                                                         className="w-24 px-2 py-1 border border-gray-300 rounded"
                                                     />
@@ -222,6 +245,10 @@ export default function ValidationPoliciesPage() {
                                                 <span className="text-sm text-gray-600 ml-1">months</span>
                                             </td>
                                             <td className="px-6 py-4">
+                                                <span className="font-medium">{policy.grace_period_months}</span>
+                                                <span className="text-sm text-gray-600 ml-1">months</span>
+                                            </td>
+                                            <td className="px-6 py-4">
                                                 <span className="font-medium">{policy.model_change_lead_time_days}</span>
                                                 <span className="text-sm text-gray-600 ml-1">days</span>
                                             </td>
@@ -252,7 +279,10 @@ export default function ValidationPoliciesPage() {
                         <strong>Re-Validation Frequency:</strong> Time from last validation completion to next validation <em>submission/intake</em> (in months)
                     </li>
                     <li>
-                        <strong>Model Change Lead Time:</strong> Days before a planned model change date to trigger interim validation
+                        <strong>Grace Period:</strong> Additional time after submission due date before the item is considered overdue (in months)
+                    </li>
+                    <li>
+                        <strong>Validation Completion Lead Time:</strong> Additional days after grace period ends to complete the validation before it is considered overdue
                     </li>
                     <li>
                         These policies apply to models based on their <strong>inherent risk tier</strong>
@@ -260,15 +290,15 @@ export default function ValidationPoliciesPage() {
                 </ul>
 
                 <div className="mt-3 p-3 bg-blue-100 rounded text-xs">
-                    <p className="font-semibold text-blue-900 mb-1">Overdue Calculation Example (Tier 2: 18 months, 90 days)</p>
+                    <p className="font-semibold text-blue-900 mb-1">Overdue Calculation Example (Tier 2: 18 months, 3 months grace, 90 days)</p>
                     <p className="text-blue-800">Last validation completed: <span className="font-mono">Jan 1, 2024</span></p>
                     <ul className="mt-1 ml-4 space-y-0.5 text-blue-700">
-                        <li>• Submission due: <span className="font-mono">Jul 1, 2025</span> (+ 18 months)</li>
-                        <li>• Submission overdue: <span className="font-mono">Oct 1, 2025</span> (+ 3 months grace)</li>
+                        <li>• Submission due: <span className="font-mono">Jul 1, 2025</span> (+ 18 months frequency)</li>
+                        <li>• Submission overdue: <span className="font-mono">Oct 1, 2025</span> (+ 3 months grace period)</li>
                         <li>• Validation overdue: <span className="font-mono">Dec 30, 2025</span> (+ 90 days lead time)</li>
                     </ul>
                     <p className="mt-2 text-blue-800 italic">
-                        A validation is considered overdue if not completed within: <strong>frequency + 3 months grace + lead time days</strong>
+                        A validation is considered overdue if not completed within: <strong>frequency + grace period + lead time days</strong>
                     </p>
                 </div>
             </div>

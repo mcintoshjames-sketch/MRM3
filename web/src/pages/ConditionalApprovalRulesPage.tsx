@@ -57,6 +57,7 @@ export default function ConditionalApprovalRulesPage() {
     const [loading, setLoading] = useState(true);
     const [showForm, setShowForm] = useState(false);
     const [editingRule, setEditingRule] = useState<ConditionalApprovalRuleDetail | null>(null);
+    const [showActiveOnly, setShowActiveOnly] = useState(true);
     const [formData, setFormData] = useState({
         rule_name: '',
         description: '',
@@ -72,7 +73,7 @@ export default function ConditionalApprovalRulesPage() {
 
     useEffect(() => {
         fetchData();
-    }, []);
+    }, [showActiveOnly]);
 
     useEffect(() => {
         // Update preview whenever form data changes
@@ -85,8 +86,11 @@ export default function ConditionalApprovalRulesPage() {
 
     const fetchData = async () => {
         try {
+            const rulesUrl = showActiveOnly
+                ? '/additional-approval-rules/?is_active=true'
+                : '/additional-approval-rules/';
             const [rulesRes, rolesRes, regionsRes] = await Promise.all([
-                api.get('/additional-approval-rules/'),
+                api.get(rulesUrl),
                 api.get('/approver-roles/?is_active=true'),
                 api.get('/regions/')
             ]);
@@ -122,7 +126,10 @@ export default function ConditionalApprovalRulesPage() {
 
     const fetchRules = async () => {
         try {
-            const response = await api.get('/additional-approval-rules/');
+            const url = showActiveOnly
+                ? '/additional-approval-rules/?is_active=true'
+                : '/additional-approval-rules/';
+            const response = await api.get(url);
             setRules(response.data);
         } catch (error) {
             console.error('Failed to fetch rules:', error);
@@ -219,6 +226,17 @@ export default function ConditionalApprovalRulesPage() {
         }
     };
 
+    const handleReactivate = async (ruleId: number) => {
+        if (!confirm('Are you sure you want to reactivate this rule? It will be evaluated for new validations.')) return;
+
+        try {
+            await api.patch(`/additional-approval-rules/${ruleId}`, { is_active: true });
+            fetchRules();
+        } catch (err: any) {
+            alert(err.response?.data?.detail || 'Failed to reactivate rule');
+        }
+    };
+
     const handleMultiSelectChange = (field: string, value: string) => {
         const numValue = parseInt(value);
         const currentValues = (formData as any)[field] as number[];
@@ -267,9 +285,20 @@ export default function ConditionalApprovalRulesPage() {
                         Define rules that determine when additional approvals are required for model use
                     </p>
                 </div>
-                <button onClick={() => setShowForm(true)} className="btn-primary">
-                    + Add Rule
-                </button>
+                <div className="flex items-center gap-4">
+                    <label className="flex items-center gap-2 text-sm text-gray-600 cursor-pointer">
+                        <input
+                            type="checkbox"
+                            checked={showActiveOnly}
+                            onChange={(e) => setShowActiveOnly(e.target.checked)}
+                            className="rounded border-gray-300"
+                        />
+                        Show Active Only
+                    </label>
+                    <button onClick={() => setShowForm(true)} className="btn-primary">
+                        + Add Rule
+                    </button>
+                </div>
             </div>
 
             {showForm && (
@@ -546,12 +575,19 @@ export default function ConditionalApprovalRulesPage() {
                                         >
                                             Edit
                                         </button>
-                                        {rule.is_active && (
+                                        {rule.is_active ? (
                                             <button
                                                 onClick={() => handleDeactivate(rule.rule_id)}
                                                 className="text-red-600 hover:text-red-800"
                                             >
                                                 Deactivate
+                                            </button>
+                                        ) : (
+                                            <button
+                                                onClick={() => handleReactivate(rule.rule_id)}
+                                                className="text-green-600 hover:text-green-800"
+                                            >
+                                                Reactivate
                                             </button>
                                         )}
                                     </td>

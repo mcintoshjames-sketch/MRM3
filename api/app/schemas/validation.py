@@ -13,6 +13,7 @@ class ValidationPolicyBase(BaseModel):
     """Base schema for validation policy."""
     risk_tier_id: int
     frequency_months: int = 12
+    grace_period_months: int = 3
     model_change_lead_time_days: int = 90
     description: Optional[str] = None
 
@@ -25,6 +26,7 @@ class ValidationPolicyCreate(ValidationPolicyBase):
 class ValidationPolicyUpdate(BaseModel):
     """Schema for updating a validation policy."""
     frequency_months: Optional[int] = None
+    grace_period_months: Optional[int] = None
     model_change_lead_time_days: Optional[int] = None
     description: Optional[str] = None
 
@@ -392,6 +394,7 @@ class ValidationRequestResponse(BaseModel):
 
     # Revalidation Lifecycle Fields
     prior_validation_request_id: Optional[int] = None
+    prior_full_validation_request_id: Optional[int] = None
     submission_received_date: Optional[date] = None
 
     # Computed revalidation lifecycle properties

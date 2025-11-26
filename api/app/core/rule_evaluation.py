@@ -114,11 +114,11 @@ def get_required_approver_roles(
     # Generate overall summary
     role_names = [r["role_name"] for r in required_roles]
     if len(role_names) == 1:
-        summary = f"Conditional approval required from: {role_names[0]}"
+        summary = f"Additional approval required from: {role_names[0]}"
     elif len(role_names) == 2:
-        summary = f"Conditional approvals required from: {role_names[0]} and {role_names[1]}"
+        summary = f"Additional approvals required from: {role_names[0]} and {role_names[1]}"
     else:
-        summary = f"Conditional approvals required from: {', '.join(role_names[:-1])}, and {role_names[-1]}"
+        summary = f"Additional approvals required from: {', '.join(role_names[:-1])}, and {role_names[-1]}"
 
     return {
         "required_roles": required_roles,

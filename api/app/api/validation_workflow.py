@@ -6,7 +6,7 @@ import json
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session, joinedload
-from sqlalchemy import desc, or_, func
+from sqlalchemy import desc, or_, func, nullslast
 from fpdf import FPDF
 import tempfile
 import os
@@ -254,6 +254,63 @@ def get_taxonomy_value_by_code(db: Session, taxonomy_name: str, code: str) -> Ta
         raise HTTPException(
             status_code=404, detail=f"Taxonomy value '{code}' not found in '{taxonomy_name}'")
     return value
+
+
+def find_prior_validation_for_models(
+    db: Session,
+    model_ids: List[int],
+    validation_type_codes: Optional[List[str]] = None
+) -> Optional[int]:
+    """
+    Find the most recent APPROVED validation request for any of the given models.
+
+    Args:
+        db: Database session
+        model_ids: List of model IDs to search for
+        validation_type_codes: Optional list of validation type codes to filter by
+                              (e.g., ['INITIAL', 'COMPREHENSIVE'])
+
+    Returns:
+        The request_id of the most recent matching validation, or None if not found.
+    """
+    # Get the APPROVED status value
+    approved_status = db.query(TaxonomyValue).join(Taxonomy).filter(
+        Taxonomy.name == "Validation Request Status",
+        TaxonomyValue.code == "APPROVED"
+    ).first()
+
+    if not approved_status:
+        return None
+
+    # Build the query - find validation requests linked to these models
+    query = db.query(ValidationRequest).join(
+        ValidationRequestModelVersion,
+        ValidationRequest.request_id == ValidationRequestModelVersion.request_id
+    ).filter(
+        ValidationRequestModelVersion.model_id.in_(model_ids),
+        ValidationRequest.current_status_id == approved_status.value_id
+    )
+
+    # Filter by validation type if specified
+    if validation_type_codes:
+        type_values = db.query(TaxonomyValue).join(Taxonomy).filter(
+            Taxonomy.name == "Validation Type",
+            TaxonomyValue.code.in_(validation_type_codes)
+        ).all()
+        type_ids = [tv.value_id for tv in type_values]
+        if type_ids:
+            query = query.filter(ValidationRequest.validation_type_id.in_(type_ids))
+        else:
+            return None
+
+    # Order by completion_date (most recent first), fall back to updated_at
+    # Use nullslast to push NULL completion_dates to the end
+    prior_validation = query.order_by(
+        nullslast(desc(ValidationRequest.completion_date)),
+        desc(ValidationRequest.updated_at)
+    ).first()
+
+    return prior_validation.request_id if prior_validation else None
 
 
 def get_allowed_approval_roles(db: Session) -> List[str]:
@@ -832,7 +889,7 @@ def calculate_model_revalidation_status(model: Model, db: Session) -> Dict:
     last_completed = last_validation.updated_at.date()
     submission_due = last_completed + \
         relativedelta(months=policy.frequency_months)
-    grace_period_end = submission_due + relativedelta(months=3)
+    grace_period_end = submission_due + relativedelta(months=policy.grace_period_months)
     validation_due = grace_period_end + \
         timedelta(days=policy.model_change_lead_time_days)
 
@@ -1065,6 +1122,21 @@ def create_validation_request(
             raise HTTPException(
                 status_code=404, detail="One or more regions not found")
 
+    # Auto-populate prior_validation_request_id if not provided
+    # Links to the most recent APPROVED validation for these models
+    prior_validation_id = request_data.prior_validation_request_id
+    if not prior_validation_id:
+        prior_validation_id = find_prior_validation_for_models(
+            db, request_data.model_ids
+        )
+
+    # Auto-populate prior_full_validation_request_id
+    # Links to the most recent APPROVED INITIAL or COMPREHENSIVE validation
+    prior_full_validation_id = find_prior_validation_for_models(
+        db, request_data.model_ids,
+        validation_type_codes=['INITIAL', 'COMPREHENSIVE']
+    )
+
     # Create the request
     validation_request = ValidationRequest(
         request_date=date.today(),
@@ -1074,7 +1146,8 @@ def create_validation_request(
         target_completion_date=request_data.target_completion_date,
         trigger_reason=request_data.trigger_reason,
         current_status_id=intake_status.value_id,
-        prior_validation_request_id=request_data.prior_validation_request_id,
+        prior_validation_request_id=prior_validation_id,
+        prior_full_validation_request_id=prior_full_validation_id,
         created_at=datetime.utcnow(),
         updated_at=datetime.utcnow()
     )

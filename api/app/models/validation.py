@@ -52,6 +52,10 @@ class ValidationPolicy(Base):
     )
     frequency_months: Mapped[int] = mapped_column(
         Integer, nullable=False, default=12)
+    grace_period_months: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=3,
+        comment="Grace period in months after submission due date before item is considered overdue"
+    )
     model_change_lead_time_days: Mapped[int] = mapped_column(
         Integer, nullable=False, default=90,
         comment="Lead time in days before model change implementation date to trigger interim validation"
@@ -132,6 +136,12 @@ class ValidationRequest(Base):
         nullable=True,
         comment="Link to the previous validation that this revalidation follows"
     )
+    prior_full_validation_request_id: Mapped[Optional[int]] = mapped_column(
+        Integer,
+        ForeignKey("validation_requests.request_id", ondelete="SET NULL"),
+        nullable=True,
+        comment="Link to the most recent INITIAL or COMPREHENSIVE validation"
+    )
     submission_due_date: Mapped[Optional[date]] = mapped_column(
         Date,
         nullable=True,
@@ -179,6 +189,11 @@ class ValidationRequest(Base):
     prior_validation_request = relationship(
         "ValidationRequest",
         foreign_keys=[prior_validation_request_id],
+        remote_side=[request_id]
+    )
+    prior_full_validation_request = relationship(
+        "ValidationRequest",
+        foreign_keys=[prior_full_validation_request_id],
         remote_side=[request_id]
     )
 
@@ -275,40 +290,49 @@ class ValidationRequest(Base):
         # Otherwise calculate it
         return self._calculate_submission_due_date()
 
-    @property
-    def submission_grace_period_end(self) -> Optional[date]:
-        """Calculate grace period end (submission_due + 3 months)."""
-        due_date = self.get_submission_due_date()
-        if not due_date:
-            return None
-        from dateutil.relativedelta import relativedelta
-        return due_date + relativedelta(months=3)
-
-    @property
-    def model_validation_due_date(self) -> Optional[date]:
-        """
-        Model compliance due date (fixed based on policy).
-        = Submission Due + 3mo grace + Lead Time
-        Model is "overdue" if not validated by this date.
-        """
-        if not self.submission_grace_period_end:
-            return None
-
-        # Get model to find risk tier
+    def _get_policy_for_request(self) -> Optional["ValidationPolicy"]:
+        """Get the validation policy based on the model's risk tier."""
         if not self.model_versions_assoc or len(self.model_versions_assoc) == 0:
             return None
         model = self.model_versions_assoc[0].model
+        if not model or not model.risk_tier_id:
+            return None
 
-        # Get policy for this risk tier
         from sqlalchemy.orm import Session
         session = Session.object_session(self)
         if not session:
             return None
 
-        policy = session.query(ValidationPolicy).filter(
+        return session.query(ValidationPolicy).filter(
             ValidationPolicy.risk_tier_id == model.risk_tier_id
         ).first()
 
+    @property
+    def submission_grace_period_end(self) -> Optional[date]:
+        """Calculate grace period end (submission_due + grace_period_months from policy)."""
+        due_date = self.get_submission_due_date()
+        if not due_date:
+            return None
+
+        from dateutil.relativedelta import relativedelta
+
+        # Get grace period from policy (defaults to 3 months if no policy found)
+        policy = self._get_policy_for_request()
+        grace_months = policy.grace_period_months if policy else 3
+
+        return due_date + relativedelta(months=grace_months)
+
+    @property
+    def model_validation_due_date(self) -> Optional[date]:
+        """
+        Model compliance due date (fixed based on policy).
+        = Submission Due + grace_period_months + Lead Time
+        Model is "overdue" if not validated by this date.
+        """
+        if not self.submission_grace_period_end:
+            return None
+
+        policy = self._get_policy_for_request()
         if not policy:
             return None
 

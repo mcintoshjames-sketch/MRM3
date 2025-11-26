@@ -203,6 +203,10 @@ cd web && pnpm test:coverage
 - [x] Validator workload tracking
 - [x] Create request creates audit log
 - [x] Status change creates audit log
+- [x] Auto-populate prior_validation_request_id with most recent APPROVED validation
+- [x] Auto-populate prior_full_validation_request_id with most recent APPROVED INITIAL/COMPREHENSIVE
+- [x] Prior validation fields are null when no prior validations exist
+- [x] Manual prior_validation_request_id is preserved when provided
 
 #### Revalidation Lifecycle (`test_revalidation.py`)
 - [x] Calculate next validation due date based on policy
@@ -273,8 +277,20 @@ cd web && pnpm test:coverage
 - [x] My overdue items shows VALIDATION_IN_PROGRESS for validators
 - [x] My overdue items includes commentary status
 - [x] My overdue items filters by current user's responsibilities
-- [x] Commentary needs_comment_update flag calculation
-- [x] Commentary target date reflects latest comment
+
+#### Validation Policies (`test_validation_workflow.py` - ValidationPolicy endpoints)
+- [x] List all validation policies
+- [x] List policies returns risk tier details
+- [x] Create validation policy (admin only)
+- [x] Create duplicate policy for risk tier returns 400
+- [x] Update policy frequency_months
+- [x] Update policy grace_period_months (configurable per tier)
+- [x] Update policy model_change_lead_time_days
+- [x] Update policy description
+- [x] Update creates audit log with old/new values
+- [x] Delete validation policy (admin only)
+- [x] Delete creates audit log
+- [x] Non-admin cannot create/update/delete policies (403)
 
 #### Model Submission Workflow (`test_model_submission_workflow.py`)
 - [x] Admin creating model is auto-approved
@@ -464,6 +480,8 @@ cd web && pnpm test:coverage
 - [x] Hides create button for regular User role
 
 #### Model Details Page (`ModelDetailsPage.test.tsx`)
+**Note**: Validation Type has been deprecated from the Model form and display (validation type is associated with ValidationRequest, not Model).
+
 - [x] Displays loading state initially
 - [x] Displays model name after loading
 - [x] Displays model details tab content

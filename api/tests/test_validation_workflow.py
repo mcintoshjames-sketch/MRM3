@@ -1,7 +1,8 @@
 """Tests for validation workflow API endpoints."""
 import pytest
 import json
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
+from sqlalchemy import text
 from app.models.taxonomy import Taxonomy, TaxonomyValue
 from app.models.validation import (
     ValidationRequest, ValidationStatusHistory, ValidationAssignment,
@@ -2297,3 +2298,180 @@ class TestSmartApproverAssignment:
         assert len(audit_entry.changes["approvers"]) == 1
         assert audit_entry.changes["approvers"][0]["approver_id"] == global_approver.user_id
         assert audit_entry.changes["approvers"][0]["role"] == "Global Approver"
+
+
+class TestPriorValidationAutoPopulation:
+    """Test auto-population of prior_validation_request_id and prior_full_validation_request_id."""
+
+    def test_auto_populate_prior_validation_id(self, client, admin_headers, db_session, sample_model, workflow_taxonomies):
+        """Test that prior_validation_request_id is auto-populated with most recent APPROVED validation."""
+        # First create and approve a validation request
+        target_date = (date.today() + timedelta(days=30)).isoformat()
+        response1 = client.post(
+            "/validation-workflow/requests/",
+            headers=admin_headers,
+            json={
+                "model_ids": [sample_model.model_id],
+                "validation_type_id": workflow_taxonomies["type"]["initial"].value_id,
+                "priority_id": workflow_taxonomies["priority"]["high"].value_id,
+                "target_completion_date": target_date,
+            }
+        )
+        assert response1.status_code == 201
+        first_request = response1.json()
+
+        # Manually set status to APPROVED (simulate approval)
+        validation_req = db_session.query(ValidationRequest).filter(
+            ValidationRequest.request_id == first_request['request_id']
+        ).first()
+        validation_req.current_status_id = workflow_taxonomies['status']['approved'].value_id
+        validation_req.completion_date = datetime.now()
+        db_session.commit()
+
+        # Now create a second validation request for the same model
+        response2 = client.post(
+            "/validation-workflow/requests/",
+            headers=admin_headers,
+            json={
+                "model_ids": [sample_model.model_id],
+                "validation_type_id": workflow_taxonomies["type"]["annual"].value_id,
+                "priority_id": workflow_taxonomies["priority"]["medium"].value_id,
+                "target_completion_date": target_date,
+            }
+        )
+        assert response2.status_code == 201
+        second_request = response2.json()
+
+        # Verify prior_validation_request_id is auto-populated
+        assert second_request["prior_validation_request_id"] == first_request["request_id"]
+
+    def test_auto_populate_prior_full_validation_id(self, client, admin_headers, db_session, sample_model, workflow_taxonomies):
+        """Test that prior_full_validation_request_id is auto-populated with most recent APPROVED INITIAL/COMPREHENSIVE."""
+        target_date = (date.today() + timedelta(days=30)).isoformat()
+
+        # Create an INITIAL validation and approve it
+        response1 = client.post(
+            "/validation-workflow/requests/",
+            headers=admin_headers,
+            json={
+                "model_ids": [sample_model.model_id],
+                "validation_type_id": workflow_taxonomies["type"]["initial"].value_id,
+                "priority_id": workflow_taxonomies["priority"]["high"].value_id,
+                "target_completion_date": target_date,
+            }
+        )
+        assert response1.status_code == 201
+        initial_request = response1.json()
+
+        # Approve the INITIAL validation
+        validation_req = db_session.query(ValidationRequest).filter(
+            ValidationRequest.request_id == initial_request['request_id']
+        ).first()
+        validation_req.current_status_id = workflow_taxonomies['status']['approved'].value_id
+        validation_req.completion_date = datetime.now()
+        db_session.commit()
+
+        # Create an ANNUAL validation - this should have prior_full pointing to INITIAL
+        response2 = client.post(
+            "/validation-workflow/requests/",
+            headers=admin_headers,
+            json={
+                "model_ids": [sample_model.model_id],
+                "validation_type_id": workflow_taxonomies["type"]["annual"].value_id,
+                "priority_id": workflow_taxonomies["priority"]["medium"].value_id,
+                "target_completion_date": target_date,
+            }
+        )
+        assert response2.status_code == 201
+        annual_request = response2.json()
+
+        # prior_full should point to the INITIAL validation
+        assert annual_request["prior_full_validation_request_id"] == initial_request["request_id"]
+
+    def test_prior_validation_fields_null_when_no_prior(self, client, admin_headers, sample_model, workflow_taxonomies):
+        """Test that prior validation fields are null when no prior APPROVED validations exist."""
+        target_date = (date.today() + timedelta(days=30)).isoformat()
+
+        # Create first validation - no prior exists
+        response = client.post(
+            "/validation-workflow/requests/",
+            headers=admin_headers,
+            json={
+                "model_ids": [sample_model.model_id],
+                "validation_type_id": workflow_taxonomies["type"]["initial"].value_id,
+                "priority_id": workflow_taxonomies["priority"]["high"].value_id,
+                "target_completion_date": target_date,
+            }
+        )
+        assert response.status_code == 201
+        data = response.json()
+
+        # Both prior fields should be null
+        assert data["prior_validation_request_id"] is None
+        assert data["prior_full_validation_request_id"] is None
+
+    def test_manual_prior_validation_id_preserved(self, client, admin_headers, db_session, sample_model, workflow_taxonomies):
+        """Test that manually provided prior_validation_request_id is preserved."""
+        target_date = (date.today() + timedelta(days=30)).isoformat()
+
+        # Create first validation
+        response1 = client.post(
+            "/validation-workflow/requests/",
+            headers=admin_headers,
+            json={
+                "model_ids": [sample_model.model_id],
+                "validation_type_id": workflow_taxonomies["type"]["initial"].value_id,
+                "priority_id": workflow_taxonomies["priority"]["high"].value_id,
+                "target_completion_date": target_date,
+            }
+        )
+        assert response1.status_code == 201
+        first_request = response1.json()
+
+        # Approve first validation
+        validation_req1 = db_session.query(ValidationRequest).filter(
+            ValidationRequest.request_id == first_request['request_id']
+        ).first()
+        validation_req1.current_status_id = workflow_taxonomies['status']['approved'].value_id
+        validation_req1.completion_date = datetime.now() - timedelta(days=1)
+        db_session.commit()
+
+        # Create second validation
+        response2 = client.post(
+            "/validation-workflow/requests/",
+            headers=admin_headers,
+            json={
+                "model_ids": [sample_model.model_id],
+                "validation_type_id": workflow_taxonomies["type"]["annual"].value_id,
+                "priority_id": workflow_taxonomies["priority"]["medium"].value_id,
+                "target_completion_date": target_date,
+            }
+        )
+        assert response2.status_code == 201
+        second_request = response2.json()
+
+        # Approve second validation
+        validation_req2 = db_session.query(ValidationRequest).filter(
+            ValidationRequest.request_id == second_request['request_id']
+        ).first()
+        validation_req2.current_status_id = workflow_taxonomies['status']['approved'].value_id
+        validation_req2.completion_date = datetime.now()
+        db_session.commit()
+
+        # Create third validation with manual prior_validation_request_id pointing to first
+        response3 = client.post(
+            "/validation-workflow/requests/",
+            headers=admin_headers,
+            json={
+                "model_ids": [sample_model.model_id],
+                "validation_type_id": workflow_taxonomies["type"]["comprehensive"].value_id,
+                "priority_id": workflow_taxonomies["priority"]["high"].value_id,
+                "target_completion_date": target_date,
+                "prior_validation_request_id": first_request["request_id"],  # Manual override
+            }
+        )
+        assert response3.status_code == 201
+        third_request = response3.json()
+
+        # Manual prior should be preserved (first_request), not auto-populated with second_request
+        assert third_request["prior_validation_request_id"] == first_request["request_id"]

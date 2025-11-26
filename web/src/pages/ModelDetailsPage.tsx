@@ -203,7 +203,6 @@ export default function ModelDetailsPage() {
         developer_id: null as number | null,
         vendor_id: null as number | null,
         risk_tier_id: null as number | null,
-        validation_type_id: null as number | null,
         model_type_id: null as number | null,
         wholly_owned_region_id: null as number | null,
         status: 'In Development',
@@ -292,7 +291,6 @@ export default function ModelDetailsPage() {
                 developer_id: modelData.developer_id,
                 vendor_id: modelData.vendor_id,
                 risk_tier_id: modelData.risk_tier_id,
-                validation_type_id: modelData.validation_type_id,
                 model_type_id: modelData.model_type_id,
                 wholly_owned_region_id: modelData.wholly_owned_region_id,
                 status: modelData.status,
@@ -347,7 +345,6 @@ export default function ModelDetailsPage() {
                 developer_id: formData.developer_id || null,
                 vendor_id: formData.vendor_id || null,
                 risk_tier_id: formData.risk_tier_id || null,
-                validation_type_id: formData.validation_type_id || null,
                 model_type_id: formData.model_type_id || null,
                 wholly_owned_region_id: formData.wholly_owned_region_id || null,
                 user_ids: formData.user_ids.length > 0 ? formData.user_ids : [],
@@ -367,7 +364,6 @@ export default function ModelDetailsPage() {
     };
 
     const getRiskTierTaxonomy = () => taxonomies.find(t => t.name === 'Model Risk Tier');
-    const getValidationTypeTaxonomy = () => taxonomies.find(t => t.name === 'Validation Type');
     const getRegulatoryCategoryTaxonomy = () => taxonomies.find(t => t.name === 'Regulatory Category');
 
     // Check for out-of-order validation conditions
@@ -1283,31 +1279,6 @@ export default function ModelDetailsPage() {
                                 </div>
                             )}
 
-                            {getValidationTypeTaxonomy() && (
-                                <div className="mb-4">
-                                    <label htmlFor="validation_type_id" className="block text-sm font-medium mb-2">
-                                        Validation Type
-                                    </label>
-                                    <select
-                                        id="validation_type_id"
-                                        className="input-field"
-                                        value={formData.validation_type_id || ''}
-                                        onChange={(e) => setFormData({
-                                            ...formData,
-                                            validation_type_id: e.target.value ? parseInt(e.target.value) : null
-                                        })}
-                                    >
-                                        <option value="">Select Validation Type</option>
-                                        {getValidationTypeTaxonomy()?.values
-                                            .filter(v => v.is_active)
-                                            .sort((a, b) => a.sort_order - b.sort_order)
-                                            .map(v => (
-                                                <option key={v.value_id} value={v.value_id}>{v.label}</option>
-                                            ))}
-                                    </select>
-                                </div>
-                            )}
-
                             <div className="mb-4">
                                 <label htmlFor="model_type_id" className="block text-sm font-medium mb-2">
                                     Model Type
@@ -1529,16 +1500,6 @@ export default function ModelDetailsPage() {
                             {model.risk_tier ? (
                                 <span className="px-2 py-1 text-sm rounded bg-orange-100 text-orange-800">
                                     {model.risk_tier.label}
-                                </span>
-                            ) : (
-                                <p className="text-lg">-</p>
-                            )}
-                        </div>
-                        <div>
-                            <h4 className="text-sm font-medium text-gray-500 mb-1">Validation Type</h4>
-                            {model.validation_type ? (
-                                <span className="px-2 py-1 text-sm rounded bg-indigo-100 text-indigo-800">
-                                    {model.validation_type.label}
                                 </span>
                             ) : (
                                 <p className="text-lg">-</p>

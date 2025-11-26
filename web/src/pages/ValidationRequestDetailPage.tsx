@@ -113,10 +113,24 @@ interface ValidationRequestDetail {
     updated_at: string;
     completion_date: string | null;
     submission_received_date: string | null;  // Date when model documentation was submitted
+    prior_validation_request_id: number | null;
+    prior_full_validation_request_id: number | null;  // Most recent INITIAL or COMPREHENSIVE validation
     assignments: ValidationAssignment[];
     status_history: ValidationStatusHistory[];
     approvals: ValidationApproval[];
     outcome: ValidationOutcome | null;
+}
+
+interface PriorValidationSummary {
+    request_id: number;
+    validation_type: TaxonomyValue;
+    current_status: TaxonomyValue;
+    completion_date: string | null;
+    updated_at: string;
+    outcome: {
+        overall_rating: TaxonomyValue | null;
+        executive_summary: string;
+    } | null;
 }
 
 interface WorkflowSLA {
@@ -197,10 +211,41 @@ export default function ValidationRequestDetailPage() {
     });
     const [showSelectPrimaryModal, setShowSelectPrimaryModal] = useState(false);
     const [deleteAssignmentData, setDeleteAssignmentData] = useState({ assignment_id: 0, new_primary_id: 0 });
+    const [priorValidation, setPriorValidation] = useState<PriorValidationSummary | null>(null);
 
     useEffect(() => {
         fetchData();
     }, [id]);
+
+    // Fetch prior full validation (INITIAL or COMPREHENSIVE) when request has prior_full_validation_request_id
+    useEffect(() => {
+        const fetchPriorValidation = async () => {
+            if (!request?.prior_full_validation_request_id) {
+                setPriorValidation(null);
+                return;
+            }
+            try {
+                const response = await api.get(`/validation-workflow/requests/${request.prior_full_validation_request_id}`);
+                const priorData = response.data;
+                // prior_full_validation_request_id is already filtered to INITIAL/COMPREHENSIVE in backend
+                setPriorValidation({
+                    request_id: priorData.request_id,
+                    validation_type: priorData.validation_type,
+                    current_status: priorData.current_status,
+                    completion_date: priorData.completion_date,
+                    updated_at: priorData.updated_at,
+                    outcome: priorData.outcome ? {
+                        overall_rating: priorData.outcome.overall_rating,
+                        executive_summary: priorData.outcome.executive_summary
+                    } : null
+                });
+            } catch (err) {
+                console.error('Failed to fetch prior validation:', err);
+                setPriorValidation(null);
+            }
+        };
+        fetchPriorValidation();
+    }, [request?.prior_full_validation_request_id]);
 
     // Auto-open assignment modal if URL parameter is present
     useEffect(() => {
@@ -993,6 +1038,65 @@ export default function ValidationRequestDetailPage() {
             <div className="bg-white rounded-lg shadow-md p-6">
                 {activeTab === 'overview' && (
                     <div>
+                        {/* Prior Validation Summary */}
+                        {priorValidation && (
+                            <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                                <div className="flex items-center justify-between mb-3">
+                                    <h3 className="text-md font-semibold text-blue-900 flex items-center gap-2">
+                                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                        </svg>
+                                        Prior Validation Summary
+                                    </h3>
+                                    <Link
+                                        to={`/validation-workflow/${priorValidation.request_id}`}
+                                        className="text-sm text-blue-600 hover:text-blue-800 hover:underline"
+                                    >
+                                        View Full Details →
+                                    </Link>
+                                </div>
+                                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                                    <div>
+                                        <span className="text-gray-500">Type:</span>{' '}
+                                        <span className="font-medium">{priorValidation.validation_type.label}</span>
+                                    </div>
+                                    <div>
+                                        <span className="text-gray-500">Status:</span>{' '}
+                                        <span className={`font-medium ${priorValidation.current_status.code === 'APPROVED' ? 'text-green-700' : 'text-gray-700'}`}>
+                                            {priorValidation.current_status.label}
+                                        </span>
+                                    </div>
+                                    <div>
+                                        <span className="text-gray-500">Completed:</span>{' '}
+                                        <span className="font-medium">
+                                            {priorValidation.completion_date
+                                                ? priorValidation.completion_date.split('T')[0]
+                                                : priorValidation.updated_at.split('T')[0]}
+                                        </span>
+                                    </div>
+                                    <div>
+                                        <span className="text-gray-500">Rating:</span>{' '}
+                                        <span className={`font-medium ${
+                                            priorValidation.outcome?.overall_rating?.code === 'FIT_FOR_PURPOSE' ? 'text-green-700' :
+                                            priorValidation.outcome?.overall_rating?.code === 'FIT_WITH_CONDITIONS' ? 'text-amber-700' :
+                                            priorValidation.outcome?.overall_rating?.code === 'NOT_FIT_FOR_PURPOSE' ? 'text-red-700' :
+                                            'text-gray-500'
+                                        }`}>
+                                            {priorValidation.outcome?.overall_rating?.label || 'Not recorded'}
+                                        </span>
+                                    </div>
+                                </div>
+                                {priorValidation.outcome?.executive_summary && (
+                                    <div className="mt-3 pt-3 border-t border-blue-200">
+                                        <span className="text-gray-500 text-sm">Summary:</span>
+                                        <p className="text-sm text-gray-700 mt-1 line-clamp-2">
+                                            {priorValidation.outcome.executive_summary}
+                                        </p>
+                                    </div>
+                                )}
+                            </div>
+                        )}
+
                         <h3 className="text-lg font-bold mb-4">Project Overview</h3>
                         <div className="grid grid-cols-2 gap-6">
                             <div>

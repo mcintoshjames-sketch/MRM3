@@ -130,7 +130,7 @@ cd api && python -m pytest && cd ../web && pnpm test:run
   - Development type: In-House or Third-Party
   - Owner (required), Developer (optional) - user lookups
   - Vendor (required for third-party)
-  - Risk Tier and Validation Type (configurable via taxonomy)
+  - Risk Tier (configurable via taxonomy; Validation Type is on ValidationRequest, not Model)
   - Model users (many-to-many relationship)
 
 ### Frontend (web/)
@@ -364,7 +364,7 @@ const { sortedData, requestSort, getSortIcon } = useTableSort<Validation>(valida
   - **ValidationAssignment**: Validator assignments with independence checks
   - **ValidationOutcome**: Final outcome - ONLY created after work is complete
   - **ValidationApproval**: Multi-stakeholder approval workflow
-  - **ValidationPolicy**: Admin-configurable re-validation frequency by risk tier
+  - **ValidationPolicy**: Admin-configurable validation scheduling per risk tier with `frequency_months` (re-validation interval), `grace_period_months` (overdue threshold after due date), and `model_change_lead_time_days` (completion lead time)
 
 - **Workflow States**:
   1. **Intake** - Initial request submission
