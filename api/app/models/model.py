@@ -66,6 +66,8 @@ class Model(Base):
         Integer, ForeignKey("model_types.type_id"), nullable=True)
     ownership_type_id: Mapped[Optional[int]] = mapped_column(
         Integer, ForeignKey("taxonomy_values.value_id"), nullable=True)
+    status_id: Mapped[Optional[int]] = mapped_column(
+        Integer, ForeignKey("taxonomy_values.value_id"), nullable=True)
     wholly_owned_region_id: Mapped[Optional[int]] = mapped_column(
         Integer, ForeignKey("regions.region_id", ondelete="SET NULL"), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
@@ -111,6 +113,8 @@ class Model(Base):
         "ModelType", foreign_keys=[model_type_id])
     ownership_type: Mapped[Optional["TaxonomyValue"]] = relationship(
         "TaxonomyValue", foreign_keys=[ownership_type_id])
+    status_value: Mapped[Optional["TaxonomyValue"]] = relationship(
+        "TaxonomyValue", foreign_keys=[status_id])
     wholly_owned_region: Mapped[Optional["Region"]] = relationship(
         "Region", foreign_keys=[wholly_owned_region_id])
     regulatory_categories: Mapped[List["TaxonomyValue"]] = relationship(

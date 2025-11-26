@@ -95,6 +95,7 @@ interface Model {
     model_type_id: number | null;
     wholly_owned_region_id: number | null;
     status: string;
+    status_id: number | null;
     created_at: string;
     updated_at: string;
     row_approval_status: string | null;
@@ -107,6 +108,7 @@ interface Model {
     risk_tier: TaxonomyValue | null;
     validation_type: TaxonomyValue | null;
     model_type: ModelType | null;
+    status_value: TaxonomyValue | null;
     wholly_owned_region: Region | null;
     users: User[];
     regulatory_categories: TaxonomyValue[];
@@ -206,6 +208,7 @@ export default function ModelDetailsPage() {
         model_type_id: null as number | null,
         wholly_owned_region_id: null as number | null,
         status: 'In Development',
+        status_id: null as number | null,
         user_ids: [] as number[],
         regulatory_category_ids: [] as number[],
         is_model: true
@@ -294,6 +297,7 @@ export default function ModelDetailsPage() {
                 model_type_id: modelData.model_type_id,
                 wholly_owned_region_id: modelData.wholly_owned_region_id,
                 status: modelData.status,
+                status_id: modelData.status_id,
                 user_ids: modelData.users.map((u: User) => u.user_id),
                 regulatory_category_ids: modelData.regulatory_categories.map((c: TaxonomyValue) => c.value_id),
                 is_model: modelData.is_model ?? true
@@ -365,6 +369,7 @@ export default function ModelDetailsPage() {
 
     const getRiskTierTaxonomy = () => taxonomies.find(t => t.name === 'Model Risk Tier');
     const getRegulatoryCategoryTaxonomy = () => taxonomies.find(t => t.name === 'Regulatory Category');
+    const getModelStatusTaxonomy = () => taxonomies.find(t => t.name === 'Model Status');
 
     // Check for out-of-order validation conditions
     const getOutOfOrderWarnings = () => {
@@ -1238,21 +1243,30 @@ export default function ModelDetailsPage() {
                                 </div>
                             )}
 
-                            <div className="mb-4">
-                                <label htmlFor="status" className="block text-sm font-medium mb-2">
-                                    Status
-                                </label>
-                                <select
-                                    id="status"
-                                    className="input-field"
-                                    value={formData.status}
-                                    onChange={(e) => setFormData({ ...formData, status: e.target.value })}
-                                >
-                                    <option value="In Development">In Development</option>
-                                    <option value="Active">Active</option>
-                                    <option value="Retired">Retired</option>
-                                </select>
-                            </div>
+                            {getModelStatusTaxonomy() && (
+                                <div className="mb-4">
+                                    <label htmlFor="status_id" className="block text-sm font-medium mb-2">
+                                        Status
+                                    </label>
+                                    <select
+                                        id="status_id"
+                                        className="input-field"
+                                        value={formData.status_id || ''}
+                                        onChange={(e) => setFormData({
+                                            ...formData,
+                                            status_id: e.target.value ? parseInt(e.target.value) : null
+                                        })}
+                                    >
+                                        <option value="">Select Status</option>
+                                        {getModelStatusTaxonomy()?.values
+                                            .filter(v => v.is_active)
+                                            .sort((a, b) => a.sort_order - b.sort_order)
+                                            .map(v => (
+                                                <option key={v.value_id} value={v.value_id}>{v.label}</option>
+                                            ))}
+                                    </select>
+                                </div>
+                            )}
 
                             {getRiskTierTaxonomy() && (
                                 <div className="mb-4">
@@ -1461,7 +1475,7 @@ export default function ModelDetailsPage() {
                         <div>
                             <h4 className="text-sm font-medium text-gray-500 mb-1">Status</h4>
                             <span className="px-2 py-1 text-sm rounded bg-blue-100 text-blue-800">
-                                {model.status}
+                                {model.status_value?.label || model.status}
                             </span>
                         </div>
                         <div>

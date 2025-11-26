@@ -28,6 +28,7 @@ class ModelCreate(ModelBase):
     validation_type_id: Optional[int] = None
     model_type_id: Optional[int] = None
     ownership_type_id: Optional[int] = None
+    status_id: Optional[int] = None
     wholly_owned_region_id: Optional[int] = None
     user_ids: Optional[List[int]] = None
     regulatory_category_ids: Optional[List[int]] = None
@@ -61,8 +62,9 @@ class ModelUpdate(BaseModel):
     validation_type_id: Optional[int] = None
     model_type_id: Optional[int] = None
     ownership_type_id: Optional[int] = None
+    status_id: Optional[int] = None
     wholly_owned_region_id: Optional[int] = None
-    status: Optional[str] = None
+    status: Optional[str] = None  # Deprecated, use status_id
     user_ids: Optional[List[int]] = None
     regulatory_category_ids: Optional[List[int]] = None
     is_model: Optional[bool] = None  # True for models, False for non-models
@@ -77,6 +79,7 @@ class ModelResponse(ModelBase):
     validation_type_id: Optional[int] = None
     model_type_id: Optional[int] = None
     ownership_type_id: Optional[int] = None
+    status_id: Optional[int] = None
     wholly_owned_region_id: Optional[int] = None
     created_at: datetime
     updated_at: datetime
@@ -110,6 +113,7 @@ class ModelDetailResponse(ModelResponse):
     validation_type: Optional[TaxonomyValueResponse] = None
     model_type: Optional[ModelTypeResponse] = None
     ownership_type: Optional[TaxonomyValueResponse] = None
+    status_value: Optional[TaxonomyValueResponse] = None
     wholly_owned_region: Optional[Region] = None
     users: List[UserResponse] = []
     regulatory_categories: List[TaxonomyValueResponse] = []
@@ -151,6 +155,7 @@ class ModelCreateResponse(BaseModel):
     validation_type_id: Optional[int] = None
     model_type_id: Optional[int] = None
     ownership_type_id: Optional[int] = None
+    status_id: Optional[int] = None
     wholly_owned_region_id: Optional[int] = None
     created_at: datetime
     updated_at: datetime
@@ -168,6 +173,7 @@ class ModelCreateResponse(BaseModel):
     validation_type: Optional[TaxonomyValueResponse] = None
     model_type: Optional[ModelTypeResponse] = None
     ownership_type: Optional[TaxonomyValueResponse] = None
+    status_value: Optional[TaxonomyValueResponse] = None
     wholly_owned_region: Optional[Any] = None
     users: List[UserResponse] = []
     regulatory_categories: List[TaxonomyValueResponse] = []

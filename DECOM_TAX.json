@@ -1,0 +1,72 @@
+[
+    {
+        "value": "REPLACEMENT",
+        "label": "Superseded / Replaced",
+        "description": "The model is being retired because a new model (internal or vendor-sourced) has been approved to take over its specific function.",
+        "behavior_flags": {
+            "replacement_model_id_required": true,
+            "replacement_model_id_visible": true,
+            "alert_level": "info"
+        }
+    },
+    {
+        "value": "CONSOLIDATION",
+        "label": "Merged / Consolidated",
+        "description": "The model's logic has been absorbed into a larger, aggregate system or model; the distinct entity no longer exists.",
+        "behavior_flags": {
+            "replacement_model_id_required": false,
+            "replacement_model_id_visible": true,
+            "alert_level": "info"
+        }
+    },
+    {
+        "value": "BUSINESS_EXIT",
+        "label": "Business Exit",
+        "description": "The specific business line, product, or activity supported by the model has ceased.",
+        "behavior_flags": {
+            "replacement_model_id_required": false,
+            "replacement_model_id_visible": false,
+            "alert_level": "info"
+        }
+    },
+    {
+        "value": "VOLUME_THRESHOLD",
+        "label": "Below Materiality Threshold",
+        "description": "Transaction or usage volume has dropped below the regulatory or policy threshold required to be classified as a 'Model'.",
+        "behavior_flags": {
+            "replacement_model_id_required": false,
+            "replacement_model_id_visible": false,
+            "alert_level": "warning"
+        }
+    },
+    {
+        "value": "PERFORMANCE_FAILURE",
+        "label": "Performance Failure",
+        "description": "The model is being retired due to irreparable accuracy degradation, instability, or failure to meet validation standards.",
+        "behavior_flags": {
+            "replacement_model_id_required": false,
+            "replacement_model_id_visible": true,
+            "alert_level": "critical"
+        }
+    },
+    {
+        "value": "DATA_UNAVAILABILITY",
+        "label": "Data Source Sunset",
+        "description": "Critical input data feeds are no longer available or reliable, rendering the model inoperable.",
+        "behavior_flags": {
+            "replacement_model_id_required": false,
+            "replacement_model_id_visible": false,
+            "alert_level": "high"
+        }
+    },
+    {
+        "value": "REGULATORY_CHANGE",
+        "label": "Regulatory Change",
+        "description": "New external regulations or internal policy changes have rendered the model non-compliant or obsolete.",
+        "behavior_flags": {
+            "replacement_model_id_required": false,
+            "replacement_model_id_visible": false,
+            "alert_level": "high"
+        }
+    }
+]
