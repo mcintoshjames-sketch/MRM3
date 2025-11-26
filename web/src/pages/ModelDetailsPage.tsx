@@ -131,6 +131,17 @@ interface ValidationRequest {
     created_at: string;
 }
 
+interface DecommissioningRequestListItem {
+    request_id: number;
+    model_id: number;
+    model_name: string;
+    status: string;
+    reason: string;
+    last_production_date: string;
+    created_at: string;
+    created_by_name: string;
+}
+
 interface RevalidationStatus {
     model_id: number;
     model_name: string;
@@ -176,9 +187,10 @@ export default function ModelDetailsPage() {
     const [validationRequests, setValidationRequests] = useState<ValidationRequest[]>([]);
     const [versions, setVersions] = useState<ModelVersion[]>([]);
     const [revalidationStatus, setRevalidationStatus] = useState<RevalidationStatus | null>(null);
+    const [decommissioningRequests, setDecommissioningRequests] = useState<DecommissioningRequestListItem[]>([]);
     const [loading, setLoading] = useState(true);
     const [editing, setEditing] = useState(false);
-    const [activeTab, setActiveTab] = useState<'details' | 'versions' | 'delegates' | 'validations' | 'hierarchy' | 'dependencies' | 'applications' | 'lineage' | 'activity'>('details');
+    const [activeTab, setActiveTab] = useState<'details' | 'versions' | 'delegates' | 'validations' | 'hierarchy' | 'dependencies' | 'applications' | 'lineage' | 'activity' | 'decommissioning'>('details');
     const [showSubmitChangeModal, setShowSubmitChangeModal] = useState(false);
     const [selectedVersion, setSelectedVersion] = useState<ModelVersion | null>(null);
     const [versionsRefreshTrigger, setVersionsRefreshTrigger] = useState(0);
@@ -305,20 +317,23 @@ export default function ModelDetailsPage() {
 
             // Fetch validation requests and versions separately - this is optional and shouldn't break the page
             try {
-                const [validationRequestsRes, versionsRes, revalidationRes] = await Promise.all([
+                const [validationRequestsRes, versionsRes, revalidationRes, decommissioningRes] = await Promise.all([
                     api.get(`/validation-workflow/requests/?model_id=${id}`),
                     api.get(`/models/${id}/versions`),
-                    api.get(`/models/${id}/revalidation-status`)
+                    api.get(`/models/${id}/revalidation-status`),
+                    api.get(`/decommissioning/?model_id=${id}`)
                 ]);
                 setValidationRequests(validationRequestsRes.data);
                 setVersions(versionsRes.data);
                 setRevalidationStatus(revalidationRes.data);
+                setDecommissioningRequests(decommissioningRes.data);
             } catch (validationError) {
                 console.error('Failed to fetch validation data:', validationError);
                 // Keep as empty arrays - don't break the page
                 setValidationRequests([]);
                 setVersions([]);
                 setRevalidationStatus(null);
+                setDecommissioningRequests([]);
             }
         } catch (error) {
             console.error('Failed to fetch model:', error);
@@ -960,6 +975,20 @@ export default function ModelDetailsPage() {
                         >
                             Activity
                         </button>
+                        <button
+                            onClick={() => setActiveTab('decommissioning')}
+                            className={`py-2 px-1 border-b-2 font-medium text-sm ${activeTab === 'decommissioning'
+                                ? 'border-blue-500 text-blue-600'
+                                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                                }`}
+                        >
+                            Decommissioning
+                            {decommissioningRequests.length > 0 && decommissioningRequests[0].status !== 'APPROVED' && decommissioningRequests[0].status !== 'REJECTED' && decommissioningRequests[0].status !== 'WITHDRAWN' && (
+                                <span className="ml-1 px-1.5 py-0.5 text-xs bg-orange-100 text-orange-800 rounded-full">
+                                    {decommissioningRequests[0].status}
+                                </span>
+                            )}
+                        </button>
                     </nav>
                 </div>
             )}
@@ -1103,6 +1132,29 @@ export default function ModelDetailsPage() {
                         </div>
                     )}
                 </>
+            )}
+
+            {/* Decommissioning Alert Banner */}
+            {!editing && activeTab === 'details' && decommissioningRequests.length > 0 && decommissioningRequests[0].status !== 'APPROVED' && decommissioningRequests[0].status !== 'REJECTED' && decommissioningRequests[0].status !== 'WITHDRAWN' && (
+                <div className="bg-purple-50 border-l-4 border-purple-500 p-4 mb-6">
+                    <div className="flex items-start">
+                        <svg className="h-5 w-5 text-purple-600 mt-0.5 mr-3" fill="currentColor" viewBox="0 0 20 20">
+                            <path fillRule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clipRule="evenodd" />
+                        </svg>
+                        <div className="flex-1">
+                            <h3 className="text-sm font-bold text-purple-800">Decommissioning In Progress</h3>
+                            <p className="text-sm text-purple-700 mt-1">
+                                This model has an active decommissioning request with status: <strong>{decommissioningRequests[0].status}</strong> ({decommissioningRequests[0].last_production_date}).
+                                <button
+                                    onClick={() => setActiveTab('decommissioning')}
+                                    className="ml-2 underline font-medium hover:text-purple-900"
+                                >
+                                    View decommissioning details →
+                                </button>
+                            </p>
+                        </div>
+                    </div>
+                </div>
             )}
 
             {editing ? (
@@ -1997,6 +2049,87 @@ export default function ModelDetailsPage() {
                 />
             ) : activeTab === 'lineage' ? (
                 <LineageViewer modelId={model.model_id} modelName={model.model_name} />
+            ) : activeTab === 'decommissioning' ? (
+                <div className="bg-white p-6 rounded-lg shadow-md">
+                    <div className="flex justify-between items-center mb-6">
+                        <h3 className="text-xl font-bold">Decommissioning</h3>
+                        {/* Show button if model is not retired AND there's no active decommissioning request */}
+                        {model.status !== 'Retired' && model.status !== 'Decommissioned' && !model.status?.includes('Decommission') &&
+                         !decommissioningRequests.some(r => r.status === 'PENDING' || r.status === 'VALIDATOR_APPROVED') && (
+                            <Link
+                                to={`/models/${model.model_id}/decommission`}
+                                className="bg-purple-600 text-white px-4 py-2 rounded hover:bg-purple-700 text-sm"
+                            >
+                                Initiate Decommissioning
+                            </Link>
+                        )}
+                    </div>
+
+                    {decommissioningRequests.length === 0 ? (
+                        <div className="text-center py-12 text-gray-500">
+                            <svg className="mx-auto h-12 w-12 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                            </svg>
+                            <p className="mt-4 text-lg">No decommissioning requests</p>
+                            <p className="mt-2 text-sm">
+                                {model.status === 'Retired' || model.status === 'Decommissioned' || model.status?.includes('Decommission')
+                                    ? 'This model has been retired.'
+                                    : 'Click "Initiate Decommissioning" above to start the retirement process for this model.'}
+                            </p>
+                        </div>
+                    ) : (
+                        <div className="space-y-6">
+                            {decommissioningRequests.map((request) => (
+                                <div key={request.request_id} className="border rounded-lg overflow-hidden">
+                                    <div className={`px-4 py-3 ${
+                                        request.status === 'APPROVED' ? 'bg-green-50 border-b border-green-200' :
+                                        request.status === 'REJECTED' || request.status === 'WITHDRAWN' ? 'bg-gray-50 border-b border-gray-200' :
+                                        'bg-purple-50 border-b border-purple-200'
+                                    }`}>
+                                        <div className="flex justify-between items-center">
+                                            <div>
+                                                <span className={`px-2 py-1 text-xs font-medium rounded ${
+                                                    request.status === 'APPROVED' ? 'bg-green-100 text-green-800' :
+                                                    request.status === 'REJECTED' ? 'bg-red-100 text-red-800' :
+                                                    request.status === 'WITHDRAWN' ? 'bg-gray-100 text-gray-800' :
+                                                    request.status === 'VALIDATOR_APPROVED' ? 'bg-blue-100 text-blue-800' :
+                                                    'bg-orange-100 text-orange-800'
+                                                }`}>
+                                                    {request.status}
+                                                </span>
+                                                <span className="ml-3 text-sm text-gray-600">
+                                                    Request #{request.request_id}
+                                                </span>
+                                            </div>
+                                            <Link
+                                                to={`/models/${model.model_id}/decommission`}
+                                                className="text-sm text-blue-600 hover:text-blue-800 font-medium"
+                                            >
+                                                View Details →
+                                            </Link>
+                                        </div>
+                                    </div>
+                                    <div className="px-4 py-4">
+                                        <dl className="grid grid-cols-2 gap-4">
+                                            <div>
+                                                <dt className="text-sm font-medium text-gray-500">Reason</dt>
+                                                <dd className="mt-1 text-sm text-gray-900">{request.reason}</dd>
+                                            </div>
+                                            <div>
+                                                <dt className="text-sm font-medium text-gray-500">Requested By</dt>
+                                                <dd className="mt-1 text-sm text-gray-900">{request.created_by_name}</dd>
+                                            </div>
+                                            <div>
+                                                <dt className="text-sm font-medium text-gray-500">Requested On</dt>
+                                                <dd className="mt-1 text-sm text-gray-900">{request.created_at.split('T')[0]}</dd>
+                                            </div>
+                                        </dl>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                </div>
             ) : (
                 <div className="bg-white p-6 rounded-lg shadow-md">
                     <div className="flex justify-between items-center mb-6">

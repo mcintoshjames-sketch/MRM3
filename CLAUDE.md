@@ -78,6 +78,7 @@ pnpm test                # Watch mode
 pnpm test:run            # Single run (25 tests)
 pnpm test:coverage       # With coverage
 ```
+**Note**: Frontend tests are currently not running in the development environment. Use TypeScript type checking (`npx tsc --noEmit`) to verify frontend code compiles correctly.
 
 **Full Regression Suite (119 tests total):**
 ```bash

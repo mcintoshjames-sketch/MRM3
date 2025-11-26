@@ -12,7 +12,8 @@ export default function Layout({ children }: LayoutProps) {
     const navigate = useNavigate();
     const [pendingCounts, setPendingCounts] = useState({
         submissions: 0,
-        deployments: 0
+        deployments: 0,
+        decommissioning: 0
     });
 
     useEffect(() => {
@@ -30,9 +31,30 @@ export default function Layout({ children }: LayoutProps) {
                     t.status === 'PENDING' && (t.days_until_due < 0 || t.days_until_due <= 7)
                 ).length;
 
+                // Fetch pending decommissioning requests
+                let pendingDecommissioning = 0;
+                if (user?.role === 'Admin' || user?.role === 'Validator') {
+                    // Admins/Validators see pending validator reviews
+                    try {
+                        const decomRes = await api.get('/decommissioning/pending-validator-review');
+                        pendingDecommissioning = decomRes.data.length;
+                    } catch {
+                        // User may not have permission
+                    }
+                } else {
+                    // Model owners see pending owner reviews for their models
+                    try {
+                        const ownerReviewRes = await api.get('/decommissioning/my-pending-owner-reviews');
+                        pendingDecommissioning = ownerReviewRes.data.length;
+                    } catch {
+                        // Silently fail
+                    }
+                }
+
                 setPendingCounts({
                     submissions: urgentSubmissions,
-                    deployments: pendingDeployments
+                    deployments: pendingDeployments,
+                    decommissioning: pendingDecommissioning
                 });
             } catch (error) {
                 // Silently fail - badges will just show 0
@@ -160,6 +182,30 @@ export default function Layout({ children }: LayoutProps) {
                                                 isActive ? 'bg-white text-blue-600' : 'bg-red-500 text-white'
                                             }`}>
                                                 {pendingCounts.deployments}
+                                            </span>
+                                        )}
+                                    </div>
+                                )}
+                            </NavLink>
+                        </li>
+                        <li>
+                            <NavLink
+                                to="/pending-decommissioning"
+                                className={({ isActive }) =>
+                                    `block px-4 py-2 rounded transition-colors ${isActive
+                                        ? 'bg-blue-600 text-white'
+                                        : 'text-gray-700 hover:bg-gray-100'
+                                    }`
+                                }
+                            >
+                                {({ isActive }) => (
+                                    <div className="flex items-center justify-between">
+                                        <span>Pending Decommissioning</span>
+                                        {pendingCounts.decommissioning > 0 && (
+                                            <span className={`ml-2 px-2 py-0.5 text-xs font-bold rounded-full ${
+                                                isActive ? 'bg-white text-blue-600' : 'bg-purple-500 text-white'
+                                            }`}>
+                                                {pendingCounts.decommissioning}
                                             </span>
                                         )}
                                     </div>

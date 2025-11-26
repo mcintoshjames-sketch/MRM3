@@ -5,9 +5,10 @@ This document tracks the regression testing strategy and test coverage for itera
 ## Quick Reference
 
 ```bash
-# Run all backend tests (337 tests total, ~333 passing)
+# Run all backend tests (~350 tests total)
 # Note: A few pre-existing test failures in conditional_approvals and model_submission_workflow
 # Added: 36 tests for Overdue Revalidation Commentary (23 core + 13 dashboard integration)
+# Added: 15 tests for Model Decommissioning workflow
 cd api && python -m pytest
 
 # Run all frontend tests (128 tests passing)
@@ -278,6 +279,28 @@ cd web && pnpm test:coverage
 - [x] My overdue items includes commentary status
 - [x] My overdue items filters by current user's responsibilities
 
+#### Model Decommissioning (`test_decommissioning.py`)
+- [x] List decommissioning requests when empty
+- [x] Get implementation date for model without version
+- [x] Get implementation date for model with version
+- [x] Create decommissioning request with OBSOLETE reason (no replacement needed)
+- [x] Create decommissioning request with REPLACEMENT reason (replacement required)
+- [x] Create fails when REPLACEMENT reason missing replacement model
+- [x] Create fails when downstream impact not verified
+- [x] Create fails for duplicate pending request on same model
+- [x] Validator can approve decommissioning request
+- [x] Validator can reject decommissioning request
+- [x] Validator review requires comment
+- [x] Withdraw request by creator or admin
+- [x] Non-creator/admin cannot withdraw request
+- [x] Pending validator review dashboard accessible by validators
+- [x] Status history tracked through workflow
+
+#### Model Activity Timeline (`test_activity_timeline.py`)
+- [x] Get activity timeline for model returns activities
+- [x] Activity timeline includes decommissioning events
+- [x] Activity timeline sorted by timestamp descending
+
 #### Validation Policies (`test_validation_workflow.py` - ValidationPolicy endpoints)
 - [x] List all validation policies
 - [x] List policies returns risk tier details
@@ -505,6 +528,26 @@ cd web && pnpm test:coverage
 - [x] Displays third-party model with vendor
 - [x] Displays no users message when model has no users
 - [x] Displays timestamps for model
+- [📋] Displays decommissioning tab when model has decommissioning requests
+- [📋] Displays decommissioning alert banner on details tab
+- [📋] Alert banner shows status and last production date
+
+#### Pending Decommissioning Page (`PendingDecommissioningPage.test.tsx`)
+- [📋] Displays loading state initially
+- [📋] Displays page title and description
+- [📋] Displays pending decommissioning requests table
+- [📋] Shows model name as link
+- [📋] Shows reason column
+- [📋] Shows last production date with urgency badge
+- [📋] Shows "Overdue" badge for past dates
+- [📋] Shows "Due Soon" badge for dates within 7 days
+- [📋] Shows "Upcoming" badge for dates within 30 days
+- [📋] Shows requested by and requested on columns
+- [📋] Shows status badge
+- [📋] Shows Review link to decommission page
+- [📋] Displays empty state when no pending requests
+- [📋] Displays error message on fetch failure
+- [📋] Restricts access to Admin/Validator roles only
 
 ### Integration Tests (web/src/) - ROUTING & NAVIGATION
 
@@ -536,6 +579,8 @@ cd web && pnpm test:coverage
 - [x] Renders user details page at /users/:id
 - [x] Renders taxonomy page at /taxonomy
 - [x] Renders audit page at /audit
+- [📋] Renders decommissioning request page at /models/:id/decommission
+- [📋] Renders pending decommissioning page at /pending-decommissioning (Admin/Validator only)
 - [x] Redirects regular user from /dashboard to /models
 - [x] Redirects root to /models for regular user
 - [x] Redirects /login to /models when already authenticated
@@ -692,6 +737,7 @@ describe('NewPage', () => {
 | **Configuration History View (Phase 9e)** | ✅ Uses existing configuration API endpoints | ✅ ConfigurationHistoryPage (Admin UI) | 2025-11-22 |
 | **Model Relationships (Phase 1-2)** | ✅ test_model_hierarchy.py (26 tests), test_model_dependencies.py (26 tests) | ⚠️ UI pending (Phase 3+) | 2025-11-23 |
 | **Conditional Model Use Approvals** | ✅ test_conditional_approvals.py (41/45 passing - 91%, core functionality fully tested) | 📋 ApproverRolesPage.test.tsx, ConditionalApprovalRulesPage.test.tsx, ConditionalApprovalsSection.test.tsx (pending) | 2025-11-24 |
+| **Model Decommissioning** | ✅ test_decommissioning.py (16 tests) | 📋 PendingDecommissioningPage.test.tsx (15 tests pending), ModelDetailsPage decommissioning tests (3 tests pending) | 2025-11-26 |
 
 **Features Added:**
 - Development type (In-House / Third-Party)
@@ -716,6 +762,7 @@ describe('NewPage', () => {
 - **Deployment Task Ratification (Phase 8)** (deployment confirmation workflow, validation control with override mechanism, model owner/delegate assignment, compliance audit trail, MyDeploymentTasksPage)
 - **Model Relationships (Phase 1-2)** (parent-child hierarchy, feeder-consumer dependencies, DFS-based cycle detection for DAG enforcement, full CRUD with Admin access control, comprehensive audit logging, database constraints for self-reference prevention and date validation)
 - **Conditional Model Use Approvals** (configurable approval rules based on validation type, risk tier, governance region, deployed regions; English rule translation; evidence-based approval submission; Admin management UI for approver roles and rules; integrated into validation workflow; audit logging for approval/void actions)
+- **Model Decommissioning** (dual approval workflow with Validator + Owner gates, replacement model tracking, gap analysis, pending decommissioning dashboard for Validators/Admins, decommissioning tab and alert banner on ModelDetailsPage, navigation badge count)
 
 **Total: 429 tests (301 backend + 128 frontend)**
 - Backend: 295 passing, 6 failing (4 integration tests for conditional_approvals need workflow hooks, 2 pre-existing)

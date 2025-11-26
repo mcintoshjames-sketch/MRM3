@@ -42,6 +42,11 @@ from app.models.validation_grouping import ValidationGroupingMemory
 from app.models.export_view import ExportView
 from app.models.version_deployment_task import VersionDeploymentTask
 from app.models.overdue_comment import OverdueRevalidationComment
+from app.models.decommissioning import (
+    DecommissioningRequest,
+    DecommissioningStatusHistory,
+    DecommissioningApproval
+)
 
 __all__ = [
     "User", "UserRole", "user_regions",
@@ -97,5 +102,9 @@ __all__ = [
     "ExportView",
     "VersionDeploymentTask",
     # Overdue revalidation comments
-    "OverdueRevalidationComment"
+    "OverdueRevalidationComment",
+    # Decommissioning
+    "DecommissioningRequest",
+    "DecommissioningStatusHistory",
+    "DecommissioningApproval"
 ]

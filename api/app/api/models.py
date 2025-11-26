@@ -1350,6 +1350,7 @@ def get_model_activity_timeline(
     - Delegates added/removed
     - Comments added
     - Deployment tasks confirmed
+    - Decommissioning requests/reviews/approvals
     """
     from app.core.rls import can_access_model
     from app.models.model_delegate import ModelDelegate
@@ -1588,6 +1589,107 @@ def get_model_activity_timeline(
             entity_id=task.task_id,
             icon="🚀"
         ))
+
+    # 8. Decommissioning requests
+    from app.models.decommissioning import DecommissioningRequest, DecommissioningStatusHistory, DecommissioningApproval
+
+    decom_requests = db.query(DecommissioningRequest).options(
+        joinedload(DecommissioningRequest.created_by),
+        joinedload(DecommissioningRequest.reason),
+        joinedload(DecommissioningRequest.validator_reviewed_by),
+        joinedload(DecommissioningRequest.owner_reviewed_by),
+        joinedload(DecommissioningRequest.status_history).joinedload(DecommissioningStatusHistory.changed_by),
+        joinedload(DecommissioningRequest.approvals).joinedload(DecommissioningApproval.approved_by)
+    ).filter(
+        DecommissioningRequest.model_id == model_id
+    ).all()
+
+    for decom in decom_requests:
+        # Decommissioning request created
+        reason_text = decom.reason.label if decom.reason else "Unknown reason"
+        activities.append(ActivityTimelineItem(
+            timestamp=decom.created_at,
+            activity_type="decommissioning_request_created",
+            title=f"Decommissioning request #{decom.request_id} created",
+            description=f"Reason: {reason_text}",
+            user_name=decom.created_by.full_name if decom.created_by else None,
+            user_id=decom.created_by_id,
+            entity_type="DecommissioningRequest",
+            entity_id=decom.request_id,
+            icon="🗑️"
+        ))
+
+        # Validator review (if completed)
+        if decom.validator_reviewed_at:
+            activities.append(ActivityTimelineItem(
+                timestamp=decom.validator_reviewed_at,
+                activity_type="decommissioning_validator_review",
+                title=f"Decommissioning #{decom.request_id} validator review",
+                description=decom.validator_comment,
+                user_name=decom.validator_reviewed_by.full_name if decom.validator_reviewed_by else None,
+                user_id=decom.validator_reviewed_by_id,
+                entity_type="DecommissioningRequest",
+                entity_id=decom.request_id,
+                icon="✍️"
+            ))
+
+        # Owner review (if completed and was required)
+        if decom.owner_approval_required and decom.owner_reviewed_at:
+            activities.append(ActivityTimelineItem(
+                timestamp=decom.owner_reviewed_at,
+                activity_type="decommissioning_owner_review",
+                title=f"Decommissioning #{decom.request_id} owner review",
+                description=decom.owner_comment,
+                user_name=decom.owner_reviewed_by.full_name if decom.owner_reviewed_by else None,
+                user_id=decom.owner_reviewed_by_id,
+                entity_type="DecommissioningRequest",
+                entity_id=decom.request_id,
+                icon="👤"
+            ))
+
+        # Status changes (from history)
+        for history in decom.status_history:
+            # Skip the initial creation record (already covered above)
+            if history.old_status is None:
+                continue
+            status_icon = "🔄"
+            if history.new_status == "APPROVED":
+                status_icon = "✅"
+            elif history.new_status == "REJECTED":
+                status_icon = "❌"
+            elif history.new_status == "WITHDRAWN":
+                status_icon = "↩️"
+            elif history.new_status == "VALIDATOR_APPROVED":
+                status_icon = "📋"
+
+            activities.append(ActivityTimelineItem(
+                timestamp=history.changed_at,
+                activity_type="decommissioning_status_change",
+                title=f"Decommissioning #{decom.request_id} status: {history.new_status}",
+                description=history.notes,
+                user_name=history.changed_by.full_name if history.changed_by else None,
+                user_id=history.changed_by_id,
+                entity_type="DecommissioningRequest",
+                entity_id=decom.request_id,
+                icon=status_icon
+            ))
+
+        # Stage 2 approvals (Global/Regional)
+        for approval in decom.approvals:
+            if approval.approved_at:
+                region_text = f" ({approval.region.name})" if approval.region else ""
+                approval_status = "approved" if approval.is_approved else "rejected"
+                activities.append(ActivityTimelineItem(
+                    timestamp=approval.approved_at,
+                    activity_type="decommissioning_approval",
+                    title=f"Decommissioning #{decom.request_id} {approval.approver_type}{region_text} {approval_status}",
+                    description=approval.comment,
+                    user_name=approval.approved_by.full_name if approval.approved_by else None,
+                    user_id=approval.approved_by_id,
+                    entity_type="DecommissioningApproval",
+                    entity_id=approval.approval_id,
+                    icon="✅" if approval.is_approved else "❌"
+                ))
 
     # Sort all activities by timestamp (newest first)
     activities.sort(key=lambda x: x.timestamp, reverse=True)

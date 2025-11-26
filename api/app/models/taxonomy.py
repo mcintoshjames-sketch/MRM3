@@ -15,9 +15,10 @@ class Taxonomy(Base):
     is_system: Mapped[bool] = mapped_column(Boolean, default=False)  # System taxonomies can't be deleted
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
-    # Relationship to values
+    # Relationship to values (ordered by sort_order)
     values: Mapped[list["TaxonomyValue"]] = relationship(
-        "TaxonomyValue", back_populates="taxonomy", cascade="all, delete-orphan"
+        "TaxonomyValue", back_populates="taxonomy", cascade="all, delete-orphan",
+        order_by="TaxonomyValue.sort_order"
     )
 
 

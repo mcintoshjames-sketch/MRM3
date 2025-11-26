@@ -31,6 +31,8 @@ import ApproverRolesPage from './pages/ApproverRolesPage';
 import ConditionalApprovalRulesPage from './pages/ConditionalApprovalRulesPage';
 import FryConfigPage from './pages/FryConfigPage';
 import OverdueRevalidationReportPage from './pages/OverdueRevalidationReportPage';
+import DecommissioningRequestPage from './pages/DecommissioningRequestPage';
+import PendingDecommissioningPage from './pages/PendingDecommissioningPage';
 
 function App() {
     const { user, loading } = useAuth();
@@ -55,11 +57,13 @@ function App() {
             <Route path="/models" element={user ? <ModelsPage /> : <Navigate to="/login" />} />
             <Route path="/models/:model_id/versions/:version_id" element={user ? <ModelChangeRecordPage /> : <Navigate to="/login" />} />
             <Route path="/models/:id" element={user ? <ModelDetailsPage /> : <Navigate to="/login" />} />
+            <Route path="/models/:id/decommission" element={user ? <DecommissioningRequestPage /> : <Navigate to="/login" />} />
             <Route path="/validation-workflow" element={user ? <ValidationWorkflowPage /> : <Navigate to="/login" />} />
             <Route path="/validation-workflow/new" element={user ? <ValidationWorkflowPage /> : <Navigate to="/login" />} />
             <Route path="/validation-workflow/:id" element={user ? <ValidationRequestDetailPage /> : <Navigate to="/login" />} />
             <Route path="/my-pending-submissions" element={user ? <MyPendingSubmissionsPage /> : <Navigate to="/login" />} />
             <Route path="/my-deployment-tasks" element={user ? <MyDeploymentTasksPage /> : <Navigate to="/login" />} />
+            <Route path="/pending-decommissioning" element={user ? <PendingDecommissioningPage /> : <Navigate to="/login" />} />
             <Route path="/vendors" element={user?.role === 'Admin' || user?.role === 'Validator' ? <VendorsPage /> : <Navigate to="/models" />} />
             <Route path="/vendors/:id" element={user?.role === 'Admin' || user?.role === 'Validator' ? <VendorDetailsPage /> : <Navigate to="/models" />} />
             <Route path="/users" element={user?.role === 'Admin' || user?.role === 'Validator' ? <UsersPage /> : <Navigate to="/models" />} />
