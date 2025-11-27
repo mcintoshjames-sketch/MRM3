@@ -881,7 +881,7 @@ describe('NewPage', () => {
 | **Model Decommissioning** | ✅ test_decommissioning.py (16 tests) | 📋 PendingDecommissioningPage.test.tsx (15 tests pending), ModelDetailsPage decommissioning tests (3 tests pending) | 2025-11-26 |
 | **KPM Library** | ✅ test_monitoring.py (14 tests - categories + KPMs CRUD) | ✅ TaxonomyPage KPM tab (manual testing) | 2025-11-26 |
 | **Performance Monitoring Plans** | ✅ test_monitoring.py (27 tests - teams, plans, metrics) + 6 manual permission tests | ✅ MonitoringPlansPage (Admin UI) | 2025-11-26 |
-| **Monitoring Cycles & Results** | ✅ test_monitoring.py (63 tests - cycles CRUD + workflow + results + approval) | ⏸️ Frontend paused (Phase 2+) | 2025-11-26 |
+| **Monitoring Cycles & Results** | ✅ test_monitoring.py (87 tests - cycles CRUD + workflow + results + approval + versioning + 9b) | ✅ MonitoringPlanDetailPage Cycles tab (Phase 4) | 2025-11-27 |
 | **Monitoring Plan Versioning** | ✅ test_monitoring.py (version CRUD, metric snapshotting, cycle binding) | ✅ MonitoringPlansPage Versions modal | 2025-11-27 |
 | **Component 9b (Monitoring Plan Review)** | ✅ seed data + validation logic in validation_workflow.py | ✅ ValidationPlanForm 9b special handling | 2025-11-27 |
 

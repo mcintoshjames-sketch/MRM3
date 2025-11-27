@@ -908,6 +908,7 @@ def get_plan_version(
         "metric_snapshots": [
             {
                 "snapshot_id": s.snapshot_id,
+                "original_metric_id": s.original_metric_id,  # FK to MonitoringPlanMetric for result submission
                 "kpm_id": s.kpm_id,
                 "kpm_name": s.kpm_name,
                 "kpm_category_name": s.kpm_category_name,

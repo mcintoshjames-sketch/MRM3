@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import api from '../api/client';
 import Layout from '../components/Layout';
@@ -745,7 +746,9 @@ export default function MonitoringPlansPage() {
                                         plans.map((plan) => (
                                             <tr key={plan.plan_id} className="hover:bg-gray-50">
                                                 <td className="px-6 py-4">
-                                                    <div className="font-medium">{plan.name}</div>
+                                                    <Link to={`/monitoring-plans/${plan.plan_id}`} className="font-medium text-blue-600 hover:text-blue-800 hover:underline">
+                                                        {plan.name}
+                                                    </Link>
                                                     {plan.description && (
                                                         <div className="text-xs text-gray-500">{plan.description}</div>
                                                     )}

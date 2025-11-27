@@ -232,6 +232,7 @@ class PublishVersionRequest(BaseModel):
 class MetricSnapshotResponse(BaseModel):
     """Response for a metric snapshot within a version."""
     snapshot_id: int
+    original_metric_id: Optional[int] = None  # FK to original MonitoringPlanMetric for result submission
     kpm_id: int
     kpm_name: str
     kpm_category_name: Optional[str] = None

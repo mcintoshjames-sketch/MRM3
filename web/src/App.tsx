@@ -35,6 +35,7 @@ import NameChangesReportPage from './pages/NameChangesReportPage';
 import DecommissioningRequestPage from './pages/DecommissioningRequestPage';
 import PendingDecommissioningPage from './pages/PendingDecommissioningPage';
 import MonitoringPlansPage from './pages/MonitoringPlansPage';
+import MonitoringPlanDetailPage from './pages/MonitoringPlanDetailPage';
 
 function App() {
     const { user, loading } = useAuth();
@@ -82,6 +83,7 @@ function App() {
             <Route path="/additional-approval-rules" element={user?.role === 'Admin' ? <ConditionalApprovalRulesPage /> : <Navigate to="/models" />} />
             <Route path="/fry-config" element={<Navigate to="/taxonomy" />} />
             <Route path="/monitoring-plans" element={user?.role === 'Admin' ? <MonitoringPlansPage /> : <Navigate to="/models" />} />
+            <Route path="/monitoring-plans/:id" element={user?.role === 'Admin' ? <MonitoringPlanDetailPage /> : <Navigate to="/models" />} />
             <Route path="/reports" element={user ? <ReportsPage /> : <Navigate to="/login" />} />
             <Route path="/reports/regional-compliance" element={user ? <RegionalComplianceReportPage /> : <Navigate to="/login" />} />
             <Route path="/reports/deviation-trends" element={user ? <DeviationTrendsReportPage /> : <Navigate to="/login" />} />

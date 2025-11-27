@@ -39,6 +39,11 @@ CREATE TABLE monitoring_cycles (
     -- Notes
     notes TEXT,
 
+    -- Version binding (locked at DATA_COLLECTION start)
+    plan_version_id INTEGER REFERENCES monitoring_plan_versions(version_id),
+    version_locked_at TIMESTAMP,
+    version_locked_by_user_id INTEGER REFERENCES users(user_id),
+
     -- Timestamps
     created_at TIMESTAMP NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
@@ -144,7 +149,7 @@ PENDING → DATA_COLLECTION → UNDER_REVIEW → PENDING_APPROVAL → APPROVED
 ```
 
 - **PENDING**: Cycle created, awaiting start of data collection period
-- **DATA_COLLECTION**: Active data entry period
+- **DATA_COLLECTION**: Active data entry period; **cycle locks to active plan version at start** (requires published version)
 - **UNDER_REVIEW**: All results submitted, team is reviewing data quality
 - **PENDING_APPROVAL**: Awaiting required approvals (Global + Regional)
 - **APPROVED**: All approvals obtained, cycle complete and locked
@@ -237,6 +242,7 @@ DELETE /monitoring/cycles/{cycle_id}
 ```
 POST   /monitoring/cycles/{cycle_id}/results
        - Enter result for a metric
+       - **Thresholds read from cycle's locked version snapshot** (not live metric config)
        - Request: {
            plan_metric_id: int,
            model_id?: int,          // Optional for multi-model plans
@@ -265,6 +271,8 @@ GET    /monitoring/cycles/{cycle_id}/results
 ```
 POST   /monitoring/cycles/{cycle_id}/start
        - Move cycle from PENDING to DATA_COLLECTION
+       - **Requires published plan version** (fails with 400 if none exists)
+       - **Locks cycle to active version** (plan_version_id, version_locked_at set)
 
 POST   /monitoring/cycles/{cycle_id}/submit
        - Move cycle from DATA_COLLECTION to UNDER_REVIEW
@@ -350,7 +358,7 @@ GET    /monitoring/plans/{plan_id}/cycles/{cycle_id}/export
 │  ┌───────────────────────────────────────────────────────┐  │
 │  │ Q3 2025 (Jul-Sep)              Status: ● Pending Approval│
 │  │ Submission Due: 2025-10-15     Report Due: 2025-11-14 │  │
-│  │ Assigned to: John Smith                               │  │
+│  │ Assigned to: John Smith        Using: v3 metrics      │  │
 │  │                                                       │  │
 │  │  Results: 8/8 metrics entered                         │  │
 │  │  Summary: 🟢 5  🟡 2  🔴 1                            │  │
@@ -362,11 +370,11 @@ GET    /monitoring/plans/{plan_id}/cycles/{cycle_id}/export
 │  └───────────────────────────────────────────────────────┘  │
 │                                                             │
 │  PREVIOUS CYCLES                                            │
-│  ┌─────────────────────────────────────────────────────┐    │
-│  │ Q2 2025  │ Apr-Jun  │ ✓ Approved   │ 🟢5 🟡2 🔴1   │    │
-│  │ Q1 2025  │ Jan-Mar  │ ✓ Approved   │ 🟢6 🟡2 🔴0   │    │
-│  │ Q4 2024  │ Oct-Dec  │ ✓ Approved   │ 🟢4 🟡3 🔴1   │    │
-│  └─────────────────────────────────────────────────────┘    │
+│  ┌───────────────────────────────────────────────────────┐  │
+│  │ Q2 2025  │ Apr-Jun  │ v3 │ ✓ Approved │ 🟢5 🟡2 🔴1 │  │
+│  │ Q1 2025  │ Jan-Mar  │ v2 │ ✓ Approved │ 🟢6 🟡2 🔴0 │  │
+│  │ Q4 2024  │ Oct-Dec  │ v1 │ ✓ Approved │ 🟢4 🟡3 🔴1 │  │
+│  └───────────────────────────────────────────────────────┘  │
 │                                                             │
 └─────────────────────────────────────────────────────────────┘
 ```
@@ -376,6 +384,8 @@ GET    /monitoring/plans/{plan_id}/cycles/{cycle_id}/export
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │ Enter Results - Q3 2025                        [Save All]   │
+├─────────────────────────────────────────────────────────────┤
+│  📋 Using v3 metrics configuration (locked Oct 1, 2025)     │
 ├─────────────────────────────────────────────────────────────┤
 │                                                             │
 │  MODEL: Credit Risk Scorecard v2.1                          │
@@ -492,15 +502,29 @@ GET    /monitoring/plans/{plan_id}/cycles/{cycle_id}/export
 4. ✅ Implement CRUD endpoints for cycles
 5. ✅ Implement result entry endpoints with outcome calculation
 6. ✅ Add permission checks (data provider, team member, admin)
-7. ✅ Write pytest tests (63 tests in test_monitoring.py)
+7. ✅ Write pytest tests (63+ tests in test_monitoring.py)
+
+### Phase 1b: Monitoring Plan Versioning ✅ COMPLETE (Sub-Plan)
+See [MONITORING_PLAN_VERSIONING_SUBPLAN.md](MONITORING_PLAN_VERSIONING_SUBPLAN.md) for details.
+1. ✅ MonitoringPlanVersion and MonitoringPlanMetricSnapshot models
+2. ✅ Version CRUD API (publish, list, get detail, export CSV)
+3. ✅ Cycle-version binding (locks to active version at DATA_COLLECTION start)
+4. ✅ Component 9b (Performance Monitoring Plan Review) for validation workflow
+5. ✅ Frontend: Versions modal in MonitoringPlansPage, 9b picker in ValidationPlanForm
+6. ✅ Versioning tests added to test_monitoring.py
 
 **Files Created/Modified:**
 - `api/alembic/versions/*_add_monitoring_cycles_tables.py` - Migration
-- `api/app/models/monitoring.py` - Added MonitoringCycle, MonitoringCycleApproval, MonitoringResult models
+- `api/alembic/versions/*_add_monitoring_plan_versioning.py` - Versioning migration
+- `api/alembic/versions/*_add_component_9b_monitoring_plan_review.py` - Component 9b migration
+- `api/app/models/monitoring.py` - Added MonitoringCycle, MonitoringCycleApproval, MonitoringResult, MonitoringPlanVersion, MonitoringPlanMetricSnapshot models
 - `api/app/models/__init__.py` - Exported new models
-- `api/app/schemas/monitoring.py` - Added cycle, approval, and result schemas
-- `api/app/api/monitoring.py` - Added all CRUD and workflow endpoints (~2300 lines)
-- `api/tests/test_monitoring.py` - Added test classes for cycles, workflow, results, approvals
+- `api/app/schemas/monitoring.py` - Added cycle, approval, result, and version schemas
+- `api/app/schemas/validation.py` - Added monitoring_plan_version_id and monitoring_review_notes to ValidationPlanComponent
+- `api/app/api/monitoring.py` - Added all CRUD, workflow, and versioning endpoints (~2500 lines)
+- `api/tests/test_monitoring.py` - Added test classes for cycles, workflow, results, approvals, versioning, and Component 9b
+- `web/src/pages/MonitoringPlansPage.tsx` - Added VersionsModal component
+- `web/src/components/ValidationPlanForm.tsx` - Added Component 9b special handling with version picker
 
 ### Phase 2: Workflow & Validation (Backend) ✅ COMPLETE (merged with Phase 1)
 1. ✅ Implement cycle status transitions (PENDING → DATA_COLLECTION → UNDER_REVIEW → PENDING_APPROVAL → APPROVED)
@@ -516,25 +540,52 @@ GET    /monitoring/plans/{plan_id}/cycles/{cycle_id}/export
 4. ✅ Add permission checks for approvers (Global: Admin or team member; Regional: User with region assignment)
 5. ✅ Write tests for approval scenarios (included in Phase 1 tests)
 
-### Phase 4: Basic Frontend (Cycles Tab) 📋 PENDING
-1. Add Cycles tab to MonitoringPlanDetailPage
-2. Display current cycle with progress and approval status
-3. List previous cycles with status badges
-4. Create New Cycle modal
-5. Add status badges for approval states
+### Phase 4: Basic Frontend (Cycles Tab) ✅ COMPLETE
+1. ✅ Created MonitoringPlanDetailPage with tabs (Overview, Models, Metrics, Cycles)
+2. ✅ Display current cycle with progress, approval status, and **locked version info**
+3. ✅ List previous cycles with status badges and version numbers
+4. ✅ Create New Cycle modal (warns if no published version exists)
+5. ✅ Add status badges for approval states
+6. ✅ Workflow action buttons (Start, Submit, Request Approval, Cancel)
+7. ✅ Cycle detail modal with approvals display
+8. ✅ Added route `/monitoring-plans/:id` and navigation link from plans list
 
-### Phase 5: Results Entry UI 📋 PENDING
-1. Create ResultsEntryPage or modal
-2. Quantitative input with threshold visualization
-3. Qualitative dropdown with required narrative
-4. Real-time outcome calculation display
-5. Save/Submit functionality
+**Files Created/Modified:**
+- `web/src/pages/MonitoringPlanDetailPage.tsx` - New detail page with Cycles tab
+- `web/src/pages/MonitoringPlansPage.tsx` - Added Link to detail page
+- `web/src/App.tsx` - Added route for detail page
 
-### Phase 6: Approval UI 📋 PENDING
-1. Create Approval Status section in cycle detail view
-2. Approve/Reject modals with comments
-3. Void approval UI (Admin only)
-4. Progress indicator for approval completion
+### Phase 5: Results Entry UI ✅ COMPLETE
+1. ✅ Created Results Entry modal in MonitoringPlanDetailPage
+2. ✅ Quantitative input with threshold visualization **from version-locked snapshot**
+3. ✅ Qualitative dropdown with required narrative (validation enforced)
+4. ✅ Outcome-only metrics with optional notes
+5. ✅ Real-time outcome calculation display (GREEN/YELLOW/RED badges)
+6. ✅ Save/Update individual results with dirty state tracking
+7. ✅ Progress indicator showing metrics entered count
+8. ✅ Version info banner (e.g., "Using v3 metrics configuration (locked 2025-10-01)")
+9. ✅ "Enter Results" button on current cycle card (only when DATA_COLLECTION or UNDER_REVIEW)
+
+**Files Modified:**
+- `web/src/pages/MonitoringPlanDetailPage.tsx` - Added Results Entry modal with full functionality
+
+### Phase 6: Approval UI ✅ COMPLETE
+1. ✅ Enhanced Approval Status section in cycle detail view with action buttons
+2. ✅ Approve/Reject modals with comments (rejection requires reason)
+3. ✅ Void approval UI (Admin only, only for pending approvals)
+4. ✅ Progress indicator showing completed vs required approvals
+
+**Implementation Details:**
+- Enhanced approvals section with color-coded cards (green=approved, red=rejected, yellow=pending, gray=voided)
+- Progress bar showing "X / Y Complete" with percentage fill
+- Approve/Reject buttons visible when cycle is in PENDING_APPROVAL and approval is pending
+- Void button visible only for Admin users on pending approvals
+- Modal dialogs with contextual messaging and required fields
+- Comments optional for approval, required for rejection/void
+- Auto-refresh of cycle detail and cycles list after actions
+
+**Files Modified:**
+- `web/src/pages/MonitoringPlanDetailPage.tsx` - Added approval modal state, handlers, and enhanced UI
 
 ### Phase 7: Reporting & Trends 📋 PENDING
 1. Implement trend API endpoint
@@ -570,6 +621,11 @@ MONITORING_OUTCOME_TAXONOMY = {
 - Permission checks (data provider vs team member vs admin)
 - Workflow state transitions
 - Validation of required fields
+- **Version binding**:
+  - Start cycle requires published version (400 if none)
+  - Cycle locks to active version at DATA_COLLECTION start
+  - Outcome calculations use snapshot thresholds (not live config)
+  - Editing plan metrics does not affect version-locked cycles
 - Approval workflow:
   - Auto-creation of approval requirements based on model regions
   - Global vs Regional approval permissions
@@ -578,12 +634,13 @@ MONITORING_OUTCOME_TAXONOMY = {
   - Rejection sends back to UNDER_REVIEW
 
 ### Frontend Tests
-- Cycles tab rendering
+- Cycles tab rendering with version info
 - Result entry form validation
-- Outcome display updates
+- Outcome display updates (using version-locked thresholds)
 - Submit workflow
 - Approval status display
 - Approve/Reject modal interactions
+- Version banner display when entering results
 
 ## Summary
 
@@ -596,3 +653,5 @@ This design enables:
 6. **Audit trail** for all changes
 7. **Reporting capabilities** for compliance and trend analysis
 8. **Approval workflow** with Global and Regional approvers (similar to validation workflow)
+9. **Version control** - cycles lock to immutable metric configurations at data collection start
+10. **Validation integration** - Component 9b enables validators to assess model monitoring plans
