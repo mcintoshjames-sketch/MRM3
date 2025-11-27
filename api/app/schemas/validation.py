@@ -16,6 +16,8 @@ class ValidationPolicyBase(BaseModel):
     grace_period_months: int = 3
     model_change_lead_time_days: int = 90
     description: Optional[str] = None
+    monitoring_plan_review_required: bool = False
+    monitoring_plan_review_description: Optional[str] = None
 
 
 class ValidationPolicyCreate(ValidationPolicyBase):
@@ -29,6 +31,8 @@ class ValidationPolicyUpdate(BaseModel):
     grace_period_months: Optional[int] = None
     model_change_lead_time_days: Optional[int] = None
     description: Optional[str] = None
+    monitoring_plan_review_required: Optional[bool] = None
+    monitoring_plan_review_description: Optional[str] = None
 
 
 class ValidationPolicyResponse(ValidationPolicyBase):
@@ -540,6 +544,9 @@ class ValidationPlanComponentBase(BaseModel):
     planned_treatment: str  # Planned, NotPlanned, NotApplicable
     rationale: Optional[str] = None
     additional_notes: Optional[str] = None
+    # Component 9b specific fields (for Performance Monitoring Plan Review)
+    monitoring_plan_version_id: Optional[int] = None  # Reference to MonitoringPlanVersion
+    monitoring_review_notes: Optional[str] = None
 
 
 class ValidationPlanComponentCreate(ValidationPlanComponentBase):
@@ -553,6 +560,9 @@ class ValidationPlanComponentUpdate(BaseModel):
     planned_treatment: Optional[str] = None
     rationale: Optional[str] = None
     additional_notes: Optional[str] = None
+    # Component 9b specific fields
+    monitoring_plan_version_id: Optional[int] = None
+    monitoring_review_notes: Optional[str] = None
 
 
 class ValidationPlanComponentResponse(ValidationPlanComponentBase):
@@ -563,6 +573,9 @@ class ValidationPlanComponentResponse(ValidationPlanComponentBase):
     component_definition: ValidationComponentDefinitionResponse
     created_at: datetime
     updated_at: datetime
+    # Component 9b specific fields
+    monitoring_plan_version_id: Optional[int] = None
+    monitoring_review_notes: Optional[str] = None
 
     class Config:
         from_attributes = True

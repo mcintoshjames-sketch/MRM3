@@ -60,6 +60,14 @@ class ValidationPolicy(Base):
         Integer, nullable=False, default=90,
         comment="Lead time in days before model change implementation date to trigger interim validation"
     )
+    # Performance monitoring plan review requirements
+    monitoring_plan_review_required: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False,
+        comment="If true, component 9b (Performance Monitoring Plan Review) requires Planned or comment"
+    )
+    monitoring_plan_review_description: Mapped[Optional[str]] = mapped_column(
+        Text, nullable=True
+    )
     description: Mapped[str] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime, nullable=False, default=datetime.utcnow
@@ -811,12 +819,23 @@ class ValidationPlanComponent(Base):
     rationale: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     additional_notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
+    # Component 9b: Performance Monitoring Plan Review
+    monitoring_plan_version_id: Mapped[Optional[int]] = mapped_column(
+        Integer, ForeignKey("monitoring_plan_versions.version_id", ondelete="SET NULL"), nullable=True,
+        comment="For component 9b: which monitoring plan version was reviewed"
+    )
+    monitoring_review_notes: Mapped[Optional[str]] = mapped_column(
+        Text, nullable=True,
+        comment="For component 9b: notes about the monitoring plan review"
+    )
+
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     # Relationships
     plan = relationship("ValidationPlan", back_populates="components")
     component_definition = relationship("ValidationComponentDefinition", back_populates="plan_components")
+    monitoring_plan_version = relationship("MonitoringPlanVersion")
 
 
 class ComponentDefinitionConfiguration(Base):

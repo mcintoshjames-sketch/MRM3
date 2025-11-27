@@ -53,9 +53,15 @@ from app.models.monitoring import (
     MonitoringTeam,
     MonitoringPlan,
     MonitoringPlanMetric,
+    MonitoringPlanVersion,
+    MonitoringPlanMetricSnapshot,
     MonitoringFrequency,
     monitoring_team_members,
     monitoring_plan_models,
+    MonitoringCycleStatus,
+    MonitoringCycle,
+    MonitoringCycleApproval,
+    MonitoringResult,
 )
 
 __all__ = [
@@ -126,7 +132,14 @@ __all__ = [
     "MonitoringTeam",
     "MonitoringPlan",
     "MonitoringPlanMetric",
+    "MonitoringPlanVersion",
+    "MonitoringPlanMetricSnapshot",
     "MonitoringFrequency",
     "monitoring_team_members",
-    "monitoring_plan_models"
+    "monitoring_plan_models",
+    # Monitoring Cycles and Results
+    "MonitoringCycleStatus",
+    "MonitoringCycle",
+    "MonitoringCycleApproval",
+    "MonitoringResult",
 ]

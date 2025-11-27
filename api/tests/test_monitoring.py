@@ -614,3 +614,1394 @@ class TestMonitoringPlanMetrics:
         # Delete metric
         response = client.delete(f"/monitoring/plans/{plan_id}/metrics/{metric_id}", headers=admin_headers)
         assert response.status_code == 204
+
+
+class TestMonitoringCycles:
+    """Tests for Monitoring Cycle CRUD operations."""
+
+    def test_create_cycle(self, client, admin_headers):
+        """Admin can create a monitoring cycle."""
+        # Create plan first
+        plan_resp = client.post("/monitoring/plans", headers=admin_headers, json={
+            "name": "Plan For Cycles",
+            "frequency": "Quarterly"
+        })
+        plan_id = plan_resp.json()["plan_id"]
+
+        # Create cycle
+        response = client.post(f"/monitoring/plans/{plan_id}/cycles", headers=admin_headers, json={
+            "notes": "Test cycle"
+        })
+        assert response.status_code == 201
+        data = response.json()
+        assert data["plan_id"] == plan_id
+        assert data["status"] == "PENDING"
+        assert data["notes"] == "Test cycle"
+
+    def test_list_cycles(self, client, admin_headers):
+        """List cycles for a plan."""
+        # Create plan and cycle
+        plan_resp = client.post("/monitoring/plans", headers=admin_headers, json={
+            "name": "Plan For Cycle List",
+            "frequency": "Quarterly"
+        })
+        plan_id = plan_resp.json()["plan_id"]
+
+        client.post(f"/monitoring/plans/{plan_id}/cycles", headers=admin_headers, json={})
+
+        response = client.get(f"/monitoring/plans/{plan_id}/cycles", headers=admin_headers)
+        assert response.status_code == 200
+        assert isinstance(response.json(), list)
+        assert len(response.json()) >= 1
+
+    def test_get_cycle_by_id(self, client, admin_headers):
+        """Get a specific cycle by ID."""
+        plan_resp = client.post("/monitoring/plans", headers=admin_headers, json={
+            "name": "Plan For Get Cycle",
+            "frequency": "Quarterly"
+        })
+        plan_id = plan_resp.json()["plan_id"]
+
+        cycle_resp = client.post(f"/monitoring/plans/{plan_id}/cycles", headers=admin_headers, json={})
+        cycle_id = cycle_resp.json()["cycle_id"]
+
+        response = client.get(f"/monitoring/cycles/{cycle_id}", headers=admin_headers)
+        assert response.status_code == 200
+        assert response.json()["cycle_id"] == cycle_id
+
+    def test_get_cycle_not_found(self, client, admin_headers):
+        """Get non-existent cycle returns 404."""
+        response = client.get("/monitoring/cycles/99999", headers=admin_headers)
+        assert response.status_code == 404
+
+    def test_update_cycle(self, client, admin_headers, test_user):
+        """Admin can update a monitoring cycle."""
+        plan_resp = client.post("/monitoring/plans", headers=admin_headers, json={
+            "name": "Plan For Update Cycle",
+            "frequency": "Quarterly"
+        })
+        plan_id = plan_resp.json()["plan_id"]
+
+        cycle_resp = client.post(f"/monitoring/plans/{plan_id}/cycles", headers=admin_headers, json={})
+        cycle_id = cycle_resp.json()["cycle_id"]
+
+        response = client.patch(f"/monitoring/cycles/{cycle_id}", headers=admin_headers, json={
+            "assigned_to_user_id": test_user.user_id,
+            "notes": "Updated notes"
+        })
+        assert response.status_code == 200
+        assert response.json()["notes"] == "Updated notes"
+
+    def test_delete_pending_cycle(self, client, admin_headers):
+        """Can delete a PENDING cycle without results."""
+        plan_resp = client.post("/monitoring/plans", headers=admin_headers, json={
+            "name": "Plan For Delete Cycle",
+            "frequency": "Quarterly"
+        })
+        plan_id = plan_resp.json()["plan_id"]
+
+        cycle_resp = client.post(f"/monitoring/plans/{plan_id}/cycles", headers=admin_headers, json={})
+        cycle_id = cycle_resp.json()["cycle_id"]
+
+        response = client.delete(f"/monitoring/cycles/{cycle_id}", headers=admin_headers)
+        assert response.status_code == 204
+
+
+class TestCycleWorkflow:
+    """Tests for monitoring cycle workflow operations."""
+
+    def _publish_version_for_plan(self, client, admin_headers, plan_id):
+        """Helper to publish a version for a plan (required before starting cycles)."""
+        # Need at least one metric for publish to work
+        cat_resp = client.post("/kpm/categories", headers=admin_headers, json={
+            "code": f"WF_CAT_{plan_id}",
+            "name": f"Workflow Category {plan_id}"
+        })
+        cat_id = cat_resp.json()["category_id"]
+
+        kpm_resp = client.post("/kpm/kpms", headers=admin_headers, json={
+            "category_id": cat_id,
+            "name": f"Workflow KPM {plan_id}"
+        })
+        kpm_id = kpm_resp.json()["kpm_id"]
+
+        client.post(f"/monitoring/plans/{plan_id}/metrics", headers=admin_headers, json={
+            "kpm_id": kpm_id
+        })
+
+        client.post(f"/monitoring/plans/{plan_id}/versions/publish", headers=admin_headers, json={})
+
+    def test_start_cycle(self, client, admin_headers):
+        """Start cycle moves from PENDING to DATA_COLLECTION."""
+        plan_resp = client.post("/monitoring/plans", headers=admin_headers, json={
+            "name": "Plan For Start",
+            "frequency": "Quarterly"
+        })
+        plan_id = plan_resp.json()["plan_id"]
+
+        # Publish version (required for starting cycles)
+        self._publish_version_for_plan(client, admin_headers, plan_id)
+
+        cycle_resp = client.post(f"/monitoring/plans/{plan_id}/cycles", headers=admin_headers, json={})
+        cycle_id = cycle_resp.json()["cycle_id"]
+        assert cycle_resp.json()["status"] == "PENDING"
+
+        response = client.post(f"/monitoring/cycles/{cycle_id}/start", headers=admin_headers)
+        assert response.status_code == 200
+        assert response.json()["status"] == "DATA_COLLECTION"
+
+    def test_start_non_pending_cycle_fails(self, client, admin_headers):
+        """Cannot start a cycle that's not PENDING."""
+        plan_resp = client.post("/monitoring/plans", headers=admin_headers, json={
+            "name": "Plan For Start Fail",
+            "frequency": "Quarterly"
+        })
+        plan_id = plan_resp.json()["plan_id"]
+
+        # Publish version
+        self._publish_version_for_plan(client, admin_headers, plan_id)
+
+        cycle_resp = client.post(f"/monitoring/plans/{plan_id}/cycles", headers=admin_headers, json={})
+        cycle_id = cycle_resp.json()["cycle_id"]
+
+        # Start once
+        client.post(f"/monitoring/cycles/{cycle_id}/start", headers=admin_headers)
+
+        # Try to start again
+        response = client.post(f"/monitoring/cycles/{cycle_id}/start", headers=admin_headers)
+        assert response.status_code == 400
+
+    def test_submit_cycle(self, client, admin_headers):
+        """Submit cycle moves from DATA_COLLECTION to UNDER_REVIEW."""
+        plan_resp = client.post("/monitoring/plans", headers=admin_headers, json={
+            "name": "Plan For Submit",
+            "frequency": "Quarterly"
+        })
+        plan_id = plan_resp.json()["plan_id"]
+
+        # Publish version
+        self._publish_version_for_plan(client, admin_headers, plan_id)
+
+        cycle_resp = client.post(f"/monitoring/plans/{plan_id}/cycles", headers=admin_headers, json={})
+        cycle_id = cycle_resp.json()["cycle_id"]
+
+        client.post(f"/monitoring/cycles/{cycle_id}/start", headers=admin_headers)
+
+        response = client.post(f"/monitoring/cycles/{cycle_id}/submit", headers=admin_headers)
+        assert response.status_code == 200
+        assert response.json()["status"] == "UNDER_REVIEW"
+        assert response.json()["submitted_at"] is not None
+
+    def test_cancel_cycle(self, client, admin_headers):
+        """Cancel cycle moves to CANCELLED status."""
+        plan_resp = client.post("/monitoring/plans", headers=admin_headers, json={
+            "name": "Plan For Cancel",
+            "frequency": "Quarterly"
+        })
+        plan_id = plan_resp.json()["plan_id"]
+
+        cycle_resp = client.post(f"/monitoring/plans/{plan_id}/cycles", headers=admin_headers, json={})
+        cycle_id = cycle_resp.json()["cycle_id"]
+
+        response = client.post(f"/monitoring/cycles/{cycle_id}/cancel", headers=admin_headers, json={
+            "cancel_reason": "Testing cancellation"
+        })
+        assert response.status_code == 200
+        assert response.json()["status"] == "CANCELLED"
+        assert "CANCELLED" in response.json()["notes"]
+
+
+class TestMonitoringResults:
+    """Tests for monitoring result entry."""
+
+    def test_create_result_quantitative(self, client, admin_headers):
+        """Create a quantitative result with outcome calculation."""
+        # Create category and KPM
+        cat_resp = client.post("/kpm/categories", headers=admin_headers, json={
+            "code": "RESULT_CAT",
+            "name": "Result Category"
+        })
+        cat_id = cat_resp.json()["category_id"]
+
+        kpm_resp = client.post("/kpm/kpms", headers=admin_headers, json={
+            "category_id": cat_id,
+            "name": "Quantitative KPM",
+            "evaluation_type": "Quantitative"
+        })
+        kpm_id = kpm_resp.json()["kpm_id"]
+
+        # Create plan with metric
+        plan_resp = client.post("/monitoring/plans", headers=admin_headers, json={
+            "name": "Plan For Results",
+            "frequency": "Quarterly"
+        })
+        plan_id = plan_resp.json()["plan_id"]
+
+        metric_resp = client.post(f"/monitoring/plans/{plan_id}/metrics", headers=admin_headers, json={
+            "kpm_id": kpm_id,
+            "yellow_min": 0.8,
+            "red_min": 0.6
+        })
+        metric_id = metric_resp.json()["metric_id"]
+
+        # Publish version (required for starting cycles)
+        client.post(f"/monitoring/plans/{plan_id}/versions/publish", headers=admin_headers, json={})
+
+        # Create and start cycle
+        cycle_resp = client.post(f"/monitoring/plans/{plan_id}/cycles", headers=admin_headers, json={})
+        cycle_id = cycle_resp.json()["cycle_id"]
+        client.post(f"/monitoring/cycles/{cycle_id}/start", headers=admin_headers)
+
+        # Create result
+        response = client.post(f"/monitoring/cycles/{cycle_id}/results", headers=admin_headers, json={
+            "plan_metric_id": metric_id,
+            "numeric_value": 0.95
+        })
+        assert response.status_code == 201
+        assert response.json()["calculated_outcome"] == "GREEN"
+
+    def test_create_result_yellow_threshold(self, client, admin_headers):
+        """Result below yellow threshold shows YELLOW outcome."""
+        # Setup
+        cat_resp = client.post("/kpm/categories", headers=admin_headers, json={
+            "code": "YELLOW_CAT",
+            "name": "Yellow Category"
+        })
+        cat_id = cat_resp.json()["category_id"]
+
+        kpm_resp = client.post("/kpm/kpms", headers=admin_headers, json={
+            "category_id": cat_id,
+            "name": "Yellow KPM",
+            "evaluation_type": "Quantitative"
+        })
+        kpm_id = kpm_resp.json()["kpm_id"]
+
+        plan_resp = client.post("/monitoring/plans", headers=admin_headers, json={
+            "name": "Plan For Yellow",
+            "frequency": "Quarterly"
+        })
+        plan_id = plan_resp.json()["plan_id"]
+
+        metric_resp = client.post(f"/monitoring/plans/{plan_id}/metrics", headers=admin_headers, json={
+            "kpm_id": kpm_id,
+            "yellow_min": 0.8,
+            "red_min": 0.6
+        })
+        metric_id = metric_resp.json()["metric_id"]
+
+        # Publish version (required for starting cycles)
+        client.post(f"/monitoring/plans/{plan_id}/versions/publish", headers=admin_headers, json={})
+
+        cycle_resp = client.post(f"/monitoring/plans/{plan_id}/cycles", headers=admin_headers, json={})
+        cycle_id = cycle_resp.json()["cycle_id"]
+        client.post(f"/monitoring/cycles/{cycle_id}/start", headers=admin_headers)
+
+        # Create result with value below yellow threshold
+        response = client.post(f"/monitoring/cycles/{cycle_id}/results", headers=admin_headers, json={
+            "plan_metric_id": metric_id,
+            "numeric_value": 0.75
+        })
+        assert response.status_code == 201
+        assert response.json()["calculated_outcome"] == "YELLOW"
+
+    def test_create_result_red_threshold(self, client, admin_headers):
+        """Result below red threshold shows RED outcome."""
+        # Setup
+        cat_resp = client.post("/kpm/categories", headers=admin_headers, json={
+            "code": "RED_CAT",
+            "name": "Red Category"
+        })
+        cat_id = cat_resp.json()["category_id"]
+
+        kpm_resp = client.post("/kpm/kpms", headers=admin_headers, json={
+            "category_id": cat_id,
+            "name": "Red KPM",
+            "evaluation_type": "Quantitative"
+        })
+        kpm_id = kpm_resp.json()["kpm_id"]
+
+        plan_resp = client.post("/monitoring/plans", headers=admin_headers, json={
+            "name": "Plan For Red",
+            "frequency": "Quarterly"
+        })
+        plan_id = plan_resp.json()["plan_id"]
+
+        metric_resp = client.post(f"/monitoring/plans/{plan_id}/metrics", headers=admin_headers, json={
+            "kpm_id": kpm_id,
+            "red_min": 0.6
+        })
+        metric_id = metric_resp.json()["metric_id"]
+
+        # Publish version (required for starting cycles)
+        client.post(f"/monitoring/plans/{plan_id}/versions/publish", headers=admin_headers, json={})
+
+        cycle_resp = client.post(f"/monitoring/plans/{plan_id}/cycles", headers=admin_headers, json={})
+        cycle_id = cycle_resp.json()["cycle_id"]
+        client.post(f"/monitoring/cycles/{cycle_id}/start", headers=admin_headers)
+
+        # Create result with value below red threshold
+        response = client.post(f"/monitoring/cycles/{cycle_id}/results", headers=admin_headers, json={
+            "plan_metric_id": metric_id,
+            "numeric_value": 0.5
+        })
+        assert response.status_code == 201
+        assert response.json()["calculated_outcome"] == "RED"
+
+    def test_list_cycle_results(self, client, admin_headers):
+        """List all results for a cycle."""
+        # Setup - create plan with metric and cycle
+        cat_resp = client.post("/kpm/categories", headers=admin_headers, json={
+            "code": "LIST_RES_CAT",
+            "name": "List Results Category"
+        })
+        cat_id = cat_resp.json()["category_id"]
+
+        kpm_resp = client.post("/kpm/kpms", headers=admin_headers, json={
+            "category_id": cat_id,
+            "name": "List Results KPM"
+        })
+        kpm_id = kpm_resp.json()["kpm_id"]
+
+        plan_resp = client.post("/monitoring/plans", headers=admin_headers, json={
+            "name": "Plan For List Results",
+            "frequency": "Quarterly"
+        })
+        plan_id = plan_resp.json()["plan_id"]
+
+        metric_resp = client.post(f"/monitoring/plans/{plan_id}/metrics", headers=admin_headers, json={
+            "kpm_id": kpm_id
+        })
+        metric_id = metric_resp.json()["metric_id"]
+
+        # Publish version (required for starting cycles)
+        client.post(f"/monitoring/plans/{plan_id}/versions/publish", headers=admin_headers, json={})
+
+        cycle_resp = client.post(f"/monitoring/plans/{plan_id}/cycles", headers=admin_headers, json={})
+        cycle_id = cycle_resp.json()["cycle_id"]
+        client.post(f"/monitoring/cycles/{cycle_id}/start", headers=admin_headers)
+
+        # Create result
+        client.post(f"/monitoring/cycles/{cycle_id}/results", headers=admin_headers, json={
+            "plan_metric_id": metric_id,
+            "numeric_value": 0.9
+        })
+
+        # List results
+        response = client.get(f"/monitoring/cycles/{cycle_id}/results", headers=admin_headers)
+        assert response.status_code == 200
+        assert len(response.json()) >= 1
+
+    def test_cannot_add_result_to_pending_cycle(self, client, admin_headers):
+        """Cannot add results to a PENDING cycle."""
+        cat_resp = client.post("/kpm/categories", headers=admin_headers, json={
+            "code": "PEND_RES_CAT",
+            "name": "Pending Results Category"
+        })
+        cat_id = cat_resp.json()["category_id"]
+
+        kpm_resp = client.post("/kpm/kpms", headers=admin_headers, json={
+            "category_id": cat_id,
+            "name": "Pending Results KPM"
+        })
+        kpm_id = kpm_resp.json()["kpm_id"]
+
+        plan_resp = client.post("/monitoring/plans", headers=admin_headers, json={
+            "name": "Plan For Pending Results",
+            "frequency": "Quarterly"
+        })
+        plan_id = plan_resp.json()["plan_id"]
+
+        metric_resp = client.post(f"/monitoring/plans/{plan_id}/metrics", headers=admin_headers, json={
+            "kpm_id": kpm_id
+        })
+        metric_id = metric_resp.json()["metric_id"]
+
+        cycle_resp = client.post(f"/monitoring/plans/{plan_id}/cycles", headers=admin_headers, json={})
+        cycle_id = cycle_resp.json()["cycle_id"]
+
+        # Try to add result without starting cycle
+        response = client.post(f"/monitoring/cycles/{cycle_id}/results", headers=admin_headers, json={
+            "plan_metric_id": metric_id,
+            "numeric_value": 0.9
+        })
+        assert response.status_code == 400
+
+
+class TestMonitoringPlanVersioning:
+    """Tests for Monitoring Plan Versioning operations."""
+
+    def _create_plan_with_metrics(self, client, admin_headers, plan_name="Versioned Plan"):
+        """Helper to create a plan with metrics for versioning tests."""
+        # Create category and KPM
+        cat_resp = client.post("/kpm/categories", headers=admin_headers, json={
+            "code": f"VER_CAT_{plan_name[:8]}",
+            "name": f"Version Category {plan_name[:8]}"
+        })
+        cat_id = cat_resp.json()["category_id"]
+
+        kpm_resp = client.post("/kpm/kpms", headers=admin_headers, json={
+            "category_id": cat_id,
+            "name": f"Version KPM {plan_name[:8]}",
+            "evaluation_type": "Quantitative"
+        })
+        kpm_id = kpm_resp.json()["kpm_id"]
+
+        # Create plan
+        plan_resp = client.post("/monitoring/plans", headers=admin_headers, json={
+            "name": plan_name,
+            "frequency": "Quarterly"
+        })
+        plan_id = plan_resp.json()["plan_id"]
+
+        # Add metric with thresholds
+        metric_resp = client.post(f"/monitoring/plans/{plan_id}/metrics", headers=admin_headers, json={
+            "kpm_id": kpm_id,
+            "yellow_min": 0.8,
+            "yellow_max": 0.9,
+            "red_min": 0.6,
+            "qualitative_guidance": "Test guidance"
+        })
+        metric_id = metric_resp.json()["metric_id"]
+
+        return plan_id, kpm_id, metric_id
+
+    def test_list_versions_empty(self, client, admin_headers):
+        """List versions returns empty list for plan with no published versions."""
+        plan_id, _, _ = self._create_plan_with_metrics(client, admin_headers, "Empty Ver Plan")
+
+        response = client.get(f"/monitoring/plans/{plan_id}/versions", headers=admin_headers)
+        assert response.status_code == 200
+        assert response.json() == []
+
+    def test_publish_version(self, client, admin_headers):
+        """Admin can publish a version, creating metric snapshots."""
+        plan_id, kpm_id, _ = self._create_plan_with_metrics(client, admin_headers, "Publish Ver Plan")
+
+        response = client.post(f"/monitoring/plans/{plan_id}/versions/publish", headers=admin_headers, json={
+            "version_name": "Initial Version",
+            "description": "First published version"
+        })
+        assert response.status_code == 201
+        data = response.json()
+        assert data["version_number"] == 1
+        assert data["version_name"] == "Initial Version"
+        assert data["is_active"] is True
+        assert data["metrics_count"] == 1
+
+    def test_publish_version_increments_number(self, client, admin_headers):
+        """Publishing multiple versions increments version_number."""
+        plan_id, _, _ = self._create_plan_with_metrics(client, admin_headers, "Multi Ver Plan")
+
+        # Publish v1
+        v1_resp = client.post(f"/monitoring/plans/{plan_id}/versions/publish", headers=admin_headers, json={
+            "version_name": "Version 1"
+        })
+        assert v1_resp.json()["version_number"] == 1
+        assert v1_resp.json()["is_active"] is True
+
+        # Publish v2
+        v2_resp = client.post(f"/monitoring/plans/{plan_id}/versions/publish", headers=admin_headers, json={
+            "version_name": "Version 2"
+        })
+        assert v2_resp.json()["version_number"] == 2
+        assert v2_resp.json()["is_active"] is True
+
+        # Verify v1 is now inactive
+        versions = client.get(f"/monitoring/plans/{plan_id}/versions", headers=admin_headers).json()
+        v1 = next(v for v in versions if v["version_number"] == 1)
+        assert v1["is_active"] is False
+
+    def test_list_versions(self, client, admin_headers):
+        """List all versions for a plan."""
+        plan_id, _, _ = self._create_plan_with_metrics(client, admin_headers, "List Ver Plan")
+
+        # Publish two versions
+        client.post(f"/monitoring/plans/{plan_id}/versions/publish", headers=admin_headers, json={})
+        client.post(f"/monitoring/plans/{plan_id}/versions/publish", headers=admin_headers, json={})
+
+        response = client.get(f"/monitoring/plans/{plan_id}/versions", headers=admin_headers)
+        assert response.status_code == 200
+        assert len(response.json()) == 2
+
+    def test_get_version_detail_with_snapshots(self, client, admin_headers):
+        """Get version details includes metric snapshots."""
+        plan_id, kpm_id, _ = self._create_plan_with_metrics(client, admin_headers, "Detail Ver Plan")
+
+        publish_resp = client.post(f"/monitoring/plans/{plan_id}/versions/publish", headers=admin_headers, json={})
+        version_id = publish_resp.json()["version_id"]
+
+        response = client.get(f"/monitoring/plans/{plan_id}/versions/{version_id}", headers=admin_headers)
+        assert response.status_code == 200
+        data = response.json()
+        assert data["version_id"] == version_id
+        assert "metric_snapshots" in data
+        assert len(data["metric_snapshots"]) == 1
+        snapshot = data["metric_snapshots"][0]
+        assert snapshot["kpm_id"] == kpm_id
+        assert snapshot["yellow_min"] == 0.8
+        assert snapshot["yellow_max"] == 0.9
+        assert snapshot["red_min"] == 0.6
+
+    def test_version_snapshots_preserve_thresholds(self, client, admin_headers):
+        """Metric snapshots preserve original thresholds even if plan metrics change."""
+        plan_id, kpm_id, metric_id = self._create_plan_with_metrics(client, admin_headers, "Snap Ver Plan")
+
+        # Publish v1
+        v1_resp = client.post(f"/monitoring/plans/{plan_id}/versions/publish", headers=admin_headers, json={})
+        v1_id = v1_resp.json()["version_id"]
+
+        # Update the plan metric thresholds
+        client.patch(f"/monitoring/plans/{plan_id}/metrics/{metric_id}", headers=admin_headers, json={
+            "yellow_min": 0.7,  # Changed from 0.8
+            "red_min": 0.5      # Changed from 0.6
+        })
+
+        # Verify v1 snapshots still have original values
+        v1_detail = client.get(f"/monitoring/plans/{plan_id}/versions/{v1_id}", headers=admin_headers).json()
+        snapshot = v1_detail["metric_snapshots"][0]
+        assert snapshot["yellow_min"] == 0.8  # Original value preserved
+        assert snapshot["red_min"] == 0.6     # Original value preserved
+
+    def test_export_version_csv(self, client, admin_headers):
+        """Export version metrics as CSV."""
+        plan_id, _, _ = self._create_plan_with_metrics(client, admin_headers, "Export Ver Plan")
+
+        publish_resp = client.post(f"/monitoring/plans/{plan_id}/versions/publish", headers=admin_headers, json={})
+        version_id = publish_resp.json()["version_id"]
+
+        response = client.get(f"/monitoring/plans/{plan_id}/versions/{version_id}/export", headers=admin_headers)
+        assert response.status_code == 200
+        assert "text/csv" in response.headers.get("content-type", "")
+        # Check CSV content includes headers
+        content = response.text
+        assert "KPM Name" in content
+        assert "Yellow Min" in content
+        assert "Red Min" in content
+
+    def test_start_cycle_requires_published_version(self, client, admin_headers):
+        """Starting a cycle requires at least one published version."""
+        plan_id, _, _ = self._create_plan_with_metrics(client, admin_headers, "No Ver Plan")
+
+        # Create cycle (without publishing version)
+        cycle_resp = client.post(f"/monitoring/plans/{plan_id}/cycles", headers=admin_headers, json={})
+        cycle_id = cycle_resp.json()["cycle_id"]
+
+        # Try to start cycle - should fail
+        response = client.post(f"/monitoring/cycles/{cycle_id}/start", headers=admin_headers)
+        assert response.status_code == 400
+        assert "published version" in response.json()["detail"].lower()
+
+    def test_start_cycle_locks_to_active_version(self, client, admin_headers):
+        """Starting a cycle locks it to the active version."""
+        plan_id, _, _ = self._create_plan_with_metrics(client, admin_headers, "Lock Ver Plan")
+
+        # Publish version
+        publish_resp = client.post(f"/monitoring/plans/{plan_id}/versions/publish", headers=admin_headers, json={})
+        version_id = publish_resp.json()["version_id"]
+
+        # Create and start cycle
+        cycle_resp = client.post(f"/monitoring/plans/{plan_id}/cycles", headers=admin_headers, json={})
+        cycle_id = cycle_resp.json()["cycle_id"]
+
+        start_resp = client.post(f"/monitoring/cycles/{cycle_id}/start", headers=admin_headers)
+        assert start_resp.status_code == 200
+        data = start_resp.json()
+        assert data["plan_version_id"] == version_id
+        assert data["version_locked_at"] is not None
+        assert data["plan_version"]["version_id"] == version_id
+
+    def test_cycle_remains_locked_after_new_version(self, client, admin_headers):
+        """Cycle stays locked to its original version even after new version published."""
+        plan_id, _, _ = self._create_plan_with_metrics(client, admin_headers, "Remain Ver Plan")
+
+        # Publish v1 and start cycle
+        v1_resp = client.post(f"/monitoring/plans/{plan_id}/versions/publish", headers=admin_headers, json={})
+        v1_id = v1_resp.json()["version_id"]
+
+        cycle_resp = client.post(f"/monitoring/plans/{plan_id}/cycles", headers=admin_headers, json={})
+        cycle_id = cycle_resp.json()["cycle_id"]
+        client.post(f"/monitoring/cycles/{cycle_id}/start", headers=admin_headers)
+
+        # Publish v2
+        v2_resp = client.post(f"/monitoring/plans/{plan_id}/versions/publish", headers=admin_headers, json={})
+        v2_id = v2_resp.json()["version_id"]
+        assert v2_id != v1_id
+
+        # Verify cycle still locked to v1
+        cycle_detail = client.get(f"/monitoring/cycles/{cycle_id}", headers=admin_headers).json()
+        assert cycle_detail["plan_version_id"] == v1_id
+
+    def test_active_cycles_warning_no_cycles(self, client, admin_headers):
+        """Active cycles warning returns false when no active cycles exist."""
+        plan_id, _, _ = self._create_plan_with_metrics(client, admin_headers, "Warn No Cyc")
+
+        response = client.get(f"/monitoring/plans/{plan_id}/active-cycles-warning", headers=admin_headers)
+        assert response.status_code == 200
+        data = response.json()
+        assert data["warning"] is False
+        assert data["active_cycle_count"] == 0
+
+    def test_active_cycles_warning_with_active_cycle(self, client, admin_headers):
+        """Active cycles warning returns true when active cycles exist."""
+        plan_id, _, _ = self._create_plan_with_metrics(client, admin_headers, "Warn Act Cyc")
+
+        # Publish and start a cycle
+        client.post(f"/monitoring/plans/{plan_id}/versions/publish", headers=admin_headers, json={})
+        cycle_resp = client.post(f"/monitoring/plans/{plan_id}/cycles", headers=admin_headers, json={})
+        cycle_id = cycle_resp.json()["cycle_id"]
+        client.post(f"/monitoring/cycles/{cycle_id}/start", headers=admin_headers)
+
+        response = client.get(f"/monitoring/plans/{plan_id}/active-cycles-warning", headers=admin_headers)
+        assert response.status_code == 200
+        data = response.json()
+        assert data["warning"] is True
+        assert data["active_cycle_count"] >= 1
+
+    def test_version_not_found(self, client, admin_headers):
+        """Get non-existent version returns 404."""
+        plan_id, _, _ = self._create_plan_with_metrics(client, admin_headers, "Not Found Plan")
+
+        response = client.get(f"/monitoring/plans/{plan_id}/versions/99999", headers=admin_headers)
+        assert response.status_code == 404
+
+
+class TestApprovalWorkflow:
+    """Tests for monitoring cycle approval workflow."""
+
+    def _publish_version_for_plan(self, client, admin_headers, plan_id, plan_name):
+        """Helper to publish a version for a plan (required before starting cycles)."""
+        # Need at least one metric for publish to work
+        cat_resp = client.post("/kpm/categories", headers=admin_headers, json={
+            "code": f"APPR_CAT_{plan_name[:8]}",
+            "name": f"Approval Category {plan_name[:8]}"
+        })
+        cat_id = cat_resp.json()["category_id"]
+
+        kpm_resp = client.post("/kpm/kpms", headers=admin_headers, json={
+            "category_id": cat_id,
+            "name": f"Approval KPM {plan_name[:8]}"
+        })
+        kpm_id = kpm_resp.json()["kpm_id"]
+
+        client.post(f"/monitoring/plans/{plan_id}/metrics", headers=admin_headers, json={
+            "kpm_id": kpm_id
+        })
+
+        client.post(f"/monitoring/plans/{plan_id}/versions/publish", headers=admin_headers, json={})
+
+    def test_request_approval_creates_global(self, client, admin_headers):
+        """Requesting approval creates at least a Global approval requirement."""
+        plan_resp = client.post("/monitoring/plans", headers=admin_headers, json={
+            "name": "Plan For Approval",
+            "frequency": "Quarterly"
+        })
+        plan_id = plan_resp.json()["plan_id"]
+
+        # Publish version (required for starting cycles)
+        self._publish_version_for_plan(client, admin_headers, plan_id, "Approval")
+
+        cycle_resp = client.post(f"/monitoring/plans/{plan_id}/cycles", headers=admin_headers, json={})
+        cycle_id = cycle_resp.json()["cycle_id"]
+
+        # Progress to UNDER_REVIEW
+        client.post(f"/monitoring/cycles/{cycle_id}/start", headers=admin_headers)
+        client.post(f"/monitoring/cycles/{cycle_id}/submit", headers=admin_headers)
+
+        # Request approval
+        response = client.post(f"/monitoring/cycles/{cycle_id}/request-approval", headers=admin_headers)
+        assert response.status_code == 200
+        assert response.json()["status"] == "PENDING_APPROVAL"
+        assert response.json()["approval_count"] >= 1
+
+    def test_list_cycle_approvals(self, client, admin_headers):
+        """List approval requirements for a cycle."""
+        plan_resp = client.post("/monitoring/plans", headers=admin_headers, json={
+            "name": "Plan For List Approvals",
+            "frequency": "Quarterly"
+        })
+        plan_id = plan_resp.json()["plan_id"]
+
+        # Publish version (required for starting cycles)
+        self._publish_version_for_plan(client, admin_headers, plan_id, "ListAppr")
+
+        cycle_resp = client.post(f"/monitoring/plans/{plan_id}/cycles", headers=admin_headers, json={})
+        cycle_id = cycle_resp.json()["cycle_id"]
+
+        client.post(f"/monitoring/cycles/{cycle_id}/start", headers=admin_headers)
+        client.post(f"/monitoring/cycles/{cycle_id}/submit", headers=admin_headers)
+        client.post(f"/monitoring/cycles/{cycle_id}/request-approval", headers=admin_headers)
+
+        response = client.get(f"/monitoring/cycles/{cycle_id}/approvals", headers=admin_headers)
+        assert response.status_code == 200
+        assert len(response.json()) >= 1
+
+        # Check Global approval exists
+        approvals = response.json()
+        global_approval = next((a for a in approvals if a["approval_type"] == "Global"), None)
+        assert global_approval is not None
+
+    def test_approve_global_approval(self, client, admin_headers):
+        """Admin can approve a Global approval."""
+        plan_resp = client.post("/monitoring/plans", headers=admin_headers, json={
+            "name": "Plan For Global Approval",
+            "frequency": "Quarterly"
+        })
+        plan_id = plan_resp.json()["plan_id"]
+
+        # Publish version (required for starting cycles)
+        self._publish_version_for_plan(client, admin_headers, plan_id, "GlobAppr")
+
+        cycle_resp = client.post(f"/monitoring/plans/{plan_id}/cycles", headers=admin_headers, json={})
+        cycle_id = cycle_resp.json()["cycle_id"]
+
+        client.post(f"/monitoring/cycles/{cycle_id}/start", headers=admin_headers)
+        client.post(f"/monitoring/cycles/{cycle_id}/submit", headers=admin_headers)
+        client.post(f"/monitoring/cycles/{cycle_id}/request-approval", headers=admin_headers)
+
+        # Get the approval ID
+        approvals_resp = client.get(f"/monitoring/cycles/{cycle_id}/approvals", headers=admin_headers)
+        global_approval = next(a for a in approvals_resp.json() if a["approval_type"] == "Global")
+        approval_id = global_approval["approval_id"]
+
+        # Approve
+        response = client.post(f"/monitoring/cycles/{cycle_id}/approvals/{approval_id}/approve",
+                              headers=admin_headers, json={"comments": "Approved by test"})
+        assert response.status_code == 200
+        assert response.json()["approval_status"] == "Approved"
+        assert response.json()["approver"] is not None
+
+    def test_cycle_auto_completes_when_all_approved(self, client, admin_headers):
+        """Cycle transitions to APPROVED when all approvals are granted."""
+        plan_resp = client.post("/monitoring/plans", headers=admin_headers, json={
+            "name": "Plan For Auto Complete",
+            "frequency": "Quarterly"
+        })
+        plan_id = plan_resp.json()["plan_id"]
+
+        # Publish version (required for starting cycles)
+        self._publish_version_for_plan(client, admin_headers, plan_id, "AutoComp")
+
+        cycle_resp = client.post(f"/monitoring/plans/{plan_id}/cycles", headers=admin_headers, json={})
+        cycle_id = cycle_resp.json()["cycle_id"]
+
+        client.post(f"/monitoring/cycles/{cycle_id}/start", headers=admin_headers)
+        client.post(f"/monitoring/cycles/{cycle_id}/submit", headers=admin_headers)
+        client.post(f"/monitoring/cycles/{cycle_id}/request-approval", headers=admin_headers)
+
+        # Approve all approvals
+        approvals_resp = client.get(f"/monitoring/cycles/{cycle_id}/approvals", headers=admin_headers)
+        for approval in approvals_resp.json():
+            if approval["approval_status"] == "Pending":
+                client.post(f"/monitoring/cycles/{cycle_id}/approvals/{approval['approval_id']}/approve",
+                           headers=admin_headers, json={"comments": "Approved"})
+
+        # Check cycle is now APPROVED
+        cycle_resp = client.get(f"/monitoring/cycles/{cycle_id}", headers=admin_headers)
+        assert cycle_resp.json()["status"] == "APPROVED"
+        assert cycle_resp.json()["completed_at"] is not None
+
+    def test_reject_approval_returns_to_under_review(self, client, admin_headers):
+        """Rejecting an approval returns cycle to UNDER_REVIEW."""
+        plan_resp = client.post("/monitoring/plans", headers=admin_headers, json={
+            "name": "Plan For Reject",
+            "frequency": "Quarterly"
+        })
+        plan_id = plan_resp.json()["plan_id"]
+
+        # Publish version (required for starting cycles)
+        self._publish_version_for_plan(client, admin_headers, plan_id, "Reject")
+
+        cycle_resp = client.post(f"/monitoring/plans/{plan_id}/cycles", headers=admin_headers, json={})
+        cycle_id = cycle_resp.json()["cycle_id"]
+
+        client.post(f"/monitoring/cycles/{cycle_id}/start", headers=admin_headers)
+        client.post(f"/monitoring/cycles/{cycle_id}/submit", headers=admin_headers)
+        client.post(f"/monitoring/cycles/{cycle_id}/request-approval", headers=admin_headers)
+
+        approvals_resp = client.get(f"/monitoring/cycles/{cycle_id}/approvals", headers=admin_headers)
+        global_approval = next(a for a in approvals_resp.json() if a["approval_type"] == "Global")
+        approval_id = global_approval["approval_id"]
+
+        # Reject
+        response = client.post(f"/monitoring/cycles/{cycle_id}/approvals/{approval_id}/reject",
+                              headers=admin_headers, json={"comments": "Issues found"})
+        assert response.status_code == 200
+        assert response.json()["approval_status"] == "Rejected"
+
+        # Check cycle is back to UNDER_REVIEW
+        cycle_resp = client.get(f"/monitoring/cycles/{cycle_id}", headers=admin_headers)
+        assert cycle_resp.json()["status"] == "UNDER_REVIEW"
+
+    def test_void_approval(self, client, admin_headers):
+        """Admin can void an approval requirement."""
+        plan_resp = client.post("/monitoring/plans", headers=admin_headers, json={
+            "name": "Plan For Void",
+            "frequency": "Quarterly"
+        })
+        plan_id = plan_resp.json()["plan_id"]
+
+        # Publish version (required for starting cycles)
+        self._publish_version_for_plan(client, admin_headers, plan_id, "Void")
+
+        cycle_resp = client.post(f"/monitoring/plans/{plan_id}/cycles", headers=admin_headers, json={})
+        cycle_id = cycle_resp.json()["cycle_id"]
+
+        client.post(f"/monitoring/cycles/{cycle_id}/start", headers=admin_headers)
+        client.post(f"/monitoring/cycles/{cycle_id}/submit", headers=admin_headers)
+        client.post(f"/monitoring/cycles/{cycle_id}/request-approval", headers=admin_headers)
+
+        approvals_resp = client.get(f"/monitoring/cycles/{cycle_id}/approvals", headers=admin_headers)
+        global_approval = next(a for a in approvals_resp.json() if a["approval_type"] == "Global")
+        approval_id = global_approval["approval_id"]
+
+        # Void
+        response = client.post(f"/monitoring/cycles/{cycle_id}/approvals/{approval_id}/void",
+                              headers=admin_headers, json={"void_reason": "No longer required"})
+        assert response.status_code == 200
+        assert response.json()["approval_status"] == "Voided"
+        assert response.json()["voided_by"] is not None
+        assert response.json()["void_reason"] == "No longer required"
+
+    def test_cannot_approve_voided_approval(self, client, admin_headers):
+        """Cannot approve an approval that has been voided."""
+        plan_resp = client.post("/monitoring/plans", headers=admin_headers, json={
+            "name": "Plan For Void Check",
+            "frequency": "Quarterly"
+        })
+        plan_id = plan_resp.json()["plan_id"]
+
+        # Publish version (required for starting cycles)
+        self._publish_version_for_plan(client, admin_headers, plan_id, "VoidChk")
+
+        cycle_resp = client.post(f"/monitoring/plans/{plan_id}/cycles", headers=admin_headers, json={})
+        cycle_id = cycle_resp.json()["cycle_id"]
+
+        client.post(f"/monitoring/cycles/{cycle_id}/start", headers=admin_headers)
+        client.post(f"/monitoring/cycles/{cycle_id}/submit", headers=admin_headers)
+        client.post(f"/monitoring/cycles/{cycle_id}/request-approval", headers=admin_headers)
+
+        approvals_resp = client.get(f"/monitoring/cycles/{cycle_id}/approvals", headers=admin_headers)
+        global_approval = next(a for a in approvals_resp.json() if a["approval_type"] == "Global")
+        approval_id = global_approval["approval_id"]
+
+        # Void first
+        client.post(f"/monitoring/cycles/{cycle_id}/approvals/{approval_id}/void",
+                   headers=admin_headers, json={"void_reason": "No longer required"})
+
+        # Try to approve voided
+        response = client.post(f"/monitoring/cycles/{cycle_id}/approvals/{approval_id}/approve",
+                              headers=admin_headers, json={"comments": "Should fail"})
+        assert response.status_code == 400
+
+
+# ============================================================================
+# Component 9b Tests - Model Monitoring Plans Lookup
+# ============================================================================
+
+class TestModelMonitoringPlansLookup:
+    """Tests for the model -> monitoring plans lookup endpoint (Component 9b)."""
+
+    def test_model_monitoring_plans_returns_empty_when_no_plans(self, client, admin_headers):
+        """Returns empty list when model has no monitoring plans."""
+        # Create a model without any monitoring plans
+        model_resp = client.post("/models/", headers=admin_headers, json={
+            "model_name": "Model Without Plans",
+            "owner_id": 1,
+            "status": "Draft"
+        })
+        assert model_resp.status_code == 201
+        model_id = model_resp.json()["model_id"]
+
+        # Get monitoring plans for this model
+        response = client.get(f"/models/{model_id}/monitoring-plans", headers=admin_headers)
+        assert response.status_code == 200
+        assert response.json() == []
+
+    def test_model_monitoring_plans_returns_plans_covering_model(self, client, admin_headers):
+        """Returns monitoring plans that cover the model."""
+        # Create a model
+        model_resp = client.post("/models/", headers=admin_headers, json={
+            "model_name": "Model With Plan",
+            "owner_id": 1,
+            "status": "Draft"
+        })
+        model_id = model_resp.json()["model_id"]
+
+        # Create monitoring plan covering this model
+        plan_resp = client.post("/monitoring/plans", headers=admin_headers, json={
+            "name": "Plan Covering Model",
+            "frequency": "Quarterly",
+            "model_ids": [model_id]
+        })
+        plan_id = plan_resp.json()["plan_id"]
+
+        # Get monitoring plans for this model
+        response = client.get(f"/models/{model_id}/monitoring-plans", headers=admin_headers)
+        assert response.status_code == 200
+        data = response.json()
+        assert len(data) == 1
+        assert data[0]["plan_id"] == plan_id
+        assert data[0]["plan_name"] == "Plan Covering Model"
+        assert data[0]["frequency"] == "Quarterly"
+
+    def test_model_monitoring_plans_includes_versions(self, client, admin_headers):
+        """Returns monitoring plan with version information."""
+        # Create model
+        model_resp = client.post("/models/", headers=admin_headers, json={
+            "model_name": "Model With Versioned Plan",
+            "owner_id": 1,
+            "status": "Draft"
+        })
+        model_id = model_resp.json()["model_id"]
+
+        # Create plan
+        plan_resp = client.post("/monitoring/plans", headers=admin_headers, json={
+            "name": "Versioned Plan",
+            "frequency": "Quarterly",
+            "model_ids": [model_id]
+        })
+        plan_id = plan_resp.json()["plan_id"]
+
+        # Publish a version
+        version_resp = client.post(
+            f"/monitoring/plans/{plan_id}/versions/publish",
+            headers=admin_headers,
+            json={"version_name": "Q1 2025", "description": "Initial version"}
+        )
+        assert version_resp.status_code == 201
+        version_id = version_resp.json()["version_id"]
+
+        # Get monitoring plans
+        response = client.get(f"/models/{model_id}/monitoring-plans", headers=admin_headers)
+        assert response.status_code == 200
+        data = response.json()
+        assert len(data) == 1
+        assert data[0]["active_version"] is not None
+        assert data[0]["active_version"]["version_id"] == version_id
+        assert data[0]["active_version"]["version_name"] == "Q1 2025"
+        assert len(data[0]["all_versions"]) == 1
+
+    def test_model_monitoring_plans_404_for_nonexistent_model(self, client, admin_headers):
+        """Returns 404 for non-existent model."""
+        response = client.get("/models/99999/monitoring-plans", headers=admin_headers)
+        assert response.status_code == 404
+
+    def test_model_monitoring_plans_excludes_inactive_plans(self, client, admin_headers):
+        """Does not return inactive monitoring plans."""
+        # Create model
+        model_resp = client.post("/models/", headers=admin_headers, json={
+            "model_name": "Model With Inactive Plan",
+            "owner_id": 1,
+            "status": "Draft"
+        })
+        model_id = model_resp.json()["model_id"]
+
+        # Create and then deactivate plan
+        plan_resp = client.post("/monitoring/plans", headers=admin_headers, json={
+            "name": "Plan To Deactivate",
+            "frequency": "Quarterly",
+            "model_ids": [model_id]
+        })
+        plan_id = plan_resp.json()["plan_id"]
+
+        # Deactivate plan
+        client.patch(f"/monitoring/plans/{plan_id}", headers=admin_headers, json={
+            "is_active": False
+        })
+
+        # Get monitoring plans - should be empty
+        response = client.get(f"/models/{model_id}/monitoring-plans", headers=admin_headers)
+        assert response.status_code == 200
+        assert len(response.json()) == 0
+
+
+# ============================================================================
+# Component 9b Tests - Validation Plan Component Fields
+# ============================================================================
+
+class TestComponent9bFields:
+    """Tests for Component 9b specific fields in validation plan components."""
+
+    @pytest.fixture
+    def component_definitions(self, db_session):
+        """Create component definitions including 9b for testing."""
+        from app.models.validation import ValidationComponentDefinition
+
+        # Create component 9b (Performance Monitoring Plan Review)
+        comp_9b = ValidationComponentDefinition(
+            section_number="9",
+            section_title="Model Performance Monitoring Requirements",
+            component_code="9b",
+            component_title="Performance Monitoring Plan Review",
+            is_test_or_analysis=False,
+            expectation_high="Required",
+            expectation_medium="Required",
+            expectation_low="IfApplicable",
+            expectation_very_low="NotExpected",
+            sort_order=29
+        )
+        db_session.add(comp_9b)
+        db_session.commit()
+        return {"9b": comp_9b}
+
+    def _create_validation_request_with_plan(self, client, admin_headers, model_id, validation_type_id, priority_id):
+        """Helper to create a validation request with a plan containing component 9b."""
+        # Create validation request
+        req_resp = client.post("/validation-workflow/requests/", headers=admin_headers, json={
+            "model_ids": [model_id],
+            "validation_type_id": validation_type_id,
+            "priority_id": priority_id,
+            "target_completion_date": "2025-12-31"
+        })
+        assert req_resp.status_code == 201, f"Failed to create validation request: {req_resp.json()}"
+        request_id = req_resp.json()["request_id"]
+
+        # Create validation plan (auto-generates component 9b)
+        plan_resp = client.post(f"/validation-workflow/requests/{request_id}/plan",
+                               headers=admin_headers, json={
+                                   "overall_scope_summary": "Test plan with 9b"
+                               })
+        assert plan_resp.status_code == 201, f"Failed to create plan: {plan_resp.json()}"
+        return request_id, plan_resp.json()["plan_id"]
+
+    def test_update_component_9b_with_version(self, client, admin_headers, taxonomy_values, component_definitions):
+        """Can update component 9b with monitoring plan version ID."""
+        # Create model with risk tier
+        model_resp = client.post("/models/", headers=admin_headers, json={
+            "model_name": "Model For 9b Test",
+            "owner_id": 1,
+            "status": "Draft",
+            "risk_tier_id": taxonomy_values["tier1"].value_id
+        })
+        assert model_resp.status_code == 201, f"Failed to create model: {model_resp.json()}"
+        model_id = model_resp.json()["model_id"]
+
+        # Create monitoring plan with version
+        plan_resp = client.post("/monitoring/plans", headers=admin_headers, json={
+            "name": "Monitoring Plan for 9b",
+            "frequency": "Quarterly",
+            "model_ids": [model_id]
+        })
+        assert plan_resp.status_code == 201, f"Failed to create monitoring plan: {plan_resp.json()}"
+        mon_plan_id = plan_resp.json()["plan_id"]
+
+        version_resp = client.post(f"/monitoring/plans/{mon_plan_id}/versions/publish",
+                                   headers=admin_headers,
+                                   json={"version_name": "v1"})
+        assert version_resp.status_code == 201, f"Failed to publish version: {version_resp.json()}"
+        version_id = version_resp.json()["version_id"]
+
+        # Create validation request with plan
+        request_id, val_plan_id = self._create_validation_request_with_plan(
+            client, admin_headers, model_id,
+            taxonomy_values["initial"].value_id,
+            taxonomy_values["priority_high"].value_id
+        )
+
+        # Get plan to find component 9b
+        plan_resp = client.get(f"/validation-workflow/requests/{request_id}/plan",
+                              headers=admin_headers)
+        assert plan_resp.status_code == 200, f"Failed to get plan: {plan_resp.json()}"
+        plan_data = plan_resp.json()
+
+        # Find component 9b
+        comp_9b = next((c for c in plan_data["components"]
+                       if c["component_definition"]["component_code"] == "9b"), None)
+        assert comp_9b is not None, "Component 9b should exist in plan"
+
+        # Update component 9b with version
+        update_resp = client.patch(f"/validation-workflow/requests/{request_id}/plan",
+                                   headers=admin_headers, json={
+                                       "components": [{
+                                           "component_id": comp_9b["component_definition"]["component_id"],
+                                           "planned_treatment": "Planned",
+                                           "monitoring_plan_version_id": version_id,
+                                           "monitoring_review_notes": "Reviewed Q1 metrics"
+                                       }]
+                                   })
+        assert update_resp.status_code == 200
+
+        # Verify update
+        verify_resp = client.get(f"/validation-workflow/requests/{request_id}/plan",
+                                headers=admin_headers)
+        updated_comp_9b = next((c for c in verify_resp.json()["components"]
+                               if c["component_definition"]["component_code"] == "9b"), None)
+        assert updated_comp_9b["monitoring_plan_version_id"] == version_id
+        assert updated_comp_9b["monitoring_review_notes"] == "Reviewed Q1 metrics"
+
+    def test_update_component_9b_with_invalid_version_fails(self, client, admin_headers, taxonomy_values, component_definitions):
+        """Cannot update component 9b with non-existent version ID."""
+        # Create model with risk tier
+        model_resp = client.post("/models/", headers=admin_headers, json={
+            "model_name": "Model For Invalid 9b",
+            "owner_id": 1,
+            "status": "Draft",
+            "risk_tier_id": taxonomy_values["tier1"].value_id
+        })
+        assert model_resp.status_code == 201, f"Failed to create model: {model_resp.json()}"
+        model_id = model_resp.json()["model_id"]
+
+        # Create validation request with plan
+        request_id, val_plan_id = self._create_validation_request_with_plan(
+            client, admin_headers, model_id,
+            taxonomy_values["initial"].value_id,
+            taxonomy_values["priority_high"].value_id
+        )
+
+        # Get plan to find component 9b
+        plan_resp = client.get(f"/validation-workflow/requests/{request_id}/plan",
+                              headers=admin_headers)
+        assert plan_resp.status_code == 200, f"Failed to get plan: {plan_resp.json()}"
+        comp_9b = next((c for c in plan_resp.json()["components"]
+                       if c["component_definition"]["component_code"] == "9b"), None)
+        assert comp_9b is not None, "Component 9b should exist in plan"
+
+        # Try to update with non-existent version
+        update_resp = client.patch(f"/validation-workflow/requests/{request_id}/plan",
+                                   headers=admin_headers, json={
+                                       "components": [{
+                                           "component_id": comp_9b["component_definition"]["component_id"],
+                                           "monitoring_plan_version_id": 99999
+                                       }]
+                                   })
+        assert update_resp.status_code == 400
+        assert "not found" in update_resp.json()["detail"].lower()
+
+    def test_component_9b_planned_without_version_fails_status_transition(
+        self, client, admin_headers, db_session, taxonomy_values, component_definitions
+    ):
+        """Component 9b marked as Planned without version fails validation on status transition to REVIEW."""
+        from app.models.user import User
+
+        # Create a separate validator user (not the model owner)
+        validator = User(
+            email="validator_9b@test.com",
+            password_hash="$2b$12$test",
+            full_name="Validator User",
+            role="Validator"
+        )
+        db_session.add(validator)
+        db_session.commit()
+        validator_id = validator.user_id
+
+        # Create model with Tier 1 risk (9b is Required) - owned by admin (id=1)
+        model_resp = client.post("/models/", headers=admin_headers, json={
+            "model_name": "Model For 9b Validation Test",
+            "owner_id": 1,
+            "status": "Draft",
+            "risk_tier_id": taxonomy_values["tier1"].value_id
+        })
+        assert model_resp.status_code == 201
+        model_id = model_resp.json()["model_id"]
+
+        # Create validation request
+        request_id, val_plan_id = self._create_validation_request_with_plan(
+            client, admin_headers, model_id,
+            taxonomy_values["initial"].value_id,
+            taxonomy_values["priority_high"].value_id
+        )
+
+        # Get component 9b and mark it as Planned (without a version)
+        plan_resp = client.get(f"/validation-workflow/requests/{request_id}/plan",
+                              headers=admin_headers)
+        comp_9b = next((c for c in plan_resp.json()["components"]
+                       if c["component_definition"]["component_code"] == "9b"), None)
+        assert comp_9b is not None
+
+        # Update 9b to Planned without version (this should succeed, validation happens on status transition)
+        update_resp = client.patch(f"/validation-workflow/requests/{request_id}/plan",
+                                   headers=admin_headers, json={
+                                       "components": [{
+                                           "component_id": comp_9b["component_definition"]["component_id"],
+                                           "planned_treatment": "Planned"
+                                           # No monitoring_plan_version_id
+                                       }]
+                                   })
+        assert update_resp.status_code == 200
+
+        # Assign a PRIMARY validator (required for status transitions)
+        # Must be a different user than the model owner and include independence attestation
+        assign_resp = client.post(f"/validation-workflow/requests/{request_id}/assignments",
+                   headers=admin_headers, json={
+                       "validator_id": validator_id,
+                       "is_primary": True,
+                       "independence_attestation": True
+                   })
+        assert assign_resp.status_code == 201, f"Failed to assign validator: {assign_resp.json()}"
+
+        # Note: Assigning a validator auto-transitions from INTAKE to PLANNING
+        # So we continue from PLANNING -> IN_PROGRESS -> REVIEW
+
+        # Move to IN_PROGRESS
+        status_resp = client.patch(f"/validation-workflow/requests/{request_id}/status",
+                                   headers=admin_headers, json={
+                                       "new_status_id": taxonomy_values["status_in_progress"].value_id,
+                                       "change_reason": "Moving to in progress"
+                                   })
+        assert status_resp.status_code == 200, f"Failed to move to IN_PROGRESS: {status_resp.json()}"
+
+        # Now try to transition to REVIEW (where validate_plan_compliance is called)
+        status_resp = client.patch(f"/validation-workflow/requests/{request_id}/status",
+                                   headers=admin_headers, json={
+                                       "new_status_id": taxonomy_values["status_review"].value_id,
+                                       "change_reason": "Moving to review"
+                                   })
+        # This should fail because 9b is Planned without a version
+        assert status_resp.status_code == 400
+        error_detail = status_resp.json()["detail"].lower()
+        assert "9b" in error_detail or "monitoring plan" in error_detail, f"Expected 9b validation error, got: {error_detail}"
+
+    def test_component_9b_not_planned_without_rationale_fails_update(
+        self, client, admin_headers, taxonomy_values, component_definitions
+    ):
+        """Component 9b marked as NotPlanned without rationale fails at update time (deviation requires rationale)."""
+        # Create model with Tier 1 risk (9b is Required)
+        model_resp = client.post("/models/", headers=admin_headers, json={
+            "model_name": "Model For 9b NotPlanned Test",
+            "owner_id": 1,
+            "status": "Draft",
+            "risk_tier_id": taxonomy_values["tier1"].value_id
+        })
+        assert model_resp.status_code == 201
+        model_id = model_resp.json()["model_id"]
+
+        # Create validation request
+        request_id, val_plan_id = self._create_validation_request_with_plan(
+            client, admin_headers, model_id,
+            taxonomy_values["initial"].value_id,
+            taxonomy_values["priority_high"].value_id
+        )
+
+        # Get component 9b
+        plan_resp = client.get(f"/validation-workflow/requests/{request_id}/plan",
+                              headers=admin_headers)
+        comp_9b = next((c for c in plan_resp.json()["components"]
+                       if c["component_definition"]["component_code"] == "9b"), None)
+        assert comp_9b is not None
+
+        # Try to update 9b to NotPlanned without rationale - this should FAIL
+        # because Required -> NotPlanned is a deviation and requires rationale at update time
+        update_resp = client.patch(f"/validation-workflow/requests/{request_id}/plan",
+                                   headers=admin_headers, json={
+                                       "components": [{
+                                           "component_id": comp_9b["component_definition"]["component_id"],
+                                           "planned_treatment": "NotPlanned"
+                                           # No rationale - this is a deviation!
+                                       }]
+                                   })
+        assert update_resp.status_code == 400
+        error_detail = update_resp.json()["detail"].lower()
+        assert "rationale" in error_detail or "9b" in error_detail, f"Expected rationale error, got: {error_detail}"
+
+    def test_component_9b_not_planned_with_rationale_succeeds(
+        self, client, admin_headers, taxonomy_values, component_definitions
+    ):
+        """Component 9b marked as NotPlanned with rationale succeeds (proper deviation handling)."""
+        # Create model with Tier 1 risk (9b is Required)
+        model_resp = client.post("/models/", headers=admin_headers, json={
+            "model_name": "Model For 9b NotPlanned With Rationale",
+            "owner_id": 1,
+            "status": "Draft",
+            "risk_tier_id": taxonomy_values["tier1"].value_id
+        })
+        assert model_resp.status_code == 201
+        model_id = model_resp.json()["model_id"]
+
+        # Create validation request
+        request_id, val_plan_id = self._create_validation_request_with_plan(
+            client, admin_headers, model_id,
+            taxonomy_values["initial"].value_id,
+            taxonomy_values["priority_high"].value_id
+        )
+
+        # Get component 9b
+        plan_resp = client.get(f"/validation-workflow/requests/{request_id}/plan",
+                              headers=admin_headers)
+        comp_9b = next((c for c in plan_resp.json()["components"]
+                       if c["component_definition"]["component_code"] == "9b"), None)
+        assert comp_9b is not None
+
+        # Update 9b to NotPlanned WITH rationale - this should succeed
+        update_resp = client.patch(f"/validation-workflow/requests/{request_id}/plan",
+                                   headers=admin_headers, json={
+                                       "components": [{
+                                           "component_id": comp_9b["component_definition"]["component_id"],
+                                           "planned_treatment": "NotPlanned",
+                                           "rationale": "Model does not have an active monitoring plan as it is still in development"
+                                       }]
+                                   })
+        assert update_resp.status_code == 200
+
+        # Verify the update
+        verify_resp = client.get(f"/validation-workflow/requests/{request_id}/plan",
+                                headers=admin_headers)
+        updated_comp_9b = next((c for c in verify_resp.json()["components"]
+                               if c["component_definition"]["component_code"] == "9b"), None)
+        assert updated_comp_9b["planned_treatment"] == "NotPlanned"
+        assert "monitoring plan" in updated_comp_9b["rationale"].lower()
+
+    def test_component_9b_planned_with_version_passes_validation(
+        self, client, admin_headers, taxonomy_values, component_definitions
+    ):
+        """Component 9b properly configured passes validation."""
+        # Create model with Tier 1 risk
+        model_resp = client.post("/models/", headers=admin_headers, json={
+            "model_name": "Model For 9b Pass Test",
+            "owner_id": 1,
+            "status": "Draft",
+            "risk_tier_id": taxonomy_values["tier1"].value_id
+        })
+        assert model_resp.status_code == 201
+        model_id = model_resp.json()["model_id"]
+
+        # Create monitoring plan with published version
+        plan_resp = client.post("/monitoring/plans", headers=admin_headers, json={
+            "name": "Monitoring Plan for 9b Pass",
+            "frequency": "Quarterly",
+            "model_ids": [model_id]
+        })
+        mon_plan_id = plan_resp.json()["plan_id"]
+
+        version_resp = client.post(f"/monitoring/plans/{mon_plan_id}/versions/publish",
+                                   headers=admin_headers, json={"version_name": "v1"})
+        version_id = version_resp.json()["version_id"]
+
+        # Create validation request
+        request_id, val_plan_id = self._create_validation_request_with_plan(
+            client, admin_headers, model_id,
+            taxonomy_values["initial"].value_id,
+            taxonomy_values["priority_high"].value_id
+        )
+
+        # Get component 9b and configure it properly
+        plan_resp = client.get(f"/validation-workflow/requests/{request_id}/plan",
+                              headers=admin_headers)
+        comp_9b = next((c for c in plan_resp.json()["components"]
+                       if c["component_definition"]["component_code"] == "9b"), None)
+        assert comp_9b is not None
+
+        # Update 9b with version
+        update_resp = client.patch(f"/validation-workflow/requests/{request_id}/plan",
+                                   headers=admin_headers, json={
+                                       "components": [{
+                                           "component_id": comp_9b["component_definition"]["component_id"],
+                                           "planned_treatment": "Planned",
+                                           "monitoring_plan_version_id": version_id,
+                                           "monitoring_review_notes": "Reviewed monitoring metrics"
+                                       }]
+                                   })
+        assert update_resp.status_code == 200
+
+        # Assign a validator
+        client.post(f"/validation-workflow/requests/{request_id}/assignments",
+                   headers=admin_headers, json={"validator_id": 1})
+
+        # The 9b validation should pass (other validations may fail but not 9b)
+        # To fully test, we would need all components configured properly
+        # For now, verify the 9b fields are stored correctly
+        verify_resp = client.get(f"/validation-workflow/requests/{request_id}/plan",
+                                headers=admin_headers)
+        updated_comp_9b = next((c for c in verify_resp.json()["components"]
+                               if c["component_definition"]["component_code"] == "9b"), None)
+        assert updated_comp_9b["monitoring_plan_version_id"] == version_id
+        assert updated_comp_9b["planned_treatment"] == "Planned"

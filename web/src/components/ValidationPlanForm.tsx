@@ -25,6 +25,29 @@ interface ValidationPlanComponent {
     rationale?: string;
     additional_notes?: string;
     component_definition: ValidationComponentDefinition;
+    // Component 9b specific fields
+    monitoring_plan_version_id?: number | null;
+    monitoring_review_notes?: string | null;
+}
+
+// Monitoring plan types for Component 9b
+interface MonitoringPlanVersion {
+    version_id: number;
+    version_number: number;
+    version_name: string | null;
+    effective_date: string;
+    is_active: boolean;
+    metrics_count: number;
+}
+
+interface ModelMonitoringPlan {
+    plan_id: number;
+    plan_name: string;
+    frequency: string;
+    active_version: MonitoringPlanVersion | null;
+    all_versions: MonitoringPlanVersion[];
+    latest_cycle_status: string | null;
+    latest_cycle_outcome_summary: string | null;
 }
 
 interface ValidationPlan {
@@ -62,19 +85,24 @@ export interface ValidationPlanFormHandle {
 
 interface Props {
     requestId: number;
+    modelId?: number;  // Needed for Component 9b monitoring plan lookup
     modelName?: string;
     riskTier?: string;
     onSave?: () => void;
     canEdit?: boolean;
 }
 
-const ValidationPlanForm = forwardRef<ValidationPlanFormHandle, Props>(({ requestId, modelName, riskTier, onSave, canEdit = true }, ref) => {
+const ValidationPlanForm = forwardRef<ValidationPlanFormHandle, Props>(({ requestId, modelId, modelName, riskTier, onSave, canEdit = true }, ref) => {
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
     const [plan, setPlan] = useState<ValidationPlan | null>(null);
     const [error, setError] = useState<string | null>(null);
     const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
     const [saveSuccess, setSaveSuccess] = useState(false);
+
+    // Component 9b: Monitoring plans for this model
+    const [monitoringPlans, setMonitoringPlans] = useState<ModelMonitoringPlan[]>([]);
+    const [loadingMonitoringPlans, setLoadingMonitoringPlans] = useState(false);
 
     // Template suggestion state
     const [templateSuggestions, setTemplateSuggestions] = useState<TemplateSuggestion[]>([]);
@@ -94,6 +122,28 @@ const ValidationPlanForm = forwardRef<ValidationPlanFormHandle, Props>(({ reques
     useEffect(() => {
         fetchValidationPlan();
     }, [requestId]);
+
+    // Fetch monitoring plans for Component 9b when model_id is available
+    useEffect(() => {
+        if (modelId) {
+            fetchMonitoringPlans();
+        }
+    }, [modelId]);
+
+    const fetchMonitoringPlans = async () => {
+        if (!modelId) return;
+
+        setLoadingMonitoringPlans(true);
+        try {
+            const response = await api.get(`/models/${modelId}/monitoring-plans`);
+            setMonitoringPlans(response.data);
+        } catch (err) {
+            console.error('Failed to fetch monitoring plans:', err);
+            // Not critical - 9b can still be set to N/A
+        } finally {
+            setLoadingMonitoringPlans(false);
+        }
+    };
 
     // Expose methods to parent via ref
     useImperativeHandle(ref, () => ({
@@ -276,6 +326,12 @@ const ValidationPlanForm = forwardRef<ValidationPlanFormHandle, Props>(({ reques
                 }
             }
 
+            // Validate Component 9b: must have monitoring plan version selected when Planned
+            const comp9b = formData.components.find(c => c.component_definition.component_code === '9b');
+            if (comp9b && comp9b.planned_treatment === 'Planned' && !comp9b.monitoring_plan_version_id) {
+                throw new Error('Component 9b (Performance Monitoring Plan Review) requires selecting a monitoring plan version when planned');
+            }
+
             // Validate material deviation rationale
             if (formData.material_deviation_from_standard && !formData.overall_deviation_rationale?.trim()) {
                 throw new Error('Overall deviation rationale is required when there is a material deviation from standard');
@@ -289,7 +345,10 @@ const ValidationPlanForm = forwardRef<ValidationPlanFormHandle, Props>(({ reques
                     component_id: comp.component_id,
                     planned_treatment: comp.planned_treatment,
                     rationale: comp.rationale,
-                    additional_notes: comp.additional_notes
+                    additional_notes: comp.additional_notes,
+                    // Component 9b specific fields
+                    monitoring_plan_version_id: comp.monitoring_plan_version_id || null,
+                    monitoring_review_notes: comp.monitoring_review_notes || null
                 }))
             };
 
@@ -321,7 +380,7 @@ const ValidationPlanForm = forwardRef<ValidationPlanFormHandle, Props>(({ reques
         await handleSaveInternal();
     };
 
-    const handleComponentChange = (componentId: number, field: string, value: string) => {
+    const handleComponentChange = (componentId: number, field: string, value: string | number | null) => {
         setHasUnsavedChanges(true);
         setSaveSuccess(false);
         setFormData(prev => ({
@@ -332,7 +391,12 @@ const ValidationPlanForm = forwardRef<ValidationPlanFormHandle, Props>(({ reques
 
                     // Recalculate deviation if planned_treatment changed
                     if (field === 'planned_treatment') {
-                        updated.is_deviation = calculateIsDeviation(comp.default_expectation, value);
+                        updated.is_deviation = calculateIsDeviation(comp.default_expectation, value as string);
+
+                        // For component 9b: clear version when setting to Not Planned/Not Applicable
+                        if (comp.component_definition.component_code === '9b' && value !== 'Planned') {
+                            updated.monitoring_plan_version_id = null;
+                        }
                     }
 
                     return updated;
@@ -341,6 +405,10 @@ const ValidationPlanForm = forwardRef<ValidationPlanFormHandle, Props>(({ reques
             })
         }));
     };
+
+    // Helper to check if component is 9b
+    const isComponent9b = (comp: ValidationPlanComponent) =>
+        comp.component_definition.component_code === '9b';
 
     const calculateIsDeviation = (defaultExpectation: string, plannedTreatment: string): boolean => {
         if (defaultExpectation === 'Required' && (plannedTreatment === 'NotPlanned' || plannedTreatment === 'NotApplicable')) {
@@ -673,24 +741,110 @@ const ValidationPlanForm = forwardRef<ValidationPlanFormHandle, Props>(({ reques
                                                 </select>
                                             </td>
                                             <td className="border border-gray-300 px-3 py-2">
-                                                {comp.is_deviation ? (
-                                                    <textarea
-                                                        className={`w-full border border-gray-300 rounded px-2 py-1 text-sm ${!canEdit ? 'bg-gray-50' : ''}`}
-                                                        placeholder="Required: Explain deviation from standard..."
-                                                        rows={2}
-                                                        value={comp.rationale || ''}
-                                                        disabled={!canEdit}
-                                                        onChange={(e) => handleComponentChange(comp.component_id, 'rationale', e.target.value)}
-                                                    />
+                                                {/* Component 9b: Special handling with monitoring plan picker */}
+                                                {isComponent9b(comp) ? (
+                                                    <div className="space-y-2">
+                                                        {/* Monitoring Plan Version Picker - only show when Planned */}
+                                                        {comp.planned_treatment === 'Planned' && (
+                                                            <>
+                                                                {loadingMonitoringPlans ? (
+                                                                    <div className="text-xs text-gray-500">Loading monitoring plans...</div>
+                                                                ) : monitoringPlans.length === 0 ? (
+                                                                    <div className="p-2 bg-amber-50 border border-amber-200 rounded text-xs">
+                                                                        <span className="text-amber-800">No monitoring plans configured for this model.</span>
+                                                                        <p className="text-amber-600 mt-1">Consider setting to "Not Applicable" or creating a monitoring plan first.</p>
+                                                                    </div>
+                                                                ) : (
+                                                                    <>
+                                                                        <div>
+                                                                            <label className="block text-xs text-gray-600 mb-1">Select Monitoring Plan Version:</label>
+                                                                            <select
+                                                                                className={`border border-gray-300 rounded px-2 py-1 text-sm w-full ${!canEdit ? 'bg-gray-50' : ''}`}
+                                                                                value={comp.monitoring_plan_version_id || ''}
+                                                                                disabled={!canEdit}
+                                                                                onChange={(e) => handleComponentChange(
+                                                                                    comp.component_id,
+                                                                                    'monitoring_plan_version_id',
+                                                                                    e.target.value ? parseInt(e.target.value) : null
+                                                                                )}
+                                                                            >
+                                                                                <option value="">-- Select Version --</option>
+                                                                                {monitoringPlans.map(plan => (
+                                                                                    <optgroup key={plan.plan_id} label={plan.plan_name}>
+                                                                                        {plan.all_versions.map(version => (
+                                                                                            <option key={version.version_id} value={version.version_id}>
+                                                                                                v{version.version_number}
+                                                                                                {version.version_name ? ` - ${version.version_name}` : ''}
+                                                                                                {version.is_active ? ' (Active)' : ''}
+                                                                                                {' '}[{version.metrics_count} metrics]
+                                                                                            </option>
+                                                                                        ))}
+                                                                                    </optgroup>
+                                                                                ))}
+                                                                            </select>
+                                                                        </div>
+
+                                                                        {/* Version Summary */}
+                                                                        {comp.monitoring_plan_version_id && (() => {
+                                                                            const selectedPlan = monitoringPlans.find(p =>
+                                                                                p.all_versions.some(v => v.version_id === comp.monitoring_plan_version_id)
+                                                                            );
+                                                                            const selectedVersion = selectedPlan?.all_versions.find(v => v.version_id === comp.monitoring_plan_version_id);
+
+                                                                            if (selectedPlan && selectedVersion) {
+                                                                                return (
+                                                                                    <div className="p-2 bg-blue-50 border border-blue-200 rounded text-xs">
+                                                                                        <div className="font-medium text-blue-800">{selectedPlan.plan_name}</div>
+                                                                                        <div className="text-blue-700 mt-1">
+                                                                                            Version {selectedVersion.version_number} • {selectedVersion.metrics_count} metrics • Effective {selectedVersion.effective_date}
+                                                                                        </div>
+                                                                                        {selectedPlan.latest_cycle_status && (
+                                                                                            <div className="text-blue-600 mt-1">
+                                                                                                Latest cycle: {selectedPlan.latest_cycle_status}
+                                                                                                {selectedPlan.latest_cycle_outcome_summary && ` - ${selectedPlan.latest_cycle_outcome_summary}`}
+                                                                                            </div>
+                                                                                        )}
+                                                                                    </div>
+                                                                                );
+                                                                            }
+                                                                            return null;
+                                                                        })()}
+                                                                    </>
+                                                                )}
+                                                            </>
+                                                        )}
+
+                                                        {/* Review Notes */}
+                                                        <textarea
+                                                            className={`w-full border border-gray-300 rounded px-2 py-1 text-sm ${!canEdit ? 'bg-gray-50' : ''}`}
+                                                            placeholder={comp.planned_treatment === 'Planned' ? 'Review notes...' : comp.is_deviation ? 'Required: Explain deviation...' : 'Optional notes...'}
+                                                            rows={2}
+                                                            value={comp.rationale || ''}
+                                                            disabled={!canEdit}
+                                                            onChange={(e) => handleComponentChange(comp.component_id, 'rationale', e.target.value)}
+                                                        />
+                                                    </div>
                                                 ) : (
-                                                    <textarea
-                                                        className={`w-full border border-gray-300 rounded px-2 py-1 text-sm ${!canEdit ? 'bg-gray-50' : ''}`}
-                                                        placeholder="Optional notes..."
-                                                        rows={2}
-                                                        value={comp.rationale || ''}
-                                                        disabled={!canEdit}
-                                                        onChange={(e) => handleComponentChange(comp.component_id, 'rationale', e.target.value)}
-                                                    />
+                                                    /* Standard components */
+                                                    comp.is_deviation ? (
+                                                        <textarea
+                                                            className={`w-full border border-gray-300 rounded px-2 py-1 text-sm ${!canEdit ? 'bg-gray-50' : ''}`}
+                                                            placeholder="Required: Explain deviation from standard..."
+                                                            rows={2}
+                                                            value={comp.rationale || ''}
+                                                            disabled={!canEdit}
+                                                            onChange={(e) => handleComponentChange(comp.component_id, 'rationale', e.target.value)}
+                                                        />
+                                                    ) : (
+                                                        <textarea
+                                                            className={`w-full border border-gray-300 rounded px-2 py-1 text-sm ${!canEdit ? 'bg-gray-50' : ''}`}
+                                                            placeholder="Optional notes..."
+                                                            rows={2}
+                                                            value={comp.rationale || ''}
+                                                            disabled={!canEdit}
+                                                            onChange={(e) => handleComponentChange(comp.component_id, 'rationale', e.target.value)}
+                                                        />
+                                                    )
                                                 )}
                                             </td>
                                         </tr>

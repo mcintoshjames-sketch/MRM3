@@ -1178,8 +1178,8 @@ class TestApprovalWorkflowIntegration:
         model.risk_tier_id = taxonomy_values["tier1"].value_id
         db_session.commit()
 
-        # Progress through workflow states: INTAKE → PLANNING → IN_PROGRESS → REVIEW → PENDING_APPROVAL
-        for status_name in ["status_planning", "status_in_progress", "status_review", "status_pending_approval"]:
+        # Progress through workflow states: INTAKE → PLANNING → IN_PROGRESS → REVIEW
+        for status_name in ["status_planning", "status_in_progress", "status_review"]:
             status_payload = {
                 "new_status_id": taxonomy_values[status_name].value_id,
                 "reason": f"Moving to {status_name}"
@@ -1188,6 +1188,42 @@ class TestApprovalWorkflowIntegration:
             if response.status_code != 200:
                 print(f"ERROR at {status_name}: {response.status_code} - {response.json()}")
             assert response.status_code == 200
+
+        # Create outcome (required before PENDING_APPROVAL)
+        # Need "Overall Rating" taxonomy value - use pass_with_findings as it's commonly used
+        # The outcome needs: overall_rating_id, executive_summary, recommended_review_frequency, effective_date
+        from app.models.taxonomy import Taxonomy, TaxonomyValue as TV
+        overall_rating_tax = db_session.query(Taxonomy).filter(Taxonomy.name == "Overall Rating").first()
+        if not overall_rating_tax:
+            overall_rating_tax = Taxonomy(name="Overall Rating", is_system=True)
+            db_session.add(overall_rating_tax)
+            db_session.flush()
+            fit_for_purpose = TV(taxonomy_id=overall_rating_tax.taxonomy_id, code="FIT", label="Fit for Purpose", sort_order=1)
+            db_session.add(fit_for_purpose)
+            db_session.commit()
+            rating_id = fit_for_purpose.value_id
+        else:
+            rating = db_session.query(TV).filter(TV.taxonomy_id == overall_rating_tax.taxonomy_id).first()
+            rating_id = rating.value_id
+
+        outcome_payload = {
+            "overall_rating_id": rating_id,
+            "executive_summary": "Test validation completed successfully",
+            "recommended_review_frequency": 12,
+            "effective_date": "2025-01-01"
+        }
+        response = client.post(f"/validation-workflow/requests/{request_id}/outcome", json=outcome_payload, headers=admin_headers)
+        assert response.status_code == 201
+
+        # Now move to PENDING_APPROVAL
+        status_payload = {
+            "new_status_id": taxonomy_values["status_pending_approval"].value_id,
+            "reason": "Moving to PENDING_APPROVAL"
+        }
+        response = client.patch(f"/validation-workflow/requests/{request_id}/status", json=status_payload, headers=admin_headers)
+        if response.status_code != 200:
+            print(f"ERROR at status_pending_approval: {response.status_code} - {response.json()}")
+        assert response.status_code == 200
 
         # Check that approval was created during re-evaluation
         approval = db_session.query(ValidationApproval).filter(

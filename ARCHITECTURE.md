@@ -255,6 +255,51 @@ Model Risk Management inventory system with a FastAPI backend, React/TypeScript 
   - Metrics: `POST /plans/{id}/metrics` (Admin or team member), `PATCH /plans/{id}/metrics/{metric_id}` (Admin or team member), `DELETE /plans/{id}/metrics/{metric_id}` (Admin or team member)
 - **Frontend**: MonitoringPlansPage (Admin only) with tabs for Teams and Plans management. Metrics modal adapts configuration form based on KPM evaluation type: shows threshold fields for Quantitative KPMs, guidance text for Qualitative/Outcome Only.
 
+## Monitoring Cycles & Results (with Approval Workflow)
+- **Purpose**: Capture periodic monitoring results with Red/Yellow/Green outcome calculation and formal approval workflow similar to validation projects.
+- **Data Model**:
+  - **MonitoringCycle**: Represents one monitoring period for a plan. Fields: cycle_id, plan_id, period_start_date, period_end_date, submission_due_date, report_due_date, status, assigned_to_user_id, submitted_at, submitted_by_user_id, completed_at, completed_by_user_id, notes.
+  - **MonitoringCycleApproval**: Approval records for cycles (Global + Regional). Fields: approval_id, cycle_id, approver_id, approval_type (Global/Regional), region_id, represented_region_id, is_required, approval_status (Pending/Approved/Rejected/Voided), comments, approved_at, voided_by_id, void_reason, voided_at.
+  - **MonitoringResult**: Individual metric result for a cycle. Fields: result_id, cycle_id, plan_metric_id, model_id (optional for multi-model plans), numeric_value, outcome_value_id, calculated_outcome (GREEN/YELLOW/RED/N/A), narrative, supporting_data (JSON), entered_by_user_id.
+- **Cycle Status Workflow**:
+  ```
+  PENDING → DATA_COLLECTION → UNDER_REVIEW → PENDING_APPROVAL → APPROVED
+                                          ↘ CANCELLED          ↗
+  ```
+  - **PENDING**: Cycle created, awaiting start
+  - **DATA_COLLECTION**: Active data entry period (results can be added)
+  - **UNDER_REVIEW**: All results submitted, team reviewing quality
+  - **PENDING_APPROVAL**: Awaiting required approvals (Global + Regional)
+  - **APPROVED**: All approvals obtained, cycle complete and locked
+  - **CANCELLED**: Terminated before completion
+- **Approval Workflow**:
+  - When cycle moves to PENDING_APPROVAL, system auto-creates approval requirements:
+    - **Global Approval**: Always required (1 approval)
+    - **Regional Approvals**: One per region where models in plan scope are deployed (based on model_regions table, only for regions with requires_regional_approval=true)
+  - Approvers not pre-assigned; any user with appropriate role can approve
+  - When all required approvals obtained, cycle auto-transitions to APPROVED
+  - Admin can void approval requirements with documented reason
+  - Rejection returns cycle to UNDER_REVIEW and resets other pending approvals
+- **Outcome Calculation**:
+  - **Quantitative metrics**: Auto-calculated based on MonitoringPlanMetric thresholds
+    - GREEN: Value passes all threshold checks
+    - YELLOW: Value below yellow_min or above yellow_max
+    - RED: Value below red_min or above red_max
+  - **Qualitative/Outcome Only metrics**: User directly selects outcome via outcome_value_id (taxonomy reference)
+- **API Endpoints** (prefix: `/monitoring`):
+  - Cycles: `POST /plans/{id}/cycles`, `GET /plans/{id}/cycles`, `GET /cycles/{id}`, `PATCH /cycles/{id}`, `DELETE /cycles/{id}`
+  - Workflow: `POST /cycles/{id}/start`, `POST /cycles/{id}/submit`, `POST /cycles/{id}/cancel`, `POST /cycles/{id}/request-approval`
+  - Results: `POST /cycles/{id}/results`, `GET /cycles/{id}/results`, `PATCH /results/{id}`, `DELETE /results/{id}`
+  - Approvals: `GET /cycles/{id}/approvals`, `POST /cycles/{id}/approvals/{approval_id}/approve`, `POST /cycles/{id}/approvals/{approval_id}/reject`, `POST /cycles/{id}/approvals/{approval_id}/void`
+- **Permission Model**:
+  | Role | Cycles | Results | Approvals |
+  |------|--------|---------|-----------|
+  | Admin | Full CRUD | Full CRUD | Approve, Reject, Void |
+  | Team Member | Full CRUD | Full CRUD | Request Approval, Approve Global |
+  | Data Provider | View, Submit | Create, Update own | - |
+  | Regional Approver | View | View | Approve for their region |
+- **Frontend**: 📋 PENDING (Phases 4-7)
+
 ## Security, Error Handling, Logging
 - JWT auth with token expiry; passwords hashed with bcrypt.
 - 401 handling: frontend interceptor removes token and redirects to `/login`.

@@ -4399,9 +4399,9 @@ def validate_plan_compliance(
     """
     errors = []
 
-    # Get the validation plan
+    # Get the validation plan with component definitions
     plan = db.query(ValidationPlan).options(
-        joinedload(ValidationPlan.components)
+        joinedload(ValidationPlan.components).joinedload(ValidationPlanComponent.component_definition)
     ).filter(ValidationPlan.request_id == request_id).first()
 
     if not plan:
@@ -4430,6 +4430,47 @@ def validate_plan_compliance(
                     f"Component {comp.component_definition.component_code} ({comp.component_definition.component_title}) "
                     f"is marked as deviation but has no rationale"
                 )
+
+    # ===== COMPONENT 9b VALIDATION (Performance Monitoring Plan Review) =====
+    # Find component 9b in the plan
+    comp_9b = next(
+        (c for c in plan.components if c.component_definition.component_code == "9b"),
+        None
+    )
+
+    if comp_9b:
+        planned_treatment = comp_9b.planned_treatment
+        expectation = comp_9b.default_expectation
+
+        if planned_treatment == "Planned":
+            # If marked as Planned, must have a valid monitoring_plan_version_id
+            if not comp_9b.monitoring_plan_version_id:
+                errors.append(
+                    "Component 9b (Performance Monitoring Plan Review) is marked as 'Planned' but no "
+                    "monitoring plan version is selected. Please select a version to review."
+                )
+            else:
+                # Verify the version still exists and is valid
+                from app.models.monitoring import MonitoringPlanVersion
+                version = db.query(MonitoringPlanVersion).filter(
+                    MonitoringPlanVersion.version_id == comp_9b.monitoring_plan_version_id
+                ).first()
+                if not version:
+                    errors.append(
+                        f"Component 9b (Performance Monitoring Plan Review): Selected monitoring plan "
+                        f"version (ID: {comp_9b.monitoring_plan_version_id}) no longer exists."
+                    )
+
+        elif planned_treatment == "NotPlanned" and expectation == "Required":
+            # If Required and marked NotPlanned, must have rationale
+            if not comp_9b.rationale or not comp_9b.rationale.strip():
+                errors.append(
+                    "Component 9b (Performance Monitoring Plan Review) is 'Required' for this risk tier "
+                    "but marked as 'Not Planned'. A rationale is required to justify this deviation."
+                )
+
+        # NotApplicable is allowed when no monitoring plan covers the model(s)
+        # This is validated at form level, not blocking transition
 
     return len(errors) == 0, errors
 
@@ -5231,6 +5272,23 @@ def update_validation_plan(
 
             if comp_update.additional_notes is not None:
                 plan_comp.additional_notes = comp_update.additional_notes
+
+            # Component 9b specific fields (Performance Monitoring Plan Review)
+            if comp_update.monitoring_plan_version_id is not None:
+                # Validate that the version exists
+                from app.models.monitoring import MonitoringPlanVersion
+                version = db.query(MonitoringPlanVersion).filter(
+                    MonitoringPlanVersion.version_id == comp_update.monitoring_plan_version_id
+                ).first()
+                if not version:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail=f"Monitoring plan version {comp_update.monitoring_plan_version_id} not found"
+                    )
+                plan_comp.monitoring_plan_version_id = comp_update.monitoring_plan_version_id
+
+            if comp_update.monitoring_review_notes is not None:
+                plan_comp.monitoring_review_notes = comp_update.monitoring_review_notes
 
     db.commit()
     db.refresh(plan)

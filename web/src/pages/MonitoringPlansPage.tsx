@@ -61,6 +61,8 @@ interface MonitoringPlan {
     data_provider_name?: string | null;
     model_count?: number;
     metric_count?: number;
+    version_count?: number;
+    active_version_number?: number | null;
     monitoring_team_id?: number | null;
     data_provider_user_id?: number | null;
     reporting_lead_days?: number;
@@ -68,6 +70,43 @@ interface MonitoringPlan {
     data_provider?: User | null;
     models?: Model[];
     metrics?: PlanMetric[];
+}
+
+interface PlanVersion {
+    version_id: number;
+    version_number: number;
+    version_name: string | null;
+    description: string | null;
+    effective_date: string;
+    published_by_name: string | null;
+    published_at: string;
+    is_active: boolean;
+    metrics_count: number;
+    cycles_count: number;
+}
+
+interface MetricSnapshot {
+    snapshot_id: number;
+    kpm_id: number;
+    kpm_name: string;
+    kpm_category_name: string | null;
+    evaluation_type: string;
+    yellow_min: number | null;
+    yellow_max: number | null;
+    red_min: number | null;
+    red_max: number | null;
+    qualitative_guidance: string | null;
+    sort_order: number;
+}
+
+interface PlanVersionDetail extends PlanVersion {
+    metric_snapshots: MetricSnapshot[];
+}
+
+interface ActiveCyclesWarning {
+    warning: boolean;
+    message: string;
+    active_cycle_count: number;
 }
 
 interface Kpm {
@@ -126,6 +165,10 @@ export default function MonitoringPlansPage() {
     // Metrics management
     const [selectedPlanForMetrics, setSelectedPlanForMetrics] = useState<MonitoringPlan | null>(null);
     const [showMetricsModal, setShowMetricsModal] = useState(false);
+
+    // Versions management
+    const [selectedPlanForVersions, setSelectedPlanForVersions] = useState<MonitoringPlan | null>(null);
+    const [showVersionsModal, setShowVersionsModal] = useState(false);
 
     const [error, setError] = useState<string | null>(null);
 
@@ -317,6 +360,11 @@ export default function MonitoringPlansPage() {
         } catch (err) {
             console.error('Failed to fetch plan details:', err);
         }
+    };
+
+    const openVersionsModal = (plan: MonitoringPlan) => {
+        setSelectedPlanForVersions(plan);
+        setShowVersionsModal(true);
     };
 
     // Admin check
@@ -680,6 +728,7 @@ export default function MonitoringPlansPage() {
                                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Team</th>
                                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Models</th>
                                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Metrics</th>
+                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Versions</th>
                                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Next Submission</th>
                                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
                                         <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">Actions</th>
@@ -688,7 +737,7 @@ export default function MonitoringPlansPage() {
                                 <tbody className="bg-white divide-y divide-gray-200">
                                     {plans.length === 0 ? (
                                         <tr>
-                                            <td colSpan={8} className="px-6 py-4 text-center text-gray-500">
+                                            <td colSpan={9} className="px-6 py-4 text-center text-gray-500">
                                                 No monitoring plans. Click "Add Plan" to create one.
                                             </td>
                                         </tr>
@@ -710,6 +759,19 @@ export default function MonitoringPlansPage() {
                                                         className="text-blue-600 hover:text-blue-800 underline"
                                                     >
                                                         {plan.metric_count} KPMs
+                                                    </button>
+                                                </td>
+                                                <td className="px-6 py-4 text-sm">
+                                                    <button
+                                                        onClick={() => openVersionsModal(plan)}
+                                                        className="text-blue-600 hover:text-blue-800 underline"
+                                                    >
+                                                        {plan.active_version_number
+                                                            ? `v${plan.active_version_number}`
+                                                            : 'None'}
+                                                        {plan.version_count && plan.version_count > 0
+                                                            ? ` (${plan.version_count})`
+                                                            : ''}
                                                     </button>
                                                 </td>
                                                 <td className="px-6 py-4 text-sm">
@@ -766,6 +828,17 @@ export default function MonitoringPlansPage() {
                     }}
                 />
             )}
+
+            {showVersionsModal && selectedPlanForVersions && (
+                <VersionsModal
+                    plan={selectedPlanForVersions}
+                    onClose={() => {
+                        setShowVersionsModal(false);
+                        setSelectedPlanForVersions(null);
+                        fetchPlans(); // Refresh to update version counts
+                    }}
+                />
+            )}
         </Layout>
     );
 }
@@ -793,6 +866,16 @@ function MetricsModal({ plan, kpmCategories, onKpmCreated, onClose }: MetricsMod
         is_active: true
     });
     const [error, setError] = useState<string | null>(null);
+
+    // Active cycles warning
+    const [activeCyclesWarning, setActiveCyclesWarning] = useState<ActiveCyclesWarning | null>(null);
+
+    useEffect(() => {
+        // Fetch active cycles warning
+        api.get(`/monitoring/plans/${plan.plan_id}/active-cycles-warning`)
+            .then(res => setActiveCyclesWarning(res.data))
+            .catch(err => console.error('Failed to fetch active cycles warning:', err));
+    }, [plan.plan_id]);
 
     // Create New KPM inline state
     const [showCreateKpm, setShowCreateKpm] = useState(false);
@@ -956,6 +1039,24 @@ function MetricsModal({ plan, kpmCategories, onKpmCreated, onClose }: MetricsMod
                     <p className="text-sm text-gray-600 mb-4">
                         Configure thresholds and guidance for each KPM in this monitoring plan.
                     </p>
+
+                    {/* Active Cycles Warning Banner */}
+                    {activeCyclesWarning?.warning && (
+                        <div className="bg-amber-50 border border-amber-300 rounded-lg p-4 mb-4">
+                            <div className="flex items-start gap-3">
+                                <svg className="w-5 h-5 text-amber-500 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                                </svg>
+                                <div>
+                                    <h4 className="font-medium text-amber-800">Active Cycles Warning</h4>
+                                    <p className="text-sm text-amber-700 mt-1">{activeCyclesWarning.message}</p>
+                                    <p className="text-xs text-amber-600 mt-2">
+                                        {activeCyclesWarning.active_cycle_count} active cycle(s) are locked to previous versions and will not be affected by changes made here.
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+                    )}
 
                     {showAddForm && (
                         <div className="bg-gray-50 p-4 rounded-lg mb-4 border">
@@ -1322,6 +1423,383 @@ function MetricsModal({ plan, kpmCategories, onKpmCreated, onClose }: MetricsMod
                             )}
                         </tbody>
                     </table>
+                </div>
+
+                <div className="p-4 border-t bg-gray-50 flex justify-end">
+                    <button onClick={onClose} className="btn-secondary">
+                        Close
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+}
+
+// Versions Modal Component
+interface VersionsModalProps {
+    plan: MonitoringPlan;
+    onClose: () => void;
+}
+
+function VersionsModal({ plan, onClose }: VersionsModalProps) {
+    const [versions, setVersions] = useState<PlanVersion[]>([]);
+    const [loading, setLoading] = useState(true);
+    const [showPublishForm, setShowPublishForm] = useState(false);
+    const [publishFormData, setPublishFormData] = useState({
+        version_name: '',
+        description: '',
+        effective_date: new Date().toISOString().split('T')[0]
+    });
+    const [publishing, setPublishing] = useState(false);
+    const [error, setError] = useState<string | null>(null);
+
+    // Version detail view
+    const [selectedVersion, setSelectedVersion] = useState<PlanVersionDetail | null>(null);
+    const [loadingDetail, setLoadingDetail] = useState(false);
+
+    useEffect(() => {
+        fetchVersions();
+    }, [plan.plan_id]);
+
+    const fetchVersions = async () => {
+        setLoading(true);
+        try {
+            const response = await api.get(`/monitoring/plans/${plan.plan_id}/versions`);
+            setVersions(response.data);
+        } catch (err) {
+            console.error('Failed to fetch versions:', err);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const handlePublish = async (e: React.FormEvent) => {
+        e.preventDefault();
+        setPublishing(true);
+        setError(null);
+
+        try {
+            await api.post(`/monitoring/plans/${plan.plan_id}/versions/publish`, {
+                version_name: publishFormData.version_name || null,
+                description: publishFormData.description || null,
+                effective_date: publishFormData.effective_date || null
+            });
+            setShowPublishForm(false);
+            setPublishFormData({
+                version_name: '',
+                description: '',
+                effective_date: new Date().toISOString().split('T')[0]
+            });
+            fetchVersions();
+        } catch (err: any) {
+            setError(err.response?.data?.detail || 'Failed to publish version');
+        } finally {
+            setPublishing(false);
+        }
+    };
+
+    const handleViewDetail = async (version: PlanVersion) => {
+        setLoadingDetail(true);
+        try {
+            const response = await api.get(`/monitoring/plans/${plan.plan_id}/versions/${version.version_id}`);
+            setSelectedVersion(response.data);
+        } catch (err) {
+            console.error('Failed to fetch version details:', err);
+        } finally {
+            setLoadingDetail(false);
+        }
+    };
+
+    const handleExportCSV = (version: PlanVersionDetail) => {
+        // Create CSV content from metric snapshots
+        const headers = ['KPM Name', 'Category', 'Type', 'Yellow Min', 'Yellow Max', 'Red Min', 'Red Max', 'Guidance'];
+        const rows = version.metric_snapshots.map(s => [
+            s.kpm_name,
+            s.kpm_category_name || '',
+            s.evaluation_type,
+            s.yellow_min?.toString() || '',
+            s.yellow_max?.toString() || '',
+            s.red_min?.toString() || '',
+            s.red_max?.toString() || '',
+            (s.qualitative_guidance || '').replace(/"/g, '""')
+        ]);
+
+        const csvContent = [
+            headers.join(','),
+            ...rows.map(row => row.map(cell => `"${cell}"`).join(','))
+        ].join('\n');
+
+        const blob = new Blob([csvContent], { type: 'text/csv' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `${plan.name}_v${version.version_number}_metrics_${version.effective_date}.csv`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+    };
+
+    return (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+            <div className="bg-white rounded-lg shadow-xl w-full max-w-4xl max-h-[90vh] overflow-hidden">
+                <div className="p-4 border-b flex justify-between items-center bg-gray-50">
+                    <h3 className="text-lg font-bold">
+                        {selectedVersion ? `Version ${selectedVersion.version_number} Details` : `Versions: ${plan.name}`}
+                    </h3>
+                    <button onClick={onClose} className="text-gray-500 hover:text-gray-700">
+                        <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                    </button>
+                </div>
+
+                <div className="p-4 overflow-y-auto max-h-[70vh]">
+                    {/* Version Detail View */}
+                    {selectedVersion ? (
+                        <div>
+                            <button
+                                onClick={() => setSelectedVersion(null)}
+                                className="text-blue-600 hover:text-blue-800 mb-4 flex items-center gap-1"
+                            >
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                                </svg>
+                                Back to Versions
+                            </button>
+
+                            <div className="bg-gray-50 p-4 rounded-lg mb-4">
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div>
+                                        <span className="text-sm text-gray-500">Version Name:</span>
+                                        <p className="font-medium">{selectedVersion.version_name || `Version ${selectedVersion.version_number}`}</p>
+                                    </div>
+                                    <div>
+                                        <span className="text-sm text-gray-500">Effective Date:</span>
+                                        <p className="font-medium">{selectedVersion.effective_date}</p>
+                                    </div>
+                                    <div>
+                                        <span className="text-sm text-gray-500">Published By:</span>
+                                        <p className="font-medium">{selectedVersion.published_by_name || 'Unknown'}</p>
+                                    </div>
+                                    <div>
+                                        <span className="text-sm text-gray-500">Published At:</span>
+                                        <p className="font-medium">{selectedVersion.published_at.split('T')[0]}</p>
+                                    </div>
+                                    {selectedVersion.description && (
+                                        <div className="col-span-2">
+                                            <span className="text-sm text-gray-500">Description:</span>
+                                            <p className="font-medium">{selectedVersion.description}</p>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+
+                            <div className="flex justify-between items-center mb-2">
+                                <h4 className="font-medium">Metric Snapshots ({selectedVersion.metric_snapshots.length})</h4>
+                                <button
+                                    onClick={() => handleExportCSV(selectedVersion)}
+                                    className="text-sm text-blue-600 hover:text-blue-800 flex items-center gap-1"
+                                >
+                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                    </svg>
+                                    Export CSV
+                                </button>
+                            </div>
+
+                            <table className="min-w-full divide-y divide-gray-200 text-sm">
+                                <thead className="bg-gray-50">
+                                    <tr>
+                                        <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">KPM</th>
+                                        <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Category</th>
+                                        <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Type</th>
+                                        <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Thresholds</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-gray-200">
+                                    {selectedVersion.metric_snapshots.length === 0 ? (
+                                        <tr>
+                                            <td colSpan={4} className="px-3 py-4 text-center text-gray-500">
+                                                No metrics in this version snapshot.
+                                            </td>
+                                        </tr>
+                                    ) : (
+                                        selectedVersion.metric_snapshots.map(snapshot => (
+                                            <tr key={snapshot.snapshot_id} className="hover:bg-gray-50">
+                                                <td className="px-3 py-2">
+                                                    <div className="font-medium">{snapshot.kpm_name}</div>
+                                                    {snapshot.qualitative_guidance && (
+                                                        <div className="text-xs text-gray-500 truncate max-w-xs" title={snapshot.qualitative_guidance}>
+                                                            {snapshot.qualitative_guidance}
+                                                        </div>
+                                                    )}
+                                                </td>
+                                                <td className="px-3 py-2 text-gray-600">{snapshot.kpm_category_name || '-'}</td>
+                                                <td className="px-3 py-2">
+                                                    <span className={`px-2 py-0.5 text-xs rounded-full ${
+                                                        snapshot.evaluation_type === 'Quantitative' ? 'bg-blue-100 text-blue-800' :
+                                                        snapshot.evaluation_type === 'Qualitative' ? 'bg-purple-100 text-purple-800' :
+                                                        'bg-green-100 text-green-800'
+                                                    }`}>
+                                                        {snapshot.evaluation_type}
+                                                    </span>
+                                                </td>
+                                                <td className="px-3 py-2">
+                                                    {snapshot.evaluation_type === 'Quantitative' ? (
+                                                        <div className="flex gap-1">
+                                                            <span className="px-1.5 py-0.5 bg-yellow-100 text-yellow-800 rounded text-xs">
+                                                                Y: {snapshot.yellow_min ?? '-'}/{snapshot.yellow_max ?? '-'}
+                                                            </span>
+                                                            <span className="px-1.5 py-0.5 bg-red-100 text-red-800 rounded text-xs">
+                                                                R: {snapshot.red_min ?? '-'}/{snapshot.red_max ?? '-'}
+                                                            </span>
+                                                        </div>
+                                                    ) : (
+                                                        <span className="text-xs text-gray-600 italic">Judgment-based</span>
+                                                    )}
+                                                </td>
+                                            </tr>
+                                        ))
+                                    )}
+                                </tbody>
+                            </table>
+                        </div>
+                    ) : (
+                        /* Version List View */
+                        <div>
+                            <div className="flex justify-between items-center mb-4">
+                                <p className="text-sm text-gray-600">
+                                    Manage version history for this monitoring plan. Each version captures a snapshot of the metric configuration.
+                                </p>
+                                <button
+                                    onClick={() => setShowPublishForm(true)}
+                                    className="btn-primary text-sm"
+                                >
+                                    Publish New Version
+                                </button>
+                            </div>
+
+                            {/* Publish Form */}
+                            {showPublishForm && (
+                                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
+                                    <h4 className="font-medium text-blue-800 mb-3">Publish New Version</h4>
+                                    <p className="text-sm text-blue-700 mb-3">
+                                        This will create a snapshot of all current active metrics with their thresholds.
+                                    </p>
+
+                                    {error && (
+                                        <div className="bg-red-100 border border-red-400 text-red-700 px-3 py-2 rounded mb-3 text-sm">
+                                            {error}
+                                        </div>
+                                    )}
+
+                                    <form onSubmit={handlePublish}>
+                                        <div className="grid grid-cols-2 gap-4 mb-4">
+                                            <div>
+                                                <label className="block text-sm font-medium mb-1">Version Name</label>
+                                                <input
+                                                    type="text"
+                                                    className="input-field"
+                                                    value={publishFormData.version_name}
+                                                    onChange={(e) => setPublishFormData({ ...publishFormData, version_name: e.target.value })}
+                                                    placeholder="e.g., Q4 2025 Threshold Update"
+                                                />
+                                            </div>
+                                            <div>
+                                                <label className="block text-sm font-medium mb-1">Effective Date</label>
+                                                <input
+                                                    type="date"
+                                                    className="input-field"
+                                                    value={publishFormData.effective_date}
+                                                    onChange={(e) => setPublishFormData({ ...publishFormData, effective_date: e.target.value })}
+                                                />
+                                            </div>
+                                            <div className="col-span-2">
+                                                <label className="block text-sm font-medium mb-1">Description/Changelog</label>
+                                                <textarea
+                                                    className="input-field"
+                                                    rows={2}
+                                                    value={publishFormData.description}
+                                                    onChange={(e) => setPublishFormData({ ...publishFormData, description: e.target.value })}
+                                                    placeholder="Describe what changed in this version..."
+                                                />
+                                            </div>
+                                        </div>
+                                        <div className="flex gap-2">
+                                            <button
+                                                type="submit"
+                                                disabled={publishing}
+                                                className="btn-primary text-sm disabled:opacity-50"
+                                            >
+                                                {publishing ? 'Publishing...' : 'Publish Version'}
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={() => {
+                                                    setShowPublishForm(false);
+                                                    setError(null);
+                                                }}
+                                                className="btn-secondary text-sm"
+                                            >
+                                                Cancel
+                                            </button>
+                                        </div>
+                                    </form>
+                                </div>
+                            )}
+
+                            {/* Version List */}
+                            {loading ? (
+                                <div className="text-center py-8 text-gray-500">Loading versions...</div>
+                            ) : versions.length === 0 ? (
+                                <div className="text-center py-8 text-gray-500 bg-gray-50 rounded-lg">
+                                    <p className="mb-2">No versions published yet.</p>
+                                    <p className="text-sm">Click "Publish New Version" to create the first snapshot of your metric configuration.</p>
+                                </div>
+                            ) : (
+                                <div className="space-y-3">
+                                    {versions.map(version => (
+                                        <div
+                                            key={version.version_id}
+                                            className={`border rounded-lg p-4 ${version.is_active ? 'border-green-300 bg-green-50' : 'border-gray-200'}`}
+                                        >
+                                            <div className="flex justify-between items-start">
+                                                <div>
+                                                    <div className="flex items-center gap-2">
+                                                        <span className="font-bold text-lg">v{version.version_number}</span>
+                                                        {version.is_active && (
+                                                            <span className="px-2 py-0.5 bg-green-500 text-white text-xs rounded-full">
+                                                                Active
+                                                            </span>
+                                                        )}
+                                                        {version.version_name && (
+                                                            <span className="text-gray-600">{version.version_name}</span>
+                                                        )}
+                                                    </div>
+                                                    <div className="text-sm text-gray-500 mt-1">
+                                                        Published {version.published_at.split('T')[0]} by {version.published_by_name || 'Unknown'}
+                                                    </div>
+                                                    <div className="text-sm text-gray-600 mt-1">
+                                                        Effective: {version.effective_date} | {version.metrics_count} metrics | {version.cycles_count} cycles using this version
+                                                    </div>
+                                                </div>
+                                                <div className="flex gap-2">
+                                                    <button
+                                                        onClick={() => handleViewDetail(version)}
+                                                        disabled={loadingDetail}
+                                                        className="text-blue-600 hover:text-blue-800 text-sm"
+                                                    >
+                                                        View Details
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    )}
                 </div>
 
                 <div className="p-4 border-t bg-gray-50 flex justify-end">

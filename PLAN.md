@@ -485,50 +485,58 @@ GET    /monitoring/plans/{plan_id}/cycles/{cycle_id}/export
 
 ## Implementation Phases
 
-### Phase 1: Database & Core API (Backend)
-1. Create migration for monitoring_cycles, monitoring_cycle_approvals, and monitoring_results tables
-2. Add MonitoringCycle, MonitoringCycleApproval, and MonitoringResult SQLAlchemy models
-3. Add Pydantic schemas for cycles, approvals, and results
-4. Implement CRUD endpoints for cycles
-5. Implement result entry endpoints with outcome calculation
-6. Add permission checks (data provider, team member, admin)
-7. Write pytest tests
+### Phase 1: Database & Core API (Backend) ✅ COMPLETE
+1. ✅ Create migration for monitoring_cycles, monitoring_cycle_approvals, and monitoring_results tables
+2. ✅ Add MonitoringCycle, MonitoringCycleApproval, and MonitoringResult SQLAlchemy models
+3. ✅ Add Pydantic schemas for cycles, approvals, and results
+4. ✅ Implement CRUD endpoints for cycles
+5. ✅ Implement result entry endpoints with outcome calculation
+6. ✅ Add permission checks (data provider, team member, admin)
+7. ✅ Write pytest tests (63 tests in test_monitoring.py)
 
-### Phase 2: Workflow & Validation (Backend)
-1. Implement cycle status transitions (including PENDING_APPROVAL → APPROVED)
-2. Add validation for result entry (required narrative for qualitative)
-3. Implement submit/request-approval workflow actions
-4. Implement auto-creation of approval requirements
-5. Write tests for workflow scenarios
+**Files Created/Modified:**
+- `api/alembic/versions/*_add_monitoring_cycles_tables.py` - Migration
+- `api/app/models/monitoring.py` - Added MonitoringCycle, MonitoringCycleApproval, MonitoringResult models
+- `api/app/models/__init__.py` - Exported new models
+- `api/app/schemas/monitoring.py` - Added cycle, approval, and result schemas
+- `api/app/api/monitoring.py` - Added all CRUD and workflow endpoints (~2300 lines)
+- `api/tests/test_monitoring.py` - Added test classes for cycles, workflow, results, approvals
 
-### Phase 3: Approval Workflow (Backend)
-1. Implement approval endpoints (approve, reject, void)
-2. Add logic to auto-generate approvals based on model regions
-3. Add auto-transition to APPROVED when all approvals complete
-4. Add permission checks for approvers (Global vs Regional)
-5. Write tests for approval scenarios
+### Phase 2: Workflow & Validation (Backend) ✅ COMPLETE (merged with Phase 1)
+1. ✅ Implement cycle status transitions (PENDING → DATA_COLLECTION → UNDER_REVIEW → PENDING_APPROVAL → APPROVED)
+2. ✅ Add validation for result entry (only allowed in DATA_COLLECTION or later, not PENDING)
+3. ✅ Implement submit/request-approval workflow actions
+4. ✅ Implement auto-creation of approval requirements (Global + Regional based on model regions)
+5. ✅ Write tests for workflow scenarios (included in Phase 1 tests)
 
-### Phase 4: Basic Frontend (Cycles Tab)
+### Phase 3: Approval Workflow (Backend) ✅ COMPLETE (merged with Phase 1)
+1. ✅ Implement approval endpoints (approve, reject, void)
+2. ✅ Add logic to auto-generate approvals based on model regions (queries model_regions for each model in plan scope)
+3. ✅ Add auto-transition to APPROVED when all approvals complete
+4. ✅ Add permission checks for approvers (Global: Admin or team member; Regional: User with region assignment)
+5. ✅ Write tests for approval scenarios (included in Phase 1 tests)
+
+### Phase 4: Basic Frontend (Cycles Tab) 📋 PENDING
 1. Add Cycles tab to MonitoringPlanDetailPage
 2. Display current cycle with progress and approval status
 3. List previous cycles with status badges
 4. Create New Cycle modal
 5. Add status badges for approval states
 
-### Phase 5: Results Entry UI
+### Phase 5: Results Entry UI 📋 PENDING
 1. Create ResultsEntryPage or modal
 2. Quantitative input with threshold visualization
 3. Qualitative dropdown with required narrative
 4. Real-time outcome calculation display
 5. Save/Submit functionality
 
-### Phase 6: Approval UI
+### Phase 6: Approval UI 📋 PENDING
 1. Create Approval Status section in cycle detail view
 2. Approve/Reject modals with comments
 3. Void approval UI (Admin only)
 4. Progress indicator for approval completion
 
-### Phase 7: Reporting & Trends
+### Phase 7: Reporting & Trends 📋 PENDING
 1. Implement trend API endpoint
 2. Add performance summary endpoint
 3. Create trend visualization component

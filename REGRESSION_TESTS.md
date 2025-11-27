@@ -5,10 +5,11 @@ This document tracks the regression testing strategy and test coverage for itera
 ## Quick Reference
 
 ```bash
-# Run all backend tests (~350 tests total)
+# Run all backend tests (~413 tests total)
 # Note: A few pre-existing test failures in conditional_approvals and model_submission_workflow
 # Added: 36 tests for Overdue Revalidation Commentary (23 core + 13 dashboard integration)
 # Added: 15 tests for Model Decommissioning workflow
+# Added: 63 tests for Monitoring Cycles, Results, and Approval Workflow
 cd api && python -m pytest
 
 # Run all frontend tests (128 tests passing)
@@ -489,6 +490,65 @@ cd web && pnpm test:coverage
 - [x] Update plan metric as Admin succeeds
 - [x] Delete plan metric as Admin succeeds
 
+#### Monitoring Cycles (`test_monitoring.py`)
+- [x] Create cycle auto-calculates period dates
+- [x] Create cycle creates initial PENDING status
+- [x] List cycles when empty
+- [x] List cycles with data
+- [x] List cycles filtered by status
+- [x] Get cycle by ID
+- [x] Get non-existent cycle returns 404
+- [x] Update cycle assigned_to_user_id
+- [x] Update cycle notes
+- [x] Delete cycle in PENDING status succeeds
+- [x] Delete cycle in DATA_COLLECTION fails (409)
+- [x] Delete non-existent cycle returns 404
+
+#### Monitoring Cycle Workflow (`test_monitoring.py`)
+- [x] Start cycle (PENDING → DATA_COLLECTION)
+- [x] Start non-pending cycle fails (400)
+- [x] Submit cycle (DATA_COLLECTION → UNDER_REVIEW)
+- [x] Submit without results fails (400)
+- [x] Request approval (UNDER_REVIEW → PENDING_APPROVAL)
+- [x] Request approval auto-creates global approval requirement
+- [x] Request approval auto-creates regional requirements based on model regions
+- [x] Cancel cycle with reason (any active state → CANCELLED)
+- [x] Cancel already-cancelled cycle fails (400)
+- [x] Workflow transitions create audit logs
+- [x] Invalid workflow transition fails (400)
+
+#### Monitoring Results (`test_monitoring.py`)
+- [x] Create result for quantitative metric
+- [x] Create result calculates GREEN outcome (within threshold)
+- [x] Create result calculates YELLOW outcome (warning threshold)
+- [x] Create result calculates RED outcome (critical threshold)
+- [x] Create result for qualitative metric with outcome_value_id
+- [x] Create result with narrative and supporting_data
+- [x] Create result on pending cycle fails (400)
+- [x] List results for cycle when empty
+- [x] List results for cycle with data
+- [x] List results includes calculated outcome
+- [x] Update result recalculates outcome
+- [x] Delete result successfully
+- [x] Result includes metric and KPM details in response
+
+#### Monitoring Cycle Approval Workflow (`test_monitoring.py`)
+- [x] Request approval creates global approval requirement
+- [x] Request approval creates regional approvals based on model regions
+- [x] List cycle approvals when empty
+- [x] List cycle approvals with data
+- [x] Approve global approval as Admin succeeds
+- [x] Approve global approval adds comments
+- [x] Approve regional approval requires region approver permission
+- [x] Cycle auto-transitions to APPROVED when all approvals complete
+- [x] Reject approval returns cycle to UNDER_REVIEW
+- [x] Reject approval requires comments
+- [x] Void approval requirement with reason
+- [x] Voided approval excludes from completion check
+- [x] Cannot approve already-approved approval (400)
+- [x] Cannot approve voided approval (400)
+- [x] Approval workflow creates audit logs
+
 ### Frontend Component Tests (web/src/) - ✅ FULLY OPERATIONAL
 
 **Note**: All tests pass using happy-dom environment with direct module mocking (no MSW).
@@ -797,6 +857,7 @@ describe('NewPage', () => {
 | **Model Decommissioning** | ✅ test_decommissioning.py (16 tests) | 📋 PendingDecommissioningPage.test.tsx (15 tests pending), ModelDetailsPage decommissioning tests (3 tests pending) | 2025-11-26 |
 | **KPM Library** | ✅ test_monitoring.py (14 tests - categories + KPMs CRUD) | ✅ TaxonomyPage KPM tab (manual testing) | 2025-11-26 |
 | **Performance Monitoring Plans** | ✅ test_monitoring.py (27 tests - teams, plans, metrics) + 6 manual permission tests | ✅ MonitoringPlansPage (Admin UI) | 2025-11-26 |
+| **Monitoring Cycles & Results** | ✅ test_monitoring.py (63 tests - cycles CRUD + workflow + results + approval) | ⏸️ Frontend paused (Phase 2+) | 2025-11-26 |
 
 **Features Added:**
 - Development type (In-House / Third-Party)
@@ -824,15 +885,21 @@ describe('NewPage', () => {
 - **Model Decommissioning** (dual approval workflow with Validator + Owner gates, replacement model tracking, gap analysis, pending decommissioning dashboard for Validators/Admins, decommissioning tab and alert banner on ModelDetailsPage, navigation badge count)
 - **KPM Library** (standardized library of Key Performance Metrics for model monitoring with 8 categories and ~30 pre-seeded metrics, Admin CRUD for categories and metrics, TaxonomyPage KPM tab)
 - **Performance Monitoring Plans** (recurring monitoring schedules with teams, model scopes, and KPM thresholds; automatic due date calculation based on frequency; Admin management UI with plan cycle advancement; **team member permissions** - assigned team members can edit plans, add/update metrics, and advance cycles)
+- **Monitoring Cycles & Results** (periodic monitoring cycle execution with status workflow: PENDING → DATA_COLLECTION → UNDER_REVIEW → PENDING_APPROVAL → APPROVED/CANCELLED; automatic R/Y/G outcome calculation based on thresholds; Global + Regional approval workflow similar to validation projects; auto-creation of approval requirements based on model regional deployments; auto-transition to APPROVED when all approvals complete)
 
-**Total: 476 tests (348 backend + 128 frontend)**
-- Backend: 342 passing, 6 failing (4 integration tests for conditional_approvals need workflow hooks, 2 pre-existing)
+**Total: 539 tests (411 backend + 128 frontend)**
+- Backend: ~405 passing, 6 failing (4 integration tests for conditional_approvals need workflow hooks, 2 pre-existing)
 - Frontend: 128 passing
-- **Note**: Core regression suite stable. Added 41 new tests for KPM Library and Monitoring Plans (14 KPM tests + 27 monitoring tests) + 6 manual permission tests for team member access control.
+- **Note**: Core regression suite stable. Added 63 new tests for Monitoring Cycles & Results (cycles CRUD, workflow transitions, result entry with R/Y/G calculation, approval workflow with auto-completion).
 
 **Frontend Testing Debt:**
 - ValidationWorkflowPage component tests (~15 tests)
 - ValidationRequestDetailPage component tests (~25 tests)
+- **Monitoring Cycles UI (Phase 2+)** - Frontend implementation paused
+  - MonitoringCyclesPage component tests (~15 tests)
+  - CycleDetailPage component tests (~20 tests)
+  - ResultEntryForm component tests (~10 tests)
+  - CycleApprovalSection component tests (~8 tests)
   - Overview tab rendering
   - Assignments tab with validator management
   - Work components tab with status updates

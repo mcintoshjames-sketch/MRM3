@@ -1355,6 +1355,7 @@ export default function ValidationRequestDetailPage() {
                     <ValidationPlanForm
                         ref={validationPlanRef}
                         requestId={request.request_id}
+                        modelId={request.models[0]?.model_id}
                         modelName={request.models[0]?.model_name}
                         riskTier={request.models[0]?.model_id ? 'Loading...' : undefined}
                         onSave={fetchData}
