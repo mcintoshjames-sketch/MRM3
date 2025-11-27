@@ -57,7 +57,7 @@ Model Risk Management inventory system with a FastAPI backend, React/TypeScript 
 - Additional approvals: `conditional_approval.py` (ApproverRole, ConditionalApprovalRule, RuleRequiredApprover).
   - MAP Applications: `map_application.py` (mock application inventory), `model_application.py` (model-application links with relationship types).
   - KPM (Key Performance Metrics): `kpm.py` (KpmCategory, Kpm - library of ongoing monitoring metrics).
-  - Performance Monitoring: `monitoring.py` (MonitoringTeam, MonitoringPlan, MonitoringPlanMetric, monitoring_team_members, monitoring_plan_models junction tables).
+  - Performance Monitoring: `monitoring.py` (MonitoringTeam, MonitoringPlan, MonitoringPlanMetric, MonitoringPlanVersion, MonitoringPlanMetricSnapshot, monitoring_team_members, monitoring_plan_models junction tables).
   - Compliance/analytics: `audit_log.py`, `export_view.py`, `saved_query.py`, `version_deployment_task.py`, `validation_grouping.py`.
 - Schemas: mirrored Pydantic models in `app/schemas/` for requests/responses.
 - Authn/z: HTTP Bearer JWT tokens; `get_current_user` dependency enforces auth; role checks per endpoint; RLS utilities narrow visibility for non-privileged users.
@@ -94,7 +94,8 @@ Model Risk Management inventory system with a FastAPI backend, React/TypeScript 
 - **Model Decommissioning**: DecommissioningRequest (model retirement workflow with status PENDING → VALIDATOR_APPROVED → APPROVED/REJECTED/WITHDRAWN), DecommissioningStatusHistory (audit trail), DecommissioningApproval (GLOBAL and REGIONAL approvals). Tracks reason (from Model Decommission Reason taxonomy), replacement model (required for REPLACEMENT/CONSOLIDATION reasons), last production date, gap analysis with justification, archive location. **Stage 1 Dual Approval**: When requestor is NOT the model owner, both Validator AND Owner approval are required before Stage 2 (tracked via `owner_approval_required`, `owner_reviewed_by_id`, `owner_reviewed_at`, `owner_comment`). Either can approve first; status stays PENDING until both complete. **Update Support**: PATCH endpoint allows creator or Admin to update requests while in PENDING status (with audit logging for all field changes).
 - Region and VersionDeploymentTask for regional deployment approvals.
 - **KPM Library**: KpmCategory (groupings like "Discriminatory Performance", "Calibration") and Kpm (individual metrics like "AUC", "Brier Score" with description, calculation, interpretation). Pre-seeded with 8 categories and ~30 KPMs covering model validation and ongoing monitoring metrics.
-- **Performance Monitoring**: MonitoringTeam (groups of users responsible for monitoring), MonitoringPlan (recurring monitoring schedules for model sets with frequency: Monthly/Quarterly/Semi-Annual/Annual), MonitoringPlanMetric (KPM with yellow/red thresholds and qualitative guidance). Automatic due date calculation based on frequency and reporting lead days.
+- **Performance Monitoring**: MonitoringTeam (groups of users responsible for monitoring), MonitoringPlan (recurring monitoring schedules for model sets with frequency: Monthly/Quarterly/Semi-Annual/Annual), MonitoringPlanMetric (KPM with yellow/red thresholds and qualitative guidance), MonitoringPlanVersion (immutable snapshots of metric configurations), MonitoringPlanMetricSnapshot (point-in-time metric config at version publish). Automatic due date calculation based on frequency and reporting lead days. **Version binding**: cycles lock to active plan version at DATA_COLLECTION start.
+- **Component 9b (Performance Monitoring Plan Review)**: Validation plan component for assessing model's monitoring plan. ValidationPlanComponent extended with `monitoring_plan_version_id` and `monitoring_review_notes`. Required for Tier 1/2, IfApplicable for Tier 3. Validation enforced before Review/Pending Approval transitions.
 - AuditLog captures actions across entities including relationship changes and conditional approval actions.
 - SavedQuery/ExportView for analytics/reporting reuse.
 
@@ -234,6 +235,8 @@ Model Risk Management inventory system with a FastAPI backend, React/TypeScript 
   - **MonitoringTeam**: Groups of users responsible for monitoring. Fields: team_id, name, description, is_active, members (many-to-many via monitoring_team_members).
   - **MonitoringPlan**: Recurring monitoring schedule. Fields: plan_id, name, description, frequency (Monthly/Quarterly/Semi-Annual/Annual), monitoring_team_id, data_provider_user_id, reporting_lead_days, next_submission_due_date, next_report_due_date, is_active, models (many-to-many via monitoring_plan_models).
   - **MonitoringPlanMetric**: KPM configuration for a plan with thresholds. Fields: metric_id, plan_id, kpm_id, yellow_min/max, red_min/max, qualitative_guidance, sort_order, is_active.
+  - **MonitoringPlanVersion**: Version snapshots of plan metric configurations. Fields: version_id, plan_id, version_number, version_name, description, effective_date, published_by_user_id, published_at, is_active.
+  - **MonitoringPlanMetricSnapshot**: Point-in-time capture of metric configuration at version publish. Fields: snapshot_id, version_id, original_metric_id, kpm_id, yellow_min/max, red_min/max, qualitative_guidance, sort_order, is_active, kpm_name, kpm_category_name, evaluation_type.
 - **Mixed KPM Type Support**: Plans can include a mix of quantitative and qualitative KPMs:
   - Quantitative KPMs: Configure numerical thresholds (yellow_min/max, red_min/max) for automatic R/Y/G determination.
   - Qualitative KPMs: Configure assessment guidance text; outcomes determined by SME judgment at monitoring time.
@@ -242,23 +245,33 @@ Model Risk Management inventory system with a FastAPI backend, React/TypeScript 
   - next_submission_due_date auto-calculated based on frequency (1/3/6/12 months from creation or last cycle)
   - next_report_due_date = next_submission_due_date + reporting_lead_days
   - "Advance Cycle" endpoint to manually progress to next period
+- **Version Management**:
+  - Manual "Publish" action creates immutable version snapshot (similar to ComponentDefinitionConfiguration)
+  - Publishing deactivates previous active version and creates new version with metric snapshots
+  - Cycles lock to active version at DATA_COLLECTION start
+  - Version history preserved with cycle counts per version
+  - CSV export of version metrics for comparison
+  - Warning displayed when editing metrics with active cycles locked to previous versions
 - **Access Control**:
   - **Team Management**: Admin only (create, update, delete teams)
   - **Plan Creation**: Admin only
   - **Plan Editing**: Admin OR members of the assigned monitoring team
     - Team members can update plan properties, add/update/remove metrics, and advance the plan cycle
     - Non-team members (except Admins) receive 403 Forbidden
-  - **Audit Logging**: All plan/team/metric changes are logged with user attribution
+  - **Version Publishing**: Admin or team member
+  - **Audit Logging**: All plan/team/metric/version changes are logged with user attribution
 - **API Endpoints** (prefix: `/monitoring`):
   - Teams: `GET /teams`, `GET /teams/{id}`, `POST /teams` (Admin), `PATCH /teams/{id}` (Admin), `DELETE /teams/{id}` (Admin)
   - Plans: `GET /plans`, `GET /plans/{id}`, `POST /plans` (Admin), `PATCH /plans/{id}` (Admin or team member), `DELETE /plans/{id}` (Admin or team member), `POST /plans/{id}/advance-cycle` (Admin or team member)
   - Metrics: `POST /plans/{id}/metrics` (Admin or team member), `PATCH /plans/{id}/metrics/{metric_id}` (Admin or team member), `DELETE /plans/{id}/metrics/{metric_id}` (Admin or team member)
-- **Frontend**: MonitoringPlansPage (Admin only) with tabs for Teams and Plans management. Metrics modal adapts configuration form based on KPM evaluation type: shows threshold fields for Quantitative KPMs, guidance text for Qualitative/Outcome Only.
+  - Versions: `GET /plans/{id}/versions`, `GET /plans/{id}/versions/{version_id}`, `POST /plans/{id}/versions/publish`, `GET /plans/{id}/versions/{version_id}/export`
+  - Model lookup: `GET /models/{model_id}/monitoring-plans` (for component 9b)
+- **Frontend**: MonitoringPlansPage (Admin only) with tabs for Teams and Plans management. Metrics modal adapts configuration form based on KPM evaluation type: shows threshold fields for Quantitative KPMs, guidance text for Qualitative/Outcome Only. Versions modal displays version history with publish capability, version details with metric snapshots, and CSV export.
 
 ## Monitoring Cycles & Results (with Approval Workflow)
 - **Purpose**: Capture periodic monitoring results with Red/Yellow/Green outcome calculation and formal approval workflow similar to validation projects.
 - **Data Model**:
-  - **MonitoringCycle**: Represents one monitoring period for a plan. Fields: cycle_id, plan_id, period_start_date, period_end_date, submission_due_date, report_due_date, status, assigned_to_user_id, submitted_at, submitted_by_user_id, completed_at, completed_by_user_id, notes.
+  - **MonitoringCycle**: Represents one monitoring period for a plan. Fields: cycle_id, plan_id, period_start_date, period_end_date, submission_due_date, report_due_date, status, assigned_to_user_id, submitted_at, submitted_by_user_id, completed_at, completed_by_user_id, notes, **plan_version_id** (locked at DATA_COLLECTION), **version_locked_at**, **version_locked_by_user_id**.
   - **MonitoringCycleApproval**: Approval records for cycles (Global + Regional). Fields: approval_id, cycle_id, approver_id, approval_type (Global/Regional), region_id, represented_region_id, is_required, approval_status (Pending/Approved/Rejected/Voided), comments, approved_at, voided_by_id, void_reason, voided_at.
   - **MonitoringResult**: Individual metric result for a cycle. Fields: result_id, cycle_id, plan_metric_id, model_id (optional for multi-model plans), numeric_value, outcome_value_id, calculated_outcome (GREEN/YELLOW/RED/N/A), narrative, supporting_data (JSON), entered_by_user_id.
 - **Cycle Status Workflow**:

@@ -5,11 +5,12 @@ This document tracks the regression testing strategy and test coverage for itera
 ## Quick Reference
 
 ```bash
-# Run all backend tests (~413 tests total)
-# Note: A few pre-existing test failures in conditional_approvals and model_submission_workflow
+# Run all backend tests (~478 tests passing)
+# Note: 3 pre-existing test failures unrelated to recent changes
 # Added: 36 tests for Overdue Revalidation Commentary (23 core + 13 dashboard integration)
 # Added: 15 tests for Model Decommissioning workflow
 # Added: 63 tests for Monitoring Cycles, Results, and Approval Workflow
+# Added: Monitoring Plan Versioning and Component 9b tests (integrated into test_monitoring.py)
 cd api && python -m pytest
 
 # Run all frontend tests (128 tests passing)
@@ -549,6 +550,29 @@ cd web && pnpm test:coverage
 - [x] Cannot approve voided approval (400)
 - [x] Approval workflow creates audit logs
 
+#### Monitoring Plan Versioning (`test_monitoring.py`)
+- [x] List versions when none exist
+- [x] Publish first version creates v1 with metric snapshots
+- [x] Publish second version increments to v2, deactivates v1
+- [x] Get version includes metric snapshots with KPM details
+- [x] Get non-existent version returns 404
+- [x] Export version metrics as CSV
+- [x] Non-admin/non-team-member cannot publish version (403)
+- [x] Team member can publish version
+- [x] Start cycle locks to active version
+- [x] Start cycle without published version fails (400)
+- [x] Active cycles warning when editing metrics
+- [x] Cycle response includes version info
+- [x] Migration backfills v1 for existing plans
+
+#### Component 9b - Performance Monitoring Plan Review (`test_monitoring.py`)
+- [x] Component 9b seed data created with correct expectations
+- [x] Validation plan component supports monitoring_plan_version_id
+- [x] Validation plan component supports monitoring_review_notes
+- [x] Model monitoring plans lookup endpoint returns plans covering model
+- [x] 9b Planned status requires version selection
+- [x] 9b NotPlanned/NotApplicable requires rationale when model has monitoring plan
+
 ### Frontend Component Tests (web/src/) - ✅ FULLY OPERATIONAL
 
 **Note**: All tests pass using happy-dom environment with direct module mocking (no MSW).
@@ -858,6 +882,8 @@ describe('NewPage', () => {
 | **KPM Library** | ✅ test_monitoring.py (14 tests - categories + KPMs CRUD) | ✅ TaxonomyPage KPM tab (manual testing) | 2025-11-26 |
 | **Performance Monitoring Plans** | ✅ test_monitoring.py (27 tests - teams, plans, metrics) + 6 manual permission tests | ✅ MonitoringPlansPage (Admin UI) | 2025-11-26 |
 | **Monitoring Cycles & Results** | ✅ test_monitoring.py (63 tests - cycles CRUD + workflow + results + approval) | ⏸️ Frontend paused (Phase 2+) | 2025-11-26 |
+| **Monitoring Plan Versioning** | ✅ test_monitoring.py (version CRUD, metric snapshotting, cycle binding) | ✅ MonitoringPlansPage Versions modal | 2025-11-27 |
+| **Component 9b (Monitoring Plan Review)** | ✅ seed data + validation logic in validation_workflow.py | ✅ ValidationPlanForm 9b special handling | 2025-11-27 |
 
 **Features Added:**
 - Development type (In-House / Third-Party)
@@ -886,11 +912,13 @@ describe('NewPage', () => {
 - **KPM Library** (standardized library of Key Performance Metrics for model monitoring with 8 categories and ~30 pre-seeded metrics, Admin CRUD for categories and metrics, TaxonomyPage KPM tab)
 - **Performance Monitoring Plans** (recurring monitoring schedules with teams, model scopes, and KPM thresholds; automatic due date calculation based on frequency; Admin management UI with plan cycle advancement; **team member permissions** - assigned team members can edit plans, add/update metrics, and advance cycles)
 - **Monitoring Cycles & Results** (periodic monitoring cycle execution with status workflow: PENDING → DATA_COLLECTION → UNDER_REVIEW → PENDING_APPROVAL → APPROVED/CANCELLED; automatic R/Y/G outcome calculation based on thresholds; Global + Regional approval workflow similar to validation projects; auto-creation of approval requirements based on model regional deployments; auto-transition to APPROVED when all approvals complete)
+- **Monitoring Plan Versioning** (immutable version snapshots of plan metric configurations; manual "Publish" action creates version with metric snapshots; cycles lock to active version at DATA_COLLECTION start; version history with cycle counts; CSV export for comparison; warning when editing metrics with active cycles locked to previous versions)
+- **Component 9b (Performance Monitoring Plan Review)** (validation plan component for assessing model's monitoring plan; ValidationPlanComponent extended with monitoring_plan_version_id and monitoring_review_notes; Required for Tier 1/2, IfApplicable for Tier 3; special UI rendering with version picker dropdown; validation enforced before Review/Pending Approval transitions)
 
-**Total: 539 tests (411 backend + 128 frontend)**
-- Backend: ~405 passing, 6 failing (4 integration tests for conditional_approvals need workflow hooks, 2 pre-existing)
+**Total: 550+ tests (420+ backend + 128 frontend)**
+- Backend: ~478 passing, 3 failing (pre-existing issues unrelated to versioning/9b changes)
 - Frontend: 128 passing
-- **Note**: Core regression suite stable. Added 63 new tests for Monitoring Cycles & Results (cycles CRUD, workflow transitions, result entry with R/Y/G calculation, approval workflow with auto-completion).
+- **Note**: Core regression suite stable. Added monitoring plan versioning tests and component 9b integration. Backend tests include version CRUD, metric snapshotting, cycle version binding, and validation plan component 9b handling.
 
 **Frontend Testing Debt:**
 - ValidationWorkflowPage component tests (~15 tests)

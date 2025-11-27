@@ -2196,10 +2196,11 @@ def start_cycle(
         )
 
     # Get active version for this plan (required for version locking)
+    # Use SELECT FOR UPDATE to prevent race condition with concurrent version publishing
     active_version = db.query(MonitoringPlanVersion).filter(
         MonitoringPlanVersion.plan_id == cycle.plan_id,
         MonitoringPlanVersion.is_active == True
-    ).first()
+    ).with_for_update(skip_locked=False).first()
 
     if not active_version:
         raise HTTPException(
