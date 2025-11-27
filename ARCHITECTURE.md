@@ -42,6 +42,8 @@ Model Risk Management inventory system with a FastAPI backend, React/TypeScript 
   - `export_views.py`: CSV/export-friendly endpoints.
   - `regional_compliance_report.py`: region-wise deployment & approval report.
   - `analytics.py`, `saved_queries.py`: analytics aggregations and saved-query storage.
+  - `kpm.py`: KPM (Key Performance Metrics) library management - categories and individual metrics for ongoing model monitoring.
+  - `monitoring.py`: Performance monitoring teams, plans, and plan metrics configuration with scheduling logic for submission/report due dates.
 - Core services:
   - DB session management (`core/database.py`), auth dependency (`core/deps.py`), security utilities (`core/security.py`), row-level security filters (`core/rls.py`).
   - PDF/report helpers in `validation_workflow.py` (FPDF) for generated artifacts.
@@ -54,6 +56,8 @@ Model Risk Management inventory system with a FastAPI backend, React/TypeScript 
   - Decommissioning: `decommissioning.py` (DecommissioningRequest, DecommissioningStatusHistory, DecommissioningApproval - model retirement workflow with replacement tracking and gap analysis).
 - Additional approvals: `conditional_approval.py` (ApproverRole, ConditionalApprovalRule, RuleRequiredApprover).
   - MAP Applications: `map_application.py` (mock application inventory), `model_application.py` (model-application links with relationship types).
+  - KPM (Key Performance Metrics): `kpm.py` (KpmCategory, Kpm - library of ongoing monitoring metrics).
+  - Performance Monitoring: `monitoring.py` (MonitoringTeam, MonitoringPlan, MonitoringPlanMetric, monitoring_team_members, monitoring_plan_models junction tables).
   - Compliance/analytics: `audit_log.py`, `export_view.py`, `saved_query.py`, `version_deployment_task.py`, `validation_grouping.py`.
 - Schemas: mirrored Pydantic models in `app/schemas/` for requests/responses.
 - Authn/z: HTTP Bearer JWT tokens; `get_current_user` dependency enforces auth; role checks per endpoint; RLS utilities narrow visibility for non-privileged users.
@@ -62,12 +66,12 @@ Model Risk Management inventory system with a FastAPI backend, React/TypeScript 
 
 ## Frontend Architecture
 - Entry: `src/main.tsx` mounts App within `AuthProvider` and `BrowserRouter`.
-- Routing (`src/App.tsx`): guarded routes for login, dashboards (`/dashboard`, `/validator-dashboard`, `/my-dashboard`), models (list/detail/change records/decommissioning), validation workflow (list/detail/new), vendors (list/detail), users (list/detail), taxonomy, audit logs, workflow configuration, batch delegates, regions, validation policies, component definitions, configuration history, approver roles, additional approval rules, reports hub (`/reports`), report detail pages (regional compliance, deviation trends), analytics, deployment tasks, pending submissions.
+- Routing (`src/App.tsx`): guarded routes for login, dashboards (`/dashboard`, `/validator-dashboard`, `/my-dashboard`), models (list/detail/change records/decommissioning), validation workflow (list/detail/new), vendors (list/detail), users (list/detail), taxonomy (with KPM Library tab), audit logs, workflow configuration, batch delegates, regions, validation policies, component definitions, configuration history, approver roles, additional approval rules, monitoring plans (Admin only), reports hub (`/reports`), report detail pages (regional compliance, deviation trends), analytics, deployment tasks, pending submissions.
 - Shared pieces:
   - Auth context (`src/contexts/AuthContext.tsx`) manages token/user; Axios client (`src/api/client.ts`) injects Bearer tokens and redirects on 401.
   - Layout (`src/components/Layout.tsx`) provides navigation shell.
   - Hooks/utilities: table sorting (`src/hooks/useTableSort.tsx`), CSV export helpers on pages.
-- Pages (`src/pages/`): feature-specific UIs aligned to backend modules (e.g., `ModelsPage.tsx`, `ModelDetailsPage.tsx`, `DecommissioningRequestPage.tsx`, `PendingDecommissioningPage.tsx`, `ValidationWorkflowPage.tsx`, `ValidationRequestDetailPage.tsx`, `VendorsPage.tsx`, `TaxonomyPage.tsx`, `AuditPage.tsx`, `WorkflowConfigurationPage.tsx`, `ApproverRolesPage.tsx`, `ConditionalApprovalRulesPage.tsx`, `RegionalComplianceReportPage.tsx`, `DeviationTrendsReportPage.tsx`, `OverdueRevalidationReportPage.tsx`, `AnalyticsPage.tsx`, dashboards). Tables generally support sorting and CSV export; dates rendered via ISO splitting.
+- Pages (`src/pages/`): feature-specific UIs aligned to backend modules (e.g., `ModelsPage.tsx`, `ModelDetailsPage.tsx`, `DecommissioningRequestPage.tsx`, `PendingDecommissioningPage.tsx`, `ValidationWorkflowPage.tsx`, `ValidationRequestDetailPage.tsx`, `VendorsPage.tsx`, `TaxonomyPage.tsx` (with KPM Library tab), `AuditPage.tsx`, `WorkflowConfigurationPage.tsx`, `ApproverRolesPage.tsx`, `ConditionalApprovalRulesPage.tsx`, `MonitoringPlansPage.tsx`, `RegionalComplianceReportPage.tsx`, `DeviationTrendsReportPage.tsx`, `OverdueRevalidationReportPage.tsx`, `AnalyticsPage.tsx`, dashboards). Tables generally support sorting and CSV export; dates rendered via ISO splitting.
   - **DecommissioningRequestPage**: Includes downstream dependency warning (fetches outbound dependencies from model relationships API and displays amber warning banner listing consumer models before submission).
   - **ModelDetailsPage**: Decommissioning tab always visible with "Initiate Decommissioning" button (shown when model not retired and no active request exists).
   - **PendingDecommissioningPage**: Accessible by all authenticated users; shows role-specific pending requests (validators see pending reviews, model owners see requests awaiting their approval).
@@ -89,6 +93,8 @@ Model Risk Management inventory system with a FastAPI backend, React/TypeScript 
 - MapApplication (mock MAP inventory) and ModelApplication (model-application links with relationship type, effective/end dates for soft delete).
 - **Model Decommissioning**: DecommissioningRequest (model retirement workflow with status PENDING → VALIDATOR_APPROVED → APPROVED/REJECTED/WITHDRAWN), DecommissioningStatusHistory (audit trail), DecommissioningApproval (GLOBAL and REGIONAL approvals). Tracks reason (from Model Decommission Reason taxonomy), replacement model (required for REPLACEMENT/CONSOLIDATION reasons), last production date, gap analysis with justification, archive location. **Stage 1 Dual Approval**: When requestor is NOT the model owner, both Validator AND Owner approval are required before Stage 2 (tracked via `owner_approval_required`, `owner_reviewed_by_id`, `owner_reviewed_at`, `owner_comment`). Either can approve first; status stays PENDING until both complete. **Update Support**: PATCH endpoint allows creator or Admin to update requests while in PENDING status (with audit logging for all field changes).
 - Region and VersionDeploymentTask for regional deployment approvals.
+- **KPM Library**: KpmCategory (groupings like "Discriminatory Performance", "Calibration") and Kpm (individual metrics like "AUC", "Brier Score" with description, calculation, interpretation). Pre-seeded with 8 categories and ~30 KPMs covering model validation and ongoing monitoring metrics.
+- **Performance Monitoring**: MonitoringTeam (groups of users responsible for monitoring), MonitoringPlan (recurring monitoring schedules for model sets with frequency: Monthly/Quarterly/Semi-Annual/Annual), MonitoringPlanMetric (KPM with yellow/red thresholds and qualitative guidance). Automatic due date calculation based on frequency and reporting lead days.
 - AuditLog captures actions across entities including relationship changes and conditional approval actions.
 - SavedQuery/ExportView for analytics/reporting reuse.
 
@@ -196,6 +202,58 @@ Model Risk Management inventory system with a FastAPI backend, React/TypeScript 
     - "Add Commentary" buttons for items needing updates
     - Commentary modal integration for quick updates without leaving dashboard
 - **Testing**: 36 tests total (23 core in `test_overdue_commentary.py`, 13 dashboard integration in `test_dashboard_commentary.py`)
+
+## KPM Library (Key Performance Metrics)
+- **Purpose**: Standardized library of metrics for ongoing model performance monitoring, used in monitoring plans.
+- **Data Model**:
+  - **KpmCategory**: Metric groupings (e.g., "Discriminatory Performance", "Calibration", "Stability"). Fields: category_id, code, name, description, sort_order.
+  - **Kpm**: Individual metrics within categories. Fields: kpm_id, category_id, name, description, calculation (formula/methodology), interpretation (guidance), sort_order, is_active, **evaluation_type** (Quantitative/Qualitative/Outcome Only).
+- **Evaluation Types**:
+  - **Quantitative**: Numerical results with configurable thresholds (yellow_min/max, red_min/max). Used for metrics like AUC, PSI, Brier Score.
+  - **Qualitative**: Judgment-based assessments where SMEs apply rules/algorithms to determine R/Y/G outcome. Used for governance alignment, methodology assessments.
+  - **Outcome Only**: Direct Red/Yellow/Green selection with supporting notes. Used for attestations and expert panel ratings.
+- **Pre-seeded Data**: 13 categories with 47 KPMs:
+  - 8 quantitative categories: Model calibration, Model performance, Model input data monitoring, Model stability, Global interpretability, Local interpretability, LLM monitoring, Fairness and governance.
+  - 5 qualitative categories (from QUALCAT.json): Attestation-based (Outcome Only), Governance and usage alignment (Qualitative), Expert-judgment assessments (Qualitative), Model conditions and exception compliance (Qualitative), Algorithmic multi-step qualitative classification (mixed).
+- **Qualitative Outcome Taxonomy**: "Qualitative Outcome" taxonomy with values: Green, Yellow, Red - used for recording qualitative KPM assessments.
+- **API Endpoints**:
+  - `GET /kpm/categories` - List all categories with their KPMs (optional active_only filter)
+  - `POST /kpm/categories` - Create category (Admin)
+  - `PATCH /kpm/categories/{id}` - Update category (Admin)
+  - `DELETE /kpm/categories/{id}` - Delete category (Admin)
+  - `GET /kpm/kpms` - List all KPMs
+  - `GET /kpm/kpms/{id}` - Get single KPM
+  - `POST /kpm/kpms` - Create KPM with category_id in body (Admin)
+  - `PATCH /kpm/kpms/{id}` - Update KPM (Admin)
+  - `DELETE /kpm/kpms/{id}` - Delete KPM (Admin)
+- **Frontend**: "KPM Library" tab in TaxonomyPage for category and metric management with master-detail layout.
+
+## Performance Monitoring Plans
+- **Purpose**: Define recurring monitoring schedules for model performance review with configurable metrics and thresholds.
+- **Data Model**:
+  - **MonitoringTeam**: Groups of users responsible for monitoring. Fields: team_id, name, description, is_active, members (many-to-many via monitoring_team_members).
+  - **MonitoringPlan**: Recurring monitoring schedule. Fields: plan_id, name, description, frequency (Monthly/Quarterly/Semi-Annual/Annual), monitoring_team_id, data_provider_user_id, reporting_lead_days, next_submission_due_date, next_report_due_date, is_active, models (many-to-many via monitoring_plan_models).
+  - **MonitoringPlanMetric**: KPM configuration for a plan with thresholds. Fields: metric_id, plan_id, kpm_id, yellow_min/max, red_min/max, qualitative_guidance, sort_order, is_active.
+- **Mixed KPM Type Support**: Plans can include a mix of quantitative and qualitative KPMs:
+  - Quantitative KPMs: Configure numerical thresholds (yellow_min/max, red_min/max) for automatic R/Y/G determination.
+  - Qualitative KPMs: Configure assessment guidance text; outcomes determined by SME judgment at monitoring time.
+  - Outcome Only KPMs: Direct R/Y/G selection with notes (e.g., attestations).
+- **Scheduling Logic**:
+  - next_submission_due_date auto-calculated based on frequency (1/3/6/12 months from creation or last cycle)
+  - next_report_due_date = next_submission_due_date + reporting_lead_days
+  - "Advance Cycle" endpoint to manually progress to next period
+- **Access Control**:
+  - **Team Management**: Admin only (create, update, delete teams)
+  - **Plan Creation**: Admin only
+  - **Plan Editing**: Admin OR members of the assigned monitoring team
+    - Team members can update plan properties, add/update/remove metrics, and advance the plan cycle
+    - Non-team members (except Admins) receive 403 Forbidden
+  - **Audit Logging**: All plan/team/metric changes are logged with user attribution
+- **API Endpoints** (prefix: `/monitoring`):
+  - Teams: `GET /teams`, `GET /teams/{id}`, `POST /teams` (Admin), `PATCH /teams/{id}` (Admin), `DELETE /teams/{id}` (Admin)
+  - Plans: `GET /plans`, `GET /plans/{id}`, `POST /plans` (Admin), `PATCH /plans/{id}` (Admin or team member), `DELETE /plans/{id}` (Admin or team member), `POST /plans/{id}/advance-cycle` (Admin or team member)
+  - Metrics: `POST /plans/{id}/metrics` (Admin or team member), `PATCH /plans/{id}/metrics/{metric_id}` (Admin or team member), `DELETE /plans/{id}/metrics/{metric_id}` (Admin or team member)
+- **Frontend**: MonitoringPlansPage (Admin only) with tabs for Teams and Plans management. Metrics modal adapts configuration form based on KPM evaluation type: shows threshold fields for Quantitative KPMs, guidance text for Qualitative/Outcome Only.
 
 ## Security, Error Handling, Logging
 - JWT auth with token expiry; passwords hashed with bcrypt.

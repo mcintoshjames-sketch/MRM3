@@ -1,0 +1,22 @@
+[
+    {
+        "category": "Attestation-based",
+        "description": "Formal certification that a model is functioning as intended and assumptions remain appropriate"
+    },
+    {
+        "category": "Governance and usage alignment (qualitative triggers)",
+        "description": "Changes in business strategy, environment, user feedback, or use outside approved scope"
+    },
+    {
+        "category": "Expert-judgment assessments vs policy frameworks",
+        "description": "Non-threshold metrics interpreted against policy limits or risk appetite by SMEs/committees"
+    },
+    {
+        "category": "Model conditions and exception compliance",
+        "description": "Conformance of live deals/model use to validation scope and conditions; exception tracking and remediation"
+    },
+    {
+        "category": "Algorithmic multi-step qualitative classification",
+        "description": "Rule-based multi-step processes that produce color outcomes without simple scalar thresholds"
+    }
+]

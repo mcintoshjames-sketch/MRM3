@@ -1358,6 +1358,7 @@ export default function ValidationRequestDetailPage() {
                         modelName={request.models[0]?.model_name}
                         riskTier={request.models[0]?.model_id ? 'Loading...' : undefined}
                         onSave={fetchData}
+                        canEdit={canEditRequest}
                     />
                 )}
 

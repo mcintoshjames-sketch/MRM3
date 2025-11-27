@@ -391,7 +391,7 @@ export default function Layout({ children }: LayoutProps) {
                                 </li>
                                 <li>
                                     <NavLink
-                                        to="/fry-config"
+                                        to="/monitoring-plans"
                                         className={({ isActive }) =>
                                             `block px-4 py-2 rounded transition-colors ${isActive
                                                 ? 'bg-blue-600 text-white'
@@ -399,7 +399,7 @@ export default function Layout({ children }: LayoutProps) {
                                             }`
                                         }
                                     >
-                                        FRY 14 Configuration
+                                        Monitoring Plans
                                     </NavLink>
                                 </li>
                                 <li>

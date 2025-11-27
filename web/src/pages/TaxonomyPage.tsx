@@ -71,9 +71,70 @@ interface ModelTypeCategory {
     model_types: ModelType[];
 }
 
+// ============================================================================
+// TYPES - KPM (Key Performance Metrics) Taxonomy
+// ============================================================================
+
+interface Kpm {
+    kpm_id: number;
+    category_id: number;
+    name: string;
+    description: string | null;
+    calculation: string | null;
+    interpretation: string | null;
+    sort_order: number;
+    is_active: boolean;
+    evaluation_type: 'Quantitative' | 'Qualitative' | 'Outcome Only';
+}
+
+interface KpmCategory {
+    category_id: number;
+    code: string;
+    name: string;
+    description: string | null;
+    sort_order: number;
+    category_type: 'Quantitative' | 'Qualitative';
+    kpms: Kpm[];
+}
+
+// ============================================================================
+// TYPES - FRY 14 Reporting Configuration
+// ============================================================================
+
+interface FryLineItem {
+    line_item_id: number;
+    line_item_text: string;
+    sort_order: number;
+}
+
+interface FryMetricGroup {
+    metric_group_id: number;
+    metric_group_name: string;
+    model_driven: boolean;
+    is_active: boolean;
+    rationale?: string;
+    line_items?: FryLineItem[];
+}
+
+interface FrySchedule {
+    schedule_id: number;
+    schedule_code: string;
+    is_active: boolean;
+    description?: string;
+    metric_groups?: FryMetricGroup[];
+}
+
+interface FryReport {
+    report_id: number;
+    report_code: string;
+    description?: string;
+    is_active: boolean;
+    schedules?: FrySchedule[];
+}
+
 export default function TaxonomyPage() {
     // Tab management
-    const [activeTab, setActiveTab] = useState<'general' | 'change-type' | 'model-type'>('general');
+    const [activeTab, setActiveTab] = useState<'general' | 'change-type' | 'model-type' | 'kpm' | 'fry'>('general');
 
     // General taxonomy state
     const [taxonomies, setTaxonomies] = useState<Taxonomy[]>([]);
@@ -132,6 +193,36 @@ export default function TaxonomyPage() {
         is_active: true
     });
 
+    // KPM taxonomy state
+    const [kpmCategories, setKpmCategories] = useState<KpmCategory[]>([]);
+    const [selectedKpmCategory, setSelectedKpmCategory] = useState<KpmCategory | null>(null);
+    const [showKpmCategoryForm, setShowKpmCategoryForm] = useState(false);
+    const [showKpmForm, setShowKpmForm] = useState(false);
+    const [editingKpm, setEditingKpm] = useState<Kpm | null>(null);
+    const [kpmCategoryFormData, setKpmCategoryFormData] = useState({
+        code: '',
+        name: '',
+        description: '',
+        category_type: 'Quantitative' as 'Quantitative' | 'Qualitative',
+        sort_order: 0
+    });
+    const [kpmFormData, setKpmFormData] = useState({
+        name: '',
+        description: '',
+        calculation: '',
+        interpretation: '',
+        sort_order: 0,
+        is_active: true
+    });
+
+    // FRY 14 state
+    const [fryReports, setFryReports] = useState<FryReport[]>([]);
+    const [selectedFryReport, setSelectedFryReport] = useState<FryReport | null>(null);
+    const [expandedReports, setExpandedReports] = useState<Set<number>>(new Set());
+    const [expandedSchedules, setExpandedSchedules] = useState<Set<number>>(new Set());
+    const [expandedMetricGroups, setExpandedMetricGroups] = useState<Set<number>>(new Set());
+    const [editingFryItem, setEditingFryItem] = useState<FryMetricGroup | null>(null);
+
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
@@ -139,8 +230,12 @@ export default function TaxonomyPage() {
             fetchTaxonomies();
         } else if (activeTab === 'change-type') {
             fetchChangeCategories();
-        } else {
+        } else if (activeTab === 'model-type') {
             fetchModelCategories();
+        } else if (activeTab === 'kpm') {
+            fetchKpmCategories();
+        } else if (activeTab === 'fry') {
+            fetchFryReports();
         }
     }, [activeTab]);
 
@@ -524,6 +619,232 @@ export default function TaxonomyPage() {
         }
     };
 
+    // ============================================================================
+    // KPM TAXONOMY FUNCTIONS
+    // ============================================================================
+
+    const fetchKpmCategories = async () => {
+        try {
+            const response = await api.get('/kpm/categories?active_only=false');
+            setKpmCategories(response.data);
+            // Update selectedKpmCategory with fresh data, or select first category
+            if (response.data.length > 0) {
+                if (selectedKpmCategory) {
+                    // Find the updated version of the currently selected category
+                    const updatedCategory = response.data.find(
+                        (cat: KpmCategory) => cat.category_id === selectedKpmCategory.category_id
+                    );
+                    setSelectedKpmCategory(updatedCategory || response.data[0]);
+                } else {
+                    setSelectedKpmCategory(response.data[0]);
+                }
+            }
+        } catch (error) {
+            console.error('Failed to fetch KPM categories:', error);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const selectKpmCategory = (category: KpmCategory) => {
+        setSelectedKpmCategory(category);
+    };
+
+    const resetKpmCategoryForm = () => {
+        setKpmCategoryFormData({ code: '', name: '', description: '', category_type: 'Quantitative', sort_order: 0 });
+        setShowKpmCategoryForm(false);
+    };
+
+    const resetKpmForm = () => {
+        setKpmFormData({
+            name: '',
+            description: '',
+            calculation: '',
+            interpretation: '',
+            sort_order: 0,
+            is_active: true
+        });
+        setEditingKpm(null);
+        setShowKpmForm(false);
+    };
+
+    const handleKpmCategorySubmit = async (e: React.FormEvent) => {
+        e.preventDefault();
+        try {
+            await api.post('/kpm/categories', kpmCategoryFormData);
+            resetKpmCategoryForm();
+            fetchKpmCategories();
+        } catch (error: any) {
+            alert(error.response?.data?.detail || 'Failed to create category');
+            console.error('Failed to create category:', error);
+        }
+    };
+
+    const handleKpmSubmit = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!selectedKpmCategory) return;
+
+        try {
+            if (editingKpm) {
+                await api.patch(`/kpm/kpms/${editingKpm.kpm_id}`, kpmFormData);
+            } else {
+                await api.post('/kpm/kpms', {
+                    ...kpmFormData,
+                    category_id: selectedKpmCategory.category_id
+                });
+            }
+            resetKpmForm();
+            fetchKpmCategories();
+        } catch (error: any) {
+            alert(error.response?.data?.detail || 'Failed to save KPM');
+            console.error('Failed to save KPM:', error);
+        }
+    };
+
+    const handleEditKpm = (kpm: Kpm) => {
+        setEditingKpm(kpm);
+        setKpmFormData({
+            name: kpm.name,
+            description: kpm.description || '',
+            calculation: kpm.calculation || '',
+            interpretation: kpm.interpretation || '',
+            sort_order: kpm.sort_order,
+            is_active: kpm.is_active
+        });
+        setShowKpmForm(true);
+    };
+
+    const handleDeleteKpm = async (kpmId: number) => {
+        if (!confirm('Are you sure you want to delete this KPM?')) return;
+
+        try {
+            await api.delete(`/kpm/kpms/${kpmId}`);
+            fetchKpmCategories();
+        } catch (error: any) {
+            const errorMessage = error.response?.data?.detail || 'Failed to delete KPM';
+
+            if (error.response?.status === 409) {
+                const deactivate = confirm(
+                    `${errorMessage}\n\n` +
+                    `Would you like to deactivate this KPM instead? ` +
+                    `This will hide it from the list while preserving historical data.`
+                );
+
+                if (deactivate) {
+                    try {
+                        await api.patch(`/kpm/kpms/${kpmId}`, { is_active: false });
+                        fetchKpmCategories();
+                        alert('KPM has been deactivated successfully.');
+                    } catch (deactivateError: any) {
+                        alert(deactivateError.response?.data?.detail || 'Failed to deactivate KPM');
+                    }
+                }
+            } else {
+                alert(errorMessage);
+            }
+            console.error('Failed to delete KPM:', error);
+        }
+    };
+
+    const handleDeleteKpmCategory = async (categoryId: number) => {
+        if (!confirm('Are you sure you want to delete this category and all its KPMs?')) return;
+
+        try {
+            await api.delete(`/kpm/categories/${categoryId}`);
+            setSelectedKpmCategory(null);
+            fetchKpmCategories();
+        } catch (error: any) {
+            alert(error.response?.data?.detail || 'Failed to delete category');
+            console.error('Failed to delete category:', error);
+        }
+    };
+
+    // ============================================================================
+    // FRY 14 REPORTING FUNCTIONS
+    // ============================================================================
+
+    const fetchFryReports = async () => {
+        try {
+            const response = await api.get('/fry/reports');
+            setFryReports(response.data);
+        } catch (error) {
+            console.error('Error fetching FRY reports:', error);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const fetchFryReportDetails = async (reportId: number) => {
+        try {
+            const response = await api.get(`/fry/reports/${reportId}`);
+            setSelectedFryReport(response.data);
+            setExpandedReports(new Set([...expandedReports, reportId]));
+        } catch (error) {
+            console.error('Error fetching report details:', error);
+        }
+    };
+
+    const toggleFryReport = async (reportId: number) => {
+        if (expandedReports.has(reportId)) {
+            const newExpanded = new Set(expandedReports);
+            newExpanded.delete(reportId);
+            setExpandedReports(newExpanded);
+        } else {
+            await fetchFryReportDetails(reportId);
+        }
+    };
+
+    const toggleFrySchedule = (scheduleId: number) => {
+        const newExpanded = new Set(expandedSchedules);
+        if (newExpanded.has(scheduleId)) {
+            newExpanded.delete(scheduleId);
+        } else {
+            newExpanded.add(scheduleId);
+        }
+        setExpandedSchedules(newExpanded);
+    };
+
+    const toggleFryMetricGroup = (metricGroupId: number) => {
+        const newExpanded = new Set(expandedMetricGroups);
+        if (newExpanded.has(metricGroupId)) {
+            newExpanded.delete(metricGroupId);
+        } else {
+            newExpanded.add(metricGroupId);
+        }
+        setExpandedMetricGroups(newExpanded);
+    };
+
+    const handleEditFryMetricGroup = (metricGroup: FryMetricGroup) => {
+        setEditingFryItem({ ...metricGroup });
+    };
+
+    const handleSaveFryMetricGroup = async () => {
+        if (!editingFryItem) return;
+
+        try {
+            await api.patch(`/fry/metric-groups/${editingFryItem.metric_group_id}`, {
+                metric_group_name: editingFryItem.metric_group_name,
+                model_driven: editingFryItem.model_driven,
+                rationale: editingFryItem.rationale,
+                is_active: editingFryItem.is_active
+            });
+
+            // Refresh report details
+            if (selectedFryReport) {
+                await fetchFryReportDetails(selectedFryReport.report_id);
+            }
+
+            setEditingFryItem(null);
+        } catch (error) {
+            console.error('Error saving metric group:', error);
+            alert('Failed to save metric group');
+        }
+    };
+
+    const handleCancelFryEdit = () => {
+        setEditingFryItem(null);
+    };
+
     if (loading) {
         return (
             <Layout>
@@ -568,6 +889,24 @@ export default function TaxonomyPage() {
                                 } whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm`}
                         >
                             Model Type Taxonomy
+                        </button>
+                        <button
+                            onClick={() => setActiveTab('kpm')}
+                            className={`${activeTab === 'kpm'
+                                ? 'border-blue-500 text-blue-600'
+                                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                                } whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm`}
+                        >
+                            KPM Library
+                        </button>
+                        <button
+                            onClick={() => setActiveTab('fry')}
+                            className={`${activeTab === 'fry'
+                                ? 'border-blue-500 text-blue-600'
+                                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                                } whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm`}
+                        >
+                            FRY 14 Config
                         </button>
                     </nav>
                 </div>
@@ -1484,6 +1823,619 @@ export default function TaxonomyPage() {
                             )}
                         </div>
                     </div>
+                </>
+            )}
+
+            {/* KPM LIBRARY TAB */}
+            {activeTab === 'kpm' && (
+                <>
+                    <div className="mb-6 flex justify-end">
+                        <button onClick={() => setShowKpmCategoryForm(true)} className="btn-primary">
+                            + New Category
+                        </button>
+                    </div>
+
+                    {showKpmCategoryForm && (
+                        <div className="bg-white p-6 rounded-lg shadow-md mb-6">
+                            <h3 className="text-lg font-bold mb-4">Create New KPM Category</h3>
+                            <form onSubmit={handleKpmCategorySubmit}>
+                                <div className="grid grid-cols-3 gap-4">
+                                    <div className="mb-4">
+                                        <label htmlFor="kpm_cat_code" className="block text-sm font-medium mb-2">
+                                            Code
+                                        </label>
+                                        <input
+                                            id="kpm_cat_code"
+                                            type="text"
+                                            className="input-field"
+                                            value={kpmCategoryFormData.code}
+                                            onChange={(e) => setKpmCategoryFormData({ ...kpmCategoryFormData, code: e.target.value })}
+                                            required
+                                            placeholder="e.g., model_calibration"
+                                        />
+                                    </div>
+                                    <div className="mb-4">
+                                        <label htmlFor="kpm_cat_name" className="block text-sm font-medium mb-2">
+                                            Name
+                                        </label>
+                                        <input
+                                            id="kpm_cat_name"
+                                            type="text"
+                                            className="input-field"
+                                            value={kpmCategoryFormData.name}
+                                            onChange={(e) => setKpmCategoryFormData({ ...kpmCategoryFormData, name: e.target.value })}
+                                            required
+                                        />
+                                    </div>
+                                    <div className="mb-4">
+                                        <label htmlFor="kpm_cat_sort" className="block text-sm font-medium mb-2">
+                                            Sort Order
+                                        </label>
+                                        <input
+                                            id="kpm_cat_sort"
+                                            type="number"
+                                            className="input-field"
+                                            value={kpmCategoryFormData.sort_order}
+                                            onChange={(e) => setKpmCategoryFormData({ ...kpmCategoryFormData, sort_order: parseInt(e.target.value) })}
+                                            required
+                                        />
+                                    </div>
+                                </div>
+                                <div className="grid grid-cols-2 gap-4 mb-4">
+                                    <div>
+                                        <label htmlFor="kpm_cat_type" className="block text-sm font-medium mb-2">
+                                            Category Type
+                                        </label>
+                                        <select
+                                            id="kpm_cat_type"
+                                            className="input-field"
+                                            value={kpmCategoryFormData.category_type}
+                                            onChange={(e) => setKpmCategoryFormData({ ...kpmCategoryFormData, category_type: e.target.value as 'Quantitative' | 'Qualitative' })}
+                                            required
+                                        >
+                                            <option value="Quantitative">Quantitative</option>
+                                            <option value="Qualitative">Qualitative</option>
+                                        </select>
+                                        <p className="text-xs text-gray-500 mt-1">
+                                            Quantitative: Metrics with numerical thresholds. Qualitative: Judgment-based assessments.
+                                        </p>
+                                    </div>
+                                    <div>
+                                        <label htmlFor="kpm_cat_desc" className="block text-sm font-medium mb-2">
+                                            Description
+                                        </label>
+                                        <textarea
+                                            id="kpm_cat_desc"
+                                            className="input-field"
+                                            rows={2}
+                                            value={kpmCategoryFormData.description}
+                                            onChange={(e) => setKpmCategoryFormData({ ...kpmCategoryFormData, description: e.target.value })}
+                                        />
+                                    </div>
+                                </div>
+                                <div className="flex gap-2">
+                                    <button type="submit" className="btn-primary">Create</button>
+                                    <button type="button" onClick={resetKpmCategoryForm} className="btn-secondary">
+                                        Cancel
+                                    </button>
+                                </div>
+                            </form>
+                        </div>
+                    )}
+
+                    <div className="grid grid-cols-4 gap-6">
+                        {/* Category list - grouped by type */}
+                        <div className="col-span-1">
+                            <div className="bg-white rounded-lg shadow-md p-4">
+                                <h3 className="font-bold mb-3">Categories</h3>
+                                {kpmCategories.length === 0 ? (
+                                    <p className="text-sm text-gray-500">No categories yet.</p>
+                                ) : (
+                                    <>
+                                        {/* Group categories by their explicit category_type */}
+                                        {(() => {
+                                            const quantitativeCategories = kpmCategories.filter(cat =>
+                                                cat.category_type === 'Quantitative'
+                                            );
+                                            const qualitativeCategories = kpmCategories.filter(cat =>
+                                                cat.category_type === 'Qualitative'
+                                            );
+
+                                            return (
+                                                <>
+                                                    {/* Quantitative Section */}
+                                                    {quantitativeCategories.length > 0 && (
+                                                        <div className="mb-4">
+                                                            <div className="flex items-center gap-2 mb-2 pb-1 border-b border-blue-200">
+                                                                <span className="w-2 h-2 bg-blue-500 rounded-full"></span>
+                                                                <span className="text-xs font-semibold text-blue-700 uppercase tracking-wide">
+                                                                    Quantitative
+                                                                </span>
+                                                                <span className="text-xs text-gray-400">({quantitativeCategories.length})</span>
+                                                            </div>
+                                                            <div className="space-y-1">
+                                                                {quantitativeCategories.map((cat) => (
+                                                                    <button
+                                                                        key={cat.category_id}
+                                                                        onClick={() => selectKpmCategory(cat)}
+                                                                        className={`w-full text-left px-3 py-2 rounded text-sm ${selectedKpmCategory?.category_id === cat.category_id
+                                                                            ? 'bg-blue-100 text-blue-800 font-medium'
+                                                                            : 'hover:bg-gray-100'
+                                                                            }`}
+                                                                    >
+                                                                        <div className="flex items-center justify-between">
+                                                                            <span className="truncate">{cat.name}</span>
+                                                                            <span className="text-xs bg-blue-100 text-blue-700 px-1.5 rounded ml-1">{cat.kpms.length}</span>
+                                                                        </div>
+                                                                    </button>
+                                                                ))}
+                                                            </div>
+                                                        </div>
+                                                    )}
+
+                                                    {/* Qualitative Section */}
+                                                    {qualitativeCategories.length > 0 && (
+                                                        <div>
+                                                            <div className="flex items-center gap-2 mb-2 pb-1 border-b border-purple-200">
+                                                                <span className="w-2 h-2 bg-purple-500 rounded-full"></span>
+                                                                <span className="text-xs font-semibold text-purple-700 uppercase tracking-wide">
+                                                                    Qualitative
+                                                                </span>
+                                                                <span className="text-xs text-gray-400">({qualitativeCategories.length})</span>
+                                                            </div>
+                                                            <div className="space-y-1">
+                                                                {qualitativeCategories.map((cat) => (
+                                                                    <button
+                                                                        key={cat.category_id}
+                                                                        onClick={() => selectKpmCategory(cat)}
+                                                                        className={`w-full text-left px-3 py-2 rounded text-sm ${selectedKpmCategory?.category_id === cat.category_id
+                                                                            ? 'bg-purple-100 text-purple-800 font-medium'
+                                                                            : 'hover:bg-gray-100'
+                                                                            }`}
+                                                                    >
+                                                                        <div className="flex items-center justify-between">
+                                                                            <span className="truncate">{cat.name}</span>
+                                                                            <span className="text-xs bg-purple-100 text-purple-700 px-1.5 rounded ml-1">{cat.kpms.length}</span>
+                                                                        </div>
+                                                                    </button>
+                                                                ))}
+                                                            </div>
+                                                        </div>
+                                                    )}
+                                                </>
+                                            );
+                                        })()}
+                                    </>
+                                )}
+                            </div>
+                        </div>
+
+                        {/* Selected category KPMs */}
+                        <div className="col-span-3">
+                            {selectedKpmCategory ? (
+                                <div className="bg-white rounded-lg shadow-md p-6">
+                                    <div className="flex justify-between items-center mb-4">
+                                        <div>
+                                            <h3 className="text-xl font-bold">{selectedKpmCategory.name}</h3>
+                                            <p className="text-xs text-gray-500 font-mono">{selectedKpmCategory.code}</p>
+                                        </div>
+                                        <div className="flex gap-2">
+                                            <button
+                                                onClick={() => setShowKpmForm(true)}
+                                                className="btn-primary text-sm"
+                                            >
+                                                + Add KPM
+                                            </button>
+                                            <button
+                                                onClick={() => handleDeleteKpmCategory(selectedKpmCategory.category_id)}
+                                                className="btn-secondary text-red-600 text-sm"
+                                            >
+                                                Delete Category
+                                            </button>
+                                        </div>
+                                    </div>
+                                    {selectedKpmCategory.description && (
+                                        <p className="text-sm text-gray-600 mb-4">
+                                            {selectedKpmCategory.description}
+                                        </p>
+                                    )}
+
+                                    {showKpmForm && (
+                                        <div className="bg-gray-50 p-4 rounded mb-4">
+                                            <h4 className="font-medium mb-3">
+                                                {editingKpm ? 'Edit KPM' : 'Add New KPM'}
+                                            </h4>
+                                            <form onSubmit={handleKpmSubmit}>
+                                                <div className="grid grid-cols-2 gap-4">
+                                                    <div className="mb-3">
+                                                        <label htmlFor="kpm_name" className="block text-sm font-medium mb-1">
+                                                            Name
+                                                        </label>
+                                                        <input
+                                                            id="kpm_name"
+                                                            type="text"
+                                                            className="input-field"
+                                                            value={kpmFormData.name}
+                                                            onChange={(e) => setKpmFormData({ ...kpmFormData, name: e.target.value })}
+                                                            required
+                                                        />
+                                                    </div>
+                                                    <div className="mb-3">
+                                                        <label htmlFor="kpm_sort" className="block text-sm font-medium mb-1">
+                                                            Sort Order
+                                                        </label>
+                                                        <input
+                                                            id="kpm_sort"
+                                                            type="number"
+                                                            className="input-field"
+                                                            value={kpmFormData.sort_order}
+                                                            onChange={(e) => setKpmFormData({ ...kpmFormData, sort_order: parseInt(e.target.value) })}
+                                                        />
+                                                    </div>
+                                                </div>
+                                                <div className="mb-3">
+                                                    <label htmlFor="kpm_desc" className="block text-sm font-medium mb-1">
+                                                        Description
+                                                    </label>
+                                                    <textarea
+                                                        id="kpm_desc"
+                                                        className="input-field"
+                                                        rows={2}
+                                                        value={kpmFormData.description}
+                                                        onChange={(e) => setKpmFormData({ ...kpmFormData, description: e.target.value })}
+                                                    />
+                                                </div>
+                                                <div className="mb-3">
+                                                    <label htmlFor="kpm_calc" className="block text-sm font-medium mb-1">
+                                                        Calculation
+                                                    </label>
+                                                    <textarea
+                                                        id="kpm_calc"
+                                                        className="input-field"
+                                                        rows={2}
+                                                        value={kpmFormData.calculation}
+                                                        onChange={(e) => setKpmFormData({ ...kpmFormData, calculation: e.target.value })}
+                                                        placeholder="How is this KPM calculated?"
+                                                    />
+                                                </div>
+                                                <div className="mb-3">
+                                                    <label htmlFor="kpm_interp" className="block text-sm font-medium mb-1">
+                                                        Interpretation
+                                                    </label>
+                                                    <textarea
+                                                        id="kpm_interp"
+                                                        className="input-field"
+                                                        rows={2}
+                                                        value={kpmFormData.interpretation}
+                                                        onChange={(e) => setKpmFormData({ ...kpmFormData, interpretation: e.target.value })}
+                                                        placeholder="How should this KPM be interpreted?"
+                                                    />
+                                                </div>
+                                                <div className="mb-3">
+                                                    <label className="flex items-center gap-2">
+                                                        <input
+                                                            type="checkbox"
+                                                            checked={kpmFormData.is_active}
+                                                            onChange={(e) => setKpmFormData({ ...kpmFormData, is_active: e.target.checked })}
+                                                        />
+                                                        <span className="text-sm font-medium">Active</span>
+                                                    </label>
+                                                </div>
+                                                <div className="flex gap-2">
+                                                    <button type="submit" className="btn-primary text-sm">
+                                                        {editingKpm ? 'Update' : 'Add'}
+                                                    </button>
+                                                    <button type="button" onClick={resetKpmForm} className="btn-secondary text-sm">
+                                                        Cancel
+                                                    </button>
+                                                </div>
+                                            </form>
+                                        </div>
+                                    )}
+
+                                    <div className="mt-4">
+                                        <h4 className="font-medium mb-3">
+                                            KPMs ({selectedKpmCategory.kpms.length})
+                                        </h4>
+                                        {selectedKpmCategory.kpms.length === 0 ? (
+                                            <p className="text-gray-500 text-sm">No KPMs yet. Add KPMs to this category.</p>
+                                        ) : (
+                                            <div className="space-y-4">
+                                                {selectedKpmCategory.kpms
+                                                    .sort((a, b) => a.sort_order - b.sort_order)
+                                                    .map((kpm) => (
+                                                        <div key={kpm.kpm_id} className={`border rounded p-4 ${!kpm.is_active ? 'opacity-60 bg-gray-50' : 'bg-white'}`}>
+                                                            <div className="flex justify-between items-start mb-2">
+                                                                <div>
+                                                                    <h5 className="font-semibold text-lg">{kpm.name}</h5>
+                                                                    {!kpm.is_active && (
+                                                                        <span className="px-2 py-0.5 text-xs font-medium rounded bg-gray-200 text-gray-600">
+                                                                            Inactive
+                                                                        </span>
+                                                                    )}
+                                                                </div>
+                                                                <div className="flex items-center gap-2">
+                                                                    <button
+                                                                        onClick={() => handleEditKpm(kpm)}
+                                                                        className="inline-flex items-center px-3 py-1 bg-blue-100 text-blue-700 hover:bg-blue-200 rounded text-sm font-medium transition-colors"
+                                                                    >
+                                                                        <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                                                                        </svg>
+                                                                        Edit
+                                                                    </button>
+                                                                    <button
+                                                                        onClick={() => handleDeleteKpm(kpm.kpm_id)}
+                                                                        className="inline-flex items-center px-3 py-1 bg-red-100 text-red-700 hover:bg-red-200 rounded text-sm font-medium transition-colors"
+                                                                    >
+                                                                        <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                                                        </svg>
+                                                                        Delete
+                                                                    </button>
+                                                                </div>
+                                                            </div>
+                                                            {kpm.description && (
+                                                                <p className="text-sm text-gray-700 mb-2">{kpm.description}</p>
+                                                            )}
+                                                            {kpm.calculation && (
+                                                                <div className="mt-2">
+                                                                    <span className="text-xs font-semibold text-gray-500 uppercase">Calculation:</span>
+                                                                    <p className="text-sm text-gray-600 mt-1">{kpm.calculation}</p>
+                                                                </div>
+                                                            )}
+                                                            {kpm.interpretation && (
+                                                                <div className="mt-2">
+                                                                    <span className="text-xs font-semibold text-gray-500 uppercase">Interpretation:</span>
+                                                                    <p className="text-sm text-gray-600 mt-1">{kpm.interpretation}</p>
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                    ))}
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            ) : (
+                                <div className="bg-white rounded-lg shadow-md p-6 text-center text-gray-500">
+                                    Select a category to view and manage its KPMs.
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                </>
+            )}
+
+            {/* FRY 14 CONFIGURATION TAB */}
+            {activeTab === 'fry' && (
+                <>
+                    <div className="mb-4">
+                        <p className="text-sm text-gray-700">
+                            Manage the Federal Reserve Board FR Y-14 reporting structure including schedules, metric groups, and line items.
+                        </p>
+                    </div>
+
+                    {fryReports.length === 0 ? (
+                        <div className="text-center py-12 bg-white shadow rounded-lg">
+                            <p className="text-gray-500">No FRY reports configured.</p>
+                        </div>
+                    ) : (
+                        <div className="space-y-4">
+                            {fryReports.map((report) => (
+                                <div key={report.report_id} className="bg-white shadow rounded-lg overflow-hidden">
+                                    {/* Report Header */}
+                                    <div
+                                        className="px-6 py-4 border-b border-gray-200 cursor-pointer hover:bg-gray-50 flex items-center justify-between"
+                                        onClick={() => toggleFryReport(report.report_id)}
+                                    >
+                                        <div className="flex items-center">
+                                            <svg
+                                                className={`h-5 w-5 text-gray-400 transition-transform ${expandedReports.has(report.report_id) ? 'transform rotate-90' : ''
+                                                    }`}
+                                                fill="none"
+                                                viewBox="0 0 24 24"
+                                                stroke="currentColor"
+                                            >
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                                            </svg>
+                                            <div className="ml-3">
+                                                <h3 className="text-lg font-medium text-gray-900">{report.report_code}</h3>
+                                                <p className="text-sm text-gray-500">{report.description}</p>
+                                            </div>
+                                        </div>
+                                        <span
+                                            className={`px-2 py-1 text-xs font-medium rounded-full ${report.is_active ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'
+                                                }`}
+                                        >
+                                            {report.is_active ? 'Active' : 'Inactive'}
+                                        </span>
+                                    </div>
+
+                                    {/* Schedules (expanded view) */}
+                                    {expandedReports.has(report.report_id) && selectedFryReport?.report_id === report.report_id && (
+                                        <div className="px-6 py-4 bg-gray-50">
+                                            {selectedFryReport.schedules && selectedFryReport.schedules.length > 0 ? (
+                                                <div className="space-y-3">
+                                                    {selectedFryReport.schedules.map((schedule) => (
+                                                        <div key={schedule.schedule_id} className="bg-white rounded-md shadow-sm overflow-hidden">
+                                                            {/* Schedule Header */}
+                                                            <div
+                                                                className="px-4 py-3 border-b border-gray-200 cursor-pointer hover:bg-gray-50 flex items-center"
+                                                                onClick={() => toggleFrySchedule(schedule.schedule_id)}
+                                                            >
+                                                                <svg
+                                                                    className={`h-4 w-4 text-gray-400 transition-transform ${expandedSchedules.has(schedule.schedule_id) ? 'transform rotate-90' : ''
+                                                                        }`}
+                                                                    fill="none"
+                                                                    viewBox="0 0 24 24"
+                                                                    stroke="currentColor"
+                                                                >
+                                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                                                                </svg>
+                                                                <div className="ml-2">
+                                                                    <h4 className="text-sm font-medium text-gray-900">{schedule.schedule_code}</h4>
+                                                                    {schedule.description && (
+                                                                        <p className="text-xs text-gray-500">{schedule.description}</p>
+                                                                    )}
+                                                                </div>
+                                                            </div>
+
+                                                            {/* Metric Groups */}
+                                                            {expandedSchedules.has(schedule.schedule_id) && schedule.metric_groups && (
+                                                                <div className="px-4 py-3 bg-gray-50">
+                                                                    {schedule.metric_groups.map((metricGroup) => (
+                                                                        <div key={metricGroup.metric_group_id} className="mb-3 last:mb-0">
+                                                                            {/* Metric Group Header */}
+                                                                            <div className="bg-white rounded-md p-3 shadow-sm">
+                                                                                <div className="flex items-start justify-between">
+                                                                                    <div
+                                                                                        className="flex-1 cursor-pointer"
+                                                                                        onClick={() => toggleFryMetricGroup(metricGroup.metric_group_id)}
+                                                                                    >
+                                                                                        <div className="flex items-center">
+                                                                                            <svg
+                                                                                                className={`h-4 w-4 text-gray-400 transition-transform ${expandedMetricGroups.has(metricGroup.metric_group_id)
+                                                                                                    ? 'transform rotate-90'
+                                                                                                    : ''
+                                                                                                    }`}
+                                                                                                fill="none"
+                                                                                                viewBox="0 0 24 24"
+                                                                                                stroke="currentColor"
+                                                                                            >
+                                                                                                <path
+                                                                                                    strokeLinecap="round"
+                                                                                                    strokeLinejoin="round"
+                                                                                                    strokeWidth={2}
+                                                                                                    d="M9 5l7 7-7 7"
+                                                                                                />
+                                                                                            </svg>
+                                                                                            <h5 className="ml-2 text-sm font-medium text-gray-900">
+                                                                                                {metricGroup.metric_group_name}
+                                                                                            </h5>
+                                                                                            <span
+                                                                                                className={`ml-2 px-2 py-0.5 text-xs font-medium rounded-full ${metricGroup.model_driven
+                                                                                                    ? 'bg-blue-100 text-blue-800'
+                                                                                                    : 'bg-gray-100 text-gray-600'
+                                                                                                    }`}
+                                                                                            >
+                                                                                                {metricGroup.model_driven ? 'Model-Driven' : 'Non-Model'}
+                                                                                            </span>
+                                                                                        </div>
+                                                                                    </div>
+                                                                                    <button
+                                                                                        onClick={() => handleEditFryMetricGroup(metricGroup)}
+                                                                                        className="ml-2 text-blue-600 hover:text-blue-800 text-sm"
+                                                                                    >
+                                                                                        Edit
+                                                                                    </button>
+                                                                                </div>
+
+                                                                                {metricGroup.rationale && (
+                                                                                    <p className="mt-2 text-xs text-gray-600 ml-6">{metricGroup.rationale}</p>
+                                                                                )}
+
+                                                                                {/* Line Items */}
+                                                                                {expandedMetricGroups.has(metricGroup.metric_group_id) &&
+                                                                                    metricGroup.line_items &&
+                                                                                    metricGroup.line_items.length > 0 && (
+                                                                                        <div className="mt-3 ml-6 pl-3 border-l-2 border-gray-200">
+                                                                                            <h6 className="text-xs font-medium text-gray-700 mb-2">Line Items:</h6>
+                                                                                            <ul className="space-y-1">
+                                                                                                {metricGroup.line_items.map((lineItem, idx) => (
+                                                                                                    <li key={lineItem.line_item_id} className="text-xs text-gray-600">
+                                                                                                        {idx + 1}. {lineItem.line_item_text}
+                                                                                                    </li>
+                                                                                                ))}
+                                                                                            </ul>
+                                                                                        </div>
+                                                                                    )}
+                                                                            </div>
+                                                                        </div>
+                                                                    ))}
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            ) : (
+                                                <p className="text-sm text-gray-500">No schedules available for this report.</p>
+                                            )}
+                                        </div>
+                                    )}
+                                </div>
+                            ))}
+                        </div>
+                    )}
+
+                    {/* Edit Metric Group Modal */}
+                    {editingFryItem && (
+                        <div className="fixed inset-0 bg-gray-500 bg-opacity-75 flex items-center justify-center z-50">
+                            <div className="bg-white rounded-lg p-6 max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+                                <h3 className="text-lg font-medium text-gray-900 mb-4">Edit Metric Group</h3>
+
+                                <div className="space-y-4">
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700">Metric Group Name</label>
+                                        <input
+                                            type="text"
+                                            value={editingFryItem.metric_group_name}
+                                            onChange={(e) => setEditingFryItem({ ...editingFryItem, metric_group_name: e.target.value })}
+                                            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 input-field"
+                                        />
+                                    </div>
+
+                                    <div>
+                                        <label className="flex items-center">
+                                            <input
+                                                type="checkbox"
+                                                checked={editingFryItem.model_driven}
+                                                onChange={(e) => setEditingFryItem({ ...editingFryItem, model_driven: e.target.checked })}
+                                                className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                                            />
+                                            <span className="ml-2 text-sm text-gray-700">Model-Driven</span>
+                                        </label>
+                                    </div>
+
+                                    <div>
+                                        <label className="flex items-center">
+                                            <input
+                                                type="checkbox"
+                                                checked={editingFryItem.is_active}
+                                                onChange={(e) => setEditingFryItem({ ...editingFryItem, is_active: e.target.checked })}
+                                                className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                                            />
+                                            <span className="ml-2 text-sm text-gray-700">Active</span>
+                                        </label>
+                                    </div>
+
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700">Rationale</label>
+                                        <textarea
+                                            value={editingFryItem.rationale || ''}
+                                            onChange={(e) => setEditingFryItem({ ...editingFryItem, rationale: e.target.value })}
+                                            rows={4}
+                                            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 input-field"
+                                        />
+                                    </div>
+                                </div>
+
+                                <div className="mt-6 flex justify-end space-x-3">
+                                    <button
+                                        onClick={handleCancelFryEdit}
+                                        className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50"
+                                    >
+                                        Cancel
+                                    </button>
+                                    <button
+                                        onClick={handleSaveFryMetricGroup}
+                                        className="px-4 py-2 text-sm font-medium text-white bg-blue-600 border border-transparent rounded-md hover:bg-blue-700"
+                                    >
+                                        Save Changes
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
                 </>
             )}
         </Layout>

@@ -65,9 +65,10 @@ interface Props {
     modelName?: string;
     riskTier?: string;
     onSave?: () => void;
+    canEdit?: boolean;
 }
 
-const ValidationPlanForm = forwardRef<ValidationPlanFormHandle, Props>(({ requestId, modelName, riskTier, onSave }, ref) => {
+const ValidationPlanForm = forwardRef<ValidationPlanFormHandle, Props>(({ requestId, modelName, riskTier, onSave, canEdit = true }, ref) => {
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
     const [plan, setPlan] = useState<ValidationPlan | null>(null);
@@ -471,28 +472,35 @@ const ValidationPlanForm = forwardRef<ValidationPlanFormHandle, Props>(({ reques
                 <div className="bg-white rounded-lg shadow-md p-6">
                     <h2 className="text-xl font-bold mb-4">Validation Plan</h2>
                     <p className="text-gray-600 mb-4">
-                        No validation plan exists for this request yet. Create a plan to document which validation components will be performed.
+                        No validation plan exists for this request yet.
+                        {canEdit ? ' Create a plan to document which validation components will be performed.' : ''}
                     </p>
 
-                    <div className="flex gap-3">
-                        <button
-                            onClick={() => handleCreatePlan()}
-                            disabled={saving}
-                            className="btn-primary"
-                        >
-                            {saving ? 'Creating...' : 'Create Validation Plan'}
-                        </button>
-
-                        {templateSuggestions.length > 0 && (
+                    {canEdit ? (
+                        <div className="flex gap-3">
                             <button
-                                onClick={() => setShowTemplateModal(true)}
+                                onClick={() => handleCreatePlan()}
                                 disabled={saving}
-                                className="px-4 py-2 border border-gray-300 rounded hover:bg-gray-50"
+                                className="btn-primary"
                             >
-                                Use Template from Previous Validation
+                                {saving ? 'Creating...' : 'Create Validation Plan'}
                             </button>
-                        )}
-                    </div>
+
+                            {templateSuggestions.length > 0 && (
+                                <button
+                                    onClick={() => setShowTemplateModal(true)}
+                                    disabled={saving}
+                                    className="px-4 py-2 border border-gray-300 rounded hover:bg-gray-50"
+                                >
+                                    Use Template from Previous Validation
+                                </button>
+                            )}
+                        </div>
+                    ) : (
+                        <p className="text-sm text-gray-500 italic">
+                            Only Validators and Admins can create validation plans.
+                        </p>
+                    )}
                 </div>
             </>
         );
@@ -545,9 +553,10 @@ const ValidationPlanForm = forwardRef<ValidationPlanFormHandle, Props>(({ reques
                     Overall Scope Summary
                 </label>
                 <textarea
-                    className="w-full border border-gray-300 rounded p-2 h-24"
+                    className={`w-full border border-gray-300 rounded p-2 h-24 ${!canEdit ? 'bg-gray-50' : ''}`}
                     placeholder="Describe the high-level scope of this validation..."
                     value={formData.overall_scope_summary || ''}
+                    disabled={!canEdit}
                     onChange={(e) => {
                         setHasUnsavedChanges(true);
                         setSaveSuccess(false);
@@ -562,6 +571,7 @@ const ValidationPlanForm = forwardRef<ValidationPlanFormHandle, Props>(({ reques
                     <input
                         type="checkbox"
                         checked={formData.material_deviation_from_standard}
+                        disabled={!canEdit}
                         onChange={(e) => {
                             setHasUnsavedChanges(true);
                             setSaveSuccess(false);
@@ -577,9 +587,10 @@ const ValidationPlanForm = forwardRef<ValidationPlanFormHandle, Props>(({ reques
                             Overall Deviation Rationale <span className="text-red-500">*</span>
                         </label>
                         <textarea
-                            className="w-full border border-gray-300 rounded p-2 h-20"
+                            className={`w-full border border-gray-300 rounded p-2 h-20 ${!canEdit ? 'bg-gray-50' : ''}`}
                             placeholder="Explain why this validation deviates materially from the standard approach..."
                             value={formData.overall_deviation_rationale || ''}
+                            disabled={!canEdit}
                             onChange={(e) => {
                                 setHasUnsavedChanges(true);
                                 setSaveSuccess(false);
@@ -651,8 +662,9 @@ const ValidationPlanForm = forwardRef<ValidationPlanFormHandle, Props>(({ reques
                                             </td>
                                             <td className="border border-gray-300 px-3 py-2">
                                                 <select
-                                                    className="border border-gray-300 rounded px-2 py-1 text-sm w-full"
+                                                    className={`border border-gray-300 rounded px-2 py-1 text-sm w-full ${!canEdit ? 'bg-gray-50' : ''}`}
                                                     value={comp.planned_treatment}
+                                                    disabled={!canEdit}
                                                     onChange={(e) => handleComponentChange(comp.component_id, 'planned_treatment', e.target.value)}
                                                 >
                                                     <option value="Planned">Planned</option>
@@ -663,18 +675,20 @@ const ValidationPlanForm = forwardRef<ValidationPlanFormHandle, Props>(({ reques
                                             <td className="border border-gray-300 px-3 py-2">
                                                 {comp.is_deviation ? (
                                                     <textarea
-                                                        className="w-full border border-gray-300 rounded px-2 py-1 text-sm"
+                                                        className={`w-full border border-gray-300 rounded px-2 py-1 text-sm ${!canEdit ? 'bg-gray-50' : ''}`}
                                                         placeholder="Required: Explain deviation from standard..."
                                                         rows={2}
                                                         value={comp.rationale || ''}
+                                                        disabled={!canEdit}
                                                         onChange={(e) => handleComponentChange(comp.component_id, 'rationale', e.target.value)}
                                                     />
                                                 ) : (
                                                     <textarea
-                                                        className="w-full border border-gray-300 rounded px-2 py-1 text-sm"
+                                                        className={`w-full border border-gray-300 rounded px-2 py-1 text-sm ${!canEdit ? 'bg-gray-50' : ''}`}
                                                         placeholder="Optional notes..."
                                                         rows={2}
                                                         value={comp.rationale || ''}
+                                                        disabled={!canEdit}
                                                         onChange={(e) => handleComponentChange(comp.component_id, 'rationale', e.target.value)}
                                                     />
                                                 )}
@@ -691,7 +705,7 @@ const ValidationPlanForm = forwardRef<ValidationPlanFormHandle, Props>(({ reques
             {/* Action Buttons */}
             <div className="flex justify-between">
                 <div>
-                    {plan && !plan.locked_at && (
+                    {canEdit && plan && !plan.locked_at && (
                         <button
                             onClick={handleDeletePlan}
                             disabled={saving}
@@ -708,13 +722,15 @@ const ValidationPlanForm = forwardRef<ValidationPlanFormHandle, Props>(({ reques
                     >
                         Export PDF
                     </button>
-                    <button
-                        onClick={handleSave}
-                        disabled={saving}
-                        className="btn-primary"
-                    >
-                        {saving ? 'Saving...' : 'Save Validation Plan'}
-                    </button>
+                    {canEdit && (
+                        <button
+                            onClick={handleSave}
+                            disabled={saving}
+                            className="btn-primary"
+                        >
+                            {saving ? 'Saving...' : 'Save Validation Plan'}
+                        </button>
+                    )}
                 </div>
             </div>
         </div>

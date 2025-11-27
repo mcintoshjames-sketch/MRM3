@@ -1,0 +1,1335 @@
+import { useState, useEffect } from 'react';
+import { useAuth } from '../contexts/AuthContext';
+import api from '../api/client';
+import Layout from '../components/Layout';
+import MultiSelectDropdown from '../components/MultiSelectDropdown';
+
+// Interfaces
+interface User {
+    user_id: number;
+    email: string;
+    full_name: string;
+}
+
+interface Model {
+    model_id: number;
+    model_name: string;
+}
+
+interface MonitoringTeam {
+    team_id: number;
+    name: string;
+    description: string | null;
+    is_active: boolean;
+    member_count: number;
+    plan_count: number;
+    members?: User[];
+    created_at?: string;
+    updated_at?: string;
+}
+
+interface KpmRef {
+    kpm_id: number;
+    name: string;
+    category_id: number;
+    evaluation_type?: string;
+}
+
+interface PlanMetric {
+    metric_id: number;
+    plan_id: number;
+    kpm_id: number;
+    yellow_min: number | null;
+    yellow_max: number | null;
+    red_min: number | null;
+    red_max: number | null;
+    qualitative_guidance: string | null;
+    sort_order: number;
+    is_active: boolean;
+    kpm: KpmRef;
+}
+
+interface MonitoringPlan {
+    plan_id: number;
+    name: string;
+    description: string | null;
+    frequency: string;
+    is_active: boolean;
+    next_submission_due_date: string | null;
+    next_report_due_date: string | null;
+    team_name?: string | null;
+    data_provider_name?: string | null;
+    model_count?: number;
+    metric_count?: number;
+    monitoring_team_id?: number | null;
+    data_provider_user_id?: number | null;
+    reporting_lead_days?: number;
+    team?: MonitoringTeam | null;
+    data_provider?: User | null;
+    models?: Model[];
+    metrics?: PlanMetric[];
+}
+
+interface Kpm {
+    kpm_id: number;
+    name: string;
+    description: string | null;
+    evaluation_type: 'Quantitative' | 'Qualitative' | 'Outcome Only';
+}
+
+interface KpmCategory {
+    category_id: number;
+    code: string;
+    name: string;
+    kpms: Kpm[];
+}
+
+type TabType = 'teams' | 'plans';
+
+export default function MonitoringPlansPage() {
+    const { user } = useAuth();
+    const [activeTab, setActiveTab] = useState<TabType>('plans');
+
+    // Teams state
+    const [teams, setTeams] = useState<MonitoringTeam[]>([]);
+    const [loadingTeams, setLoadingTeams] = useState(false);
+    const [showTeamForm, setShowTeamForm] = useState(false);
+    const [editingTeam, setEditingTeam] = useState<MonitoringTeam | null>(null);
+    const [teamFormData, setTeamFormData] = useState({
+        name: '',
+        description: '',
+        is_active: true,
+        member_ids: [] as number[]
+    });
+
+    // Plans state
+    const [plans, setPlans] = useState<MonitoringPlan[]>([]);
+    const [loadingPlans, setLoadingPlans] = useState(false);
+    const [showPlanForm, setShowPlanForm] = useState(false);
+    const [editingPlan, setEditingPlan] = useState<MonitoringPlan | null>(null);
+    const [planFormData, setPlanFormData] = useState({
+        name: '',
+        description: '',
+        frequency: 'Quarterly',
+        monitoring_team_id: null as number | null,
+        data_provider_user_id: null as number | null,
+        reporting_lead_days: 30,
+        is_active: true,
+        model_ids: [] as number[]
+    });
+
+    // Reference data
+    const [allUsers, setAllUsers] = useState<User[]>([]);
+    const [allModels, setAllModels] = useState<Model[]>([]);
+    const [kpmCategories, setKpmCategories] = useState<KpmCategory[]>([]);
+
+    // Metrics management
+    const [selectedPlanForMetrics, setSelectedPlanForMetrics] = useState<MonitoringPlan | null>(null);
+    const [showMetricsModal, setShowMetricsModal] = useState(false);
+
+    const [error, setError] = useState<string | null>(null);
+
+    // Fetch data on mount
+    useEffect(() => {
+        fetchTeams();
+        fetchPlans();
+        fetchReferenceData();
+    }, []);
+
+    const fetchReferenceData = async () => {
+        try {
+            const [usersRes, modelsRes, kpmRes] = await Promise.all([
+                api.get('/auth/users'),
+                api.get('/models/'),
+                api.get('/kpm/categories?active_only=false')
+            ]);
+            setAllUsers(usersRes.data);
+            setAllModels(modelsRes.data);
+            setKpmCategories(kpmRes.data);
+        } catch (err) {
+            console.error('Failed to fetch reference data:', err);
+        }
+    };
+
+    // Teams CRUD
+    const fetchTeams = async () => {
+        setLoadingTeams(true);
+        try {
+            const response = await api.get('/monitoring/teams?include_inactive=true');
+            setTeams(response.data);
+        } catch (err) {
+            console.error('Failed to fetch teams:', err);
+        } finally {
+            setLoadingTeams(false);
+        }
+    };
+
+    const resetTeamForm = () => {
+        setTeamFormData({ name: '', description: '', is_active: true, member_ids: [] });
+        setEditingTeam(null);
+        setShowTeamForm(false);
+        setError(null);
+    };
+
+    const handleTeamSubmit = async (e: React.FormEvent) => {
+        e.preventDefault();
+        setError(null);
+
+        try {
+            if (editingTeam) {
+                await api.patch(`/monitoring/teams/${editingTeam.team_id}`, teamFormData);
+            } else {
+                await api.post('/monitoring/teams', teamFormData);
+            }
+            resetTeamForm();
+            fetchTeams();
+        } catch (err: any) {
+            setError(err.response?.data?.detail || 'Failed to save team');
+        }
+    };
+
+    const handleEditTeam = async (team: MonitoringTeam) => {
+        // Fetch full team details to get members
+        try {
+            const response = await api.get(`/monitoring/teams/${team.team_id}`);
+            const fullTeam = response.data;
+            setEditingTeam(fullTeam);
+            setTeamFormData({
+                name: fullTeam.name,
+                description: fullTeam.description || '',
+                is_active: fullTeam.is_active,
+                member_ids: fullTeam.members?.map((m: User) => m.user_id) || []
+            });
+            setShowTeamForm(true);
+        } catch (err) {
+            console.error('Failed to fetch team details:', err);
+        }
+    };
+
+    const handleDeleteTeam = async (teamId: number) => {
+        if (!confirm('Are you sure you want to delete this team? This cannot be undone.')) return;
+
+        try {
+            await api.delete(`/monitoring/teams/${teamId}`);
+            fetchTeams();
+        } catch (err: any) {
+            alert(err.response?.data?.detail || 'Failed to delete team');
+        }
+    };
+
+    // Plans CRUD
+    const fetchPlans = async () => {
+        setLoadingPlans(true);
+        try {
+            const response = await api.get('/monitoring/plans?include_inactive=true');
+            setPlans(response.data);
+        } catch (err) {
+            console.error('Failed to fetch plans:', err);
+        } finally {
+            setLoadingPlans(false);
+        }
+    };
+
+    const resetPlanForm = () => {
+        setPlanFormData({
+            name: '',
+            description: '',
+            frequency: 'Quarterly',
+            monitoring_team_id: null,
+            data_provider_user_id: null,
+            reporting_lead_days: 30,
+            is_active: true,
+            model_ids: []
+        });
+        setEditingPlan(null);
+        setShowPlanForm(false);
+        setError(null);
+    };
+
+    const handlePlanSubmit = async (e: React.FormEvent) => {
+        e.preventDefault();
+        setError(null);
+
+        try {
+            const payload = {
+                ...planFormData,
+                metrics: [] // Metrics are added separately
+            };
+            if (editingPlan) {
+                await api.patch(`/monitoring/plans/${editingPlan.plan_id}`, payload);
+            } else {
+                await api.post('/monitoring/plans', payload);
+            }
+            resetPlanForm();
+            fetchPlans();
+        } catch (err: any) {
+            setError(err.response?.data?.detail || 'Failed to save plan');
+        }
+    };
+
+    const handleEditPlan = async (plan: MonitoringPlan) => {
+        // Fetch full plan details
+        try {
+            const response = await api.get(`/monitoring/plans/${plan.plan_id}`);
+            const fullPlan = response.data;
+            setEditingPlan(fullPlan);
+            setPlanFormData({
+                name: fullPlan.name,
+                description: fullPlan.description || '',
+                frequency: fullPlan.frequency,
+                monitoring_team_id: fullPlan.monitoring_team_id,
+                data_provider_user_id: fullPlan.data_provider_user_id,
+                reporting_lead_days: fullPlan.reporting_lead_days,
+                is_active: fullPlan.is_active,
+                model_ids: fullPlan.models?.map((m: Model) => m.model_id) || []
+            });
+            setShowPlanForm(true);
+        } catch (err) {
+            console.error('Failed to fetch plan details:', err);
+        }
+    };
+
+    const handleDeletePlan = async (planId: number) => {
+        if (!confirm('Are you sure you want to delete this monitoring plan? This cannot be undone.')) return;
+
+        try {
+            await api.delete(`/monitoring/plans/${planId}`);
+            fetchPlans();
+        } catch (err: any) {
+            alert(err.response?.data?.detail || 'Failed to delete plan');
+        }
+    };
+
+    const handleAdvanceCycle = async (planId: number) => {
+        try {
+            await api.post(`/monitoring/plans/${planId}/advance-cycle`);
+            fetchPlans();
+        } catch (err: any) {
+            alert(err.response?.data?.detail || 'Failed to advance cycle');
+        }
+    };
+
+    const openMetricsModal = async (plan: MonitoringPlan) => {
+        try {
+            const response = await api.get(`/monitoring/plans/${plan.plan_id}`);
+            setSelectedPlanForMetrics(response.data);
+            setShowMetricsModal(true);
+        } catch (err) {
+            console.error('Failed to fetch plan details:', err);
+        }
+    };
+
+    // Admin check
+    if (user?.role !== 'Admin') {
+        return (
+            <Layout>
+                <div className="text-center py-12">
+                    <h2 className="text-2xl font-bold text-gray-800">Access Denied</h2>
+                    <p className="text-gray-600 mt-2">Only administrators can manage monitoring plans.</p>
+                </div>
+            </Layout>
+        );
+    }
+
+    return (
+        <Layout>
+            <div className="flex justify-between items-center mb-6">
+                <div>
+                    <h2 className="text-2xl font-bold">Performance Monitoring</h2>
+                    <p className="text-gray-600 text-sm mt-1">
+                        Manage monitoring teams and plans for ongoing model monitoring
+                    </p>
+                </div>
+            </div>
+
+            {/* Tabs */}
+            <div className="mb-6">
+                <nav className="flex space-x-4 border-b border-gray-200">
+                    <button
+                        onClick={() => setActiveTab('plans')}
+                        className={`pb-3 px-1 border-b-2 font-medium text-sm ${
+                            activeTab === 'plans'
+                                ? 'border-blue-500 text-blue-600'
+                                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                        }`}
+                    >
+                        Monitoring Plans
+                    </button>
+                    <button
+                        onClick={() => setActiveTab('teams')}
+                        className={`pb-3 px-1 border-b-2 font-medium text-sm ${
+                            activeTab === 'teams'
+                                ? 'border-blue-500 text-blue-600'
+                                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                        }`}
+                    >
+                        Monitoring Teams
+                    </button>
+                </nav>
+            </div>
+
+            {/* Teams Tab */}
+            {activeTab === 'teams' && (
+                <div>
+                    <div className="flex justify-between items-center mb-4">
+                        <h3 className="text-lg font-semibold">Monitoring Teams</h3>
+                        <button onClick={() => setShowTeamForm(true)} className="btn-primary">
+                            + Add Team
+                        </button>
+                    </div>
+
+                    {showTeamForm && (
+                        <div className="bg-white p-6 rounded-lg shadow-md mb-6">
+                            <h4 className="text-lg font-bold mb-4">
+                                {editingTeam ? 'Edit Team' : 'Create New Team'}
+                            </h4>
+
+                            {error && (
+                                <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
+                                    {error}
+                                </div>
+                            )}
+
+                            <form onSubmit={handleTeamSubmit}>
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                                    <div>
+                                        <label className="block text-sm font-medium mb-2">Team Name *</label>
+                                        <input
+                                            type="text"
+                                            className="input-field"
+                                            value={teamFormData.name}
+                                            onChange={(e) => setTeamFormData({ ...teamFormData, name: e.target.value })}
+                                            placeholder="e.g., Credit Risk Monitoring Team"
+                                            required
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-medium mb-2">Status</label>
+                                        <label className="flex items-center">
+                                            <input
+                                                type="checkbox"
+                                                checked={teamFormData.is_active}
+                                                onChange={(e) => setTeamFormData({ ...teamFormData, is_active: e.target.checked })}
+                                                className="mr-2"
+                                            />
+                                            <span>Active</span>
+                                        </label>
+                                    </div>
+                                </div>
+
+                                <div className="mb-4">
+                                    <label className="block text-sm font-medium mb-2">Description</label>
+                                    <textarea
+                                        className="input-field"
+                                        rows={2}
+                                        value={teamFormData.description}
+                                        onChange={(e) => setTeamFormData({ ...teamFormData, description: e.target.value })}
+                                        placeholder="Optional description"
+                                    />
+                                </div>
+
+                                <div className="mb-4">
+                                    <label className="block text-sm font-medium mb-2">Team Members</label>
+                                    <select
+                                        multiple
+                                        className="input-field h-32"
+                                        value={teamFormData.member_ids.map(String)}
+                                        onChange={(e) => {
+                                            const selected = Array.from(e.target.selectedOptions, opt => parseInt(opt.value));
+                                            setTeamFormData({ ...teamFormData, member_ids: selected });
+                                        }}
+                                    >
+                                        {allUsers.map(u => (
+                                            <option key={u.user_id} value={u.user_id}>
+                                                {u.full_name} ({u.email})
+                                            </option>
+                                        ))}
+                                    </select>
+                                    <p className="text-xs text-gray-500 mt-1">Hold Ctrl/Cmd to select multiple</p>
+                                </div>
+
+                                <div className="flex gap-2">
+                                    <button type="submit" className="btn-primary">
+                                        {editingTeam ? 'Update Team' : 'Create Team'}
+                                    </button>
+                                    <button type="button" onClick={resetTeamForm} className="btn-secondary">
+                                        Cancel
+                                    </button>
+                                </div>
+                            </form>
+                        </div>
+                    )}
+
+                    <div className="bg-white rounded-lg shadow-md overflow-hidden">
+                        {loadingTeams ? (
+                            <div className="p-4 text-center">Loading teams...</div>
+                        ) : (
+                            <table className="min-w-full divide-y divide-gray-200">
+                                <thead className="bg-gray-50">
+                                    <tr>
+                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Name</th>
+                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Description</th>
+                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Members</th>
+                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Plans</th>
+                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+                                        <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="bg-white divide-y divide-gray-200">
+                                    {teams.length === 0 ? (
+                                        <tr>
+                                            <td colSpan={6} className="px-6 py-4 text-center text-gray-500">
+                                                No monitoring teams. Click "Add Team" to create one.
+                                            </td>
+                                        </tr>
+                                    ) : (
+                                        teams.map((team) => (
+                                            <tr key={team.team_id} className="hover:bg-gray-50">
+                                                <td className="px-6 py-4 font-medium">{team.name}</td>
+                                                <td className="px-6 py-4 text-sm text-gray-600">{team.description || '-'}</td>
+                                                <td className="px-6 py-4">{team.member_count}</td>
+                                                <td className="px-6 py-4">{team.plan_count}</td>
+                                                <td className="px-6 py-4">
+                                                    <span className={`px-2 py-1 text-xs rounded-full ${
+                                                        team.is_active ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'
+                                                    }`}>
+                                                        {team.is_active ? 'Active' : 'Inactive'}
+                                                    </span>
+                                                </td>
+                                                <td className="px-6 py-4 text-right text-sm">
+                                                    <button
+                                                        onClick={() => handleEditTeam(team)}
+                                                        className="text-blue-600 hover:text-blue-800 mr-3"
+                                                    >
+                                                        Edit
+                                                    </button>
+                                                    {team.plan_count === 0 && (
+                                                        <button
+                                                            onClick={() => handleDeleteTeam(team.team_id)}
+                                                            className="text-red-600 hover:text-red-800"
+                                                        >
+                                                            Delete
+                                                        </button>
+                                                    )}
+                                                </td>
+                                            </tr>
+                                        ))
+                                    )}
+                                </tbody>
+                            </table>
+                        )}
+                    </div>
+                </div>
+            )}
+
+            {/* Plans Tab */}
+            {activeTab === 'plans' && (
+                <div>
+                    <div className="flex justify-between items-center mb-4">
+                        <h3 className="text-lg font-semibold">Monitoring Plans</h3>
+                        <button onClick={() => setShowPlanForm(true)} className="btn-primary">
+                            + Add Plan
+                        </button>
+                    </div>
+
+                    {showPlanForm && (
+                        <div className="bg-white p-6 rounded-lg shadow-md mb-6">
+                            <h4 className="text-lg font-bold mb-4">
+                                {editingPlan ? 'Edit Plan' : 'Create New Plan'}
+                            </h4>
+
+                            {error && (
+                                <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
+                                    {error}
+                                </div>
+                            )}
+
+                            <form onSubmit={handlePlanSubmit}>
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                                    <div>
+                                        <label className="block text-sm font-medium mb-2">Plan Name *</label>
+                                        <input
+                                            type="text"
+                                            className="input-field"
+                                            value={planFormData.name}
+                                            onChange={(e) => setPlanFormData({ ...planFormData, name: e.target.value })}
+                                            placeholder="e.g., Credit Risk Quarterly Monitoring"
+                                            required
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-medium mb-2">Frequency *</label>
+                                        <select
+                                            className="input-field"
+                                            value={planFormData.frequency}
+                                            onChange={(e) => setPlanFormData({ ...planFormData, frequency: e.target.value })}
+                                        >
+                                            <option value="Monthly">Monthly</option>
+                                            <option value="Quarterly">Quarterly</option>
+                                            <option value="Semi-Annual">Semi-Annual</option>
+                                            <option value="Annual">Annual</option>
+                                        </select>
+                                    </div>
+                                </div>
+
+                                <div className="mb-4">
+                                    <label className="block text-sm font-medium mb-2">Description</label>
+                                    <textarea
+                                        className="input-field"
+                                        rows={2}
+                                        value={planFormData.description}
+                                        onChange={(e) => setPlanFormData({ ...planFormData, description: e.target.value })}
+                                        placeholder="Optional description of the monitoring plan"
+                                    />
+                                </div>
+
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+                                    <div>
+                                        <label className="block text-sm font-medium mb-2">Monitoring Team</label>
+                                        <select
+                                            className="input-field"
+                                            value={planFormData.monitoring_team_id || ''}
+                                            onChange={(e) => setPlanFormData({
+                                                ...planFormData,
+                                                monitoring_team_id: e.target.value ? parseInt(e.target.value) : null
+                                            })}
+                                        >
+                                            <option value="">-- Select Team --</option>
+                                            {teams.filter(t => t.is_active).map(t => (
+                                                <option key={t.team_id} value={t.team_id}>{t.name}</option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-medium mb-2">Data Provider</label>
+                                        <select
+                                            className="input-field"
+                                            value={planFormData.data_provider_user_id || ''}
+                                            onChange={(e) => setPlanFormData({
+                                                ...planFormData,
+                                                data_provider_user_id: e.target.value ? parseInt(e.target.value) : null
+                                            })}
+                                        >
+                                            <option value="">-- Select User --</option>
+                                            {allUsers.map(u => (
+                                                <option key={u.user_id} value={u.user_id}>{u.full_name}</option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-medium mb-2">Reporting Lead Days</label>
+                                        <input
+                                            type="number"
+                                            className="input-field"
+                                            value={planFormData.reporting_lead_days}
+                                            onChange={(e) => setPlanFormData({
+                                                ...planFormData,
+                                                reporting_lead_days: parseInt(e.target.value) || 30
+                                            })}
+                                            min={1}
+                                        />
+                                        <p className="text-xs text-gray-500 mt-1">Days after submission for report</p>
+                                    </div>
+                                </div>
+
+                                <div className="mb-4">
+                                    <label className="block text-sm font-medium mb-2">
+                                        Models in Scope
+                                    </label>
+                                    <MultiSelectDropdown
+                                        placeholder="Select Models"
+                                        options={allModels.map(m => ({ value: m.model_id, label: m.model_name }))}
+                                        selectedValues={planFormData.model_ids}
+                                        onChange={(values) => setPlanFormData({ ...planFormData, model_ids: values as number[] })}
+                                    />
+                                </div>
+
+                                <div className="mb-4">
+                                    <label className="flex items-center">
+                                        <input
+                                            type="checkbox"
+                                            checked={planFormData.is_active}
+                                            onChange={(e) => setPlanFormData({ ...planFormData, is_active: e.target.checked })}
+                                            className="mr-2"
+                                        />
+                                        <span className="text-sm font-medium">Active</span>
+                                    </label>
+                                </div>
+
+                                <div className="flex gap-2">
+                                    <button type="submit" className="btn-primary">
+                                        {editingPlan ? 'Update Plan' : 'Create Plan'}
+                                    </button>
+                                    <button type="button" onClick={resetPlanForm} className="btn-secondary">
+                                        Cancel
+                                    </button>
+                                </div>
+                            </form>
+                        </div>
+                    )}
+
+                    <div className="bg-white rounded-lg shadow-md overflow-hidden">
+                        {loadingPlans ? (
+                            <div className="p-4 text-center">Loading plans...</div>
+                        ) : (
+                            <table className="min-w-full divide-y divide-gray-200">
+                                <thead className="bg-gray-50">
+                                    <tr>
+                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Name</th>
+                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Frequency</th>
+                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Team</th>
+                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Models</th>
+                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Metrics</th>
+                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Next Submission</th>
+                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+                                        <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="bg-white divide-y divide-gray-200">
+                                    {plans.length === 0 ? (
+                                        <tr>
+                                            <td colSpan={8} className="px-6 py-4 text-center text-gray-500">
+                                                No monitoring plans. Click "Add Plan" to create one.
+                                            </td>
+                                        </tr>
+                                    ) : (
+                                        plans.map((plan) => (
+                                            <tr key={plan.plan_id} className="hover:bg-gray-50">
+                                                <td className="px-6 py-4">
+                                                    <div className="font-medium">{plan.name}</div>
+                                                    {plan.description && (
+                                                        <div className="text-xs text-gray-500">{plan.description}</div>
+                                                    )}
+                                                </td>
+                                                <td className="px-6 py-4 text-sm">{plan.frequency}</td>
+                                                <td className="px-6 py-4 text-sm">{plan.team_name || '-'}</td>
+                                                <td className="px-6 py-4 text-sm">{plan.model_count}</td>
+                                                <td className="px-6 py-4 text-sm">
+                                                    <button
+                                                        onClick={() => openMetricsModal(plan)}
+                                                        className="text-blue-600 hover:text-blue-800 underline"
+                                                    >
+                                                        {plan.metric_count} KPMs
+                                                    </button>
+                                                </td>
+                                                <td className="px-6 py-4 text-sm">
+                                                    {plan.next_submission_due_date || '-'}
+                                                </td>
+                                                <td className="px-6 py-4">
+                                                    <span className={`px-2 py-1 text-xs rounded-full ${
+                                                        plan.is_active ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'
+                                                    }`}>
+                                                        {plan.is_active ? 'Active' : 'Inactive'}
+                                                    </span>
+                                                </td>
+                                                <td className="px-6 py-4 text-right text-sm space-x-2">
+                                                    <button
+                                                        onClick={() => handleEditPlan(plan)}
+                                                        className="text-blue-600 hover:text-blue-800"
+                                                    >
+                                                        Edit
+                                                    </button>
+                                                    <button
+                                                        onClick={() => handleAdvanceCycle(plan.plan_id)}
+                                                        className="text-green-600 hover:text-green-800"
+                                                        title="Advance to next cycle"
+                                                    >
+                                                        Advance
+                                                    </button>
+                                                    <button
+                                                        onClick={() => handleDeletePlan(plan.plan_id)}
+                                                        className="text-red-600 hover:text-red-800"
+                                                    >
+                                                        Delete
+                                                    </button>
+                                                </td>
+                                            </tr>
+                                        ))
+                                    )}
+                                </tbody>
+                            </table>
+                        )}
+                    </div>
+                </div>
+            )}
+
+            {/* Metrics Modal */}
+            {showMetricsModal && selectedPlanForMetrics && (
+                <MetricsModal
+                    plan={selectedPlanForMetrics}
+                    kpmCategories={kpmCategories}
+                    onKpmCreated={fetchReferenceData}
+                    onClose={() => {
+                        setShowMetricsModal(false);
+                        setSelectedPlanForMetrics(null);
+                        fetchPlans(); // Refresh to update metric counts
+                    }}
+                />
+            )}
+        </Layout>
+    );
+}
+
+// Metrics Modal Component
+interface MetricsModalProps {
+    plan: MonitoringPlan;
+    kpmCategories: KpmCategory[];
+    onKpmCreated: () => Promise<void>;
+    onClose: () => void;
+}
+
+function MetricsModal({ plan, kpmCategories, onKpmCreated, onClose }: MetricsModalProps) {
+    const [metrics, setMetrics] = useState<PlanMetric[]>(plan.metrics || []);
+    const [showAddForm, setShowAddForm] = useState(true);
+    const [editingMetric, setEditingMetric] = useState<PlanMetric | null>(null);
+    const [formData, setFormData] = useState({
+        kpm_id: 0,
+        yellow_min: '' as string | number,
+        yellow_max: '' as string | number,
+        red_min: '' as string | number,
+        red_max: '' as string | number,
+        qualitative_guidance: '',
+        sort_order: 0,
+        is_active: true
+    });
+    const [error, setError] = useState<string | null>(null);
+
+    // Create New KPM inline state
+    const [showCreateKpm, setShowCreateKpm] = useState(false);
+    const [creatingKpm, setCreatingKpm] = useState(false);
+    const [newKpmData, setNewKpmData] = useState({
+        name: '',
+        description: '',
+        category_id: 0,
+        evaluation_type: 'Quantitative' as 'Quantitative' | 'Qualitative' | 'Outcome Only',
+        calculation: '',
+        interpretation: ''
+    });
+    const [kpmError, setKpmError] = useState<string | null>(null);
+
+    const resetForm = () => {
+        setFormData({
+            kpm_id: 0,
+            yellow_min: '',
+            yellow_max: '',
+            red_min: '',
+            red_max: '',
+            qualitative_guidance: '',
+            sort_order: metrics.length,
+            is_active: true
+        });
+        setEditingMetric(null);
+        setShowAddForm(false);
+        setError(null);
+    };
+
+    const handleSubmit = async (e: React.FormEvent) => {
+        e.preventDefault();
+        setError(null);
+
+        const payload = {
+            kpm_id: formData.kpm_id,
+            yellow_min: formData.yellow_min === '' ? null : parseFloat(String(formData.yellow_min)),
+            yellow_max: formData.yellow_max === '' ? null : parseFloat(String(formData.yellow_max)),
+            red_min: formData.red_min === '' ? null : parseFloat(String(formData.red_min)),
+            red_max: formData.red_max === '' ? null : parseFloat(String(formData.red_max)),
+            qualitative_guidance: formData.qualitative_guidance || null,
+            sort_order: formData.sort_order,
+            is_active: formData.is_active
+        };
+
+        try {
+            if (editingMetric) {
+                const response = await api.patch(
+                    `/monitoring/plans/${plan.plan_id}/metrics/${editingMetric.metric_id}`,
+                    payload
+                );
+                setMetrics(metrics.map(m =>
+                    m.metric_id === editingMetric.metric_id ? response.data : m
+                ));
+            } else {
+                const response = await api.post(
+                    `/monitoring/plans/${plan.plan_id}/metrics`,
+                    payload
+                );
+                setMetrics([...metrics, response.data]);
+            }
+            resetForm();
+        } catch (err: any) {
+            setError(err.response?.data?.detail || 'Failed to save metric');
+        }
+    };
+
+    const handleEdit = (metric: PlanMetric) => {
+        setEditingMetric(metric);
+        setFormData({
+            kpm_id: metric.kpm_id,
+            yellow_min: metric.yellow_min ?? '',
+            yellow_max: metric.yellow_max ?? '',
+            red_min: metric.red_min ?? '',
+            red_max: metric.red_max ?? '',
+            qualitative_guidance: metric.qualitative_guidance || '',
+            sort_order: metric.sort_order,
+            is_active: metric.is_active
+        });
+        setShowAddForm(true);
+    };
+
+    const handleDelete = async (metricId: number) => {
+        if (!confirm('Remove this metric from the plan?')) return;
+
+        try {
+            await api.delete(`/monitoring/plans/${plan.plan_id}/metrics/${metricId}`);
+            setMetrics(metrics.filter(m => m.metric_id !== metricId));
+        } catch (err: any) {
+            alert(err.response?.data?.detail || 'Failed to delete metric');
+        }
+    };
+
+    // Handle inline KPM creation
+    const handleCreateKpm = async () => {
+        setKpmError(null);
+        setCreatingKpm(true);
+
+        try {
+            const response = await api.post('/kpm/kpms', {
+                name: newKpmData.name,
+                description: newKpmData.description || null,
+                category_id: newKpmData.category_id,
+                evaluation_type: newKpmData.evaluation_type,
+                calculation: newKpmData.calculation || null,
+                interpretation: newKpmData.interpretation || null,
+                is_active: true,
+                sort_order: 0
+            });
+
+            // Refresh the KPM categories to include the new KPM
+            await onKpmCreated();
+
+            // Auto-select the newly created KPM
+            setFormData({ ...formData, kpm_id: response.data.kpm_id });
+
+            // Reset and close the create KPM form
+            setNewKpmData({
+                name: '',
+                description: '',
+                category_id: 0,
+                evaluation_type: 'Quantitative',
+                calculation: '',
+                interpretation: ''
+            });
+            setShowCreateKpm(false);
+        } catch (err: any) {
+            setKpmError(err.response?.data?.detail || 'Failed to create KPM');
+        } finally {
+            setCreatingKpm(false);
+        }
+    };
+
+    // Get all KPMs from categories
+    const allKpms = kpmCategories.flatMap(cat =>
+        cat.kpms.map(kpm => ({ ...kpm, category_name: cat.name }))
+    );
+
+    // Filter out already-added KPMs unless editing
+    const availableKpms = allKpms.filter(kpm =>
+        editingMetric?.kpm_id === kpm.kpm_id || !metrics.some(m => m.kpm_id === kpm.kpm_id)
+    );
+
+    // Get the selected KPM's evaluation type
+    const selectedKpm = allKpms.find(k => k.kpm_id === formData.kpm_id);
+    const evaluationType = selectedKpm?.evaluation_type || 'Quantitative';
+
+    return (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+            <div className="bg-white rounded-lg shadow-xl w-full max-w-4xl max-h-[90vh] overflow-hidden">
+                <div className="p-4 border-b flex justify-between items-center bg-gray-50">
+                    <h3 className="text-lg font-bold">Metrics for: {plan.name}</h3>
+                    <button onClick={onClose} className="text-gray-500 hover:text-gray-700">
+                        <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                    </button>
+                </div>
+
+                <div className="p-4 overflow-y-auto max-h-[70vh]">
+                    <p className="text-sm text-gray-600 mb-4">
+                        Configure thresholds and guidance for each KPM in this monitoring plan.
+                    </p>
+
+                    {showAddForm && (
+                        <div className="bg-gray-50 p-4 rounded-lg mb-4 border">
+                            <h4 className="font-medium mb-3">
+                                {editingMetric ? 'Edit Metric' : 'Add Metric to Plan'}
+                            </h4>
+
+                            {error && (
+                                <div className="bg-red-100 border border-red-400 text-red-700 px-3 py-2 rounded mb-3 text-sm">
+                                    {error}
+                                </div>
+                            )}
+
+                            <form onSubmit={handleSubmit}>
+                                <div className="grid grid-cols-2 gap-4 mb-3">
+                                    <div className="col-span-2">
+                                        <div className="flex justify-between items-center mb-1">
+                                            <label className="block text-sm font-medium">KPM *</label>
+                                            {!editingMetric && !showCreateKpm && (
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setShowCreateKpm(true)}
+                                                    className="text-xs text-blue-600 hover:text-blue-800 font-medium"
+                                                >
+                                                    + Create New KPM
+                                                </button>
+                                            )}
+                                        </div>
+
+                                        {/* Inline Create New KPM Form */}
+                                        {showCreateKpm && (
+                                            <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-3">
+                                                <div className="flex justify-between items-center mb-2">
+                                                    <h5 className="text-sm font-medium text-blue-800">Create New KPM</h5>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setShowCreateKpm(false)}
+                                                        className="text-blue-600 hover:text-blue-800"
+                                                    >
+                                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                                        </svg>
+                                                    </button>
+                                                </div>
+
+                                                {kpmError && (
+                                                    <div className="bg-red-100 border border-red-400 text-red-700 px-2 py-1 rounded mb-2 text-xs">
+                                                        {kpmError}
+                                                    </div>
+                                                )}
+
+                                                <div className="grid grid-cols-2 gap-2">
+                                                    <div className="col-span-2">
+                                                        <label className="block text-xs font-medium text-gray-700 mb-1">Name *</label>
+                                                        <input
+                                                            type="text"
+                                                            className="input-field text-sm"
+                                                            value={newKpmData.name}
+                                                            onChange={(e) => setNewKpmData({ ...newKpmData, name: e.target.value })}
+                                                            placeholder="e.g., Population Stability Index"
+                                                            required
+                                                        />
+                                                    </div>
+                                                    <div>
+                                                        <label className="block text-xs font-medium text-gray-700 mb-1">Category *</label>
+                                                        <select
+                                                            className="input-field text-sm"
+                                                            value={newKpmData.category_id}
+                                                            onChange={(e) => setNewKpmData({ ...newKpmData, category_id: parseInt(e.target.value) })}
+                                                            required
+                                                        >
+                                                            <option value={0}>-- Select Category --</option>
+                                                            {kpmCategories.map(cat => (
+                                                                <option key={cat.category_id} value={cat.category_id}>
+                                                                    {cat.name}
+                                                                </option>
+                                                            ))}
+                                                        </select>
+                                                    </div>
+                                                    <div>
+                                                        <label className="block text-xs font-medium text-gray-700 mb-1">Type *</label>
+                                                        <select
+                                                            className="input-field text-sm"
+                                                            value={newKpmData.evaluation_type}
+                                                            onChange={(e) => setNewKpmData({ ...newKpmData, evaluation_type: e.target.value as any })}
+                                                        >
+                                                            <option value="Quantitative">Quantitative (thresholds)</option>
+                                                            <option value="Qualitative">Qualitative (judgment)</option>
+                                                            <option value="Outcome Only">Outcome Only (R/Y/G)</option>
+                                                        </select>
+                                                    </div>
+                                                    <div className="col-span-2">
+                                                        <label className="block text-xs font-medium text-gray-700 mb-1">Description</label>
+                                                        <textarea
+                                                            className="input-field text-sm"
+                                                            rows={2}
+                                                            value={newKpmData.description}
+                                                            onChange={(e) => setNewKpmData({ ...newKpmData, description: e.target.value })}
+                                                            placeholder="Brief description of what this KPM measures..."
+                                                        />
+                                                    </div>
+                                                    {newKpmData.evaluation_type === 'Quantitative' && (
+                                                        <>
+                                                            <div>
+                                                                <label className="block text-xs font-medium text-gray-700 mb-1">Calculation</label>
+                                                                <input
+                                                                    type="text"
+                                                                    className="input-field text-sm"
+                                                                    value={newKpmData.calculation}
+                                                                    onChange={(e) => setNewKpmData({ ...newKpmData, calculation: e.target.value })}
+                                                                    placeholder="e.g., (Σ(pi - oi)²) / n"
+                                                                />
+                                                            </div>
+                                                            <div>
+                                                                <label className="block text-xs font-medium text-gray-700 mb-1">Interpretation</label>
+                                                                <input
+                                                                    type="text"
+                                                                    className="input-field text-sm"
+                                                                    value={newKpmData.interpretation}
+                                                                    onChange={(e) => setNewKpmData({ ...newKpmData, interpretation: e.target.value })}
+                                                                    placeholder="e.g., Lower is better"
+                                                                />
+                                                            </div>
+                                                        </>
+                                                    )}
+                                                </div>
+
+                                                <div className="flex gap-2 mt-3">
+                                                    <button
+                                                        type="button"
+                                                        onClick={handleCreateKpm}
+                                                        disabled={creatingKpm || !newKpmData.name || !newKpmData.category_id}
+                                                        className="px-3 py-1 text-xs bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50"
+                                                    >
+                                                        {creatingKpm ? 'Creating...' : 'Create & Select'}
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setShowCreateKpm(false)}
+                                                        className="px-3 py-1 text-xs bg-gray-200 text-gray-700 rounded hover:bg-gray-300"
+                                                    >
+                                                        Cancel
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        <select
+                                            className="input-field"
+                                            value={formData.kpm_id}
+                                            onChange={(e) => setFormData({ ...formData, kpm_id: parseInt(e.target.value) })}
+                                            required
+                                            disabled={!!editingMetric || showCreateKpm}
+                                        >
+                                            <option value={0}>-- Select KPM --</option>
+                                            {availableKpms.map(kpm => (
+                                                <option key={kpm.kpm_id} value={kpm.kpm_id}>
+                                                    [{kpm.category_name}] {kpm.name} ({kpm.evaluation_type})
+                                                </option>
+                                            ))}
+                                        </select>
+                                        {selectedKpm && (
+                                            <p className="text-xs text-gray-500 mt-1">
+                                                Type: <span className={`font-medium ${
+                                                    evaluationType === 'Quantitative' ? 'text-blue-600' :
+                                                    evaluationType === 'Qualitative' ? 'text-purple-600' : 'text-green-600'
+                                                }`}>{evaluationType}</span>
+                                                {evaluationType === 'Quantitative' && ' - Configure numerical thresholds'}
+                                                {evaluationType === 'Qualitative' && ' - Judgment-based assessment (R/Y/G outcome)'}
+                                                {evaluationType === 'Outcome Only' && ' - Direct R/Y/G selection with notes'}
+                                            </p>
+                                        )}
+                                    </div>
+
+                                    {/* Only show threshold fields for Quantitative KPMs */}
+                                    {evaluationType === 'Quantitative' && (
+                                        <>
+                                            <div>
+                                                <label className="block text-sm font-medium mb-1">Yellow Min</label>
+                                                <input
+                                                    type="number"
+                                                    step="any"
+                                                    className="input-field"
+                                                    value={formData.yellow_min}
+                                                    onChange={(e) => setFormData({ ...formData, yellow_min: e.target.value })}
+                                                    placeholder="e.g., 0.8"
+                                                />
+                                            </div>
+                                            <div>
+                                                <label className="block text-sm font-medium mb-1">Yellow Max</label>
+                                                <input
+                                                    type="number"
+                                                    step="any"
+                                                    className="input-field"
+                                                    value={formData.yellow_max}
+                                                    onChange={(e) => setFormData({ ...formData, yellow_max: e.target.value })}
+                                                    placeholder="e.g., 0.9"
+                                                />
+                                            </div>
+                                            <div>
+                                                <label className="block text-sm font-medium mb-1">Red Min</label>
+                                                <input
+                                                    type="number"
+                                                    step="any"
+                                                    className="input-field"
+                                                    value={formData.red_min}
+                                                    onChange={(e) => setFormData({ ...formData, red_min: e.target.value })}
+                                                    placeholder="e.g., 0.7"
+                                                />
+                                            </div>
+                                            <div>
+                                                <label className="block text-sm font-medium mb-1">Red Max</label>
+                                                <input
+                                                    type="number"
+                                                    step="any"
+                                                    className="input-field"
+                                                    value={formData.red_max}
+                                                    onChange={(e) => setFormData({ ...formData, red_max: e.target.value })}
+                                                    placeholder="e.g., 0.7"
+                                                />
+                                            </div>
+                                        </>
+                                    )}
+
+                                    <div className="col-span-2">
+                                        <label className="block text-sm font-medium mb-1">
+                                            {evaluationType === 'Quantitative' ? 'Additional Guidance' : 'Assessment Guidance *'}
+                                        </label>
+                                        <textarea
+                                            className="input-field"
+                                            rows={evaluationType === 'Quantitative' ? 2 : 4}
+                                            value={formData.qualitative_guidance}
+                                            onChange={(e) => setFormData({ ...formData, qualitative_guidance: e.target.value })}
+                                            placeholder={
+                                                evaluationType === 'Quantitative'
+                                                    ? 'Additional guidance for interpreting this metric...'
+                                                    : 'Describe the criteria for Green/Yellow/Red outcomes...'
+                                            }
+                                            required={evaluationType !== 'Quantitative'}
+                                        />
+                                        {evaluationType !== 'Quantitative' && (
+                                            <p className="text-xs text-gray-500 mt-1">
+                                                Define the rules or criteria for each outcome (Green/Yellow/Red)
+                                            </p>
+                                        )}
+                                    </div>
+
+                                    <div>
+                                        <label className="block text-sm font-medium mb-1">Sort Order</label>
+                                        <input
+                                            type="number"
+                                            className="input-field"
+                                            value={formData.sort_order}
+                                            onChange={(e) => setFormData({ ...formData, sort_order: parseInt(e.target.value) || 0 })}
+                                        />
+                                    </div>
+                                    <div className="flex items-end pb-2">
+                                        <label className="flex items-center">
+                                            <input
+                                                type="checkbox"
+                                                checked={formData.is_active}
+                                                onChange={(e) => setFormData({ ...formData, is_active: e.target.checked })}
+                                                className="mr-2"
+                                            />
+                                            <span className="text-sm">Active</span>
+                                        </label>
+                                    </div>
+                                </div>
+
+                                <div className="flex gap-2">
+                                    <button type="submit" className="btn-primary text-sm">
+                                        {editingMetric ? 'Update Metric' : 'Add Metric to Plan'}
+                                    </button>
+                                    <button type="button" onClick={resetForm} className="btn-secondary text-sm">
+                                        {editingMetric ? 'Cancel' : 'Clear'}
+                                    </button>
+                                </div>
+                            </form>
+                        </div>
+                    )}
+
+                    {/* Metrics Table */}
+                    <table className="min-w-full divide-y divide-gray-200">
+                        <thead className="bg-gray-50">
+                            <tr>
+                                <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">KPM</th>
+                                <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Type</th>
+                                <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Configuration</th>
+                                <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+                                <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-200">
+                            {metrics.length === 0 ? (
+                                <tr>
+                                    <td colSpan={5} className="px-4 py-4 text-center text-gray-500">
+                                        No metrics configured. Use the form above to add metrics to this plan.
+                                    </td>
+                                </tr>
+                            ) : (
+                                metrics.sort((a, b) => a.sort_order - b.sort_order).map((metric) => {
+                                    const kpmEvalType = metric.kpm.evaluation_type || 'Quantitative';
+                                    const isQuantitative = kpmEvalType === 'Quantitative';
+
+                                    return (
+                                        <tr key={metric.metric_id} className="hover:bg-gray-50">
+                                            <td className="px-4 py-2">
+                                                <div className="font-medium text-sm">{metric.kpm.name}</div>
+                                                {metric.qualitative_guidance && (
+                                                    <div className="text-xs text-gray-500 truncate max-w-xs" title={metric.qualitative_guidance}>
+                                                        {metric.qualitative_guidance}
+                                                    </div>
+                                                )}
+                                            </td>
+                                            <td className="px-4 py-2 text-sm">
+                                                <span className={`px-2 py-0.5 text-xs rounded-full ${
+                                                    kpmEvalType === 'Quantitative' ? 'bg-blue-100 text-blue-800' :
+                                                    kpmEvalType === 'Qualitative' ? 'bg-purple-100 text-purple-800' :
+                                                    'bg-green-100 text-green-800'
+                                                }`}>
+                                                    {kpmEvalType}
+                                                </span>
+                                            </td>
+                                            <td className="px-4 py-2 text-sm">
+                                                {isQuantitative ? (
+                                                    <div className="flex gap-2">
+                                                        <span className="px-2 py-0.5 bg-yellow-100 text-yellow-800 rounded text-xs">
+                                                            Y: {metric.yellow_min ?? '-'} to {metric.yellow_max ?? '-'}
+                                                        </span>
+                                                        <span className="px-2 py-0.5 bg-red-100 text-red-800 rounded text-xs">
+                                                            R: {metric.red_min ?? '-'} to {metric.red_max ?? '-'}
+                                                        </span>
+                                                    </div>
+                                                ) : (
+                                                    <span className="text-xs text-gray-600 italic">
+                                                        R/Y/G judgment-based
+                                                    </span>
+                                                )}
+                                            </td>
+                                            <td className="px-4 py-2">
+                                                <span className={`px-2 py-0.5 text-xs rounded-full ${
+                                                    metric.is_active ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'
+                                                }`}>
+                                                    {metric.is_active ? 'Active' : 'Inactive'}
+                                                </span>
+                                            </td>
+                                            <td className="px-4 py-2 text-right text-sm">
+                                                <button
+                                                    onClick={() => handleEdit(metric)}
+                                                    className="text-blue-600 hover:text-blue-800 mr-2"
+                                                >
+                                                    Edit
+                                                </button>
+                                                <button
+                                                    onClick={() => handleDelete(metric.metric_id)}
+                                                    className="text-red-600 hover:text-red-800"
+                                                >
+                                                    Remove
+                                                </button>
+                                            </td>
+                                        </tr>
+                                    );
+                                })
+                            )}
+                        </tbody>
+                    </table>
+                </div>
+
+                <div className="p-4 border-t bg-gray-50 flex justify-end">
+                    <button onClick={onClose} className="btn-secondary">
+                        Close
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+}

@@ -176,7 +176,7 @@ export default function ModelsPage() {
     const availableColumns = [
         { key: 'model_id', label: 'Model ID', default: true },
         { key: 'model_name', label: 'Model Name', default: true },
-        { key: 'description', label: 'Description', default: true },
+        { key: 'description', label: 'Description and Purpose', default: true },
         { key: 'development_type', label: 'Development Type', default: true },
         { key: 'status', label: 'Status', default: true },
         { key: 'owner', label: 'Owner', default: true },
@@ -955,11 +955,12 @@ export default function ModelsPage() {
                             </div>
 
                             <div className="mb-4">
-                                <label htmlFor="description" className="block text-sm font-medium mb-2">Description</label>
+                                <label htmlFor="description" className="block text-sm font-medium mb-2">Description and Purpose</label>
                                 <textarea
                                     id="description"
                                     className="input-field"
                                     rows={3}
+                                    placeholder="Describe what this model does and its business purpose..."
                                     value={formData.description}
                                     onChange={(e) => setFormData({ ...formData, description: e.target.value })}
                                 />

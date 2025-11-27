@@ -4,6 +4,12 @@ import Layout from '../components/Layout';
 import client from '../api/client';
 import OverdueCommentaryModal, { OverdueType } from '../components/OverdueCommentaryModal';
 
+interface RegionInfo {
+    region_id: number;
+    region_code: string;
+    region_name: string;
+}
+
 interface OverdueRevalidationRecord {
     overdue_type: 'PRE_SUBMISSION' | 'VALIDATION_IN_PROGRESS';
     request_id: number;
@@ -11,6 +17,8 @@ interface OverdueRevalidationRecord {
     model_id: number;
     model_name: string;
     risk_tier: string | null;
+    risk_tier_code: string | null;
+    regions: RegionInfo[];
     model_owner_id: number | null;
     model_owner_name: string | null;
     model_owner_email: string | null;
@@ -34,7 +42,7 @@ interface OverdueRevalidationRecord {
     computed_completion_date: string | null;
 }
 
-interface ReportSummary {
+interface EnhancedSummary {
     total_overdue: number;
     pre_submission_overdue: number;
     validation_overdue: number;
@@ -43,7 +51,20 @@ interface ReportSummary {
     current_commentary: number;
     needs_attention: number;
     average_days_overdue: number;
+    median_days_overdue: number;
     max_days_overdue: number;
+    overdue_30_plus_days: number;
+    overdue_60_plus_days: number;
+    overdue_90_plus_days: number;
+    by_risk_tier: Record<string, number>;
+    by_region: Record<string, number>;
+    risk_weighted_overdue_score: number;
+}
+
+interface DataLimitation {
+    metric_name: string;
+    reason: string;
+    remediation: string;
 }
 
 interface OverdueRevalidationReportResponse {
@@ -51,25 +72,33 @@ interface OverdueRevalidationReportResponse {
     filters_applied: {
         overdue_type: string | null;
         risk_tier: string | null;
+        region_id: number | null;
+        region_name: string | null;
         comment_status: string | null;
         owner_id: number | null;
         days_overdue_min: number | null;
         needs_update_only: boolean;
     };
-    summary: ReportSummary;
+    summary: EnhancedSummary;
     total_records: number;
     records: OverdueRevalidationRecord[];
+    data_limitations: DataLimitation[];
 }
 
 const OverdueRevalidationReportPage: React.FC = () => {
     const [loading, setLoading] = useState(true);
     const [reportData, setReportData] = useState<OverdueRevalidationReportResponse | null>(null);
+    const [regions, setRegions] = useState<RegionInfo[]>([]);
 
     // Filters
     const [overdueTypeFilter, setOverdueTypeFilter] = useState<string>('');
+    const [regionFilter, setRegionFilter] = useState<string>('');
     const [commentStatusFilter, setCommentStatusFilter] = useState<string>('');
     const [needsUpdateOnly, setNeedsUpdateOnly] = useState(false);
     const [daysOverdueMin, setDaysOverdueMin] = useState<string>('');
+
+    // UI State
+    const [showDataLimitations, setShowDataLimitations] = useState(false);
 
     // Commentary modal
     const [showCommentaryModal, setShowCommentaryModal] = useState(false);
@@ -78,14 +107,28 @@ const OverdueRevalidationReportPage: React.FC = () => {
     const [commentaryModalModelName, setCommentaryModalModelName] = useState<string>('');
 
     useEffect(() => {
+        fetchRegions();
+    }, []);
+
+    useEffect(() => {
         fetchReport();
-    }, [overdueTypeFilter, commentStatusFilter, needsUpdateOnly, daysOverdueMin]);
+    }, [overdueTypeFilter, regionFilter, commentStatusFilter, needsUpdateOnly, daysOverdueMin]);
+
+    const fetchRegions = async () => {
+        try {
+            const response = await client.get('/overdue-revalidation-report/regions');
+            setRegions(response.data);
+        } catch (error) {
+            console.error('Failed to fetch regions:', error);
+        }
+    };
 
     const fetchReport = async () => {
         try {
             setLoading(true);
             const params = new URLSearchParams();
             if (overdueTypeFilter) params.append('overdue_type', overdueTypeFilter);
+            if (regionFilter) params.append('region_id', regionFilter);
             if (commentStatusFilter) params.append('comment_status', commentStatusFilter);
             if (needsUpdateOnly) params.append('needs_update_only', 'true');
             if (daysOverdueMin) params.append('days_overdue_min', daysOverdueMin);
@@ -134,10 +177,13 @@ const OverdueRevalidationReportPage: React.FC = () => {
         if (urgency === 'in_grace_period') {
             return 'bg-yellow-100 text-yellow-800';
         }
-        if (daysOverdue > 30) {
+        if (daysOverdue >= 90) {
+            return 'bg-red-300 text-red-900';
+        }
+        if (daysOverdue >= 60) {
             return 'bg-red-200 text-red-900';
         }
-        if (daysOverdue > 14) {
+        if (daysOverdue >= 30) {
             return 'bg-red-100 text-red-800';
         }
         return 'bg-orange-100 text-orange-800';
@@ -152,6 +198,7 @@ const OverdueRevalidationReportPage: React.FC = () => {
             'Model ID',
             'Model Name',
             'Risk Tier',
+            'Regions',
             'Owner Name',
             'Owner Email',
             'Primary Validator',
@@ -175,6 +222,7 @@ const OverdueRevalidationReportPage: React.FC = () => {
             record.model_id,
             record.model_name,
             record.risk_tier || 'N/A',
+            record.regions.map(r => r.region_code).join('; ') || 'N/A',
             record.model_owner_name || 'N/A',
             record.model_owner_email || 'N/A',
             record.primary_validator_name || 'N/A',
@@ -218,13 +266,13 @@ const OverdueRevalidationReportPage: React.FC = () => {
                     </div>
                     <h2 className="text-2xl font-bold text-gray-900">Overdue Revalidation Report</h2>
                     <p className="mt-1 text-sm text-gray-600">
-                        Comprehensive view of all overdue items with commentary status and responsible party tracking
+                        Comprehensive view of all overdue items with commentary status, regional breakdown, and responsible party tracking
                     </p>
                 </div>
 
-                {/* Summary Cards */}
+                {/* Primary Summary Cards */}
                 {reportData && (
-                    <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4 mb-6">
+                    <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4 mb-4">
                         <div className="bg-white p-4 rounded-lg shadow-sm border">
                             <div className="text-2xl font-bold text-gray-900">{reportData.summary.total_overdue}</div>
                             <div className="text-xs text-gray-500">Total Overdue</div>
@@ -252,6 +300,71 @@ const OverdueRevalidationReportPage: React.FC = () => {
                     </div>
                 )}
 
+                {/* Enhanced Metrics Panel */}
+                {reportData && reportData.summary.total_overdue > 0 && (
+                    <div className="bg-white p-4 rounded-lg shadow-sm border mb-4">
+                        <h3 className="text-sm font-semibold text-gray-700 mb-3">Enhanced Metrics</h3>
+                        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
+                            {/* Severity Buckets */}
+                            <div className="bg-gray-50 p-3 rounded">
+                                <div className="text-lg font-bold text-gray-700">{reportData.summary.overdue_30_plus_days}</div>
+                                <div className="text-xs text-gray-500">30+ Days Overdue</div>
+                            </div>
+                            <div className="bg-red-50 p-3 rounded">
+                                <div className="text-lg font-bold text-red-700">{reportData.summary.overdue_60_plus_days}</div>
+                                <div className="text-xs text-red-600">60+ Days Overdue</div>
+                            </div>
+                            <div className="bg-red-100 p-3 rounded">
+                                <div className="text-lg font-bold text-red-800">{reportData.summary.overdue_90_plus_days}</div>
+                                <div className="text-xs text-red-700">90+ Days Overdue</div>
+                            </div>
+                            {/* Statistics */}
+                            <div className="bg-blue-50 p-3 rounded">
+                                <div className="text-lg font-bold text-blue-700">{reportData.summary.average_days_overdue}</div>
+                                <div className="text-xs text-blue-600">Avg Days Overdue</div>
+                            </div>
+                            <div className="bg-blue-50 p-3 rounded">
+                                <div className="text-lg font-bold text-blue-700">{reportData.summary.median_days_overdue}</div>
+                                <div className="text-xs text-blue-600">Median Days Overdue</div>
+                            </div>
+                            <div className="bg-purple-50 p-3 rounded" title="Risk-weighted score: Tier 1 models count 3x, Tier 2 = 2x, Tier 3 = 1x, multiplied by days overdue">
+                                <div className="text-lg font-bold text-purple-700">{reportData.summary.risk_weighted_overdue_score.toLocaleString()}</div>
+                                <div className="text-xs text-purple-600">Risk-Weighted Score</div>
+                            </div>
+                        </div>
+
+                        {/* Breakdown by Risk Tier and Region */}
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+                            {/* Risk Tier Breakdown */}
+                            {Object.keys(reportData.summary.by_risk_tier).length > 0 && (
+                                <div>
+                                    <h4 className="text-xs font-medium text-gray-500 mb-2">By Risk Tier</h4>
+                                    <div className="flex flex-wrap gap-2">
+                                        {Object.entries(reportData.summary.by_risk_tier).map(([tier, count]) => (
+                                            <span key={tier} className="px-2 py-1 bg-gray-100 rounded text-xs">
+                                                {tier}: <strong>{count}</strong>
+                                            </span>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+                            {/* Region Breakdown */}
+                            {Object.keys(reportData.summary.by_region).length > 0 && (
+                                <div>
+                                    <h4 className="text-xs font-medium text-gray-500 mb-2">By Region</h4>
+                                    <div className="flex flex-wrap gap-2">
+                                        {Object.entries(reportData.summary.by_region).map(([region, count]) => (
+                                            <span key={region} className="px-2 py-1 bg-blue-100 rounded text-xs">
+                                                {region}: <strong>{count}</strong>
+                                            </span>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                )}
+
                 {/* Filters */}
                 <div className="bg-white p-4 rounded-lg shadow-sm border mb-6">
                     <div className="flex flex-wrap items-center gap-4">
@@ -265,6 +378,21 @@ const OverdueRevalidationReportPage: React.FC = () => {
                                 <option value="">All Types</option>
                                 <option value="PRE_SUBMISSION">Submission Overdue</option>
                                 <option value="VALIDATION_IN_PROGRESS">Validation Overdue</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label className="block text-xs font-medium text-gray-500 mb-1">Region</label>
+                            <select
+                                value={regionFilter}
+                                onChange={(e) => setRegionFilter(e.target.value)}
+                                className="block w-40 rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 text-sm"
+                            >
+                                <option value="">All Regions</option>
+                                {regions.map(region => (
+                                    <option key={region.region_id} value={region.region_id}>
+                                        {region.region_name}
+                                    </option>
+                                ))}
                             </select>
                         </div>
                         <div>
@@ -329,13 +457,17 @@ const OverdueRevalidationReportPage: React.FC = () => {
                         <div className="p-4 border-b bg-gray-50 flex justify-between items-center">
                             <span className="text-sm font-medium text-gray-700">
                                 {reportData.total_records} records found
+                                {reportData.filters_applied.region_name && (
+                                    <span className="ml-2 text-blue-600">
+                                        (filtered by: {reportData.filters_applied.region_name})
+                                    </span>
+                                )}
                             </span>
-                            {reportData.summary.average_days_overdue > 0 && (
-                                <span className="text-sm text-gray-500">
-                                    Avg: {reportData.summary.average_days_overdue} days overdue |
-                                    Max: {reportData.summary.max_days_overdue} days
-                                </span>
-                            )}
+                            <span className="text-sm text-gray-500">
+                                Avg: {reportData.summary.average_days_overdue} days |
+                                Median: {reportData.summary.median_days_overdue} days |
+                                Max: {reportData.summary.max_days_overdue} days
+                            </span>
                         </div>
                         <div className="overflow-x-auto">
                             <table className="min-w-full divide-y divide-gray-200">
@@ -344,11 +476,12 @@ const OverdueRevalidationReportPage: React.FC = () => {
                                         <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Type</th>
                                         <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Model</th>
                                         <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Risk Tier</th>
+                                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Regions</th>
                                         <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Responsible</th>
                                         <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Due Date</th>
                                         <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Days Overdue</th>
                                         <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Commentary</th>
-                                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Latest Target</th>
+                                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Target</th>
                                         <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
                                     </tr>
                                 </thead>
@@ -373,6 +506,19 @@ const OverdueRevalidationReportPage: React.FC = () => {
                                             </td>
                                             <td className="px-4 py-3 whitespace-nowrap text-sm">
                                                 {record.risk_tier || <span className="text-gray-400">-</span>}
+                                            </td>
+                                            <td className="px-4 py-3 whitespace-nowrap text-sm">
+                                                {record.regions.length > 0 ? (
+                                                    <div className="flex flex-wrap gap-1">
+                                                        {record.regions.map(r => (
+                                                            <span key={r.region_id} className="px-1.5 py-0.5 bg-blue-100 text-blue-800 rounded text-xs">
+                                                                {r.region_code}
+                                                            </span>
+                                                        ))}
+                                                    </div>
+                                                ) : (
+                                                    <span className="text-gray-400">-</span>
+                                                )}
                                             </td>
                                             <td className="px-4 py-3 whitespace-nowrap text-sm">
                                                 {record.overdue_type === 'PRE_SUBMISSION' ? (
@@ -458,6 +604,47 @@ const OverdueRevalidationReportPage: React.FC = () => {
                         <p className="text-sm text-gray-500">
                             All models are up to date with their revalidation schedules.
                         </p>
+                    </div>
+                )}
+
+                {/* Data Limitations Section */}
+                {reportData && reportData.data_limitations && reportData.data_limitations.length > 0 && (
+                    <div className="mt-6">
+                        <button
+                            onClick={() => setShowDataLimitations(!showDataLimitations)}
+                            className="flex items-center gap-2 text-sm text-gray-600 hover:text-gray-800"
+                        >
+                            <svg
+                                className={`w-4 h-4 transform transition-transform ${showDataLimitations ? 'rotate-90' : ''}`}
+                                fill="none"
+                                stroke="currentColor"
+                                viewBox="0 0 24 24"
+                            >
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                            </svg>
+                            Data Limitations & Recommended Improvements ({reportData.data_limitations.length})
+                        </button>
+
+                        {showDataLimitations && (
+                            <div className="mt-3 bg-amber-50 border border-amber-200 rounded-lg p-4">
+                                <p className="text-sm text-amber-800 mb-3">
+                                    The following metrics would be valuable for regulatory reporting but cannot currently be calculated due to data limitations:
+                                </p>
+                                <div className="space-y-3">
+                                    {reportData.data_limitations.map((limitation, index) => (
+                                        <div key={index} className="bg-white p-3 rounded border border-amber-100">
+                                            <h4 className="font-medium text-gray-900 text-sm">{limitation.metric_name}</h4>
+                                            <p className="text-xs text-gray-600 mt-1">
+                                                <strong>Current Limitation:</strong> {limitation.reason}
+                                            </p>
+                                            <p className="text-xs text-green-700 mt-1">
+                                                <strong>Recommended Remediation:</strong> {limitation.remediation}
+                                            </p>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
                     </div>
                 )}
 

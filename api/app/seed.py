@@ -5,6 +5,7 @@ from typing import Dict, List
 from app.core.database import SessionLocal
 from app.core.security import get_password_hash
 from app.models import User, UserRole, Vendor, EntraUser, Taxonomy, TaxonomyValue, ValidationWorkflowSLA, ValidationPolicy, Region, ValidationComponentDefinition, ComponentDefinitionConfiguration, ComponentDefinitionConfigItem, ModelTypeCategory, ModelType, ValidationRequest, ValidationOutcome, ValidationRequestModelVersion, ApproverRole, ConditionalApprovalRule, RuleRequiredApprover, MapApplication
+from app.models.kpm import KpmCategory, Kpm
 from app.models.model import Model
 
 
@@ -145,6 +146,17 @@ MODEL_TYPE_VALUES = [
         "description": "Allocates metrics between dimensions or entities."},
     {"code": "MRM_SCORING", "label": "Model Risk Scoring / Model Tiering Model",
         "description": "Scores models to determine tiering and validation intensity."},
+]
+
+
+# Qualitative Outcome values for qualitative KPM assessments
+QUALITATIVE_OUTCOME_VALUES = [
+    {"code": "GREEN", "label": "Green",
+        "description": "KPM within acceptable parameters; no concerns identified."},
+    {"code": "YELLOW", "label": "Yellow",
+        "description": "KPM warrants attention; minor concerns or approaching thresholds."},
+    {"code": "RED", "label": "Red",
+        "description": "KPM breached thresholds or significant concerns identified; action required."},
 ]
 
 
@@ -295,7 +307,7 @@ def _upsert_taxonomy_with_values(
 
 
 def seed_taxonomy_reference_data(db):
-    """Ensure the Regulatory Category and Model Type taxonomies exist."""
+    """Ensure the Regulatory Category, Model Type, and Qualitative Outcome taxonomies exist."""
     _upsert_taxonomy_with_values(
         db,
         name="Regulatory Category",
@@ -307,6 +319,12 @@ def seed_taxonomy_reference_data(db):
         name="Model Type",
         description="Functional classification describing what the model does.",
         values=MODEL_TYPE_VALUES,
+    )
+    _upsert_taxonomy_with_values(
+        db,
+        name="Qualitative Outcome",
+        description="Assessment outcomes for qualitative KPMs (Red/Yellow/Green rating scale).",
+        values=QUALITATIVE_OUTCOME_VALUES,
     )
 
 
@@ -1573,6 +1591,9 @@ def seed_database():
         # Seed Model Type Hierarchy
         seed_model_type_taxonomy(db)
 
+        # Seed KPM Library (Key Performance Metrics for ongoing monitoring)
+        seed_kpm(db)
+
         # Seed MAP Applications (Mock Managed Application Portfolio)
         seed_map_applications(db)
 
@@ -2014,6 +2035,212 @@ def seed_model_type_taxonomy(db):
 
     db.commit()
     print("✓ Model type taxonomy seeded")
+
+
+# KPM (Key Performance Metrics) data for ongoing monitoring
+KPM_DATA = {
+    "categories": [
+        {
+            "code": "model_calibration",
+            "name": "Model calibration",
+            "category_type": "Quantitative",
+            "kpis": [
+                {"name": "Brier Score", "description": "Mean squared error between predicted probabilities and actual binary outcomes; reflects both calibration and overall probabilistic accuracy.", "calculation": "Average over all observations of (predicted_probability - actual_outcome)^2, where actual_outcome is 0 or 1.", "interpretation": "Lower is better; 0 indicates perfect calibration. As a rule of thumb, a model that is materially better than a naive constant-probability model (event_rate * (1 - event_rate)) is acceptable. Rising Brier score over time suggests worsening calibration."},
+                {"name": "Hosmer-Lemeshow Test", "description": "Goodness-of-fit test for binary probability models; checks whether observed event rates agree with predicted probabilities across risk bands.", "calculation": "Sort observations by predicted probability, split into K groups (often 10), then compute a chi-square statistic comparing observed versus expected events in each group to obtain a p-value.", "interpretation": "High p-value (for example > 0.05) indicates no evidence of miscalibration; very low p-value (for example < 0.01) suggests systematic mismatch between predicted and observed event rates and may trigger recalibration."},
+                {"name": "Calibration Intercept", "description": "Measures overall bias of predicted probabilities relative to actual outcomes (calibration in the large).", "calculation": "Fit a logistic regression of outcomes on the log-odds of predicted probabilities with slope fixed at 1; the constant term is the calibration intercept.", "interpretation": "Ideal value is 0. A positive intercept means the model underestimates risk on average (events happen more often than predicted); a negative intercept means the model overestimates risk. In practice, values within about +/-0.1 are usually considered acceptable, with larger deviations suggesting recalibration."},
+                {"name": "Calibration Slope", "description": "Assesses whether predicted probabilities are too extreme or too moderate compared to actual outcomes.", "calculation": "Fit a logistic regression of outcomes on the log-odds of predicted probabilities (with intercept); the coefficient on the log-odds term is the calibration slope.", "interpretation": "Ideal value is 1. A slope below 1 indicates over-confident predictions (high risks too high, low risks too low); a slope above 1 indicates under-confident predictions. Slopes between about 0.8 and 1.2 are commonly viewed as reasonable; values much outside this range indicate substantial miscalibration."},
+                {"name": "Expected Calibration Error (ECE)", "description": "Summarises, in a single value, the average absolute difference between predicted probabilities and observed event rates across bins of prediction confidence.", "calculation": "Bin predictions into intervals (for example deciles of predicted probability). For each bin, compute the absolute difference between the mean predicted probability and the observed event rate. ECE is the weighted average of these differences, weighted by bin size.", "interpretation": "Ranges from 0 upward; lower is better. Values of a few percentage points (for example ECE < 0.02) usually indicate very good calibration. Increasing ECE over time is a sign of calibration drift and may trigger recalibration or model refresh."},
+            ]
+        },
+        {
+            "code": "model_performance",
+            "name": "Model performance",
+            "category_type": "Quantitative",
+            "kpis": [
+                {"name": "Accuracy", "description": "Overall proportion of correctly classified observations.", "calculation": "Accuracy = (true_positives + true_negatives) / (true_positives + false_positives + true_negatives + false_negatives).", "interpretation": "Ranges from 0 to 1; higher is better. Useful when classes are roughly balanced. In imbalanced problems (for example fraud detection), accuracy can be misleading and should be interpreted together with precision, recall and other metrics."},
+                {"name": "Precision", "description": "Share of predicted positives that are actually positive; measures how often alerts are correct.", "calculation": "Precision = true_positives / (true_positives + false_positives).", "interpretation": "Ranges from 0 to 1; higher is better. High precision means few false alarms (for example, most flagged fraud cases are truly fraud). Operationally, institutions may target precision above 0.8 or 0.9 for certain high-cost review processes."},
+                {"name": "Recall", "description": "Share of actual positives that the model correctly identifies; also called sensitivity or true positive rate.", "calculation": "Recall = true_positives / (true_positives + false_negatives).", "interpretation": "Ranges from 0 to 1; higher is better. High recall means the model misses few bad cases (for example few defaulters slip through). For risk models, recall above 0.9 on key segments is often desirable, subject to cost trade-offs."},
+                {"name": "F1 Score", "description": "Harmonic mean of precision and recall; balances the trade-off between missing positives and generating false alarms.", "calculation": "F1 = 2 * precision * recall / (precision + recall).", "interpretation": "Ranges from 0 to 1; higher is better. An F1 score near 1 indicates both high precision and high recall. In imbalanced settings, F1 is often used as a primary optimisation metric; values above about 0.7 are usually regarded as good, depending on the use case."},
+                {"name": "ROC AUC", "description": "Area under the receiver operating characteristic curve; measures the model's ability to rank positive cases above negative cases across all thresholds.", "calculation": "Compute true positive rate and false positive rate for many score thresholds, plot the ROC curve and calculate the area under the curve.", "interpretation": "Ranges from 0.5 (no discrimination) to 1.0 (perfect discrimination). In credit risk, ROC AUC around 0.7 to 0.8 is common; above 0.8 is strong. Declines in ROC AUC over time indicate reduced discriminatory power."},
+                {"name": "PR AUC", "description": "Area under the precision-recall curve; focuses on performance on the positive (often rare) class.", "calculation": "Compute precision and recall for many thresholds, plot the curve and calculate the area under it.", "interpretation": "Ranges from 0 to 1; higher is better. The baseline PR AUC equals the prevalence of the positive class. For very rare events (for example 1% fraud), a PR AUC far above 0.01 (for example 0.2 or greater) indicates a highly effective model."},
+                {"name": "Kolmogorov-Smirnov (KS)", "description": "Maximum separation between the cumulative score distributions of positive and negative classes; widely used in credit scoring.", "calculation": "Sort records by predicted score; at each score threshold compute cumulative shares of positives and negatives. KS is the maximum difference between these two cumulative curves.", "interpretation": "Ranges from 0 to 1 (often reported as 0 to 100%). Higher is better. In many credit models, KS above 0.3 (30%) is acceptable, around 0.4 to 0.5 is considered strong. A declining KS over time indicates weakening rank-order stability."},
+                {"name": "Log Loss (Cross-Entropy)", "description": "Penalty-based measure of how well predicted probabilities match actual outcomes; strongly penalises confident wrong predictions.", "calculation": "For binary classification, log_loss = -(1/N) * sum( y * log(p) + (1 - y) * log(1 - p) ) over all observations, where p is predicted probability and y is 0 or 1.", "interpretation": "Lower is better; 0 is perfect. A log loss close to the entropy of the class distribution corresponds to a weak or uninformative model. Rising log loss over time, with similar class mix, suggests deterioration in either calibration or discrimination."},
+                {"name": "Mean Squared Error (MSE)", "description": "Standard regression metric measuring average squared difference between predicted values and actual values.", "calculation": "MSE = (1/N) * sum( (prediction - actual)^2 ) across all observations; root mean squared error (RMSE) is the square root of MSE.", "interpretation": "Lower is better; 0 indicates perfect prediction. Because MSE is in squared units, RMSE is often used for interpretability. Acceptable values depend on the scale of the target; for example, for monetary predictions, RMSE should be small relative to typical transaction sizes."},
+            ]
+        },
+        {
+            "code": "model_input_data_monitoring",
+            "name": "Model input data monitoring",
+            "category_type": "Quantitative",
+            "kpis": [
+                {"name": "Missing Data Rate", "description": "Proportion of missing or null values in model input features.", "calculation": "For each feature, missing_rate = number_of_missing_values / total_number_of_records; can also aggregate across features.", "interpretation": "Ideally low and stable over time. Sudden increases often indicate upstream data issues. Many institutions flag if any key feature's missing rate exceeds a threshold (for example 5%) compared with training."},
+                {"name": "New Category Rate", "description": "Frequency with which categorical features take values that were not seen during model training.", "calculation": "For each categorical variable, new_category_rate = records_with_unseen_value / total_records in the monitoring window.", "interpretation": "Should be close to 0; any persistent non-zero values for important features indicate population change or data quality problems and may require model updates or revised encodings."},
+                {"name": "Feature Distribution Drift (PSI)", "description": "Population Stability Index computed on individual input features to quantify distribution shift between a baseline period and current data.", "calculation": "Bin each feature using bins defined on baseline data. For each bin, compute baseline and current proportions, then sum over bins: (current - baseline) * ln(current / baseline).", "interpretation": "Common rules of thumb: PSI < 0.1 indicates little change; 0.1 to 0.2 suggests moderate drift; > 0.2 indicates significant drift that may affect model performance. High PSI on key features is a trigger for investigation."},
+            ]
+        },
+        {
+            "code": "model_stability",
+            "name": "Model stability",
+            "category_type": "Quantitative",
+            "kpis": [
+                {"name": "Score Distribution PSI", "description": "Population Stability Index computed on the model score or predicted probability to track shifts in the overall risk mix.", "calculation": "Bin the model scores using bins defined on a reference period (for example training or prior year), then compute PSI between reference and current score distributions.", "interpretation": "The same rule of thumb as for feature PSI applies: < 0.1 stable, 0.1 to 0.2 moderate shift, > 0.2 large shift. Persistent high score PSI often indicates a change in portfolio composition or macroeconomic conditions, and may precede performance degradation."},
+                {"name": "Performance Drift (Metric Change)", "description": "Change in a chosen performance metric (for example ROC AUC, KS, F1) between a baseline period and the current monitoring period.", "calculation": "Compute the performance metric on recent data and subtract the baseline value, or express the difference as a percentage of the baseline.", "interpretation": "Negative changes indicate deterioration. Tolerances depend on the metric and use case; for example, an AUC drop of more than 0.03 or a relative drop in KS greater than about 10% may warrant investigation or model recalibration."},
+            ]
+        },
+        {
+            "code": "global_interpretability",
+            "name": "Global interpretability",
+            "category_type": "Quantitative",
+            "kpis": [
+                {"name": "Feature Importance", "description": "Relative contribution of each feature to the model's predictions when considered over the entire portfolio.", "calculation": "Model-specific or model-agnostic methods, such as tree-based impurity reduction, permutation importance, or mean absolute SHAP values aggregated across all observations.", "interpretation": "Features with larger importance scores are the main drivers of model behaviour. Important features should be conceptually sensible and stable over time; sudden shifts in importance profiles may indicate changes in data or model specification that need explanation."},
+                {"name": "Surrogate Model Fidelity", "description": "How closely a simpler, interpretable surrogate model can reproduce the predictions of the complex model.", "calculation": "Train a simple model (for example shallow tree, linear model, or scorecard) to predict the complex model's outputs instead of the true labels; compute R-squared, accuracy, or another similarity metric between surrogate predictions and complex model predictions.", "interpretation": "Higher fidelity (for example R-squared or agreement above 0.8) indicates that the complex model's logic can be well-approximated and explained globally. Low fidelity suggests that simple global explanations may be misleading, and that local or more complex explanation techniques are required."},
+                {"name": "Model Complexity", "description": "Structural complexity of the model, used as a proxy for ease of understanding and ability to validate.", "calculation": "Depends on model type: number of features with non-zero coefficients, number and depth of trees, number of rules, parameters, or layers, etc.", "interpretation": "There is no universal numeric threshold, but lower complexity generally aids interpretability and governance. Many institutions set explicit limits (for example maximum number of features or tree depth) and flag models that exceed those limits for additional review."},
+            ]
+        },
+        {
+            "code": "local_interpretability",
+            "name": "Local interpretability",
+            "category_type": "Quantitative",
+            "kpis": [
+                {"name": "Local Explanation Fidelity", "description": "How accurately a local explanation (for example LIME, local SHAP) reproduces the complex model's predictions in a small neighbourhood around an individual case.", "calculation": "For a given observation, generate perturbed samples around it, fit a simple local surrogate model, and compute R-squared or classification accuracy between surrogate predictions and the complex model's predictions on those samples.", "interpretation": "Higher values indicate more trustworthy explanations. As a guideline, local fidelity above about 0.8 is generally considered good; low-fidelity explanations should not be used for sensitive decisions without further analysis."},
+                {"name": "Local Explanation Stability", "description": "Degree to which explanations for similar inputs remain consistent.", "calculation": "Compare explanations (for example top contributing features or attribution vectors) for the same case under small perturbations or repeated runs, or for very similar cases; quantify similarity using overlap or correlation measures.", "interpretation": "High stability means small changes in input or random seeds do not materially alter the explanation, supporting trust. Large instability suggests that explanations may be fragile and should be treated with caution in customer or regulator-facing contexts."},
+                {"name": "Explanation Sparsity", "description": "Number of features required to explain an individual prediction to a reasonable degree.", "calculation": "Count the number of features whose local importance or attribution exceeds a chosen threshold, or fix the explanation length (for example top 3 to 5 features) and measure how much of the prediction is captured.", "interpretation": "Lower sparsity (fewer features) typically improves interpretability. Many financial institutions prefer explanations that rely on a small set of intuitive drivers (for example 3 to 7 variables) for any one decision."},
+            ]
+        },
+        {
+            "code": "llm_monitoring",
+            "name": "LLM monitoring",
+            "category_type": "Quantitative",
+            "kpis": [
+                {"name": "Perplexity", "description": "Measures how well a language model predicts text; lower perplexity means better next-token prediction on a reference corpus.", "calculation": "Perplexity is the exponential of the average negative log-likelihood of the correct token over a set of sequences.", "interpretation": "Lower is better, but absolute values depend on the task and dataset. For monitoring, the main signal is change over time: rising perplexity on a fixed evaluation set suggests degradation in language modelling quality."},
+                {"name": "Factual Accuracy", "description": "Proportion of model responses that are factually correct and sufficiently supported by trusted sources.", "calculation": "On a set of prompts with known answers or verifiable ground truth, measure the fraction of responses assessed as fully correct; may be evaluated by human review or automated fact-checking.", "interpretation": "Higher is better; in financial customer-facing use cases, targets may be above 95% or higher, with zero tolerance for errors on critical regulatory or product information."},
+                {"name": "Toxicity Score", "description": "Extent to which model outputs contain abusive, hateful, or otherwise inappropriate language.", "calculation": "Run outputs through a toxicity classifier or rule-based detector and record either the average toxicity score or the proportion of outputs whose score exceeds a defined threshold.", "interpretation": "Should be extremely low in production. Many institutions require that virtually no outputs exceed the toxicity threshold; any spike triggers investigation into prompts, guardrails, or model configuration."},
+                {"name": "Response Latency", "description": "End-to-end time taken for the model to produce a response to a user query.", "calculation": "Measure wall-clock time between receipt of input and completion of output, and summarise using averages and high percentiles (for example p90, p95).", "interpretation": "Lower is better for user experience. Typical targets for interactive systems are in the range of sub-second to a few seconds; sustained breaches of service-level targets indicate the need for optimisation or scaling."},
+            ]
+        },
+        {
+            "code": "fairness_and_governance",
+            "name": "Fairness and governance",
+            "category_type": "Quantitative",
+            "kpis": [
+                {"name": "Disparate Impact Ratio", "description": "Ratio of positive outcome rates between a protected group and a reference group; used to assess potential adverse impact.", "calculation": "Compute the proportion of approved or positive decisions in the protected group and in the reference group, then take protected_rate / reference_rate.", "interpretation": "Values close to 1 indicate parity. In many jurisdictions, a ratio below about 0.8 (the 80 percent rule) is treated as a potential red flag for adverse impact and requires further analysis and justification."},
+                {"name": "Equal Opportunity Difference", "description": "Difference in true positive rates between a protected group and a reference group for a favourable outcome.", "calculation": "Compute recall (true positive rate) separately for the protected and reference groups, then subtract reference_group_recall from protected_group_recall.", "interpretation": "The ideal value is 0, meaning equal ability to correctly identify positives across groups. Differences of only a few percentage points may be acceptable; larger gaps can indicate fairness concerns that need mitigation or policy review."},
+            ]
+        },
+        # Qualitative KPM categories (from QUALCAT.json)
+        {
+            "code": "attestation_based",
+            "name": "Attestation-based",
+            "category_type": "Qualitative",
+            "kpis": [
+                {"name": "Model Owner Attestation", "description": "Formal certification by the model owner that the model is functioning as intended and assumptions remain appropriate.", "evaluation_type": "Outcome Only", "interpretation": "Green: Owner confirms model performs as expected with no material concerns. Yellow: Owner notes minor deviations or emerging issues requiring monitoring. Red: Owner identifies significant concerns or confirms model is not performing as intended."},
+                {"name": "Developer Attestation", "description": "Technical certification by the model developer that model implementation matches design specification.", "evaluation_type": "Outcome Only", "interpretation": "Green: Developer confirms implementation is correct and complete. Yellow: Minor discrepancies identified but not material to model outputs. Red: Implementation deviates materially from specification."},
+                {"name": "Data Provider Attestation", "description": "Certification that input data quality and availability meet model requirements.", "evaluation_type": "Outcome Only", "interpretation": "Green: Data meets all quality requirements. Yellow: Minor data quality issues present but managed. Red: Significant data quality issues affecting model reliability."},
+            ]
+        },
+        {
+            "code": "governance_usage_alignment",
+            "name": "Governance and usage alignment (qualitative triggers)",
+            "category_type": "Qualitative",
+            "kpis": [
+                {"name": "Business Strategy Alignment", "description": "Assessment of whether model usage remains aligned with current business strategy and environment.", "evaluation_type": "Qualitative", "interpretation": "Green: Model fully aligned with business strategy. Yellow: Minor misalignment or strategy evolution may require adjustments. Red: Significant misalignment; model may need redesign or replacement."},
+                {"name": "User Feedback Assessment", "description": "Synthesis of feedback from model users regarding fitness for purpose and usability.", "evaluation_type": "Qualitative", "interpretation": "Green: Users report model meets needs effectively. Yellow: Users report some limitations or usability concerns. Red: Users report significant issues affecting business decisions."},
+                {"name": "Scope Compliance Review", "description": "Verification that model use cases remain within approved scope and intended applications.", "evaluation_type": "Qualitative", "interpretation": "Green: All uses within approved scope. Yellow: Borderline use cases identified requiring clarification. Red: Model being used outside approved scope."},
+                {"name": "Environmental Change Impact", "description": "Assessment of external environmental changes (market, regulatory, economic) affecting model relevance.", "evaluation_type": "Qualitative", "interpretation": "Green: No material environmental changes affecting model. Yellow: Changes identified that may require model adjustments. Red: Significant environmental shifts that may invalidate model assumptions."},
+            ]
+        },
+        {
+            "code": "expert_judgment_assessments",
+            "name": "Expert-judgment assessments vs policy frameworks",
+            "category_type": "Qualitative",
+            "kpis": [
+                {"name": "Risk Appetite Alignment", "description": "Expert assessment of whether model outputs remain consistent with institutional risk appetite.", "evaluation_type": "Qualitative", "interpretation": "Green: Outputs fully consistent with risk appetite. Yellow: Some outputs approaching risk appetite boundaries. Red: Outputs inconsistent with or exceeding risk appetite."},
+                {"name": "Policy Limit Compliance", "description": "Committee or SME assessment of model outputs against policy limits and internal guidelines.", "evaluation_type": "Qualitative", "interpretation": "Green: All outputs within policy limits. Yellow: Outputs approaching policy limits; enhanced monitoring advised. Red: Policy limits breached; escalation required."},
+                {"name": "Methodology Reasonableness", "description": "Expert judgment on whether model methodology remains appropriate and defensible.", "evaluation_type": "Qualitative", "interpretation": "Green: Methodology fully appropriate and well-documented. Yellow: Methodology adequate but could benefit from enhancement. Red: Methodology concerns that may affect reliability."},
+            ]
+        },
+        {
+            "code": "model_conditions_exceptions",
+            "name": "Model conditions and exception compliance",
+            "category_type": "Qualitative",
+            "kpis": [
+                {"name": "Validation Condition Compliance", "description": "Assessment of compliance with conditions and recommendations from prior validations.", "evaluation_type": "Qualitative", "interpretation": "Green: All conditions met or on track. Yellow: Some conditions delayed but remediation in progress. Red: Material conditions overdue or not being addressed."},
+                {"name": "Exception Tracking Status", "description": "Review of outstanding exceptions and their remediation progress.", "evaluation_type": "Qualitative", "interpretation": "Green: No material exceptions or all remediated. Yellow: Exceptions exist with active remediation plans. Red: Significant exceptions without adequate remediation progress."},
+                {"name": "Approved Use Scope Conformance", "description": "Verification that live model usage conforms to validation scope and approved applications.", "evaluation_type": "Qualitative", "interpretation": "Green: All usage within approved scope. Yellow: Minor deviations identified and documented. Red: Significant use outside approved scope requiring immediate attention."},
+            ]
+        },
+        {
+            "code": "algorithmic_qualitative_classification",
+            "name": "Algorithmic multi-step qualitative classification",
+            "category_type": "Qualitative",
+            "kpis": [
+                {"name": "Decision Tree Outcome Assessment", "description": "Rule-based multi-step classification producing color outcomes without simple scalar thresholds.", "evaluation_type": "Qualitative", "interpretation": "Green: All decision criteria pass. Yellow: Some criteria at warning levels. Red: Critical criteria fail or multiple warnings present."},
+                {"name": "Composite Qualitative Score", "description": "Weighted combination of multiple qualitative factors into an overall assessment.", "evaluation_type": "Qualitative", "interpretation": "Green: Composite assessment indicates acceptable status. Yellow: Composite indicates monitoring required. Red: Composite indicates material concerns requiring action."},
+                {"name": "Expert Panel Rating", "description": "Consensus rating from expert panel applying structured evaluation framework.", "evaluation_type": "Outcome Only", "interpretation": "Green: Panel consensus is favorable. Yellow: Panel notes concerns requiring attention. Red: Panel identifies significant issues."},
+            ]
+        },
+    ]
+}
+
+
+def seed_kpm(db):
+    """Seed the KPM (Key Performance Metrics) library."""
+    print("Seeding KPM library...")
+
+    for i, cat_data in enumerate(KPM_DATA["categories"], 1):
+        # Create or update category
+        category = db.query(KpmCategory).filter(
+            KpmCategory.code == cat_data["code"]
+        ).first()
+
+        if not category:
+            category = KpmCategory(
+                code=cat_data["code"],
+                name=cat_data["name"],
+                sort_order=i,
+                category_type=cat_data.get("category_type", "Quantitative")
+            )
+            db.add(category)
+            db.flush()
+            print(f"✓ Created KPM category: {category.name} ({cat_data.get('category_type', 'Quantitative')})")
+        else:
+            category.name = cat_data["name"]
+            category.sort_order = i
+            category.category_type = cat_data.get("category_type", "Quantitative")
+            print(f"✓ Updated KPM category: {category.name} ({category.category_type})")
+
+        # Create or update KPMs
+        for j, kpi_data in enumerate(cat_data["kpis"], 1):
+            kpm = db.query(Kpm).filter(
+                Kpm.name == kpi_data["name"],
+                Kpm.category_id == category.category_id
+            ).first()
+
+            # Determine evaluation type (default to Quantitative for existing metrics)
+            eval_type = kpi_data.get("evaluation_type", "Quantitative")
+
+            if not kpm:
+                kpm = Kpm(
+                    category_id=category.category_id,
+                    name=kpi_data["name"],
+                    description=kpi_data.get("description"),
+                    calculation=kpi_data.get("calculation"),
+                    interpretation=kpi_data.get("interpretation"),
+                    sort_order=j,
+                    is_active=True,
+                    evaluation_type=eval_type
+                )
+                db.add(kpm)
+            else:
+                kpm.description = kpi_data.get("description")
+                kpm.calculation = kpi_data.get("calculation")
+                kpm.interpretation = kpi_data.get("interpretation")
+                kpm.sort_order = j
+                kpm.is_active = True
+                kpm.evaluation_type = eval_type
+
+    db.commit()
+    print("✓ KPM library seeded")
 
 
 if __name__ == "__main__":

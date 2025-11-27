@@ -48,6 +48,15 @@ from app.models.decommissioning import (
     DecommissioningStatusHistory,
     DecommissioningApproval
 )
+from app.models.kpm import KpmCategory, Kpm, KpmEvaluationType
+from app.models.monitoring import (
+    MonitoringTeam,
+    MonitoringPlan,
+    MonitoringPlanMetric,
+    MonitoringFrequency,
+    monitoring_team_members,
+    monitoring_plan_models,
+)
 
 __all__ = [
     "User", "UserRole", "user_regions",
@@ -108,5 +117,16 @@ __all__ = [
     # Decommissioning
     "DecommissioningRequest",
     "DecommissioningStatusHistory",
-    "DecommissioningApproval"
+    "DecommissioningApproval",
+    # KPM (Key Performance Metrics)
+    "KpmCategory",
+    "Kpm",
+    "KpmEvaluationType",
+    # Monitoring Plans and Teams
+    "MonitoringTeam",
+    "MonitoringPlan",
+    "MonitoringPlanMetric",
+    "MonitoringFrequency",
+    "monitoring_team_members",
+    "monitoring_plan_models"
 ]

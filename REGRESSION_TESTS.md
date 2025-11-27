@@ -432,6 +432,63 @@ cd web && pnpm test:coverage
 - [x] Adding application to non-existent model returns 404
 - [x] Adding non-existent application returns 404
 
+#### KPM Library (`test_monitoring.py`)
+- [x] List KPM categories when none exist
+- [x] List KPM categories with data
+- [x] List KPM categories with active_only filter
+- [x] Create KPM category as Admin succeeds
+- [x] Create KPM category as non-Admin fails (403)
+- [x] Create KPM category with duplicate code fails (400)
+- [x] Get KPM category by ID
+- [x] Get non-existent KPM category returns 404
+- [x] Update KPM category as Admin succeeds
+- [x] Delete KPM category as Admin succeeds
+- [x] Add KPM to category as Admin succeeds
+- [x] Add KPM to category as non-Admin fails (403)
+- [x] Update KPM as Admin succeeds
+- [x] Delete KPM as Admin succeeds
+
+#### Monitoring Teams (`test_monitoring.py`)
+- [x] List monitoring teams when empty
+- [x] Create monitoring team as Admin succeeds
+- [x] Create monitoring team as non-Admin fails (403)
+- [x] Create monitoring team with duplicate name fails (400)
+- [x] Create monitoring team with members
+- [x] Get monitoring team by ID
+- [x] Get non-existent monitoring team returns 404
+- [x] Update monitoring team as Admin succeeds
+- [x] Delete monitoring team without plans succeeds
+- [x] Delete monitoring team with active plans fails (409)
+
+#### Monitoring Plans (`test_monitoring.py`)
+- [x] List monitoring plans when empty
+- [x] Create monitoring plan as Admin succeeds
+- [x] Create monitoring plan as non-Admin fails (403)
+- [x] Create monitoring plan with assigned team
+- [x] Create monitoring plan with models in scope
+- [x] Create quarterly plan calculates +3 months submission date
+- [x] Create monthly plan calculates +1 month submission date
+- [x] Report due date = submission date + lead days
+- [x] Get monitoring plan by ID
+- [x] Get non-existent monitoring plan returns 404
+- [x] Update monitoring plan as Admin succeeds
+- [x] Delete monitoring plan as Admin succeeds
+- [x] Advance plan cycle updates dates correctly
+
+#### Monitoring Plan Team Member Permissions (Manual API Tests)
+- [x] Team member can update plan description
+- [x] Team member can add metric to plan
+- [x] Team member can advance plan cycle
+- [x] Non-team member cannot update plan (403)
+- [x] Admin can still edit any plan (always allowed)
+- [x] Audit log captures team member changes with correct user_id
+
+#### Monitoring Plan Metrics (`test_monitoring.py`)
+- [x] Add metric to plan as Admin succeeds
+- [x] Add duplicate metric to plan fails (400)
+- [x] Update plan metric as Admin succeeds
+- [x] Delete plan metric as Admin succeeds
+
 ### Frontend Component Tests (web/src/) - ✅ FULLY OPERATIONAL
 
 **Note**: All tests pass using happy-dom environment with direct module mocking (no MSW).
@@ -738,6 +795,8 @@ describe('NewPage', () => {
 | **Model Relationships (Phase 1-2)** | ✅ test_model_hierarchy.py (26 tests), test_model_dependencies.py (26 tests) | ⚠️ UI pending (Phase 3+) | 2025-11-23 |
 | **Conditional Model Use Approvals** | ✅ test_conditional_approvals.py (41/45 passing - 91%, core functionality fully tested) | 📋 ApproverRolesPage.test.tsx, ConditionalApprovalRulesPage.test.tsx, ConditionalApprovalsSection.test.tsx (pending) | 2025-11-24 |
 | **Model Decommissioning** | ✅ test_decommissioning.py (16 tests) | 📋 PendingDecommissioningPage.test.tsx (15 tests pending), ModelDetailsPage decommissioning tests (3 tests pending) | 2025-11-26 |
+| **KPM Library** | ✅ test_monitoring.py (14 tests - categories + KPMs CRUD) | ✅ TaxonomyPage KPM tab (manual testing) | 2025-11-26 |
+| **Performance Monitoring Plans** | ✅ test_monitoring.py (27 tests - teams, plans, metrics) + 6 manual permission tests | ✅ MonitoringPlansPage (Admin UI) | 2025-11-26 |
 
 **Features Added:**
 - Development type (In-House / Third-Party)
@@ -763,11 +822,13 @@ describe('NewPage', () => {
 - **Model Relationships (Phase 1-2)** (parent-child hierarchy, feeder-consumer dependencies, DFS-based cycle detection for DAG enforcement, full CRUD with Admin access control, comprehensive audit logging, database constraints for self-reference prevention and date validation)
 - **Conditional Model Use Approvals** (configurable approval rules based on validation type, risk tier, governance region, deployed regions; English rule translation; evidence-based approval submission; Admin management UI for approver roles and rules; integrated into validation workflow; audit logging for approval/void actions)
 - **Model Decommissioning** (dual approval workflow with Validator + Owner gates, replacement model tracking, gap analysis, pending decommissioning dashboard for Validators/Admins, decommissioning tab and alert banner on ModelDetailsPage, navigation badge count)
+- **KPM Library** (standardized library of Key Performance Metrics for model monitoring with 8 categories and ~30 pre-seeded metrics, Admin CRUD for categories and metrics, TaxonomyPage KPM tab)
+- **Performance Monitoring Plans** (recurring monitoring schedules with teams, model scopes, and KPM thresholds; automatic due date calculation based on frequency; Admin management UI with plan cycle advancement; **team member permissions** - assigned team members can edit plans, add/update metrics, and advance cycles)
 
-**Total: 429 tests (301 backend + 128 frontend)**
-- Backend: 295 passing, 6 failing (4 integration tests for conditional_approvals need workflow hooks, 2 pre-existing)
+**Total: 476 tests (348 backend + 128 frontend)**
+- Backend: 342 passing, 6 failing (4 integration tests for conditional_approvals need workflow hooks, 2 pre-existing)
 - Frontend: 128 passing
-- **Note**: Core regression suite stable (254/256 backend tests passing). Conditional approval feature is fully tested (41/45 tests = 91%) with all core functionality verified. Remaining 4 failing tests require validation workflow integration hooks to auto-evaluate rules on request creation/status changes.
+- **Note**: Core regression suite stable. Added 41 new tests for KPM Library and Monitoring Plans (14 KPM tests + 27 monitoring tests) + 6 manual permission tests for team member access control.
 
 **Frontend Testing Debt:**
 - ValidationWorkflowPage component tests (~15 tests)

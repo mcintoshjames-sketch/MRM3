@@ -1413,12 +1413,13 @@ export default function ModelDetailsPage() {
 
                         <div className="mb-4">
                             <label htmlFor="description" className="block text-sm font-medium mb-2">
-                                Description
+                                Description and Purpose
                             </label>
                             <textarea
                                 id="description"
                                 className="input-field"
                                 rows={3}
+                                placeholder="Describe what this model does and its business purpose..."
                                 value={formData.description}
                                 onChange={(e) => setFormData({ ...formData, description: e.target.value })}
                             />
@@ -1630,8 +1631,8 @@ export default function ModelDetailsPage() {
                             )}
                         </div>
                         <div className="col-span-2">
-                            <h4 className="text-sm font-medium text-gray-500 mb-1">Description</h4>
-                            <p className="text-lg">{model.description || 'No description'}</p>
+                            <h4 className="text-sm font-medium text-gray-500 mb-1">Description and Purpose</h4>
+                            <p className="text-lg">{model.description || 'No description provided'}</p>
                         </div>
                         <div className="col-span-2">
                             <h4 className="text-sm font-medium text-gray-500 mb-1">Model Users</h4>

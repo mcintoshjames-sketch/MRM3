@@ -29,11 +29,12 @@ import ConfigurationHistoryPage from './pages/ConfigurationHistoryPage';
 import DeviationTrendsReportPage from './pages/DeviationTrendsReportPage';
 import ApproverRolesPage from './pages/ApproverRolesPage';
 import ConditionalApprovalRulesPage from './pages/ConditionalApprovalRulesPage';
-import FryConfigPage from './pages/FryConfigPage';
+// FryConfigPage moved to TaxonomyPage as "FRY 14 Config" tab
 import OverdueRevalidationReportPage from './pages/OverdueRevalidationReportPage';
 import NameChangesReportPage from './pages/NameChangesReportPage';
 import DecommissioningRequestPage from './pages/DecommissioningRequestPage';
 import PendingDecommissioningPage from './pages/PendingDecommissioningPage';
+import MonitoringPlansPage from './pages/MonitoringPlansPage';
 
 function App() {
     const { user, loading } = useAuth();
@@ -79,7 +80,8 @@ function App() {
             <Route path="/configuration-history" element={user?.role === 'Admin' ? <ConfigurationHistoryPage /> : <Navigate to="/models" />} />
             <Route path="/approver-roles" element={user?.role === 'Admin' ? <ApproverRolesPage /> : <Navigate to="/models" />} />
             <Route path="/additional-approval-rules" element={user?.role === 'Admin' ? <ConditionalApprovalRulesPage /> : <Navigate to="/models" />} />
-            <Route path="/fry-config" element={user?.role === 'Admin' ? <FryConfigPage /> : <Navigate to="/models" />} />
+            <Route path="/fry-config" element={<Navigate to="/taxonomy" />} />
+            <Route path="/monitoring-plans" element={user?.role === 'Admin' ? <MonitoringPlansPage /> : <Navigate to="/models" />} />
             <Route path="/reports" element={user ? <ReportsPage /> : <Navigate to="/login" />} />
             <Route path="/reports/regional-compliance" element={user ? <RegionalComplianceReportPage /> : <Navigate to="/login" />} />
             <Route path="/reports/deviation-trends" element={user ? <DeviationTrendsReportPage /> : <Navigate to="/login" />} />
