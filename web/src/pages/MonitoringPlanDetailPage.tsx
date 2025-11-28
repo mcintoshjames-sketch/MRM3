@@ -178,7 +178,27 @@ interface ResultFormData {
     dirty: boolean;
 }
 
-type TabType = 'overview' | 'models' | 'metrics' | 'cycles';
+// Phase 7: Reporting & Trends
+interface MetricSummary {
+    metric_id: number;
+    metric_name: string;
+    green_count: number;
+    yellow_count: number;
+    red_count: number;
+    na_count: number;
+    total: number;
+}
+
+interface PerformanceSummary {
+    total_results: number;
+    green_count: number;
+    yellow_count: number;
+    red_count: number;
+    na_count: number;
+    by_metric: MetricSummary[];
+}
+
+type TabType = 'overview' | 'models' | 'metrics' | 'cycles' | 'history';
 
 const MonitoringPlanDetailPage: React.FC = () => {
     const { id } = useParams<{ id: string }>();
@@ -222,12 +242,24 @@ const MonitoringPlanDetailPage: React.FC = () => {
     const [approvalLoading, setApprovalLoading] = useState(false);
     const [approvalError, setApprovalError] = useState<string | null>(null);
 
+    // Phase 7: Performance summary state
+    const [performanceSummary, setPerformanceSummary] = useState<PerformanceSummary | null>(null);
+    const [loadingPerformance, setLoadingPerformance] = useState(false);
+    const [exportingCycle, setExportingCycle] = useState<number | null>(null);
+
     useEffect(() => {
         if (id) {
             fetchPlan();
             fetchCycles();
         }
     }, [id]);
+
+    // Phase 7: Fetch performance summary when history tab is selected
+    useEffect(() => {
+        if (id && activeTab === 'history') {
+            fetchPerformanceSummary();
+        }
+    }, [id, activeTab]);
 
     const fetchPlan = async () => {
         setLoading(true);
@@ -278,6 +310,54 @@ const MonitoringPlanDetailPage: React.FC = () => {
             console.error('Failed to load cycle detail:', err);
         } finally {
             setLoadingCycleDetail(false);
+        }
+    };
+
+    // Phase 7: Fetch performance summary for History tab
+    const fetchPerformanceSummary = async () => {
+        setLoadingPerformance(true);
+        try {
+            const response = await api.get(`/monitoring/plans/${id}/performance-summary?cycles=10`);
+            setPerformanceSummary(response.data);
+        } catch (err) {
+            console.error('Failed to load performance summary:', err);
+        } finally {
+            setLoadingPerformance(false);
+        }
+    };
+
+    // Phase 7: Export cycle results as CSV
+    const exportCycleCSV = async (cycleId: number) => {
+        setExportingCycle(cycleId);
+        try {
+            const response = await api.get(`/monitoring/plans/${id}/cycles/${cycleId}/export`, {
+                responseType: 'blob'
+            });
+
+            // Create blob link to download
+            const url = window.URL.createObjectURL(new Blob([response.data]));
+            const link = document.createElement('a');
+            link.href = url;
+
+            // Get filename from content-disposition header or use default
+            const contentDisposition = response.headers['content-disposition'];
+            let filename = `cycle_${cycleId}_results.csv`;
+            if (contentDisposition) {
+                const filenameMatch = contentDisposition.match(/filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/);
+                if (filenameMatch && filenameMatch[1]) {
+                    filename = filenameMatch[1].replace(/['"]/g, '');
+                }
+            }
+
+            link.setAttribute('download', filename);
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+            window.URL.revokeObjectURL(url);
+        } catch (err) {
+            console.error('Failed to export cycle:', err);
+        } finally {
+            setExportingCycle(null);
         }
     };
 
@@ -739,7 +819,7 @@ const MonitoringPlanDetailPage: React.FC = () => {
                 {/* Tabs */}
                 <div className="border-b">
                     <nav className="flex gap-6">
-                        {(['overview', 'models', 'metrics', 'cycles'] as TabType[]).map((tab) => (
+                        {(['overview', 'models', 'metrics', 'cycles', 'history'] as TabType[]).map((tab) => (
                             <button
                                 key={tab}
                                 onClick={() => setActiveTab(tab)}
@@ -1058,6 +1138,195 @@ const MonitoringPlanDetailPage: React.FC = () => {
                                                     </td>
                                                 </tr>
                                             ))}
+                                        </tbody>
+                                    </table>
+                                )}
+                            </div>
+                        </div>
+                    )}
+
+                    {/* History Tab - Phase 7: Performance Summary */}
+                    {activeTab === 'history' && (
+                        <div className="space-y-6">
+                            {/* Performance Summary Cards */}
+                            <div className="bg-white rounded-lg shadow p-6">
+                                <div className="flex justify-between items-center mb-4">
+                                    <h3 className="text-lg font-semibold">Performance Summary (Last 10 Cycles)</h3>
+                                    <button
+                                        onClick={fetchPerformanceSummary}
+                                        className="text-blue-600 hover:underline text-sm"
+                                    >
+                                        Refresh
+                                    </button>
+                                </div>
+
+                                {loadingPerformance ? (
+                                    <div className="text-center py-8">Loading performance data...</div>
+                                ) : performanceSummary ? (
+                                    <div className="space-y-6">
+                                        {/* Overall Summary */}
+                                        <div className="grid grid-cols-5 gap-4">
+                                            <div className="bg-gray-50 rounded-lg p-4 text-center">
+                                                <div className="text-2xl font-bold text-gray-700">
+                                                    {performanceSummary.total_results}
+                                                </div>
+                                                <div className="text-sm text-gray-500">Total Results</div>
+                                            </div>
+                                            <div className="bg-green-50 rounded-lg p-4 text-center">
+                                                <div className="text-2xl font-bold text-green-700">
+                                                    {performanceSummary.green_count}
+                                                </div>
+                                                <div className="text-sm text-green-600">Green</div>
+                                            </div>
+                                            <div className="bg-yellow-50 rounded-lg p-4 text-center">
+                                                <div className="text-2xl font-bold text-yellow-700">
+                                                    {performanceSummary.yellow_count}
+                                                </div>
+                                                <div className="text-sm text-yellow-600">Yellow</div>
+                                            </div>
+                                            <div className="bg-red-50 rounded-lg p-4 text-center">
+                                                <div className="text-2xl font-bold text-red-700">
+                                                    {performanceSummary.red_count}
+                                                </div>
+                                                <div className="text-sm text-red-600">Red</div>
+                                            </div>
+                                            <div className="bg-gray-50 rounded-lg p-4 text-center">
+                                                <div className="text-2xl font-bold text-gray-500">
+                                                    {performanceSummary.na_count}
+                                                </div>
+                                                <div className="text-sm text-gray-500">N/A</div>
+                                            </div>
+                                        </div>
+
+                                        {/* Outcome Distribution Bar */}
+                                        {performanceSummary.total_results > 0 && (
+                                            <div className="mt-4">
+                                                <div className="text-sm text-gray-500 mb-2">Outcome Distribution</div>
+                                                <div className="flex h-6 rounded-full overflow-hidden bg-gray-200">
+                                                    {performanceSummary.green_count > 0 && (
+                                                        <div
+                                                            className="bg-green-500"
+                                                            style={{ width: `${(performanceSummary.green_count / performanceSummary.total_results) * 100}%` }}
+                                                            title={`Green: ${performanceSummary.green_count} (${Math.round((performanceSummary.green_count / performanceSummary.total_results) * 100)}%)`}
+                                                        />
+                                                    )}
+                                                    {performanceSummary.yellow_count > 0 && (
+                                                        <div
+                                                            className="bg-yellow-400"
+                                                            style={{ width: `${(performanceSummary.yellow_count / performanceSummary.total_results) * 100}%` }}
+                                                            title={`Yellow: ${performanceSummary.yellow_count} (${Math.round((performanceSummary.yellow_count / performanceSummary.total_results) * 100)}%)`}
+                                                        />
+                                                    )}
+                                                    {performanceSummary.red_count > 0 && (
+                                                        <div
+                                                            className="bg-red-500"
+                                                            style={{ width: `${(performanceSummary.red_count / performanceSummary.total_results) * 100}%` }}
+                                                            title={`Red: ${performanceSummary.red_count} (${Math.round((performanceSummary.red_count / performanceSummary.total_results) * 100)}%)`}
+                                                        />
+                                                    )}
+                                                    {performanceSummary.na_count > 0 && (
+                                                        <div
+                                                            className="bg-gray-400"
+                                                            style={{ width: `${(performanceSummary.na_count / performanceSummary.total_results) * 100}%` }}
+                                                            title={`N/A: ${performanceSummary.na_count} (${Math.round((performanceSummary.na_count / performanceSummary.total_results) * 100)}%)`}
+                                                        />
+                                                    )}
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        {/* By Metric Breakdown */}
+                                        {performanceSummary.by_metric.length > 0 && (
+                                            <div className="mt-6">
+                                                <h4 className="text-md font-medium mb-3">Results by Metric</h4>
+                                                <table className="min-w-full divide-y divide-gray-200">
+                                                    <thead className="bg-gray-50">
+                                                        <tr>
+                                                            <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Metric</th>
+                                                            <th className="px-4 py-2 text-center text-xs font-medium text-green-600 uppercase">Green</th>
+                                                            <th className="px-4 py-2 text-center text-xs font-medium text-yellow-600 uppercase">Yellow</th>
+                                                            <th className="px-4 py-2 text-center text-xs font-medium text-red-600 uppercase">Red</th>
+                                                            <th className="px-4 py-2 text-center text-xs font-medium text-gray-500 uppercase">N/A</th>
+                                                            <th className="px-4 py-2 text-center text-xs font-medium text-gray-500 uppercase">Total</th>
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody className="bg-white divide-y divide-gray-200">
+                                                        {performanceSummary.by_metric.map((metric) => (
+                                                            <tr key={metric.metric_id}>
+                                                                <td className="px-4 py-2 text-sm">{metric.metric_name}</td>
+                                                                <td className="px-4 py-2 text-center text-sm text-green-600">{metric.green_count}</td>
+                                                                <td className="px-4 py-2 text-center text-sm text-yellow-600">{metric.yellow_count}</td>
+                                                                <td className="px-4 py-2 text-center text-sm text-red-600">{metric.red_count}</td>
+                                                                <td className="px-4 py-2 text-center text-sm text-gray-500">{metric.na_count}</td>
+                                                                <td className="px-4 py-2 text-center text-sm font-medium">{metric.total}</td>
+                                                            </tr>
+                                                        ))}
+                                                    </tbody>
+                                                </table>
+                                            </div>
+                                        )}
+                                    </div>
+                                ) : (
+                                    <div className="text-center py-8 text-gray-500">
+                                        No performance data available. Complete some monitoring cycles to see summary data.
+                                    </div>
+                                )}
+                            </div>
+
+                            {/* Completed Cycles with Export */}
+                            <div className="bg-white rounded-lg shadow p-6">
+                                <h3 className="text-lg font-semibold mb-4">Completed Cycles - Export Data</h3>
+                                {cycles.filter(c => ['APPROVED', 'PENDING_APPROVAL', 'UNDER_REVIEW'].includes(c.status)).length === 0 ? (
+                                    <div className="text-center py-8 text-gray-500">
+                                        No completed cycles available for export.
+                                    </div>
+                                ) : (
+                                    <table className="min-w-full divide-y divide-gray-200">
+                                        <thead className="bg-gray-50">
+                                            <tr>
+                                                <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Period</th>
+                                                <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+                                                <th className="px-4 py-2 text-center text-xs font-medium text-gray-500 uppercase">Results</th>
+                                                <th className="px-4 py-2 text-center text-xs font-medium text-gray-500 uppercase">Outcomes</th>
+                                                <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">Export</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody className="bg-white divide-y divide-gray-200">
+                                            {cycles
+                                                .filter(c => ['APPROVED', 'PENDING_APPROVAL', 'UNDER_REVIEW'].includes(c.status))
+                                                .map((cycle) => (
+                                                    <tr key={cycle.cycle_id}>
+                                                        <td className="px-4 py-2 text-sm">
+                                                            {formatPeriod(cycle.period_start_date, cycle.period_end_date)}
+                                                        </td>
+                                                        <td className="px-4 py-2">
+                                                            <span className={`px-2 py-1 text-xs rounded-full ${getStatusBadgeColor(cycle.status)}`}>
+                                                                {formatStatus(cycle.status)}
+                                                            </span>
+                                                        </td>
+                                                        <td className="px-4 py-2 text-center text-sm">{cycle.result_count}</td>
+                                                        <td className="px-4 py-2 text-center text-sm">
+                                                            {cycle.result_count > 0 ? (
+                                                                <span className="flex justify-center gap-2">
+                                                                    {cycle.green_count > 0 && <span className="text-green-600">{cycle.green_count}G</span>}
+                                                                    {cycle.yellow_count > 0 && <span className="text-yellow-600">{cycle.yellow_count}Y</span>}
+                                                                    {cycle.red_count > 0 && <span className="text-red-600">{cycle.red_count}R</span>}
+                                                                </span>
+                                                            ) : (
+                                                                <span className="text-gray-400">-</span>
+                                                            )}
+                                                        </td>
+                                                        <td className="px-4 py-2 text-right">
+                                                            <button
+                                                                onClick={() => exportCycleCSV(cycle.cycle_id)}
+                                                                disabled={exportingCycle === cycle.cycle_id}
+                                                                className="text-blue-600 hover:underline text-sm disabled:text-gray-400"
+                                                            >
+                                                                {exportingCycle === cycle.cycle_id ? 'Exporting...' : 'Export CSV'}
+                                                            </button>
+                                                        </td>
+                                                    </tr>
+                                                ))}
                                         </tbody>
                                     </table>
                                 )}

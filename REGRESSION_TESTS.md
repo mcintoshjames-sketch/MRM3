@@ -881,7 +881,7 @@ describe('NewPage', () => {
 | **Model Decommissioning** | ✅ test_decommissioning.py (16 tests) | 📋 PendingDecommissioningPage.test.tsx (15 tests pending), ModelDetailsPage decommissioning tests (3 tests pending) | 2025-11-26 |
 | **KPM Library** | ✅ test_monitoring.py (14 tests - categories + KPMs CRUD) | ✅ TaxonomyPage KPM tab (manual testing) | 2025-11-26 |
 | **Performance Monitoring Plans** | ✅ test_monitoring.py (27 tests - teams, plans, metrics) + 6 manual permission tests | ✅ MonitoringPlansPage (Admin UI) | 2025-11-26 |
-| **Monitoring Cycles & Results** | ✅ test_monitoring.py (87 tests - cycles CRUD + workflow + results + approval + versioning + 9b) | ✅ MonitoringPlanDetailPage Cycles tab (Phase 4) | 2025-11-27 |
+| **Monitoring Cycles & Results** | ✅ test_monitoring.py (87 tests - cycles CRUD + workflow + results + approval + versioning + 9b) | ✅ MonitoringPlanDetailPage (Phases 4-6: Cycles tab, Results Entry, Approval UI) | 2025-11-27 |
 | **Monitoring Plan Versioning** | ✅ test_monitoring.py (version CRUD, metric snapshotting, cycle binding) | ✅ MonitoringPlansPage Versions modal | 2025-11-27 |
 | **Component 9b (Monitoring Plan Review)** | ✅ seed data + validation logic in validation_workflow.py | ✅ ValidationPlanForm 9b special handling | 2025-11-27 |
 
@@ -911,7 +911,7 @@ describe('NewPage', () => {
 - **Model Decommissioning** (dual approval workflow with Validator + Owner gates, replacement model tracking, gap analysis, pending decommissioning dashboard for Validators/Admins, decommissioning tab and alert banner on ModelDetailsPage, navigation badge count)
 - **KPM Library** (standardized library of Key Performance Metrics for model monitoring with 8 categories and ~30 pre-seeded metrics, Admin CRUD for categories and metrics, TaxonomyPage KPM tab)
 - **Performance Monitoring Plans** (recurring monitoring schedules with teams, model scopes, and KPM thresholds; automatic due date calculation based on frequency; Admin management UI with plan cycle advancement; **team member permissions** - assigned team members can edit plans, add/update metrics, and advance cycles)
-- **Monitoring Cycles & Results** (periodic monitoring cycle execution with status workflow: PENDING → DATA_COLLECTION → UNDER_REVIEW → PENDING_APPROVAL → APPROVED/CANCELLED; automatic R/Y/G outcome calculation based on thresholds; Global + Regional approval workflow similar to validation projects; auto-creation of approval requirements based on model regional deployments; auto-transition to APPROVED when all approvals complete)
+- **Monitoring Cycles & Results** (periodic monitoring cycle execution with status workflow: PENDING → DATA_COLLECTION → UNDER_REVIEW → PENDING_APPROVAL → APPROVED/CANCELLED; automatic R/Y/G outcome calculation based on thresholds; Global + Regional approval workflow similar to validation projects; auto-creation of approval requirements based on model regional deployments; auto-transition to APPROVED when all approvals complete; **Phases 4-6 Complete**: Cycles Tab with workflow actions, Results Entry modal with threshold visualization and real-time outcome calculation, Approval UI with approve/reject/void modals and server-computed can_approve permissions)
 - **Monitoring Plan Versioning** (immutable version snapshots of plan metric configurations; manual "Publish" action creates version with metric snapshots; cycles lock to active version at DATA_COLLECTION start; version history with cycle counts; CSV export for comparison; warning when editing metrics with active cycles locked to previous versions)
 - **Component 9b (Performance Monitoring Plan Review)** (validation plan component for assessing model's monitoring plan; ValidationPlanComponent extended with monitoring_plan_version_id and monitoring_review_notes; Required for Tier 1/2, IfApplicable for Tier 3; special UI rendering with version picker dropdown; validation enforced before Review/Pending Approval transitions)
 
@@ -923,19 +923,13 @@ describe('NewPage', () => {
 **Frontend Testing Debt:**
 - ValidationWorkflowPage component tests (~15 tests)
 - ValidationRequestDetailPage component tests (~25 tests)
-- **Monitoring Cycles UI (Phase 2+)** - Frontend implementation paused
-  - MonitoringCyclesPage component tests (~15 tests)
-  - CycleDetailPage component tests (~20 tests)
-  - ResultEntryForm component tests (~10 tests)
-  - CycleApprovalSection component tests (~8 tests)
-  - Overview tab rendering
-  - Assignments tab with validator management
-  - Work components tab with status updates
-  - Outcome tab creation and display
-  - Approvals tab with decision submission
-  - History tab with audit trail
-  - Modal dialogs for all actions
-  - Error handling and validation
+- **Monitoring Cycles UI (Phases 4-6 Complete, Phase 7 Pending)** - MonitoringPlanDetailPage.tsx
+  - ✅ Phase 4: Cycles Tab with workflow actions
+  - ✅ Phase 5: Results Entry modal with threshold visualization
+  - ✅ Phase 6: Approval UI with approve/reject/void modals
+  - 📋 Phase 7 Pending: Reporting & Trends (trend charts, performance summary, CSV export)
+  - MonitoringPlanDetailPage component tests (~30 tests pending)
+  - Trend visualization component tests (~10 tests pending)
 - **Phase 4 Test Fixes Needed** (14 failing tests)
   - Minor UI layout assertion fixes needed in existing tests
   - All Phase 4 components are functional and tested manually

@@ -587,12 +587,24 @@ See [MONITORING_PLAN_VERSIONING_SUBPLAN.md](MONITORING_PLAN_VERSIONING_SUBPLAN.m
 **Files Modified:**
 - `web/src/pages/MonitoringPlanDetailPage.tsx` - Added approval modal state, handlers, and enhanced UI
 
-### Phase 7: Reporting & Trends 📋 PENDING
-1. Implement trend API endpoint
-2. Add performance summary endpoint
-3. Create trend visualization component
-4. Add CSV export functionality
-5. Add History tab with charts
+### Phase 7: Reporting & Trends ✅ COMPLETE
+1. ✅ Implemented trend API endpoint (`GET /monitoring/metrics/{plan_metric_id}/trend`)
+2. ✅ Added performance summary endpoint (`GET /monitoring/plans/{plan_id}/performance-summary`)
+3. ✅ Added cycle export endpoint (`GET /monitoring/plans/{plan_id}/cycles/{cycle_id}/export`)
+4. ✅ Created History tab with:
+   - Performance Summary Cards (Total, Green, Yellow, Red, N/A)
+   - Outcome Distribution Bar (visual progress indicator)
+   - Results by Metric breakdown table
+   - Completed Cycles list with CSV Export buttons
+
+**API Endpoints Added:**
+- `GET /monitoring/metrics/{plan_metric_id}/trend` - Time series trend data for a metric
+- `GET /monitoring/plans/{plan_id}/performance-summary` - Aggregate performance across cycles
+- `GET /monitoring/plans/{plan_id}/cycles/{cycle_id}/export` - Export cycle results to CSV
+
+**Files Modified:**
+- `api/app/api/monitoring.py` - Added Phase 7 reporting endpoints
+- `web/src/pages/MonitoringPlanDetailPage.tsx` - Added History tab with performance visualization
 
 ## Taxonomy Setup
 

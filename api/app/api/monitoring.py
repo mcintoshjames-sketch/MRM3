@@ -44,6 +44,10 @@ from app.schemas.monitoring import (
     ActiveCyclesWarning,
     # Component 9b lookup
     ModelMonitoringPlanResponse,
+    # Phase 7: Reporting & Trends
+    MetricTrendPoint,
+    MetricTrendResponse,
+    PerformanceSummary,
 )
 
 router = APIRouter()
@@ -2848,3 +2852,246 @@ def void_cycle_approval(
     ).filter(MonitoringCycleApproval.approval_id == approval_id).first()
 
     return _build_approval_response(approval)
+
+
+# ============================================================================
+# PHASE 7: REPORTING & TRENDS
+# ============================================================================
+
+@router.get("/monitoring/metrics/{plan_metric_id}/trend", response_model=MetricTrendResponse)
+def get_metric_trend(
+    plan_metric_id: int,
+    model_id: Optional[int] = None,
+    start_date: Optional[date] = None,
+    end_date: Optional[date] = None,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Get time series trend data for a specific metric.
+
+    Returns results across completed cycles for trend analysis.
+    Optionally filter by model for multi-model plans.
+    """
+    # Get the metric with KPM info
+    metric = db.query(MonitoringPlanMetric).options(
+        joinedload(MonitoringPlanMetric.kpm).joinedload(Kpm.category)
+    ).filter(MonitoringPlanMetric.metric_id == plan_metric_id).first()
+
+    if not metric:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Metric not found")
+
+    # Build query for results
+    query = db.query(MonitoringResult).join(
+        MonitoringCycle
+    ).filter(
+        MonitoringResult.plan_metric_id == plan_metric_id,
+        MonitoringCycle.status.in_([MonitoringCycleStatus.APPROVED.value, MonitoringCycleStatus.PENDING_APPROVAL.value, MonitoringCycleStatus.UNDER_REVIEW.value])
+    )
+
+    if model_id:
+        query = query.filter(MonitoringResult.model_id == model_id)
+
+    if start_date:
+        query = query.filter(MonitoringCycle.period_end_date >= start_date)
+
+    if end_date:
+        query = query.filter(MonitoringCycle.period_end_date <= end_date)
+
+    results = query.options(
+        joinedload(MonitoringResult.cycle),
+        joinedload(MonitoringResult.model)
+    ).order_by(MonitoringCycle.period_end_date.asc()).all()
+
+    # Build trend data points
+    data_points = []
+    for result in results:
+        data_points.append(MetricTrendPoint(
+            cycle_id=result.cycle_id,
+            period_end_date=result.cycle.period_end_date,
+            numeric_value=result.numeric_value,
+            calculated_outcome=result.calculated_outcome,
+            model_id=result.model_id,
+            model_name=result.model.model_name if result.model else None
+        ))
+
+    return MetricTrendResponse(
+        plan_metric_id=plan_metric_id,
+        metric_name=f"{metric.kpm.category.name}: {metric.kpm.name}" if metric.kpm.category else metric.kpm.name,
+        kpm_name=metric.kpm.name,
+        evaluation_type=metric.kpm.evaluation_type or "Quantitative",
+        data_points=data_points
+    )
+
+
+@router.get("/monitoring/plans/{plan_id}/performance-summary", response_model=PerformanceSummary)
+def get_performance_summary(
+    plan_id: int,
+    cycles: int = 5,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Get aggregate performance summary across recent cycles.
+
+    Provides outcome distribution (GREEN/YELLOW/RED) for the last N cycles.
+    """
+    # Verify plan exists
+    plan = db.query(MonitoringPlan).filter(MonitoringPlan.plan_id == plan_id).first()
+    if not plan:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Plan not found")
+
+    # Get recent completed/in-review cycles
+    recent_cycles = db.query(MonitoringCycle).filter(
+        MonitoringCycle.plan_id == plan_id,
+        MonitoringCycle.status.in_([MonitoringCycleStatus.APPROVED.value, MonitoringCycleStatus.PENDING_APPROVAL.value, MonitoringCycleStatus.UNDER_REVIEW.value])
+    ).order_by(MonitoringCycle.period_end_date.desc()).limit(cycles).all()
+
+    if not recent_cycles:
+        return PerformanceSummary(
+            total_results=0,
+            green_count=0,
+            yellow_count=0,
+            red_count=0,
+            na_count=0,
+            by_metric=[]
+        )
+
+    cycle_ids = [c.cycle_id for c in recent_cycles]
+
+    # Get all results for these cycles
+    results = db.query(MonitoringResult).filter(
+        MonitoringResult.cycle_id.in_(cycle_ids)
+    ).all()
+
+    # Count outcomes
+    total = len(results)
+    green_count = sum(1 for r in results if r.calculated_outcome == "GREEN")
+    yellow_count = sum(1 for r in results if r.calculated_outcome == "YELLOW")
+    red_count = sum(1 for r in results if r.calculated_outcome == "RED")
+    na_count = sum(1 for r in results if r.calculated_outcome == "N/A" or r.calculated_outcome is None)
+
+    # Group by metric for breakdown
+    metric_outcomes = {}
+    for result in results:
+        metric_id = result.plan_metric_id
+        if metric_id not in metric_outcomes:
+            metric_outcomes[metric_id] = {"green": 0, "yellow": 0, "red": 0, "na": 0}
+
+        if result.calculated_outcome == "GREEN":
+            metric_outcomes[metric_id]["green"] += 1
+        elif result.calculated_outcome == "YELLOW":
+            metric_outcomes[metric_id]["yellow"] += 1
+        elif result.calculated_outcome == "RED":
+            metric_outcomes[metric_id]["red"] += 1
+        else:
+            metric_outcomes[metric_id]["na"] += 1
+
+    # Get metric names
+    metrics = db.query(MonitoringPlanMetric).options(
+        joinedload(MonitoringPlanMetric.kpm)
+    ).filter(
+        MonitoringPlanMetric.metric_id.in_(metric_outcomes.keys())
+    ).all()
+
+    metric_name_map = {m.metric_id: m.kpm.name for m in metrics}
+
+    by_metric = []
+    for metric_id, counts in metric_outcomes.items():
+        by_metric.append({
+            "metric_id": metric_id,
+            "metric_name": metric_name_map.get(metric_id, f"Metric {metric_id}"),
+            "green_count": counts["green"],
+            "yellow_count": counts["yellow"],
+            "red_count": counts["red"],
+            "na_count": counts["na"],
+            "total": sum(counts.values())
+        })
+
+    return PerformanceSummary(
+        total_results=total,
+        green_count=green_count,
+        yellow_count=yellow_count,
+        red_count=red_count,
+        na_count=na_count,
+        by_metric=by_metric
+    )
+
+
+@router.get("/monitoring/plans/{plan_id}/cycles/{cycle_id}/export")
+def export_cycle_results(
+    plan_id: int,
+    cycle_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Export cycle results to CSV format.
+
+    Returns CSV with all metric results for the cycle.
+    """
+    from fastapi.responses import Response
+    import csv
+    import io
+
+    # Verify cycle belongs to plan
+    cycle = db.query(MonitoringCycle).filter(
+        MonitoringCycle.cycle_id == cycle_id,
+        MonitoringCycle.plan_id == plan_id
+    ).first()
+
+    if not cycle:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Cycle not found")
+
+    # Get all results with metric and model info
+    results = db.query(MonitoringResult).options(
+        joinedload(MonitoringResult.model),
+        joinedload(MonitoringResult.entered_by),
+        joinedload(MonitoringResult.plan_metric).joinedload(MonitoringPlanMetric.kpm).joinedload(Kpm.category)
+    ).filter(
+        MonitoringResult.cycle_id == cycle_id
+    ).order_by(MonitoringResult.plan_metric_id).all()
+
+    # Get plan name for filename
+    plan = db.query(MonitoringPlan).filter(MonitoringPlan.plan_id == plan_id).first()
+
+    # Build CSV
+    output = io.StringIO()
+    writer = csv.writer(output)
+
+    # Header row
+    writer.writerow([
+        "Category",
+        "Metric",
+        "Model",
+        "Numeric Value",
+        "Outcome",
+        "Narrative",
+        "Entered By",
+        "Entered At"
+    ])
+
+    # Data rows
+    for result in results:
+        metric = result.plan_metric
+        writer.writerow([
+            metric.kpm.category.name if metric and metric.kpm and metric.kpm.category else "",
+            metric.kpm.name if metric and metric.kpm else f"Metric {result.plan_metric_id}",
+            result.model.model_name if result.model else "All Models",
+            result.numeric_value if result.numeric_value is not None else "",
+            result.calculated_outcome or "N/A",
+            result.narrative or "",
+            result.entered_by.full_name if result.entered_by else "",
+            result.entered_at.strftime("%Y-%m-%d %H:%M") if result.entered_at else ""
+        ])
+
+    csv_content = output.getvalue()
+
+    # Generate filename
+    period = f"{cycle.period_start_date.strftime('%Y%m%d')}-{cycle.period_end_date.strftime('%Y%m%d')}"
+    filename = f"{plan.name.replace(' ', '_')}_Cycle_{period}.csv"
+
+    return Response(
+        content=csv_content,
+        media_type="text/csv",
+        headers={
+            "Content-Disposition": f"attachment; filename={filename}"
+        }
+    )

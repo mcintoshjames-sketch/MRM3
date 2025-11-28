@@ -311,7 +311,15 @@ Model Risk Management inventory system with a FastAPI backend, React/TypeScript 
   | Team Member | Full CRUD | Full CRUD | Request Approval, Approve Global |
   | Data Provider | View, Submit | Create, Update own | - |
   | Regional Approver | View | View | Approve for their region |
-- **Frontend**: 📋 PENDING (Phases 4-7)
+- **Frontend**: ✅ Phases 4-7 COMPLETE (Cycles Tab, Results Entry, Approval UI, Reporting & Trends)
+  - Phase 4: Cycles Tab with status badges, workflow actions, version info
+  - Phase 5: Results Entry modal with threshold visualization, real-time outcome calculation
+  - Phase 6: Approval UI with approve/reject/void modals, progress indicators
+  - Phase 7: History tab with Performance Summary, Outcome Distribution bar, CSV Export
+- **Reporting API Endpoints**:
+  - `GET /monitoring/metrics/{plan_metric_id}/trend` - Time series trend data for a metric
+  - `GET /monitoring/plans/{plan_id}/performance-summary` - Aggregate performance across cycles
+  - `GET /monitoring/plans/{plan_id}/cycles/{cycle_id}/export` - Export cycle results to CSV
 
 ## Security, Error Handling, Logging
 - JWT auth with token expiry; passwords hashed with bcrypt.
