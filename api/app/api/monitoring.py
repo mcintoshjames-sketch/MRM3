@@ -416,7 +416,7 @@ def get_monitoring_plan(
         joinedload(MonitoringPlan.team).joinedload(MonitoringTeam.members),
         joinedload(MonitoringPlan.data_provider),
         joinedload(MonitoringPlan.models),
-        joinedload(MonitoringPlan.metrics).joinedload(MonitoringPlanMetric.kpm)
+        joinedload(MonitoringPlan.metrics).joinedload(MonitoringPlanMetric.kpm).joinedload(Kpm.category)
     ).filter(MonitoringPlan.plan_id == plan_id).first()
 
     if not plan:
@@ -472,6 +472,7 @@ def get_monitoring_plan(
                     "kpm_id": metric.kpm.kpm_id,
                     "name": metric.kpm.name,
                     "category_id": metric.kpm.category_id,
+                    "category_name": metric.kpm.category.name if metric.kpm.category else None,
                     "evaluation_type": metric.kpm.evaluation_type
                 }
             }
@@ -2919,6 +2920,10 @@ def get_metric_trend(
         metric_name=f"{metric.kpm.category.name}: {metric.kpm.name}" if metric.kpm.category else metric.kpm.name,
         kpm_name=metric.kpm.name,
         evaluation_type=metric.kpm.evaluation_type or "Quantitative",
+        yellow_min=metric.yellow_min,
+        yellow_max=metric.yellow_max,
+        red_min=metric.red_min,
+        red_max=metric.red_max,
         data_points=data_points
     )
 

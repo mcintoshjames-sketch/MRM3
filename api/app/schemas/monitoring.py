@@ -49,6 +49,7 @@ class KpmRef(BaseModel):
     kpm_id: int
     name: str
     category_id: int
+    category_name: Optional[str] = None
     evaluation_type: Optional[str] = "Quantitative"
 
     class Config:
@@ -597,6 +598,11 @@ class MetricTrendResponse(BaseModel):
     metric_name: str
     kpm_name: str
     evaluation_type: str
+    # Thresholds for chart visualization
+    yellow_min: Optional[float] = None
+    yellow_max: Optional[float] = None
+    red_min: Optional[float] = None
+    red_max: Optional[float] = None
     data_points: List[MetricTrendPoint] = []
 
 

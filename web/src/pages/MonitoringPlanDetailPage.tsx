@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import Layout from '../components/Layout';
+import TrendChartModal from '../components/TrendChartModal';
 import api from '../api/client';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -25,12 +26,18 @@ interface Model {
     model_id_str?: string;
 }
 
+interface KpmRef {
+    kpm_id: number;
+    name: string;
+    category_id: number;
+    category_name: string | null;
+    evaluation_type: string;
+}
+
 interface PlanMetric {
     metric_id: number;
     kpm_id: number;
-    kpm_name: string;
-    kpm_category_name: string | null;
-    evaluation_type: string;
+    kpm: KpmRef;
     yellow_min: number | null;
     yellow_max: number | null;
     red_min: number | null;
@@ -246,6 +253,18 @@ const MonitoringPlanDetailPage: React.FC = () => {
     const [performanceSummary, setPerformanceSummary] = useState<PerformanceSummary | null>(null);
     const [loadingPerformance, setLoadingPerformance] = useState(false);
     const [exportingCycle, setExportingCycle] = useState<number | null>(null);
+
+    // Trend chart modal state
+    const [trendModalMetric, setTrendModalMetric] = useState<{
+        metric_id: number;
+        metric_name: string;
+        thresholds: {
+            yellow_min: number | null;
+            yellow_max: number | null;
+            red_min: number | null;
+            red_max: number | null;
+        };
+    } | null>(null);
 
     useEffect(() => {
         if (id) {
@@ -912,19 +931,19 @@ const MonitoringPlanDetailPage: React.FC = () => {
                                     <tbody className="divide-y divide-gray-200">
                                         {plan.metrics.map((metric) => (
                                             <tr key={metric.metric_id} className="hover:bg-gray-50">
-                                                <td className="px-4 py-2">{metric.kpm_name}</td>
-                                                <td className="px-4 py-2 text-gray-600">{metric.kpm_category_name || '-'}</td>
+                                                <td className="px-4 py-2">{metric.kpm?.name || '-'}</td>
+                                                <td className="px-4 py-2 text-gray-600">{metric.kpm?.category_name || '-'}</td>
                                                 <td className="px-4 py-2">
                                                     <span className={`px-2 py-0.5 text-xs rounded-full ${
-                                                        metric.evaluation_type === 'Quantitative' ? 'bg-blue-100 text-blue-800' :
-                                                        metric.evaluation_type === 'Qualitative' ? 'bg-purple-100 text-purple-800' :
+                                                        metric.kpm?.evaluation_type === 'Quantitative' ? 'bg-blue-100 text-blue-800' :
+                                                        metric.kpm?.evaluation_type === 'Qualitative' ? 'bg-purple-100 text-purple-800' :
                                                         'bg-green-100 text-green-800'
                                                     }`}>
-                                                        {metric.evaluation_type}
+                                                        {metric.kpm?.evaluation_type || '-'}
                                                     </span>
                                                 </td>
                                                 <td className="px-4 py-2">
-                                                    {metric.evaluation_type === 'Quantitative' ? (
+                                                    {metric.kpm?.evaluation_type === 'Quantitative' ? (
                                                         <div className="flex gap-1">
                                                             <span className="px-1.5 py-0.5 bg-yellow-100 text-yellow-800 rounded text-xs">
                                                                 Y: {metric.yellow_min ?? '-'}/{metric.yellow_max ?? '-'}
@@ -1248,19 +1267,45 @@ const MonitoringPlanDetailPage: React.FC = () => {
                                                             <th className="px-4 py-2 text-center text-xs font-medium text-red-600 uppercase">Red</th>
                                                             <th className="px-4 py-2 text-center text-xs font-medium text-gray-500 uppercase">N/A</th>
                                                             <th className="px-4 py-2 text-center text-xs font-medium text-gray-500 uppercase">Total</th>
+                                                            <th className="px-4 py-2 text-center text-xs font-medium text-gray-500 uppercase">Trend</th>
                                                         </tr>
                                                     </thead>
                                                     <tbody className="bg-white divide-y divide-gray-200">
-                                                        {performanceSummary.by_metric.map((metric) => (
-                                                            <tr key={metric.metric_id}>
-                                                                <td className="px-4 py-2 text-sm">{metric.metric_name}</td>
-                                                                <td className="px-4 py-2 text-center text-sm text-green-600">{metric.green_count}</td>
-                                                                <td className="px-4 py-2 text-center text-sm text-yellow-600">{metric.yellow_count}</td>
-                                                                <td className="px-4 py-2 text-center text-sm text-red-600">{metric.red_count}</td>
-                                                                <td className="px-4 py-2 text-center text-sm text-gray-500">{metric.na_count}</td>
-                                                                <td className="px-4 py-2 text-center text-sm font-medium">{metric.total}</td>
-                                                            </tr>
-                                                        ))}
+                                                        {performanceSummary.by_metric.map((metric) => {
+                                                            // Look up thresholds from plan metrics
+                                                            const planMetric = plan?.metrics?.find(m => m.metric_id === metric.metric_id);
+                                                            return (
+                                                                <tr key={metric.metric_id}>
+                                                                    <td className="px-4 py-2 text-sm">{metric.metric_name}</td>
+                                                                    <td className="px-4 py-2 text-center text-sm text-green-600">{metric.green_count}</td>
+                                                                    <td className="px-4 py-2 text-center text-sm text-yellow-600">{metric.yellow_count}</td>
+                                                                    <td className="px-4 py-2 text-center text-sm text-red-600">{metric.red_count}</td>
+                                                                    <td className="px-4 py-2 text-center text-sm text-gray-500">{metric.na_count}</td>
+                                                                    <td className="px-4 py-2 text-center text-sm font-medium">{metric.total}</td>
+                                                                    <td className="px-4 py-2 text-center">
+                                                                        <button
+                                                                            onClick={() => setTrendModalMetric({
+                                                                                metric_id: metric.metric_id,
+                                                                                metric_name: metric.metric_name,
+                                                                                thresholds: {
+                                                                                    yellow_min: planMetric?.yellow_min ?? null,
+                                                                                    yellow_max: planMetric?.yellow_max ?? null,
+                                                                                    red_min: planMetric?.red_min ?? null,
+                                                                                    red_max: planMetric?.red_max ?? null,
+                                                                                }
+                                                                            })}
+                                                                            className="text-blue-600 hover:text-blue-800 hover:underline text-sm flex items-center gap-1 justify-center"
+                                                                            title="View trend chart"
+                                                                        >
+                                                                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 12l3-3 3 3 4-4M8 21l4-4 4 4M3 4h18M4 4h16v12a1 1 0 01-1 1H5a1 1 0 01-1-1V4z" />
+                                                                            </svg>
+                                                                            View
+                                                                        </button>
+                                                                    </td>
+                                                                </tr>
+                                                            );
+                                                        })}
                                                     </tbody>
                                                 </table>
                                             </div>
@@ -1975,6 +2020,20 @@ const MonitoringPlanDetailPage: React.FC = () => {
                         </div>
                     </div>
                 )}
+
+                {/* Trend Chart Modal */}
+                <TrendChartModal
+                    isOpen={trendModalMetric !== null}
+                    onClose={() => setTrendModalMetric(null)}
+                    planMetricId={trendModalMetric?.metric_id || 0}
+                    metricName={trendModalMetric?.metric_name || ''}
+                    thresholds={trendModalMetric?.thresholds || {
+                        yellow_min: null,
+                        yellow_max: null,
+                        red_min: null,
+                        red_max: null,
+                    }}
+                />
             </div>
         </Layout>
     );
