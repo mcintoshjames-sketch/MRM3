@@ -1666,7 +1666,8 @@ def list_plan_cycles(
 
     query = db.query(MonitoringCycle).options(
         joinedload(MonitoringCycle.assigned_to),
-        joinedload(MonitoringCycle.results)
+        joinedload(MonitoringCycle.results),
+        joinedload(MonitoringCycle.approvals)
     ).filter(MonitoringCycle.plan_id == plan_id)
 
     if status_filter:
@@ -1681,6 +1682,11 @@ def list_plan_cycles(
         yellow_count = sum(1 for r in cycle.results if r.calculated_outcome == "YELLOW")
         red_count = sum(1 for r in cycle.results if r.calculated_outcome == "RED")
 
+        # Count approvals (only required, non-voided ones)
+        required_approvals = [a for a in cycle.approvals if a.is_required and not a.voided_at]
+        approval_count = len(required_approvals)
+        pending_approval_count = sum(1 for a in required_approvals if a.approval_status == "PENDING")
+
         result.append({
             "cycle_id": cycle.cycle_id,
             "plan_id": cycle.plan_id,
@@ -1693,7 +1699,9 @@ def list_plan_cycles(
             "result_count": len(cycle.results),
             "green_count": green_count,
             "yellow_count": yellow_count,
-            "red_count": red_count
+            "red_count": red_count,
+            "approval_count": approval_count,
+            "pending_approval_count": pending_approval_count
         })
 
     return result

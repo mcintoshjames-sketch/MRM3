@@ -91,6 +91,8 @@ interface MonitoringCycle {
     green_count: number;
     yellow_count: number;
     red_count: number;
+    approval_count: number;
+    pending_approval_count: number;
 }
 
 interface CycleApproval {
@@ -183,6 +185,10 @@ interface ResultFormData {
     calculatedOutcome: string | null;
     existingResultId: number | null;
     dirty: boolean;
+    // Inline trend context
+    previousValue: number | null;
+    previousOutcome: string | null;
+    previousPeriod: string | null;
 }
 
 // Phase 7: Reporting & Trends
@@ -205,7 +211,151 @@ interface PerformanceSummary {
     by_metric: MetricSummary[];
 }
 
-type TabType = 'overview' | 'models' | 'metrics' | 'cycles' | 'history';
+type TabType = 'dashboard' | 'models' | 'metrics' | 'cycles';
+
+// Bullet Chart Component for threshold visualization
+const BulletChart: React.FC<{
+    value: number | null;
+    yellowMin: number | null;
+    yellowMax: number | null;
+    redMin: number | null;
+    redMax: number | null;
+    width?: number;
+    height?: number;
+}> = ({ value, yellowMin, yellowMax, redMin, redMax, width = 200, height = 24 }) => {
+    // Determine the metric type and calculate range
+    const isLowerBetter = yellowMax !== null && redMax !== null;
+    const isHigherBetter = yellowMin !== null && redMin !== null;
+
+    if (!isLowerBetter && !isHigherBetter) {
+        return <span className="text-xs text-gray-400 italic">No thresholds</span>;
+    }
+
+    // Calculate min/max for the chart
+    let minVal: number, maxVal: number;
+    if (isLowerBetter) {
+        minVal = 0;
+        maxVal = (redMax || 0) * 1.3; // Add 30% padding
+    } else {
+        minVal = (redMin || 0) * 0.7; // 30% padding below
+        maxVal = (yellowMin || 0) * 1.3; // 30% padding above
+    }
+    const range = maxVal - minVal;
+
+    const getPosition = (val: number) => ((val - minVal) / range) * 100;
+
+    return (
+        <div className="relative" style={{ width, height }}>
+            {/* Background segments */}
+            <div className="absolute inset-0 flex rounded-sm overflow-hidden">
+                {isLowerBetter ? (
+                    <>
+                        <div
+                            className="bg-green-200 h-full"
+                            style={{ width: `${getPosition(yellowMax || 0)}%` }}
+                        />
+                        <div
+                            className="bg-yellow-200 h-full"
+                            style={{ width: `${getPosition(redMax || 0) - getPosition(yellowMax || 0)}%` }}
+                        />
+                        <div
+                            className="bg-red-200 h-full flex-1"
+                        />
+                    </>
+                ) : (
+                    <>
+                        <div
+                            className="bg-red-200 h-full"
+                            style={{ width: `${getPosition(redMin || 0)}%` }}
+                        />
+                        <div
+                            className="bg-yellow-200 h-full"
+                            style={{ width: `${getPosition(yellowMin || 0) - getPosition(redMin || 0)}%` }}
+                        />
+                        <div
+                            className="bg-green-200 h-full flex-1"
+                        />
+                    </>
+                )}
+            </div>
+            {/* Value marker */}
+            {value !== null && (
+                <div
+                    className="absolute top-0 bottom-0 w-0.5 bg-gray-800"
+                    style={{ left: `${Math.min(100, Math.max(0, getPosition(value)))}%` }}
+                >
+                    <div className="absolute -top-1 left-1/2 transform -translate-x-1/2 w-2 h-2 bg-gray-800 rotate-45" />
+                </div>
+            )}
+            {/* Threshold lines */}
+            {isLowerBetter && yellowMax !== null && (
+                <div
+                    className="absolute top-0 bottom-0 w-px bg-yellow-600"
+                    style={{ left: `${getPosition(yellowMax)}%` }}
+                />
+            )}
+            {isLowerBetter && redMax !== null && (
+                <div
+                    className="absolute top-0 bottom-0 w-px bg-red-600"
+                    style={{ left: `${getPosition(redMax)}%` }}
+                />
+            )}
+            {isHigherBetter && yellowMin !== null && (
+                <div
+                    className="absolute top-0 bottom-0 w-px bg-yellow-600"
+                    style={{ left: `${getPosition(yellowMin)}%` }}
+                />
+            )}
+            {isHigherBetter && redMin !== null && (
+                <div
+                    className="absolute top-0 bottom-0 w-px bg-red-600"
+                    style={{ left: `${getPosition(redMin)}%` }}
+                />
+            )}
+        </div>
+    );
+};
+
+// Mini Sparkline for cycle outcomes
+const CycleSparkline: React.FC<{ cycles: MonitoringCycle[] }> = ({ cycles }) => {
+    const recentCycles = cycles
+        .filter(c => c.status === 'APPROVED')
+        .slice(0, 4)
+        .reverse();
+
+    if (recentCycles.length === 0) {
+        return <span className="text-xs text-gray-400">No completed cycles</span>;
+    }
+
+    return (
+        <div className="flex items-center gap-1">
+            {recentCycles.map((cycle) => {
+                const total = cycle.green_count + cycle.yellow_count + cycle.red_count;
+                if (total === 0) {
+                    return (
+                        <div key={cycle.cycle_id} className="w-3 h-8 bg-gray-200 rounded-sm" title="No results" />
+                    );
+                }
+                const greenPct = (cycle.green_count / total) * 100;
+                const yellowPct = (cycle.yellow_count / total) * 100;
+                const redPct = (cycle.red_count / total) * 100;
+                const periodLabel = `${cycle.period_start_date.split('-').slice(1).join('/')} - ${cycle.period_end_date.split('-').slice(1).join('/')}`;
+                return (
+                    <div
+                        key={cycle.cycle_id}
+                        className="w-3 h-8 rounded-sm overflow-hidden flex flex-col"
+                        title={`${periodLabel}: ${cycle.green_count}G ${cycle.yellow_count}Y ${cycle.red_count}R`}
+                    >
+                        {redPct > 0 && <div className="bg-red-500" style={{ height: `${redPct}%` }} />}
+                        {yellowPct > 0 && <div className="bg-yellow-400" style={{ height: `${yellowPct}%` }} />}
+                        {greenPct > 0 && <div className="bg-green-500" style={{ height: `${greenPct}%` }} />}
+                    </div>
+                );
+            })}
+            <span className="text-xs text-gray-500 ml-1">Last {recentCycles.length}</span>
+        </div>
+    );
+};
 
 const MonitoringPlanDetailPage: React.FC = () => {
     const { id } = useParams<{ id: string }>();
@@ -213,7 +363,7 @@ const MonitoringPlanDetailPage: React.FC = () => {
     const [loading, setLoading] = useState(true);
     const [plan, setPlan] = useState<MonitoringPlan | null>(null);
     const [error, setError] = useState<string | null>(null);
-    const [activeTab, setActiveTab] = useState<TabType>('cycles');
+    const [activeTab, setActiveTab] = useState<TabType>('dashboard');
 
     // Cycles state
     const [cycles, setCycles] = useState<MonitoringCycle[]>([]);
@@ -273,9 +423,9 @@ const MonitoringPlanDetailPage: React.FC = () => {
         }
     }, [id]);
 
-    // Phase 7: Fetch performance summary when history tab is selected
+    // Phase 7: Fetch performance summary when dashboard or cycles tab is selected
     useEffect(() => {
-        if (id && activeTab === 'history') {
+        if (id && (activeTab === 'dashboard' || activeTab === 'cycles')) {
             fetchPerformanceSummary();
         }
     }, [id, activeTab]);
@@ -461,8 +611,8 @@ const MonitoringPlanDetailPage: React.FC = () => {
                 setVersionDetail(null);
                 metricsToShow = plan.metrics.filter(m => m.is_active).map(m => ({
                     metric_id: m.metric_id,
-                    kpm_name: m.kpm_name,
-                    evaluation_type: m.evaluation_type,
+                    kpm_name: m.kpm?.name || 'Unknown',
+                    evaluation_type: m.kpm?.evaluation_type || 'Quantitative',
                     yellow_min: m.yellow_min,
                     yellow_max: m.yellow_max,
                     red_min: m.red_min,
@@ -471,10 +621,33 @@ const MonitoringPlanDetailPage: React.FC = () => {
                 }));
             }
 
+            // Find previous approved cycle for trend context
+            const previousApprovedCycle = cycles.find(c =>
+                c.status === 'APPROVED' &&
+                c.period_end_date < cycle.period_end_date
+            );
+            let previousResults: MonitoringResult[] = [];
+            let previousPeriodLabel: string | null = null;
+
+            if (previousApprovedCycle) {
+                try {
+                    const prevResultsResponse = await api.get(`/monitoring/cycles/${previousApprovedCycle.cycle_id}/results`);
+                    previousResults = prevResultsResponse.data;
+                    previousPeriodLabel = formatPeriod(previousApprovedCycle.period_start_date, previousApprovedCycle.period_end_date);
+                } catch {
+                    // Silently fail - previous context is optional
+                }
+            }
+
             // Build form data for each metric
             const forms: ResultFormData[] = metricsToShow.map(m => {
                 // Find existing result for this metric
                 const existing = resultsResponse.data.find((r: MonitoringResult) =>
+                    r.plan_metric_id === m.metric_id
+                );
+
+                // Find previous cycle's result for this metric
+                const previousResult = previousResults.find((r: MonitoringResult) =>
                     r.plan_metric_id === m.metric_id
                 );
 
@@ -493,7 +666,11 @@ const MonitoringPlanDetailPage: React.FC = () => {
                     qualitative_guidance: m.qualitative_guidance,
                     calculatedOutcome: existing?.calculated_outcome ?? null,
                     existingResultId: existing?.result_id ?? null,
-                    dirty: false
+                    dirty: false,
+                    // Inline trend context
+                    previousValue: previousResult?.numeric_value ?? null,
+                    previousOutcome: previousResult?.calculated_outcome ?? null,
+                    previousPeriod: previousPeriodLabel
                 };
             });
 
@@ -838,17 +1015,33 @@ const MonitoringPlanDetailPage: React.FC = () => {
                 {/* Tabs */}
                 <div className="border-b">
                     <nav className="flex gap-6">
-                        {(['overview', 'models', 'metrics', 'cycles', 'history'] as TabType[]).map((tab) => (
+                        {([
+                            { key: 'dashboard', label: 'Dashboard' },
+                            { key: 'models', label: 'Models' },
+                            { key: 'metrics', label: 'Metrics' },
+                            { key: 'cycles', label: 'Cycles & Results' }
+                        ] as { key: TabType; label: string }[]).map((tab) => (
                             <button
-                                key={tab}
-                                onClick={() => setActiveTab(tab)}
-                                className={`py-3 px-1 border-b-2 font-medium text-sm capitalize ${
-                                    activeTab === tab
+                                key={tab.key}
+                                onClick={() => setActiveTab(tab.key)}
+                                className={`py-3 px-1 border-b-2 font-medium text-sm ${
+                                    activeTab === tab.key
                                         ? 'border-blue-500 text-blue-600'
                                         : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
                                 }`}
                             >
-                                {tab}
+                                {tab.label}
+                                {tab.key === 'cycles' && currentCycle && (
+                                    <span className={`ml-2 px-2 py-0.5 text-xs rounded-full ${
+                                        currentCycle.status === 'DATA_COLLECTION' ? 'bg-blue-100 text-blue-700' :
+                                        currentCycle.status === 'PENDING_APPROVAL' ? 'bg-purple-100 text-purple-700' :
+                                        'bg-gray-100 text-gray-600'
+                                    }`}>
+                                        {currentCycle.status === 'DATA_COLLECTION' ? 'Active' :
+                                         currentCycle.status === 'PENDING_APPROVAL' ? 'Awaiting' :
+                                         currentCycle.status.replace(/_/g, ' ')}
+                                    </span>
+                                )}
                             </button>
                         ))}
                     </nav>
@@ -856,26 +1049,251 @@ const MonitoringPlanDetailPage: React.FC = () => {
 
                 {/* Tab Content */}
                 <div className="bg-white rounded-lg border p-6">
-                    {/* Overview Tab */}
-                    {activeTab === 'overview' && (
+                    {/* Dashboard Tab */}
+                    {activeTab === 'dashboard' && (
                         <div className="space-y-6">
-                            <h3 className="text-lg font-semibold">Plan Details</h3>
+                            {/* Action Card - Current Cycle Status */}
+                            {currentCycle ? (
+                                <div className={`rounded-lg p-5 ${
+                                    currentCycle.status === 'DATA_COLLECTION' ? 'bg-blue-50 border-2 border-blue-300' :
+                                    currentCycle.status === 'PENDING_APPROVAL' ? 'bg-purple-50 border-2 border-purple-300' :
+                                    currentCycle.status === 'UNDER_REVIEW' ? 'bg-yellow-50 border-2 border-yellow-300' :
+                                    'bg-gray-50 border border-gray-200'
+                                }`}>
+                                    <div className="flex justify-between items-start">
+                                        <div>
+                                            <div className="flex items-center gap-3">
+                                                <span className={`text-lg font-bold ${
+                                                    currentCycle.status === 'DATA_COLLECTION' ? 'text-blue-800' :
+                                                    currentCycle.status === 'PENDING_APPROVAL' ? 'text-purple-800' :
+                                                    currentCycle.status === 'UNDER_REVIEW' ? 'text-yellow-800' :
+                                                    'text-gray-800'
+                                                }`}>
+                                                    {formatPeriod(currentCycle.period_start_date, currentCycle.period_end_date)} Cycle
+                                                </span>
+                                                <span className={`px-3 py-1 rounded-full text-sm font-medium ${getStatusBadgeColor(currentCycle.status)}`}>
+                                                    {formatStatus(currentCycle.status)}
+                                                </span>
+                                            </div>
+                                            <p className="text-sm text-gray-600 mt-2">
+                                                {currentCycle.status === 'DATA_COLLECTION' && (
+                                                    <>Data collection in progress. {currentCycle.result_count} / {plan.metrics?.length || 0} metrics entered.</>
+                                                )}
+                                                {currentCycle.status === 'PENDING_APPROVAL' && (
+                                                    <>Awaiting approvals before cycle can be completed.</>
+                                                )}
+                                                {currentCycle.status === 'UNDER_REVIEW' && (
+                                                    <>Results under review before requesting approval.</>
+                                                )}
+                                                {currentCycle.status === 'PENDING' && (
+                                                    <>Cycle created. Start data collection when ready.</>
+                                                )}
+                                            </p>
+                                            <div className="flex items-center gap-4 mt-3 text-sm text-gray-600">
+                                                <span>Due: <strong>{currentCycle.submission_due_date}</strong></span>
+                                                {currentCycle.version_number && (
+                                                    <span>Version: <strong>v{currentCycle.version_number}</strong></span>
+                                                )}
+                                            </div>
+                                        </div>
+                                        <div className="flex flex-col gap-2">
+                                            {canEnterResults(currentCycle) && (
+                                                <button
+                                                    onClick={() => openResultsEntry(currentCycle)}
+                                                    className="px-4 py-2 rounded text-sm font-medium bg-green-600 text-white hover:bg-green-700"
+                                                >
+                                                    Enter Results
+                                                </button>
+                                            )}
+                                            {currentCycle.status === 'PENDING_APPROVAL' && (
+                                                <button
+                                                    onClick={() => fetchCycleDetail(currentCycle.cycle_id)}
+                                                    className="px-4 py-2 rounded text-sm font-medium bg-purple-600 text-white hover:bg-purple-700"
+                                                >
+                                                    View Approvals
+                                                </button>
+                                            )}
+                                            {getAvailableActions(currentCycle).slice(0, 1).map((action) => (
+                                                <button
+                                                    key={action.action}
+                                                    onClick={() => {
+                                                        if (action.requiresConfirm) {
+                                                            if (window.confirm(`Are you sure you want to ${action.label.toLowerCase()}?`)) {
+                                                                handleCycleAction(currentCycle.cycle_id, action.action);
+                                                            }
+                                                        } else {
+                                                            handleCycleAction(currentCycle.cycle_id, action.action);
+                                                        }
+                                                    }}
+                                                    disabled={actionLoading}
+                                                    className={`px-4 py-2 rounded text-sm font-medium ${
+                                                        action.variant === 'primary' ? 'bg-blue-600 text-white hover:bg-blue-700' :
+                                                        'bg-gray-200 text-gray-800 hover:bg-gray-300'
+                                                    } disabled:opacity-50`}
+                                                >
+                                                    {actionLoading ? 'Processing...' : action.label}
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </div>
+                                    {/* Results Summary Bar */}
+                                    {currentCycle.result_count > 0 && (
+                                        <div className="mt-4 pt-4 border-t border-gray-200">
+                                            <div className="flex items-center justify-between">
+                                                <span className="text-sm text-gray-600">Current Results:</span>
+                                                <div className="flex items-center gap-3">
+                                                    <span className="inline-flex items-center gap-1 px-2 py-1 bg-green-100 text-green-800 rounded text-sm">
+                                                        <span className="w-2 h-2 rounded-full bg-green-500"></span>
+                                                        {currentCycle.green_count} Green
+                                                    </span>
+                                                    <span className="inline-flex items-center gap-1 px-2 py-1 bg-yellow-100 text-yellow-800 rounded text-sm">
+                                                        <span className="w-2 h-2 rounded-full bg-yellow-500"></span>
+                                                        {currentCycle.yellow_count} Yellow
+                                                    </span>
+                                                    <span className="inline-flex items-center gap-1 px-2 py-1 bg-red-100 text-red-800 rounded text-sm">
+                                                        <span className="w-2 h-2 rounded-full bg-red-500"></span>
+                                                        {currentCycle.red_count} Red
+                                                    </span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    )}
+                                    {/* Approval Status Bar */}
+                                    {currentCycle.status === 'PENDING_APPROVAL' && currentCycle.approval_count > 0 && (
+                                        <div className="mt-4 pt-4 border-t border-gray-200">
+                                            <div className="flex items-center justify-between">
+                                                <span className="text-sm text-gray-600">Approval Status:</span>
+                                                <div className="flex items-center gap-3">
+                                                    {currentCycle.pending_approval_count > 0 ? (
+                                                        <span className="inline-flex items-center gap-1 px-2 py-1 bg-purple-100 text-purple-800 rounded text-sm">
+                                                            <span className="w-2 h-2 rounded-full bg-purple-500 animate-pulse"></span>
+                                                            {currentCycle.pending_approval_count} of {currentCycle.approval_count} pending
+                                                        </span>
+                                                    ) : (
+                                                        <span className="inline-flex items-center gap-1 px-2 py-1 bg-green-100 text-green-800 rounded text-sm">
+                                                            <span className="w-2 h-2 rounded-full bg-green-500"></span>
+                                                            All {currentCycle.approval_count} approved
+                                                        </span>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+                            ) : (
+                                <div className="bg-gray-50 rounded-lg p-5 border border-gray-200">
+                                    <div className="flex justify-between items-center">
+                                        <div>
+                                            <h3 className="text-lg font-semibold text-gray-700">No Active Cycle</h3>
+                                            <p className="text-sm text-gray-500 mt-1">
+                                                {!plan.active_version_number
+                                                    ? 'Publish a plan version before creating cycles.'
+                                                    : 'Create a new cycle to start monitoring.'}
+                                            </p>
+                                        </div>
+                                        {canCreateCycle && plan.active_version_number && (
+                                            <button
+                                                onClick={() => setShowCreateModal(true)}
+                                                className="px-4 py-2 rounded text-sm font-medium bg-blue-600 text-white hover:bg-blue-700"
+                                            >
+                                                + New Cycle
+                                            </button>
+                                        )}
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* Performance Overview */}
                             <div className="grid grid-cols-2 gap-6">
-                                <div>
-                                    <label className="text-sm text-gray-500">Data Provider</label>
-                                    <p className="font-medium">{plan.data_provider?.full_name || '-'}</p>
+                                {/* Left Column: Last Cycle Status + Sparkline */}
+                                <div className="space-y-4">
+                                    <div className="bg-white rounded-lg border p-4">
+                                        <h4 className="text-sm font-semibold text-gray-500 uppercase mb-3">Recent Performance</h4>
+                                        <CycleSparkline cycles={cycles} />
+                                        {cycles.filter(c => c.status === 'APPROVED').length > 0 && (
+                                            <div className="mt-3 pt-3 border-t">
+                                                <div className="text-sm text-gray-600">
+                                                    Last Completed: <strong>{formatPeriod(
+                                                        cycles.filter(c => c.status === 'APPROVED')[0]?.period_start_date || '',
+                                                        cycles.filter(c => c.status === 'APPROVED')[0]?.period_end_date || ''
+                                                    )}</strong>
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+                                    {/* Plan Details */}
+                                    <div className="bg-white rounded-lg border p-4">
+                                        <h4 className="text-sm font-semibold text-gray-500 uppercase mb-3">Plan Details</h4>
+                                        <div className="grid grid-cols-2 gap-3 text-sm">
+                                            <div>
+                                                <span className="text-gray-500">Data Provider</span>
+                                                <p className="font-medium">{plan.data_provider?.full_name || '-'}</p>
+                                            </div>
+                                            <div>
+                                                <span className="text-gray-500">Lead Time</span>
+                                                <p className="font-medium">{plan.reporting_lead_days} days</p>
+                                            </div>
+                                            <div>
+                                                <span className="text-gray-500">Next Due</span>
+                                                <p className="font-medium">{plan.next_submission_due_date || '-'}</p>
+                                            </div>
+                                            <div>
+                                                <span className="text-gray-500">Report Due</span>
+                                                <p className="font-medium">{plan.next_report_due_date || '-'}</p>
+                                            </div>
+                                        </div>
+                                    </div>
                                 </div>
-                                <div>
-                                    <label className="text-sm text-gray-500">Reporting Lead Days</label>
-                                    <p className="font-medium">{plan.reporting_lead_days} days</p>
-                                </div>
-                                <div>
-                                    <label className="text-sm text-gray-500">Next Submission Due</label>
-                                    <p className="font-medium">{plan.next_submission_due_date || '-'}</p>
-                                </div>
-                                <div>
-                                    <label className="text-sm text-gray-500">Next Report Due</label>
-                                    <p className="font-medium">{plan.next_report_due_date || '-'}</p>
+
+                                {/* Right Column: Performance Summary */}
+                                <div className="bg-white rounded-lg border p-4">
+                                    <h4 className="text-sm font-semibold text-gray-500 uppercase mb-3">Overall Performance (Last 10 Cycles)</h4>
+                                    {loadingPerformance ? (
+                                        <div className="text-center py-8 text-gray-500">Loading...</div>
+                                    ) : performanceSummary && performanceSummary.total_results > 0 ? (
+                                        <div className="space-y-4">
+                                            <div className="grid grid-cols-4 gap-2 text-center">
+                                                <div className="bg-green-50 rounded p-2">
+                                                    <div className="text-xl font-bold text-green-700">{performanceSummary.green_count}</div>
+                                                    <div className="text-xs text-green-600">Green</div>
+                                                </div>
+                                                <div className="bg-yellow-50 rounded p-2">
+                                                    <div className="text-xl font-bold text-yellow-700">{performanceSummary.yellow_count}</div>
+                                                    <div className="text-xs text-yellow-600">Yellow</div>
+                                                </div>
+                                                <div className="bg-red-50 rounded p-2">
+                                                    <div className="text-xl font-bold text-red-700">{performanceSummary.red_count}</div>
+                                                    <div className="text-xs text-red-600">Red</div>
+                                                </div>
+                                                <div className="bg-gray-50 rounded p-2">
+                                                    <div className="text-xl font-bold text-gray-500">{performanceSummary.na_count}</div>
+                                                    <div className="text-xs text-gray-500">N/A</div>
+                                                </div>
+                                            </div>
+                                            {/* Distribution Bar */}
+                                            <div className="flex h-4 rounded-full overflow-hidden bg-gray-200">
+                                                {performanceSummary.green_count > 0 && (
+                                                    <div className="bg-green-500" style={{ width: `${(performanceSummary.green_count / performanceSummary.total_results) * 100}%` }} />
+                                                )}
+                                                {performanceSummary.yellow_count > 0 && (
+                                                    <div className="bg-yellow-400" style={{ width: `${(performanceSummary.yellow_count / performanceSummary.total_results) * 100}%` }} />
+                                                )}
+                                                {performanceSummary.red_count > 0 && (
+                                                    <div className="bg-red-500" style={{ width: `${(performanceSummary.red_count / performanceSummary.total_results) * 100}%` }} />
+                                                )}
+                                                {performanceSummary.na_count > 0 && (
+                                                    <div className="bg-gray-400" style={{ width: `${(performanceSummary.na_count / performanceSummary.total_results) * 100}%` }} />
+                                                )}
+                                            </div>
+                                            <div className="text-xs text-gray-500 text-center">
+                                                {performanceSummary.total_results} total results across {cycles.filter(c => c.status === 'APPROVED').length} cycles
+                                            </div>
+                                        </div>
+                                    ) : (
+                                        <div className="text-center py-8 text-gray-500 text-sm">
+                                            No performance data yet. Complete monitoring cycles to see summary.
+                                        </div>
+                                    )}
                                 </div>
                             </div>
                         </div>
@@ -919,47 +1337,83 @@ const MonitoringPlanDetailPage: React.FC = () => {
                             {!plan.metrics?.length ? (
                                 <p className="text-gray-500">No metrics configured for this plan.</p>
                             ) : (
-                                <table className="min-w-full divide-y divide-gray-200 text-sm">
-                                    <thead className="bg-gray-50">
-                                        <tr>
-                                            <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">KPM</th>
-                                            <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Category</th>
-                                            <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Type</th>
-                                            <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Thresholds</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody className="divide-y divide-gray-200">
-                                        {plan.metrics.map((metric) => (
-                                            <tr key={metric.metric_id} className="hover:bg-gray-50">
-                                                <td className="px-4 py-2">{metric.kpm?.name || '-'}</td>
-                                                <td className="px-4 py-2 text-gray-600">{metric.kpm?.category_name || '-'}</td>
-                                                <td className="px-4 py-2">
-                                                    <span className={`px-2 py-0.5 text-xs rounded-full ${
-                                                        metric.kpm?.evaluation_type === 'Quantitative' ? 'bg-blue-100 text-blue-800' :
-                                                        metric.kpm?.evaluation_type === 'Qualitative' ? 'bg-purple-100 text-purple-800' :
-                                                        'bg-green-100 text-green-800'
-                                                    }`}>
-                                                        {metric.kpm?.evaluation_type || '-'}
-                                                    </span>
-                                                </td>
-                                                <td className="px-4 py-2">
-                                                    {metric.kpm?.evaluation_type === 'Quantitative' ? (
-                                                        <div className="flex gap-1">
-                                                            <span className="px-1.5 py-0.5 bg-yellow-100 text-yellow-800 rounded text-xs">
-                                                                Y: {metric.yellow_min ?? '-'}/{metric.yellow_max ?? '-'}
-                                                            </span>
-                                                            <span className="px-1.5 py-0.5 bg-red-100 text-red-800 rounded text-xs">
-                                                                R: {metric.red_min ?? '-'}/{metric.red_max ?? '-'}
-                                                            </span>
+                                <div className="space-y-4">
+                                    {plan.metrics.map((metric) => (
+                                        <div key={metric.metric_id} className="border rounded-lg p-4 hover:bg-gray-50">
+                                            <div className="flex justify-between items-start">
+                                                <div className="flex-1">
+                                                    <div className="flex items-center gap-3">
+                                                        <span className="font-medium text-gray-900">{metric.kpm?.name || '-'}</span>
+                                                        <span className={`px-2 py-0.5 text-xs rounded-full ${
+                                                            metric.kpm?.evaluation_type === 'Quantitative' ? 'bg-blue-100 text-blue-800' :
+                                                            metric.kpm?.evaluation_type === 'Qualitative' ? 'bg-purple-100 text-purple-800' :
+                                                            'bg-green-100 text-green-800'
+                                                        }`}>
+                                                            {metric.kpm?.evaluation_type || '-'}
+                                                        </span>
+                                                    </div>
+                                                    <div className="text-sm text-gray-500 mt-1">{metric.kpm?.category_name || '-'}</div>
+                                                </div>
+                                                {metric.kpm?.evaluation_type === 'Quantitative' && (
+                                                    <button
+                                                        onClick={() => setTrendModalMetric({
+                                                            metric_id: metric.metric_id,
+                                                            metric_name: metric.kpm?.name || '',
+                                                            thresholds: {
+                                                                yellow_min: metric.yellow_min,
+                                                                yellow_max: metric.yellow_max,
+                                                                red_min: metric.red_min,
+                                                                red_max: metric.red_max,
+                                                            }
+                                                        })}
+                                                        className="text-blue-600 hover:text-blue-800 text-sm flex items-center gap-1"
+                                                        title="View trend chart"
+                                                    >
+                                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 12l3-3 3 3 4-4M8 21l4-4 4 4M3 4h18M4 4h16v12a1 1 0 01-1 1H5a1 1 0 01-1-1V4z" />
+                                                        </svg>
+                                                        Trend
+                                                    </button>
+                                                )}
+                                            </div>
+                                            {metric.kpm?.evaluation_type === 'Quantitative' && (
+                                                <div className="mt-3 pt-3 border-t">
+                                                    <div className="flex items-center justify-between">
+                                                        <span className="text-xs text-gray-500 uppercase">Thresholds</span>
+                                                        <div className="flex items-center gap-4 text-xs">
+                                                            {metric.yellow_max !== null && metric.red_max !== null ? (
+                                                                <span className="text-gray-600">Lower is better: G &lt; {metric.yellow_max}, Y {metric.yellow_max}-{metric.red_max}, R &gt; {metric.red_max}</span>
+                                                            ) : metric.yellow_min !== null && metric.red_min !== null ? (
+                                                                <span className="text-gray-600">Higher is better: G &gt; {metric.yellow_min}, Y {metric.red_min}-{metric.yellow_min}, R &lt; {metric.red_min}</span>
+                                                            ) : (
+                                                                <span className="text-gray-400 italic">No thresholds configured</span>
+                                                            )}
                                                         </div>
-                                                    ) : (
-                                                        <span className="text-xs text-gray-500 italic">Judgment-based</span>
+                                                    </div>
+                                                    <div className="mt-2">
+                                                        <BulletChart
+                                                            value={null}
+                                                            yellowMin={metric.yellow_min}
+                                                            yellowMax={metric.yellow_max}
+                                                            redMin={metric.red_min}
+                                                            redMax={metric.red_max}
+                                                            width={300}
+                                                            height={20}
+                                                        />
+                                                    </div>
+                                                </div>
+                                            )}
+                                            {metric.kpm?.evaluation_type !== 'Quantitative' && (
+                                                <div className="mt-3 pt-3 border-t">
+                                                    <span className="text-xs text-gray-500">Judgment-based evaluation</span>
+                                                    {metric.qualitative_guidance && (
+                                                        <p className="text-sm text-gray-600 mt-1">{metric.qualitative_guidance}</p>
                                                     )}
-                                                </td>
-                                            </tr>
-                                        ))}
-                                    </tbody>
-                                </table>
+                                                </div>
+                                            )}
+                                        </div>
+                                    ))}
+                                </div>
                             )}
                         </div>
                     )}
@@ -1101,9 +1555,9 @@ const MonitoringPlanDetailPage: React.FC = () => {
                                 )}
                             </div>
 
-                            {/* Previous Cycles */}
+                            {/* Cycle History */}
                             <div>
-                                <h3 className="text-lg font-semibold mb-4">Previous Cycles</h3>
+                                <h3 className="text-lg font-semibold mb-4">Cycle History</h3>
                                 {previousCycles.length === 0 ? (
                                     <p className="text-gray-500">No completed cycles yet.</p>
                                 ) : (
@@ -1114,6 +1568,7 @@ const MonitoringPlanDetailPage: React.FC = () => {
                                                 <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Version</th>
                                                 <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
                                                 <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Results</th>
+                                                <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Approvals</th>
                                                 <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">Actions</th>
                                             </tr>
                                         </thead>
@@ -1147,12 +1602,36 @@ const MonitoringPlanDetailPage: React.FC = () => {
                                                             </span>
                                                         </div>
                                                     </td>
-                                                    <td className="px-4 py-3 text-right">
+                                                    <td className="px-4 py-3">
+                                                        {cycle.approval_count > 0 ? (
+                                                            cycle.pending_approval_count > 0 ? (
+                                                                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-purple-100 text-purple-800 rounded text-xs">
+                                                                    <span className="w-1.5 h-1.5 rounded-full bg-purple-500"></span>
+                                                                    {cycle.approval_count - cycle.pending_approval_count}/{cycle.approval_count}
+                                                                </span>
+                                                            ) : (
+                                                                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-green-100 text-green-800 rounded text-xs">
+                                                                    <span className="w-1.5 h-1.5 rounded-full bg-green-500"></span>
+                                                                    {cycle.approval_count}/{cycle.approval_count}
+                                                                </span>
+                                                            )
+                                                        ) : (
+                                                            <span className="text-gray-400 text-xs">-</span>
+                                                        )}
+                                                    </td>
+                                                    <td className="px-4 py-3 text-right space-x-2">
                                                         <button
                                                             onClick={() => fetchCycleDetail(cycle.cycle_id)}
                                                             className="text-blue-600 hover:underline text-sm"
                                                         >
                                                             View
+                                                        </button>
+                                                        <button
+                                                            onClick={() => exportCycleCSV(cycle.cycle_id)}
+                                                            disabled={exportingCycle === cycle.cycle_id}
+                                                            className="text-gray-600 hover:underline text-sm disabled:text-gray-400"
+                                                        >
+                                                            {exportingCycle === cycle.cycle_id ? '...' : 'CSV'}
                                                         </button>
                                                     </td>
                                                 </tr>
@@ -1161,221 +1640,57 @@ const MonitoringPlanDetailPage: React.FC = () => {
                                     </table>
                                 )}
                             </div>
-                        </div>
-                    )}
 
-                    {/* History Tab - Phase 7: Performance Summary */}
-                    {activeTab === 'history' && (
-                        <div className="space-y-6">
-                            {/* Performance Summary Cards */}
-                            <div className="bg-white rounded-lg shadow p-6">
-                                <div className="flex justify-between items-center mb-4">
-                                    <h3 className="text-lg font-semibold">Performance Summary (Last 10 Cycles)</h3>
-                                    <button
-                                        onClick={fetchPerformanceSummary}
-                                        className="text-blue-600 hover:underline text-sm"
-                                    >
-                                        Refresh
-                                    </button>
-                                </div>
-
-                                {loadingPerformance ? (
-                                    <div className="text-center py-8">Loading performance data...</div>
-                                ) : performanceSummary ? (
-                                    <div className="space-y-6">
-                                        {/* Overall Summary */}
-                                        <div className="grid grid-cols-5 gap-4">
-                                            <div className="bg-gray-50 rounded-lg p-4 text-center">
-                                                <div className="text-2xl font-bold text-gray-700">
-                                                    {performanceSummary.total_results}
-                                                </div>
-                                                <div className="text-sm text-gray-500">Total Results</div>
-                                            </div>
-                                            <div className="bg-green-50 rounded-lg p-4 text-center">
-                                                <div className="text-2xl font-bold text-green-700">
-                                                    {performanceSummary.green_count}
-                                                </div>
-                                                <div className="text-sm text-green-600">Green</div>
-                                            </div>
-                                            <div className="bg-yellow-50 rounded-lg p-4 text-center">
-                                                <div className="text-2xl font-bold text-yellow-700">
-                                                    {performanceSummary.yellow_count}
-                                                </div>
-                                                <div className="text-sm text-yellow-600">Yellow</div>
-                                            </div>
-                                            <div className="bg-red-50 rounded-lg p-4 text-center">
-                                                <div className="text-2xl font-bold text-red-700">
-                                                    {performanceSummary.red_count}
-                                                </div>
-                                                <div className="text-sm text-red-600">Red</div>
-                                            </div>
-                                            <div className="bg-gray-50 rounded-lg p-4 text-center">
-                                                <div className="text-2xl font-bold text-gray-500">
-                                                    {performanceSummary.na_count}
-                                                </div>
-                                                <div className="text-sm text-gray-500">N/A</div>
-                                            </div>
-                                        </div>
-
-                                        {/* Outcome Distribution Bar */}
-                                        {performanceSummary.total_results > 0 && (
-                                            <div className="mt-4">
-                                                <div className="text-sm text-gray-500 mb-2">Outcome Distribution</div>
-                                                <div className="flex h-6 rounded-full overflow-hidden bg-gray-200">
-                                                    {performanceSummary.green_count > 0 && (
-                                                        <div
-                                                            className="bg-green-500"
-                                                            style={{ width: `${(performanceSummary.green_count / performanceSummary.total_results) * 100}%` }}
-                                                            title={`Green: ${performanceSummary.green_count} (${Math.round((performanceSummary.green_count / performanceSummary.total_results) * 100)}%)`}
-                                                        />
-                                                    )}
-                                                    {performanceSummary.yellow_count > 0 && (
-                                                        <div
-                                                            className="bg-yellow-400"
-                                                            style={{ width: `${(performanceSummary.yellow_count / performanceSummary.total_results) * 100}%` }}
-                                                            title={`Yellow: ${performanceSummary.yellow_count} (${Math.round((performanceSummary.yellow_count / performanceSummary.total_results) * 100)}%)`}
-                                                        />
-                                                    )}
-                                                    {performanceSummary.red_count > 0 && (
-                                                        <div
-                                                            className="bg-red-500"
-                                                            style={{ width: `${(performanceSummary.red_count / performanceSummary.total_results) * 100}%` }}
-                                                            title={`Red: ${performanceSummary.red_count} (${Math.round((performanceSummary.red_count / performanceSummary.total_results) * 100)}%)`}
-                                                        />
-                                                    )}
-                                                    {performanceSummary.na_count > 0 && (
-                                                        <div
-                                                            className="bg-gray-400"
-                                                            style={{ width: `${(performanceSummary.na_count / performanceSummary.total_results) * 100}%` }}
-                                                            title={`N/A: ${performanceSummary.na_count} (${Math.round((performanceSummary.na_count / performanceSummary.total_results) * 100)}%)`}
-                                                        />
-                                                    )}
-                                                </div>
-                                            </div>
-                                        )}
-
-                                        {/* By Metric Breakdown */}
-                                        {performanceSummary.by_metric.length > 0 && (
-                                            <div className="mt-6">
-                                                <h4 className="text-md font-medium mb-3">Results by Metric</h4>
-                                                <table className="min-w-full divide-y divide-gray-200">
-                                                    <thead className="bg-gray-50">
-                                                        <tr>
-                                                            <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Metric</th>
-                                                            <th className="px-4 py-2 text-center text-xs font-medium text-green-600 uppercase">Green</th>
-                                                            <th className="px-4 py-2 text-center text-xs font-medium text-yellow-600 uppercase">Yellow</th>
-                                                            <th className="px-4 py-2 text-center text-xs font-medium text-red-600 uppercase">Red</th>
-                                                            <th className="px-4 py-2 text-center text-xs font-medium text-gray-500 uppercase">N/A</th>
-                                                            <th className="px-4 py-2 text-center text-xs font-medium text-gray-500 uppercase">Total</th>
-                                                            <th className="px-4 py-2 text-center text-xs font-medium text-gray-500 uppercase">Trend</th>
-                                                        </tr>
-                                                    </thead>
-                                                    <tbody className="bg-white divide-y divide-gray-200">
-                                                        {performanceSummary.by_metric.map((metric) => {
-                                                            // Look up thresholds from plan metrics
-                                                            const planMetric = plan?.metrics?.find(m => m.metric_id === metric.metric_id);
-                                                            return (
-                                                                <tr key={metric.metric_id}>
-                                                                    <td className="px-4 py-2 text-sm">{metric.metric_name}</td>
-                                                                    <td className="px-4 py-2 text-center text-sm text-green-600">{metric.green_count}</td>
-                                                                    <td className="px-4 py-2 text-center text-sm text-yellow-600">{metric.yellow_count}</td>
-                                                                    <td className="px-4 py-2 text-center text-sm text-red-600">{metric.red_count}</td>
-                                                                    <td className="px-4 py-2 text-center text-sm text-gray-500">{metric.na_count}</td>
-                                                                    <td className="px-4 py-2 text-center text-sm font-medium">{metric.total}</td>
-                                                                    <td className="px-4 py-2 text-center">
-                                                                        <button
-                                                                            onClick={() => setTrendModalMetric({
-                                                                                metric_id: metric.metric_id,
-                                                                                metric_name: metric.metric_name,
-                                                                                thresholds: {
-                                                                                    yellow_min: planMetric?.yellow_min ?? null,
-                                                                                    yellow_max: planMetric?.yellow_max ?? null,
-                                                                                    red_min: planMetric?.red_min ?? null,
-                                                                                    red_max: planMetric?.red_max ?? null,
-                                                                                }
-                                                                            })}
-                                                                            className="text-blue-600 hover:text-blue-800 hover:underline text-sm flex items-center gap-1 justify-center"
-                                                                            title="View trend chart"
-                                                                        >
-                                                                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 12l3-3 3 3 4-4M8 21l4-4 4 4M3 4h18M4 4h16v12a1 1 0 01-1 1H5a1 1 0 01-1-1V4z" />
-                                                                            </svg>
-                                                                            View
-                                                                        </button>
-                                                                    </td>
-                                                                </tr>
-                                                            );
-                                                        })}
-                                                    </tbody>
-                                                </table>
-                                            </div>
-                                        )}
-                                    </div>
-                                ) : (
-                                    <div className="text-center py-8 text-gray-500">
-                                        No performance data available. Complete some monitoring cycles to see summary data.
-                                    </div>
-                                )}
-                            </div>
-
-                            {/* Completed Cycles with Export */}
-                            <div className="bg-white rounded-lg shadow p-6">
-                                <h3 className="text-lg font-semibold mb-4">Completed Cycles - Export Data</h3>
-                                {cycles.filter(c => ['APPROVED', 'PENDING_APPROVAL', 'UNDER_REVIEW'].includes(c.status)).length === 0 ? (
-                                    <div className="text-center py-8 text-gray-500">
-                                        No completed cycles available for export.
-                                    </div>
-                                ) : (
-                                    <table className="min-w-full divide-y divide-gray-200">
-                                        <thead className="bg-gray-50">
+                            {/* Results by Metric Summary (collapsible) */}
+                            {performanceSummary && performanceSummary.by_metric.length > 0 && (
+                                <div className="border rounded-lg p-4 bg-gray-50">
+                                    <h4 className="text-md font-semibold mb-3">Results by Metric (Last 10 Cycles)</h4>
+                                    <table className="min-w-full divide-y divide-gray-200 text-sm">
+                                        <thead className="bg-white">
                                             <tr>
-                                                <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Period</th>
-                                                <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
-                                                <th className="px-4 py-2 text-center text-xs font-medium text-gray-500 uppercase">Results</th>
-                                                <th className="px-4 py-2 text-center text-xs font-medium text-gray-500 uppercase">Outcomes</th>
-                                                <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">Export</th>
+                                                <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Metric</th>
+                                                <th className="px-3 py-2 text-center text-xs font-medium text-green-600 uppercase">G</th>
+                                                <th className="px-3 py-2 text-center text-xs font-medium text-yellow-600 uppercase">Y</th>
+                                                <th className="px-3 py-2 text-center text-xs font-medium text-red-600 uppercase">R</th>
+                                                <th className="px-3 py-2 text-center text-xs font-medium text-gray-500 uppercase">Trend</th>
                                             </tr>
                                         </thead>
                                         <tbody className="bg-white divide-y divide-gray-200">
-                                            {cycles
-                                                .filter(c => ['APPROVED', 'PENDING_APPROVAL', 'UNDER_REVIEW'].includes(c.status))
-                                                .map((cycle) => (
-                                                    <tr key={cycle.cycle_id}>
-                                                        <td className="px-4 py-2 text-sm">
-                                                            {formatPeriod(cycle.period_start_date, cycle.period_end_date)}
-                                                        </td>
-                                                        <td className="px-4 py-2">
-                                                            <span className={`px-2 py-1 text-xs rounded-full ${getStatusBadgeColor(cycle.status)}`}>
-                                                                {formatStatus(cycle.status)}
-                                                            </span>
-                                                        </td>
-                                                        <td className="px-4 py-2 text-center text-sm">{cycle.result_count}</td>
-                                                        <td className="px-4 py-2 text-center text-sm">
-                                                            {cycle.result_count > 0 ? (
-                                                                <span className="flex justify-center gap-2">
-                                                                    {cycle.green_count > 0 && <span className="text-green-600">{cycle.green_count}G</span>}
-                                                                    {cycle.yellow_count > 0 && <span className="text-yellow-600">{cycle.yellow_count}Y</span>}
-                                                                    {cycle.red_count > 0 && <span className="text-red-600">{cycle.red_count}R</span>}
-                                                                </span>
-                                                            ) : (
-                                                                <span className="text-gray-400">-</span>
-                                                            )}
-                                                        </td>
-                                                        <td className="px-4 py-2 text-right">
+                                            {performanceSummary.by_metric.map((metric) => {
+                                                const planMetric = plan?.metrics?.find(m => m.metric_id === metric.metric_id);
+                                                return (
+                                                    <tr key={metric.metric_id}>
+                                                        <td className="px-3 py-2 text-sm">{metric.metric_name}</td>
+                                                        <td className="px-3 py-2 text-center text-sm text-green-600">{metric.green_count}</td>
+                                                        <td className="px-3 py-2 text-center text-sm text-yellow-600">{metric.yellow_count}</td>
+                                                        <td className="px-3 py-2 text-center text-sm text-red-600">{metric.red_count}</td>
+                                                        <td className="px-3 py-2 text-center">
                                                             <button
-                                                                onClick={() => exportCycleCSV(cycle.cycle_id)}
-                                                                disabled={exportingCycle === cycle.cycle_id}
-                                                                className="text-blue-600 hover:underline text-sm disabled:text-gray-400"
+                                                                onClick={() => setTrendModalMetric({
+                                                                    metric_id: metric.metric_id,
+                                                                    metric_name: metric.metric_name,
+                                                                    thresholds: {
+                                                                        yellow_min: planMetric?.yellow_min ?? null,
+                                                                        yellow_max: planMetric?.yellow_max ?? null,
+                                                                        red_min: planMetric?.red_min ?? null,
+                                                                        red_max: planMetric?.red_max ?? null,
+                                                                    }
+                                                                })}
+                                                                className="text-blue-600 hover:text-blue-800 text-sm"
+                                                                title="View trend chart"
                                                             >
-                                                                {exportingCycle === cycle.cycle_id ? 'Exporting...' : 'Export CSV'}
+                                                                <svg className="w-4 h-4 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 12l3-3 3 3 4-4M8 21l4-4 4 4M3 4h18M4 4h16v12a1 1 0 01-1 1H5a1 1 0 01-1-1V4z" />
+                                                                </svg>
                                                             </button>
                                                         </td>
                                                     </tr>
-                                                ))}
+                                                );
+                                            })}
                                         </tbody>
                                     </table>
-                                )}
-                            </div>
+                                </div>
+                            )}
                         </div>
                     )}
                 </div>
@@ -1773,6 +2088,31 @@ const MonitoringPlanDetailPage: React.FC = () => {
                                                                 )}
                                                             </div>
                                                         </div>
+
+                                                        {/* Previous Value Context */}
+                                                        {form.previousValue !== null && (
+                                                            <div className="bg-blue-50 rounded-lg p-3 flex items-center justify-between">
+                                                                <div>
+                                                                    <span className="text-xs text-blue-600 font-medium">Previous Cycle</span>
+                                                                    {form.previousPeriod && (
+                                                                        <span className="text-xs text-blue-500 ml-1">({form.previousPeriod})</span>
+                                                                    )}
+                                                                </div>
+                                                                <div className="flex items-center gap-2">
+                                                                    <span className="text-sm font-medium text-blue-900">{form.previousValue.toFixed(4)}</span>
+                                                                    {form.previousOutcome && (
+                                                                        <span className={`px-2 py-0.5 rounded text-xs font-medium ${
+                                                                            form.previousOutcome === 'GREEN' ? 'bg-green-100 text-green-800' :
+                                                                            form.previousOutcome === 'YELLOW' ? 'bg-yellow-100 text-yellow-800' :
+                                                                            form.previousOutcome === 'RED' ? 'bg-red-100 text-red-800' :
+                                                                            'bg-gray-100 text-gray-800'
+                                                                        }`}>
+                                                                            {form.previousOutcome}
+                                                                        </span>
+                                                                    )}
+                                                                </div>
+                                                            </div>
+                                                        )}
 
                                                         {/* Value Input */}
                                                         <div>

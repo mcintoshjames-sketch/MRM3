@@ -411,6 +411,9 @@ class MonitoringCycleListResponse(BaseModel):
     green_count: int = 0
     yellow_count: int = 0
     red_count: int = 0
+    # Approval counts (for showing approval status on cycle cards)
+    approval_count: int = 0
+    pending_approval_count: int = 0
 
     class Config:
         from_attributes = True
