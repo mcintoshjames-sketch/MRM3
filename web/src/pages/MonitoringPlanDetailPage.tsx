@@ -399,6 +399,11 @@ const MonitoringPlanDetailPage: React.FC = () => {
     const [approvalLoading, setApprovalLoading] = useState(false);
     const [approvalError, setApprovalError] = useState<string | null>(null);
 
+    // Cancel cycle modal state
+    const [showCancelModal, setShowCancelModal] = useState(false);
+    const [cancelCycleId, setCancelCycleId] = useState<number | null>(null);
+    const [cancelReason, setCancelReason] = useState('');
+
     // Phase 7: Performance summary state
     const [performanceSummary, setPerformanceSummary] = useState<PerformanceSummary | null>(null);
     const [loadingPerformance, setLoadingPerformance] = useState(false);
@@ -567,6 +572,38 @@ const MonitoringPlanDetailPage: React.FC = () => {
         }
     };
 
+    // Cancel cycle functions
+    const openCancelModal = (cycleId: number) => {
+        setCancelCycleId(cycleId);
+        setCancelReason('');
+        setActionError(null);
+        setShowCancelModal(true);
+    };
+
+    const handleCancelCycle = async () => {
+        if (!cancelCycleId || !cancelReason.trim()) return;
+
+        setActionLoading(true);
+        setActionError(null);
+
+        try {
+            await api.post(`/monitoring/cycles/${cancelCycleId}/cancel`, {
+                cancel_reason: cancelReason.trim()
+            });
+            setShowCancelModal(false);
+            setCancelCycleId(null);
+            setCancelReason('');
+            fetchCycles();
+            if (selectedCycle?.cycle_id === cancelCycleId) {
+                setSelectedCycle(null);
+            }
+        } catch (err: any) {
+            setActionError(err.response?.data?.detail || 'Failed to cancel cycle');
+        } finally {
+            setActionLoading(false);
+        }
+    };
+
     // ========== Results Entry Functions ==========
 
     const openResultsEntry = async (cycle: MonitoringCycle) => {
@@ -579,10 +616,12 @@ const MonitoringPlanDetailPage: React.FC = () => {
             // Fetch outcome values for qualitative selection
             const outcomeResponse = await api.get('/taxonomies/');
             const taxonomies = outcomeResponse.data;
-            const monitoringOutcomeTax = taxonomies.find((t: { code: string }) => t.code === 'MONITORING_OUTCOME');
-            if (monitoringOutcomeTax) {
-                const outcomeValResponse = await api.get(`/taxonomies/${monitoringOutcomeTax.taxonomy_id}/values`);
-                setOutcomeValues(outcomeValResponse.data.filter((v: OutcomeValue & { is_active: boolean }) => v.is_active));
+            const qualitativeOutcomeTax = taxonomies.find((t: { name: string }) => t.name === 'Qualitative Outcome');
+            if (qualitativeOutcomeTax) {
+                // GET /taxonomies/{id} returns the taxonomy with values included
+                const taxDetailResponse = await api.get(`/taxonomies/${qualitativeOutcomeTax.taxonomy_id}`);
+                const values = taxDetailResponse.data.values || [];
+                setOutcomeValues(values.filter((v: OutcomeValue & { is_active: boolean }) => v.is_active));
             }
 
             // Fetch existing results for this cycle
@@ -1117,10 +1156,8 @@ const MonitoringPlanDetailPage: React.FC = () => {
                                                 <button
                                                     key={action.action}
                                                     onClick={() => {
-                                                        if (action.requiresConfirm) {
-                                                            if (window.confirm(`Are you sure you want to ${action.label.toLowerCase()}?`)) {
-                                                                handleCycleAction(currentCycle.cycle_id, action.action);
-                                                            }
+                                                        if (action.action === 'cancel') {
+                                                            openCancelModal(currentCycle.cycle_id);
                                                         } else {
                                                             handleCycleAction(currentCycle.cycle_id, action.action);
                                                         }
@@ -1128,6 +1165,7 @@ const MonitoringPlanDetailPage: React.FC = () => {
                                                     disabled={actionLoading}
                                                     className={`px-4 py-2 rounded text-sm font-medium ${
                                                         action.variant === 'primary' ? 'bg-blue-600 text-white hover:bg-blue-700' :
+                                                        action.variant === 'danger' ? 'bg-red-600 text-white hover:bg-red-700' :
                                                         'bg-gray-200 text-gray-800 hover:bg-gray-300'
                                                     } disabled:opacity-50`}
                                                 >
@@ -1517,10 +1555,8 @@ const MonitoringPlanDetailPage: React.FC = () => {
                                                     <button
                                                         key={action.action}
                                                         onClick={() => {
-                                                            if (action.requiresConfirm) {
-                                                                if (window.confirm(`Are you sure you want to ${action.label.toLowerCase()}?`)) {
-                                                                    handleCycleAction(currentCycle.cycle_id, action.action);
-                                                                }
+                                                            if (action.action === 'cancel') {
+                                                                openCancelModal(currentCycle.cycle_id);
                                                             } else {
                                                                 handleCycleAction(currentCycle.cycle_id, action.action);
                                                             }
@@ -2355,6 +2391,66 @@ const MonitoringPlanDetailPage: React.FC = () => {
                                      approvalModalType === 'approve' ? 'Confirm Approval' :
                                      approvalModalType === 'reject' ? 'Confirm Rejection' :
                                      'Confirm Void'}
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                {/* Cancel Cycle Modal */}
+                {showCancelModal && cancelCycleId && (
+                    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+                        <div className="bg-white rounded-lg shadow-xl w-full max-w-md">
+                            <div className="p-4 border-b bg-red-50">
+                                <h3 className="text-lg font-bold text-red-800">Cancel Monitoring Cycle</h3>
+                            </div>
+
+                            <div className="p-4 space-y-4">
+                                {actionError && (
+                                    <div className="bg-red-100 border border-red-400 text-red-700 px-3 py-2 rounded text-sm">
+                                        {actionError}
+                                    </div>
+                                )}
+
+                                <div className="bg-red-50 border border-red-200 rounded-lg p-3">
+                                    <p className="text-red-800 text-sm">
+                                        Cancelling this cycle will permanently stop all work on it. This action cannot be undone.
+                                    </p>
+                                </div>
+
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                                        Cancellation Reason *
+                                    </label>
+                                    <textarea
+                                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                                        rows={3}
+                                        value={cancelReason}
+                                        onChange={(e) => setCancelReason(e.target.value)}
+                                        placeholder="Please explain why this cycle is being cancelled..."
+                                    />
+                                </div>
+                            </div>
+
+                            <div className="p-4 border-t bg-gray-50 flex justify-end gap-2">
+                                <button
+                                    onClick={() => {
+                                        setShowCancelModal(false);
+                                        setCancelCycleId(null);
+                                        setCancelReason('');
+                                        setActionError(null);
+                                    }}
+                                    disabled={actionLoading}
+                                    className="btn-secondary"
+                                >
+                                    Keep Cycle
+                                </button>
+                                <button
+                                    onClick={handleCancelCycle}
+                                    disabled={actionLoading || !cancelReason.trim()}
+                                    className="px-4 py-2 rounded text-white font-medium bg-red-600 hover:bg-red-700 disabled:opacity-50"
+                                >
+                                    {actionLoading ? 'Cancelling...' : 'Confirm Cancel'}
                                 </button>
                             </div>
                         </div>
