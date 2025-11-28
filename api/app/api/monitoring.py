@@ -445,8 +445,26 @@ def get_monitoring_plan(
             "description": plan.team.description,
             "is_active": plan.team.is_active,
             "member_count": len(plan.team.members),
-            "plan_count": len([p for p in plan.team.plans if p.is_active])
+            "plan_count": len([p for p in plan.team.plans if p.is_active]),
+            "members": [
+                {
+                    "user_id": m.user_id,
+                    "email": m.email,
+                    "full_name": m.full_name
+                }
+                for m in plan.team.members
+            ]
         } if plan.team else None,
+        # User permission indicators for frontend
+        "user_permissions": {
+            "is_admin": current_user.role == UserRole.ADMIN,
+            "is_team_member": plan.team and current_user.user_id in [m.user_id for m in plan.team.members] if plan.team else False,
+            "is_data_provider": plan.data_provider and plan.data_provider.user_id == current_user.user_id if plan.data_provider else False,
+            "can_start_cycle": current_user.role == UserRole.ADMIN or (plan.team and current_user.user_id in [m.user_id for m in plan.team.members]),
+            "can_submit_cycle": True,  # Anyone with view access can submit results
+            "can_request_approval": current_user.role == UserRole.ADMIN or (plan.team and current_user.user_id in [m.user_id for m in plan.team.members]),
+            "can_cancel_cycle": current_user.role == UserRole.ADMIN or (plan.team and current_user.user_id in [m.user_id for m in plan.team.members]),
+        },
         "data_provider": {
             "user_id": plan.data_provider.user_id,
             "email": plan.data_provider.email,
@@ -1485,7 +1503,216 @@ from app.schemas.monitoring import (
     RejectRequest,
     VoidApprovalRequest,
     CycleCancelRequest,
+    MyMonitoringTaskResponse,
 )
+
+
+# ============================================================================
+# MY MONITORING TASKS ENDPOINT
+# ============================================================================
+
+@router.get("/monitoring/my-tasks", response_model=List[MyMonitoringTaskResponse])
+def get_my_monitoring_tasks(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Get monitoring tasks for the current user.
+
+    Returns cycles where the current user has a role/responsibility:
+    - data_provider: User is the plan's data provider (needs to submit results)
+    - team_member: User is on the monitoring team (risk function - review/approve)
+    - assignee: User is specifically assigned to the cycle
+
+    Only returns active cycles (not APPROVED or CANCELLED).
+    """
+    today = date.today()
+    tasks = []
+
+    # Get active statuses (cycles that need action)
+    active_statuses = [
+        MonitoringCycleStatus.PENDING.value,
+        MonitoringCycleStatus.DATA_COLLECTION.value,
+        MonitoringCycleStatus.UNDER_REVIEW.value,
+        MonitoringCycleStatus.PENDING_APPROVAL.value,
+    ]
+
+    # Query 1: Cycles where user is the data provider for the plan
+    data_provider_cycles = db.query(MonitoringCycle).options(
+        joinedload(MonitoringCycle.plan)
+    ).join(
+        MonitoringPlan, MonitoringCycle.plan_id == MonitoringPlan.plan_id
+    ).filter(
+        MonitoringPlan.data_provider_user_id == current_user.user_id,
+        MonitoringCycle.status.in_(active_statuses)
+    ).all()
+
+    for cycle in data_provider_cycles:
+        action = _get_data_provider_action(cycle.status)
+        is_overdue = cycle.submission_due_date < today
+        days_until_due = (cycle.submission_due_date - today).days if not is_overdue else None
+
+        # Count results
+        result_count = db.query(func.count(MonitoringResult.result_id)).filter(
+            MonitoringResult.cycle_id == cycle.cycle_id
+        ).scalar() or 0
+
+        tasks.append({
+            "cycle_id": cycle.cycle_id,
+            "plan_id": cycle.plan_id,
+            "plan_name": cycle.plan.name,
+            "period_start_date": cycle.period_start_date,
+            "period_end_date": cycle.period_end_date,
+            "submission_due_date": cycle.submission_due_date,
+            "report_due_date": cycle.report_due_date,
+            "status": cycle.status,
+            "user_role": "data_provider",
+            "action_needed": action,
+            "result_count": result_count,
+            "pending_approval_count": 0,
+            "is_overdue": is_overdue,
+            "days_until_due": days_until_due,
+        })
+
+    # Query 2: Cycles where user is assigned_to
+    assigned_cycles = db.query(MonitoringCycle).options(
+        joinedload(MonitoringCycle.plan)
+    ).filter(
+        MonitoringCycle.assigned_to_user_id == current_user.user_id,
+        MonitoringCycle.status.in_(active_statuses)
+    ).all()
+
+    # Track cycle_ids we've already added to avoid duplicates
+    added_cycle_ids = {t["cycle_id"] for t in tasks}
+
+    for cycle in assigned_cycles:
+        if cycle.cycle_id in added_cycle_ids:
+            continue
+
+        action = _get_assignee_action(cycle.status)
+        is_overdue = cycle.submission_due_date < today
+        days_until_due = (cycle.submission_due_date - today).days if not is_overdue else None
+
+        result_count = db.query(func.count(MonitoringResult.result_id)).filter(
+            MonitoringResult.cycle_id == cycle.cycle_id
+        ).scalar() or 0
+
+        tasks.append({
+            "cycle_id": cycle.cycle_id,
+            "plan_id": cycle.plan_id,
+            "plan_name": cycle.plan.name,
+            "period_start_date": cycle.period_start_date,
+            "period_end_date": cycle.period_end_date,
+            "submission_due_date": cycle.submission_due_date,
+            "report_due_date": cycle.report_due_date,
+            "status": cycle.status,
+            "user_role": "assignee",
+            "action_needed": action,
+            "result_count": result_count,
+            "pending_approval_count": 0,
+            "is_overdue": is_overdue,
+            "days_until_due": days_until_due,
+        })
+        added_cycle_ids.add(cycle.cycle_id)
+
+    # Query 3: Cycles where user is a monitoring team member (risk function)
+    # These users review and approve results
+    team_member_plans = db.query(MonitoringPlan.plan_id).join(
+        MonitoringTeam, MonitoringPlan.monitoring_team_id == MonitoringTeam.team_id
+    ).join(
+        monitoring_team_members,
+        MonitoringTeam.team_id == monitoring_team_members.c.team_id
+    ).filter(
+        monitoring_team_members.c.user_id == current_user.user_id
+    ).all()
+
+    team_plan_ids = [p[0] for p in team_member_plans]
+
+    if team_plan_ids:
+        team_cycles = db.query(MonitoringCycle).options(
+            joinedload(MonitoringCycle.plan)
+        ).filter(
+            MonitoringCycle.plan_id.in_(team_plan_ids),
+            MonitoringCycle.status.in_(active_statuses)
+        ).all()
+
+        for cycle in team_cycles:
+            if cycle.cycle_id in added_cycle_ids:
+                continue
+
+            action = _get_team_member_action(cycle.status)
+            is_overdue = cycle.report_due_date < today  # Team members care about report due date
+            days_until_due = (cycle.report_due_date - today).days if not is_overdue else None
+
+            result_count = db.query(func.count(MonitoringResult.result_id)).filter(
+                MonitoringResult.cycle_id == cycle.cycle_id
+            ).scalar() or 0
+
+            pending_approval_count = db.query(func.count(MonitoringCycleApproval.approval_id)).filter(
+                MonitoringCycleApproval.cycle_id == cycle.cycle_id,
+                MonitoringCycleApproval.approval_status == "Pending"
+            ).scalar() or 0
+
+            tasks.append({
+                "cycle_id": cycle.cycle_id,
+                "plan_id": cycle.plan_id,
+                "plan_name": cycle.plan.name,
+                "period_start_date": cycle.period_start_date,
+                "period_end_date": cycle.period_end_date,
+                "submission_due_date": cycle.submission_due_date,
+                "report_due_date": cycle.report_due_date,
+                "status": cycle.status,
+                "user_role": "team_member",
+                "action_needed": action,
+                "result_count": result_count,
+                "pending_approval_count": pending_approval_count,
+                "is_overdue": is_overdue,
+                "days_until_due": days_until_due,
+            })
+            added_cycle_ids.add(cycle.cycle_id)
+
+    # Sort by due date (most urgent first)
+    tasks.sort(key=lambda t: (not t["is_overdue"], t["submission_due_date"]))
+
+    return tasks
+
+
+def _get_data_provider_action(status: str) -> str:
+    """Get action needed for data provider based on cycle status."""
+    if status == MonitoringCycleStatus.PENDING.value:
+        return "Waiting for cycle to start"
+    elif status == MonitoringCycleStatus.DATA_COLLECTION.value:
+        return "Submit Results"
+    elif status == MonitoringCycleStatus.UNDER_REVIEW.value:
+        return "Results submitted - Under Review"
+    elif status == MonitoringCycleStatus.PENDING_APPROVAL.value:
+        return "Pending Approval"
+    return "No action required"
+
+
+def _get_assignee_action(status: str) -> str:
+    """Get action needed for assignee based on cycle status."""
+    if status == MonitoringCycleStatus.PENDING.value:
+        return "Start Cycle"
+    elif status == MonitoringCycleStatus.DATA_COLLECTION.value:
+        return "Submit Results"
+    elif status == MonitoringCycleStatus.UNDER_REVIEW.value:
+        return "Review Results"
+    elif status == MonitoringCycleStatus.PENDING_APPROVAL.value:
+        return "Pending Approval"
+    return "No action required"
+
+
+def _get_team_member_action(status: str) -> str:
+    """Get action needed for team member (risk function) based on cycle status."""
+    if status == MonitoringCycleStatus.PENDING.value:
+        return "Awaiting Data Collection"
+    elif status == MonitoringCycleStatus.DATA_COLLECTION.value:
+        return "Awaiting Results"
+    elif status == MonitoringCycleStatus.UNDER_REVIEW.value:
+        return "Review Results"
+    elif status == MonitoringCycleStatus.PENDING_APPROVAL.value:
+        return "Approve Results"
+    return "No action required"
 
 
 def calculate_period_dates(frequency: MonitoringFrequency, from_date: date = None) -> tuple:
@@ -1539,14 +1766,15 @@ def calculate_outcome(value: float, metric: MonitoringPlanMetric) -> str:
 
 
 def check_cycle_edit_permission(db: Session, cycle_id: int, current_user: User) -> MonitoringCycle:
-    """Check if user can edit a monitoring cycle.
+    """Check if user can edit a monitoring cycle (enter/update results).
 
     Returns the cycle if user has permission, raises HTTPException otherwise.
 
     Permission is granted if:
     - User is an Admin, OR
     - User is a member of the monitoring team assigned to the plan, OR
-    - User is the data provider assigned to the cycle
+    - User is the data provider for the plan, OR
+    - User is assigned to this specific cycle
     """
     cycle = db.query(MonitoringCycle).options(
         joinedload(MonitoringCycle.plan).joinedload(MonitoringPlan.team).joinedload(MonitoringTeam.members)
@@ -1566,6 +1794,10 @@ def check_cycle_edit_permission(db: Session, cycle_id: int, current_user: User) 
     if cycle.assigned_to_user_id == current_user.user_id:
         return cycle
 
+    # Check if user is the data provider for the plan
+    if cycle.plan and cycle.plan.data_provider_user_id == current_user.user_id:
+        return cycle
+
     # Check if user is a member of the plan's monitoring team
     if cycle.plan and cycle.plan.team:
         member_ids = [m.user_id for m in cycle.plan.team.members]
@@ -1574,8 +1806,120 @@ def check_cycle_edit_permission(db: Session, cycle_id: int, current_user: User) 
 
     raise HTTPException(
         status_code=status.HTTP_403_FORBIDDEN,
-        detail="You must be an Admin, team member, or assigned data provider to edit this cycle"
+        detail="You must be an Admin, team member, data provider, or cycle assignee to edit this cycle"
     )
+
+
+def check_team_member_or_admin(db: Session, cycle_id: int, current_user: User) -> MonitoringCycle:
+    """Check if user is Admin or monitoring team member (risk function).
+
+    Used for workflow actions that should only be performed by the risk function:
+    - Start cycle (PENDING → DATA_COLLECTION)
+    - Request approval (UNDER_REVIEW → PENDING_APPROVAL)
+    - Cancel cycle
+
+    Data providers and assignees who are not team members cannot perform these actions.
+    """
+    cycle = db.query(MonitoringCycle).options(
+        joinedload(MonitoringCycle.plan).joinedload(MonitoringPlan.team).joinedload(MonitoringTeam.members)
+    ).filter(MonitoringCycle.cycle_id == cycle_id).first()
+
+    if not cycle:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Cycle not found"
+        )
+
+    # Admins always have permission
+    if current_user.role == UserRole.ADMIN:
+        return cycle
+
+    # Check if user is a member of the plan's monitoring team (risk function)
+    if cycle.plan and cycle.plan.team:
+        member_ids = [m.user_id for m in cycle.plan.team.members]
+        if current_user.user_id in member_ids:
+            return cycle
+
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail="Only Admin or monitoring team members can perform this workflow action"
+    )
+
+
+def validate_results_completeness(db: Session, cycle: MonitoringCycle) -> None:
+    """Validate results before submission.
+
+    Rules:
+    - Cycle must have a locked version
+    - At least one result must be entered
+    - For metrics without a value (null numeric_value and null outcome_value_id),
+      a narrative/comment is required explaining why the metric was not measured
+
+    Raises HTTPException if validation fails.
+    """
+    # Get the version's metric snapshots (what metrics were active when cycle started)
+    if not cycle.plan_version_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cannot submit: Cycle has no locked version. Start the cycle first."
+        )
+
+    # Get metric snapshots for this version
+    metric_snapshots = db.query(MonitoringPlanMetricSnapshot).filter(
+        MonitoringPlanMetricSnapshot.version_id == cycle.plan_version_id
+    ).all()
+
+    if not metric_snapshots:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cannot submit: No metrics defined in the plan version."
+        )
+
+    # Get existing results for this cycle
+    existing_results = db.query(MonitoringResult).filter(
+        MonitoringResult.cycle_id == cycle.cycle_id
+    ).all()
+
+    # Must have at least one result
+    if not existing_results:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cannot submit: No results have been entered. Enter at least one metric result before submitting."
+        )
+
+    # Build map of results by metric_id for easy lookup
+    results_by_metric = {r.plan_metric_id: r for r in existing_results}
+
+    # Check which metrics are missing entirely or have no value without explanation
+    metrics_missing_entirely = []
+    metrics_missing_explanation = []
+
+    for snapshot in metric_snapshots:
+        if not snapshot.original_metric_id:
+            continue
+
+        result = results_by_metric.get(snapshot.original_metric_id)
+
+        if not result:
+            # Metric has no result record at all
+            metrics_missing_entirely.append(snapshot.kpm_name)
+        elif result.numeric_value is None and result.outcome_value_id is None:
+            # Result exists but has no value - must have narrative
+            if not result.narrative or not result.narrative.strip():
+                metrics_missing_explanation.append(snapshot.kpm_name)
+
+    # Report issues
+    issues = []
+    if metrics_missing_entirely:
+        issues.append(f"Missing results for: {', '.join(metrics_missing_entirely)}")
+    if metrics_missing_explanation:
+        issues.append(f"Missing explanation for N/A values: {', '.join(metrics_missing_explanation)}")
+
+    if issues:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Cannot submit: {'; '.join(issues)}. Either enter a value or provide a narrative explaining why the metric was not measured."
+        )
 
 
 @router.post("/monitoring/plans/{plan_id}/cycles", response_model=MonitoringCycleResponse, status_code=status.HTTP_201_CREATED)
@@ -1685,7 +2029,7 @@ def list_plan_cycles(
         # Count approvals (only required, non-voided ones)
         required_approvals = [a for a in cycle.approvals if a.is_required and not a.voided_at]
         approval_count = len(required_approvals)
-        pending_approval_count = sum(1 for a in required_approvals if a.approval_status == "PENDING")
+        pending_approval_count = sum(1 for a in required_approvals if a.approval_status == "Pending")
 
         result.append({
             "cycle_id": cycle.cycle_id,
@@ -2200,8 +2544,11 @@ def start_cycle(
     When starting a cycle, it is locked to the current active version of the plan.
     This ensures that metrics/thresholds used for this cycle remain consistent
     even if the plan is updated later.
+
+    Only Admin or monitoring team members (risk function) can start a cycle.
+    Data providers cannot start cycles - they can only submit results.
     """
-    cycle = check_cycle_edit_permission(db, cycle_id, current_user)
+    cycle = check_team_member_or_admin(db, cycle_id, current_user)
 
     if cycle.status != MonitoringCycleStatus.PENDING.value:
         raise HTTPException(
@@ -2253,7 +2600,13 @@ def submit_cycle(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Move cycle from DATA_COLLECTION to UNDER_REVIEW."""
+    """Move cycle from DATA_COLLECTION to UNDER_REVIEW.
+
+    Data providers, assignees, team members, and Admins can submit.
+    Before submitting, validates that results are complete:
+    - At least one result must be entered
+    - Metrics without values must have a narrative explaining why
+    """
     cycle = check_cycle_edit_permission(db, cycle_id, current_user)
 
     if cycle.status != MonitoringCycleStatus.DATA_COLLECTION.value:
@@ -2261,6 +2614,9 @@ def submit_cycle(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Can only submit a cycle in DATA_COLLECTION status (current: {cycle.status})"
         )
+
+    # Validate results completeness before submission
+    validate_results_completeness(db, cycle)
 
     cycle.status = MonitoringCycleStatus.UNDER_REVIEW.value
     cycle.submitted_at = datetime.utcnow()
@@ -2286,8 +2642,12 @@ def cancel_cycle(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Cancel a cycle (with reason)."""
-    cycle = check_cycle_edit_permission(db, cycle_id, current_user)
+    """Cancel a cycle (with reason).
+
+    Only Admin or monitoring team members (risk function) can cancel a cycle.
+    Data providers cannot cancel cycles.
+    """
+    cycle = check_team_member_or_admin(db, cycle_id, current_user)
 
     if cycle.status == MonitoringCycleStatus.APPROVED.value:
         raise HTTPException(
@@ -2328,8 +2688,8 @@ def _can_user_approve_approval(
     """Check if the current user can approve this specific approval.
 
     - Approval must be pending and not voided
-    - For Global: Admin or team member
-    - For Regional: Admin or user must have the region in their assignments
+    - For Global: Admin OR user with 'Global Approver' role
+    - For Regional: Admin OR user with 'Regional Approver' role AND authorized for the region
     """
     # Can't approve if already approved or voided
     if approval.approval_status != "Pending":
@@ -2337,15 +2697,17 @@ def _can_user_approve_approval(
     if approval.voided_at:
         return False
 
-    # Admin can always approve
+    # Admin can always approve (on behalf of the appropriate role with evidence)
     if current_user.role == UserRole.ADMIN:
         return True
 
     if approval.approval_type == "Global":
-        # Team members can approve global
-        return current_user.user_id in team_member_ids
+        # User must have Global Approver role
+        return current_user.role == UserRole.GLOBAL_APPROVER
     elif approval.approval_type == "Regional":
-        # User must be a regional approver for this region
+        # User must have Regional Approver role AND be authorized for this region
+        if current_user.role != UserRole.REGIONAL_APPROVER:
+            return False
         return approval.region_id in user_region_ids
 
     return False
@@ -2353,6 +2715,13 @@ def _can_user_approve_approval(
 
 def _build_approval_response(approval: MonitoringCycleApproval, can_approve: bool = False) -> dict:
     """Build approval response dict."""
+    # Determine if this was a proxy approval (Admin approving on behalf)
+    is_proxy_approval = (
+        approval.approval_evidence is not None and
+        approval.approver is not None and
+        approval.approver.role == UserRole.ADMIN
+    )
+
     return {
         "approval_id": approval.approval_id,
         "cycle_id": approval.cycle_id,
@@ -2376,6 +2745,8 @@ def _build_approval_response(approval: MonitoringCycleApproval, can_approve: boo
         "approval_status": approval.approval_status,
         "comments": approval.comments,
         "approved_at": approval.approved_at,
+        "approval_evidence": approval.approval_evidence,
+        "is_proxy_approval": is_proxy_approval,
         "voided_by": {
             "user_id": approval.voided_by.user_id,
             "email": approval.voided_by.email,
@@ -2399,8 +2770,11 @@ def request_cycle_approval(
     Auto-generates approval requirements based on:
     - Global approval (always required)
     - Regional approvals based on regions of models in the plan scope
+
+    Only Admin or monitoring team members (risk function) can request approval.
+    Data providers cannot advance to approval stage.
     """
-    cycle = check_cycle_edit_permission(db, cycle_id, current_user)
+    cycle = check_team_member_or_admin(db, cycle_id, current_user)
 
     if cycle.status != MonitoringCycleStatus.UNDER_REVIEW.value:
         raise HTTPException(
@@ -2569,8 +2943,12 @@ def approve_cycle(
 ):
     """Approve a monitoring cycle approval requirement.
 
-    For Global approvals: Admin or any team member can approve.
-    For Regional approvals: User must be a regional approver for that region.
+    For Global approvals: User must have 'Global Approver' role OR be Admin.
+    For Regional approvals: User must have 'Regional Approver' role AND be
+        authorized for that region, OR be Admin.
+
+    Admin users can approve on behalf of the appropriate role by providing
+    approval_evidence (description of meeting minutes, email confirmation, etc.).
     """
     approval = db.query(MonitoringCycleApproval).options(
         joinedload(MonitoringCycleApproval.cycle),
@@ -2603,41 +2981,51 @@ def approve_cycle(
 
     # Check permission to approve
     represented_region_id = None
+    is_proxy_approval = False
 
     if approval.approval_type == "Global":
-        # Admin or team member can approve global
-        if current_user.role != UserRole.ADMIN:
-            # Check if user is team member
-            plan = db.query(MonitoringPlan).options(
-                joinedload(MonitoringPlan.team).joinedload(MonitoringTeam.members)
-            ).filter(MonitoringPlan.plan_id == approval.cycle.plan_id).first()
-
-            if not plan or not plan.team:
+        # User must have Global Approver role OR be Admin
+        if current_user.role == UserRole.ADMIN:
+            # Admin approving on behalf - require evidence
+            if not approval_data.approval_evidence:
                 raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN,
-                    detail="Only Admin or team members can approve Global approvals"
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Admin must provide approval_evidence when approving on behalf (e.g., meeting minutes, email confirmation)"
                 )
-
-            member_ids = [m.user_id for m in plan.team.members]
-            if current_user.user_id not in member_ids:
-                raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN,
-                    detail="Only Admin or team members can approve Global approvals"
-                )
+            is_proxy_approval = True
+        elif current_user.role == UserRole.GLOBAL_APPROVER:
+            # Global Approver has direct authority
+            pass
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Only users with 'Global Approver' role or Admin can approve Global approvals"
+            )
 
     elif approval.approval_type == "Regional":
-        # User must be a regional approver for the specific region OR Admin
-        if current_user.role != UserRole.ADMIN:
-            # Check if user is a regional approver
+        # User must have Regional Approver role AND be authorized for this region, OR be Admin
+        if current_user.role == UserRole.ADMIN:
+            # Admin approving on behalf - require evidence
+            if not approval_data.approval_evidence:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Admin must provide approval_evidence when approving on behalf (e.g., meeting minutes, email confirmation)"
+                )
+            is_proxy_approval = True
+        elif current_user.role == UserRole.REGIONAL_APPROVER:
+            # Check if user is authorized for this region
             user_region_ids = [r.region_id for r in current_user.regions]
-
             if approval.region_id not in user_region_ids:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
-                    detail=f"You are not an approver for region {approval.region.name if approval.region else approval.region_id}"
+                    detail=f"You are not authorized for region {approval.region.name if approval.region else approval.region_id}"
                 )
-
             represented_region_id = approval.region_id
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Only users with 'Regional Approver' role (with authorized regions) or Admin can approve Regional approvals"
+            )
 
     # Record the approval
     approval.approver_id = current_user.user_id
@@ -2645,6 +3033,18 @@ def approve_cycle(
     approval.comments = approval_data.comments
     approval.approved_at = datetime.utcnow()
     approval.represented_region_id = represented_region_id
+    approval.approval_evidence = approval_data.approval_evidence if is_proxy_approval else None
+
+    # Build audit log changes
+    audit_changes = {
+        "cycle_id": cycle_id,
+        "approval_type": approval.approval_type,
+        "region": approval.region.name if approval.region else None,
+        "comments": approval_data.comments
+    }
+    if is_proxy_approval:
+        audit_changes["proxy_approval"] = True
+        audit_changes["approval_evidence"] = approval_data.approval_evidence
 
     create_audit_log(
         db=db,
@@ -2652,12 +3052,7 @@ def approve_cycle(
         entity_id=approval_id,
         action="APPROVE",
         user_id=current_user.user_id,
-        changes={
-            "cycle_id": cycle_id,
-            "approval_type": approval.approval_type,
-            "region": approval.region.name if approval.region else None,
-            "comments": approval_data.comments
-        }
+        changes=audit_changes
     )
 
     # Check if all approvals complete

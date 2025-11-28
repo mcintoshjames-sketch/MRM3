@@ -1363,12 +1363,17 @@ class TestApprovalWorkflow:
         global_approval = next(a for a in approvals_resp.json() if a["approval_type"] == "Global")
         approval_id = global_approval["approval_id"]
 
-        # Approve
+        # Approve (Admin must provide approval_evidence when approving on behalf)
         response = client.post(f"/monitoring/cycles/{cycle_id}/approvals/{approval_id}/approve",
-                              headers=admin_headers, json={"comments": "Approved by test"})
+                              headers=admin_headers, json={
+                                  "comments": "Approved by test",
+                                  "approval_evidence": "Committee meeting minutes from test date"
+                              })
         assert response.status_code == 200
         assert response.json()["approval_status"] == "Approved"
         assert response.json()["approver"] is not None
+        assert response.json()["approval_evidence"] is not None
+        assert response.json()["is_proxy_approval"] == True
 
     def test_cycle_auto_completes_when_all_approved(self, client, admin_headers):
         """Cycle transitions to APPROVED when all approvals are granted."""
@@ -1388,12 +1393,15 @@ class TestApprovalWorkflow:
         client.post(f"/monitoring/cycles/{cycle_id}/submit", headers=admin_headers)
         client.post(f"/monitoring/cycles/{cycle_id}/request-approval", headers=admin_headers)
 
-        # Approve all approvals
+        # Approve all approvals (Admin must provide approval_evidence when approving on behalf)
         approvals_resp = client.get(f"/monitoring/cycles/{cycle_id}/approvals", headers=admin_headers)
         for approval in approvals_resp.json():
             if approval["approval_status"] == "Pending":
                 client.post(f"/monitoring/cycles/{cycle_id}/approvals/{approval['approval_id']}/approve",
-                           headers=admin_headers, json={"comments": "Approved"})
+                           headers=admin_headers, json={
+                               "comments": "Approved",
+                               "approval_evidence": "Committee meeting minutes for test"
+                           })
 
         # Check cycle is now APPROVED
         cycle_resp = client.get(f"/monitoring/cycles/{cycle_id}", headers=admin_headers)

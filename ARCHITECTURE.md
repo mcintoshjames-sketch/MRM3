@@ -307,10 +307,30 @@ Model Risk Management inventory system with a FastAPI backend, React/TypeScript 
 - **Permission Model**:
   | Role | Cycles | Results | Approvals |
   |------|--------|---------|-----------|
-  | Admin | Full CRUD | Full CRUD | Approve, Reject, Void |
-  | Team Member | Full CRUD | Full CRUD | Request Approval, Approve Global |
-  | Data Provider | View, Submit | Create, Update own | - |
-  | Regional Approver | View | View | Approve for their region |
+  | Admin | Full CRUD, All workflow actions | Full CRUD | Approve on behalf (requires evidence), Reject, Void |
+  | Global Approver | View | View | Approve Global approvals |
+  | Regional Approver | View | View | Approve Regional for their authorized regions |
+  | Team Member (Risk Function) | Full CRUD, Start/Request Approval/Cancel | Full CRUD | Request Approval only |
+  | Data Provider | View, Submit results | Create, Update own | View only |
+- **Approval Role Enforcement**:
+  - **Global approvals**: Requires `Global Approver` role OR Admin with evidence
+  - **Regional approvals**: Requires `Regional Approver` role with authorized regions OR Admin with evidence
+  - **Admin proxy approvals**: Admin can approve on behalf but MUST provide `approval_evidence` (meeting minutes, email confirmation, etc.)
+  - Response includes `is_proxy_approval: true` when Admin approves on behalf
+- **Workflow Action Permissions** (enforced by `check_team_member_or_admin`):
+  - **Start Cycle** (PENDING → DATA_COLLECTION): Admin or Team Member only - data providers cannot start cycles
+  - **Submit Cycle** (DATA_COLLECTION → UNDER_REVIEW): Data providers, team members, and admins can submit (requires results completeness validation)
+  - **Request Approval** (UNDER_REVIEW → PENDING_APPROVAL): Admin or Team Member only - data providers cannot advance to approval
+  - **Cancel Cycle**: Admin or Team Member only - data providers cannot cancel
+- **Results Completeness Validation** (enforced by `validate_results_completeness`):
+  - Cycle must have at least one result entered before submission
+  - Metrics without a value (null numeric_value and null outcome_value_id) require a narrative explanation
+  - Returns detailed error messages listing which metrics are missing results or explanations
+- **My Monitoring Tasks** (`GET /monitoring/my-tasks`):
+  - Returns all active monitoring cycles the current user is involved with
+  - User roles: `data_provider` (assigned as data provider), `team_member` (member of monitoring team), `assignee` (directly assigned to cycle)
+  - Includes action_needed hints based on cycle status and user role
+  - Shows overdue status and days until due for prioritization
 - **Frontend**: ✅ Phases 4-7 COMPLETE (Cycles Tab, Results Entry, Approval UI, Reporting & Trends)
   - Phase 4: Cycles Tab with status badges, workflow actions, version info
   - Phase 5: Results Entry modal with threshold visualization, real-time outcome calculation

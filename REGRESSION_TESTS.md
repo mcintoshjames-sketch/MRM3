@@ -485,6 +485,20 @@ cd web && pnpm test:coverage
 - [x] Admin can still edit any plan (always allowed)
 - [x] Audit log captures team member changes with correct user_id
 
+#### My Monitoring Tasks Endpoint (`/monitoring/my-tasks`)
+- [x] Returns empty list when user has no monitoring assignments
+- [x] Returns tasks where user is data_provider
+- [x] Returns tasks where user is team_member
+- [x] Returns tasks where user is assignee
+- [x] Task response includes cycle_id, plan_id, plan_name
+- [x] Task response includes period dates and due dates
+- [x] Task response includes status and user_role
+- [x] Task response includes action_needed description
+- [x] Task response includes result_count and pending_approval_count
+- [x] Task response includes is_overdue and days_until_due
+- [x] Excludes APPROVED and CANCELLED cycles
+- [x] Requires authentication (401 without token)
+
 #### Monitoring Plan Metrics (`test_monitoring.py`)
 - [x] Add metric to plan as Admin succeeds
 - [x] Add duplicate metric to plan fails (400)
@@ -517,6 +531,27 @@ cd web && pnpm test:coverage
 - [x] Cancel already-cancelled cycle fails (400)
 - [x] Workflow transitions create audit logs
 - [x] Invalid workflow transition fails (400)
+
+#### Monitoring Workflow Permission Model (Manual API Tests - 2025-11-28)
+- [x] Data provider CANNOT start cycle (403 - only Admin/Team Member)
+- [x] Data provider CANNOT cancel cycle (403 - only Admin/Team Member)
+- [x] Data provider CANNOT request approval (403 - only Admin/Team Member)
+- [x] Data provider CAN submit results during DATA_COLLECTION
+- [x] Team member CAN start cycle (PENDING → DATA_COLLECTION)
+- [x] Team member CAN request approval (UNDER_REVIEW → PENDING_APPROVAL)
+- [x] Team member CAN cancel cycle
+- [x] Admin CAN perform all workflow actions
+- [x] Results completeness validation: submit fails without any results (400)
+- [x] Results completeness validation: submit fails if metrics have no value AND no narrative (400)
+- [x] Results completeness validation: submit succeeds with metric value
+- [x] Results completeness validation: submit succeeds with narrative explanation for missing value
+- [x] Plan detail response includes user_permissions object
+- [x] user_permissions.is_admin correctly identifies Admin users
+- [x] user_permissions.is_team_member correctly identifies team members
+- [x] user_permissions.is_data_provider correctly identifies data providers
+- [x] user_permissions.can_start_cycle reflects actual permission
+- [x] user_permissions.can_request_approval reflects actual permission
+- [x] user_permissions.can_cancel_cycle reflects actual permission
 
 #### Monitoring Results (`test_monitoring.py`)
 - [x] Create result for quantitative metric
@@ -884,6 +919,8 @@ describe('NewPage', () => {
 | **Monitoring Cycles & Results** | ✅ test_monitoring.py (87 tests - cycles CRUD + workflow + results + approval + versioning + 9b) | ✅ MonitoringPlanDetailPage (Phases 4-6: Cycles tab, Results Entry, Approval UI) | 2025-11-27 |
 | **Monitoring Plan Versioning** | ✅ test_monitoring.py (version CRUD, metric snapshotting, cycle binding) | ✅ MonitoringPlansPage Versions modal | 2025-11-27 |
 | **Component 9b (Monitoring Plan Review)** | ✅ seed data + validation logic in validation_workflow.py | ✅ ValidationPlanForm 9b special handling | 2025-11-27 |
+| **My Monitoring Tasks** | ✅ /monitoring/my-tasks endpoint (12 manual tests) | ✅ MyMonitoringPage with role-based filters | 2025-11-28 |
+| **Monitoring Workflow Permissions** | ✅ Permission helpers + validation (19 manual tests) | ✅ Permission-based UI button visibility | 2025-11-28 |
 
 **Features Added:**
 - Development type (In-House / Third-Party)
@@ -914,6 +951,8 @@ describe('NewPage', () => {
 - **Monitoring Cycles & Results** (periodic monitoring cycle execution with status workflow: PENDING → DATA_COLLECTION → UNDER_REVIEW → PENDING_APPROVAL → APPROVED/CANCELLED; automatic R/Y/G outcome calculation based on thresholds; Global + Regional approval workflow similar to validation projects; auto-creation of approval requirements based on model regional deployments; auto-transition to APPROVED when all approvals complete; **Phases 4-6 Complete**: Cycles Tab with workflow actions, Results Entry modal with threshold visualization and real-time outcome calculation, Approval UI with approve/reject/void modals and server-computed can_approve permissions)
 - **Monitoring Plan Versioning** (immutable version snapshots of plan metric configurations; manual "Publish" action creates version with metric snapshots; cycles lock to active version at DATA_COLLECTION start; version history with cycle counts; CSV export for comparison; warning when editing metrics with active cycles locked to previous versions)
 - **Component 9b (Performance Monitoring Plan Review)** (validation plan component for assessing model's monitoring plan; ValidationPlanComponent extended with monitoring_plan_version_id and monitoring_review_notes; Required for Tier 1/2, IfApplicable for Tier 3; special UI rendering with version picker dropdown; validation enforced before Review/Pending Approval transitions)
+- **My Monitoring Tasks** (centralized view for users to see all monitoring cycles requiring their attention; supports three roles: data_provider, team_member, assignee; includes action_needed guidance, due dates, overdue status; MyMonitoringPage with role-based filtering)
+- **Monitoring Workflow Permission Model** (role-based access control for workflow actions; Monitoring Team = Risk function with full workflow control; Data Provider = can only submit results; Admin = full access; `check_team_member_or_admin()` helper for protected actions; `validate_results_completeness()` ensures complete submissions; `user_permissions` object in plan responses for frontend permission display)
 
 **Total: 550+ tests (420+ backend + 128 frontend)**
 - Backend: ~478 passing, 3 failing (pre-existing issues unrelated to versioning/9b changes)
@@ -923,6 +962,19 @@ describe('NewPage', () => {
 **Frontend Testing Debt:**
 - ValidationWorkflowPage component tests (~15 tests)
 - ValidationRequestDetailPage component tests (~25 tests)
+- **MyMonitoringPage** - MyMonitoringPage.test.tsx (~12 tests pending)
+  - Displays loading state initially
+  - Displays page title and description
+  - Displays filter buttons for All, Data Provider, Team Member, Assignee
+  - Displays correct counts on filter buttons
+  - Displays tasks table with role badge
+  - Displays plan name as link
+  - Displays period dates and status badges
+  - Displays due date with days remaining
+  - Displays overdue indicator for overdue tasks
+  - Displays action needed column with appropriate styling
+  - Displays action button (Enter Results / Approve / View Cycle)
+  - Displays empty state when no tasks
 - **Monitoring Cycles UI (Phases 4-6 Complete, Phase 7 Pending)** - MonitoringPlanDetailPage.tsx
   - ✅ Phase 4: Cycles Tab with workflow actions
   - ✅ Phase 5: Results Entry modal with threshold visualization

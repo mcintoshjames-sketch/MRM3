@@ -104,6 +104,31 @@ class MonitoringTeamListResponse(BaseModel):
         from_attributes = True
 
 
+class MonitoringTeamWithMembersResponse(BaseModel):
+    """Response schema for monitoring team with members list."""
+    team_id: int
+    name: str
+    description: Optional[str] = None
+    is_active: bool
+    member_count: int = 0
+    plan_count: int = 0
+    members: List[UserRef] = []
+
+    class Config:
+        from_attributes = True
+
+
+class UserPermissions(BaseModel):
+    """User permissions for a specific resource."""
+    is_admin: bool = False
+    is_team_member: bool = False
+    is_data_provider: bool = False
+    can_start_cycle: bool = False
+    can_submit_cycle: bool = False
+    can_request_approval: bool = False
+    can_cancel_cycle: bool = False
+
+
 # ============================================================================
 # MONITORING PLAN METRIC SCHEMAS
 # ============================================================================
@@ -188,7 +213,8 @@ class MonitoringPlanResponse(MonitoringPlanBase):
     plan_id: int
     next_submission_due_date: Optional[date] = None
     next_report_due_date: Optional[date] = None
-    team: Optional[MonitoringTeamListResponse] = None
+    team: Optional[MonitoringTeamWithMembersResponse] = None
+    user_permissions: Optional[UserPermissions] = None
     data_provider: Optional[UserRef] = None
     models: List[ModelRef] = []
     metrics: List[MonitoringPlanMetricResponse] = []
@@ -457,19 +483,30 @@ class MonitoringCycleApprovalResponse(BaseModel):
     approval_status: str
     comments: Optional[str] = None
     approved_at: Optional[datetime] = None
+    approval_evidence: Optional[str] = None  # Evidence for Admin proxy approvals
     voided_by: Optional[UserRef] = None
     void_reason: Optional[str] = None
     voided_at: Optional[datetime] = None
     created_at: datetime
     can_approve: bool = False  # Whether current user can approve this
+    is_proxy_approval: bool = False  # Whether this was Admin approving on behalf
 
     class Config:
         from_attributes = True
 
 
 class ApproveRequest(BaseModel):
-    """Request schema for approving a cycle."""
+    """Request schema for approving a cycle.
+
+    Regular approvers (Global Approver role for Global approvals,
+    Regional Approver role with authorized region for Regional approvals)
+    only need to provide optional comments.
+
+    Admin users approving on behalf of the appropriate role must provide
+    approval_evidence documenting the proof of approval (meeting minutes, email, etc.).
+    """
     comments: Optional[str] = None
+    approval_evidence: Optional[str] = None  # Required for Admin proxy approvals
 
 
 class RejectRequest(BaseModel):
@@ -617,3 +654,36 @@ class PerformanceSummary(BaseModel):
     red_count: int
     na_count: int
     by_metric: List[dict] = []
+
+
+# ============================================================================
+# MY MONITORING TASKS SCHEMA
+# ============================================================================
+
+class MyMonitoringTaskResponse(BaseModel):
+    """Response schema for user's monitoring task.
+
+    Returns cycles where the current user has a role/responsibility:
+    - data_provider: User is the plan's data provider (needs to submit results)
+    - team_member: User is on the monitoring team (risk function - review/approve)
+    - assignee: User is specifically assigned to the cycle
+    """
+    cycle_id: int
+    plan_id: int
+    plan_name: str
+    period_start_date: date
+    period_end_date: date
+    submission_due_date: date
+    report_due_date: date
+    status: MonitoringCycleStatusEnum
+    # User's relationship to this task
+    user_role: str  # "data_provider", "team_member", or "assignee"
+    action_needed: str  # "Submit Results", "Review Results", "Approve", etc.
+    # Additional context
+    result_count: int = 0
+    pending_approval_count: int = 0
+    is_overdue: bool = False
+    days_until_due: Optional[int] = None
+
+    class Config:
+        from_attributes = True

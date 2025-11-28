@@ -405,6 +405,12 @@ class MonitoringCycleApproval(Base):
     comments: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     approved_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
 
+    # Admin proxy approval evidence (when Admin approves on behalf of approver)
+    approval_evidence: Mapped[Optional[str]] = mapped_column(
+        Text, nullable=True,
+        comment="Evidence description for Admin proxy approvals (meeting minutes, email, etc.)"
+    )
+
     # Voiding (Admin can void approval requirements)
     voided_by_id: Mapped[Optional[int]] = mapped_column(
         Integer, ForeignKey("users.user_id", ondelete="SET NULL"), nullable=True
