@@ -13,7 +13,8 @@ export default function Layout({ children }: LayoutProps) {
     const [pendingCounts, setPendingCounts] = useState({
         submissions: 0,
         deployments: 0,
-        decommissioning: 0
+        decommissioning: 0,
+        monitoring: 0
     });
 
     useEffect(() => {
@@ -51,10 +52,23 @@ export default function Layout({ children }: LayoutProps) {
                     }
                 }
 
+                // Fetch monitoring tasks count
+                let pendingMonitoring = 0;
+                try {
+                    const monitoringRes = await api.get('/monitoring/my-tasks');
+                    // Count tasks that need action (overdue or have action needed)
+                    pendingMonitoring = monitoringRes.data.filter((t: any) =>
+                        t.is_overdue || t.action_needed.includes('Submit') || t.action_needed.includes('Review') || t.action_needed.includes('Approve')
+                    ).length;
+                } catch {
+                    // Silently fail
+                }
+
                 setPendingCounts({
                     submissions: urgentSubmissions,
                     deployments: pendingDeployments,
-                    decommissioning: pendingDecommissioning
+                    decommissioning: pendingDecommissioning,
+                    monitoring: pendingMonitoring
                 });
             } catch (error) {
                 // Silently fail - badges will just show 0
@@ -206,6 +220,30 @@ export default function Layout({ children }: LayoutProps) {
                                                 isActive ? 'bg-white text-blue-600' : 'bg-purple-500 text-white'
                                             }`}>
                                                 {pendingCounts.decommissioning}
+                                            </span>
+                                        )}
+                                    </div>
+                                )}
+                            </NavLink>
+                        </li>
+                        <li>
+                            <NavLink
+                                to="/my-monitoring"
+                                className={({ isActive }) =>
+                                    `block px-4 py-2 rounded transition-colors ${isActive
+                                        ? 'bg-blue-600 text-white'
+                                        : 'text-gray-700 hover:bg-gray-100'
+                                    }`
+                                }
+                            >
+                                {({ isActive }) => (
+                                    <div className="flex items-center justify-between">
+                                        <span>My Monitoring</span>
+                                        {pendingCounts.monitoring > 0 && (
+                                            <span className={`ml-2 px-2 py-0.5 text-xs font-bold rounded-full ${
+                                                isActive ? 'bg-white text-blue-600' : 'bg-green-500 text-white'
+                                            }`}>
+                                                {pendingCounts.monitoring}
                                             </span>
                                         )}
                                     </div>

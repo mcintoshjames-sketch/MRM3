@@ -12,12 +12,29 @@ interface UserRef {
     full_name: string;
 }
 
+interface TeamMember {
+    user_id: number;
+    email: string;
+    full_name: string;
+}
+
 interface MonitoringTeam {
     team_id: number;
     name: string;
     description: string | null;
     is_active: boolean;
     member_count?: number;
+    members?: TeamMember[];
+}
+
+interface UserPermissions {
+    is_admin: boolean;
+    is_team_member: boolean;
+    is_data_provider: boolean;
+    can_start_cycle: boolean;
+    can_submit_cycle: boolean;
+    can_request_approval: boolean;
+    can_cancel_cycle: boolean;
 }
 
 interface Model {
@@ -72,6 +89,7 @@ interface MonitoringPlan {
     metrics?: PlanMetric[];
     active_version_number?: number | null;
     version_count?: number;
+    user_permissions?: UserPermissions;
 }
 
 interface MonitoringCycle {
@@ -949,25 +967,36 @@ const MonitoringPlanDetailPage: React.FC = () => {
         return `${startMonth} - ${endMonth} ${year}`;
     };
 
-    const canCreateCycle = user?.role === 'Admin' ||
-        (plan?.team?.team_id && plan.data_provider?.user_id === user?.user_id);
+    // Permission checks based on user_permissions from API
+    const permissions = plan?.user_permissions;
+    const canCreateCycle = permissions?.can_start_cycle ?? user?.role === 'Admin';
 
     const getAvailableActions = (cycle: MonitoringCycle | CycleDetail) => {
         const actions: { label: string; action: string; variant: string; requiresConfirm?: boolean }[] = [];
 
         switch (cycle.status) {
             case 'PENDING':
-                actions.push({ label: 'Start Data Collection', action: 'start', variant: 'primary' });
+                // Only Admin or team members (risk function) can start a cycle
+                if (permissions?.can_start_cycle) {
+                    actions.push({ label: 'Start Data Collection', action: 'start', variant: 'primary' });
+                }
                 break;
             case 'DATA_COLLECTION':
-                actions.push({ label: 'Submit for Review', action: 'submit', variant: 'primary' });
+                // Data providers, team members, and admins can submit
+                if (permissions?.can_submit_cycle) {
+                    actions.push({ label: 'Submit for Review', action: 'submit', variant: 'primary' });
+                }
                 break;
             case 'UNDER_REVIEW':
-                actions.push({ label: 'Request Approval', action: 'request-approval', variant: 'primary' });
+                // Only Admin or team members (risk function) can request approval
+                if (permissions?.can_request_approval) {
+                    actions.push({ label: 'Request Approval', action: 'request-approval', variant: 'primary' });
+                }
                 break;
         }
 
-        if (cycle.status !== 'APPROVED' && cycle.status !== 'CANCELLED') {
+        // Only Admin or team members (risk function) can cancel
+        if (cycle.status !== 'APPROVED' && cycle.status !== 'CANCELLED' && permissions?.can_cancel_cycle) {
             actions.push({ label: 'Cancel Cycle', action: 'cancel', variant: 'danger', requiresConfirm: true });
         }
 

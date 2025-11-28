@@ -746,7 +746,7 @@ export default function MonitoringPlansPage() {
                                         plans.map((plan) => (
                                             <tr key={plan.plan_id} className="hover:bg-gray-50">
                                                 <td className="px-6 py-4">
-                                                    <Link to={`/monitoring-plans/${plan.plan_id}`} className="font-medium text-blue-600 hover:text-blue-800 hover:underline">
+                                                    <Link to={`/monitoring/${plan.plan_id}`} className="font-medium text-blue-600 hover:text-blue-800 hover:underline">
                                                         {plan.name}
                                                     </Link>
                                                     {plan.description && (

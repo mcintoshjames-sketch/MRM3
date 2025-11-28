@@ -36,6 +36,7 @@ import DecommissioningRequestPage from './pages/DecommissioningRequestPage';
 import PendingDecommissioningPage from './pages/PendingDecommissioningPage';
 import MonitoringPlansPage from './pages/MonitoringPlansPage';
 import MonitoringPlanDetailPage from './pages/MonitoringPlanDetailPage';
+import MyMonitoringPage from './pages/MyMonitoringPage';
 
 function App() {
     const { user, loading } = useAuth();
@@ -66,6 +67,7 @@ function App() {
             <Route path="/validation-workflow/:id" element={user ? <ValidationRequestDetailPage /> : <Navigate to="/login" />} />
             <Route path="/my-pending-submissions" element={user ? <MyPendingSubmissionsPage /> : <Navigate to="/login" />} />
             <Route path="/my-deployment-tasks" element={user ? <MyDeploymentTasksPage /> : <Navigate to="/login" />} />
+            <Route path="/my-monitoring" element={user ? <MyMonitoringPage /> : <Navigate to="/login" />} />
             <Route path="/pending-decommissioning" element={user ? <PendingDecommissioningPage /> : <Navigate to="/login" />} />
             <Route path="/vendors" element={user?.role === 'Admin' || user?.role === 'Validator' ? <VendorsPage /> : <Navigate to="/models" />} />
             <Route path="/vendors/:id" element={user?.role === 'Admin' || user?.role === 'Validator' ? <VendorDetailsPage /> : <Navigate to="/models" />} />
@@ -83,7 +85,7 @@ function App() {
             <Route path="/additional-approval-rules" element={user?.role === 'Admin' ? <ConditionalApprovalRulesPage /> : <Navigate to="/models" />} />
             <Route path="/fry-config" element={<Navigate to="/taxonomy" />} />
             <Route path="/monitoring-plans" element={user?.role === 'Admin' ? <MonitoringPlansPage /> : <Navigate to="/models" />} />
-            <Route path="/monitoring-plans/:id" element={user?.role === 'Admin' ? <MonitoringPlanDetailPage /> : <Navigate to="/models" />} />
+            <Route path="/monitoring/:id" element={user ? <MonitoringPlanDetailPage /> : <Navigate to="/login" />} />
             <Route path="/reports" element={user ? <ReportsPage /> : <Navigate to="/login" />} />
             <Route path="/reports/regional-compliance" element={user ? <RegionalComplianceReportPage /> : <Navigate to="/login" />} />
             <Route path="/reports/deviation-trends" element={user ? <DeviationTrendsReportPage /> : <Navigate to="/login" />} />
