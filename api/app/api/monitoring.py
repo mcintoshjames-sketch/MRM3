@@ -2306,7 +2306,39 @@ def cancel_cycle(
 # APPROVAL WORKFLOW ENDPOINTS
 # ============================================================================
 
-def _build_approval_response(approval: MonitoringCycleApproval) -> dict:
+def _can_user_approve_approval(
+    approval: MonitoringCycleApproval,
+    current_user: User,
+    team_member_ids: List[int],
+    user_region_ids: List[int]
+) -> bool:
+    """Check if the current user can approve this specific approval.
+
+    - Approval must be pending and not voided
+    - For Global: Admin or team member
+    - For Regional: Admin or user must have the region in their assignments
+    """
+    # Can't approve if already approved or voided
+    if approval.approval_status != "Pending":
+        return False
+    if approval.voided_at:
+        return False
+
+    # Admin can always approve
+    if current_user.role == UserRole.ADMIN:
+        return True
+
+    if approval.approval_type == "Global":
+        # Team members can approve global
+        return current_user.user_id in team_member_ids
+    elif approval.approval_type == "Regional":
+        # User must be a regional approver for this region
+        return approval.region_id in user_region_ids
+
+    return False
+
+
+def _build_approval_response(approval: MonitoringCycleApproval, can_approve: bool = False) -> dict:
     """Build approval response dict."""
     return {
         "approval_id": approval.approval_id,
@@ -2338,7 +2370,8 @@ def _build_approval_response(approval: MonitoringCycleApproval) -> dict:
         } if approval.voided_by else None,
         "void_reason": approval.void_reason,
         "voided_at": approval.voided_at,
-        "created_at": approval.created_at
+        "created_at": approval.created_at,
+        "can_approve": can_approve
     }
 
 
@@ -2440,7 +2473,7 @@ def list_cycle_approvals(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """List all approval requirements for a cycle."""
+    """List all approval requirements for a cycle with can_approve permissions."""
     cycle = db.query(MonitoringCycle).filter(MonitoringCycle.cycle_id == cycle_id).first()
     if not cycle:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Cycle not found")
@@ -2457,7 +2490,30 @@ def list_cycle_approvals(
         MonitoringCycleApproval.region_id
     ).all()
 
-    return [_build_approval_response(a) for a in approvals]
+    # Only calculate can_approve if cycle is in PENDING_APPROVAL status
+    if cycle.status != MonitoringCycleStatus.PENDING_APPROVAL.value:
+        return [_build_approval_response(a, can_approve=False) for a in approvals]
+
+    # Get team member IDs for Global approval permission check
+    plan = db.query(MonitoringPlan).options(
+        joinedload(MonitoringPlan.team).joinedload(MonitoringTeam.members)
+    ).filter(MonitoringPlan.plan_id == cycle.plan_id).first()
+
+    team_member_ids = []
+    if plan and plan.team:
+        team_member_ids = [m.user_id for m in plan.team.members]
+
+    # Get current user's region IDs for Regional approval permission check
+    user_region_ids = [r.region_id for r in current_user.regions]
+
+    # Build responses with can_approve calculated for each approval
+    return [
+        _build_approval_response(
+            a,
+            can_approve=_can_user_approve_approval(a, current_user, team_member_ids, user_region_ids)
+        )
+        for a in approvals
+    ]
 
 
 def _check_and_complete_cycle(db: Session, cycle: MonitoringCycle, current_user: User):

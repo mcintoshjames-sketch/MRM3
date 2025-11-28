@@ -98,6 +98,7 @@ interface CycleApproval {
     is_required: boolean;
     voided_at?: string | null;
     void_reason?: string | null;
+    can_approve: boolean;  // Server-calculated permission
 }
 
 interface CycleDetail extends MonitoringCycle {
@@ -255,8 +256,24 @@ const MonitoringPlanDetailPage: React.FC = () => {
     const fetchCycleDetail = async (cycleId: number) => {
         setLoadingCycleDetail(true);
         try {
-            const response = await api.get(`/monitoring/cycles/${cycleId}`);
-            setSelectedCycle(response.data);
+            // Fetch cycle details and approvals in parallel
+            const [cycleResponse, approvalsResponse] = await Promise.all([
+                api.get(`/monitoring/cycles/${cycleId}`),
+                api.get(`/monitoring/cycles/${cycleId}/approvals`)
+            ]);
+
+            // Map approvals to include region_name for display
+            const approvals = approvalsResponse.data.map((a: any) => ({
+                ...a,
+                region_name: a.region?.region_name || null,
+                approver_name: a.approver?.full_name || null
+            }));
+
+            // Merge cycle data with approvals
+            setSelectedCycle({
+                ...cycleResponse.data,
+                approvals
+            });
         } catch (err) {
             console.error('Failed to load cycle detail:', err);
         } finally {
@@ -564,16 +581,11 @@ const MonitoringPlanDetailPage: React.FC = () => {
     };
 
     const canApprove = (approval: CycleApproval): boolean => {
-        // Can only approve if cycle is in PENDING_APPROVAL status and approval is pending
-        if (selectedCycle?.status !== 'PENDING_APPROVAL') return false;
-        if (approval.approval_status !== 'Pending') return false;
-        if (approval.voided_at) return false;
-
-        // Permission check (simplified - server will enforce full rules)
-        if (user?.role === 'Admin') return true;
-        // Team members can approve global, regional approvers can approve their region
-        // For simplicity, show button and let server validate
-        return true;
+        // Use server-calculated permission which checks:
+        // - Cycle is in PENDING_APPROVAL status
+        // - Approval is pending and not voided
+        // - User has permission (Admin, team member for Global, regional approver for Regional)
+        return approval.can_approve;
     };
 
     const canVoid = (approval: CycleApproval): boolean => {

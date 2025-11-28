@@ -457,6 +457,7 @@ class MonitoringCycleApprovalResponse(BaseModel):
     void_reason: Optional[str] = None
     voided_at: Optional[datetime] = None
     created_at: datetime
+    can_approve: bool = False  # Whether current user can approve this
 
     class Config:
         from_attributes = True
