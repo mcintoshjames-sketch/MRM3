@@ -110,6 +110,39 @@ def check_plan_edit_permission(db: Session, plan_id: int, current_user: User) ->
     )
 
 
+def validate_metric_thresholds(
+    yellow_min: Optional[float],
+    yellow_max: Optional[float],
+    red_min: Optional[float],
+    red_max: Optional[float]
+) -> None:
+    """Validate that metric thresholds are logically consistent.
+
+    Rules:
+    - If both yellow_max and red_max are set, red_max must be > yellow_max
+      (otherwise the yellow_max threshold becomes unreachable)
+    - If both yellow_min and red_min are set, red_min must be < yellow_min
+      (otherwise the yellow_min threshold becomes unreachable)
+
+    Raises HTTPException with 400 status if validation fails.
+    """
+    if yellow_max is not None and red_max is not None:
+        if red_max <= yellow_max:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid threshold configuration: red_max ({red_max}) must be greater than yellow_max ({yellow_max}). "
+                       f"Otherwise yellow_max threshold becomes unreachable."
+            )
+
+    if yellow_min is not None and red_min is not None:
+        if red_min >= yellow_min:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid threshold configuration: red_min ({red_min}) must be less than yellow_min ({yellow_min}). "
+                       f"Otherwise yellow_min threshold becomes unreachable."
+            )
+
+
 def calculate_next_submission_date(frequency: MonitoringFrequency, from_date: date = None) -> date:
     """Calculate the next submission due date based on frequency."""
     if from_date is None:
@@ -425,6 +458,12 @@ def get_monitoring_plan(
             detail="Plan not found"
         )
 
+    # Query for active version
+    active_version = db.query(MonitoringPlanVersion).filter(
+        MonitoringPlanVersion.plan_id == plan_id,
+        MonitoringPlanVersion.is_active == True
+    ).first()
+
     # Build response with proper nested structure
     return {
         "plan_id": plan.plan_id,
@@ -495,7 +534,8 @@ def get_monitoring_plan(
                 }
             }
             for metric in plan.metrics
-        ]
+        ],
+        "active_version_number": active_version.version_number if active_version else None
     }
 
 
@@ -953,21 +993,19 @@ def publish_plan_version(
     plan_id: int,
     payload: PublishVersionRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_admin)
+    current_user: User = Depends(get_current_user)
 ):
-    """Publish a new version of the monitoring plan (Admin only).
+    """Publish a new version of the monitoring plan (Admin or Team Member).
 
     Snapshots all current active metrics with their thresholds.
     """
+    # Check plan edit permission (Admin or Team Member)
+    plan = check_plan_edit_permission(db, plan_id, current_user)
+
+    # Reload with metrics
     plan = db.query(MonitoringPlan).options(
         joinedload(MonitoringPlan.metrics).joinedload(MonitoringPlanMetric.kpm)
     ).filter(MonitoringPlan.plan_id == plan_id).first()
-
-    if not plan:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Plan not found"
-        )
 
     # Get next version number
     max_version = db.query(func.max(MonitoringPlanVersion.version_number)).filter(
@@ -1210,6 +1248,14 @@ def add_plan_metric(
             detail="This KPM is already in the plan"
         )
 
+    # Validate threshold consistency
+    validate_metric_thresholds(
+        yellow_min=metric_data.yellow_min,
+        yellow_max=metric_data.yellow_max,
+        red_min=metric_data.red_min,
+        red_max=metric_data.red_max
+    )
+
     metric = MonitoringPlanMetric(
         plan_id=plan_id,
         kpm_id=metric_data.kpm_id,
@@ -1343,6 +1389,14 @@ def update_plan_metric(
         if metric.is_active != update_data.is_active:
             changes["is_active"] = {"old": metric.is_active, "new": update_data.is_active}
         metric.is_active = update_data.is_active
+
+    # Validate threshold consistency with final values
+    validate_metric_thresholds(
+        yellow_min=metric.yellow_min,
+        yellow_max=metric.yellow_max,
+        red_min=metric.red_min,
+        red_max=metric.red_max
+    )
 
     # Audit log if changes were made
     if changes:
@@ -2011,7 +2065,8 @@ def list_plan_cycles(
     query = db.query(MonitoringCycle).options(
         joinedload(MonitoringCycle.assigned_to),
         joinedload(MonitoringCycle.results),
-        joinedload(MonitoringCycle.approvals)
+        joinedload(MonitoringCycle.approvals),
+        joinedload(MonitoringCycle.plan_version)
     ).filter(MonitoringCycle.plan_id == plan_id)
 
     if status_filter:
@@ -2040,6 +2095,10 @@ def list_plan_cycles(
             "submission_due_date": cycle.submission_due_date,
             "report_due_date": cycle.report_due_date,
             "assigned_to_name": cycle.assigned_to.full_name if cycle.assigned_to else None,
+            # Version info
+            "plan_version_id": cycle.plan_version_id,
+            "version_number": cycle.plan_version.version_number if cycle.plan_version else None,
+            "version_name": cycle.plan_version.version_name if cycle.plan_version else None,
             "result_count": len(cycle.results),
             "green_count": green_count,
             "yellow_count": yellow_count,
@@ -2436,32 +2495,41 @@ def update_monitoring_result(
 
     changes = {}
 
-    if update_data.numeric_value is not None:
+    # Use model_fields_set to check which fields were explicitly provided (including null)
+    provided_fields = update_data.model_fields_set
+
+    if "numeric_value" in provided_fields:
         if result.numeric_value != update_data.numeric_value:
             changes["numeric_value"] = {"old": result.numeric_value, "new": update_data.numeric_value}
         result.numeric_value = update_data.numeric_value
-        # Recalculate outcome
+        # Recalculate outcome (or clear if value is now null)
         if result.plan_metric.kpm.evaluation_type == "Quantitative":
-            result.calculated_outcome = calculate_outcome(update_data.numeric_value, result.plan_metric)
+            if update_data.numeric_value is not None:
+                result.calculated_outcome = calculate_outcome(update_data.numeric_value, result.plan_metric)
+            else:
+                result.calculated_outcome = None
 
-    if update_data.outcome_value_id is not None:
+    if "outcome_value_id" in provided_fields:
         if result.outcome_value_id != update_data.outcome_value_id:
             changes["outcome_value_id"] = {"old": result.outcome_value_id, "new": update_data.outcome_value_id}
         result.outcome_value_id = update_data.outcome_value_id
-        # Update calculated outcome from taxonomy value
-        outcome_value = db.query(TaxonomyValue).filter(
-            TaxonomyValue.value_id == update_data.outcome_value_id
-        ).first()
-        if outcome_value:
-            result.calculated_outcome = outcome_value.code
+        # Update calculated outcome from taxonomy value (or clear if null)
+        if update_data.outcome_value_id is not None:
+            outcome_value = db.query(TaxonomyValue).filter(
+                TaxonomyValue.value_id == update_data.outcome_value_id
+            ).first()
+            if outcome_value:
+                result.calculated_outcome = outcome_value.code
+        else:
+            result.calculated_outcome = None
 
-    if update_data.narrative is not None:
+    if "narrative" in provided_fields:
         if result.narrative != update_data.narrative:
             changes["narrative"] = {"old": result.narrative[:100] if result.narrative else None,
                                    "new": update_data.narrative[:100] if update_data.narrative else None}
         result.narrative = update_data.narrative
 
-    if update_data.supporting_data is not None:
+    if "supporting_data" in provided_fields:
         result.supporting_data = update_data.supporting_data
 
     if changes:

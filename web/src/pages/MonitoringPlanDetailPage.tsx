@@ -203,6 +203,7 @@ interface ResultFormData {
     calculatedOutcome: string | null;
     existingResultId: number | null;
     dirty: boolean;
+    skipped: boolean;  // Whether this metric is being skipped (requires explanation)
     // Inline trend context
     previousValue: number | null;
     previousOutcome: string | null;
@@ -229,7 +230,7 @@ interface PerformanceSummary {
     by_metric: MetricSummary[];
 }
 
-type TabType = 'dashboard' | 'models' | 'metrics' | 'cycles';
+type TabType = 'dashboard' | 'models' | 'metrics' | 'versions' | 'cycles';
 
 // Bullet Chart Component for threshold visualization
 const BulletChart: React.FC<{
@@ -242,10 +243,17 @@ const BulletChart: React.FC<{
     height?: number;
 }> = ({ value, yellowMin, yellowMax, redMin, redMax, width = 200, height = 24 }) => {
     // Determine the metric type and calculate range
+    // Type 1: Lower is better (yellowMax and redMax set) - G < yellowMax < Y < redMax < R
+    // Type 2: Higher is better (yellowMin and redMin set) - R < redMin < Y < yellowMin < G
+    // Type 3: Range-based (yellowMin AND yellowMax set) - Green is within the range
     const isLowerBetter = yellowMax !== null && redMax !== null;
     const isHigherBetter = yellowMin !== null && redMin !== null;
+    const isRangeBased = yellowMin !== null && yellowMax !== null && !isLowerBetter && !isHigherBetter;
 
-    if (!isLowerBetter && !isHigherBetter) {
+    // Check if any thresholds are configured
+    const hasAnyThreshold = yellowMin !== null || yellowMax !== null || redMin !== null || redMax !== null;
+
+    if (!hasAnyThreshold) {
         return <span className="text-xs text-gray-400 italic">No thresholds</span>;
     }
 
@@ -254,13 +262,22 @@ const BulletChart: React.FC<{
     if (isLowerBetter) {
         minVal = 0;
         maxVal = (redMax || 0) * 1.3; // Add 30% padding
-    } else {
+    } else if (isHigherBetter) {
         minVal = (redMin || 0) * 0.7; // 30% padding below
         maxVal = (yellowMin || 0) * 1.3; // 30% padding above
+    } else if (isRangeBased) {
+        // Range-based: show yellowMin to yellowMax with padding
+        minVal = (yellowMin || 0) * 0.7;
+        maxVal = (yellowMax || 0) * 1.3;
+    } else {
+        // Partial thresholds - just show what we have
+        const allVals = [yellowMin, yellowMax, redMin, redMax].filter(v => v !== null) as number[];
+        minVal = Math.min(...allVals) * 0.7;
+        maxVal = Math.max(...allVals) * 1.3;
     }
-    const range = maxVal - minVal;
+    const range = maxVal - minVal || 1; // Avoid division by zero
 
-    const getPosition = (val: number) => ((val - minVal) / range) * 100;
+    const getPosition = (val: number) => Math.max(0, Math.min(100, ((val - minVal) / range) * 100));
 
     return (
         <div className="relative" style={{ width, height }}>
@@ -280,7 +297,7 @@ const BulletChart: React.FC<{
                             className="bg-red-200 h-full flex-1"
                         />
                     </>
-                ) : (
+                ) : isHigherBetter ? (
                     <>
                         <div
                             className="bg-red-200 h-full"
@@ -294,6 +311,24 @@ const BulletChart: React.FC<{
                             className="bg-green-200 h-full flex-1"
                         />
                     </>
+                ) : isRangeBased ? (
+                    // Range-based: Yellow on both edges, Green in the middle
+                    <>
+                        <div
+                            className="bg-yellow-200 h-full"
+                            style={{ width: `${getPosition(yellowMin || 0)}%` }}
+                        />
+                        <div
+                            className="bg-green-200 h-full"
+                            style={{ width: `${getPosition(yellowMax || 0) - getPosition(yellowMin || 0)}%` }}
+                        />
+                        <div
+                            className="bg-yellow-200 h-full flex-1"
+                        />
+                    </>
+                ) : (
+                    // Partial thresholds - show gray with threshold markers
+                    <div className="bg-gray-200 h-full flex-1" />
                 )}
             </div>
             {/* Value marker */}
@@ -408,6 +443,7 @@ const MonitoringPlanDetailPage: React.FC = () => {
     const [resultForms, setResultForms] = useState<ResultFormData[]>([]);
     const [loadingResults, setLoadingResults] = useState(false);
     const [savingResult, setSavingResult] = useState<number | null>(null);
+    const [deletingResult, setDeletingResult] = useState<number | null>(null);
     const [resultsError, setResultsError] = useState<string | null>(null);
 
     // Approval modal state
@@ -439,6 +475,33 @@ const MonitoringPlanDetailPage: React.FC = () => {
         };
     } | null>(null);
 
+    // Version management state
+    const [versions, setVersions] = useState<PlanVersion[]>([]);
+    const [loadingVersions, setLoadingVersions] = useState(false);
+    const [selectedVersionDetail, setSelectedVersionDetail] = useState<VersionDetail | null>(null);
+    const [loadingVersionDetail, setLoadingVersionDetail] = useState(false);
+    const [showPublishModal, setShowPublishModal] = useState(false);
+    const [publishForm, setPublishForm] = useState({
+        version_name: '',
+        description: '',
+        effective_date: new Date().toISOString().split('T')[0]
+    });
+    const [publishing, setPublishing] = useState(false);
+    const [publishError, setPublishError] = useState<string | null>(null);
+
+    // Metric editing state
+    const [editingMetric, setEditingMetric] = useState<PlanMetric | null>(null);
+    const [showMetricModal, setShowMetricModal] = useState(false);
+    const [metricForm, setMetricForm] = useState({
+        yellow_min: '' as string,
+        yellow_max: '' as string,
+        red_min: '' as string,
+        red_max: '' as string,
+        qualitative_guidance: ''
+    });
+    const [savingMetric, setSavingMetric] = useState(false);
+    const [metricError, setMetricError] = useState<string | null>(null);
+
     useEffect(() => {
         if (id) {
             fetchPlan();
@@ -450,6 +513,13 @@ const MonitoringPlanDetailPage: React.FC = () => {
     useEffect(() => {
         if (id && (activeTab === 'dashboard' || activeTab === 'cycles')) {
             fetchPerformanceSummary();
+        }
+    }, [id, activeTab]);
+
+    // Fetch versions when versions tab is selected
+    useEffect(() => {
+        if (id && activeTab === 'versions') {
+            fetchVersions();
         }
     }, [id, activeTab]);
 
@@ -550,6 +620,141 @@ const MonitoringPlanDetailPage: React.FC = () => {
             console.error('Failed to export cycle:', err);
         } finally {
             setExportingCycle(null);
+        }
+    };
+
+    // Version management functions
+    const fetchVersions = async () => {
+        setLoadingVersions(true);
+        try {
+            const response = await api.get(`/monitoring/plans/${id}/versions`);
+            setVersions(response.data);
+        } catch (err) {
+            console.error('Failed to load versions:', err);
+        } finally {
+            setLoadingVersions(false);
+        }
+    };
+
+    const fetchVersionDetail = async (versionId: number) => {
+        setLoadingVersionDetail(true);
+        try {
+            const response = await api.get(`/monitoring/plans/${id}/versions/${versionId}`);
+            setSelectedVersionDetail(response.data);
+        } catch (err) {
+            console.error('Failed to load version detail:', err);
+        } finally {
+            setLoadingVersionDetail(false);
+        }
+    };
+
+    const handlePublishVersion = async (e: React.FormEvent) => {
+        e.preventDefault();
+        setPublishing(true);
+        setPublishError(null);
+
+        try {
+            await api.post(`/monitoring/plans/${id}/versions/publish`, {
+                version_name: publishForm.version_name || null,
+                description: publishForm.description || null,
+                effective_date: publishForm.effective_date || null
+            });
+            setShowPublishModal(false);
+            setPublishForm({
+                version_name: '',
+                description: '',
+                effective_date: new Date().toISOString().split('T')[0]
+            });
+            fetchVersions();
+            fetchPlan(); // Refresh plan to get updated version count
+        } catch (err: any) {
+            setPublishError(err.response?.data?.detail || 'Failed to publish version');
+        } finally {
+            setPublishing(false);
+        }
+    };
+
+    const exportVersionCSV = (version: VersionDetail) => {
+        const headers = ['KPM Name', 'Category', 'Type', 'Yellow Min', 'Yellow Max', 'Red Min', 'Red Max', 'Guidance'];
+        const rows = version.metric_snapshots.map(s => [
+            s.kpm_name,
+            s.kpm_category_name || '',
+            s.evaluation_type,
+            s.yellow_min?.toString() || '',
+            s.yellow_max?.toString() || '',
+            s.red_min?.toString() || '',
+            s.red_max?.toString() || '',
+            (s.qualitative_guidance || '').replace(/"/g, '""')
+        ]);
+
+        const csvContent = [
+            headers.join(','),
+            ...rows.map(row => row.map(cell => `"${cell}"`).join(','))
+        ].join('\n');
+
+        const blob = new Blob([csvContent], { type: 'text/csv' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `${plan?.name || 'plan'}_v${version.version_number}_metrics_${version.effective_date}.csv`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+    };
+
+    // Metric editing functions
+    const openEditMetric = (metric: PlanMetric) => {
+        setEditingMetric(metric);
+        setMetricForm({
+            yellow_min: metric.yellow_min?.toString() || '',
+            yellow_max: metric.yellow_max?.toString() || '',
+            red_min: metric.red_min?.toString() || '',
+            red_max: metric.red_max?.toString() || '',
+            qualitative_guidance: metric.qualitative_guidance || ''
+        });
+        setMetricError(null);
+        setShowMetricModal(true);
+    };
+
+    const handleSaveMetric = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!editingMetric) return;
+
+        // Validate threshold consistency
+        const yellowMin = metricForm.yellow_min ? parseFloat(metricForm.yellow_min) : null;
+        const yellowMax = metricForm.yellow_max ? parseFloat(metricForm.yellow_max) : null;
+        const redMin = metricForm.red_min ? parseFloat(metricForm.red_min) : null;
+        const redMax = metricForm.red_max ? parseFloat(metricForm.red_max) : null;
+
+        if (yellowMax !== null && redMax !== null && redMax <= yellowMax) {
+            setMetricError(`Invalid threshold configuration: red_max (${redMax}) must be greater than yellow_max (${yellowMax}).`);
+            return;
+        }
+
+        if (yellowMin !== null && redMin !== null && redMin >= yellowMin) {
+            setMetricError(`Invalid threshold configuration: red_min (${redMin}) must be less than yellow_min (${yellowMin}).`);
+            return;
+        }
+
+        setSavingMetric(true);
+        setMetricError(null);
+
+        try {
+            await api.patch(`/monitoring/plans/${id}/metrics/${editingMetric.metric_id}`, {
+                yellow_min: metricForm.yellow_min ? parseFloat(metricForm.yellow_min) : null,
+                yellow_max: metricForm.yellow_max ? parseFloat(metricForm.yellow_max) : null,
+                red_min: metricForm.red_min ? parseFloat(metricForm.red_min) : null,
+                red_max: metricForm.red_max ? parseFloat(metricForm.red_max) : null,
+                qualitative_guidance: metricForm.qualitative_guidance || null
+            });
+            setShowMetricModal(false);
+            setEditingMetric(null);
+            fetchPlan(); // Refresh to show updated thresholds
+        } catch (err: any) {
+            setMetricError(err.response?.data?.detail || 'Failed to save metric');
+        } finally {
+            setSavingMetric(false);
         }
     };
 
@@ -708,6 +913,12 @@ const MonitoringPlanDetailPage: React.FC = () => {
                     r.plan_metric_id === m.metric_id
                 );
 
+                // Determine if this was a skipped metric (has narrative but no value)
+                const wasSkipped = existing &&
+                    existing.numeric_value === null &&
+                    existing.outcome_value === null &&
+                    existing.narrative;
+
                 return {
                     metric_id: m.metric_id,
                     snapshot_id: m.snapshot_id,
@@ -724,6 +935,7 @@ const MonitoringPlanDetailPage: React.FC = () => {
                     calculatedOutcome: existing?.calculated_outcome ?? null,
                     existingResultId: existing?.result_id ?? null,
                     dirty: false,
+                    skipped: wasSkipped ?? false,
                     // Inline trend context
                     previousValue: previousResult?.numeric_value ?? null,
                     previousOutcome: previousResult?.calculated_outcome ?? null,
@@ -756,21 +968,48 @@ const MonitoringPlanDetailPage: React.FC = () => {
             const form = { ...updated[index], [field]: value, dirty: true };
 
             // Calculate outcome for quantitative metrics
-            if (form.evaluation_type === 'Quantitative' && field === 'numeric_value' && value !== '') {
-                const numValue = parseFloat(value as string);
-                if (!isNaN(numValue)) {
-                    form.calculatedOutcome = calculateOutcome(numValue, form);
+            if (form.evaluation_type === 'Quantitative' && field === 'numeric_value') {
+                if (value !== '' && value !== null) {
+                    const numValue = parseFloat(value as string);
+                    if (!isNaN(numValue)) {
+                        form.calculatedOutcome = calculateOutcome(numValue, form);
+                    } else {
+                        form.calculatedOutcome = null;
+                    }
                 } else {
+                    // Value cleared - also clear the outcome
                     form.calculatedOutcome = null;
                 }
             }
 
             // For qualitative/outcome-only, update calculated outcome from selected value
-            if (field === 'outcome_value_id' && value !== null) {
-                const selectedOutcome = outcomeValues.find(o => o.value_id === value);
-                if (selectedOutcome) {
-                    form.calculatedOutcome = selectedOutcome.code;
+            if (field === 'outcome_value_id') {
+                if (value !== null) {
+                    const selectedOutcome = outcomeValues.find(o => o.value_id === value);
+                    if (selectedOutcome) {
+                        form.calculatedOutcome = selectedOutcome.code;
+                    }
+                } else {
+                    // Outcome cleared
+                    form.calculatedOutcome = null;
                 }
+            }
+
+            updated[index] = form;
+            return updated;
+        });
+    };
+
+    const handleSkipToggle = (index: number, isSkipped: boolean) => {
+        setResultForms(prev => {
+            const updated = [...prev];
+            const form = { ...updated[index], skipped: isSkipped, dirty: true };
+
+            if (isSkipped) {
+                // Clear value when skip is checked
+                form.numeric_value = '';
+                form.outcome_value_id = null;
+                form.calculatedOutcome = null;
             }
 
             updated[index] = form;
@@ -781,6 +1020,12 @@ const MonitoringPlanDetailPage: React.FC = () => {
     const saveResult = async (index: number) => {
         const form = resultForms[index];
         if (!resultsEntryCycle) return;
+
+        // Validate skipped metrics require explanation
+        if (form.skipped && !form.narrative.trim()) {
+            setResultsError('An explanation is required when skipping a metric');
+            return;
+        }
 
         // Validate qualitative requires narrative
         if (form.evaluation_type === 'Qualitative' && !form.narrative.trim()) {
@@ -830,6 +1075,45 @@ const MonitoringPlanDetailPage: React.FC = () => {
             setResultsError(err.response?.data?.detail || 'Failed to save result');
         } finally {
             setSavingResult(null);
+        }
+    };
+
+    const deleteResult = async (index: number) => {
+        const form = resultForms[index];
+        if (!form.existingResultId) return;
+
+        if (!window.confirm('Are you sure you want to delete this result? This cannot be undone.')) {
+            return;
+        }
+
+        setDeletingResult(index);
+        setResultsError(null);
+
+        try {
+            await api.delete(`/monitoring/results/${form.existingResultId}`);
+
+            // Reset the form to empty state
+            setResultForms(prev => {
+                const updated = [...prev];
+                updated[index] = {
+                    ...updated[index],
+                    existingResultId: null,
+                    numeric_value: '',
+                    outcome_value_id: null,
+                    narrative: '',
+                    calculatedOutcome: null,
+                    skipped: false,
+                    dirty: false
+                };
+                return updated;
+            });
+
+            // Refresh cycles to update counts
+            fetchCycles();
+        } catch (err: any) {
+            setResultsError(err.response?.data?.detail || 'Failed to delete result');
+        } finally {
+            setDeletingResult(null);
         }
     };
 
@@ -1087,6 +1371,7 @@ const MonitoringPlanDetailPage: React.FC = () => {
                             { key: 'dashboard', label: 'Dashboard' },
                             { key: 'models', label: 'Models' },
                             { key: 'metrics', label: 'Metrics' },
+                            { key: 'versions', label: 'Versions' },
                             { key: 'cycles', label: 'Cycles & Results' }
                         ] as { key: TabType; label: string }[]).map((tab) => (
                             <button
@@ -1099,6 +1384,11 @@ const MonitoringPlanDetailPage: React.FC = () => {
                                 }`}
                             >
                                 {tab.label}
+                                {tab.key === 'versions' && plan?.version_count !== undefined && plan.version_count > 0 && (
+                                    <span className="ml-2 px-2 py-0.5 text-xs rounded-full bg-gray-100 text-gray-600">
+                                        {plan.version_count}
+                                    </span>
+                                )}
                                 {tab.key === 'cycles' && currentCycle && (
                                     <span className={`ml-2 px-2 py-0.5 text-xs rounded-full ${
                                         currentCycle.status === 'DATA_COLLECTION' ? 'bg-blue-100 text-blue-700' :
@@ -1120,6 +1410,18 @@ const MonitoringPlanDetailPage: React.FC = () => {
                     {/* Dashboard Tab */}
                     {activeTab === 'dashboard' && (
                         <div className="space-y-6">
+                            {/* Action Error */}
+                            {actionError && (
+                                <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded">
+                                    <p className="font-medium">{actionError}</p>
+                                    {actionError.includes('Missing results') && (
+                                        <p className="mt-2 text-sm">
+                                            Click <strong>"Enter Results"</strong> to provide values or explanations for each metric.
+                                        </p>
+                                    )}
+                                </div>
+                            )}
+
                             {/* Action Card - Current Cycle Status */}
                             {currentCycle ? (
                                 <div className={`rounded-lg p-5 ${
@@ -1400,7 +1702,27 @@ const MonitoringPlanDetailPage: React.FC = () => {
                     {/* Metrics Tab */}
                     {activeTab === 'metrics' && (
                         <div>
-                            <h3 className="text-lg font-semibold mb-4">Configured Metrics ({plan.metrics?.length || 0})</h3>
+                            <div className="flex justify-between items-center mb-4">
+                                <div>
+                                    <h3 className="text-lg font-semibold">Configured Metrics ({plan.metrics?.length || 0})</h3>
+                                    {(plan.user_permissions?.is_admin || plan.user_permissions?.is_team_member) && (
+                                        <p className="text-sm text-gray-500 mt-1">
+                                            Edit thresholds below and publish a new version when ready
+                                        </p>
+                                    )}
+                                </div>
+                                {(plan.user_permissions?.is_admin || plan.user_permissions?.is_team_member) && (
+                                    <button
+                                        onClick={() => setShowPublishModal(true)}
+                                        className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center gap-2"
+                                    >
+                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                                        </svg>
+                                        Publish Version
+                                    </button>
+                                )}
+                            </div>
                             {!plan.metrics?.length ? (
                                 <p className="text-gray-500">No metrics configured for this plan.</p>
                             ) : (
@@ -1421,37 +1743,69 @@ const MonitoringPlanDetailPage: React.FC = () => {
                                                     </div>
                                                     <div className="text-sm text-gray-500 mt-1">{metric.kpm?.category_name || '-'}</div>
                                                 </div>
-                                                {metric.kpm?.evaluation_type === 'Quantitative' && (
-                                                    <button
-                                                        onClick={() => setTrendModalMetric({
-                                                            metric_id: metric.metric_id,
-                                                            metric_name: metric.kpm?.name || '',
-                                                            thresholds: {
-                                                                yellow_min: metric.yellow_min,
-                                                                yellow_max: metric.yellow_max,
-                                                                red_min: metric.red_min,
-                                                                red_max: metric.red_max,
-                                                            }
-                                                        })}
-                                                        className="text-blue-600 hover:text-blue-800 text-sm flex items-center gap-1"
-                                                        title="View trend chart"
-                                                    >
-                                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 12l3-3 3 3 4-4M8 21l4-4 4 4M3 4h18M4 4h16v12a1 1 0 01-1 1H5a1 1 0 01-1-1V4z" />
-                                                        </svg>
-                                                        Trend
-                                                    </button>
-                                                )}
+                                                <div className="flex items-center gap-3">
+                                                    {(plan.user_permissions?.is_admin || plan.user_permissions?.is_team_member) && (
+                                                        <button
+                                                            onClick={() => openEditMetric(metric)}
+                                                            className="text-gray-600 hover:text-gray-800 text-sm flex items-center gap-1"
+                                                            title="Edit thresholds"
+                                                        >
+                                                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                                                            </svg>
+                                                            Edit
+                                                        </button>
+                                                    )}
+                                                    {metric.kpm?.evaluation_type === 'Quantitative' && (
+                                                        <button
+                                                            onClick={() => setTrendModalMetric({
+                                                                metric_id: metric.metric_id,
+                                                                metric_name: metric.kpm?.name || '',
+                                                                thresholds: {
+                                                                    yellow_min: metric.yellow_min,
+                                                                    yellow_max: metric.yellow_max,
+                                                                    red_min: metric.red_min,
+                                                                    red_max: metric.red_max,
+                                                                }
+                                                            })}
+                                                            className="text-blue-600 hover:text-blue-800 text-sm flex items-center gap-1"
+                                                            title="View trend chart"
+                                                        >
+                                                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 12l3-3 3 3 4-4M8 21l4-4 4 4M3 4h18M4 4h16v12a1 1 0 01-1 1H5a1 1 0 01-1-1V4z" />
+                                                            </svg>
+                                                            Trend
+                                                        </button>
+                                                    )}
+                                                </div>
                                             </div>
                                             {metric.kpm?.evaluation_type === 'Quantitative' && (
                                                 <div className="mt-3 pt-3 border-t">
                                                     <div className="flex items-center justify-between">
                                                         <span className="text-xs text-gray-500 uppercase">Thresholds</span>
-                                                        <div className="flex items-center gap-4 text-xs">
-                                                            {metric.yellow_max !== null && metric.red_max !== null ? (
-                                                                <span className="text-gray-600">Lower is better: G &lt; {metric.yellow_max}, Y {metric.yellow_max}-{metric.red_max}, R &gt; {metric.red_max}</span>
-                                                            ) : metric.yellow_min !== null && metric.red_min !== null ? (
-                                                                <span className="text-gray-600">Higher is better: G &gt; {metric.yellow_min}, Y {metric.red_min}-{metric.yellow_min}, R &lt; {metric.red_min}</span>
+                                                        <div className="flex flex-wrap items-center gap-2 text-xs">
+                                                            {metric.yellow_min !== null || metric.yellow_max !== null || metric.red_min !== null || metric.red_max !== null ? (
+                                                                <>
+                                                                    <span className="inline-flex items-center px-2 py-0.5 bg-green-100 text-green-800 rounded">
+                                                                        G: {metric.yellow_min !== null || metric.yellow_max !== null ? (
+                                                                            <>
+                                                                                {metric.yellow_min !== null ? `>${metric.yellow_min}` : ''}
+                                                                                {metric.yellow_min !== null && metric.yellow_max !== null ? ' and ' : ''}
+                                                                                {metric.yellow_max !== null ? `<${metric.yellow_max}` : ''}
+                                                                            </>
+                                                                        ) : 'Default'}
+                                                                    </span>
+                                                                    {(metric.yellow_min !== null || metric.yellow_max !== null) && (
+                                                                        <span className="inline-flex items-center px-2 py-0.5 bg-yellow-100 text-yellow-800 rounded">
+                                                                            Y: {metric.yellow_min ?? '-'} to {metric.yellow_max ?? '-'}
+                                                                        </span>
+                                                                    )}
+                                                                    {(metric.red_min !== null || metric.red_max !== null) && (
+                                                                        <span className="inline-flex items-center px-2 py-0.5 bg-red-100 text-red-800 rounded">
+                                                                            R: {metric.red_min !== null ? `<${metric.red_min}` : ''}{metric.red_min !== null && metric.red_max !== null ? ' or ' : ''}{metric.red_max !== null ? `>${metric.red_max}` : ''}
+                                                                        </span>
+                                                                    )}
+                                                                </>
                                                             ) : (
                                                                 <span className="text-gray-400 italic">No thresholds configured</span>
                                                             )}
@@ -1485,13 +1839,181 @@ const MonitoringPlanDetailPage: React.FC = () => {
                         </div>
                     )}
 
+                    {/* Versions Tab */}
+                    {activeTab === 'versions' && (
+                        <div className="space-y-6">
+                            {/* Header */}
+                            <div>
+                                <h3 className="text-lg font-semibold">Plan Versions</h3>
+                                <p className="text-sm text-gray-500 mt-1">
+                                    Each version captures a snapshot of metric configurations for immutable audit trail.
+                                    To publish a new version, go to the <button onClick={() => setActiveTab('metrics')} className="text-blue-600 hover:underline">Metrics tab</button>.
+                                </p>
+                            </div>
+
+                            {loadingVersions ? (
+                                <div className="text-center py-8 text-gray-500">Loading versions...</div>
+                            ) : versions.length === 0 ? (
+                                <div className="bg-amber-50 border border-amber-200 rounded-lg p-6 text-center">
+                                    <svg className="w-12 h-12 mx-auto text-amber-400 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                                    </svg>
+                                    <h4 className="text-lg font-medium text-amber-800">No Published Versions</h4>
+                                    <p className="text-amber-600 mt-1">
+                                        Publish a version to lock in the current metric configurations before starting a cycle.
+                                    </p>
+                                    {(plan.user_permissions?.is_admin || plan.user_permissions?.is_team_member) && (
+                                        <button
+                                            onClick={() => setActiveTab('metrics')}
+                                            className="mt-4 px-4 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700"
+                                        >
+                                            Go to Metrics Tab
+                                        </button>
+                                    )}
+                                </div>
+                            ) : (
+                                <div className="grid grid-cols-3 gap-6">
+                                    {/* Version List */}
+                                    <div className="col-span-1 border rounded-lg overflow-hidden">
+                                        <div className="bg-gray-50 px-4 py-3 border-b">
+                                            <h4 className="font-medium">All Versions</h4>
+                                        </div>
+                                        <div className="divide-y max-h-96 overflow-y-auto">
+                                            {versions.map((version) => (
+                                                <button
+                                                    key={version.version_id}
+                                                    onClick={() => fetchVersionDetail(version.version_id)}
+                                                    className={`w-full text-left px-4 py-3 hover:bg-gray-50 ${
+                                                        selectedVersionDetail?.version_id === version.version_id ? 'bg-blue-50 border-l-4 border-blue-500' : ''
+                                                    }`}
+                                                >
+                                                    <div className="flex items-center justify-between">
+                                                        <span className="font-medium">v{version.version_number}</span>
+                                                        {version.is_active && (
+                                                            <span className="px-2 py-0.5 text-xs bg-green-100 text-green-800 rounded">Active</span>
+                                                        )}
+                                                    </div>
+                                                    {version.version_name && (
+                                                        <div className="text-sm text-gray-600 truncate">{version.version_name}</div>
+                                                    )}
+                                                    <div className="text-xs text-gray-400 mt-1">
+                                                        Effective: {version.effective_date}
+                                                    </div>
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </div>
+
+                                    {/* Version Detail */}
+                                    <div className="col-span-2 border rounded-lg">
+                                        {loadingVersionDetail ? (
+                                            <div className="p-8 text-center text-gray-500">Loading version details...</div>
+                                        ) : selectedVersionDetail ? (
+                                            <div>
+                                                <div className="bg-gray-50 px-4 py-3 border-b flex justify-between items-center">
+                                                    <div>
+                                                        <h4 className="font-medium">
+                                                            Version {selectedVersionDetail.version_number}
+                                                            {selectedVersionDetail.version_name && ` - ${selectedVersionDetail.version_name}`}
+                                                        </h4>
+                                                        <div className="text-xs text-gray-500">
+                                                            Published: {selectedVersionDetail.published_at?.split('T')[0]} • Effective: {selectedVersionDetail.effective_date}
+                                                        </div>
+                                                    </div>
+                                                    <button
+                                                        onClick={() => exportVersionCSV(selectedVersionDetail)}
+                                                        className="text-blue-600 hover:text-blue-800 text-sm flex items-center gap-1"
+                                                    >
+                                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                                                        </svg>
+                                                        Export CSV
+                                                    </button>
+                                                </div>
+                                                <div className="p-4">
+                                                    <h5 className="text-sm font-medium text-gray-700 mb-3">
+                                                        Metric Snapshots ({selectedVersionDetail.metric_snapshots.length})
+                                                    </h5>
+                                                    <div className="space-y-3 max-h-80 overflow-y-auto">
+                                                        {selectedVersionDetail.metric_snapshots.map((snapshot) => (
+                                                            <div key={snapshot.snapshot_id} className="border rounded p-3 text-sm">
+                                                                <div className="flex items-center justify-between">
+                                                                    <span className="font-medium">{snapshot.kpm_name}</span>
+                                                                    <span className={`px-2 py-0.5 text-xs rounded ${
+                                                                        snapshot.evaluation_type === 'Quantitative' ? 'bg-blue-100 text-blue-800' :
+                                                                        snapshot.evaluation_type === 'Qualitative' ? 'bg-purple-100 text-purple-800' :
+                                                                        'bg-green-100 text-green-800'
+                                                                    }`}>
+                                                                        {snapshot.evaluation_type}
+                                                                    </span>
+                                                                </div>
+                                                                <div className="text-xs text-gray-500 mt-1">{snapshot.kpm_category_name}</div>
+                                                                {snapshot.evaluation_type === 'Quantitative' && (
+                                                                    <div className="mt-2 flex flex-wrap gap-2 text-xs">
+                                                                        {(snapshot.yellow_min !== null || snapshot.yellow_max !== null || snapshot.red_min !== null || snapshot.red_max !== null) ? (
+                                                                            <>
+                                                                                {snapshot.yellow_max !== null && (
+                                                                                    <span className="px-2 py-0.5 bg-yellow-100 text-yellow-800 rounded">
+                                                                                        Y ≤ {snapshot.yellow_max}
+                                                                                    </span>
+                                                                                )}
+                                                                                {snapshot.red_max !== null && (
+                                                                                    <span className="px-2 py-0.5 bg-red-100 text-red-800 rounded">
+                                                                                        R &gt; {snapshot.red_max}
+                                                                                    </span>
+                                                                                )}
+                                                                                {snapshot.yellow_min !== null && (
+                                                                                    <span className="px-2 py-0.5 bg-yellow-100 text-yellow-800 rounded">
+                                                                                        Y ≥ {snapshot.yellow_min}
+                                                                                    </span>
+                                                                                )}
+                                                                                {snapshot.red_min !== null && (
+                                                                                    <span className="px-2 py-0.5 bg-red-100 text-red-800 rounded">
+                                                                                        R &lt; {snapshot.red_min}
+                                                                                    </span>
+                                                                                )}
+                                                                            </>
+                                                                        ) : (
+                                                                            <span className="text-gray-400 italic">No thresholds</span>
+                                                                        )}
+                                                                    </div>
+                                                                )}
+                                                                {snapshot.qualitative_guidance && (
+                                                                    <div className="mt-2 text-xs text-gray-600 italic">
+                                                                        "{snapshot.qualitative_guidance}"
+                                                                    </div>
+                                                                )}
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        ) : (
+                                            <div className="p-8 text-center text-gray-400">
+                                                <svg className="w-12 h-12 mx-auto mb-3 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+                                                </svg>
+                                                <p>Select a version to view its metric snapshots</p>
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    )}
+
                     {/* Cycles Tab */}
                     {activeTab === 'cycles' && (
                         <div className="space-y-6">
                             {/* Action Error */}
                             {actionError && (
                                 <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded">
-                                    {actionError}
+                                    <p className="font-medium">{actionError}</p>
+                                    {actionError.includes('Missing results') && (
+                                        <p className="mt-2 text-sm">
+                                            Click <strong>"Enter Results"</strong> to provide values or explanations for each metric.
+                                        </p>
+                                    )}
                                 </div>
                             )}
 
@@ -2179,30 +2701,71 @@ const MonitoringPlanDetailPage: React.FC = () => {
                                                             </div>
                                                         )}
 
-                                                        {/* Value Input */}
+                                                        {/* Value Input with Skip checkbox */}
                                                         <div>
-                                                            <label className="block text-sm font-medium text-gray-700 mb-1">Value</label>
+                                                            <div className="flex items-center justify-between mb-1">
+                                                                <label className="block text-sm font-medium text-gray-700">Value</label>
+                                                                <label className="flex items-center gap-2 text-sm cursor-pointer">
+                                                                    <input
+                                                                        type="checkbox"
+                                                                        checked={form.skipped}
+                                                                        onChange={(e) => handleSkipToggle(index, e.target.checked)}
+                                                                        className="rounded border-gray-300 text-amber-600 focus:ring-amber-500"
+                                                                    />
+                                                                    <span className="text-gray-600">Skip this metric</span>
+                                                                </label>
+                                                            </div>
                                                             <input
                                                                 type="number"
                                                                 step="any"
-                                                                className="w-full border border-gray-300 rounded-lg px-3 py-2"
+                                                                className={`w-full border border-gray-300 rounded-lg px-3 py-2 ${
+                                                                    form.skipped ? 'bg-gray-100 text-gray-400' : ''
+                                                                }`}
                                                                 value={form.numeric_value}
                                                                 onChange={(e) => handleResultChange(index, 'numeric_value', e.target.value)}
-                                                                placeholder="Enter numeric value..."
+                                                                placeholder={form.skipped ? "Skipped" : "Enter numeric value..."}
+                                                                disabled={form.skipped}
                                                             />
                                                         </div>
 
-                                                        {/* Notes */}
-                                                        <div>
-                                                            <label className="block text-sm font-medium text-gray-700 mb-1">Notes (optional)</label>
-                                                            <textarea
-                                                                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
-                                                                rows={2}
-                                                                value={form.narrative}
-                                                                onChange={(e) => handleResultChange(index, 'narrative', e.target.value)}
-                                                                placeholder="Any supporting notes..."
-                                                            />
-                                                        </div>
+                                                        {/* Skip Explanation (only shown when skipped) */}
+                                                        {form.skipped && (
+                                                            <div>
+                                                                <label className="block text-sm font-medium text-gray-700 mb-1">
+                                                                    Skip Explanation <span className="text-red-500">*</span>
+                                                                </label>
+                                                                <textarea
+                                                                    className={`w-full border rounded-lg px-3 py-2 text-sm ${
+                                                                        !form.narrative.trim()
+                                                                            ? 'border-amber-300 bg-amber-50'
+                                                                            : 'border-gray-300'
+                                                                    }`}
+                                                                    rows={2}
+                                                                    value={form.narrative}
+                                                                    onChange={(e) => handleResultChange(index, 'narrative', e.target.value)}
+                                                                    placeholder="Required: Explain why this metric was not measured..."
+                                                                />
+                                                                {!form.narrative.trim() && (
+                                                                    <p className="text-xs text-amber-600 mt-1">
+                                                                        ⚠️ An explanation is required when skipping a metric.
+                                                                    </p>
+                                                                )}
+                                                            </div>
+                                                        )}
+
+                                                        {/* Notes (only shown when not skipped) */}
+                                                        {!form.skipped && (
+                                                            <div>
+                                                                <label className="block text-sm font-medium text-gray-700 mb-1">Notes (optional)</label>
+                                                                <textarea
+                                                                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                                                                    rows={2}
+                                                                    value={form.narrative}
+                                                                    onChange={(e) => handleResultChange(index, 'narrative', e.target.value)}
+                                                                    placeholder="Any supporting notes..."
+                                                                />
+                                                            </div>
+                                                        )}
                                                     </div>
                                                 )}
 
@@ -2216,32 +2779,75 @@ const MonitoringPlanDetailPage: React.FC = () => {
                                                             </div>
                                                         )}
 
+                                                        {/* Outcome Input with Skip checkbox */}
                                                         <div>
-                                                            <label className="block text-sm font-medium text-gray-700 mb-1">Outcome</label>
+                                                            <div className="flex items-center justify-between mb-1">
+                                                                <label className="block text-sm font-medium text-gray-700">Outcome</label>
+                                                                <label className="flex items-center gap-2 text-sm cursor-pointer">
+                                                                    <input
+                                                                        type="checkbox"
+                                                                        checked={form.skipped}
+                                                                        onChange={(e) => handleSkipToggle(index, e.target.checked)}
+                                                                        className="rounded border-gray-300 text-amber-600 focus:ring-amber-500"
+                                                                    />
+                                                                    <span className="text-gray-600">Skip this metric</span>
+                                                                </label>
+                                                            </div>
                                                             <select
-                                                                className="w-full border border-gray-300 rounded-lg px-3 py-2"
+                                                                className={`w-full border border-gray-300 rounded-lg px-3 py-2 ${
+                                                                    form.skipped ? 'bg-gray-100 text-gray-400' : ''
+                                                                }`}
                                                                 value={form.outcome_value_id || ''}
                                                                 onChange={(e) => handleResultChange(index, 'outcome_value_id', e.target.value ? parseInt(e.target.value) : null)}
+                                                                disabled={form.skipped}
                                                             >
-                                                                <option value="">Select outcome...</option>
+                                                                <option value="">{form.skipped ? "Skipped" : "Select outcome..."}</option>
                                                                 {outcomeValues.map(o => (
                                                                     <option key={o.value_id} value={o.value_id}>{o.label}</option>
                                                                 ))}
                                                             </select>
                                                         </div>
 
-                                                        <div>
-                                                            <label className="block text-sm font-medium text-gray-700 mb-1">
-                                                                Rationale <span className="text-red-500">*</span>
-                                                            </label>
-                                                            <textarea
-                                                                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
-                                                                rows={3}
-                                                                value={form.narrative}
-                                                                onChange={(e) => handleResultChange(index, 'narrative', e.target.value)}
-                                                                placeholder="Required: Explain the rationale for this outcome..."
-                                                            />
-                                                        </div>
+                                                        {/* Skip Explanation (only shown when skipped) */}
+                                                        {form.skipped && (
+                                                            <div>
+                                                                <label className="block text-sm font-medium text-gray-700 mb-1">
+                                                                    Skip Explanation <span className="text-red-500">*</span>
+                                                                </label>
+                                                                <textarea
+                                                                    className={`w-full border rounded-lg px-3 py-2 text-sm ${
+                                                                        !form.narrative.trim()
+                                                                            ? 'border-amber-300 bg-amber-50'
+                                                                            : 'border-gray-300'
+                                                                    }`}
+                                                                    rows={2}
+                                                                    value={form.narrative}
+                                                                    onChange={(e) => handleResultChange(index, 'narrative', e.target.value)}
+                                                                    placeholder="Required: Explain why this metric was not measured..."
+                                                                />
+                                                                {!form.narrative.trim() && (
+                                                                    <p className="text-xs text-amber-600 mt-1">
+                                                                        ⚠️ An explanation is required when skipping a metric.
+                                                                    </p>
+                                                                )}
+                                                            </div>
+                                                        )}
+
+                                                        {/* Rationale (only shown when not skipped) */}
+                                                        {!form.skipped && (
+                                                            <div>
+                                                                <label className="block text-sm font-medium text-gray-700 mb-1">
+                                                                    Rationale <span className="text-red-500">*</span>
+                                                                </label>
+                                                                <textarea
+                                                                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                                                                    rows={3}
+                                                                    value={form.narrative}
+                                                                    onChange={(e) => handleResultChange(index, 'narrative', e.target.value)}
+                                                                    placeholder="Required: Explain the rationale for this outcome..."
+                                                                />
+                                                            </div>
+                                                        )}
                                                     </div>
                                                 )}
 
@@ -2255,34 +2861,77 @@ const MonitoringPlanDetailPage: React.FC = () => {
                                                             </div>
                                                         )}
 
+                                                        {/* Outcome Input with Skip checkbox */}
                                                         <div>
-                                                            <label className="block text-sm font-medium text-gray-700 mb-1">Outcome</label>
+                                                            <div className="flex items-center justify-between mb-1">
+                                                                <label className="block text-sm font-medium text-gray-700">Outcome</label>
+                                                                <label className="flex items-center gap-2 text-sm cursor-pointer">
+                                                                    <input
+                                                                        type="checkbox"
+                                                                        checked={form.skipped}
+                                                                        onChange={(e) => handleSkipToggle(index, e.target.checked)}
+                                                                        className="rounded border-gray-300 text-amber-600 focus:ring-amber-500"
+                                                                    />
+                                                                    <span className="text-gray-600">Skip this metric</span>
+                                                                </label>
+                                                            </div>
                                                             <select
-                                                                className="w-full border border-gray-300 rounded-lg px-3 py-2"
+                                                                className={`w-full border border-gray-300 rounded-lg px-3 py-2 ${
+                                                                    form.skipped ? 'bg-gray-100 text-gray-400' : ''
+                                                                }`}
                                                                 value={form.outcome_value_id || ''}
                                                                 onChange={(e) => handleResultChange(index, 'outcome_value_id', e.target.value ? parseInt(e.target.value) : null)}
+                                                                disabled={form.skipped}
                                                             >
-                                                                <option value="">Select outcome...</option>
+                                                                <option value="">{form.skipped ? "Skipped" : "Select outcome..."}</option>
                                                                 {outcomeValues.map(o => (
                                                                     <option key={o.value_id} value={o.value_id}>{o.label}</option>
                                                                 ))}
                                                             </select>
                                                         </div>
 
-                                                        <div>
-                                                            <label className="block text-sm font-medium text-gray-700 mb-1">Notes (optional)</label>
-                                                            <textarea
-                                                                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
-                                                                rows={2}
-                                                                value={form.narrative}
-                                                                onChange={(e) => handleResultChange(index, 'narrative', e.target.value)}
-                                                                placeholder="Any supporting notes..."
-                                                            />
-                                                        </div>
+                                                        {/* Skip Explanation (only shown when skipped) */}
+                                                        {form.skipped && (
+                                                            <div>
+                                                                <label className="block text-sm font-medium text-gray-700 mb-1">
+                                                                    Skip Explanation <span className="text-red-500">*</span>
+                                                                </label>
+                                                                <textarea
+                                                                    className={`w-full border rounded-lg px-3 py-2 text-sm ${
+                                                                        !form.narrative.trim()
+                                                                            ? 'border-amber-300 bg-amber-50'
+                                                                            : 'border-gray-300'
+                                                                    }`}
+                                                                    rows={2}
+                                                                    value={form.narrative}
+                                                                    onChange={(e) => handleResultChange(index, 'narrative', e.target.value)}
+                                                                    placeholder="Required: Explain why this metric was not measured..."
+                                                                />
+                                                                {!form.narrative.trim() && (
+                                                                    <p className="text-xs text-amber-600 mt-1">
+                                                                        ⚠️ An explanation is required when skipping a metric.
+                                                                    </p>
+                                                                )}
+                                                            </div>
+                                                        )}
+
+                                                        {/* Notes (only shown when not skipped) */}
+                                                        {!form.skipped && (
+                                                            <div>
+                                                                <label className="block text-sm font-medium text-gray-700 mb-1">Notes (optional)</label>
+                                                                <textarea
+                                                                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                                                                    rows={2}
+                                                                    value={form.narrative}
+                                                                    onChange={(e) => handleResultChange(index, 'narrative', e.target.value)}
+                                                                    placeholder="Any supporting notes..."
+                                                                />
+                                                            </div>
+                                                        )}
                                                     </div>
                                                 )}
 
-                                                {/* Save Button */}
+                                                {/* Save/Delete Buttons */}
                                                 <div className="mt-4 flex justify-between items-center">
                                                     <div className="flex items-center gap-2">
                                                         {form.existingResultId && !form.dirty && (
@@ -2297,17 +2946,28 @@ const MonitoringPlanDetailPage: React.FC = () => {
                                                             <span className="text-amber-600 text-sm">Unsaved changes</span>
                                                         )}
                                                     </div>
-                                                    <button
-                                                        onClick={() => saveResult(index)}
-                                                        disabled={savingResult === index || (!form.dirty && form.existingResultId !== null)}
-                                                        className={`px-4 py-2 rounded text-sm font-medium ${
-                                                            form.dirty
-                                                                ? 'bg-blue-600 text-white hover:bg-blue-700'
-                                                                : 'bg-gray-200 text-gray-600'
-                                                        } disabled:opacity-50`}
-                                                    >
-                                                        {savingResult === index ? 'Saving...' : form.existingResultId ? 'Update' : 'Save'}
-                                                    </button>
+                                                    <div className="flex items-center gap-2">
+                                                        {form.existingResultId && (
+                                                            <button
+                                                                onClick={() => deleteResult(index)}
+                                                                disabled={deletingResult === index || savingResult === index}
+                                                                className="px-3 py-2 rounded text-sm font-medium text-red-600 hover:bg-red-50 border border-red-300 disabled:opacity-50"
+                                                            >
+                                                                {deletingResult === index ? 'Deleting...' : 'Delete'}
+                                                            </button>
+                                                        )}
+                                                        <button
+                                                            onClick={() => saveResult(index)}
+                                                            disabled={savingResult === index || deletingResult === index || (!form.dirty && form.existingResultId !== null)}
+                                                            className={`px-4 py-2 rounded text-sm font-medium ${
+                                                                form.dirty
+                                                                    ? 'bg-blue-600 text-white hover:bg-blue-700'
+                                                                    : 'bg-gray-200 text-gray-600'
+                                                            } disabled:opacity-50`}
+                                                        >
+                                                            {savingResult === index ? 'Saving...' : form.existingResultId ? 'Update' : 'Save'}
+                                                        </button>
+                                                    </div>
                                                 </div>
                                             </div>
                                         ))}
@@ -2482,6 +3142,242 @@ const MonitoringPlanDetailPage: React.FC = () => {
                                     {actionLoading ? 'Cancelling...' : 'Confirm Cancel'}
                                 </button>
                             </div>
+                        </div>
+                    </div>
+                )}
+
+                {/* Publish Version Modal */}
+                {showPublishModal && (
+                    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+                        <div className="bg-white rounded-lg shadow-xl w-full max-w-md">
+                            <div className="p-4 border-b bg-blue-50">
+                                <h3 className="text-lg font-bold text-blue-800">Publish New Version</h3>
+                            </div>
+
+                            <form onSubmit={handlePublishVersion}>
+                                <div className="p-4 space-y-4">
+                                    {publishError && (
+                                        <div className="bg-red-100 border border-red-400 text-red-700 px-3 py-2 rounded text-sm">
+                                            {publishError}
+                                        </div>
+                                    )}
+
+                                    <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                                        <p className="text-blue-800 text-sm">
+                                            Publishing a version creates an immutable snapshot of the current metric configurations.
+                                            This version will be used for all future cycles until a new version is published.
+                                        </p>
+                                    </div>
+
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                                            Version Name (optional)
+                                        </label>
+                                        <input
+                                            type="text"
+                                            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                                            value={publishForm.version_name}
+                                            onChange={(e) => setPublishForm(prev => ({ ...prev, version_name: e.target.value }))}
+                                            placeholder="e.g., Q1 2025 Update, Enhanced Risk Thresholds"
+                                        />
+                                    </div>
+
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                                            Effective Date
+                                        </label>
+                                        <input
+                                            type="date"
+                                            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                                            value={publishForm.effective_date}
+                                            onChange={(e) => setPublishForm(prev => ({ ...prev, effective_date: e.target.value }))}
+                                        />
+                                    </div>
+
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                                            Description (optional)
+                                        </label>
+                                        <textarea
+                                            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                                            rows={3}
+                                            value={publishForm.description}
+                                            onChange={(e) => setPublishForm(prev => ({ ...prev, description: e.target.value }))}
+                                            placeholder="Describe the changes in this version..."
+                                        />
+                                    </div>
+
+                                    <div className="bg-gray-50 rounded-lg p-3">
+                                        <p className="text-sm text-gray-600">
+                                            <strong>{plan.metrics?.length || 0}</strong> metrics will be captured in this version.
+                                        </p>
+                                    </div>
+                                </div>
+
+                                <div className="p-4 border-t bg-gray-50 flex justify-end gap-2">
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            setShowPublishModal(false);
+                                            setPublishError(null);
+                                        }}
+                                        disabled={publishing}
+                                        className="btn-secondary"
+                                    >
+                                        Cancel
+                                    </button>
+                                    <button
+                                        type="submit"
+                                        disabled={publishing}
+                                        className="px-4 py-2 rounded text-white font-medium bg-blue-600 hover:bg-blue-700 disabled:opacity-50"
+                                    >
+                                        {publishing ? 'Publishing...' : 'Publish Version'}
+                                    </button>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+                )}
+
+                {/* Edit Metric Modal */}
+                {showMetricModal && editingMetric && (
+                    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+                        <div className="bg-white rounded-lg shadow-xl w-full max-w-lg">
+                            <div className="p-4 border-b">
+                                <h3 className="text-lg font-bold">Edit Metric Thresholds</h3>
+                                <p className="text-sm text-gray-500 mt-1">
+                                    {editingMetric.kpm?.name} ({editingMetric.kpm?.evaluation_type})
+                                </p>
+                            </div>
+
+                            <form onSubmit={handleSaveMetric}>
+                                <div className="p-4 space-y-4">
+                                    {metricError && (
+                                        <div className="bg-red-100 border border-red-400 text-red-700 px-3 py-2 rounded text-sm">
+                                            {metricError}
+                                        </div>
+                                    )}
+
+                                    {editingMetric.kpm?.evaluation_type === 'Quantitative' ? (
+                                        <>
+                                            <div className="bg-gray-50 rounded-lg p-3">
+                                                <p className="text-sm text-gray-600">
+                                                    Configure threshold boundaries. Leave fields blank for no threshold.
+                                                </p>
+                                            </div>
+
+                                            <div className="grid grid-cols-2 gap-4">
+                                                <div>
+                                                    <label className="block text-sm font-medium text-yellow-700 mb-1">
+                                                        Yellow Min
+                                                    </label>
+                                                    <input
+                                                        type="number"
+                                                        step="any"
+                                                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                                                        value={metricForm.yellow_min}
+                                                        onChange={(e) => setMetricForm(prev => ({ ...prev, yellow_min: e.target.value }))}
+                                                        placeholder="No minimum"
+                                                    />
+                                                    <p className="text-xs text-gray-500 mt-1">Yellow zone starts above this</p>
+                                                </div>
+                                                <div>
+                                                    <label className="block text-sm font-medium text-yellow-700 mb-1">
+                                                        Yellow Max
+                                                    </label>
+                                                    <input
+                                                        type="number"
+                                                        step="any"
+                                                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                                                        value={metricForm.yellow_max}
+                                                        onChange={(e) => setMetricForm(prev => ({ ...prev, yellow_max: e.target.value }))}
+                                                        placeholder="No maximum"
+                                                    />
+                                                    <p className="text-xs text-gray-500 mt-1">Yellow zone ends below this</p>
+                                                </div>
+                                            </div>
+
+                                            <div className="grid grid-cols-2 gap-4">
+                                                <div>
+                                                    <label className="block text-sm font-medium text-red-700 mb-1">
+                                                        Red Min
+                                                    </label>
+                                                    <input
+                                                        type="number"
+                                                        step="any"
+                                                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                                                        value={metricForm.red_min}
+                                                        onChange={(e) => setMetricForm(prev => ({ ...prev, red_min: e.target.value }))}
+                                                        placeholder="No minimum"
+                                                    />
+                                                    <p className="text-xs text-gray-500 mt-1">Red zone starts below this</p>
+                                                </div>
+                                                <div>
+                                                    <label className="block text-sm font-medium text-red-700 mb-1">
+                                                        Red Max
+                                                    </label>
+                                                    <input
+                                                        type="number"
+                                                        step="any"
+                                                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                                                        value={metricForm.red_max}
+                                                        onChange={(e) => setMetricForm(prev => ({ ...prev, red_max: e.target.value }))}
+                                                        placeholder="No maximum"
+                                                    />
+                                                    <p className="text-xs text-gray-500 mt-1">Red zone starts above this</p>
+                                                </div>
+                                            </div>
+
+                                            <div className="bg-blue-50 rounded-lg p-3 text-sm">
+                                                <p className="font-medium text-blue-800 mb-2">Common Threshold Patterns:</p>
+                                                <ul className="list-disc list-inside text-blue-700 space-y-1">
+                                                    <li><strong>Lower is better:</strong> Set Yellow Max and Red Max (e.g., error rate)</li>
+                                                    <li><strong>Higher is better:</strong> Set Yellow Min and Red Min (e.g., accuracy)</li>
+                                                    <li><strong>Range-based:</strong> Set Yellow Min and Yellow Max (e.g., p-value)</li>
+                                                </ul>
+                                            </div>
+                                        </>
+                                    ) : (
+                                        <div>
+                                            <label className="block text-sm font-medium text-gray-700 mb-1">
+                                                Qualitative Guidance
+                                            </label>
+                                            <textarea
+                                                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                                                rows={4}
+                                                value={metricForm.qualitative_guidance}
+                                                onChange={(e) => setMetricForm(prev => ({ ...prev, qualitative_guidance: e.target.value }))}
+                                                placeholder="Provide guidance for evaluating this qualitative metric..."
+                                            />
+                                            <p className="text-xs text-gray-500 mt-1">
+                                                This guidance will be shown to evaluators when assessing the metric.
+                                            </p>
+                                        </div>
+                                    )}
+                                </div>
+
+                                <div className="p-4 border-t bg-gray-50 flex justify-end gap-2">
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            setShowMetricModal(false);
+                                            setEditingMetric(null);
+                                            setMetricError(null);
+                                        }}
+                                        disabled={savingMetric}
+                                        className="btn-secondary"
+                                    >
+                                        Cancel
+                                    </button>
+                                    <button
+                                        type="submit"
+                                        disabled={savingMetric}
+                                        className="px-4 py-2 rounded text-white font-medium bg-blue-600 hover:bg-blue-700 disabled:opacity-50"
+                                    >
+                                        {savingMetric ? 'Saving...' : 'Save Changes'}
+                                    </button>
+                                </div>
+                            </form>
                         </div>
                     </div>
                 )}

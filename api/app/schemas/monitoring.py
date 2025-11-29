@@ -218,6 +218,7 @@ class MonitoringPlanResponse(MonitoringPlanBase):
     data_provider: Optional[UserRef] = None
     models: List[ModelRef] = []
     metrics: List[MonitoringPlanMetricResponse] = []
+    active_version_number: Optional[int] = None
     created_at: datetime
     updated_at: datetime
 
