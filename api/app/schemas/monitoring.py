@@ -417,6 +417,8 @@ class MonitoringCycleResponse(BaseModel):
     completed_at: Optional[datetime] = None
     completed_by: Optional[UserRef] = None
     notes: Optional[str] = None
+    # Report URL (provided when requesting approval)
+    report_url: Optional[str] = None
     # Version tracking
     plan_version_id: Optional[int] = None
     plan_version: Optional[MonitoringCycleVersionRef] = None
@@ -443,6 +445,8 @@ class MonitoringCycleListResponse(BaseModel):
     submission_due_date: date
     report_due_date: date
     assigned_to_name: Optional[str] = None
+    # Report URL (provided when requesting approval)
+    report_url: Optional[str] = None
     # Version info
     plan_version_id: Optional[int] = None
     version_number: Optional[int] = None
@@ -454,6 +458,9 @@ class MonitoringCycleListResponse(BaseModel):
     # Approval counts (for showing approval status on cycle cards)
     approval_count: int = 0
     pending_approval_count: int = 0
+    # Overdue status (calculated server-side)
+    is_overdue: bool = False
+    days_overdue: int = 0  # Positive if overdue, negative if days remaining
 
     class Config:
         from_attributes = True
@@ -624,7 +631,7 @@ class CycleSubmitRequest(BaseModel):
 
 class CycleRequestApprovalRequest(BaseModel):
     """Request schema for requesting approval."""
-    pass
+    report_url: str  # Required URL to the final monitoring report document
 
 
 class CycleCancelRequest(BaseModel):
@@ -698,6 +705,58 @@ class MyMonitoringTaskResponse(BaseModel):
     pending_approval_count: int = 0
     is_overdue: bool = False
     days_until_due: Optional[int] = None
+
+    class Config:
+        from_attributes = True
+
+
+# ============================================================================
+# ADMIN MONITORING OVERVIEW SCHEMAS
+# ============================================================================
+
+class AdminMonitoringCycleSummary(BaseModel):
+    """Summary of a cycle for admin oversight view.
+
+    Includes priority indicator and approval progress.
+    """
+    cycle_id: int
+    plan_id: int
+    plan_name: str
+    period_label: str  # e.g., "Q3 2025" or "2025-07 - 2025-09"
+    period_start_date: date
+    period_end_date: date
+    due_date: date  # report_due_date for visibility
+    status: MonitoringCycleStatusEnum
+    days_overdue: int  # Positive if overdue, negative if days remaining
+    priority: str  # "overdue", "pending_approval", "approaching", "normal"
+    team_name: Optional[str] = None
+    data_provider_name: Optional[str] = None
+    approval_progress: Optional[str] = None  # e.g., "1/2" for PENDING_APPROVAL
+    report_url: Optional[str] = None
+    result_count: int = 0
+    green_count: int = 0
+    yellow_count: int = 0
+    red_count: int = 0
+
+    class Config:
+        from_attributes = True
+
+
+class AdminMonitoringOverviewSummary(BaseModel):
+    """Summary counts for admin monitoring overview."""
+    overdue_count: int
+    pending_approval_count: int
+    in_progress_count: int
+    completed_last_30_days: int
+
+
+class AdminMonitoringOverviewResponse(BaseModel):
+    """Response schema for admin monitoring overview.
+
+    Provides a governance oversight view of all monitoring activity.
+    """
+    summary: AdminMonitoringOverviewSummary
+    cycles: List[AdminMonitoringCycleSummary] = []
 
     class Config:
         from_attributes = True

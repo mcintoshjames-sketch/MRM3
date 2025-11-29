@@ -123,6 +123,22 @@ interface PendingAdditionalApproval {
     created_at: string;
 }
 
+interface OverdueMonitoringCycle {
+    cycle_id: number;
+    plan_id: number;
+    plan_name: string;
+    period_label: string;
+    due_date: string;
+    status: string;
+    days_overdue: number;
+    team_name: string | null;
+    data_provider_name: string | null;
+    result_count: number;
+    green_count: number;
+    yellow_count: number;
+    red_count: number;
+}
+
 export default function AdminDashboardPage() {
     const { user } = useAuth();
     const [slaViolations, setSlaViolations] = useState<SLAViolation[]>([]);
@@ -134,6 +150,7 @@ export default function AdminDashboardPage() {
     const [pendingModelSubmissions, setPendingModelSubmissions] = useState<PendingModelSubmission[]>([]);
     const [pendingAdditionalApprovals, setPendingAdditionalApprovals] = useState<PendingAdditionalApproval[]>([]);
     const [myOverdueItems, setMyOverdueItems] = useState<MyOverdueItem[]>([]);
+    const [overdueMonitoringCycles, setOverdueMonitoringCycles] = useState<OverdueMonitoringCycle[]>([]);
     const [loading, setLoading] = useState(true);
 
     // Commentary modal state
@@ -157,7 +174,8 @@ export default function AdminDashboardPage() {
                 upcomingRevalidationsRes,
                 pendingModelsRes,
                 conditionalApprovalsRes,
-                myOverdueRes
+                myOverdueRes,
+                monitoringOverviewRes
             ] = await Promise.all([
                 api.get('/validation-workflow/dashboard/sla-violations'),
                 api.get('/validation-workflow/dashboard/out-of-order'),
@@ -167,7 +185,8 @@ export default function AdminDashboardPage() {
                 api.get('/validation-workflow/dashboard/upcoming-revalidations?days_ahead=90'),
                 api.get('/models/pending-submissions'),
                 api.get('/validation-workflow/dashboard/pending-additional-approvals'),
-                overdueCommentaryApi.getMyOverdueItems()
+                overdueCommentaryApi.getMyOverdueItems(),
+                api.get('/monitoring/admin-overview')
             ]);
             setSlaViolations(violationsRes.data);
             setOutOfOrder(outOfOrderRes.data);
@@ -178,6 +197,11 @@ export default function AdminDashboardPage() {
             setPendingModelSubmissions(pendingModelsRes.data);
             setPendingAdditionalApprovals(conditionalApprovalsRes.data);
             setMyOverdueItems(myOverdueRes);
+            // Filter monitoring cycles for overdue ones only
+            const overdueCycles = monitoringOverviewRes.data.cycles.filter(
+                (cycle: OverdueMonitoringCycle & { priority: string }) => cycle.priority === 'overdue'
+            );
+            setOverdueMonitoringCycles(overdueCycles);
         } catch (error) {
             console.error('Failed to fetch dashboard data:', error);
         } finally {
@@ -398,7 +422,7 @@ export default function AdminDashboardPage() {
             )}
 
             {/* Summary Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-7 gap-4 mb-6">
+            <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-8 gap-4 mb-6">
                 <div className="bg-white p-4 rounded-lg shadow-md">
                     <h3 className="text-xs font-medium text-gray-500 uppercase">Pending Assignment</h3>
                     <p className="text-3xl font-bold text-blue-600 mt-2">{pendingAssignments.length}</p>
@@ -423,6 +447,11 @@ export default function AdminDashboardPage() {
                     <h3 className="text-xs font-medium text-gray-500 uppercase">Overdue Validations</h3>
                     <p className="text-3xl font-bold text-red-600 mt-2">{overdueValidations.length}</p>
                     <p className="text-xs text-gray-600 mt-1">Past validation due</p>
+                </div>
+                <div className="bg-white p-4 rounded-lg shadow-md">
+                    <h3 className="text-xs font-medium text-gray-500 uppercase">Overdue Monitoring</h3>
+                    <p className="text-3xl font-bold text-red-600 mt-2">{overdueMonitoringCycles.length}</p>
+                    <p className="text-xs text-gray-600 mt-1">Past report due</p>
                 </div>
                 <div className="bg-white p-4 rounded-lg shadow-md">
                     <h3 className="text-xs font-medium text-gray-500 uppercase">Quick Actions</h3>
@@ -930,6 +959,107 @@ export default function AdminDashboardPage() {
                                                     </button>
                                                 )}
                                             </div>
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                )}
+
+                {/* Overdue Monitoring Cycles */}
+                {overdueMonitoringCycles.length > 0 && (
+                    <div className="bg-white rounded-lg shadow-md overflow-hidden">
+                        <div className="p-4 border-b bg-red-50">
+                            <div className="flex items-center">
+                                <svg className="h-5 w-5 text-red-600 mr-2" fill="currentColor" viewBox="0 0 20 20">
+                                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clipRule="evenodd" />
+                                </svg>
+                                <h3 className="text-lg font-bold text-red-900">
+                                    Overdue Monitoring Cycles ({overdueMonitoringCycles.length})
+                                </h3>
+                            </div>
+                            <p className="text-sm text-red-700 ml-7">Monitoring cycles past their report due date</p>
+                        </div>
+                        <table className="min-w-full divide-y divide-gray-200">
+                            <thead className="bg-gray-50">
+                                <tr>
+                                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Plan</th>
+                                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Period</th>
+                                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Due Date</th>
+                                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Days Overdue</th>
+                                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+                                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Team</th>
+                                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Results</th>
+                                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody className="bg-white divide-y divide-gray-200">
+                                {overdueMonitoringCycles.map((cycle) => (
+                                    <tr key={cycle.cycle_id} className="hover:bg-red-50">
+                                        <td className="px-4 py-3 whitespace-nowrap">
+                                            <Link
+                                                to={`/monitoring/${cycle.plan_id}`}
+                                                className="text-blue-600 hover:text-blue-800 font-medium"
+                                            >
+                                                {cycle.plan_name}
+                                            </Link>
+                                            {cycle.data_provider_name && (
+                                                <div className="text-xs text-gray-500">
+                                                    Provider: {cycle.data_provider_name}
+                                                </div>
+                                            )}
+                                        </td>
+                                        <td className="px-4 py-3 whitespace-nowrap text-sm">{cycle.period_label}</td>
+                                        <td className="px-4 py-3 whitespace-nowrap text-sm">{cycle.due_date.split('T')[0]}</td>
+                                        <td className="px-4 py-3 whitespace-nowrap">
+                                            <span className="px-2 py-1 text-xs font-semibold rounded bg-red-100 text-red-800">
+                                                {cycle.days_overdue} days
+                                            </span>
+                                        </td>
+                                        <td className="px-4 py-3 whitespace-nowrap">
+                                            <span className={`px-2 py-1 text-xs font-semibold rounded ${
+                                                cycle.status === 'PENDING' ? 'bg-gray-100 text-gray-800' :
+                                                cycle.status === 'DATA_COLLECTION' ? 'bg-blue-100 text-blue-800' :
+                                                cycle.status === 'UNDER_REVIEW' ? 'bg-yellow-100 text-yellow-800' :
+                                                cycle.status === 'PENDING_APPROVAL' ? 'bg-orange-100 text-orange-800' :
+                                                'bg-gray-100 text-gray-800'
+                                            }`}>
+                                                {cycle.status.replace(/_/g, ' ')}
+                                            </span>
+                                        </td>
+                                        <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-600">
+                                            {cycle.team_name || '-'}
+                                        </td>
+                                        <td className="px-4 py-3 whitespace-nowrap">
+                                            {cycle.result_count > 0 ? (
+                                                <div className="flex items-center gap-1">
+                                                    <span className="text-sm text-gray-600">{cycle.result_count}</span>
+                                                    {(cycle.green_count > 0 || cycle.yellow_count > 0 || cycle.red_count > 0) && (
+                                                        <div className="flex gap-0.5 ml-1">
+                                                            {cycle.green_count > 0 && (
+                                                                <span className="inline-block w-2.5 h-2.5 bg-green-500 rounded-full" title={`${cycle.green_count} Green`}></span>
+                                                            )}
+                                                            {cycle.yellow_count > 0 && (
+                                                                <span className="inline-block w-2.5 h-2.5 bg-yellow-400 rounded-full" title={`${cycle.yellow_count} Yellow`}></span>
+                                                            )}
+                                                            {cycle.red_count > 0 && (
+                                                                <span className="inline-block w-2.5 h-2.5 bg-red-500 rounded-full" title={`${cycle.red_count} Red`}></span>
+                                                            )}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            ) : (
+                                                <span className="text-sm text-gray-400">-</span>
+                                            )}
+                                        </td>
+                                        <td className="px-4 py-3 whitespace-nowrap">
+                                            <Link
+                                                to={`/monitoring/${cycle.plan_id}?cycle=${cycle.cycle_id}`}
+                                                className="text-blue-600 hover:text-blue-800 text-sm"
+                                            >
+                                                View Cycle
+                                            </Link>
                                         </td>
                                     </tr>
                                 ))}

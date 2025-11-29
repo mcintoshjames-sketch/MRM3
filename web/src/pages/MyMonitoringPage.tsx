@@ -2,6 +2,8 @@ import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import api from '../api/client';
 import Layout from '../components/Layout';
+import { useAuth } from '../contexts/AuthContext';
+import AdminMonitoringOverview from '../components/AdminMonitoringOverview';
 
 interface MonitoringTask {
     cycle_id: number;
@@ -21,13 +23,22 @@ interface MonitoringTask {
 }
 
 export default function MyMonitoringPage() {
+    const { user } = useAuth();
     const [tasks, setTasks] = useState<MonitoringTask[]>([]);
     const [loading, setLoading] = useState(true);
     const [filter, setFilter] = useState<'all' | 'data_provider' | 'team_member' | 'assignee'>('all');
 
+    // Check if user is Admin - they see the governance overview instead
+    const isAdmin = user?.role === 'Admin';
+
     useEffect(() => {
-        fetchTasks();
-    }, []);
+        // Only fetch tasks if not admin (admin has their own component)
+        if (!isAdmin) {
+            fetchTasks();
+        } else {
+            setLoading(false);
+        }
+    }, [isAdmin]);
 
     const fetchTasks = async () => {
         try {
@@ -104,6 +115,15 @@ export default function MyMonitoringPage() {
     };
 
     const filteredTasks = getFilteredTasks();
+
+    // Admin users see the governance overview
+    if (isAdmin) {
+        return (
+            <Layout>
+                <AdminMonitoringOverview />
+            </Layout>
+        );
+    }
 
     if (loading) {
         return (

@@ -500,19 +500,20 @@ class TestMonitoringPlanMetrics:
         })
         plan_id = plan_resp.json()["plan_id"]
 
-        # Add metric
+        # Add metric - note: red_max must be > yellow_max per validation rules
         response = client.post(f"/monitoring/plans/{plan_id}/metrics", headers=admin_headers, json={
             "kpm_id": kpm_id,
-            "yellow_min": 0.8,
+            "yellow_min": 0.7,
             "yellow_max": 0.9,
-            "red_max": 0.7,
-            "qualitative_guidance": "Should be above 0.8"
+            "red_max": 1.0,
+            "qualitative_guidance": "Should be above 0.9 (green), 0.7-0.9 (yellow), above 1.0 (red)"
         })
         assert response.status_code == 201
         data = response.json()
         assert data["kpm_id"] == kpm_id
-        assert data["yellow_min"] == 0.8
+        assert data["yellow_min"] == 0.7
         assert data["yellow_max"] == 0.9
+        assert data["red_max"] == 1.0
 
     def test_add_duplicate_metric_fails(self, client, admin_headers):
         """Cannot add same KPM to plan twice."""
@@ -711,7 +712,10 @@ class TestCycleWorkflow:
     """Tests for monitoring cycle workflow operations."""
 
     def _publish_version_for_plan(self, client, admin_headers, plan_id):
-        """Helper to publish a version for a plan (required before starting cycles)."""
+        """Helper to publish a version for a plan (required before starting cycles).
+
+        Returns the metric_id so tests can add results if needed.
+        """
         # Need at least one metric for publish to work
         cat_resp = client.post("/kpm/categories", headers=admin_headers, json={
             "code": f"WF_CAT_{plan_id}",
@@ -725,11 +729,14 @@ class TestCycleWorkflow:
         })
         kpm_id = kpm_resp.json()["kpm_id"]
 
-        client.post(f"/monitoring/plans/{plan_id}/metrics", headers=admin_headers, json={
+        metric_resp = client.post(f"/monitoring/plans/{plan_id}/metrics", headers=admin_headers, json={
             "kpm_id": kpm_id
         })
+        metric_id = metric_resp.json()["metric_id"]
 
         client.post(f"/monitoring/plans/{plan_id}/versions/publish", headers=admin_headers, json={})
+
+        return metric_id
 
     def test_start_cycle(self, client, admin_headers):
         """Start cycle moves from PENDING to DATA_COLLECTION."""
@@ -779,13 +786,20 @@ class TestCycleWorkflow:
         })
         plan_id = plan_resp.json()["plan_id"]
 
-        # Publish version
-        self._publish_version_for_plan(client, admin_headers, plan_id)
+        # Publish version and get metric_id
+        metric_id = self._publish_version_for_plan(client, admin_headers, plan_id)
 
         cycle_resp = client.post(f"/monitoring/plans/{plan_id}/cycles", headers=admin_headers, json={})
         cycle_id = cycle_resp.json()["cycle_id"]
 
         client.post(f"/monitoring/cycles/{cycle_id}/start", headers=admin_headers)
+
+        # Add at least one result before submitting (required by validation)
+        client.post(f"/monitoring/cycles/{cycle_id}/results", headers=admin_headers, json={
+            "plan_metric_id": metric_id,
+            "numeric_value": 0.95,
+            "narrative": "Results look good"
+        })
 
         response = client.post(f"/monitoring/cycles/{cycle_id}/submit", headers=admin_headers)
         assert response.status_code == 200
@@ -1269,7 +1283,10 @@ class TestApprovalWorkflow:
     """Tests for monitoring cycle approval workflow."""
 
     def _publish_version_for_plan(self, client, admin_headers, plan_id, plan_name):
-        """Helper to publish a version for a plan (required before starting cycles)."""
+        """Helper to publish a version for a plan (required before starting cycles).
+
+        Returns the metric_id so tests can add results if needed.
+        """
         # Need at least one metric for publish to work
         cat_resp = client.post("/kpm/categories", headers=admin_headers, json={
             "code": f"APPR_CAT_{plan_name[:8]}",
@@ -1283,53 +1300,65 @@ class TestApprovalWorkflow:
         })
         kpm_id = kpm_resp.json()["kpm_id"]
 
-        client.post(f"/monitoring/plans/{plan_id}/metrics", headers=admin_headers, json={
+        metric_resp = client.post(f"/monitoring/plans/{plan_id}/metrics", headers=admin_headers, json={
             "kpm_id": kpm_id
         })
+        metric_id = metric_resp.json()["metric_id"]
 
         client.post(f"/monitoring/plans/{plan_id}/versions/publish", headers=admin_headers, json={})
 
-    def test_request_approval_creates_global(self, client, admin_headers):
-        """Requesting approval creates at least a Global approval requirement."""
+        return metric_id
+
+    def _setup_cycle_for_approval(self, client, admin_headers, plan_name):
+        """Helper to create a plan, publish version, create cycle, and move to UNDER_REVIEW.
+
+        Returns (plan_id, cycle_id) for further testing.
+        """
         plan_resp = client.post("/monitoring/plans", headers=admin_headers, json={
-            "name": "Plan For Approval",
+            "name": plan_name,
             "frequency": "Quarterly"
         })
         plan_id = plan_resp.json()["plan_id"]
 
-        # Publish version (required for starting cycles)
-        self._publish_version_for_plan(client, admin_headers, plan_id, "Approval")
+        # Publish version and get metric_id
+        metric_id = self._publish_version_for_plan(client, admin_headers, plan_id, plan_name)
 
         cycle_resp = client.post(f"/monitoring/plans/{plan_id}/cycles", headers=admin_headers, json={})
         cycle_id = cycle_resp.json()["cycle_id"]
 
-        # Progress to UNDER_REVIEW
+        # Start cycle
         client.post(f"/monitoring/cycles/{cycle_id}/start", headers=admin_headers)
+
+        # Add at least one result before submitting (required by validation)
+        client.post(f"/monitoring/cycles/{cycle_id}/results", headers=admin_headers, json={
+            "plan_metric_id": metric_id,
+            "numeric_value": 0.95,
+            "narrative": "Results look good for approval testing"
+        })
+
+        # Submit
         client.post(f"/monitoring/cycles/{cycle_id}/submit", headers=admin_headers)
 
-        # Request approval
-        response = client.post(f"/monitoring/cycles/{cycle_id}/request-approval", headers=admin_headers)
+        return plan_id, cycle_id
+
+    def test_request_approval_creates_global(self, client, admin_headers):
+        """Requesting approval creates at least a Global approval requirement."""
+        # Setup cycle in UNDER_REVIEW state
+        plan_id, cycle_id = self._setup_cycle_for_approval(client, admin_headers, "Plan For Approval")
+
+        # Request approval (requires report_url)
+        response = client.post(f"/monitoring/cycles/{cycle_id}/request-approval", headers=admin_headers,
+                              json={"report_url": "https://example.com/reports/test-report.pdf"})
         assert response.status_code == 200
         assert response.json()["status"] == "PENDING_APPROVAL"
         assert response.json()["approval_count"] >= 1
 
     def test_list_cycle_approvals(self, client, admin_headers):
         """List approval requirements for a cycle."""
-        plan_resp = client.post("/monitoring/plans", headers=admin_headers, json={
-            "name": "Plan For List Approvals",
-            "frequency": "Quarterly"
-        })
-        plan_id = plan_resp.json()["plan_id"]
-
-        # Publish version (required for starting cycles)
-        self._publish_version_for_plan(client, admin_headers, plan_id, "ListAppr")
-
-        cycle_resp = client.post(f"/monitoring/plans/{plan_id}/cycles", headers=admin_headers, json={})
-        cycle_id = cycle_resp.json()["cycle_id"]
-
-        client.post(f"/monitoring/cycles/{cycle_id}/start", headers=admin_headers)
-        client.post(f"/monitoring/cycles/{cycle_id}/submit", headers=admin_headers)
-        client.post(f"/monitoring/cycles/{cycle_id}/request-approval", headers=admin_headers)
+        # Setup cycle in UNDER_REVIEW state
+        plan_id, cycle_id = self._setup_cycle_for_approval(client, admin_headers, "Plan For List Approvals")
+        client.post(f"/monitoring/cycles/{cycle_id}/request-approval", headers=admin_headers,
+                   json={"report_url": "https://example.com/reports/test-report.pdf"})
 
         response = client.get(f"/monitoring/cycles/{cycle_id}/approvals", headers=admin_headers)
         assert response.status_code == 200
@@ -1342,21 +1371,10 @@ class TestApprovalWorkflow:
 
     def test_approve_global_approval(self, client, admin_headers):
         """Admin can approve a Global approval."""
-        plan_resp = client.post("/monitoring/plans", headers=admin_headers, json={
-            "name": "Plan For Global Approval",
-            "frequency": "Quarterly"
-        })
-        plan_id = plan_resp.json()["plan_id"]
-
-        # Publish version (required for starting cycles)
-        self._publish_version_for_plan(client, admin_headers, plan_id, "GlobAppr")
-
-        cycle_resp = client.post(f"/monitoring/plans/{plan_id}/cycles", headers=admin_headers, json={})
-        cycle_id = cycle_resp.json()["cycle_id"]
-
-        client.post(f"/monitoring/cycles/{cycle_id}/start", headers=admin_headers)
-        client.post(f"/monitoring/cycles/{cycle_id}/submit", headers=admin_headers)
-        client.post(f"/monitoring/cycles/{cycle_id}/request-approval", headers=admin_headers)
+        # Setup cycle in UNDER_REVIEW state
+        plan_id, cycle_id = self._setup_cycle_for_approval(client, admin_headers, "Plan For Global Approval")
+        client.post(f"/monitoring/cycles/{cycle_id}/request-approval", headers=admin_headers,
+                   json={"report_url": "https://example.com/reports/test-report.pdf"})
 
         # Get the approval ID
         approvals_resp = client.get(f"/monitoring/cycles/{cycle_id}/approvals", headers=admin_headers)
@@ -1377,21 +1395,10 @@ class TestApprovalWorkflow:
 
     def test_cycle_auto_completes_when_all_approved(self, client, admin_headers):
         """Cycle transitions to APPROVED when all approvals are granted."""
-        plan_resp = client.post("/monitoring/plans", headers=admin_headers, json={
-            "name": "Plan For Auto Complete",
-            "frequency": "Quarterly"
-        })
-        plan_id = plan_resp.json()["plan_id"]
-
-        # Publish version (required for starting cycles)
-        self._publish_version_for_plan(client, admin_headers, plan_id, "AutoComp")
-
-        cycle_resp = client.post(f"/monitoring/plans/{plan_id}/cycles", headers=admin_headers, json={})
-        cycle_id = cycle_resp.json()["cycle_id"]
-
-        client.post(f"/monitoring/cycles/{cycle_id}/start", headers=admin_headers)
-        client.post(f"/monitoring/cycles/{cycle_id}/submit", headers=admin_headers)
-        client.post(f"/monitoring/cycles/{cycle_id}/request-approval", headers=admin_headers)
+        # Setup cycle in UNDER_REVIEW state
+        plan_id, cycle_id = self._setup_cycle_for_approval(client, admin_headers, "Plan For Auto Complete")
+        client.post(f"/monitoring/cycles/{cycle_id}/request-approval", headers=admin_headers,
+                   json={"report_url": "https://example.com/reports/test-report.pdf"})
 
         # Approve all approvals (Admin must provide approval_evidence when approving on behalf)
         approvals_resp = client.get(f"/monitoring/cycles/{cycle_id}/approvals", headers=admin_headers)
@@ -1410,21 +1417,10 @@ class TestApprovalWorkflow:
 
     def test_reject_approval_returns_to_under_review(self, client, admin_headers):
         """Rejecting an approval returns cycle to UNDER_REVIEW."""
-        plan_resp = client.post("/monitoring/plans", headers=admin_headers, json={
-            "name": "Plan For Reject",
-            "frequency": "Quarterly"
-        })
-        plan_id = plan_resp.json()["plan_id"]
-
-        # Publish version (required for starting cycles)
-        self._publish_version_for_plan(client, admin_headers, plan_id, "Reject")
-
-        cycle_resp = client.post(f"/monitoring/plans/{plan_id}/cycles", headers=admin_headers, json={})
-        cycle_id = cycle_resp.json()["cycle_id"]
-
-        client.post(f"/monitoring/cycles/{cycle_id}/start", headers=admin_headers)
-        client.post(f"/monitoring/cycles/{cycle_id}/submit", headers=admin_headers)
-        client.post(f"/monitoring/cycles/{cycle_id}/request-approval", headers=admin_headers)
+        # Setup cycle in UNDER_REVIEW state
+        plan_id, cycle_id = self._setup_cycle_for_approval(client, admin_headers, "Plan For Reject")
+        client.post(f"/monitoring/cycles/{cycle_id}/request-approval", headers=admin_headers,
+                   json={"report_url": "https://example.com/reports/test-report.pdf"})
 
         approvals_resp = client.get(f"/monitoring/cycles/{cycle_id}/approvals", headers=admin_headers)
         global_approval = next(a for a in approvals_resp.json() if a["approval_type"] == "Global")
@@ -1442,21 +1438,10 @@ class TestApprovalWorkflow:
 
     def test_void_approval(self, client, admin_headers):
         """Admin can void an approval requirement."""
-        plan_resp = client.post("/monitoring/plans", headers=admin_headers, json={
-            "name": "Plan For Void",
-            "frequency": "Quarterly"
-        })
-        plan_id = plan_resp.json()["plan_id"]
-
-        # Publish version (required for starting cycles)
-        self._publish_version_for_plan(client, admin_headers, plan_id, "Void")
-
-        cycle_resp = client.post(f"/monitoring/plans/{plan_id}/cycles", headers=admin_headers, json={})
-        cycle_id = cycle_resp.json()["cycle_id"]
-
-        client.post(f"/monitoring/cycles/{cycle_id}/start", headers=admin_headers)
-        client.post(f"/monitoring/cycles/{cycle_id}/submit", headers=admin_headers)
-        client.post(f"/monitoring/cycles/{cycle_id}/request-approval", headers=admin_headers)
+        # Setup cycle in UNDER_REVIEW state
+        plan_id, cycle_id = self._setup_cycle_for_approval(client, admin_headers, "Plan For Void")
+        client.post(f"/monitoring/cycles/{cycle_id}/request-approval", headers=admin_headers,
+                   json={"report_url": "https://example.com/reports/test-report.pdf"})
 
         approvals_resp = client.get(f"/monitoring/cycles/{cycle_id}/approvals", headers=admin_headers)
         global_approval = next(a for a in approvals_resp.json() if a["approval_type"] == "Global")
@@ -1472,21 +1457,10 @@ class TestApprovalWorkflow:
 
     def test_cannot_approve_voided_approval(self, client, admin_headers):
         """Cannot approve an approval that has been voided."""
-        plan_resp = client.post("/monitoring/plans", headers=admin_headers, json={
-            "name": "Plan For Void Check",
-            "frequency": "Quarterly"
-        })
-        plan_id = plan_resp.json()["plan_id"]
-
-        # Publish version (required for starting cycles)
-        self._publish_version_for_plan(client, admin_headers, plan_id, "VoidChk")
-
-        cycle_resp = client.post(f"/monitoring/plans/{plan_id}/cycles", headers=admin_headers, json={})
-        cycle_id = cycle_resp.json()["cycle_id"]
-
-        client.post(f"/monitoring/cycles/{cycle_id}/start", headers=admin_headers)
-        client.post(f"/monitoring/cycles/{cycle_id}/submit", headers=admin_headers)
-        client.post(f"/monitoring/cycles/{cycle_id}/request-approval", headers=admin_headers)
+        # Setup cycle in UNDER_REVIEW state
+        plan_id, cycle_id = self._setup_cycle_for_approval(client, admin_headers, "Plan For Void Check")
+        client.post(f"/monitoring/cycles/{cycle_id}/request-approval", headers=admin_headers,
+                   json={"report_url": "https://example.com/reports/test-report.pdf"})
 
         approvals_resp = client.get(f"/monitoring/cycles/{cycle_id}/approvals", headers=admin_headers)
         global_approval = next(a for a in approvals_resp.json() if a["approval_type"] == "Global")

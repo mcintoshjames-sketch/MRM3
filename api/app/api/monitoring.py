@@ -248,7 +248,8 @@ def create_monitoring_team(
 
     # Add members
     if team_data.member_ids:
-        members = db.query(User).filter(User.user_id.in_(team_data.member_ids)).all()
+        members = db.query(User).filter(
+            User.user_id.in_(team_data.member_ids)).all()
         team.members = members
 
     # Audit log
@@ -311,19 +312,23 @@ def update_monitoring_team(
 
     if update_data.description is not None:
         if team.description != update_data.description:
-            changes["description"] = {"old": team.description, "new": update_data.description}
+            changes["description"] = {
+                "old": team.description, "new": update_data.description}
         team.description = update_data.description
 
     if update_data.is_active is not None:
         if team.is_active != update_data.is_active:
-            changes["is_active"] = {"old": team.is_active, "new": update_data.is_active}
+            changes["is_active"] = {
+                "old": team.is_active, "new": update_data.is_active}
         team.is_active = update_data.is_active
 
     if update_data.member_ids is not None:
-        members = db.query(User).filter(User.user_id.in_(update_data.member_ids)).all()
+        members = db.query(User).filter(
+            User.user_id.in_(update_data.member_ids)).all()
         team.members = members
         if set(old_member_ids) != set(update_data.member_ids):
-            changes["member_ids"] = {"old": old_member_ids, "new": update_data.member_ids}
+            changes["member_ids"] = {
+                "old": old_member_ids, "new": update_data.member_ids}
 
     # Audit log if changes were made
     if changes:
@@ -414,7 +419,8 @@ def list_monitoring_plans(
 
     # Filter by model if specified
     if model_id:
-        plans = [p for p in plans if any(m.model_id == model_id for m in p.models)]
+        plans = [p for p in plans if any(
+            m.model_id == model_id for m in p.models)]
 
     result = []
     for plan in plans:
@@ -450,7 +456,8 @@ def get_monitoring_plan(
         joinedload(MonitoringPlan.team).joinedload(MonitoringTeam.members),
         joinedload(MonitoringPlan.data_provider),
         joinedload(MonitoringPlan.models),
-        joinedload(MonitoringPlan.metrics).joinedload(MonitoringPlanMetric.kpm).joinedload(Kpm.category)
+        joinedload(MonitoringPlan.metrics).joinedload(
+            MonitoringPlanMetric.kpm).joinedload(Kpm.category)
     ).filter(MonitoringPlan.plan_id == plan_id).first()
 
     if not plan:
@@ -573,7 +580,8 @@ def create_monitoring_plan(
     submission_date = plan_data.next_submission_due_date or calculate_next_submission_date(
         MonitoringFrequency(plan_data.frequency)
     )
-    report_date = calculate_report_due_date(submission_date, plan_data.reporting_lead_days)
+    report_date = calculate_report_due_date(
+        submission_date, plan_data.reporting_lead_days)
 
     # Create plan
     plan = MonitoringPlan(
@@ -593,7 +601,8 @@ def create_monitoring_plan(
 
     # Add models (scope)
     if plan_data.model_ids:
-        models = db.query(Model).filter(Model.model_id.in_(plan_data.model_ids)).all()
+        models = db.query(Model).filter(
+            Model.model_id.in_(plan_data.model_ids)).all()
         plan.models = models
 
     # Add metrics
@@ -672,12 +681,14 @@ def update_monitoring_plan(
 
     if update_data.description is not None:
         if plan.description != update_data.description:
-            changes["description"] = {"old": plan.description, "new": update_data.description}
+            changes["description"] = {
+                "old": plan.description, "new": update_data.description}
         plan.description = update_data.description
 
     if update_data.frequency is not None:
         if plan.frequency != update_data.frequency:
-            changes["frequency"] = {"old": plan.frequency, "new": update_data.frequency}
+            changes["frequency"] = {
+                "old": plan.frequency, "new": update_data.frequency}
         plan.frequency = update_data.frequency
         recalculate_dates = True
 
@@ -693,7 +704,8 @@ def update_monitoring_plan(
                 )
         new_team_id = update_data.monitoring_team_id if update_data.monitoring_team_id != 0 else None
         if plan.monitoring_team_id != new_team_id:
-            changes["monitoring_team_id"] = {"old": plan.monitoring_team_id, "new": new_team_id}
+            changes["monitoring_team_id"] = {
+                "old": plan.monitoring_team_id, "new": new_team_id}
         plan.monitoring_team_id = new_team_id
 
     if update_data.data_provider_user_id is not None:
@@ -708,20 +720,24 @@ def update_monitoring_plan(
                 )
         new_provider_id = update_data.data_provider_user_id if update_data.data_provider_user_id != 0 else None
         if plan.data_provider_user_id != new_provider_id:
-            changes["data_provider_user_id"] = {"old": plan.data_provider_user_id, "new": new_provider_id}
+            changes["data_provider_user_id"] = {
+                "old": plan.data_provider_user_id, "new": new_provider_id}
         plan.data_provider_user_id = new_provider_id
 
     if update_data.reporting_lead_days is not None:
         if plan.reporting_lead_days != update_data.reporting_lead_days:
-            changes["reporting_lead_days"] = {"old": plan.reporting_lead_days, "new": update_data.reporting_lead_days}
+            changes["reporting_lead_days"] = {
+                "old": plan.reporting_lead_days, "new": update_data.reporting_lead_days}
         plan.reporting_lead_days = update_data.reporting_lead_days
         recalculate_dates = True
 
     if update_data.next_submission_due_date is not None:
-        old_date = str(plan.next_submission_due_date) if plan.next_submission_due_date else None
+        old_date = str(
+            plan.next_submission_due_date) if plan.next_submission_due_date else None
         new_date = str(update_data.next_submission_due_date)
         if old_date != new_date:
-            changes["next_submission_due_date"] = {"old": old_date, "new": new_date}
+            changes["next_submission_due_date"] = {
+                "old": old_date, "new": new_date}
         plan.next_submission_due_date = update_data.next_submission_due_date
         plan.next_report_due_date = calculate_report_due_date(
             update_data.next_submission_due_date, plan.reporting_lead_days
@@ -730,14 +746,17 @@ def update_monitoring_plan(
 
     if update_data.is_active is not None:
         if plan.is_active != update_data.is_active:
-            changes["is_active"] = {"old": plan.is_active, "new": update_data.is_active}
+            changes["is_active"] = {
+                "old": plan.is_active, "new": update_data.is_active}
         plan.is_active = update_data.is_active
 
     if update_data.model_ids is not None:
-        models = db.query(Model).filter(Model.model_id.in_(update_data.model_ids)).all()
+        models = db.query(Model).filter(
+            Model.model_id.in_(update_data.model_ids)).all()
         plan.models = models
         if set(old_model_ids) != set(update_data.model_ids):
-            changes["model_ids"] = {"old": old_model_ids, "new": update_data.model_ids}
+            changes["model_ids"] = {
+                "old": old_model_ids, "new": update_data.model_ids}
 
     # Recalculate dates if frequency or lead days changed
     if recalculate_dates and plan.next_submission_due_date:
@@ -817,8 +836,10 @@ def get_model_monitoring_plans(
 
     # Find monitoring plans that include this model
     plans = db.query(MonitoringPlan).options(
-        joinedload(MonitoringPlan.versions).joinedload(MonitoringPlanVersion.published_by),
-        joinedload(MonitoringPlan.versions).joinedload(MonitoringPlanVersion.metric_snapshots),
+        joinedload(MonitoringPlan.versions).joinedload(
+            MonitoringPlanVersion.published_by),
+        joinedload(MonitoringPlan.versions).joinedload(
+            MonitoringPlanVersion.metric_snapshots),
     ).filter(
         MonitoringPlan.models.any(Model.model_id == model_id),
         MonitoringPlan.is_active == True
@@ -868,9 +889,12 @@ def get_model_monitoring_plans(
             ).all()
 
             if results:
-                green_count = sum(1 for r in results if r.calculated_outcome == "GREEN")
-                yellow_count = sum(1 for r in results if r.calculated_outcome == "YELLOW")
-                red_count = sum(1 for r in results if r.calculated_outcome == "RED")
+                green_count = sum(
+                    1 for r in results if r.calculated_outcome == "GREEN")
+                yellow_count = sum(
+                    1 for r in results if r.calculated_outcome == "YELLOW")
+                red_count = sum(
+                    1 for r in results if r.calculated_outcome == "RED")
                 latest_cycle_outcome_summary = f"{green_count} Green, {yellow_count} Yellow, {red_count} Red"
 
         result.append({
@@ -898,7 +922,8 @@ def list_plan_versions(
 ):
     """List all versions for a monitoring plan."""
     # Verify plan exists
-    plan = db.query(MonitoringPlan).filter(MonitoringPlan.plan_id == plan_id).first()
+    plan = db.query(MonitoringPlan).filter(
+        MonitoringPlan.plan_id == plan_id).first()
     if not plan:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -976,7 +1001,8 @@ def get_plan_version(
         "metric_snapshots": [
             {
                 "snapshot_id": s.snapshot_id,
-                "original_metric_id": s.original_metric_id,  # FK to MonitoringPlanMetric for result submission
+                # FK to MonitoringPlanMetric for result submission
+                "original_metric_id": s.original_metric_id,
                 "kpm_id": s.kpm_id,
                 "kpm_name": s.kpm_name,
                 "kpm_category_name": s.kpm_category_name,
@@ -1017,7 +1043,8 @@ def publish_plan_version(
 
     # Reload with metrics and models
     plan = db.query(MonitoringPlan).options(
-        joinedload(MonitoringPlan.metrics).joinedload(MonitoringPlanMetric.kpm),
+        joinedload(MonitoringPlan.metrics).joinedload(
+            MonitoringPlanMetric.kpm),
         joinedload(MonitoringPlan.models)
     ).filter(MonitoringPlan.plan_id == plan_id).first()
 
@@ -1057,7 +1084,8 @@ def publish_plan_version(
         category_name = None
         if kpm.category_id:
             from app.models.kpm import KpmCategory
-            category = db.query(KpmCategory).filter(KpmCategory.category_id == kpm.category_id).first()
+            category = db.query(KpmCategory).filter(
+                KpmCategory.category_id == kpm.category_id).first()
             category_name = category.name if category else None
 
         snapshot = MonitoringPlanMetricSnapshot(
@@ -1204,7 +1232,8 @@ def check_active_cycles_warning(
     from app.models.monitoring import MonitoringCycle, MonitoringCycleStatus
 
     # Verify plan exists
-    plan = db.query(MonitoringPlan).filter(MonitoringPlan.plan_id == plan_id).first()
+    plan = db.query(MonitoringPlan).filter(
+        MonitoringPlan.plan_id == plan_id).first()
     if not plan:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -1227,7 +1256,7 @@ def check_active_cycles_warning(
         return {
             "warning": True,
             "message": f"There are {active_cycles} active cycle(s) locked to previous versions. "
-                      f"Changes will only affect new cycles after a new version is published.",
+            f"Changes will only affect new cycles after a new version is published.",
             "active_cycle_count": active_cycles
         }
 
@@ -1377,42 +1406,50 @@ def update_plan_metric(
                 detail="KPM not found"
             )
         if metric.kpm_id != update_data.kpm_id:
-            changes["kpm_id"] = {"old": metric.kpm_id, "new": update_data.kpm_id}
+            changes["kpm_id"] = {
+                "old": metric.kpm_id, "new": update_data.kpm_id}
         metric.kpm_id = update_data.kpm_id
 
     if update_data.yellow_min is not None:
         if metric.yellow_min != update_data.yellow_min:
-            changes["yellow_min"] = {"old": metric.yellow_min, "new": update_data.yellow_min}
+            changes["yellow_min"] = {
+                "old": metric.yellow_min, "new": update_data.yellow_min}
         metric.yellow_min = update_data.yellow_min
 
     if update_data.yellow_max is not None:
         if metric.yellow_max != update_data.yellow_max:
-            changes["yellow_max"] = {"old": metric.yellow_max, "new": update_data.yellow_max}
+            changes["yellow_max"] = {
+                "old": metric.yellow_max, "new": update_data.yellow_max}
         metric.yellow_max = update_data.yellow_max
 
     if update_data.red_min is not None:
         if metric.red_min != update_data.red_min:
-            changes["red_min"] = {"old": metric.red_min, "new": update_data.red_min}
+            changes["red_min"] = {
+                "old": metric.red_min, "new": update_data.red_min}
         metric.red_min = update_data.red_min
 
     if update_data.red_max is not None:
         if metric.red_max != update_data.red_max:
-            changes["red_max"] = {"old": metric.red_max, "new": update_data.red_max}
+            changes["red_max"] = {
+                "old": metric.red_max, "new": update_data.red_max}
         metric.red_max = update_data.red_max
 
     if update_data.qualitative_guidance is not None:
         if metric.qualitative_guidance != update_data.qualitative_guidance:
-            changes["qualitative_guidance"] = {"old": metric.qualitative_guidance, "new": update_data.qualitative_guidance}
+            changes["qualitative_guidance"] = {
+                "old": metric.qualitative_guidance, "new": update_data.qualitative_guidance}
         metric.qualitative_guidance = update_data.qualitative_guidance
 
     if update_data.sort_order is not None:
         if metric.sort_order != update_data.sort_order:
-            changes["sort_order"] = {"old": metric.sort_order, "new": update_data.sort_order}
+            changes["sort_order"] = {
+                "old": metric.sort_order, "new": update_data.sort_order}
         metric.sort_order = update_data.sort_order
 
     if update_data.is_active is not None:
         if metric.is_active != update_data.is_active:
-            changes["is_active"] = {"old": metric.is_active, "new": update_data.is_active}
+            changes["is_active"] = {
+                "old": metric.is_active, "new": update_data.is_active}
         metric.is_active = update_data.is_active
 
     # Validate threshold consistency with final values
@@ -1523,8 +1560,10 @@ def advance_plan_cycle(
     plan = check_plan_edit_permission(db, plan_id, current_user)
 
     # Store old dates for audit log
-    old_submission_date = str(plan.next_submission_due_date) if plan.next_submission_due_date else None
-    old_report_date = str(plan.next_report_due_date) if plan.next_report_due_date else None
+    old_submission_date = str(
+        plan.next_submission_due_date) if plan.next_submission_due_date else None
+    old_report_date = str(
+        plan.next_report_due_date) if plan.next_report_due_date else None
 
     # Calculate next dates from current submission date
     base_date = plan.next_submission_due_date or date.today()
@@ -1560,30 +1599,6 @@ def advance_plan_cycle(
 # ============================================================================
 # MONITORING CYCLES ENDPOINTS
 # ============================================================================
-
-from app.models.monitoring import (
-    MonitoringCycle,
-    MonitoringCycleStatus,
-    MonitoringCycleApproval,
-    MonitoringResult,
-)
-from app.schemas.monitoring import (
-    MonitoringCycleCreate,
-    MonitoringCycleUpdate,
-    MonitoringCycleResponse,
-    MonitoringCycleListResponse,
-    MonitoringCycleStatusEnum,
-    MonitoringCycleApprovalResponse,
-    MonitoringResultCreate,
-    MonitoringResultUpdate,
-    MonitoringResultResponse,
-    MonitoringResultListResponse,
-    ApproveRequest,
-    RejectRequest,
-    VoidApprovalRequest,
-    CycleCancelRequest,
-    MyMonitoringTaskResponse,
-)
 
 
 # ============================================================================
@@ -1628,7 +1643,8 @@ def get_my_monitoring_tasks(
     for cycle in data_provider_cycles:
         action = _get_data_provider_action(cycle.status)
         is_overdue = cycle.submission_due_date < today
-        days_until_due = (cycle.submission_due_date - today).days if not is_overdue else None
+        days_until_due = (cycle.submission_due_date -
+                          today).days if not is_overdue else None
 
         # Count results
         result_count = db.query(func.count(MonitoringResult.result_id)).filter(
@@ -1669,7 +1685,8 @@ def get_my_monitoring_tasks(
 
         action = _get_assignee_action(cycle.status)
         is_overdue = cycle.submission_due_date < today
-        days_until_due = (cycle.submission_due_date - today).days if not is_overdue else None
+        days_until_due = (cycle.submission_due_date -
+                          today).days if not is_overdue else None
 
         result_count = db.query(func.count(MonitoringResult.result_id)).filter(
             MonitoringResult.cycle_id == cycle.cycle_id
@@ -1719,8 +1736,10 @@ def get_my_monitoring_tasks(
                 continue
 
             action = _get_team_member_action(cycle.status)
-            is_overdue = cycle.report_due_date < today  # Team members care about report due date
-            days_until_due = (cycle.report_due_date - today).days if not is_overdue else None
+            # Team members care about report due date
+            is_overdue = cycle.report_due_date < today
+            days_until_due = (cycle.report_due_date -
+                              today).days if not is_overdue else None
 
             result_count = db.query(func.count(MonitoringResult.result_id)).filter(
                 MonitoringResult.cycle_id == cycle.cycle_id
@@ -1794,6 +1813,221 @@ def _get_team_member_action(status: str) -> str:
     return "No action required"
 
 
+# ============================================================================
+# ADMIN MONITORING OVERVIEW ENDPOINT
+# ============================================================================
+
+@router.get("/monitoring/admin-overview", response_model=AdminMonitoringOverviewResponse)
+def get_admin_monitoring_overview(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin)
+):
+    """Get monitoring program overview for admin governance.
+
+    Provides a comprehensive view of all monitoring activity:
+    - Summary counts: overdue, pending approval, in progress, recently completed
+    - Priority-sorted cycle list with urgency indicators
+
+    Only accessible by Admin users.
+    """
+    today = date.today()
+    thirty_days_ago = today - timedelta(days=30)
+    fourteen_days_from_now = today + timedelta(days=14)
+
+    # Query all cycles with their related data
+    cycles = db.query(MonitoringCycle).options(
+        joinedload(MonitoringCycle.plan).joinedload(MonitoringPlan.team),
+        joinedload(MonitoringCycle.plan).joinedload(
+            MonitoringPlan.data_provider),
+    ).all()
+
+    # Calculate summary counts
+    overdue_count = 0
+    pending_approval_count = 0
+    in_progress_count = 0
+    completed_last_30_days = 0
+
+    for cycle in cycles:
+        if cycle.status == MonitoringCycleStatus.APPROVED.value:
+            if cycle.completed_at and cycle.completed_at.date() >= thirty_days_ago:
+                completed_last_30_days += 1
+        elif cycle.status == MonitoringCycleStatus.CANCELLED.value:
+            pass  # Don't count cancelled
+        elif cycle.status == MonitoringCycleStatus.PENDING_APPROVAL.value:
+            pending_approval_count += 1
+            if cycle.report_due_date < today:
+                overdue_count += 1
+        elif cycle.status in [
+            MonitoringCycleStatus.DATA_COLLECTION.value,
+            MonitoringCycleStatus.UNDER_REVIEW.value
+        ]:
+            in_progress_count += 1
+            # Check if overdue based on relevant due date
+            due_date = cycle.submission_due_date if cycle.status == MonitoringCycleStatus.DATA_COLLECTION.value else cycle.report_due_date
+            if due_date < today:
+                overdue_count += 1
+        elif cycle.status == MonitoringCycleStatus.PENDING.value:
+            # PENDING cycles don't contribute to overdue yet
+            pass
+
+    # Build cycle summaries for active cycles (exclude APPROVED and CANCELLED)
+    active_statuses = [
+        MonitoringCycleStatus.PENDING.value,
+        MonitoringCycleStatus.DATA_COLLECTION.value,
+        MonitoringCycleStatus.UNDER_REVIEW.value,
+        MonitoringCycleStatus.PENDING_APPROVAL.value,
+    ]
+
+    cycle_summaries = []
+    for cycle in cycles:
+        if cycle.status not in active_statuses:
+            continue
+
+        # Determine due date based on status
+        if cycle.status in [MonitoringCycleStatus.PENDING.value, MonitoringCycleStatus.DATA_COLLECTION.value]:
+            due_date = cycle.submission_due_date
+        else:
+            due_date = cycle.report_due_date
+
+        # Calculate days overdue (positive = overdue, negative = days remaining)
+        days_overdue = (today - due_date).days
+
+        # Determine priority
+        if days_overdue > 0:
+            priority = "overdue"
+        elif cycle.status == MonitoringCycleStatus.PENDING_APPROVAL.value:
+            priority = "pending_approval"
+        elif days_overdue >= -14:  # Within 14 days
+            priority = "approaching"
+        else:
+            priority = "normal"
+
+        # Generate period label (e.g., "Q3 2025" or "Sep 2025")
+        period_label = _generate_period_label(
+            cycle.period_start_date, cycle.period_end_date)
+
+        # Get team and data provider names
+        team_name = cycle.plan.team.name if cycle.plan.team else None
+        data_provider_name = cycle.plan.data_provider.full_name if cycle.plan.data_provider else None
+
+        # Get approval progress for PENDING_APPROVAL cycles
+        approval_progress = None
+        if cycle.status == MonitoringCycleStatus.PENDING_APPROVAL.value:
+            total_approvals = db.query(func.count(MonitoringCycleApproval.approval_id)).filter(
+                MonitoringCycleApproval.cycle_id == cycle.cycle_id,
+                MonitoringCycleApproval.is_required == True
+            ).scalar() or 0
+
+            completed_approvals = db.query(func.count(MonitoringCycleApproval.approval_id)).filter(
+                MonitoringCycleApproval.cycle_id == cycle.cycle_id,
+                MonitoringCycleApproval.is_required == True,
+                MonitoringCycleApproval.approval_status == "Approved"
+            ).scalar() or 0
+
+            if total_approvals > 0:
+                approval_progress = f"{completed_approvals}/{total_approvals}"
+
+        # Get result counts
+        result_count = db.query(func.count(MonitoringResult.result_id)).filter(
+            MonitoringResult.cycle_id == cycle.cycle_id
+        ).scalar() or 0
+
+        green_count = db.query(func.count(MonitoringResult.result_id)).filter(
+            MonitoringResult.cycle_id == cycle.cycle_id,
+            MonitoringResult.calculated_outcome == "GREEN"
+        ).scalar() or 0
+
+        yellow_count = db.query(func.count(MonitoringResult.result_id)).filter(
+            MonitoringResult.cycle_id == cycle.cycle_id,
+            MonitoringResult.calculated_outcome == "YELLOW"
+        ).scalar() or 0
+
+        red_count = db.query(func.count(MonitoringResult.result_id)).filter(
+            MonitoringResult.cycle_id == cycle.cycle_id,
+            MonitoringResult.calculated_outcome == "RED"
+        ).scalar() or 0
+
+        cycle_summaries.append(AdminMonitoringCycleSummary(
+            cycle_id=cycle.cycle_id,
+            plan_id=cycle.plan_id,
+            plan_name=cycle.plan.name,
+            period_label=period_label,
+            period_start_date=cycle.period_start_date,
+            period_end_date=cycle.period_end_date,
+            due_date=due_date,
+            status=cycle.status,
+            days_overdue=days_overdue,
+            priority=priority,
+            team_name=team_name,
+            data_provider_name=data_provider_name,
+            approval_progress=approval_progress,
+            report_url=cycle.report_url,
+            result_count=result_count,
+            green_count=green_count,
+            yellow_count=yellow_count,
+            red_count=red_count,
+        ))
+
+    # Sort by priority: overdue first (most overdue), then pending_approval, then approaching, then normal
+    priority_order = {"overdue": 0, "pending_approval": 1,
+                      "approaching": 2, "normal": 3}
+    cycle_summaries.sort(key=lambda c: (
+        priority_order.get(c.priority, 3), -c.days_overdue))
+
+    return AdminMonitoringOverviewResponse(
+        summary=AdminMonitoringOverviewSummary(
+            overdue_count=overdue_count,
+            pending_approval_count=pending_approval_count,
+            in_progress_count=in_progress_count,
+            completed_last_30_days=completed_last_30_days,
+        ),
+        cycles=cycle_summaries,
+    )
+
+
+def _generate_period_label(start_date: date, end_date: date) -> str:
+    """Generate a human-readable period label (e.g., 'Q3 2025' or 'Sep 2025')."""
+    # Check if it's a quarter (3-month period starting in Jan, Apr, Jul, Oct)
+    if start_date.day == 1 and start_date.month in [1, 4, 7, 10]:
+        # Calculate expected quarter end
+        quarter_month = start_date.month + 2
+        quarter_year = start_date.year
+        if quarter_month > 12:
+            quarter_month -= 12
+            quarter_year += 1
+
+        # Check if end_date matches quarter end
+        from calendar import monthrange
+        expected_end = date(
+            quarter_year if quarter_month <= 12 else quarter_year + 1,
+            quarter_month,
+            monthrange(quarter_year, quarter_month)[1]
+        )
+
+        if end_date == expected_end:
+            quarter = (start_date.month - 1) // 3 + 1
+            return f"Q{quarter} {start_date.year}"
+
+    # Check if it's a single month
+    if start_date.day == 1:
+        from calendar import monthrange
+        last_day = monthrange(start_date.year, start_date.month)[1]
+        if end_date == date(start_date.year, start_date.month, last_day):
+            return start_date.strftime("%b %Y")
+
+    # Check if it's semi-annual (6 months)
+    months_diff = (end_date.year - start_date.year) * \
+        12 + end_date.month - start_date.month
+    if months_diff >= 5 and months_diff <= 6:
+        if start_date.month <= 6:
+            return f"H1 {start_date.year}"
+        else:
+            return f"H2 {start_date.year}"
+
+    # Default: show date range
+    return f"{start_date.strftime('%Y-%m')} - {end_date.strftime('%Y-%m')}"
+
+
 def calculate_period_dates(frequency: MonitoringFrequency, from_date: date = None) -> tuple:
     """Calculate period start and end dates based on frequency."""
     if from_date is None:
@@ -1802,15 +2036,18 @@ def calculate_period_dates(frequency: MonitoringFrequency, from_date: date = Non
     # Start from beginning of current period
     if frequency == MonitoringFrequency.MONTHLY:
         period_start = from_date.replace(day=1)
-        period_end = (period_start + relativedelta(months=1)) - timedelta(days=1)
+        period_end = (period_start + relativedelta(months=1)) - \
+            timedelta(days=1)
     elif frequency == MonitoringFrequency.QUARTERLY:
         quarter_month = ((from_date.month - 1) // 3) * 3 + 1
         period_start = from_date.replace(month=quarter_month, day=1)
-        period_end = (period_start + relativedelta(months=3)) - timedelta(days=1)
+        period_end = (period_start + relativedelta(months=3)) - \
+            timedelta(days=1)
     elif frequency == MonitoringFrequency.SEMI_ANNUAL:
         half_month = 1 if from_date.month <= 6 else 7
         period_start = from_date.replace(month=half_month, day=1)
-        period_end = (period_start + relativedelta(months=6)) - timedelta(days=1)
+        period_end = (period_start + relativedelta(months=6)) - \
+            timedelta(days=1)
     elif frequency == MonitoringFrequency.ANNUAL:
         period_start = from_date.replace(month=1, day=1)
         period_end = from_date.replace(month=12, day=31)
@@ -1818,7 +2055,8 @@ def calculate_period_dates(frequency: MonitoringFrequency, from_date: date = Non
         # Default to quarterly
         quarter_month = ((from_date.month - 1) // 3) * 3 + 1
         period_start = from_date.replace(month=quarter_month, day=1)
-        period_end = (period_start + relativedelta(months=3)) - timedelta(days=1)
+        period_end = (period_start + relativedelta(months=3)) - \
+            timedelta(days=1)
 
     return period_start, period_end
 
@@ -1856,7 +2094,8 @@ def check_cycle_edit_permission(db: Session, cycle_id: int, current_user: User) 
     - User is assigned to this specific cycle
     """
     cycle = db.query(MonitoringCycle).options(
-        joinedload(MonitoringCycle.plan).joinedload(MonitoringPlan.team).joinedload(MonitoringTeam.members)
+        joinedload(MonitoringCycle.plan).joinedload(
+            MonitoringPlan.team).joinedload(MonitoringTeam.members)
     ).filter(MonitoringCycle.cycle_id == cycle_id).first()
 
     if not cycle:
@@ -1900,7 +2139,8 @@ def check_team_member_or_admin(db: Session, cycle_id: int, current_user: User) -
     Data providers and assignees who are not team members cannot perform these actions.
     """
     cycle = db.query(MonitoringCycle).options(
-        joinedload(MonitoringCycle.plan).joinedload(MonitoringPlan.team).joinedload(MonitoringTeam.members)
+        joinedload(MonitoringCycle.plan).joinedload(
+            MonitoringPlan.team).joinedload(MonitoringTeam.members)
     ).filter(MonitoringCycle.cycle_id == cycle_id).first()
 
     if not cycle:
@@ -1990,9 +2230,11 @@ def validate_results_completeness(db: Session, cycle: MonitoringCycle) -> None:
     # Report issues
     issues = []
     if metrics_missing_entirely:
-        issues.append(f"Missing results for: {', '.join(metrics_missing_entirely)}")
+        issues.append(
+            f"Missing results for: {', '.join(metrics_missing_entirely)}")
     if metrics_missing_explanation:
-        issues.append(f"Missing explanation for N/A values: {', '.join(metrics_missing_explanation)}")
+        issues.append(
+            f"Missing explanation for N/A values: {', '.join(metrics_missing_explanation)}")
 
     if issues:
         raise HTTPException(
@@ -2034,8 +2276,10 @@ def create_monitoring_cycle(
         )
 
     # Calculate due dates
-    submission_due = period_end + timedelta(days=15)  # Default: 15 days after period end
-    report_due = calculate_report_due_date(submission_due, plan.reporting_lead_days)
+    # Default: 15 days after period end
+    submission_due = period_end + timedelta(days=15)
+    report_due = calculate_report_due_date(
+        submission_due, plan.reporting_lead_days)
 
     # Use plan's data provider if no specific assignment
     assigned_to = cycle_data.assigned_to_user_id or plan.data_provider_user_id
@@ -2083,9 +2327,11 @@ def list_plan_cycles(
 ):
     """List all cycles for a monitoring plan."""
     # Verify plan exists
-    plan = db.query(MonitoringPlan).filter(MonitoringPlan.plan_id == plan_id).first()
+    plan = db.query(MonitoringPlan).filter(
+        MonitoringPlan.plan_id == plan_id).first()
     if not plan:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Plan not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Plan not found")
 
     query = db.query(MonitoringCycle).options(
         joinedload(MonitoringCycle.assigned_to),
@@ -2100,16 +2346,32 @@ def list_plan_cycles(
     cycles = query.order_by(MonitoringCycle.period_end_date.desc()).all()
 
     result = []
+    today = date.today()
     for cycle in cycles:
         # Count outcomes
-        green_count = sum(1 for r in cycle.results if r.calculated_outcome == "GREEN")
-        yellow_count = sum(1 for r in cycle.results if r.calculated_outcome == "YELLOW")
-        red_count = sum(1 for r in cycle.results if r.calculated_outcome == "RED")
+        green_count = sum(
+            1 for r in cycle.results if r.calculated_outcome == "GREEN")
+        yellow_count = sum(
+            1 for r in cycle.results if r.calculated_outcome == "YELLOW")
+        red_count = sum(
+            1 for r in cycle.results if r.calculated_outcome == "RED")
 
         # Count approvals (only required, non-voided ones)
-        required_approvals = [a for a in cycle.approvals if a.is_required and not a.voided_at]
+        required_approvals = [
+            a for a in cycle.approvals if a.is_required and not a.voided_at]
         approval_count = len(required_approvals)
-        pending_approval_count = sum(1 for a in required_approvals if a.approval_status == "Pending")
+        pending_approval_count = sum(
+            1 for a in required_approvals if a.approval_status == "Pending")
+
+        # Calculate overdue status (only non-completed cycles can be overdue)
+        status_value = cycle.status.value if hasattr(
+            cycle.status, 'value') else cycle.status
+        if status_value in ("APPROVED", "CANCELLED"):
+            is_overdue = False
+            days_overdue = 0
+        else:
+            days_overdue = (today - cycle.report_due_date).days
+            is_overdue = days_overdue > 0
 
         result.append({
             "cycle_id": cycle.cycle_id,
@@ -2129,7 +2391,9 @@ def list_plan_cycles(
             "yellow_count": yellow_count,
             "red_count": red_count,
             "approval_count": approval_count,
-            "pending_approval_count": pending_approval_count
+            "pending_approval_count": pending_approval_count,
+            "is_overdue": is_overdue,
+            "days_overdue": days_overdue
         })
 
     return result
@@ -2153,7 +2417,8 @@ def get_monitoring_cycle(
     ).filter(MonitoringCycle.cycle_id == cycle_id).first()
 
     if not cycle:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Cycle not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Cycle not found")
 
     # Count pending approvals
     pending_approvals = sum(
@@ -2238,12 +2503,15 @@ def update_monitoring_cycle(
 
     if update_data.assigned_to_user_id is not None:
         if update_data.assigned_to_user_id != 0:
-            user = db.query(User).filter(User.user_id == update_data.assigned_to_user_id).first()
+            user = db.query(User).filter(
+                User.user_id == update_data.assigned_to_user_id).first()
             if not user:
-                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
         new_id = update_data.assigned_to_user_id if update_data.assigned_to_user_id != 0 else None
         if cycle.assigned_to_user_id != new_id:
-            changes["assigned_to_user_id"] = {"old": cycle.assigned_to_user_id, "new": new_id}
+            changes["assigned_to_user_id"] = {
+                "old": cycle.assigned_to_user_id, "new": new_id}
         cycle.assigned_to_user_id = new_id
 
     if update_data.notes is not None:
@@ -2294,7 +2562,8 @@ def delete_monitoring_cycle(
         entity_id=cycle_id,
         action="DELETE",
         user_id=current_user.user_id,
-        changes={"plan_id": cycle.plan_id, "period": f"{cycle.period_start_date} to {cycle.period_end_date}"}
+        changes={"plan_id": cycle.plan_id,
+                 "period": f"{cycle.period_start_date} to {cycle.period_end_date}"}
     )
 
     db.delete(cycle)
@@ -2381,7 +2650,8 @@ def create_monitoring_result(
     # Calculate outcome for quantitative metrics
     calculated_outcome = None
     if metric.kpm.evaluation_type == "Quantitative" and result_data.numeric_value is not None:
-        calculated_outcome = calculate_outcome(result_data.numeric_value, metric)
+        calculated_outcome = calculate_outcome(
+            result_data.numeric_value, metric)
     elif result_data.outcome_value_id:
         # For qualitative/outcome-only, use the selected outcome
         outcome_value = db.query(TaxonomyValue).filter(
@@ -2433,7 +2703,8 @@ def create_monitoring_result(
         joinedload(MonitoringResult.model),
         joinedload(MonitoringResult.outcome_value),
         joinedload(MonitoringResult.entered_by),
-        joinedload(MonitoringResult.plan_metric).joinedload(MonitoringPlanMetric.kpm)
+        joinedload(MonitoringResult.plan_metric).joinedload(
+            MonitoringPlanMetric.kpm)
     ).filter(MonitoringResult.result_id == result.result_id).first()
 
     return _build_result_response(result)
@@ -2493,14 +2764,17 @@ def list_cycle_results(
     current_user: User = Depends(get_current_user)
 ):
     """Get all results for a cycle."""
-    cycle = db.query(MonitoringCycle).filter(MonitoringCycle.cycle_id == cycle_id).first()
+    cycle = db.query(MonitoringCycle).filter(
+        MonitoringCycle.cycle_id == cycle_id).first()
     if not cycle:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Cycle not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Cycle not found")
 
     results = db.query(MonitoringResult).options(
         joinedload(MonitoringResult.model),
         joinedload(MonitoringResult.entered_by),
-        joinedload(MonitoringResult.plan_metric).joinedload(MonitoringPlanMetric.kpm)
+        joinedload(MonitoringResult.plan_metric).joinedload(
+            MonitoringPlanMetric.kpm)
     ).filter(MonitoringResult.cycle_id == cycle_id).all()
 
     return [
@@ -2530,11 +2804,13 @@ def update_monitoring_result(
     """Update a monitoring result."""
     result = db.query(MonitoringResult).options(
         joinedload(MonitoringResult.cycle),
-        joinedload(MonitoringResult.plan_metric).joinedload(MonitoringPlanMetric.kpm)
+        joinedload(MonitoringResult.plan_metric).joinedload(
+            MonitoringPlanMetric.kpm)
     ).filter(MonitoringResult.result_id == result_id).first()
 
     if not result:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Result not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Result not found")
 
     # Check cycle edit permission
     check_cycle_edit_permission(db, result.cycle_id, current_user)
@@ -2553,18 +2829,21 @@ def update_monitoring_result(
 
     if "numeric_value" in provided_fields:
         if result.numeric_value != update_data.numeric_value:
-            changes["numeric_value"] = {"old": result.numeric_value, "new": update_data.numeric_value}
+            changes["numeric_value"] = {
+                "old": result.numeric_value, "new": update_data.numeric_value}
         result.numeric_value = update_data.numeric_value
         # Recalculate outcome (or clear if value is now null)
         if result.plan_metric.kpm.evaluation_type == "Quantitative":
             if update_data.numeric_value is not None:
-                result.calculated_outcome = calculate_outcome(update_data.numeric_value, result.plan_metric)
+                result.calculated_outcome = calculate_outcome(
+                    update_data.numeric_value, result.plan_metric)
             else:
                 result.calculated_outcome = None
 
     if "outcome_value_id" in provided_fields:
         if result.outcome_value_id != update_data.outcome_value_id:
-            changes["outcome_value_id"] = {"old": result.outcome_value_id, "new": update_data.outcome_value_id}
+            changes["outcome_value_id"] = {
+                "old": result.outcome_value_id, "new": update_data.outcome_value_id}
         result.outcome_value_id = update_data.outcome_value_id
         # Update calculated outcome from taxonomy value (or clear if null)
         if update_data.outcome_value_id is not None:
@@ -2579,7 +2858,7 @@ def update_monitoring_result(
     if "narrative" in provided_fields:
         if result.narrative != update_data.narrative:
             changes["narrative"] = {"old": result.narrative[:100] if result.narrative else None,
-                                   "new": update_data.narrative[:100] if update_data.narrative else None}
+                                    "new": update_data.narrative[:100] if update_data.narrative else None}
         result.narrative = update_data.narrative
 
     if "supporting_data" in provided_fields:
@@ -2602,7 +2881,8 @@ def update_monitoring_result(
         joinedload(MonitoringResult.model),
         joinedload(MonitoringResult.outcome_value),
         joinedload(MonitoringResult.entered_by),
-        joinedload(MonitoringResult.plan_metric).joinedload(MonitoringPlanMetric.kpm)
+        joinedload(MonitoringResult.plan_metric).joinedload(
+            MonitoringPlanMetric.kpm)
     ).filter(MonitoringResult.result_id == result_id).first()
 
     return _build_result_response(result)
@@ -2617,11 +2897,13 @@ def delete_monitoring_result(
     """Delete a monitoring result."""
     result = db.query(MonitoringResult).options(
         joinedload(MonitoringResult.cycle),
-        joinedload(MonitoringResult.plan_metric).joinedload(MonitoringPlanMetric.kpm)
+        joinedload(MonitoringResult.plan_metric).joinedload(
+            MonitoringPlanMetric.kpm)
     ).filter(MonitoringResult.result_id == result_id).first()
 
     if not result:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Result not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Result not found")
 
     # Check cycle edit permission
     check_cycle_edit_permission(db, result.cycle_id, current_user)
@@ -2778,7 +3060,8 @@ def cancel_cycle(
 
     old_status = cycle.status
     cycle.status = MonitoringCycleStatus.CANCELLED.value
-    cycle.notes = f"[CANCELLED] {cancel_data.cancel_reason}" + (f"\n\n{cycle.notes}" if cycle.notes else "")
+    cycle.notes = f"[CANCELLED] {cancel_data.cancel_reason}" + \
+        (f"\n\n{cycle.notes}" if cycle.notes else "")
 
     create_audit_log(
         db=db,
@@ -2883,6 +3166,7 @@ def _build_approval_response(approval: MonitoringCycleApproval, can_approve: boo
 @router.post("/monitoring/cycles/{cycle_id}/request-approval", response_model=MonitoringCycleResponse)
 def request_cycle_approval(
     cycle_id: int,
+    request_data: CycleRequestApprovalRequest,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
@@ -2891,6 +3175,8 @@ def request_cycle_approval(
     Auto-generates approval requirements based on:
     - Global approval (always required)
     - Regional approvals based on regions of models in the plan scope
+
+    Requires a report_url to the final monitoring report document that approvers will review.
 
     Only Admin or monitoring team members (risk function) can request approval.
     Data providers cannot advance to approval stage.
@@ -2918,7 +3204,8 @@ def request_cycle_approval(
         ).all()
 
         for mr in model_regions:
-            region = db.query(Region).filter(Region.region_id == mr.region_id).first()
+            region = db.query(Region).filter(
+                Region.region_id == mr.region_id).first()
             if region and region.requires_regional_approval:
                 regions_needing_approval.add(region.region_id)
 
@@ -2956,8 +3243,21 @@ def request_cycle_approval(
             )
             db.add(regional_approval)
 
-    # Update cycle status
+    # Reset any Rejected approvals to Pending for re-review
+    rejected_approvals = db.query(MonitoringCycleApproval).filter(
+        MonitoringCycleApproval.cycle_id == cycle_id,
+        MonitoringCycleApproval.approval_status == "Rejected"
+    ).all()
+
+    for approval in rejected_approvals:
+        approval.approval_status = "Pending"
+        approval.approver_id = None
+        approval.approved_at = None
+        approval.comments = None
+
+    # Update cycle status and store report URL
     cycle.status = MonitoringCycleStatus.PENDING_APPROVAL.value
+    cycle.report_url = request_data.report_url
 
     create_audit_log(
         db=db,
@@ -2967,6 +3267,7 @@ def request_cycle_approval(
         user_id=current_user.user_id,
         changes={
             "status": {"old": "UNDER_REVIEW", "new": "PENDING_APPROVAL"},
+            "report_url": request_data.report_url,
             "regional_approvals_created": list(regions_needing_approval)
         }
     )
@@ -2982,9 +3283,11 @@ def list_cycle_approvals(
     current_user: User = Depends(get_current_user)
 ):
     """List all approval requirements for a cycle with can_approve permissions."""
-    cycle = db.query(MonitoringCycle).filter(MonitoringCycle.cycle_id == cycle_id).first()
+    cycle = db.query(MonitoringCycle).filter(
+        MonitoringCycle.cycle_id == cycle_id).first()
     if not cycle:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Cycle not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Cycle not found")
 
     approvals = db.query(MonitoringCycleApproval).options(
         joinedload(MonitoringCycleApproval.approver),
@@ -3018,7 +3321,8 @@ def list_cycle_approvals(
     return [
         _build_approval_response(
             a,
-            can_approve=_can_user_approve_approval(a, current_user, team_member_ids, user_region_ids)
+            can_approve=_can_user_approve_approval(
+                a, current_user, team_member_ids, user_region_ids)
         )
         for a in approvals
     ]
@@ -3034,7 +3338,8 @@ def _check_and_complete_cycle(db: Session, cycle: MonitoringCycle, current_user:
     ).all()
 
     # Check if all are approved
-    all_approved = all(a.approval_status == "Approved" for a in required_approvals)
+    all_approved = all(a.approval_status ==
+                       "Approved" for a in required_approvals)
 
     if all_approved and required_approvals:
         cycle.status = MonitoringCycleStatus.APPROVED.value
@@ -3080,7 +3385,8 @@ def approve_cycle(
     ).first()
 
     if not approval:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Approval not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Approval not found")
 
     if approval.cycle.status != MonitoringCycleStatus.PENDING_APPROVAL.value:
         raise HTTPException(
@@ -3213,7 +3519,8 @@ def reject_cycle_approval(
     ).first()
 
     if not approval:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Approval not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Approval not found")
 
     if approval.cycle.status != MonitoringCycleStatus.PENDING_APPROVAL.value:
         raise HTTPException(
@@ -3231,7 +3538,8 @@ def reject_cycle_approval(
     if approval.approval_type == "Global":
         if current_user.role != UserRole.ADMIN:
             plan = db.query(MonitoringPlan).options(
-                joinedload(MonitoringPlan.team).joinedload(MonitoringTeam.members)
+                joinedload(MonitoringPlan.team).joinedload(
+                    MonitoringTeam.members)
             ).filter(MonitoringPlan.plan_id == approval.cycle.plan_id).first()
 
             if not plan or not plan.team:
@@ -3329,7 +3637,8 @@ def void_cycle_approval(
     ).first()
 
     if not approval:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Approval not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Approval not found")
 
     if approval.voided_at:
         raise HTTPException(
@@ -3403,14 +3712,16 @@ def get_metric_trend(
     ).filter(MonitoringPlanMetric.metric_id == plan_metric_id).first()
 
     if not metric:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Metric not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Metric not found")
 
     # Build query for results
     query = db.query(MonitoringResult).join(
         MonitoringCycle
     ).filter(
         MonitoringResult.plan_metric_id == plan_metric_id,
-        MonitoringCycle.status.in_([MonitoringCycleStatus.APPROVED.value, MonitoringCycleStatus.PENDING_APPROVAL.value, MonitoringCycleStatus.UNDER_REVIEW.value])
+        MonitoringCycle.status.in_([MonitoringCycleStatus.APPROVED.value,
+                                   MonitoringCycleStatus.PENDING_APPROVAL.value, MonitoringCycleStatus.UNDER_REVIEW.value])
     )
 
     if model_id:
@@ -3464,14 +3775,17 @@ def get_performance_summary(
     Provides outcome distribution (GREEN/YELLOW/RED) for the last N cycles.
     """
     # Verify plan exists
-    plan = db.query(MonitoringPlan).filter(MonitoringPlan.plan_id == plan_id).first()
+    plan = db.query(MonitoringPlan).filter(
+        MonitoringPlan.plan_id == plan_id).first()
     if not plan:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Plan not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Plan not found")
 
     # Get recent completed/in-review cycles
     recent_cycles = db.query(MonitoringCycle).filter(
         MonitoringCycle.plan_id == plan_id,
-        MonitoringCycle.status.in_([MonitoringCycleStatus.APPROVED.value, MonitoringCycleStatus.PENDING_APPROVAL.value, MonitoringCycleStatus.UNDER_REVIEW.value])
+        MonitoringCycle.status.in_([MonitoringCycleStatus.APPROVED.value,
+                                   MonitoringCycleStatus.PENDING_APPROVAL.value, MonitoringCycleStatus.UNDER_REVIEW.value])
     ).order_by(MonitoringCycle.period_end_date.desc()).limit(cycles).all()
 
     if not recent_cycles:
@@ -3496,14 +3810,16 @@ def get_performance_summary(
     green_count = sum(1 for r in results if r.calculated_outcome == "GREEN")
     yellow_count = sum(1 for r in results if r.calculated_outcome == "YELLOW")
     red_count = sum(1 for r in results if r.calculated_outcome == "RED")
-    na_count = sum(1 for r in results if r.calculated_outcome == "N/A" or r.calculated_outcome is None)
+    na_count = sum(1 for r in results if r.calculated_outcome ==
+                   "N/A" or r.calculated_outcome is None)
 
     # Group by metric for breakdown
     metric_outcomes = {}
     for result in results:
         metric_id = result.plan_metric_id
         if metric_id not in metric_outcomes:
-            metric_outcomes[metric_id] = {"green": 0, "yellow": 0, "red": 0, "na": 0}
+            metric_outcomes[metric_id] = {
+                "green": 0, "yellow": 0, "red": 0, "na": 0}
 
         if result.calculated_outcome == "GREEN":
             metric_outcomes[metric_id]["green"] += 1
@@ -3567,19 +3883,22 @@ def export_cycle_results(
     ).first()
 
     if not cycle:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Cycle not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Cycle not found")
 
     # Get all results with metric and model info
     results = db.query(MonitoringResult).options(
         joinedload(MonitoringResult.model),
         joinedload(MonitoringResult.entered_by),
-        joinedload(MonitoringResult.plan_metric).joinedload(MonitoringPlanMetric.kpm).joinedload(Kpm.category)
+        joinedload(MonitoringResult.plan_metric).joinedload(
+            MonitoringPlanMetric.kpm).joinedload(Kpm.category)
     ).filter(
         MonitoringResult.cycle_id == cycle_id
     ).order_by(MonitoringResult.plan_metric_id).all()
 
     # Get plan name for filename
-    plan = db.query(MonitoringPlan).filter(MonitoringPlan.plan_id == plan_id).first()
+    plan = db.query(MonitoringPlan).filter(
+        MonitoringPlan.plan_id == plan_id).first()
 
     # Build CSV
     output = io.StringIO()
@@ -3608,7 +3927,8 @@ def export_cycle_results(
             result.calculated_outcome or "N/A",
             result.narrative or "",
             result.entered_by.full_name if result.entered_by else "",
-            result.entered_at.strftime("%Y-%m-%d %H:%M") if result.entered_at else ""
+            result.entered_at.strftime(
+                "%Y-%m-%d %H:%M") if result.entered_at else ""
         ])
 
     csv_content = output.getvalue()

@@ -102,6 +102,7 @@ interface MonitoringCycle {
     report_due_date: string;
     status: string;
     assigned_to_name?: string | null;
+    report_url?: string | null;
     plan_version_id?: number | null;
     version_number?: number | null;
     version_name?: string | null;
@@ -112,6 +113,9 @@ interface MonitoringCycle {
     red_count: number;
     approval_count: number;
     pending_approval_count: number;
+    // Overdue status (calculated server-side)
+    is_overdue: boolean;
+    days_overdue: number;
 }
 
 interface CycleApproval {
@@ -483,6 +487,11 @@ const MonitoringPlanDetailPage: React.FC = () => {
     const [cancelCycleId, setCancelCycleId] = useState<number | null>(null);
     const [cancelReason, setCancelReason] = useState('');
 
+    // Request approval modal state
+    const [showRequestApprovalModal, setShowRequestApprovalModal] = useState(false);
+    const [requestApprovalCycleId, setRequestApprovalCycleId] = useState<number | null>(null);
+    const [reportUrl, setReportUrl] = useState('');
+
     // Phase 7: Performance summary state
     const [performanceSummary, setPerformanceSummary] = useState<PerformanceSummary | null>(null);
     const [loadingPerformance, setLoadingPerformance] = useState(false);
@@ -847,6 +856,38 @@ const MonitoringPlanDetailPage: React.FC = () => {
             }
         } catch (err: any) {
             setActionError(err.response?.data?.detail || 'Failed to cancel cycle');
+        } finally {
+            setActionLoading(false);
+        }
+    };
+
+    // Request approval functions
+    const openRequestApprovalModal = (cycleId: number) => {
+        setRequestApprovalCycleId(cycleId);
+        setReportUrl('');
+        setActionError(null);
+        setShowRequestApprovalModal(true);
+    };
+
+    const handleRequestApproval = async () => {
+        if (!requestApprovalCycleId || !reportUrl.trim()) return;
+
+        setActionLoading(true);
+        setActionError(null);
+
+        try {
+            await api.post(`/monitoring/cycles/${requestApprovalCycleId}/request-approval`, {
+                report_url: reportUrl.trim()
+            });
+            setShowRequestApprovalModal(false);
+            setRequestApprovalCycleId(null);
+            setReportUrl('');
+            fetchCycles();
+            if (selectedCycle?.cycle_id === requestApprovalCycleId) {
+                fetchCycleDetail(requestApprovalCycleId);
+            }
+        } catch (err: any) {
+            setActionError(err.response?.data?.detail || 'Failed to request approval');
         } finally {
             setActionLoading(false);
         }
@@ -1511,6 +1552,29 @@ const MonitoringPlanDetailPage: React.FC = () => {
                                 </div>
                             )}
 
+                            {/* Overdue Alert Banner */}
+                            {currentCycle && currentCycle.is_overdue && (
+                                <div className="bg-red-50 border-l-4 border-red-500 p-4 rounded-r-lg">
+                                    <div className="flex items-start">
+                                        <div className="flex-shrink-0">
+                                            <svg className="h-5 w-5 text-red-500" viewBox="0 0 20 20" fill="currentColor">
+                                                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+                                            </svg>
+                                        </div>
+                                        <div className="ml-3">
+                                            <h3 className="text-sm font-bold text-red-800">
+                                                Monitoring Cycle Overdue
+                                            </h3>
+                                            <p className="mt-1 text-sm text-red-700">
+                                                This monitoring cycle is <strong>{currentCycle.days_overdue} days overdue</strong>.
+                                                The report was due on {currentCycle.report_due_date}.
+                                                Please complete data collection and submit for approval as soon as possible.
+                                            </p>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+
                             {/* Action Card - Current Cycle Status */}
                             {currentCycle ? (
                                 <div className={`rounded-lg p-5 ${
@@ -1578,6 +1642,8 @@ const MonitoringPlanDetailPage: React.FC = () => {
                                                     onClick={() => {
                                                         if (action.action === 'cancel') {
                                                             openCancelModal(currentCycle.cycle_id);
+                                                        } else if (action.action === 'request-approval') {
+                                                            openRequestApprovalModal(currentCycle.cycle_id);
                                                         } else {
                                                             handleCycleAction(currentCycle.cycle_id, action.action);
                                                         }
@@ -1613,6 +1679,22 @@ const MonitoringPlanDetailPage: React.FC = () => {
                                                         {currentCycle.red_count} Red
                                                     </span>
                                                 </div>
+                                            </div>
+                                        </div>
+                                    )}
+                                    {/* Report URL (shown for PENDING_APPROVAL and APPROVED cycles) */}
+                                    {(currentCycle.status === 'PENDING_APPROVAL' || currentCycle.status === 'APPROVED') && currentCycle.report_url && (
+                                        <div className="mt-4 pt-4 border-t border-gray-200">
+                                            <div className="flex items-center gap-2">
+                                                <span className="text-sm text-gray-600">📄 Final Report:</span>
+                                                <a
+                                                    href={currentCycle.report_url}
+                                                    target="_blank"
+                                                    rel="noopener noreferrer"
+                                                    className="text-sm text-blue-600 hover:text-blue-800 hover:underline truncate max-w-md"
+                                                >
+                                                    {currentCycle.report_url}
+                                                </a>
                                             </div>
                                         </div>
                                     )}
@@ -2219,6 +2301,8 @@ const MonitoringPlanDetailPage: React.FC = () => {
                                                         onClick={() => {
                                                             if (action.action === 'cancel') {
                                                                 openCancelModal(currentCycle.cycle_id);
+                                                            } else if (action.action === 'request-approval') {
+                                                                openRequestApprovalModal(currentCycle.cycle_id);
                                                             } else {
                                                                 handleCycleAction(currentCycle.cycle_id, action.action);
                                                             }
@@ -2471,6 +2555,32 @@ const MonitoringPlanDetailPage: React.FC = () => {
                                             <div>
                                                 <label className="text-sm text-gray-500">Notes</label>
                                                 <p className="mt-1 text-gray-700">{selectedCycle.notes}</p>
+                                            </div>
+                                        )}
+
+                                        {/* Report Document for Approvers */}
+                                        {selectedCycle.report_url && (
+                                            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
+                                                <div className="flex items-center gap-3">
+                                                    <span className="text-2xl">📄</span>
+                                                    <div className="flex-1">
+                                                        <h4 className="font-semibold text-blue-800">Final Monitoring Report</h4>
+                                                        <p className="text-sm text-blue-600 mt-1">
+                                                            Please review the report before providing your approval.
+                                                        </p>
+                                                    </div>
+                                                    <a
+                                                        href={selectedCycle.report_url}
+                                                        target="_blank"
+                                                        rel="noopener noreferrer"
+                                                        className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium flex items-center gap-2"
+                                                    >
+                                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                                                        </svg>
+                                                        Open Report
+                                                    </a>
+                                                </div>
                                             </div>
                                         )}
 
@@ -3314,6 +3424,69 @@ const MonitoringPlanDetailPage: React.FC = () => {
                                     className="px-4 py-2 rounded text-white font-medium bg-red-600 hover:bg-red-700 disabled:opacity-50"
                                 >
                                     {actionLoading ? 'Cancelling...' : 'Confirm Cancel'}
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                {/* Request Approval Modal */}
+                {showRequestApprovalModal && requestApprovalCycleId && (
+                    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+                        <div className="bg-white rounded-lg shadow-xl w-full max-w-md">
+                            <div className="p-4 border-b bg-blue-50">
+                                <h3 className="text-lg font-bold text-blue-800">Request Approval</h3>
+                            </div>
+
+                            <div className="p-4 space-y-4">
+                                {actionError && (
+                                    <div className="bg-red-100 border border-red-400 text-red-700 px-3 py-2 rounded text-sm">
+                                        {actionError}
+                                    </div>
+                                )}
+
+                                <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                                    <p className="text-blue-800 text-sm">
+                                        Please provide the URL to the final monitoring report document. Approvers will review this report before providing their approval.
+                                    </p>
+                                </div>
+
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                                        Report Document URL *
+                                    </label>
+                                    <input
+                                        type="url"
+                                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                                        value={reportUrl}
+                                        onChange={(e) => setReportUrl(e.target.value)}
+                                        placeholder="https://sharepoint.example.com/reports/..."
+                                    />
+                                    <p className="text-xs text-gray-500 mt-1">
+                                        Enter the full URL to the monitoring report (e.g., SharePoint, OneDrive, Google Drive)
+                                    </p>
+                                </div>
+                            </div>
+
+                            <div className="p-4 border-t bg-gray-50 flex justify-end gap-2">
+                                <button
+                                    onClick={() => {
+                                        setShowRequestApprovalModal(false);
+                                        setRequestApprovalCycleId(null);
+                                        setReportUrl('');
+                                        setActionError(null);
+                                    }}
+                                    disabled={actionLoading}
+                                    className="btn-secondary"
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    onClick={handleRequestApproval}
+                                    disabled={actionLoading || !reportUrl.trim()}
+                                    className="px-4 py-2 rounded text-white font-medium bg-blue-600 hover:bg-blue-700 disabled:opacity-50"
+                                >
+                                    {actionLoading ? 'Submitting...' : 'Request Approval'}
                                 </button>
                             </div>
                         </div>

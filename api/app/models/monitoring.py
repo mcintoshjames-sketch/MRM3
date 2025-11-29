@@ -354,6 +354,12 @@ class MonitoringCycle(Base):
     # Notes
     notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
+    # Final report URL (provided when requesting approval)
+    report_url: Mapped[Optional[str]] = mapped_column(
+        String(500), nullable=True,
+        comment="URL to the final monitoring report document for approvers to review"
+    )
+
     # Version tracking (locked at DATA_COLLECTION start)
     plan_version_id: Mapped[Optional[int]] = mapped_column(
         Integer, ForeignKey("monitoring_plan_versions.version_id", ondelete="SET NULL"),
