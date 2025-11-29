@@ -475,6 +475,8 @@ cd web && pnpm test:coverage
 - [x] Get non-existent monitoring plan returns 404
 - [x] Update monitoring plan as Admin succeeds
 - [x] Delete monitoring plan as Admin succeeds
+- [x] **Delete plan verifies plan is actually removed (GET returns 404)**
+- [x] **Delete plan cascades to metrics, versions, and cycles**
 - [x] Advance plan cycle updates dates correctly
 
 #### Monitoring Plan Team Member Permissions (Manual API Tests)
@@ -524,6 +526,9 @@ cd web && pnpm test:coverage
 - [x] Start non-pending cycle fails (400)
 - [x] Submit cycle (DATA_COLLECTION → UNDER_REVIEW)
 - [x] Submit without results fails (400)
+- [x] **Submit fails when some metrics have no results (multi-metric validation)**
+- [x] **Submit fails when N/A value has no narrative explanation**
+- [x] **Submit succeeds when N/A value has narrative explanation**
 - [x] Request approval (UNDER_REVIEW → PENDING_APPROVAL)
 - [x] Request approval auto-creates global approval requirement
 - [x] Request approval auto-creates regional requirements based on model regions
@@ -570,15 +575,18 @@ cd web && pnpm test:coverage
 
 #### Monitoring Cycle Approval Workflow (`test_monitoring.py`)
 - [x] Request approval creates global approval requirement
+- [x] **Request approval creates Global with correct fields (is_required=True, status=Pending)**
 - [x] Request approval creates regional approvals based on model regions
 - [x] List cycle approvals when empty
 - [x] List cycle approvals with data
+- [x] **List cycle approvals returns complete approval object structure**
 - [x] Approve global approval as Admin succeeds
 - [x] Approve global approval adds comments
 - [x] Approve regional approval requires region approver permission
 - [x] Cycle auto-transitions to APPROVED when all approvals complete
 - [x] Reject approval returns cycle to UNDER_REVIEW
 - [x] Reject approval requires comments
+- [x] **Re-submit after rejection resets Rejected approvals to Pending (approval workflow fix)**
 - [x] Void approval requirement with reason
 - [x] Voided approval excludes from completion check
 - [x] Cannot approve already-approved approval (400)
@@ -954,14 +962,26 @@ describe('NewPage', () => {
 - **My Monitoring Tasks** (centralized view for users to see all monitoring cycles requiring their attention; supports three roles: data_provider, team_member, assignee; includes action_needed guidance, due dates, overdue status; MyMonitoringPage with role-based filtering)
 - **Monitoring Workflow Permission Model** (role-based access control for workflow actions; Monitoring Team = Risk function with full workflow control; Data Provider = can only submit results; Admin = full access; `check_team_member_or_admin()` helper for protected actions; `validate_results_completeness()` ensures complete submissions; `user_permissions` object in plan responses for frontend permission display)
 
-**Total: 550+ tests (420+ backend + 128 frontend)**
-- Backend: ~478 passing, 3 failing (pre-existing issues unrelated to versioning/9b changes)
+**Total: 560+ tests (430+ backend + 128 frontend)**
+- Backend: ~486 passing, 3 failing (pre-existing issues unrelated to versioning/9b changes)
 - Frontend: 128 passing
 - **Note**: Core regression suite stable. Added monitoring plan versioning tests and component 9b integration. Backend tests include version CRUD, metric snapshotting, cycle version binding, and validation plan component 9b handling.
+- **2025-11-29 Test Hardening**: Added 8 new tests to guard against regressions in monitoring module:
+  - Submit cycle completeness validation (multi-metric, N/A narrative requirements)
+  - Plan delete cascade verification
+  - Approval creation field verification
+  - Re-submit after rejection resets Rejected approvals to Pending
 
 **Frontend Testing Debt:**
 - ValidationWorkflowPage component tests (~15 tests)
 - ValidationRequestDetailPage component tests (~25 tests)
+- **AdminMonitoringOverview** - AdminMonitoringOverview.test.tsx (missing)
+  - Displays loading state initially
+  - Displays overview statistics (total plans, active cycles, pending approvals)
+  - Displays overdue cycles alert section
+  - Displays recent activity feed
+  - Handles empty data gracefully
+  - Admin-only access verification
 - **MyMonitoringPage** - MyMonitoringPage.test.tsx (~12 tests pending)
   - Displays loading state initially
   - Displays page title and description

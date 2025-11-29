@@ -345,7 +345,7 @@ const { sortedData, requestSort, getSortIcon } = useTableSort<Validation>(valida
   - `TaxonomyValue` - Individual values with code, label, description, sort order, active status
 - **Pre-seeded Taxonomies**:
   - **Model Risk Tier**: Tier 1 (High), Tier 2 (Medium), Tier 3 (Low)
-  - **Validation Type**: Initial, Annual Review, Comprehensive, Targeted Review, Ongoing Monitoring
+  - **Validation Type**: Initial, Comprehensive, Targeted Review
   - **Validation Outcome**: Pass, Pass with Findings, Fail
   - **Validation Scope**: Full Scope, Conceptual Soundness, Data Quality, Implementation Testing, Performance Monitoring
 - **Features**:

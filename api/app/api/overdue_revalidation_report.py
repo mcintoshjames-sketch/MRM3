@@ -279,7 +279,7 @@ def get_overdue_revalidation_report(
             joinedload(ValidationRequest.validation_type)
         ).filter(
             ValidationRequest.validation_type.has(
-                TaxonomyValue.code.in_(["COMPREHENSIVE", "ANNUAL"])),
+                TaxonomyValue.code == "COMPREHENSIVE"),
             ValidationRequest.submission_received_date.is_(None),
             ValidationRequest.current_status.has(
                 TaxonomyValue.code.in_(["INTAKE", "PLANNING"]))
@@ -391,7 +391,7 @@ def get_overdue_revalidation_report(
             joinedload(ValidationRequest.assignments).joinedload(ValidationAssignment.validator)
         ).filter(
             ValidationRequest.validation_type.has(
-                TaxonomyValue.code.in_(["COMPREHENSIVE", "ANNUAL"])),
+                TaxonomyValue.code == "COMPREHENSIVE"),
             ValidationRequest.current_status.has(
                 TaxonomyValue.code.notin_(["APPROVED", "CANCELLED"]))
         ).all()

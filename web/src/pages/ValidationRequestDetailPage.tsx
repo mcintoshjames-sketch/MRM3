@@ -963,8 +963,10 @@ export default function ValidationRequestDetailPage() {
                                 This validation is <strong>{getOverdueDays()} days overdue</strong>.
                                 Target completion was {request.target_completion_date.split('T')[0]}.
                             </p>
-                            {/* Commentary Status */}
-                            {overdueCommentary && (
+                            {/* Commentary Status - Only ask validator for explanation if submission was received.
+                                If submission hasn't been received, the delay is due to the owner/developer not submitting,
+                                so only PRE_SUBMISSION commentary should be required. */}
+                            {request.submission_received_date && overdueCommentary && (
                                 <div className="mt-3 pt-3 border-t border-red-200">
                                     {overdueCommentary.has_current_comment && overdueCommentary.current_comment ? (
                                         <div className="text-sm">
@@ -990,6 +992,65 @@ export default function ValidationRequestDetailPage() {
                                     <button
                                         onClick={() => handleOpenCommentaryModal('VALIDATION_IN_PROGRESS')}
                                         className="mt-2 px-3 py-1 bg-red-600 text-white text-sm rounded hover:bg-red-700"
+                                    >
+                                        {overdueCommentary.has_current_comment ? 'Update Explanation' : 'Provide Explanation'}
+                                    </button>
+                                </div>
+                            )}
+                            {/* If submission hasn't been received, show message explaining the cause */}
+                            {!request.submission_received_date && (
+                                <div className="mt-3 pt-3 border-t border-red-200">
+                                    <p className="text-sm text-red-800">
+                                        <span className="font-medium">Cause:</span> Model documentation has not been submitted for validation.
+                                        The model owner/developer must submit documentation and provide an explanation for this delay.
+                                    </p>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Submission Required Banner - shows when validation is overdue but submission not received */}
+            {isOverdueValidation() && !request.submission_received_date && (
+                <div className="bg-yellow-50 border-l-4 border-yellow-500 p-4 mb-6">
+                    <div className="flex items-start">
+                        <svg className="h-5 w-5 text-yellow-600 mt-0.5 mr-3" fill="currentColor" viewBox="0 0 20 20">
+                            <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
+                        </svg>
+                        <div className="flex-1">
+                            <h3 className="text-sm font-bold text-yellow-800">Submission Required - Owner/Developer Action Needed</h3>
+                            <p className="text-sm text-yellow-700 mt-1">
+                                Model documentation has not been submitted for validation.
+                                The model owner/developer must provide an explanation for this delay.
+                            </p>
+                            {/* Commentary Status for Pre-Submission */}
+                            {overdueCommentary && (
+                                <div className="mt-3 pt-3 border-t border-yellow-200">
+                                    {overdueCommentary.has_current_comment && overdueCommentary.current_comment ? (
+                                        <div className="text-sm">
+                                            <p className="text-yellow-800">
+                                                <span className="font-medium">Current explanation:</span>{' '}
+                                                <span className="italic">"{overdueCommentary.current_comment.reason_comment}"</span>
+                                            </p>
+                                            <p className="text-yellow-700 text-xs mt-1">
+                                                Target submission: {overdueCommentary.current_comment.target_date.split('T')[0]} •
+                                                By: {overdueCommentary.current_comment.created_by_user.full_name}
+                                                {overdueCommentary.is_stale && (
+                                                    <span className="ml-2 text-yellow-900 font-medium">
+                                                        ⚠ Update required: {overdueCommentary.stale_reason}
+                                                    </span>
+                                                )}
+                                            </p>
+                                        </div>
+                                    ) : (
+                                        <p className="text-sm text-yellow-800 font-medium">
+                                            ⚠ No explanation provided for this delay
+                                        </p>
+                                    )}
+                                    <button
+                                        onClick={() => handleOpenCommentaryModal('PRE_SUBMISSION')}
+                                        className="mt-2 px-3 py-1 bg-yellow-600 text-white text-sm rounded hover:bg-yellow-700"
                                     >
                                         {overdueCommentary.has_current_comment ? 'Update Explanation' : 'Provide Explanation'}
                                     </button>

@@ -849,28 +849,16 @@ def seed_database():
                         "sort_order": 1
                     },
                     {
-                        "code": "ANNUAL",
-                        "label": "Annual Review",
-                        "description": "Regular annual review to ensure continued model appropriateness",
-                        "sort_order": 2
-                    },
-                    {
                         "code": "COMPREHENSIVE",
                         "label": "Comprehensive Validation",
-                        "description": "Full deep-dive validation covering all aspects of model performance",
-                        "sort_order": 3
+                        "description": "Full deep-dive validation covering all aspects of model performance. Used for periodic revalidations.",
+                        "sort_order": 2
                     },
                     {
                         "code": "TARGETED",
                         "label": "Targeted Review",
                         "description": "Focused review on specific model aspects or identified issues",
-                        "sort_order": 4
-                    },
-                    {
-                        "code": "ONGOING",
-                        "label": "Ongoing Monitoring",
-                        "description": "Continuous monitoring of model performance metrics",
-                        "sort_order": 5
+                        "sort_order": 3
                     },
                     {
                         "code": "INTERIM",
@@ -1310,7 +1298,7 @@ def seed_database():
                     "frequency_months": 12,
                     "grace_period_months": 2,  # Shorter grace for high-risk
                     "model_change_lead_time_days": 120,
-                    "description": "High-risk models require annual re-validation, 2-month grace period, and 120-day lead time for validation completion"
+                    "description": "High-risk models require comprehensive re-validation every 12 months, 2-month grace period, and 120-day lead time for validation completion"
                 },
                 "TIER_2": {
                     "frequency_months": 18,
@@ -1378,8 +1366,8 @@ def seed_database():
         initial_val_type = db.query(TaxonomyValue).filter(
             TaxonomyValue.code == "INITIAL"
         ).first()
-        annual_val_type = db.query(TaxonomyValue).filter(
-            TaxonomyValue.code == "ANNUAL"
+        comprehensive_val_type = db.query(TaxonomyValue).filter(
+            TaxonomyValue.code == "COMPREHENSIVE"
         ).first()
         pass_outcome = db.query(TaxonomyValue).filter(
             TaxonomyValue.code == "PASS"
@@ -1393,7 +1381,7 @@ def seed_database():
         fit_for_purpose = db.query(TaxonomyValue).filter(
             TaxonomyValue.code == "FIT_FOR_PURPOSE").first()
 
-        if tier_2 and tier_3 and initial_val_type and annual_val_type and pass_outcome and admin and validator and medium_priority and approved_status and fit_for_purpose:
+        if tier_2 and tier_3 and initial_val_type and comprehensive_val_type and pass_outcome and admin and validator and medium_priority and approved_status and fit_for_purpose:
             # Calculate strategic dates for Tier 2 (18 month frequency, 90 day lead time)
             # Total overdue threshold: 18 months + 3 months grace + 90 days = ~21.5 months
             today = date.today()
@@ -1418,7 +1406,7 @@ def seed_database():
                 val_date = today - timedelta(days=24*30)
                 req = ValidationRequest(
                     requestor_id=admin.user_id,
-                    validation_type_id=annual_val_type.value_id,
+                    validation_type_id=comprehensive_val_type.value_id,
                     priority_id=medium_priority.value_id,
                     target_completion_date=val_date,
                     current_status_id=approved_status.value_id,
@@ -1436,7 +1424,7 @@ def seed_database():
                 outcome = ValidationOutcome(
                     request_id=req.request_id,
                     overall_rating_id=fit_for_purpose.value_id,
-                    executive_summary="Annual validation completed. Model performing as expected.",
+                    executive_summary="Comprehensive validation completed. Model performing as expected.",
                     recommended_review_frequency=18,
                     effective_date=val_date,
                     created_at=val_date
@@ -1466,7 +1454,7 @@ def seed_database():
                 val_date = today - timedelta(days=20*30)
                 req = ValidationRequest(
                     requestor_id=admin.user_id,
-                    validation_type_id=annual_val_type.value_id,
+                    validation_type_id=comprehensive_val_type.value_id,
                     priority_id=medium_priority.value_id,
                     target_completion_date=val_date,
                     current_status_id=approved_status.value_id,
@@ -1484,7 +1472,7 @@ def seed_database():
                 outcome = ValidationOutcome(
                     request_id=req.request_id,
                     overall_rating_id=fit_for_purpose.value_id,
-                    executive_summary="Annual validation completed.",
+                    executive_summary="Comprehensive validation completed.",
                     recommended_review_frequency=18,
                     effective_date=val_date,
                     created_at=val_date
@@ -1514,7 +1502,7 @@ def seed_database():
                 val_date = today - timedelta(days=17*30)
                 req = ValidationRequest(
                     requestor_id=admin.user_id,
-                    validation_type_id=annual_val_type.value_id,
+                    validation_type_id=comprehensive_val_type.value_id,
                     priority_id=medium_priority.value_id,
                     target_completion_date=val_date,
                     current_status_id=approved_status.value_id,
@@ -1532,7 +1520,7 @@ def seed_database():
                 outcome = ValidationOutcome(
                     request_id=req.request_id,
                     overall_rating_id=fit_for_purpose.value_id,
-                    executive_summary="Annual validation completed.",
+                    executive_summary="Comprehensive validation completed.",
                     recommended_review_frequency=18,
                     effective_date=val_date,
                     created_at=val_date
@@ -1578,7 +1566,7 @@ def seed_database():
                 val_date = today - timedelta(days=6*30)
                 req = ValidationRequest(
                     requestor_id=admin.user_id,
-                    validation_type_id=annual_val_type.value_id,
+                    validation_type_id=comprehensive_val_type.value_id,
                     priority_id=medium_priority.value_id,
                     target_completion_date=val_date,
                     current_status_id=approved_status.value_id,
@@ -1596,7 +1584,7 @@ def seed_database():
                 outcome = ValidationOutcome(
                     request_id=req.request_id,
                     overall_rating_id=fit_for_purpose.value_id,
-                    executive_summary="Annual validation completed. Model is compliant.",
+                    executive_summary="Comprehensive validation completed. Model is compliant.",
                     recommended_review_frequency=18,
                     effective_date=val_date,
                     created_at=val_date

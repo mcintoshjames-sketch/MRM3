@@ -364,7 +364,7 @@ if plan.locked_at:
 
 ### Business Requirement
 
-When creating a new validation plan, if a previous validation of the same **Validation Type** exists for the same model(s), offer to use that previous plan as a template. This saves validators significant time when performing periodic validations (e.g., annual reviews of the same model).
+When creating a new validation plan, if a previous validation of the same **Validation Type** exists for the same model(s), offer to use that previous plan as a template. This saves validators significant time when performing periodic validations (e.g., comprehensive reviews of the same model).
 
 ### Implementation
 
@@ -379,7 +379,7 @@ Response:
     {
       "source_request_id": 5,
       "source_plan_id": 3,
-      "validation_type": "Annual Review",
+      "validation_type": "Comprehensive Review",
       "model_names": ["Credit Risk RWA Model"],
       "completion_date": "2024-11-15",
       "validator_name": "Sarah Chen",

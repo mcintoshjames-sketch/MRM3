@@ -1030,8 +1030,10 @@ export default function ModelDetailsPage() {
                                             </Link>
                                         )}
                                     </p>
-                                    {/* Commentary Status */}
-                                    {revalidationStatus.active_request_id && overdueCommentary && (
+                                    {/* Commentary Status - Only ask validator for explanation if submission was received.
+                                        If submission hasn't been received, the delay is due to the owner/developer not submitting,
+                                        so we only need their PRE_SUBMISSION commentary (shown in yellow banner below). */}
+                                    {revalidationStatus.active_request_id && revalidationStatus.submission_received && overdueCommentary && (
                                         <div className="mt-3 pt-3 border-t border-red-200">
                                             {overdueCommentary.has_current_comment && overdueCommentary.current_comment ? (
                                                 <div className="text-sm">
@@ -1060,6 +1062,15 @@ export default function ModelDetailsPage() {
                                             >
                                                 {overdueCommentary.has_current_comment ? 'Update Explanation' : 'Provide Explanation'}
                                             </button>
+                                        </div>
+                                    )}
+                                    {/* If submission hasn't been received, show message directing to submission overdue explanation */}
+                                    {revalidationStatus.active_request_id && !revalidationStatus.submission_received && (
+                                        <div className="mt-3 pt-3 border-t border-red-200">
+                                            <p className="text-sm text-red-800">
+                                                <span className="font-medium">Cause:</span> Model documentation has not been submitted for validation.
+                                                The model owner/developer must submit documentation before validation work can begin.
+                                            </p>
                                         </div>
                                     )}
                                 </div>
@@ -1093,21 +1104,43 @@ export default function ModelDetailsPage() {
                         </div>
                     )}
 
-                    {/* Info: Submission overdue or in grace period */}
-                    {!revalidationStatus.status.includes('Validation Overdue') && revalidationStatus.days_until_submission_due !== null && revalidationStatus.days_until_submission_due < 0 && revalidationStatus.days_until_validation_due !== null && revalidationStatus.days_until_validation_due >= 60 && (
+                    {/* Info: Submission overdue or in grace period
+                        Show this banner when:
+                        1. Submission is overdue but validation isn't yet overdue (normal case), OR
+                        2. Validation IS overdue but submission hasn't been received (owner/developer caused the delay)
+                        This ensures we only ask for ONE commentary explanation - from the responsible party. */}
+                    {((revalidationStatus.days_until_submission_due !== null && revalidationStatus.days_until_submission_due < 0 && revalidationStatus.days_until_validation_due !== null && revalidationStatus.days_until_validation_due >= 0) ||
+                      (revalidationStatus.days_until_validation_due !== null && revalidationStatus.days_until_validation_due < 0 && !revalidationStatus.submission_received)) && (
                         <div className="bg-yellow-50 border-l-4 border-yellow-500 p-4 mb-6">
                             <div className="flex items-start">
                                 <svg className="h-5 w-5 text-yellow-600 mt-0.5 mr-3" fill="currentColor" viewBox="0 0 20 20">
                                     <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
                                 </svg>
                                 <div className="flex-1">
-                                    <h3 className="text-sm font-bold text-yellow-800">Documentation Submission {revalidationStatus.submission_status}</h3>
+                                    <h3 className="text-sm font-bold text-yellow-800">
+                                        {revalidationStatus.days_until_validation_due !== null && revalidationStatus.days_until_validation_due < 0
+                                            ? 'Submission Required - Validation Overdue'
+                                            : revalidationStatus.status.includes('Grace')
+                                                ? 'Documentation Submission - In Grace Period'
+                                                : 'Documentation Submission Overdue'}
+                                    </h3>
                                     <p className="text-sm text-yellow-700 mt-1">
-                                        Submission was due {revalidationStatus.next_submission_due && `on ${revalidationStatus.next_submission_due}`}.
-                                        {revalidationStatus.grace_period_end && ` Grace period ends ${revalidationStatus.grace_period_end}.`}
+                                        {revalidationStatus.days_until_validation_due !== null && revalidationStatus.days_until_validation_due < 0 ? (
+                                            <>
+                                                Model documentation has not been submitted for validation.
+                                                The model owner/developer must provide an explanation for this delay.
+                                            </>
+                                        ) : (
+                                            <>
+                                                Submission was due {revalidationStatus.next_submission_due && `on ${revalidationStatus.next_submission_due}`}.
+                                                {revalidationStatus.grace_period_end && ` Grace period ends ${revalidationStatus.grace_period_end}.`}
+                                            </>
+                                        )}
                                         {revalidationStatus.active_request_id && (
                                             <Link to={`/validation-workflow/${revalidationStatus.active_request_id}`} className="ml-2 underline font-medium hover:text-yellow-900">
-                                                Submit documentation →
+                                                {revalidationStatus.days_until_validation_due !== null && revalidationStatus.days_until_validation_due < 0
+                                                    ? 'View validation request →'
+                                                    : 'Submit documentation →'}
                                             </Link>
                                         )}
                                     </p>

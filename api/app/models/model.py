@@ -177,3 +177,9 @@ class Model(Base):
     applications: Mapped[List["ModelApplication"]] = relationship(
         "ModelApplication", back_populates="model", cascade="all, delete-orphan"
     )
+
+    # Pending edits awaiting admin approval
+    pending_edits: Mapped[List["ModelPendingEdit"]] = relationship(
+        "ModelPendingEdit", back_populates="model", cascade="all, delete-orphan",
+        order_by="desc(ModelPendingEdit.requested_at)"
+    )

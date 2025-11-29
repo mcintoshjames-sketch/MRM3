@@ -97,7 +97,8 @@ export default function ValidationWorkflowPage() {
         status_filter: [] as string[],
         priority_filter: [] as string[],
         validation_type_filter: [] as string[],
-        region_ids: [] as number[]
+        region_ids: [] as number[],
+        overdue_only: false
     });
 
     // Apply filters
@@ -142,6 +143,17 @@ export default function ValidationWorkflowPage() {
             if (!hasMatchingRegion) {
                 return false;
             }
+        }
+
+        // Overdue filter
+        if (filters.overdue_only) {
+            const terminalStatuses = ['Approved', 'Cancelled'];
+            if (terminalStatuses.includes(req.current_status)) return false;
+
+            const targetDate = new Date(req.target_completion_date);
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+            if (targetDate >= today) return false;
         }
 
         return true;
@@ -457,6 +469,17 @@ export default function ValidationWorkflowPage() {
             case 'Low': return 'bg-green-100 text-green-800';
             default: return 'bg-gray-100 text-gray-800';
         }
+    };
+
+    // Check if a validation request is overdue (target date passed and not in terminal state)
+    const isOverdue = (req: ValidationRequest) => {
+        const terminalStatuses = ['Approved', 'Cancelled'];
+        if (terminalStatuses.includes(req.current_status)) return false;
+
+        const targetDate = new Date(req.target_completion_date);
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        return targetDate < today;
     };
 
     if (loading) {
@@ -903,6 +926,26 @@ export default function ValidationWorkflowPage() {
                     />
                 </div>
 
+                {/* Overdue Filter */}
+                <div className="mt-3 flex items-center">
+                    <label className="flex items-center cursor-pointer">
+                        <input
+                            type="checkbox"
+                            className="h-4 w-4 text-red-600 focus:ring-red-500 border-gray-300 rounded"
+                            checked={filters.overdue_only}
+                            onChange={(e) => setFilters({ ...filters, overdue_only: e.target.checked })}
+                        />
+                        <span className="ml-2 text-sm font-medium text-gray-700">
+                            Show overdue only
+                        </span>
+                        {filters.overdue_only && (
+                            <span className="ml-2 px-1.5 py-0.5 text-xs font-medium rounded bg-red-600 text-white">
+                                OVERDUE
+                            </span>
+                        )}
+                    </label>
+                </div>
+
                 {/* Clear Filters and Results Count */}
                 <div className="flex items-center justify-between mt-3 pt-3 border-t">
                     <div className="text-sm text-gray-600">
@@ -915,7 +958,8 @@ export default function ValidationWorkflowPage() {
                             status_filter: [],
                             priority_filter: [],
                             validation_type_filter: [],
-                            region_ids: []
+                            region_ids: [],
+                            overdue_only: false
                         })}
                         className="text-sm text-blue-600 hover:text-blue-800"
                     >
@@ -1053,9 +1097,16 @@ export default function ValidationWorkflowPage() {
                                         </span>
                                     </td>
                                     <td className="px-6 py-4 whitespace-nowrap">
-                                        <span className={`px-2 py-1 text-xs rounded ${getStatusColor(req.current_status)}`}>
-                                            {req.current_status}
-                                        </span>
+                                        <div className="flex items-center gap-2">
+                                            <span className={`px-2 py-1 text-xs rounded ${getStatusColor(req.current_status)}`}>
+                                                {req.current_status}
+                                            </span>
+                                            {isOverdue(req) && (
+                                                <span className="px-1.5 py-0.5 text-xs font-medium rounded bg-red-600 text-white" title="Target completion date has passed">
+                                                    OVERDUE
+                                                </span>
+                                            )}
+                                        </div>
                                     </td>
                                     <td className="px-6 py-4 whitespace-nowrap text-sm">
                                         <span className={req.days_in_status > 14 ? 'text-red-600 font-semibold' : ''}>

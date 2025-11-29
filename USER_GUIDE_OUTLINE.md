@@ -58,7 +58,7 @@
   - Understanding when Regional Sign-off is required.
   - Managing multi-region approval chains.
 - **Revalidation Management**:
-  - **Periodic Reviews**: Tracking Annual/Comprehensive revalidation cycles.
+  - **Periodic Reviews**: Tracking Comprehensive revalidation cycles.
   - **Deadlines**: Understanding Submission Due Dates vs. Validation Due Dates.
   - **Grace Periods**: Policy on late submissions.
 

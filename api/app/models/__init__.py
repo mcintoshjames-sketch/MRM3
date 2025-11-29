@@ -19,6 +19,7 @@ from app.models.model_feed_dependency import ModelFeedDependency
 from app.models.model_dependency_metadata import ModelDependencyMetadata
 from app.models.map_application import MapApplication
 from app.models.model_application import ModelApplication
+from app.models.model_pending_edit import ModelPendingEdit
 from app.models.conditional_approval import ApproverRole, ConditionalApprovalRule, RuleRequiredApprover
 from app.models.fry import FryReport, FrySchedule, FryMetricGroup, FryLineItem
 from app.models.validation import (
@@ -89,6 +90,8 @@ __all__ = [
     # MAP Applications
     "MapApplication",
     "ModelApplication",
+    # Model edit approval workflow
+    "ModelPendingEdit",
     # Conditional model use approvals
     "ApproverRole",
     "ConditionalApprovalRule",

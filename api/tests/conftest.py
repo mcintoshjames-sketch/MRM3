@@ -12,6 +12,7 @@ from app.models.base import Base
 from app.models.user import User
 from app.models.model import Model
 from app.models.vendor import Vendor
+from app.models.model_pending_edit import ModelPendingEdit  # For pending edit workflow tests
 
 # In-memory SQLite for testing
 SQLALCHEMY_DATABASE_URL = "sqlite:///:memory:"
@@ -200,7 +201,7 @@ def taxonomy_values(db_session):
     tier1 = TaxonomyValue(taxonomy_id=risk_tier_tax.taxonomy_id, code="TIER_1", label="Tier 1", sort_order=1)
     tier2 = TaxonomyValue(taxonomy_id=risk_tier_tax.taxonomy_id, code="TIER_2", label="Tier 2", sort_order=2)
     initial = TaxonomyValue(taxonomy_id=val_type_tax.taxonomy_id, code="INITIAL", label="Initial", sort_order=1)
-    annual = TaxonomyValue(taxonomy_id=val_type_tax.taxonomy_id, code="ANNUAL", label="Annual Review", sort_order=2)
+    comprehensive = TaxonomyValue(taxonomy_id=val_type_tax.taxonomy_id, code="COMPREHENSIVE", label="Comprehensive", sort_order=2)
     pass_outcome = TaxonomyValue(taxonomy_id=outcome_tax.taxonomy_id, code="PASS", label="Pass", sort_order=1)
     pass_findings = TaxonomyValue(taxonomy_id=outcome_tax.taxonomy_id, code="PASS_WITH_FINDINGS", label="Pass with Findings", sort_order=2)
     fail_outcome = TaxonomyValue(taxonomy_id=outcome_tax.taxonomy_id, code="FAIL", label="Fail", sort_order=3)
@@ -214,14 +215,14 @@ def taxonomy_values(db_session):
     status_pending_approval = TaxonomyValue(taxonomy_id=status_tax.taxonomy_id, code="PENDING_APPROVAL", label="Pending Approval", sort_order=5)
     status_approved = TaxonomyValue(taxonomy_id=status_tax.taxonomy_id, code="APPROVED", label="Approved", sort_order=6)
 
-    db_session.add_all([tier1, tier2, initial, annual, pass_outcome, pass_findings, fail_outcome, full_scope, priority_high, priority_medium, status_intake, status_planning, status_in_progress, status_review, status_pending_approval, status_approved])
+    db_session.add_all([tier1, tier2, initial, comprehensive, pass_outcome, pass_findings, fail_outcome, full_scope, priority_high, priority_medium, status_intake, status_planning, status_in_progress, status_review, status_pending_approval, status_approved])
     db_session.commit()
 
     return {
         "tier1": tier1,
         "tier2": tier2,
         "initial": initial,
-        "annual": annual,
+        "comprehensive": comprehensive,
         "pass": pass_outcome,
         "pass_with_findings": pass_findings,
         "fail": fail_outcome,

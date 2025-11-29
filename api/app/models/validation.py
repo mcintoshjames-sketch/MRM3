@@ -246,7 +246,7 @@ class ValidationRequest(Base):
         """Determine if this is a periodic revalidation based on validation type."""
         if not self.validation_type:
             return False
-        return self.validation_type.code in ["COMPREHENSIVE", "ANNUAL"]
+        return self.validation_type.code == "COMPREHENSIVE"
 
     def _calculate_submission_due_date(self) -> Optional[date]:
         """Calculate submission due date from prior validation + frequency."""

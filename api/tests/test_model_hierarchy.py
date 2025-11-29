@@ -333,7 +333,7 @@ class TestCreateHierarchy:
             }
         )
         assert response.status_code == 400
-        assert "already exists" in response.json()["detail"].lower()
+        assert "already has a parent" in response.json()["detail"].lower()
 
     def test_create_hierarchy_nonexistent_parent(self, client, admin_headers, child_model, hierarchy_taxonomy):
         """Test creating hierarchy with nonexistent parent returns 404."""

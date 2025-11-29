@@ -19,7 +19,8 @@ depends_on: Union[str, Sequence[str], None] = None
 
 def upgrade() -> None:
     # Add submission_due_date column
-    op.add_column('validation_requests', sa.Column('submission_due_date', sa.Date(), nullable=True, comment='Date by which model owner must submit documentation (locked at request creation)'))
+    op.add_column('validation_requests', sa.Column('submission_due_date', sa.Date(), nullable=True,
+                  comment='Date by which model owner must submit documentation (locked at request creation)'))
 
     # Backfill submission_due_date for existing revalidation requests
     # This SQL calculates submission_due_date from prior validation + policy frequency
@@ -39,7 +40,7 @@ def upgrade() -> None:
             JOIN validation_policies vp ON vp.risk_tier_id = m.risk_tier_id
             JOIN taxonomy_values tv ON tv.value_id = vr.validation_type_id
             WHERE prior_vr.request_id = vr.prior_validation_request_id
-                AND tv.code IN ('COMPREHENSIVE', 'ANNUAL')
+                AND tv.code = 'COMPREHENSIVE'
                 AND prior_vr.current_status_id IN (
                     SELECT value_id FROM taxonomy_values WHERE code = 'APPROVED'
                 )
@@ -47,7 +48,7 @@ def upgrade() -> None:
         )
         WHERE vr.prior_validation_request_id IS NOT NULL
             AND vr.validation_type_id IN (
-                SELECT value_id FROM taxonomy_values WHERE code IN ('COMPREHENSIVE', 'ANNUAL')
+                SELECT value_id FROM taxonomy_values WHERE code = 'COMPREHENSIVE'
             );
     """)
 

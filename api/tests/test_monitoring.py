@@ -446,7 +446,7 @@ class TestMonitoringPlans:
         assert response.json()["is_active"] is False
 
     def test_delete_plan(self, client, admin_headers):
-        """Admin can delete a monitoring plan."""
+        """Admin can delete a monitoring plan - verifies plan is actually removed."""
         create_resp = client.post("/monitoring/plans", headers=admin_headers, json={
             "name": "Delete Plan Test",
             "frequency": "Quarterly"
@@ -455,6 +455,62 @@ class TestMonitoringPlans:
 
         response = client.delete(f"/monitoring/plans/{plan_id}", headers=admin_headers)
         assert response.status_code == 204
+
+        # Verify plan is actually gone - GET should return 404
+        get_response = client.get(f"/monitoring/plans/{plan_id}", headers=admin_headers)
+        assert get_response.status_code == 404
+
+    def test_delete_plan_cascades_related_objects(self, client, admin_headers):
+        """Deleting plan removes metrics, versions, and cycles via cascade."""
+        # Create plan
+        plan_resp = client.post("/monitoring/plans", headers=admin_headers, json={
+            "name": "Plan With Related Objects",
+            "frequency": "Quarterly"
+        })
+        plan_id = plan_resp.json()["plan_id"]
+
+        # Add a metric
+        cat_resp = client.post("/kpm/categories", headers=admin_headers, json={
+            "code": f"CASCADE_CAT_{plan_id}",
+            "name": f"Cascade Category {plan_id}"
+        })
+        cat_id = cat_resp.json()["category_id"]
+
+        kpm_resp = client.post("/kpm/kpms", headers=admin_headers, json={
+            "category_id": cat_id,
+            "name": f"Cascade KPM {plan_id}"
+        })
+        kpm_id = kpm_resp.json()["kpm_id"]
+
+        client.post(f"/monitoring/plans/{plan_id}/metrics", headers=admin_headers, json={
+            "kpm_id": kpm_id
+        })
+
+        # Publish a version
+        version_resp = client.post(f"/monitoring/plans/{plan_id}/versions/publish",
+                                   headers=admin_headers, json={})
+        assert version_resp.status_code == 201
+
+        # Create a cycle
+        cycle_resp = client.post(f"/monitoring/plans/{plan_id}/cycles", headers=admin_headers, json={})
+        assert cycle_resp.status_code == 201
+        cycle_id = cycle_resp.json()["cycle_id"]
+
+        # Delete plan
+        delete_resp = client.delete(f"/monitoring/plans/{plan_id}", headers=admin_headers)
+        assert delete_resp.status_code == 204
+
+        # Verify plan is gone
+        get_plan_resp = client.get(f"/monitoring/plans/{plan_id}", headers=admin_headers)
+        assert get_plan_resp.status_code == 404
+
+        # Verify cycle is gone (cascaded)
+        get_cycle_resp = client.get(f"/monitoring/cycles/{cycle_id}", headers=admin_headers)
+        assert get_cycle_resp.status_code == 404
+
+        # Verify versions are gone (list versions for deleted plan should 404)
+        get_versions_resp = client.get(f"/monitoring/plans/{plan_id}/versions", headers=admin_headers)
+        assert get_versions_resp.status_code == 404
 
     def test_advance_plan_cycle(self, client, admin_headers):
         """Advance plan to next monitoring cycle."""
@@ -806,6 +862,142 @@ class TestCycleWorkflow:
         assert response.json()["status"] == "UNDER_REVIEW"
         assert response.json()["submitted_at"] is not None
 
+    def test_submit_cycle_fails_without_any_results(self, client, admin_headers):
+        """Submit fails if no results have been entered - guards against removed completeness validation."""
+        plan_resp = client.post("/monitoring/plans", headers=admin_headers, json={
+            "name": "Plan For Submit No Results",
+            "frequency": "Quarterly"
+        })
+        plan_id = plan_resp.json()["plan_id"]
+
+        # Publish version (creates metric)
+        self._publish_version_for_plan(client, admin_headers, plan_id)
+
+        cycle_resp = client.post(f"/monitoring/plans/{plan_id}/cycles", headers=admin_headers, json={})
+        cycle_id = cycle_resp.json()["cycle_id"]
+
+        # Start cycle to move to DATA_COLLECTION
+        client.post(f"/monitoring/cycles/{cycle_id}/start", headers=admin_headers)
+
+        # Try to submit WITHOUT entering any results
+        response = client.post(f"/monitoring/cycles/{cycle_id}/submit", headers=admin_headers)
+        assert response.status_code == 400
+        assert "No results have been entered" in response.json()["detail"]
+
+    def test_submit_cycle_fails_with_missing_metric_results(self, client, admin_headers):
+        """Submit fails when some metrics have no results - guards multi-metric completeness."""
+        plan_resp = client.post("/monitoring/plans", headers=admin_headers, json={
+            "name": "Plan For Submit Missing Metrics",
+            "frequency": "Quarterly"
+        })
+        plan_id = plan_resp.json()["plan_id"]
+
+        # Create TWO KPMs and add TWO metrics to the plan
+        cat_resp = client.post("/kpm/categories", headers=admin_headers, json={
+            "code": f"MULTI_CAT_{plan_id}",
+            "name": f"Multi Category {plan_id}"
+        })
+        cat_id = cat_resp.json()["category_id"]
+
+        kpm1_resp = client.post("/kpm/kpms", headers=admin_headers, json={
+            "category_id": cat_id,
+            "name": f"Metric One {plan_id}"
+        })
+        kpm1_id = kpm1_resp.json()["kpm_id"]
+
+        kpm2_resp = client.post("/kpm/kpms", headers=admin_headers, json={
+            "category_id": cat_id,
+            "name": f"Metric Two {plan_id}"
+        })
+        kpm2_id = kpm2_resp.json()["kpm_id"]
+
+        # Add both metrics to plan
+        metric1_resp = client.post(f"/monitoring/plans/{plan_id}/metrics", headers=admin_headers, json={
+            "kpm_id": kpm1_id
+        })
+        metric1_id = metric1_resp.json()["metric_id"]
+
+        client.post(f"/monitoring/plans/{plan_id}/metrics", headers=admin_headers, json={
+            "kpm_id": kpm2_id
+        })
+        # Note: We intentionally don't use metric2_id - we'll skip its result
+
+        # Publish version (locks both metrics)
+        client.post(f"/monitoring/plans/{plan_id}/versions/publish", headers=admin_headers, json={})
+
+        # Create and start cycle
+        cycle_resp = client.post(f"/monitoring/plans/{plan_id}/cycles", headers=admin_headers, json={})
+        cycle_id = cycle_resp.json()["cycle_id"]
+        client.post(f"/monitoring/cycles/{cycle_id}/start", headers=admin_headers)
+
+        # Only add result for metric1, skip metric2
+        client.post(f"/monitoring/cycles/{cycle_id}/results", headers=admin_headers, json={
+            "plan_metric_id": metric1_id,
+            "numeric_value": 0.95,
+            "narrative": "First metric looks good"
+        })
+
+        # Try to submit - should fail because metric2 has no result
+        response = client.post(f"/monitoring/cycles/{cycle_id}/submit", headers=admin_headers)
+        assert response.status_code == 400
+        assert "Missing results for:" in response.json()["detail"]
+        assert f"Metric Two {plan_id}" in response.json()["detail"]
+
+    def test_submit_cycle_fails_with_na_value_no_narrative(self, client, admin_headers):
+        """Submit fails when a metric has no value AND no narrative explanation."""
+        plan_resp = client.post("/monitoring/plans", headers=admin_headers, json={
+            "name": "Plan For Submit NA No Narrative",
+            "frequency": "Quarterly"
+        })
+        plan_id = plan_resp.json()["plan_id"]
+
+        # Publish version and get metric_id
+        metric_id = self._publish_version_for_plan(client, admin_headers, plan_id)
+
+        cycle_resp = client.post(f"/monitoring/plans/{plan_id}/cycles", headers=admin_headers, json={})
+        cycle_id = cycle_resp.json()["cycle_id"]
+
+        client.post(f"/monitoring/cycles/{cycle_id}/start", headers=admin_headers)
+
+        # Add result with NULL value AND empty narrative (N/A without explanation)
+        client.post(f"/monitoring/cycles/{cycle_id}/results", headers=admin_headers, json={
+            "plan_metric_id": metric_id,
+            "numeric_value": None,
+            "narrative": ""  # Empty narrative for N/A value
+        })
+
+        # Try to submit - should fail because N/A needs explanation
+        response = client.post(f"/monitoring/cycles/{cycle_id}/submit", headers=admin_headers)
+        assert response.status_code == 400
+        assert "Missing explanation for N/A values" in response.json()["detail"]
+
+    def test_submit_cycle_succeeds_with_na_value_and_narrative(self, client, admin_headers):
+        """Submit succeeds when N/A metric has narrative explanation."""
+        plan_resp = client.post("/monitoring/plans", headers=admin_headers, json={
+            "name": "Plan For Submit NA With Narrative",
+            "frequency": "Quarterly"
+        })
+        plan_id = plan_resp.json()["plan_id"]
+
+        metric_id = self._publish_version_for_plan(client, admin_headers, plan_id)
+
+        cycle_resp = client.post(f"/monitoring/plans/{plan_id}/cycles", headers=admin_headers, json={})
+        cycle_id = cycle_resp.json()["cycle_id"]
+
+        client.post(f"/monitoring/cycles/{cycle_id}/start", headers=admin_headers)
+
+        # Add result with NULL value but WITH narrative explanation
+        client.post(f"/monitoring/cycles/{cycle_id}/results", headers=admin_headers, json={
+            "plan_metric_id": metric_id,
+            "numeric_value": None,
+            "narrative": "Data not available this period due to system maintenance"
+        })
+
+        # Submit should succeed because N/A has explanation
+        response = client.post(f"/monitoring/cycles/{cycle_id}/submit", headers=admin_headers)
+        assert response.status_code == 200
+        assert response.json()["status"] == "UNDER_REVIEW"
+
     def test_cancel_cycle(self, client, admin_headers):
         """Cancel cycle moves to CANCELLED status."""
         plan_resp = client.post("/monitoring/plans", headers=admin_headers, json={
@@ -823,6 +1015,122 @@ class TestCycleWorkflow:
         assert response.status_code == 200
         assert response.json()["status"] == "CANCELLED"
         assert "CANCELLED" in response.json()["notes"]
+
+    def test_cycle_overdue_fields_past_due_date(self, client, admin_headers):
+        """Cycle with past report_due_date in DATA_COLLECTION shows is_overdue=True."""
+        plan_resp = client.post("/monitoring/plans", headers=admin_headers, json={
+            "name": "Plan For Overdue Test",
+            "frequency": "Quarterly",
+            "reporting_lead_days": 0  # Simplify: report_due = submission_due = period_end + 15
+        })
+        plan_id = plan_resp.json()["plan_id"]
+
+        # Publish version
+        self._publish_version_for_plan(client, admin_headers, plan_id)
+
+        # Create cycle with period_end_date that results in past report_due_date
+        # report_due_date = period_end + 15 days (default submission_due) + 0 (no lead days)
+        # To make report_due 7 days ago: period_end = today - 7 - 15 = today - 22
+        today = date.today()
+        period_end = today - timedelta(days=22)
+        period_start = period_end - timedelta(days=30)
+
+        cycle_resp = client.post(f"/monitoring/plans/{plan_id}/cycles", headers=admin_headers, json={
+            "period_start_date": period_start.isoformat(),
+            "period_end_date": period_end.isoformat()
+        })
+        assert cycle_resp.status_code == 201
+        cycle_id = cycle_resp.json()["cycle_id"]
+
+        # Start the cycle so it's in DATA_COLLECTION (non-completed status)
+        client.post(f"/monitoring/cycles/{cycle_id}/start", headers=admin_headers)
+
+        # Get cycles list to check overdue fields
+        response = client.get(f"/monitoring/plans/{plan_id}/cycles", headers=admin_headers)
+        assert response.status_code == 200
+        cycles = response.json()
+        cycle = next(c for c in cycles if c["cycle_id"] == cycle_id)
+
+        assert cycle["is_overdue"] is True
+        assert cycle["days_overdue"] == 7
+
+    def test_cycle_overdue_fields_future_due_date(self, client, admin_headers):
+        """Cycle with future report_due_date shows is_overdue=False."""
+        plan_resp = client.post("/monitoring/plans", headers=admin_headers, json={
+            "name": "Plan For Future Due Test",
+            "frequency": "Quarterly",
+            "reporting_lead_days": 0  # Simplify: report_due = submission_due = period_end + 15
+        })
+        plan_id = plan_resp.json()["plan_id"]
+
+        # Publish version
+        self._publish_version_for_plan(client, admin_headers, plan_id)
+
+        # Create cycle with period_end_date that results in future report_due_date
+        # report_due = period_end + 15 days
+        # To make report_due 14 days in future: period_end = today + 14 - 15 = today - 1
+        today = date.today()
+        period_end = today - timedelta(days=1)
+        period_start = period_end - timedelta(days=30)
+
+        cycle_resp = client.post(f"/monitoring/plans/{plan_id}/cycles", headers=admin_headers, json={
+            "period_start_date": period_start.isoformat(),
+            "period_end_date": period_end.isoformat()
+        })
+        assert cycle_resp.status_code == 201
+        cycle_id = cycle_resp.json()["cycle_id"]
+
+        # Start the cycle
+        client.post(f"/monitoring/cycles/{cycle_id}/start", headers=admin_headers)
+
+        # Get cycles list to check overdue fields
+        response = client.get(f"/monitoring/plans/{plan_id}/cycles", headers=admin_headers)
+        assert response.status_code == 200
+        cycles = response.json()
+        cycle = next(c for c in cycles if c["cycle_id"] == cycle_id)
+
+        assert cycle["is_overdue"] is False
+        assert cycle["days_overdue"] == -14  # Negative means days until due
+
+    def test_cycle_cancelled_never_overdue(self, client, admin_headers):
+        """CANCELLED cycles are never considered overdue, even with past due date."""
+        plan_resp = client.post("/monitoring/plans", headers=admin_headers, json={
+            "name": "Plan For Cancelled Not Overdue",
+            "frequency": "Quarterly",
+            "reporting_lead_days": 0  # Simplify: report_due = submission_due = period_end + 15
+        })
+        plan_id = plan_resp.json()["plan_id"]
+
+        # Publish version
+        self._publish_version_for_plan(client, admin_headers, plan_id)
+
+        # Create cycle with period that results in past due date (30 days ago)
+        # report_due = period_end + 15 days
+        # To make report_due 30 days ago: period_end = today - 30 - 15 = today - 45
+        today = date.today()
+        period_end = today - timedelta(days=45)
+        period_start = period_end - timedelta(days=30)
+
+        cycle_resp = client.post(f"/monitoring/plans/{plan_id}/cycles", headers=admin_headers, json={
+            "period_start_date": period_start.isoformat(),
+            "period_end_date": period_end.isoformat()
+        })
+        cycle_id = cycle_resp.json()["cycle_id"]
+
+        # Cancel the cycle
+        client.post(f"/monitoring/cycles/{cycle_id}/cancel", headers=admin_headers, json={
+            "cancel_reason": "Testing cancelled overdue status"
+        })
+
+        # Get cycles list to check overdue fields
+        response = client.get(f"/monitoring/plans/{plan_id}/cycles", headers=admin_headers)
+        assert response.status_code == 200
+        cycles = response.json()
+        cycle = next(c for c in cycles if c["cycle_id"] == cycle_id)
+
+        # CANCELLED cycle should NOT be overdue
+        assert cycle["status"] == "CANCELLED"
+        assert cycle["is_overdue"] is False
 
 
 class TestMonitoringResults:
@@ -1342,7 +1650,7 @@ class TestApprovalWorkflow:
         return plan_id, cycle_id
 
     def test_request_approval_creates_global(self, client, admin_headers):
-        """Requesting approval creates at least a Global approval requirement."""
+        """Requesting approval creates a Global approval with correct fields - guards mandatory Global creation."""
         # Setup cycle in UNDER_REVIEW state
         plan_id, cycle_id = self._setup_cycle_for_approval(client, admin_headers, "Plan For Approval")
 
@@ -1353,8 +1661,20 @@ class TestApprovalWorkflow:
         assert response.json()["status"] == "PENDING_APPROVAL"
         assert response.json()["approval_count"] >= 1
 
+        # Verify Global approval exists with correct required fields
+        approvals_resp = client.get(f"/monitoring/cycles/{cycle_id}/approvals", headers=admin_headers)
+        approvals = approvals_resp.json()
+        global_approval = next((a for a in approvals if a["approval_type"] == "Global"), None)
+
+        assert global_approval is not None, "Global approval must be created"
+        assert global_approval["is_required"] is True, "Global approval must be marked as required"
+        assert global_approval["approval_status"] == "Pending", "Global approval must start as Pending"
+        assert global_approval["region"] is None, "Global approval has no region"
+        assert global_approval["approver"] is None, "Global approval should have no approver initially"
+        assert global_approval["approved_at"] is None, "Global approval should have no approved_at initially"
+
     def test_list_cycle_approvals(self, client, admin_headers):
-        """List approval requirements for a cycle."""
+        """List approval requirements for a cycle - verifies approval object completeness."""
         # Setup cycle in UNDER_REVIEW state
         plan_id, cycle_id = self._setup_cycle_for_approval(client, admin_headers, "Plan For List Approvals")
         client.post(f"/monitoring/cycles/{cycle_id}/request-approval", headers=admin_headers,
@@ -1364,10 +1684,19 @@ class TestApprovalWorkflow:
         assert response.status_code == 200
         assert len(response.json()) >= 1
 
-        # Check Global approval exists
+        # Check Global approval exists with all required fields present
         approvals = response.json()
         global_approval = next((a for a in approvals if a["approval_type"] == "Global"), None)
         assert global_approval is not None
+
+        # Verify approval object structure (guards against missing fields)
+        assert "approval_id" in global_approval
+        assert "cycle_id" in global_approval
+        assert "approval_type" in global_approval
+        assert "is_required" in global_approval
+        assert "approval_status" in global_approval
+        assert global_approval["is_required"] is True
+        assert global_approval["approval_status"] == "Pending"
 
     def test_approve_global_approval(self, client, admin_headers):
         """Admin can approve a Global approval."""
@@ -1435,6 +1764,65 @@ class TestApprovalWorkflow:
         # Check cycle is back to UNDER_REVIEW
         cycle_resp = client.get(f"/monitoring/cycles/{cycle_id}", headers=admin_headers)
         assert cycle_resp.json()["status"] == "UNDER_REVIEW"
+
+    def test_resubmit_cycle_resets_rejected_approvals(self, client, admin_headers):
+        """Re-requesting approval after rejection resets Rejected approvals to Pending.
+
+        This guards against the defect where Rejected approvals persisted and blocked
+        the cycle from completing even after re-submission and subsequent approvals.
+        """
+        # Setup cycle in UNDER_REVIEW state
+        plan_id, cycle_id = self._setup_cycle_for_approval(client, admin_headers, "Plan For Resubmit")
+
+        # Request approval
+        client.post(f"/monitoring/cycles/{cycle_id}/request-approval", headers=admin_headers,
+                   json={"report_url": "https://example.com/reports/v1.pdf"})
+
+        # Get approval and reject it
+        approvals_resp = client.get(f"/monitoring/cycles/{cycle_id}/approvals", headers=admin_headers)
+        global_approval = next(a for a in approvals_resp.json() if a["approval_type"] == "Global")
+        approval_id = global_approval["approval_id"]
+
+        # Reject the approval
+        reject_resp = client.post(f"/monitoring/cycles/{cycle_id}/approvals/{approval_id}/reject",
+                                  headers=admin_headers, json={"comments": "Issues found, please revise"})
+        assert reject_resp.status_code == 200
+        assert reject_resp.json()["approval_status"] == "Rejected"
+
+        # Verify cycle is back to UNDER_REVIEW
+        cycle_resp = client.get(f"/monitoring/cycles/{cycle_id}", headers=admin_headers)
+        assert cycle_resp.json()["status"] == "UNDER_REVIEW"
+
+        # Re-request approval (simulating resubmission with fixes)
+        resubmit_resp = client.post(f"/monitoring/cycles/{cycle_id}/request-approval", headers=admin_headers,
+                                    json={"report_url": "https://example.com/reports/v2-revised.pdf"})
+        assert resubmit_resp.status_code == 200
+        assert resubmit_resp.json()["status"] == "PENDING_APPROVAL"
+
+        # Verify the previously Rejected approval is now reset to Pending
+        approvals_after = client.get(f"/monitoring/cycles/{cycle_id}/approvals", headers=admin_headers)
+        global_after = next(a for a in approvals_after.json() if a["approval_type"] == "Global")
+
+        assert global_after["approval_status"] == "Pending", \
+            "Rejected approval must be reset to Pending on re-submission"
+        assert global_after["approver"] is None, \
+            "Approver must be cleared on re-submission"
+        assert global_after["approved_at"] is None, \
+            "Approved_at must be cleared on re-submission"
+
+        # Now approve and verify cycle completes successfully
+        approve_resp = client.post(
+            f"/monitoring/cycles/{cycle_id}/approvals/{global_after['approval_id']}/approve",
+            headers=admin_headers,
+            json={"comments": "Approved after revisions", "approval_evidence": "Review meeting 2025-11-29"}
+        )
+        assert approve_resp.status_code == 200
+        assert approve_resp.json()["approval_status"] == "Approved"
+
+        # Verify cycle transitions to APPROVED (not stuck due to lingering rejection)
+        final_cycle = client.get(f"/monitoring/cycles/{cycle_id}", headers=admin_headers)
+        assert final_cycle.json()["status"] == "APPROVED", \
+            "Cycle must complete after re-submission approval (no lingering Rejected state)"
 
     def test_void_approval(self, client, admin_headers):
         """Admin can void an approval requirement."""

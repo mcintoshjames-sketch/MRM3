@@ -215,3 +215,44 @@ class NameChangeStatistics(BaseModel):
     models_changed_last_30_days: int
     total_name_changes: int
     recent_changes: List[ModelNameHistoryItem]
+
+
+# Pending Edit Schemas for Model Edit Approval Workflow
+class ModelPendingEditResponse(BaseModel):
+    """Response schema for a pending model edit."""
+    pending_edit_id: int
+    model_id: int
+    requested_by: UserResponse
+    requested_at: datetime
+    proposed_changes: dict
+    original_values: dict
+    status: str
+    reviewed_by: Optional[UserResponse] = None
+    reviewed_at: Optional[datetime] = None
+    review_comment: Optional[str] = None
+
+    class Config:
+        from_attributes = True
+
+
+class ModelPendingEditWithModel(ModelPendingEditResponse):
+    """Pending edit with model details for admin dashboard."""
+    model_name: str
+    model_owner: UserResponse
+
+    class Config:
+        from_attributes = True
+
+
+class PendingEditReviewRequest(BaseModel):
+    """Request schema for reviewing (approving/rejecting) a pending edit."""
+    comment: Optional[str] = None
+
+
+class ModelUpdateWithPendingResponse(BaseModel):
+    """Response when a non-admin edit is held for approval."""
+    message: str
+    pending_edit_id: int
+    status: str
+    proposed_changes: dict
+    model_id: int

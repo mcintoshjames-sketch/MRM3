@@ -9,7 +9,7 @@ from app.models.base import Base
 class ValidationGroupingMemory(Base):
     """Tracks the most recent multi-model validation for each model.
 
-    Only updated for regular validations (Annual Review, Comprehensive, etc.),
+    Only updated for regular validations (Comprehensive, etc.),
     NOT for targeted validations (change-driven, targeted reviews).
 
     Used to suggest previously validated model groupings when creating new validations.

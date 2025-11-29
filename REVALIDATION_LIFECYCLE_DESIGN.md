@@ -70,7 +70,7 @@ This document outlines the design for automated periodic revalidation tracking w
    - After grace period expires, submission is "overdue"
 
 4. **Validation Type Determines if Periodic**
-   - COMPREHENSIVE and ANNUAL = periodic revalidations (follows this lifecycle)
+   - COMPREHENSIVE = periodic revalidations (follows this lifecycle)
    - TARGETED, INTERIM = change-driven (different rules)
    - No need for separate `is_periodic_revalidation` flag
 
@@ -112,11 +112,11 @@ class ValidationRequest(Base):
     @property
     def is_periodic_revalidation(self) -> bool:
         """Determine if this is a periodic revalidation based on validation type."""
-        # COMPREHENSIVE and ANNUAL are periodic revalidations
+        # COMPREHENSIVE is periodic revalidation
         # TARGETED, INTERIM are change-driven
         if not self.validation_type:
             return False
-        return self.validation_type.code in ["COMPREHENSIVE", "ANNUAL"]
+        return self.validation_type.code == "COMPREHENSIVE"
 
     @property
     def submission_due_date(self) -> Optional[date]:

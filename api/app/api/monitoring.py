@@ -23,6 +23,10 @@ from app.models.monitoring import (
     MonitoringFrequency,
     monitoring_team_members,
     monitoring_plan_models,
+    MonitoringCycle,
+    MonitoringCycleStatus,
+    MonitoringResult,
+    MonitoringCycleApproval,
 )
 from app.schemas.monitoring import (
     MonitoringTeamCreate,
@@ -49,6 +53,29 @@ from app.schemas.monitoring import (
     MetricTrendPoint,
     MetricTrendResponse,
     PerformanceSummary,
+    # My Tasks endpoint
+    MyMonitoringTaskResponse,
+    # Admin Overview endpoint
+    AdminMonitoringCycleSummary,
+    AdminMonitoringOverviewSummary,
+    AdminMonitoringOverviewResponse,
+    # Cycle schemas
+    MonitoringCycleCreate,
+    MonitoringCycleUpdate,
+    MonitoringCycleResponse,
+    MonitoringCycleListResponse,
+    CycleCancelRequest,
+    CycleRequestApprovalRequest,
+    # Result schemas
+    MonitoringResultCreate,
+    MonitoringResultUpdate,
+    MonitoringResultResponse,
+    MonitoringResultListResponse,
+    # Approval schemas
+    MonitoringCycleApprovalResponse,
+    ApproveRequest,
+    RejectRequest,
+    VoidApprovalRequest,
 )
 
 router = APIRouter()
@@ -1619,6 +1646,9 @@ def get_my_monitoring_tasks(
 
     Only returns active cycles (not APPROVED or CANCELLED).
     """
+    # Import locally to avoid circular imports
+    from app.models.monitoring import MonitoringCycle, MonitoringCycleStatus
+
     today = date.today()
     tasks = []
 

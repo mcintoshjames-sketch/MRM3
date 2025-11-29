@@ -75,7 +75,8 @@ def seed_sla_test_data():
         if not all([intake_status, planning_status, in_progress_status, pending_approval_status,
                    validation_type, priority_medium, priority_high, priority_critical,
                    admin, validator, model]):
-            print("Missing required data. Please ensure taxonomies and users are seeded first.")
+            print(
+                "Missing required data. Please ensure taxonomies and users are seeded first.")
             return
 
         print("Creating test validation requests with SLA violations...")
@@ -106,7 +107,8 @@ def seed_sla_test_data():
             change_reason="Initial request"
         )
         db.add(hist1)
-        print(f"✓ Created Request #{req1.request_id}: Assignment Overdue (15 days in Intake)")
+        print(
+            f"✓ Created Request #{req1.request_id}: Assignment Overdue (15 days in Intake)")
 
         # Test Case 2: Begin Work Overdue (assigned 8 days ago, still in Planning)
         req2 = ValidationRequest(
@@ -115,7 +117,7 @@ def seed_sla_test_data():
             validation_type_id=validation_type.value_id,
             priority_id=priority_high.value_id,
             target_completion_date=date.today() + timedelta(days=45),
-            trigger_reason="Annual review",
+            trigger_reason="Comprehensive review",
             business_justification="Scheduled validation",
             current_status_id=planning_status.value_id,
             created_at=datetime.utcnow() - timedelta(days=10),
@@ -157,7 +159,8 @@ def seed_sla_test_data():
             change_reason="Validator assigned"
         )
         db.add(hist2b)
-        print(f"✓ Created Request #{req2.request_id}: Begin Work Overdue (8 days in Planning)")
+        print(
+            f"✓ Created Request #{req2.request_id}: Begin Work Overdue (8 days in Planning)")
 
         # Test Case 3: Work Completion Overdue (in progress for 95 days)
         req3 = ValidationRequest(
@@ -218,7 +221,8 @@ def seed_sla_test_data():
             change_reason="Started validation work"
         )
         db.add(hist3c)
-        print(f"✓ Created Request #{req3.request_id}: Work Completion Overdue (95 days in progress)")
+        print(
+            f"✓ Created Request #{req3.request_id}: Work Completion Overdue (95 days in progress)")
 
         # Test Case 4: Approval Overdue (in pending approval for 15 days)
         req4 = ValidationRequest(
@@ -259,7 +263,8 @@ def seed_sla_test_data():
             change_reason="Work completed, ready for approval"
         )
         db.add(hist4d)
-        print(f"✓ Created Request #{req4.request_id}: Approval Overdue (15 days in Pending Approval)")
+        print(
+            f"✓ Created Request #{req4.request_id}: Approval Overdue (15 days in Pending Approval)")
 
         # Test Case 5: On-time validation (in progress for 30 days, within SLA)
         req5 = ValidationRequest(
@@ -300,7 +305,8 @@ def seed_sla_test_data():
             change_reason="Started validation work"
         )
         db.add(hist5c)
-        print(f"✓ Created Request #{req5.request_id}: On-Time (30 days in progress, within SLA)")
+        print(
+            f"✓ Created Request #{req5.request_id}: On-Time (30 days in progress, within SLA)")
 
         db.commit()
         print("\n✓ Successfully created 5 test validation requests")

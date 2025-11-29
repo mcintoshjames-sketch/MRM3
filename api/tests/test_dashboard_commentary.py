@@ -112,7 +112,6 @@ class TestDashboardCommentaryAPI:
         types = {}
         for i, (code, label) in enumerate([
             ("COMPREHENSIVE", "Comprehensive"),
-            ("ANNUAL", "Annual Review"),
             ("TARGETED", "Targeted Review")
         ]):
             value = TaxonomyValue(
@@ -157,7 +156,7 @@ class TestDashboardCommentaryAPI:
         """Create a validation request that is overdue for submission."""
         request = ValidationRequest(
             requestor_id=admin_user.user_id,
-            validation_type_id=validation_taxonomies["types"]["annual"].value_id,
+            validation_type_id=validation_taxonomies["types"]["comprehensive"].value_id,
             current_status_id=validation_taxonomies["statuses"]["intake"].value_id,
             priority_id=validation_taxonomies["statuses"]["intake"].value_id,
             target_completion_date=date.today() + timedelta(days=60),
@@ -185,7 +184,7 @@ class TestDashboardCommentaryAPI:
         """Create a validation request that is overdue for validation completion."""
         request = ValidationRequest(
             requestor_id=admin_user.user_id,
-            validation_type_id=validation_taxonomies["types"]["annual"].value_id,
+            validation_type_id=validation_taxonomies["types"]["comprehensive"].value_id,
             current_status_id=validation_taxonomies["statuses"]["in_progress"].value_id,
             priority_id=validation_taxonomies["statuses"]["intake"].value_id,
             target_completion_date=date.today() - timedelta(days=30),  # Overdue
@@ -392,7 +391,7 @@ class TestDashboardCommentaryAPI:
         # Create an overdue submission request for the test model (owned by regular_user)
         request = ValidationRequest(
             requestor_id=regular_user.user_id,
-            validation_type_id=validation_taxonomies["types"]["annual"].value_id,
+            validation_type_id=validation_taxonomies["types"]["comprehensive"].value_id,
             current_status_id=validation_taxonomies["statuses"]["intake"].value_id,
             priority_id=validation_taxonomies["statuses"]["intake"].value_id,
             target_completion_date=date.today() + timedelta(days=30),
@@ -425,7 +424,7 @@ class TestDashboardCommentaryAPI:
         # Create an overdue validation request
         request = ValidationRequest(
             requestor_id=admin_user.user_id,
-            validation_type_id=validation_taxonomies["types"]["annual"].value_id,
+            validation_type_id=validation_taxonomies["types"]["comprehensive"].value_id,
             current_status_id=validation_taxonomies["statuses"]["in_progress"].value_id,
             priority_id=validation_taxonomies["statuses"]["intake"].value_id,
             target_completion_date=date.today() - timedelta(days=30),  # Overdue
@@ -492,7 +491,7 @@ class TestDashboardCommentaryAPI:
         # Create an overdue submission request
         request = ValidationRequest(
             requestor_id=admin_user.user_id,
-            validation_type_id=validation_taxonomies["types"]["annual"].value_id,
+            validation_type_id=validation_taxonomies["types"]["comprehensive"].value_id,
             current_status_id=validation_taxonomies["statuses"]["intake"].value_id,
             priority_id=validation_taxonomies["statuses"]["intake"].value_id,
             target_completion_date=date.today() + timedelta(days=30),
@@ -528,7 +527,7 @@ class TestDashboardCommentaryAPI:
         # Create an overdue validation request
         request = ValidationRequest(
             requestor_id=admin_user.user_id,
-            validation_type_id=validation_taxonomies["types"]["annual"].value_id,
+            validation_type_id=validation_taxonomies["types"]["comprehensive"].value_id,
             current_status_id=validation_taxonomies["statuses"]["in_progress"].value_id,
             priority_id=validation_taxonomies["statuses"]["intake"].value_id,
             target_completion_date=date.today() - timedelta(days=30),

@@ -3,8 +3,8 @@ import csv
 import io
 import json
 from datetime import datetime, date, timedelta
-from typing import List
-from fastapi import APIRouter, Depends, HTTPException, status
+from typing import List, Optional
+from fastapi import APIRouter, Depends, HTTPException, status, Query
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session, joinedload
 from app.core.database import get_db
@@ -474,7 +474,8 @@ def get_name_change_statistics(
     ).scalar() or 0
 
     # Total name changes
-    total_changes = db.query(func.count(ModelNameHistory.history_id)).scalar() or 0
+    total_changes = db.query(func.count(
+        ModelNameHistory.history_id)).scalar() or 0
 
     # Build query for recent changes with optional date filtering
     changes_query = db.query(ModelNameHistory).options(
@@ -483,14 +484,17 @@ def get_name_change_statistics(
 
     if start_date:
         changes_query = changes_query.filter(
-            ModelNameHistory.changed_at >= datetime.combine(start_date, datetime.min.time())
+            ModelNameHistory.changed_at >= datetime.combine(
+                start_date, datetime.min.time())
         )
     if end_date:
         changes_query = changes_query.filter(
-            ModelNameHistory.changed_at <= datetime.combine(end_date, datetime.max.time())
+            ModelNameHistory.changed_at <= datetime.combine(
+                end_date, datetime.max.time())
         )
 
-    recent = changes_query.order_by(ModelNameHistory.changed_at.desc()).limit(100).all()
+    recent = changes_query.order_by(
+        ModelNameHistory.changed_at.desc()).limit(100).all()
 
     recent_changes = [
         ModelNameHistoryItem(
@@ -670,7 +674,7 @@ def get_validation_grouping_suggestions(
     Get suggested models for validation based on previous groupings.
 
     Returns models that were previously validated together with this model
-    in the most recent regular validation (Annual Review, Comprehensive, etc.).
+    in the most recent regular validation (Comprehensive, etc.).
     Targeted validations are excluded from suggestions.
 
     Row-Level Security:
@@ -740,7 +744,7 @@ def get_validation_grouping_suggestions(
     )
 
 
-@router.patch("/{model_id}", response_model=ModelDetailResponse)
+@router.patch("/{model_id}")
 def update_model(
     model_id: int,
     model_data: ModelUpdate,
@@ -750,13 +754,18 @@ def update_model(
     """
     Update a model.
 
+    For approved models edited by non-admins, changes are held for admin approval.
+    Returns 202 Accepted with pending edit details in that case.
+
     Row-Level Security:
-    - Admin: Can update any model
-    - Owner: Can update their models
-    - Developer: Can update models they develop
-    - Delegate with can_submit_changes: Can update delegated models
+    - Admin: Can update any model directly
+    - Owner/Developer/Delegate: Can update pending/needs_revision models directly;
+      for approved models, changes are held for admin approval
     """
     from app.core.rls import can_access_model, can_modify_model
+    from app.models.model_pending_edit import ModelPendingEdit
+    from app.schemas.model import ModelUpdateWithPendingResponse
+    from datetime import datetime, UTC
 
     # Check RLS access first (can user see this model?)
     if not can_access_model(model_id, current_user, db):
@@ -765,18 +774,77 @@ def update_model(
             detail="Model not found"
         )
 
-    # Check modification rights
-    if not can_modify_model(model_id, current_user, db):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="You do not have permission to modify this model"
-        )
-
     model = db.query(Model).filter(Model.model_id == model_id).first()
     if not model:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Model not found"
+        )
+
+    is_admin = current_user.role == "Admin"
+
+    # For non-admins editing APPROVED models, create a pending edit instead
+    if not is_admin and model.row_approval_status is None:
+        update_data = model_data.model_dump(exclude_unset=True)
+
+        if not update_data:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="No changes provided"
+            )
+
+        # Capture original values for the fields being changed
+        original_values = {}
+        for field in update_data.keys():
+            if field == 'user_ids':
+                original_values[field] = [u.user_id for u in model.users]
+            elif field == 'regulatory_category_ids':
+                original_values[field] = [c.value_id for c in model.regulatory_categories]
+            else:
+                original_values[field] = getattr(model, field, None)
+
+        # Create pending edit record
+        pending_edit = ModelPendingEdit(
+            model_id=model_id,
+            requested_by_id=current_user.user_id,
+            requested_at=datetime.now(UTC),
+            proposed_changes=update_data,
+            original_values=original_values,
+            status="pending"
+        )
+        db.add(pending_edit)
+
+        # Create audit log for pending edit creation
+        create_audit_log(
+            db=db,
+            entity_type="ModelPendingEdit",
+            entity_id=model_id,
+            action="CREATE",
+            user_id=current_user.user_id,
+            changes={"proposed_changes": update_data, "model_name": model.model_name}
+        )
+
+        db.commit()
+        db.refresh(pending_edit)
+
+        # Return 202 Accepted with pending edit info
+        from fastapi.responses import JSONResponse
+        return JSONResponse(
+            status_code=status.HTTP_202_ACCEPTED,
+            content={
+                "message": "Your changes have been submitted for admin approval.",
+                "pending_edit_id": pending_edit.pending_edit_id,
+                "status": "pending",
+                "proposed_changes": update_data,
+                "model_id": model_id
+            }
+        )
+
+    # For admins or non-approved models, check standard modification rights
+    if not can_modify_model(model_id, current_user, db):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You do not have permission to modify this model"
         )
 
     update_data = model_data.model_dump(exclude_unset=True)
@@ -1707,8 +1775,10 @@ def get_model_activity_timeline(
         joinedload(DecommissioningRequest.reason),
         joinedload(DecommissioningRequest.validator_reviewed_by),
         joinedload(DecommissioningRequest.owner_reviewed_by),
-        joinedload(DecommissioningRequest.status_history).joinedload(DecommissioningStatusHistory.changed_by),
-        joinedload(DecommissioningRequest.approvals).joinedload(DecommissioningApproval.approved_by)
+        joinedload(DecommissioningRequest.status_history).joinedload(
+            DecommissioningStatusHistory.changed_by),
+        joinedload(DecommissioningRequest.approvals).joinedload(
+            DecommissioningApproval.approved_by)
     ).filter(
         DecommissioningRequest.model_id == model_id
     ).all()
@@ -1868,3 +1938,301 @@ def get_model_name_history(
         history=history_items,
         total_changes=len(history_items)
     )
+
+
+# ============================================================================
+# Pending Edit Endpoints (Model Edit Approval Workflow)
+# ============================================================================
+
+@router.get("/pending-edits/all", response_model=List[dict])
+def list_all_pending_edits(
+    status_filter: Optional[str] = Query(None, description="Filter by status: pending, approved, rejected"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    List all pending model edits across all models (Admin only).
+
+    Used for admin dashboard to review pending changes.
+    """
+    if current_user.role != "Admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin access required"
+        )
+
+    from app.models.model_pending_edit import ModelPendingEdit
+
+    query = db.query(ModelPendingEdit).options(
+        joinedload(ModelPendingEdit.model).joinedload(Model.owner),
+        joinedload(ModelPendingEdit.requested_by),
+        joinedload(ModelPendingEdit.reviewed_by)
+    )
+
+    if status_filter:
+        query = query.filter(ModelPendingEdit.status == status_filter)
+    else:
+        # Default to pending only
+        query = query.filter(ModelPendingEdit.status == "pending")
+
+    pending_edits = query.order_by(ModelPendingEdit.requested_at.desc()).all()
+
+    return [
+        {
+            "pending_edit_id": pe.pending_edit_id,
+            "model_id": pe.model_id,
+            "model_name": pe.model.model_name,
+            "model_owner": {
+                "user_id": pe.model.owner.user_id,
+                "full_name": pe.model.owner.full_name,
+                "email": pe.model.owner.email
+            } if pe.model.owner else None,
+            "requested_by": {
+                "user_id": pe.requested_by.user_id,
+                "full_name": pe.requested_by.full_name,
+                "email": pe.requested_by.email
+            },
+            "requested_at": pe.requested_at.isoformat() if pe.requested_at else None,
+            "proposed_changes": pe.proposed_changes,
+            "original_values": pe.original_values,
+            "status": pe.status,
+            "reviewed_by": {
+                "user_id": pe.reviewed_by.user_id,
+                "full_name": pe.reviewed_by.full_name,
+                "email": pe.reviewed_by.email
+            } if pe.reviewed_by else None,
+            "reviewed_at": pe.reviewed_at.isoformat() if pe.reviewed_at else None,
+            "review_comment": pe.review_comment
+        }
+        for pe in pending_edits
+    ]
+
+
+@router.get("/{model_id}/pending-edits", response_model=List[dict])
+def list_model_pending_edits(
+    model_id: int,
+    include_all: bool = Query(False, description="Include approved/rejected edits"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    List pending edits for a specific model.
+
+    Accessible by model owners, developers, delegates, and admins.
+    """
+    from app.core.rls import can_access_model
+    from app.models.model_pending_edit import ModelPendingEdit
+
+    if not can_access_model(model_id, current_user, db):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Model not found"
+        )
+
+    query = db.query(ModelPendingEdit).options(
+        joinedload(ModelPendingEdit.requested_by),
+        joinedload(ModelPendingEdit.reviewed_by)
+    ).filter(ModelPendingEdit.model_id == model_id)
+
+    if not include_all:
+        query = query.filter(ModelPendingEdit.status == "pending")
+
+    pending_edits = query.order_by(ModelPendingEdit.requested_at.desc()).all()
+
+    return [
+        {
+            "pending_edit_id": pe.pending_edit_id,
+            "model_id": pe.model_id,
+            "requested_by": {
+                "user_id": pe.requested_by.user_id,
+                "full_name": pe.requested_by.full_name,
+                "email": pe.requested_by.email
+            },
+            "requested_at": pe.requested_at.isoformat() if pe.requested_at else None,
+            "proposed_changes": pe.proposed_changes,
+            "original_values": pe.original_values,
+            "status": pe.status,
+            "reviewed_by": {
+                "user_id": pe.reviewed_by.user_id,
+                "full_name": pe.reviewed_by.full_name,
+                "email": pe.reviewed_by.email
+            } if pe.reviewed_by else None,
+            "reviewed_at": pe.reviewed_at.isoformat() if pe.reviewed_at else None,
+            "review_comment": pe.review_comment
+        }
+        for pe in pending_edits
+    ]
+
+
+@router.post("/{model_id}/pending-edits/{edit_id}/approve")
+def approve_pending_edit(
+    model_id: int,
+    edit_id: int,
+    review_data: Optional[dict] = None,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Approve a pending edit and apply the changes to the model.
+
+    Admin only.
+    """
+    if current_user.role != "Admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin access required"
+        )
+
+    from app.models.model_pending_edit import ModelPendingEdit
+    from datetime import datetime, UTC
+
+    pending_edit = db.query(ModelPendingEdit).filter(
+        ModelPendingEdit.pending_edit_id == edit_id,
+        ModelPendingEdit.model_id == model_id
+    ).first()
+
+    if not pending_edit:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Pending edit not found"
+        )
+
+    if pending_edit.status != "pending":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Cannot approve edit with status '{pending_edit.status}'"
+        )
+
+    model = db.query(Model).filter(Model.model_id == model_id).first()
+    if not model:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Model not found"
+        )
+
+    # Apply the proposed changes to the model
+    proposed_changes = pending_edit.proposed_changes
+    changes_applied = {}
+
+    for field, value in proposed_changes.items():
+        if field == 'user_ids':
+            # Handle user_ids separately
+            if value is not None:
+                users = db.query(User).filter(User.user_id.in_(value)).all()
+                model.users = users
+                changes_applied[field] = "modified"
+        elif field == 'regulatory_category_ids':
+            # Handle regulatory_category_ids separately
+            if value is not None:
+                categories = db.query(TaxonomyValue).filter(
+                    TaxonomyValue.value_id.in_(value)).all()
+                model.regulatory_categories = categories
+                changes_applied[field] = "modified"
+        else:
+            old_value = getattr(model, field, None)
+            setattr(model, field, value)
+            changes_applied[field] = {"old": old_value, "new": value}
+
+    # Update pending edit status
+    pending_edit.status = "approved"
+    pending_edit.reviewed_by_id = current_user.user_id
+    pending_edit.reviewed_at = datetime.now(UTC)
+    pending_edit.review_comment = review_data.get("comment") if review_data else None
+
+    # Audit log for approval
+    create_audit_log(
+        db=db,
+        entity_type="ModelPendingEdit",
+        entity_id=edit_id,
+        action="APPROVE",
+        user_id=current_user.user_id,
+        changes={"model_id": model_id, "changes_applied": changes_applied}
+    )
+
+    # Audit log for model update
+    create_audit_log(
+        db=db,
+        entity_type="Model",
+        entity_id=model_id,
+        action="UPDATE",
+        user_id=current_user.user_id,
+        changes={"approved_pending_edit_id": edit_id, **changes_applied}
+    )
+
+    db.commit()
+
+    return {
+        "message": "Pending edit approved and changes applied",
+        "pending_edit_id": edit_id,
+        "status": "approved",
+        "model_id": model_id
+    }
+
+
+@router.post("/{model_id}/pending-edits/{edit_id}/reject")
+def reject_pending_edit(
+    model_id: int,
+    edit_id: int,
+    review_data: Optional[dict] = None,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Reject a pending edit.
+
+    Admin only. The proposed changes are NOT applied.
+    """
+    if current_user.role != "Admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin access required"
+        )
+
+    from app.models.model_pending_edit import ModelPendingEdit
+    from datetime import datetime, UTC
+
+    pending_edit = db.query(ModelPendingEdit).filter(
+        ModelPendingEdit.pending_edit_id == edit_id,
+        ModelPendingEdit.model_id == model_id
+    ).first()
+
+    if not pending_edit:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Pending edit not found"
+        )
+
+    if pending_edit.status != "pending":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Cannot reject edit with status '{pending_edit.status}'"
+        )
+
+    # Update pending edit status
+    pending_edit.status = "rejected"
+    pending_edit.reviewed_by_id = current_user.user_id
+    pending_edit.reviewed_at = datetime.now(UTC)
+    pending_edit.review_comment = review_data.get("comment") if review_data else None
+
+    # Audit log for rejection
+    create_audit_log(
+        db=db,
+        entity_type="ModelPendingEdit",
+        entity_id=edit_id,
+        action="REJECT",
+        user_id=current_user.user_id,
+        changes={
+            "model_id": model_id,
+            "rejected_changes": pending_edit.proposed_changes,
+            "comment": pending_edit.review_comment
+        }
+    )
+
+    db.commit()
+
+    return {
+        "message": "Pending edit rejected",
+        "pending_edit_id": edit_id,
+        "status": "rejected",
+        "model_id": model_id
+    }

@@ -47,8 +47,7 @@ def workflow_taxonomies(db_session):
     db_session.flush()
 
     initial_val = TaxonomyValue(taxonomy_id=type_tax.taxonomy_id, code="INITIAL", label="Initial Validation", sort_order=1)
-    annual_val = TaxonomyValue(taxonomy_id=type_tax.taxonomy_id, code="ANNUAL", label="Annual Review", sort_order=2)
-    comprehensive_val = TaxonomyValue(taxonomy_id=type_tax.taxonomy_id, code="COMPREHENSIVE", label="Comprehensive Review", sort_order=3)
+    comprehensive_val = TaxonomyValue(taxonomy_id=type_tax.taxonomy_id, code="COMPREHENSIVE", label="Comprehensive Review", sort_order=2)
 
     # Work Component Type
     component_tax = Taxonomy(name="Work Component Type", is_system=True)
@@ -82,7 +81,7 @@ def workflow_taxonomies(db_session):
     db_session.add_all([
         critical, high, medium, low,
         intake, planning, in_progress, review, pending_approval, approved, on_hold, cancelled,
-        initial_val, annual_val, comprehensive_val,
+        initial_val, comprehensive_val,
         conceptual, data_quality, implementation, performance, documentation,
         not_started, comp_in_progress, completed,
         fit_for_purpose, fit_with_conditions, not_fit
@@ -96,7 +95,7 @@ def workflow_taxonomies(db_session):
             "review": review, "pending_approval": pending_approval, "approved": approved,
             "on_hold": on_hold, "cancelled": cancelled
         },
-        "type": {"initial": initial_val, "annual": annual_val, "comprehensive": comprehensive_val},
+        "type": {"initial": initial_val, "comprehensive": comprehensive_val},
         "component_type": {
             "conceptual": conceptual, "data_quality": data_quality,
             "implementation": implementation, "performance": performance, "documentation": documentation
@@ -1254,17 +1253,17 @@ class TestValidationGroupingMemory:
         db_session.commit()
         db_session.refresh(second_model)
 
-        # Create multi-model validation with regular validation type (ANNUAL)
+        # Create multi-model validation with regular validation type (COMPREHENSIVE)
         target_date = (date.today() + timedelta(days=30)).isoformat()
         response = client.post(
             "/validation-workflow/requests/",
             headers=admin_headers,
             json={
                 "model_ids": [sample_model.model_id, second_model.model_id],
-                "validation_type_id": workflow_taxonomies["type"]["annual"].value_id,
+                "validation_type_id": workflow_taxonomies["type"]["comprehensive"].value_id,
                 "priority_id": workflow_taxonomies["priority"]["medium"].value_id,
                 "target_completion_date": target_date,
-                "trigger_reason": "Annual review cycle"
+                "trigger_reason": "Periodic review cycle"
             }
         )
         assert response.status_code == 201
@@ -1305,10 +1304,10 @@ class TestValidationGroupingMemory:
             headers=admin_headers,
             json={
                 "model_ids": [sample_model.model_id],
-                "validation_type_id": workflow_taxonomies["type"]["annual"].value_id,
+                "validation_type_id": workflow_taxonomies["type"]["comprehensive"].value_id,
                 "priority_id": workflow_taxonomies["priority"]["medium"].value_id,
                 "target_completion_date": target_date,
-                "trigger_reason": "Annual review"
+                "trigger_reason": "Comprehensive review"
             }
         )
         assert response.status_code == 201
@@ -1398,10 +1397,10 @@ class TestValidationGroupingMemory:
             headers=admin_headers,
             json={
                 "model_ids": [sample_model.model_id, model2.model_id],
-                "validation_type_id": workflow_taxonomies["type"]["annual"].value_id,
+                "validation_type_id": workflow_taxonomies["type"]["comprehensive"].value_id,
                 "priority_id": workflow_taxonomies["priority"]["medium"].value_id,
                 "target_completion_date": target_date,
-                "trigger_reason": "Annual review"
+                "trigger_reason": "Comprehensive review"
             }
         )
         assert response1.status_code == 201
@@ -1419,10 +1418,10 @@ class TestValidationGroupingMemory:
             headers=admin_headers,
             json={
                 "model_ids": [sample_model.model_id, model3.model_id],
-                "validation_type_id": workflow_taxonomies["type"]["annual"].value_id,
+                "validation_type_id": workflow_taxonomies["type"]["comprehensive"].value_id,
                 "priority_id": workflow_taxonomies["priority"]["medium"].value_id,
                 "target_completion_date": target_date,
-                "trigger_reason": "Annual review"
+                "trigger_reason": "Comprehensive review"
             }
         )
         assert response2.status_code == 201
@@ -1456,10 +1455,10 @@ class TestValidationGroupingMemory:
             headers=admin_headers,
             json={
                 "model_ids": [sample_model.model_id, model2.model_id],
-                "validation_type_id": workflow_taxonomies["type"]["annual"].value_id,
+                "validation_type_id": workflow_taxonomies["type"]["comprehensive"].value_id,
                 "priority_id": workflow_taxonomies["priority"]["medium"].value_id,
                 "target_completion_date": target_date,
-                "trigger_reason": "Annual review"
+                "trigger_reason": "Comprehensive review"
             }
         )
 
@@ -1531,10 +1530,10 @@ class TestValidationGroupingMemory:
             headers=admin_headers,
             json={
                 "model_ids": [sample_model.model_id, model2.model_id, model3.model_id],
-                "validation_type_id": workflow_taxonomies["type"]["annual"].value_id,
+                "validation_type_id": workflow_taxonomies["type"]["comprehensive"].value_id,
                 "priority_id": workflow_taxonomies["priority"]["medium"].value_id,
                 "target_completion_date": target_date,
-                "trigger_reason": "Annual review"
+                "trigger_reason": "Comprehensive review"
             }
         )
 
@@ -1564,10 +1563,10 @@ class TestValidationLifecycleEnhancements:
             headers=admin_headers,
             json={
                 "model_ids": [sample_model.model_id],
-                "validation_type_id": workflow_taxonomies["type"]["annual"].value_id,
+                "validation_type_id": workflow_taxonomies["type"]["comprehensive"].value_id,
                 "priority_id": workflow_taxonomies["priority"]["high"].value_id,
                 "target_completion_date": target_date,
-                "trigger_reason": "Annual review"
+                "trigger_reason": "Comprehensive review"
             }
         )
         assert create_response.status_code == 201
@@ -1607,7 +1606,7 @@ class TestValidationLifecycleEnhancements:
             headers=admin_headers,
             json={
                 "model_ids": [sample_model.model_id],
-                "validation_type_id": workflow_taxonomies["type"]["annual"].value_id,
+                "validation_type_id": workflow_taxonomies["type"]["comprehensive"].value_id,
                 "priority_id": workflow_taxonomies["priority"]["high"].value_id,
                 "target_completion_date": target_date
             }
@@ -1637,7 +1636,7 @@ class TestValidationLifecycleEnhancements:
             headers=admin_headers,
             json={
                 "model_ids": [sample_model.model_id],
-                "validation_type_id": workflow_taxonomies["type"]["annual"].value_id,
+                "validation_type_id": workflow_taxonomies["type"]["comprehensive"].value_id,
                 "priority_id": workflow_taxonomies["priority"]["high"].value_id,
                 "target_completion_date": target_date
             }
@@ -1698,7 +1697,7 @@ class TestValidationLifecycleEnhancements:
             headers=admin_headers,
             json={
                 "model_ids": [sample_model.model_id],
-                "validation_type_id": workflow_taxonomies["type"]["annual"].value_id,
+                "validation_type_id": workflow_taxonomies["type"]["comprehensive"].value_id,
                 "priority_id": workflow_taxonomies["priority"]["medium"].value_id,
                 "target_completion_date": target_date
             }
@@ -1737,7 +1736,7 @@ class TestValidationLifecycleEnhancements:
             headers=admin_headers,
             json={
                 "model_ids": [sample_model.model_id],
-                "validation_type_id": workflow_taxonomies["type"]["annual"].value_id,
+                "validation_type_id": workflow_taxonomies["type"]["comprehensive"].value_id,
                 "priority_id": workflow_taxonomies["priority"]["high"].value_id,
                 "target_completion_date": target_date
             }
@@ -2014,7 +2013,7 @@ class TestSmartApproverAssignment:
                 "validation_type_id": workflow_taxonomies["type"]["initial"].value_id,
                 "priority_id": workflow_taxonomies["priority"]["high"].value_id,
                 "target_completion_date": "2025-12-31",
-                "trigger_reason": "Annual review"
+                "trigger_reason": "Comprehensive review"
                 # region_id is NOT provided → global validation
             },
             headers=admin_headers
@@ -2334,7 +2333,7 @@ class TestPriorValidationAutoPopulation:
             headers=admin_headers,
             json={
                 "model_ids": [sample_model.model_id],
-                "validation_type_id": workflow_taxonomies["type"]["annual"].value_id,
+                "validation_type_id": workflow_taxonomies["type"]["comprehensive"].value_id,
                 "priority_id": workflow_taxonomies["priority"]["medium"].value_id,
                 "target_completion_date": target_date,
             }
@@ -2371,22 +2370,22 @@ class TestPriorValidationAutoPopulation:
         validation_req.completion_date = datetime.now()
         db_session.commit()
 
-        # Create an ANNUAL validation - this should have prior_full pointing to INITIAL
+        # Create a COMPREHENSIVE validation - this should have prior_full pointing to INITIAL
         response2 = client.post(
             "/validation-workflow/requests/",
             headers=admin_headers,
             json={
                 "model_ids": [sample_model.model_id],
-                "validation_type_id": workflow_taxonomies["type"]["annual"].value_id,
+                "validation_type_id": workflow_taxonomies["type"]["comprehensive"].value_id,
                 "priority_id": workflow_taxonomies["priority"]["medium"].value_id,
                 "target_completion_date": target_date,
             }
         )
         assert response2.status_code == 201
-        annual_request = response2.json()
+        comprehensive_request = response2.json()
 
         # prior_full should point to the INITIAL validation
-        assert annual_request["prior_full_validation_request_id"] == initial_request["request_id"]
+        assert comprehensive_request["prior_full_validation_request_id"] == initial_request["request_id"]
 
     def test_prior_validation_fields_null_when_no_prior(self, client, admin_headers, sample_model, workflow_taxonomies):
         """Test that prior validation fields are null when no prior APPROVED validations exist."""
@@ -2442,7 +2441,7 @@ class TestPriorValidationAutoPopulation:
             headers=admin_headers,
             json={
                 "model_ids": [sample_model.model_id],
-                "validation_type_id": workflow_taxonomies["type"]["annual"].value_id,
+                "validation_type_id": workflow_taxonomies["type"]["comprehensive"].value_id,
                 "priority_id": workflow_taxonomies["priority"]["medium"].value_id,
                 "target_completion_date": target_date,
             }

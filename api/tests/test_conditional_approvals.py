@@ -593,8 +593,8 @@ class TestRuleEvaluationLogic:
         db_session.add(model)
         db_session.flush()
 
-        # Should match both initial and annual
-        for val_type in [taxonomy_values["initial"], taxonomy_values["annual"]]:
+        # Should match both initial and comprehensive
+        for val_type in [taxonomy_values["initial"], taxonomy_values["comprehensive"]]:
             validation_request = ValidationRequest(
             requestor_id=test_user.user_id,
                 validation_type_id=val_type.value_id,
@@ -1043,7 +1043,7 @@ class TestRuleEvaluationLogic:
 
         rule = ConditionalApprovalRule(
             rule_name="Multi-Value Rule",
-            validation_type_ids=f"{taxonomy_values['initial'].value_id},{taxonomy_values['annual'].value_id}",
+            validation_type_ids=f"{taxonomy_values['initial'].value_id},{taxonomy_values['comprehensive'].value_id}",
             is_active=True
         )
         db_session.add(rule)

@@ -59,7 +59,7 @@ class ValidationGroupingMemory(Base):
 - One row per model_id (primary key)
 - Only stores the MOST RECENT multi-model validation
 - If a model is validated alone, no row is created/row is deleted
-- **ONLY updated for regular validations** (validation_type = Annual Review, Comprehensive, etc.)
+- **ONLY updated for regular validations** (validation_type = Comprehensive, etc.)
 - **NOT updated for targeted validations** (validation_type = Targeted Review, triggered by model changes)
 - Updated automatically when validation request reaches "Approved" status
 
@@ -927,7 +927,7 @@ def create_model_change(
 
 **Key Features Delivered**:
 - System tracks most recent multi-model validation for each model
-- Only regular validations (INITIAL, ANNUAL, COMPREHENSIVE, ONGOING) update grouping memory
+- Only regular validations (INITIAL, COMPREHENSIVE) update grouping memory
 - Targeted validations (TARGETED, INTERIM) are excluded
 - Suggestions appear when selecting a single model for validation
 - Users can add suggested models individually or all at once

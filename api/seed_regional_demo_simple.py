@@ -18,9 +18,12 @@ try:
 
     # Get required users
     admin = db.query(User).filter(User.email == "admin@example.com").first()
-    validator = db.query(User).filter(User.email == "validator@example.com").first()
-    us_approver = db.query(User).filter(User.email == "usapprover@example.com").first()
-    eu_approver = db.query(User).filter(User.email == "euapprover@example.com").first()
+    validator = db.query(User).filter(
+        User.email == "validator@example.com").first()
+    us_approver = db.query(User).filter(
+        User.email == "usapprover@example.com").first()
+    eu_approver = db.query(User).filter(
+        User.email == "euapprover@example.com").first()
 
     # Get regions
     us_region = db.query(Region).filter(Region.code == "US").first()
@@ -28,11 +31,16 @@ try:
     uk_region = db.query(Region).filter(Region.code == "UK").first()
 
     # Get taxonomy values
-    val_type_initial = db.query(TaxonomyValue).filter(TaxonomyValue.code == "INITIAL").first()
-    priority_high = db.query(TaxonomyValue).filter(TaxonomyValue.code == "HIGH").first()
-    status_approved = db.query(TaxonomyValue).filter(TaxonomyValue.code == "APPROVED").first()
-    status_pending = db.query(TaxonomyValue).filter(TaxonomyValue.code == "PENDING_APPROVAL").first()
-    status_in_progress = db.query(TaxonomyValue).filter(TaxonomyValue.code == "IN_PROGRESS").first()
+    val_type_initial = db.query(TaxonomyValue).filter(
+        TaxonomyValue.code == "INITIAL").first()
+    priority_high = db.query(TaxonomyValue).filter(
+        TaxonomyValue.code == "HIGH").first()
+    status_approved = db.query(TaxonomyValue).filter(
+        TaxonomyValue.code == "APPROVED").first()
+    status_pending = db.query(TaxonomyValue).filter(
+        TaxonomyValue.code == "PENDING_APPROVAL").first()
+    status_in_progress = db.query(TaxonomyValue).filter(
+        TaxonomyValue.code == "IN_PROGRESS").first()
 
     print("✓ Found required users, regions, and taxonomy values\n")
 
@@ -42,7 +50,8 @@ try:
     print("Creating Scenario 1: Credit Risk Model")
     print("-" * 60)
 
-    model1 = db.query(Model).filter(Model.model_name == "Credit Risk Scorecard v3").first()
+    model1 = db.query(Model).filter(Model.model_name ==
+                                    "Credit Risk Scorecard v3").first()
     if not model1:
         model1 = Model(
             model_name="Credit Risk Scorecard v3",
@@ -64,7 +73,7 @@ try:
         priority_id=priority_high.value_id,
         target_completion_date=date.today() - timedelta(days=30),
         current_status_id=status_approved.value_id,
-        trigger_reason="Annual validation"
+        trigger_reason="Comprehensive validation"
     )
     db.add(val1)
     db.commit()
@@ -105,7 +114,7 @@ try:
     )
     db.add(us_appr1)
 
-    # Create EU regional approval - APPROVED  
+    # Create EU regional approval - APPROVED
     eu_appr1 = ValidationApproval(
         request_id=val1.request_id,
         approver_id=eu_approver.user_id,

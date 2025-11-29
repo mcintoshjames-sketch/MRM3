@@ -76,9 +76,10 @@ def test_user_can_edit_pending_model(client, auth_headers, test_user, db_session
     assert data["row_approval_status"] == "pending"
 
 
-def test_user_cannot_edit_approved_model_workflow_restriction(client, auth_headers, test_user, db_session):
+def test_user_edit_approved_model_creates_pending_edit(client, auth_headers, test_user, db_session):
     """
-    Test that users cannot edit approved models if the workflow restricts it.
+    Test that non-admin users editing approved models creates a pending edit
+    that requires admin approval, rather than directly modifying the model.
     """
     # Create an approved model (row_approval_status=None)
     model = Model(
@@ -93,7 +94,7 @@ def test_user_cannot_edit_approved_model_workflow_restriction(client, auth_heade
     db_session.add(model)
     db_session.commit()
 
-    # Attempt to edit as user
+    # Attempt to edit as user - should create pending edit, not direct update
     response = client.patch(
         f"/models/{model.model_id}",
         headers=auth_headers,
@@ -102,13 +103,18 @@ def test_user_cannot_edit_approved_model_workflow_restriction(client, auth_heade
         }
     )
 
-    # Assuming strict governance where approved models cannot be edited by users directly
-    # or require a new submission cycle.
-    # If the design implies they can only edit 'pending' or 'needs_revision', this should fail or be restricted.
-    # However, if standard RLS allows owners to edit, this might pass.
-    # Given the requirement "Submitter: Can edit if ... row_approval_status IN ('pending', 'needs_revision')",
-    # we will assume this returns 403 Forbidden for approved models in this workflow context.
-    assert response.status_code == 403
+    # Non-admin editing approved model should return 202 Accepted
+    # with info about the pending edit
+    assert response.status_code == 202
+    data = response.json()
+    assert data["status"] == "pending"
+    assert "pending_edit_id" in data
+    assert data["proposed_changes"]["description"] == "Updated description"
+    assert data["model_id"] == model.model_id
+
+    # Verify the model was NOT actually updated
+    db_session.refresh(model)
+    assert model.description == "Original description"
 
 
 def test_admin_approve_model(client, admin_headers, test_user, db_session):
@@ -344,9 +350,9 @@ def test_dashboard_news_feed(client, auth_headers, test_user, db_session):
     assert isinstance(data, list)
 
 
-def test_create_model_enforces_user_inclusion(client, auth_headers, test_user, second_user):
-    """Test that non-admins must include themselves in user_ids."""
-    # Try to create model without current user in user_ids
+def test_create_model_enforces_user_inclusion(client, auth_headers, second_user):
+    """Test that non-admins must include themselves as owner, developer, or model user."""
+    # Try to create model where current user is not owner, developer, or in user_ids
     response = client.post(
         "/models/",
         headers=auth_headers,
@@ -354,9 +360,9 @@ def test_create_model_enforces_user_inclusion(client, auth_headers, test_user, s
             "model_name": "Invalid User Model",
             "description": "Created by user",
             "development_type": "In-House",
-            "owner_id": test_user.user_id,
+            "owner_id": second_user.user_id,  # Different user as owner
             "status": "In Development",
-            "user_ids": [second_user.user_id],  # Only other user
+            "user_ids": [second_user.user_id],  # Only other user, not current user
             "auto_create_validation": False
         }
     )

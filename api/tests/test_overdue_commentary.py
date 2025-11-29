@@ -57,13 +57,13 @@ class TestOverdueCommentaryAPI:
 
         val_type = TaxonomyValue(
             taxonomy_id=taxonomy.taxonomy_id,
-            code="ANNUAL",
-            label="Annual Review",
+            code="COMPREHENSIVE",
+            label="Comprehensive Validation",
             sort_order=1
         )
         db_session.add(val_type)
         db_session.commit()
-        return {"taxonomy": taxonomy, "annual": val_type}
+        return {"taxonomy": taxonomy, "comprehensive": val_type}
 
     @pytest.fixture
     def test_model_for_commentary(self, db_session, admin_user):
@@ -95,7 +95,7 @@ class TestOverdueCommentaryAPI:
         """Create a validation request in pre-submission state (no submission_received_date)."""
         request = ValidationRequest(
             requestor_id=admin_user.user_id,
-            validation_type_id=validation_type_taxonomy["annual"].value_id,
+            validation_type_id=validation_type_taxonomy["comprehensive"].value_id,
             current_status_id=validation_status_taxonomy["intake"].value_id,
             priority_id=validation_status_taxonomy["intake"].value_id,  # Using intake as priority placeholder
             target_completion_date=date.today() + timedelta(days=90),
@@ -122,7 +122,7 @@ class TestOverdueCommentaryAPI:
         """Create a validation request in progress (has submission_received_date)."""
         request = ValidationRequest(
             requestor_id=admin_user.user_id,
-            validation_type_id=validation_type_taxonomy["annual"].value_id,
+            validation_type_id=validation_type_taxonomy["comprehensive"].value_id,
             current_status_id=validation_status_taxonomy["in_progress"].value_id,
             priority_id=validation_status_taxonomy["intake"].value_id,  # Using intake as priority placeholder
             target_completion_date=date.today() + timedelta(days=60),

@@ -38,7 +38,7 @@ INSERT INTO validation_requests (
 )
 VALUES (
     CURRENT_DATE - 60, :admin_id, :val_type_initial_id, :priority_high_id,
-    CURRENT_DATE - 30, :status_approved_id, 'Annual validation',
+    CURRENT_DATE - 30, :status_approved_id, 'Comprehensive validation',
     NOW() - INTERVAL '60 days', NOW() - INTERVAL '45 days'
 )
 RETURNING request_id \gset val1_id

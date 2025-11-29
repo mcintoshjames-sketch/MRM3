@@ -6,7 +6,7 @@ import json
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session, joinedload
-from sqlalchemy import desc, or_, func, nullslast
+from sqlalchemy import desc, or_, func, nullslast, select
 from fpdf import FPDF
 import tempfile
 import os
@@ -526,13 +526,12 @@ def calculate_days_in_status(request: ValidationRequest) -> int:
 def update_grouping_memory(db: Session, validation_request: ValidationRequest, models: List[Model]):
     """Update validation grouping memory for multi-model regular validations.
 
-    Only updates for regular validations (INITIAL, ANNUAL, COMPREHENSIVE, ONGOING).
+    Only updates for regular validations (INITIAL, COMPREHENSIVE).
     Skips targeted validations (TARGETED, INTERIM).
     Only updates if 2 or more models are being validated together.
     """
     # Regular validation type codes that should update grouping memory
-    REGULAR_VALIDATION_TYPES = ["INITIAL",
-                                "ANNUAL", "COMPREHENSIVE", "ONGOING"]
+    REGULAR_VALIDATION_TYPES = ["INITIAL", "COMPREHENSIVE"]
 
     # Check if this is a multi-model validation
     if len(models) < 2:
@@ -899,7 +898,7 @@ def calculate_model_revalidation_status(model: Model, db: Session) -> Dict:
     ).filter(
         ValidationRequestModelVersion.model_id == model.model_id,
         ValidationRequest.validation_type.has(
-            TaxonomyValue.code.in_(["COMPREHENSIVE", "ANNUAL"])),
+            TaxonomyValue.code == "COMPREHENSIVE"),
         ValidationRequest.prior_validation_request_id == last_validation.request_id,
         ValidationRequest.current_status.has(
             TaxonomyValue.code.notin_(["APPROVED", "CANCELLED"]))
@@ -3495,7 +3494,7 @@ def submit_documentation(
     if not validation_request.is_periodic_revalidation:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Can only mark submission for periodic revalidations (COMPREHENSIVE or ANNUAL)"
+            detail="Can only mark submission for periodic revalidations (COMPREHENSIVE)"
         )
 
     # Check if submission already received
@@ -3559,22 +3558,25 @@ def get_my_overdue_items(
     results = []
 
     # Part 1: Find overdue SUBMISSIONS for user's models
-    pending_requests = db.query(ValidationRequest).options(
-        joinedload(ValidationRequest.model_versions_assoc).joinedload(
-            ValidationRequestModelVersion.model
-        ).joinedload(Model.owner),
-        joinedload(ValidationRequest.model_versions_assoc).joinedload(
-            ValidationRequestModelVersion.model
-        ).joinedload(Model.risk_tier),
-        joinedload(ValidationRequest.current_status),
-        joinedload(ValidationRequest.validation_type)
-    ).filter(
-        ValidationRequest.validation_type.has(
-            TaxonomyValue.code.in_(["COMPREHENSIVE", "ANNUAL"])),
-        ValidationRequest.submission_received_date.is_(None),
-        ValidationRequest.current_status.has(
-            TaxonomyValue.code.in_(["INTAKE", "PLANNING"]))
-    ).all()
+    # Use SQLAlchemy 2.0-style query with unique() to prevent duplicate rows from joinedload
+    pending_requests = db.execute(
+        select(ValidationRequest).options(
+            joinedload(ValidationRequest.model_versions_assoc).joinedload(
+                ValidationRequestModelVersion.model
+            ).joinedload(Model.owner),
+            joinedload(ValidationRequest.model_versions_assoc).joinedload(
+                ValidationRequestModelVersion.model
+            ).joinedload(Model.risk_tier),
+            joinedload(ValidationRequest.current_status),
+            joinedload(ValidationRequest.validation_type)
+        ).filter(
+            ValidationRequest.validation_type.has(
+                TaxonomyValue.code == "COMPREHENSIVE"),
+            ValidationRequest.submission_received_date.is_(None),
+            ValidationRequest.current_status.has(
+                TaxonomyValue.code.in_(["INTAKE", "PLANNING"]))
+        )
+    ).scalars().unique().all()
 
     for req in pending_requests:
         # Check if past due or past grace
@@ -3655,20 +3657,23 @@ def get_my_validator_overdue_items(
     # 2. Documentation has been submitted (submission_received_date is set)
     # 3. Validation is past target completion date
     # 4. Validation is not yet approved/cancelled
-    assigned_requests = db.query(ValidationRequest).options(
-        joinedload(ValidationRequest.model_versions_assoc).joinedload(
-            ValidationRequestModelVersion.model
-        ).joinedload(Model.risk_tier),
-        joinedload(ValidationRequest.current_status),
-        joinedload(ValidationRequest.validation_type),
-        joinedload(ValidationRequest.assignments).joinedload(ValidationAssignment.validator)
-    ).filter(
-        ValidationRequest.validation_type.has(
-            TaxonomyValue.code.in_(["COMPREHENSIVE", "ANNUAL"])),
-        ValidationRequest.submission_received_date.isnot(None),  # Submitted
-        ValidationRequest.current_status.has(
-            TaxonomyValue.code.notin_(["APPROVED", "CANCELLED"]))
-    ).all()
+    # Use SQLAlchemy 2.0-style query with unique() to prevent duplicate rows from joinedload
+    assigned_requests = db.execute(
+        select(ValidationRequest).options(
+            joinedload(ValidationRequest.model_versions_assoc).joinedload(
+                ValidationRequestModelVersion.model
+            ).joinedload(Model.risk_tier),
+            joinedload(ValidationRequest.current_status),
+            joinedload(ValidationRequest.validation_type),
+            joinedload(ValidationRequest.assignments).joinedload(ValidationAssignment.validator)
+        ).filter(
+            ValidationRequest.validation_type.has(
+                TaxonomyValue.code == "COMPREHENSIVE"),
+            ValidationRequest.submission_received_date.isnot(None),  # Submitted
+            ValidationRequest.current_status.has(
+                TaxonomyValue.code.notin_(["APPROVED", "CANCELLED"]))
+        )
+    ).scalars().unique().all()
 
     for req in assigned_requests:
         # Check if current user is an assigned validator for this request
@@ -3736,22 +3741,25 @@ def get_overdue_submissions(
     today = date.today()
 
     # Find active revalidation requests without submissions
-    pending_requests = db.query(ValidationRequest).options(
-        joinedload(ValidationRequest.model_versions_assoc).joinedload(
-            ValidationRequestModelVersion.model
-        ).joinedload(Model.owner),
-        joinedload(ValidationRequest.model_versions_assoc).joinedload(
-            ValidationRequestModelVersion.model
-        ).joinedload(Model.risk_tier),
-        joinedload(ValidationRequest.current_status),
-        joinedload(ValidationRequest.validation_type)
-    ).filter(
-        ValidationRequest.validation_type.has(
-            TaxonomyValue.code.in_(["COMPREHENSIVE", "ANNUAL"])),
-        ValidationRequest.submission_received_date.is_(None),
-        ValidationRequest.current_status.has(
-            TaxonomyValue.code.in_(["INTAKE", "PLANNING"]))
-    ).all()
+    # Use SQLAlchemy 2.0-style query with unique() to prevent duplicate rows from joinedload
+    pending_requests = db.execute(
+        select(ValidationRequest).options(
+            joinedload(ValidationRequest.model_versions_assoc).joinedload(
+                ValidationRequestModelVersion.model
+            ).joinedload(Model.owner),
+            joinedload(ValidationRequest.model_versions_assoc).joinedload(
+                ValidationRequestModelVersion.model
+            ).joinedload(Model.risk_tier),
+            joinedload(ValidationRequest.current_status),
+            joinedload(ValidationRequest.validation_type)
+        ).filter(
+            ValidationRequest.validation_type.has(
+                TaxonomyValue.code == "COMPREHENSIVE"),
+            ValidationRequest.submission_received_date.is_(None),
+            ValidationRequest.current_status.has(
+                TaxonomyValue.code.in_(["INTAKE", "PLANNING"]))
+        )
+    ).scalars().unique().all()
 
     results = []
     for req in pending_requests:
@@ -3820,21 +3828,24 @@ def get_overdue_validations(
     today = date.today()
 
     # Find active revalidation requests
-    active_requests = db.query(ValidationRequest).options(
-        joinedload(ValidationRequest.model_versions_assoc).joinedload(
-            ValidationRequestModelVersion.model
-        ).joinedload(Model.owner),
-        joinedload(ValidationRequest.model_versions_assoc).joinedload(
-            ValidationRequestModelVersion.model
-        ).joinedload(Model.risk_tier),
-        joinedload(ValidationRequest.current_status),
-        joinedload(ValidationRequest.validation_type)
-    ).filter(
-        ValidationRequest.validation_type.has(
-            TaxonomyValue.code.in_(["COMPREHENSIVE", "ANNUAL"])),
-        ValidationRequest.current_status.has(
-            TaxonomyValue.code.notin_(["APPROVED", "CANCELLED"]))
-    ).all()
+    # Use SQLAlchemy 2.0-style query with unique() to prevent duplicate rows from joinedload
+    active_requests = db.execute(
+        select(ValidationRequest).options(
+            joinedload(ValidationRequest.model_versions_assoc).joinedload(
+                ValidationRequestModelVersion.model
+            ).joinedload(Model.owner),
+            joinedload(ValidationRequest.model_versions_assoc).joinedload(
+                ValidationRequestModelVersion.model
+            ).joinedload(Model.risk_tier),
+            joinedload(ValidationRequest.current_status),
+            joinedload(ValidationRequest.validation_type)
+        ).filter(
+            ValidationRequest.validation_type.has(
+                TaxonomyValue.code == "COMPREHENSIVE"),
+            ValidationRequest.current_status.has(
+                TaxonomyValue.code.notin_(["APPROVED", "CANCELLED"]))
+        )
+    ).scalars().unique().all()
 
     results = []
     for req in active_requests:
@@ -4094,7 +4105,7 @@ def get_my_pending_submissions(
     # Apply common filters
     pending_requests = query.filter(
         ValidationRequest.validation_type.has(
-            TaxonomyValue.code.in_(["COMPREHENSIVE", "ANNUAL"])),
+            TaxonomyValue.code == "COMPREHENSIVE"),
         ValidationRequest.submission_received_date.is_(None),
         ValidationRequest.current_status.has(
             TaxonomyValue.code.in_(["INTAKE", "PLANNING"]))
