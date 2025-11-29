@@ -70,19 +70,54 @@ const TrendChartModal: React.FC<TrendChartModalProps> = ({
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [trendData, setTrendData] = useState<TrendData | null>(null);
+    // Model filter: 'all' = show all, 'plan-level' = only null model_id, number = specific model
+    const [modelFilter, setModelFilter] = useState<'all' | 'plan-level' | number>('all');
+    // Available models extracted from trend data
+    const [availableModels, setAvailableModels] = useState<Array<{ model_id: number; model_name: string }>>([]);
 
     useEffect(() => {
         if (isOpen && planMetricId) {
+            // Reset filter when modal opens
+            setModelFilter('all');
             fetchTrendData();
         }
     }, [isOpen, planMetricId]);
 
-    const fetchTrendData = async () => {
+    const fetchTrendData = async (filterModelId?: number | null) => {
         setLoading(true);
         setError(null);
         try {
-            const response = await api.get(`/monitoring/metrics/${planMetricId}/trend`);
+            // Build URL with optional model_id filter
+            let url = `/monitoring/metrics/${planMetricId}/trend`;
+            if (filterModelId !== undefined && filterModelId !== null) {
+                url += `?model_id=${filterModelId}`;
+            }
+            const response = await api.get(url);
             setTrendData(response.data);
+
+            // Extract unique models from data for filter dropdown (only on initial load)
+            if (filterModelId === undefined) {
+                const models = new Map<number, string>();
+                let hasPlanLevel = false;
+                response.data.data_points.forEach((point: TrendDataPoint) => {
+                    if (point.model_id === null) {
+                        hasPlanLevel = true;
+                    } else if (point.model_name) {
+                        models.set(point.model_id, point.model_name);
+                    }
+                });
+                const modelList = Array.from(models.entries()).map(([id, name]) => ({
+                    model_id: id,
+                    model_name: name
+                }));
+                // Sort by name
+                modelList.sort((a, b) => a.model_name.localeCompare(b.model_name));
+                // Add plan-level option if exists
+                if (hasPlanLevel) {
+                    modelList.unshift({ model_id: -1, model_name: 'Plan Level (All Models)' });
+                }
+                setAvailableModels(modelList);
+            }
         } catch (err: unknown) {
             console.error('Error fetching trend data:', err);
             if (err && typeof err === 'object' && 'response' in err) {
@@ -93,6 +128,21 @@ const TrendChartModal: React.FC<TrendChartModalProps> = ({
             }
         } finally {
             setLoading(false);
+        }
+    };
+
+    const handleModelFilterChange = (value: string) => {
+        if (value === 'all') {
+            setModelFilter('all');
+            fetchTrendData(); // Fetch all
+        } else if (value === 'plan-level') {
+            setModelFilter('plan-level');
+            // Backend doesn't support filtering for null, so we filter client-side
+            fetchTrendData();
+        } else {
+            const modelId = parseInt(value);
+            setModelFilter(modelId);
+            fetchTrendData(modelId);
         }
     };
 
@@ -119,8 +169,16 @@ const TrendChartModal: React.FC<TrendChartModalProps> = ({
         const modelNames = new Set<string>();
         const dateMap = new Map<string, ChartDataPoint>();
 
-        trendData.data_points.forEach((point) => {
-            const modelKey = point.model_name || 'All Models';
+        // Filter data points based on model filter
+        let filteredPoints = trendData.data_points;
+        if (modelFilter === 'plan-level') {
+            // Only show plan-level results (model_id = null)
+            filteredPoints = trendData.data_points.filter(p => p.model_id === null);
+        }
+        // Note: specific model filtering is done server-side via API query param
+
+        filteredPoints.forEach((point) => {
+            const modelKey = point.model_name || 'Plan Level';
             modelNames.add(modelKey);
 
             const dateKey = point.period_end_date;
@@ -295,6 +353,34 @@ const TrendChartModal: React.FC<TrendChartModalProps> = ({
                     </button>
                 </div>
 
+                {/* Model Filter - Only show when multiple models exist */}
+                {availableModels.length > 1 && (
+                    <div className="px-6 py-3 border-b bg-gray-50 flex items-center gap-3">
+                        <label className="text-sm font-medium text-gray-700">Filter by Model:</label>
+                        <select
+                            value={modelFilter === 'all' ? 'all' : modelFilter === 'plan-level' ? 'plan-level' : modelFilter.toString()}
+                            onChange={(e) => handleModelFilterChange(e.target.value)}
+                            className="border rounded-md px-3 py-1.5 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                            disabled={loading}
+                        >
+                            <option value="all">All Results (Multi-Line)</option>
+                            {availableModels.map((model) => (
+                                <option
+                                    key={model.model_id}
+                                    value={model.model_id === -1 ? 'plan-level' : model.model_id.toString()}
+                                >
+                                    {model.model_name}
+                                </option>
+                            ))}
+                        </select>
+                        {modelFilter !== 'all' && (
+                            <span className="text-xs text-gray-500">
+                                Showing single line for selected model
+                            </span>
+                        )}
+                    </div>
+                )}
+
                 {/* Content */}
                 <div className="p-6">
                     {loading ? (
@@ -306,7 +392,7 @@ const TrendChartModal: React.FC<TrendChartModalProps> = ({
                         <div className="text-center py-8 text-red-600">
                             <p>{error}</p>
                             <button
-                                onClick={fetchTrendData}
+                                onClick={() => fetchTrendData()}
                                 className="mt-4 px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
                             >
                                 Retry

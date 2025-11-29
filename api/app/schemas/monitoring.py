@@ -276,6 +276,16 @@ class MetricSnapshotResponse(BaseModel):
         from_attributes = True
 
 
+class ModelSnapshotResponse(BaseModel):
+    """Response for a model snapshot within a version."""
+    snapshot_id: int
+    model_id: int
+    model_name: str
+
+    class Config:
+        from_attributes = True
+
+
 class MonitoringPlanVersionResponse(BaseModel):
     """Summary response for a plan version."""
     version_id: int
@@ -288,6 +298,7 @@ class MonitoringPlanVersionResponse(BaseModel):
     published_at: datetime
     is_active: bool
     metrics_count: int = 0
+    models_count: int = 0
     cycles_count: int = 0
 
     class Config:
@@ -295,8 +306,9 @@ class MonitoringPlanVersionResponse(BaseModel):
 
 
 class MonitoringPlanVersionDetailResponse(MonitoringPlanVersionResponse):
-    """Detailed response including metric snapshots."""
+    """Detailed response including metric and model snapshots."""
     metric_snapshots: List[MetricSnapshotResponse] = []
+    model_snapshots: List[ModelSnapshotResponse] = []
 
 
 class MonitoringPlanVersionListResponse(BaseModel):
@@ -309,6 +321,7 @@ class MonitoringPlanVersionListResponse(BaseModel):
     published_at: datetime
     is_active: bool
     metrics_count: int = 0
+    models_count: int = 0
     cycles_count: int = 0
 
     class Config:

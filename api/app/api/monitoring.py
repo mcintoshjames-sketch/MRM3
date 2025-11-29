@@ -19,6 +19,7 @@ from app.models.monitoring import (
     MonitoringPlanMetric,
     MonitoringPlanVersion,
     MonitoringPlanMetricSnapshot,
+    MonitoringPlanModelSnapshot,
     MonitoringFrequency,
     monitoring_team_members,
     monitoring_plan_models,
@@ -907,6 +908,7 @@ def list_plan_versions(
     versions = db.query(MonitoringPlanVersion).options(
         joinedload(MonitoringPlanVersion.published_by),
         joinedload(MonitoringPlanVersion.metric_snapshots),
+        joinedload(MonitoringPlanVersion.model_snapshots),
         joinedload(MonitoringPlanVersion.cycles)
     ).filter(
         MonitoringPlanVersion.plan_id == plan_id
@@ -923,6 +925,7 @@ def list_plan_versions(
             "published_at": v.published_at,
             "is_active": v.is_active,
             "metrics_count": len(v.metric_snapshots),
+            "models_count": len(v.model_snapshots),
             "cycles_count": len(v.cycles)
         })
 
@@ -936,10 +939,11 @@ def get_plan_version(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Get a specific version with its metric snapshots."""
+    """Get a specific version with its metric and model snapshots."""
     version = db.query(MonitoringPlanVersion).options(
         joinedload(MonitoringPlanVersion.published_by),
         joinedload(MonitoringPlanVersion.metric_snapshots),
+        joinedload(MonitoringPlanVersion.model_snapshots),
         joinedload(MonitoringPlanVersion.cycles)
     ).filter(
         MonitoringPlanVersion.version_id == version_id,
@@ -967,6 +971,7 @@ def get_plan_version(
         "published_at": version.published_at,
         "is_active": version.is_active,
         "metrics_count": len(version.metric_snapshots),
+        "models_count": len(version.model_snapshots),
         "cycles_count": len(version.cycles),
         "metric_snapshots": [
             {
@@ -984,6 +989,14 @@ def get_plan_version(
                 "sort_order": s.sort_order
             }
             for s in sorted(version.metric_snapshots, key=lambda x: x.sort_order)
+        ],
+        "model_snapshots": [
+            {
+                "snapshot_id": m.snapshot_id,
+                "model_id": m.model_id,
+                "model_name": m.model_name
+            }
+            for m in version.model_snapshots
         ]
     }
 
@@ -1002,9 +1015,10 @@ def publish_plan_version(
     # Check plan edit permission (Admin or Team Member)
     plan = check_plan_edit_permission(db, plan_id, current_user)
 
-    # Reload with metrics
+    # Reload with metrics and models
     plan = db.query(MonitoringPlan).options(
-        joinedload(MonitoringPlan.metrics).joinedload(MonitoringPlanMetric.kpm)
+        joinedload(MonitoringPlan.metrics).joinedload(MonitoringPlanMetric.kpm),
+        joinedload(MonitoringPlan.models)
     ).filter(MonitoringPlan.plan_id == plan_id).first()
 
     # Get next version number
@@ -1063,6 +1077,15 @@ def publish_plan_version(
         )
         db.add(snapshot)
 
+    # Snapshot all models in scope
+    for model in plan.models:
+        model_snapshot = MonitoringPlanModelSnapshot(
+            version_id=new_version.version_id,
+            model_id=model.model_id,
+            model_name=model.model_name
+        )
+        db.add(model_snapshot)
+
     # Audit log
     create_audit_log(
         db=db,
@@ -1075,7 +1098,8 @@ def publish_plan_version(
             "plan_name": plan.name,
             "version_number": new_version_number,
             "version_name": new_version.version_name,
-            "metrics_count": len(active_metrics)
+            "metrics_count": len(active_metrics),
+            "models_count": len(plan.models)
         }
     )
 
@@ -1097,6 +1121,7 @@ def publish_plan_version(
         "published_at": new_version.published_at,
         "is_active": new_version.is_active,
         "metrics_count": len(active_metrics),
+        "models_count": len(plan.models),
         "cycles_count": 0
     }
 

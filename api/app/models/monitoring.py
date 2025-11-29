@@ -221,6 +221,10 @@ class MonitoringPlanVersion(Base):
         "MonitoringPlanMetricSnapshot", back_populates="version",
         cascade="all, delete-orphan"
     )
+    model_snapshots: Mapped[List["MonitoringPlanModelSnapshot"]] = relationship(
+        "MonitoringPlanModelSnapshot", back_populates="version",
+        cascade="all, delete-orphan"
+    )
     cycles: Mapped[List["MonitoringCycle"]] = relationship(
         "MonitoringCycle", back_populates="plan_version"
     )
@@ -267,6 +271,37 @@ class MonitoringPlanMetricSnapshot(Base):
         "MonitoringPlanVersion", back_populates="metric_snapshots"
     )
     kpm: Mapped["Kpm"] = relationship("Kpm")
+
+
+class MonitoringPlanModelSnapshot(Base):
+    """Snapshot of models in scope at a specific plan version."""
+    __tablename__ = "monitoring_plan_model_snapshots"
+
+    snapshot_id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    version_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("monitoring_plan_versions.version_id", ondelete="CASCADE"),
+        nullable=False, index=True
+    )
+    model_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("models.model_id", ondelete="CASCADE"), nullable=False
+    )
+
+    # Model metadata snapshot (captured at time of version publish)
+    model_name: Mapped[str] = mapped_column(String(255), nullable=False)
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, nullable=False
+    )
+
+    __table_args__ = (
+        UniqueConstraint('version_id', 'model_id', name='uq_version_model'),
+    )
+
+    # Relationships
+    version: Mapped["MonitoringPlanVersion"] = relationship(
+        "MonitoringPlanVersion", back_populates="model_snapshots"
+    )
+    model: Mapped["Model"] = relationship("Model")
 
 
 class MonitoringCycleStatus(str, enum.Enum):

@@ -40,7 +40,6 @@ interface UserPermissions {
 interface Model {
     model_id: number;
     model_name: string;
-    model_id_str?: string;
 }
 
 interface KpmRef {
@@ -70,6 +69,8 @@ interface PlanVersion {
     version_name: string | null;
     effective_date: string;
     is_active: boolean;
+    metrics_count?: number;
+    models_count?: number;
 }
 
 interface MonitoringPlan {
@@ -157,6 +158,12 @@ interface MetricSnapshot {
     sort_order: number;
 }
 
+interface ModelSnapshot {
+    snapshot_id: number;
+    model_id: number;
+    model_name: string;
+}
+
 interface VersionDetail {
     version_id: number;
     plan_id: number;
@@ -166,6 +173,7 @@ interface VersionDetail {
     published_at: string;
     is_active: boolean;
     metric_snapshots: MetricSnapshot[];
+    model_snapshots: ModelSnapshot[];
 }
 
 interface OutcomeValue {
@@ -208,6 +216,8 @@ interface ResultFormData {
     previousValue: number | null;
     previousOutcome: string | null;
     previousPeriod: string | null;
+    // Model-specific results
+    model_id: number | null;  // null = plan-level (aggregate across all models)
 }
 
 // Phase 7: Reporting & Trends
@@ -445,6 +455,9 @@ const MonitoringPlanDetailPage: React.FC = () => {
     const [savingResult, setSavingResult] = useState<number | null>(null);
     const [deletingResult, setDeletingResult] = useState<number | null>(null);
     const [resultsError, setResultsError] = useState<string | null>(null);
+    // Model-specific results state (null = plan-level, number = specific model)
+    const [selectedResultsModel, setSelectedResultsModel] = useState<number | null>(null);
+    const [allCycleResults, setAllCycleResults] = useState<MonitoringResult[]>([]);  // All results for current cycle
 
     // Approval modal state
     const [approvalModalType, setApprovalModalType] = useState<'approve' | 'reject' | 'void' | null>(null);
@@ -829,6 +842,58 @@ const MonitoringPlanDetailPage: React.FC = () => {
 
     // ========== Results Entry Functions ==========
 
+    // Helper function to build form data for a specific model selection
+    const buildResultForms = (
+        metricsToShow: { metric_id: number; snapshot_id?: number; kpm_name: string; evaluation_type: string; yellow_min: number | null; yellow_max: number | null; red_min: number | null; red_max: number | null; qualitative_guidance: string | null }[],
+        currentResults: MonitoringResult[],
+        previousResults: MonitoringResult[],
+        previousPeriodLabel: string | null,
+        modelId: number | null
+    ): ResultFormData[] => {
+        return metricsToShow.map(m => {
+            // Find existing result for this metric AND model combination
+            const existing = currentResults.find((r: MonitoringResult) =>
+                r.plan_metric_id === m.metric_id && r.model_id === modelId
+            );
+
+            // Find previous cycle's result for this metric AND model
+            const previousResult = previousResults.find((r: MonitoringResult) =>
+                r.plan_metric_id === m.metric_id && r.model_id === modelId
+            );
+
+            // Determine if this was a skipped metric (has narrative but no value)
+            const wasSkipped = existing &&
+                existing.numeric_value === null &&
+                existing.outcome_value === null &&
+                existing.narrative;
+
+            return {
+                metric_id: m.metric_id,
+                snapshot_id: m.snapshot_id,
+                kpm_name: m.kpm_name,
+                evaluation_type: m.evaluation_type,
+                numeric_value: existing?.numeric_value?.toString() ?? '',
+                outcome_value_id: existing?.outcome_value?.value_id ?? null,
+                narrative: existing?.narrative ?? '',
+                yellow_min: m.yellow_min,
+                yellow_max: m.yellow_max,
+                red_min: m.red_min,
+                red_max: m.red_max,
+                qualitative_guidance: m.qualitative_guidance,
+                calculatedOutcome: existing?.calculated_outcome ?? null,
+                existingResultId: existing?.result_id ?? null,
+                dirty: false,
+                skipped: !!wasSkipped,
+                // Inline trend context
+                previousValue: previousResult?.numeric_value ?? null,
+                previousOutcome: previousResult?.calculated_outcome ?? null,
+                previousPeriod: previousPeriodLabel,
+                // Model-specific
+                model_id: modelId
+            };
+        });
+    };
+
     const openResultsEntry = async (cycle: MonitoringCycle) => {
         setResultsEntryCycle(cycle);
         setShowResultsModal(true);
@@ -847,8 +912,10 @@ const MonitoringPlanDetailPage: React.FC = () => {
                 setOutcomeValues(values.filter((v: OutcomeValue & { is_active: boolean }) => v.is_active));
             }
 
-            // Fetch existing results for this cycle
+            // Fetch existing results for this cycle (ALL results, regardless of model)
             const resultsResponse = await api.get(`/monitoring/cycles/${cycle.cycle_id}/results`);
+            const allResults: MonitoringResult[] = resultsResponse.data;
+            setAllCycleResults(allResults);
 
             // Determine which metrics to show
             let metricsToShow: { metric_id: number; snapshot_id?: number; kpm_name: string; evaluation_type: string; yellow_min: number | null; yellow_max: number | null; red_min: number | null; red_max: number | null; qualitative_guidance: string | null }[] = [];
@@ -901,54 +968,39 @@ const MonitoringPlanDetailPage: React.FC = () => {
                 }
             }
 
-            // Build form data for each metric
-            const forms: ResultFormData[] = metricsToShow.map(m => {
-                // Find existing result for this metric
-                const existing = resultsResponse.data.find((r: MonitoringResult) =>
-                    r.plan_metric_id === m.metric_id
-                );
+            // Determine initial model selection:
+            // - If plan has only 1 model, pre-select that model
+            // - If plan has multiple models, start with null (plan-level)
+            const planModels = plan?.models || [];
+            const initialModelId = planModels.length === 1 ? planModels[0].model_id : null;
+            setSelectedResultsModel(initialModelId);
 
-                // Find previous cycle's result for this metric
-                const previousResult = previousResults.find((r: MonitoringResult) =>
-                    r.plan_metric_id === m.metric_id
-                );
-
-                // Determine if this was a skipped metric (has narrative but no value)
-                const wasSkipped = existing &&
-                    existing.numeric_value === null &&
-                    existing.outcome_value === null &&
-                    existing.narrative;
-
-                return {
-                    metric_id: m.metric_id,
-                    snapshot_id: m.snapshot_id,
-                    kpm_name: m.kpm_name,
-                    evaluation_type: m.evaluation_type,
-                    numeric_value: existing?.numeric_value?.toString() ?? '',
-                    outcome_value_id: existing?.outcome_value?.value_id ?? null,
-                    narrative: existing?.narrative ?? '',
-                    yellow_min: m.yellow_min,
-                    yellow_max: m.yellow_max,
-                    red_min: m.red_min,
-                    red_max: m.red_max,
-                    qualitative_guidance: m.qualitative_guidance,
-                    calculatedOutcome: existing?.calculated_outcome ?? null,
-                    existingResultId: existing?.result_id ?? null,
-                    dirty: false,
-                    skipped: wasSkipped ?? false,
-                    // Inline trend context
-                    previousValue: previousResult?.numeric_value ?? null,
-                    previousOutcome: previousResult?.calculated_outcome ?? null,
-                    previousPeriod: previousPeriodLabel
-                };
-            });
-
+            // Build form data for the initial model selection
+            const forms = buildResultForms(metricsToShow, allResults, previousResults, previousPeriodLabel, initialModelId);
             setResultForms(forms);
+
+            // Store metrics for model switching (stored in a ref-like way via closure)
+            (window as any).__resultsMetrics = metricsToShow;
+            (window as any).__previousResults = previousResults;
+            (window as any).__previousPeriodLabel = previousPeriodLabel;
         } catch (err: any) {
             setResultsError(err.response?.data?.detail || 'Failed to load results data');
         } finally {
             setLoadingResults(false);
         }
+    };
+
+    // Handler for model selection change in results entry
+    const handleResultsModelChange = (modelId: number | null) => {
+        setSelectedResultsModel(modelId);
+
+        // Rebuild forms for the new model selection
+        const metricsToShow = (window as any).__resultsMetrics || [];
+        const previousResults = (window as any).__previousResults || [];
+        const previousPeriodLabel = (window as any).__previousPeriodLabel || null;
+
+        const forms = buildResultForms(metricsToShow, allCycleResults, previousResults, previousPeriodLabel, modelId);
+        setResultForms(forms);
     };
 
     const calculateOutcome = (value: number, metric: ResultFormData): string => {
@@ -1039,6 +1091,7 @@ const MonitoringPlanDetailPage: React.FC = () => {
         try {
             const payload: Record<string, unknown> = {
                 plan_metric_id: form.metric_id,
+                model_id: form.model_id,  // null for plan-level, number for model-specific
                 narrative: form.narrative || null
             };
 
@@ -1048,12 +1101,14 @@ const MonitoringPlanDetailPage: React.FC = () => {
                 payload.outcome_value_id = form.outcome_value_id;
             }
 
+            let savedResultId = form.existingResultId;
             if (form.existingResultId) {
                 // Update existing
                 await api.patch(`/monitoring/results/${form.existingResultId}`, payload);
             } else {
                 // Create new
                 const response = await api.post(`/monitoring/cycles/${resultsEntryCycle.cycle_id}/results`, payload);
+                savedResultId = response.data.result_id;
                 // Update the form with the new result ID
                 setResultForms(prev => {
                     const updated = [...prev];
@@ -1067,6 +1122,28 @@ const MonitoringPlanDetailPage: React.FC = () => {
                 const updated = [...prev];
                 updated[index] = { ...updated[index], dirty: false };
                 return updated;
+            });
+
+            // Update allCycleResults to keep state in sync for model switching
+            setAllCycleResults(prev => {
+                // Remove any existing result for this metric/model combination
+                const filtered = prev.filter((r: MonitoringResult) =>
+                    !(r.plan_metric_id === form.metric_id && r.model_id === form.model_id)
+                );
+                // Add the new/updated result (used for local state tracking when switching models)
+                const newResult: MonitoringResult = {
+                    result_id: savedResultId!,
+                    cycle_id: resultsEntryCycle.cycle_id,
+                    plan_metric_id: form.metric_id,
+                    model_id: form.model_id,
+                    numeric_value: form.evaluation_type === 'Quantitative' && form.numeric_value ? parseFloat(form.numeric_value) : null,
+                    outcome_value: form.outcome_value_id ? { value_id: form.outcome_value_id, code: '', label: '' } : null,
+                    narrative: form.narrative || null,
+                    calculated_outcome: form.calculatedOutcome,
+                    entered_by: { user_id: 0, email: '', full_name: '' },  // Placeholder - actual value from server
+                    entered_at: new Date().toISOString()
+                };
+                return [...filtered, newResult];
             });
 
             // Refresh cycles to update counts
@@ -1685,7 +1762,7 @@ const MonitoringPlanDetailPage: React.FC = () => {
                                     <tbody className="divide-y divide-gray-200">
                                         {plan.models.map((model) => (
                                             <tr key={model.model_id} className="hover:bg-gray-50">
-                                                <td className="px-4 py-2 text-sm">{model.model_id_str || model.model_id}</td>
+                                                <td className="px-4 py-2 text-sm">{model.model_id}</td>
                                                 <td className="px-4 py-2 text-sm">
                                                     <Link to={`/models/${model.model_id}`} className="text-blue-600 hover:underline">
                                                         {model.model_name}
@@ -1986,6 +2063,28 @@ const MonitoringPlanDetailPage: React.FC = () => {
                                                             </div>
                                                         ))}
                                                     </div>
+
+                                                    {/* Models in Scope Section */}
+                                                    <h5 className="text-sm font-medium text-gray-700 mb-3 mt-6 pt-4 border-t">
+                                                        Models in Scope ({selectedVersionDetail.model_snapshots?.length || 0})
+                                                    </h5>
+                                                    {selectedVersionDetail.model_snapshots && selectedVersionDetail.model_snapshots.length > 0 ? (
+                                                        <div className="grid grid-cols-2 gap-2">
+                                                            {selectedVersionDetail.model_snapshots.map((model) => (
+                                                                <div key={model.snapshot_id} className="border rounded p-2 text-sm flex items-center gap-2">
+                                                                    <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z" />
+                                                                    </svg>
+                                                                    <div>
+                                                                        <div className="font-medium">{model.model_name}</div>
+                                                                        <div className="text-xs text-gray-500">ID: {model.model_id}</div>
+                                                                    </div>
+                                                                </div>
+                                                            ))}
+                                                        </div>
+                                                    ) : (
+                                                        <div className="text-sm text-gray-400 italic">No models were in scope for this version</div>
+                                                    )}
                                                 </div>
                                             </div>
                                         ) : (
@@ -1993,7 +2092,7 @@ const MonitoringPlanDetailPage: React.FC = () => {
                                                 <svg className="w-12 h-12 mx-auto mb-3 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
                                                 </svg>
-                                                <p>Select a version to view its metric snapshots</p>
+                                                <p>Select a version to view its snapshots</p>
                                             </div>
                                         )}
                                     </div>
@@ -2597,6 +2696,37 @@ const MonitoringPlanDetailPage: React.FC = () => {
                                 </div>
                             )}
 
+                            {/* Model Selector - Only show when plan has multiple models */}
+                            {plan && plan.models && plan.models.length > 1 && (
+                                <div className="px-4 py-3 bg-gray-50 border-b border-gray-200">
+                                    <div className="flex items-center gap-3">
+                                        <label className="text-sm font-medium text-gray-700">
+                                            Enter Results For:
+                                        </label>
+                                        <select
+                                            value={selectedResultsModel === null ? 'plan-level' : selectedResultsModel}
+                                            onChange={(e) => {
+                                                const value = e.target.value;
+                                                handleResultsModelChange(value === 'plan-level' ? null : parseInt(value));
+                                            }}
+                                            className="border rounded-md px-3 py-1.5 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                        >
+                                            <option value="plan-level">Plan Level (All Models)</option>
+                                            {plan.models.map((model: Model) => (
+                                                <option key={model.model_id} value={model.model_id}>
+                                                    {model.model_name} (ID: {model.model_id})
+                                                </option>
+                                            ))}
+                                        </select>
+                                        <span className="text-xs text-gray-500">
+                                            {selectedResultsModel === null
+                                                ? 'Results will apply to all models in this plan'
+                                                : `Results specific to ${plan.models.find((m: Model) => m.model_id === selectedResultsModel)?.model_name}`}
+                                        </span>
+                                    </div>
+                                </div>
+                            )}
+
                             {/* Error display */}
                             {resultsError && (
                                 <div className="px-4 py-3 bg-red-100 border-b border-red-300">
@@ -2615,7 +2745,11 @@ const MonitoringPlanDetailPage: React.FC = () => {
                                         {/* Progress indicator */}
                                         <div className="flex items-center gap-4 mb-4">
                                             <span className="text-sm text-gray-600">
-                                                Progress: {resultForms.filter(f => f.existingResultId !== null).length} / {resultForms.length} entered
+                                                Progress{plan && plan.models && plan.models.length > 1 && selectedResultsModel !== null
+                                                    ? ` (${plan.models.find((m: Model) => m.model_id === selectedResultsModel)?.model_name})`
+                                                    : plan && plan.models && plan.models.length > 1
+                                                    ? ' (Plan Level)'
+                                                    : ''}: {resultForms.filter(f => f.existingResultId !== null).length} / {resultForms.length} entered
                                             </span>
                                             <div className="flex-1 bg-gray-200 rounded-full h-2">
                                                 <div
