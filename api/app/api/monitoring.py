@@ -2337,7 +2337,7 @@ def create_monitoring_result(
             detail="Metric does not belong to this plan"
         )
 
-    # Check for existing result
+    # Check for existing result with exact same combination
     existing = db.query(MonitoringResult).filter(
         MonitoringResult.cycle_id == cycle_id,
         MonitoringResult.plan_metric_id == result_data.plan_metric_id,
@@ -2349,6 +2349,34 @@ def create_monitoring_result(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Result already exists for this metric/model combination"
         )
+
+    # Exclusive mode: Cannot mix plan-level and model-specific results for the same metric
+    # If submitting plan-level (model_id=null), check no model-specific results exist
+    # If submitting model-specific, check no plan-level result exists
+    if result_data.model_id is None:
+        # Trying to create plan-level result - check for any model-specific results
+        model_specific_exists = db.query(MonitoringResult).filter(
+            MonitoringResult.cycle_id == cycle_id,
+            MonitoringResult.plan_metric_id == result_data.plan_metric_id,
+            MonitoringResult.model_id.isnot(None)
+        ).first()
+        if model_specific_exists:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Cannot create plan-level result: model-specific results already exist for this metric. Delete existing model-specific results first or continue with model-specific entry."
+            )
+    else:
+        # Trying to create model-specific result - check for plan-level result
+        plan_level_exists = db.query(MonitoringResult).filter(
+            MonitoringResult.cycle_id == cycle_id,
+            MonitoringResult.plan_metric_id == result_data.plan_metric_id,
+            MonitoringResult.model_id.is_(None)
+        ).first()
+        if plan_level_exists:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Cannot create model-specific result: a plan-level result already exists for this metric. Delete the plan-level result first or continue with plan-level entry."
+            )
 
     # Calculate outcome for quantitative metrics
     calculated_outcome = None

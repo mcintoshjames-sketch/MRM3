@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import Layout from '../components/Layout';
 import TrendChartModal from '../components/TrendChartModal';
@@ -458,6 +458,18 @@ const MonitoringPlanDetailPage: React.FC = () => {
     // Model-specific results state (null = plan-level, number = specific model)
     const [selectedResultsModel, setSelectedResultsModel] = useState<number | null>(null);
     const [allCycleResults, setAllCycleResults] = useState<MonitoringResult[]>([]);  // All results for current cycle
+
+    // Compute the current "mode" of existing results for exclusive mode enforcement
+    // Returns: 'none' (no results), 'plan-level' (only model_id=null), 'model-specific' (has model_id values)
+    const existingResultsMode = useMemo<'none' | 'plan-level' | 'model-specific'>(() => {
+        if (allCycleResults.length === 0) return 'none';
+        const hasPlanLevel = allCycleResults.some(r => r.model_id === null);
+        const hasModelSpecific = allCycleResults.some(r => r.model_id !== null);
+        if (hasPlanLevel && !hasModelSpecific) return 'plan-level';
+        if (hasModelSpecific && !hasPlanLevel) return 'model-specific';
+        // Mixed state shouldn't happen with backend validation, but handle it
+        return hasModelSpecific ? 'model-specific' : 'plan-level';
+    }, [allCycleResults]);
 
     // Approval modal state
     const [approvalModalType, setApprovalModalType] = useState<'approve' | 'reject' | 'void' | null>(null);
@@ -2699,30 +2711,58 @@ const MonitoringPlanDetailPage: React.FC = () => {
                             {/* Model Selector - Only show when plan has multiple models */}
                             {plan && plan.models && plan.models.length > 1 && (
                                 <div className="px-4 py-3 bg-gray-50 border-b border-gray-200">
-                                    <div className="flex items-center gap-3">
-                                        <label className="text-sm font-medium text-gray-700">
-                                            Enter Results For:
-                                        </label>
-                                        <select
-                                            value={selectedResultsModel === null ? 'plan-level' : selectedResultsModel}
-                                            onChange={(e) => {
-                                                const value = e.target.value;
-                                                handleResultsModelChange(value === 'plan-level' ? null : parseInt(value));
-                                            }}
-                                            className="border rounded-md px-3 py-1.5 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                                        >
-                                            <option value="plan-level">Plan Level (All Models)</option>
-                                            {plan.models.map((model: Model) => (
-                                                <option key={model.model_id} value={model.model_id}>
-                                                    {model.model_name} (ID: {model.model_id})
+                                    <div className="flex flex-col gap-2">
+                                        <div className="flex items-center gap-3">
+                                            <label className="text-sm font-medium text-gray-700">
+                                                Enter Results For:
+                                            </label>
+                                            <select
+                                                value={selectedResultsModel === null ? 'plan-level' : selectedResultsModel}
+                                                onChange={(e) => {
+                                                    const value = e.target.value;
+                                                    handleResultsModelChange(value === 'plan-level' ? null : parseInt(value));
+                                                }}
+                                                className="border rounded-md px-3 py-1.5 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                            >
+                                                <option
+                                                    value="plan-level"
+                                                    disabled={existingResultsMode === 'model-specific'}
+                                                >
+                                                    Plan Level (All Models){existingResultsMode === 'model-specific' ? ' - locked' : ''}
                                                 </option>
-                                            ))}
-                                        </select>
-                                        <span className="text-xs text-gray-500">
-                                            {selectedResultsModel === null
-                                                ? 'Results will apply to all models in this plan'
-                                                : `Results specific to ${plan.models.find((m: Model) => m.model_id === selectedResultsModel)?.model_name}`}
-                                        </span>
+                                                {plan.models.map((model: Model) => (
+                                                    <option
+                                                        key={model.model_id}
+                                                        value={model.model_id}
+                                                        disabled={existingResultsMode === 'plan-level'}
+                                                    >
+                                                        {model.model_name} (ID: {model.model_id}){existingResultsMode === 'plan-level' ? ' - locked' : ''}
+                                                    </option>
+                                                ))}
+                                            </select>
+                                            {/* Mode indicator badge */}
+                                            {existingResultsMode !== 'none' && (
+                                                <span className={`px-2 py-0.5 text-xs rounded-full ${
+                                                    existingResultsMode === 'plan-level'
+                                                        ? 'bg-blue-100 text-blue-700'
+                                                        : 'bg-purple-100 text-purple-700'
+                                                }`}>
+                                                    {existingResultsMode === 'plan-level' ? 'Plan-level mode' : 'Model-specific mode'}
+                                                </span>
+                                            )}
+                                        </div>
+                                        {/* Contextual guidance */}
+                                        <p className="text-xs text-gray-500">
+                                            {existingResultsMode === 'none' ? (
+                                                selectedResultsModel === null
+                                                    ? 'Results will apply to all models in this plan. Once saved, you cannot switch to model-specific results.'
+                                                    : `Results specific to ${plan.models.find((m: Model) => m.model_id === selectedResultsModel)?.model_name}. Once saved, you cannot switch to plan-level results.`
+                                            ) : existingResultsMode === 'plan-level' ? (
+                                                'This cycle has plan-level results. Model-specific entry is disabled to maintain consistency.'
+                                            ) : (
+                                                'This cycle has model-specific results. Plan-level entry is disabled to maintain consistency.'
+                                            )}
+                                        </p>
                                     </div>
                                 </div>
                             )}
