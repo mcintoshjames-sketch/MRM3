@@ -4,6 +4,7 @@ from typing import Optional, List, TYPE_CHECKING
 from sqlalchemy import String, Integer, Text, DateTime, Date, ForeignKey
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.models.base import Base
+from app.core.time import utc_now
 
 if TYPE_CHECKING:
     from app.models.model import Model
@@ -45,14 +46,14 @@ class ModelApplication(Base):
         comment="When this relationship ended (soft delete)"
     )
     created_at: Mapped[datetime] = mapped_column(
-        DateTime, default=datetime.utcnow, nullable=False
+        DateTime, default=utc_now, nullable=False
     )
     created_by_user_id: Mapped[Optional[int]] = mapped_column(
         Integer, ForeignKey("users.user_id", ondelete="SET NULL"),
         nullable=True
     )
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
+        DateTime, default=utc_now, onupdate=utc_now, nullable=False
     )
 
     # Relationships

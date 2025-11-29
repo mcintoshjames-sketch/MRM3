@@ -3,6 +3,7 @@ from datetime import datetime
 from sqlalchemy import Integer, ForeignKey, DateTime, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.models.base import Base
+from app.core.time import utc_now
 
 
 class ModelVersionRegion(Base):
@@ -20,7 +21,7 @@ class ModelVersionRegion(Base):
         Integer, ForeignKey("regions.region_id", ondelete="CASCADE"), nullable=False, index=True
     )
     created_at: Mapped[datetime] = mapped_column(
-        DateTime, nullable=False, default=datetime.utcnow
+        DateTime, nullable=False, default=utc_now
     )
 
     # Relationships

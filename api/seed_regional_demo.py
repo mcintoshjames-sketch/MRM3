@@ -9,6 +9,7 @@ This script creates:
 """
 from datetime import datetime, timedelta
 from app.core.database import SessionLocal
+from app.core.time import utc_now
 from app.models.user import User
 from app.models.model import Model
 from app.models.model_version import ModelVersion
@@ -90,7 +91,7 @@ def seed_regional_demo():
             change_type="MAJOR",
             change_description="Initial production version",
             created_by_id=admin.user_id,
-            created_at=datetime.utcnow() - timedelta(days=180)
+            created_at=utc_now() - timedelta(days=180)
         )
         db.add(version_1_0)
         db.flush()
@@ -102,7 +103,7 @@ def seed_regional_demo():
             change_type="MAJOR",
             change_description="Major algorithm update with new risk factors",
             created_by_id=admin.user_id,
-            created_at=datetime.utcnow() - timedelta(days=90)
+            created_at=utc_now() - timedelta(days=90)
         )
         db.add(version_2_0)
         db.flush()
@@ -114,7 +115,7 @@ def seed_regional_demo():
             change_type="MINOR",
             change_description="Performance improvements and bug fixes",
             created_by_id=admin.user_id,
-            created_at=datetime.utcnow() - timedelta(days=30)
+            created_at=utc_now() - timedelta(days=30)
         )
         db.add(version_2_1)
         db.flush()
@@ -129,10 +130,10 @@ def seed_regional_demo():
             validation_type_id=comprehensive_type.value_id,
             priority_id=medium_priority.value_id,
             requestor_id=admin.user_id,
-            request_date=datetime.utcnow() - timedelta(days=85),
-            target_completion_date=datetime.utcnow() - timedelta(days=45),
-            created_at=datetime.utcnow() - timedelta(days=85),
-            updated_at=datetime.utcnow() - timedelta(days=80)
+            request_date=utc_now() - timedelta(days=85),
+            target_completion_date=utc_now() - timedelta(days=45),
+            created_at=utc_now() - timedelta(days=85),
+            updated_at=utc_now() - timedelta(days=80)
         )
         db.add(validation_v2)
         db.flush()
@@ -155,10 +156,10 @@ def seed_regional_demo():
             validation_type_id=comprehensive_type.value_id,
             priority_id=medium_priority.value_id,
             requestor_id=admin.user_id,
-            request_date=datetime.utcnow() - timedelta(days=25),
-            target_completion_date=datetime.utcnow() + timedelta(days=15),
-            created_at=datetime.utcnow() - timedelta(days=25),
-            updated_at=datetime.utcnow() - timedelta(days=5)
+            request_date=utc_now() - timedelta(days=25),
+            target_completion_date=utc_now() + timedelta(days=15),
+            created_at=utc_now() - timedelta(days=25),
+            updated_at=utc_now() - timedelta(days=5)
         )
         db.add(validation_v2_1)
         db.flush()
@@ -188,8 +189,8 @@ def seed_regional_demo():
             is_required=True,
             approval_status="Approved",
             comments="Approved for US deployment after comprehensive review",
-            approved_at=datetime.utcnow() - timedelta(days=80),
-            created_at=datetime.utcnow() - timedelta(days=82)
+            approved_at=utc_now() - timedelta(days=80),
+            created_at=utc_now() - timedelta(days=82)
         )
         db.add(approval_us)
         print(f"Created US regional approval (Approved)")
@@ -204,8 +205,8 @@ def seed_regional_demo():
             is_required=True,
             approval_status="Approved",
             comments="Approved for EU deployment with GDPR compliance confirmed",
-            approved_at=datetime.utcnow() - timedelta(days=79),
-            created_at=datetime.utcnow() - timedelta(days=82)
+            approved_at=utc_now() - timedelta(days=79),
+            created_at=utc_now() - timedelta(days=82)
         )
         db.add(approval_eu)
         print(f"Created EU regional approval (Approved)")
@@ -221,7 +222,7 @@ def seed_regional_demo():
             approval_status="Pending",
             comments=None,
             approved_at=None,
-            created_at=datetime.utcnow() - timedelta(days=25)
+            created_at=utc_now() - timedelta(days=25)
         )
         db.add(approval_uk)
         print(f"Created UK regional approval (Pending)")
@@ -236,7 +237,7 @@ def seed_regional_demo():
             model_id=credit_model.model_id,
             region_id=us_region.region_id,
             version_id=version_2_0.version_id,
-            deployed_at=datetime.utcnow() - timedelta(days=75),
+            deployed_at=utc_now() - timedelta(days=75),
             deployment_notes="Production deployment following validation approval"
         )
         db.add(mr_us)
@@ -247,7 +248,7 @@ def seed_regional_demo():
             model_id=credit_model.model_id,
             region_id=eu_region.region_id,
             version_id=version_2_0.version_id,
-            deployed_at=datetime.utcnow() - timedelta(days=74),
+            deployed_at=utc_now() - timedelta(days=74),
             deployment_notes="Production deployment with GDPR compliance"
         )
         db.add(mr_eu)
@@ -258,7 +259,7 @@ def seed_regional_demo():
             model_id=credit_model.model_id,
             region_id=uk_region.region_id,
             version_id=version_1_0.version_id,
-            deployed_at=datetime.utcnow() - timedelta(days=170),
+            deployed_at=utc_now() - timedelta(days=170),
             deployment_notes="Legacy version pending upgrade to v2.1.0"
         )
         db.add(mr_uk)

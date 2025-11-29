@@ -25,6 +25,7 @@ from sqlalchemy.orm import Session, joinedload, aliased
 from pydantic import BaseModel, Field
 
 from app.core.database import get_db
+from app.core.time import utc_now
 from app.core.deps import get_current_user
 from app.models.user import User
 from app.models.model import Model
@@ -229,7 +230,7 @@ async def get_regional_deployment_compliance_report(
         records.append(record)
 
     return RegionalComplianceReportResponse(
-        report_generated_at=datetime.utcnow(),
+        report_generated_at=utc_now(),
         region_filter=region_code,
         total_records=len(records),
         records=records

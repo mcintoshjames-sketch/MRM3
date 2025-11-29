@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import func, or_
 
 from app.core.database import get_db
+from app.core.time import utc_now
 from app.core.deps import get_current_user
 from app.models import (
     User, UserRole, Model, ModelVersion, ModelRegion, Region,
@@ -75,7 +76,7 @@ def create_status_history(
         old_status=old_status,
         new_status=new_status,
         changed_by_id=user_id,
-        changed_at=datetime.utcnow(),
+        changed_at=utc_now(),
         notes=notes
     )
     db.add(history)
@@ -310,7 +311,7 @@ def create_decommissioning_request(
         gap_justification=data.gap_justification,
         archive_location=data.archive_location,
         downstream_impact_verified=data.downstream_impact_verified,
-        created_at=datetime.utcnow(),
+        created_at=utc_now(),
         created_by_id=current_user.user_id,
         owner_approval_required=owner_approval_required
     )
@@ -790,7 +791,7 @@ def submit_validator_review(
 
     old_status = request.status
     request.validator_reviewed_by_id = current_user.user_id
-    request.validator_reviewed_at = datetime.utcnow()
+    request.validator_reviewed_at = utc_now()
     request.validator_comment = review.comment
 
     if review.approved:
@@ -811,7 +812,7 @@ def submit_validator_review(
     else:
         request.status = "REJECTED"
         request.rejection_reason = review.comment
-        request.final_reviewed_at = datetime.utcnow()
+        request.final_reviewed_at = utc_now()
         create_status_history(db, request_id, old_status, "REJECTED", current_user.user_id, review.comment)
 
         # Revert model status (remove DECOMMISSIONING)
@@ -896,7 +897,7 @@ def submit_owner_review(
 
     old_status = request.status
     request.owner_reviewed_by_id = current_user.user_id
-    request.owner_reviewed_at = datetime.utcnow()
+    request.owner_reviewed_at = utc_now()
     request.owner_comment = review.comment
 
     if review.approved:
@@ -921,7 +922,7 @@ def submit_owner_review(
         # Rejection - terminate the workflow
         request.status = "REJECTED"
         request.rejection_reason = review.comment
-        request.final_reviewed_at = datetime.utcnow()
+        request.final_reviewed_at = utc_now()
         create_status_history(db, request_id, old_status, "REJECTED", current_user.user_id, review.comment)
 
         # Revert model status (remove DECOMMISSIONING)
@@ -1006,7 +1007,7 @@ def submit_approval(
 
     # Submit approval
     approval.approved_by_id = current_user.user_id
-    approval.approved_at = datetime.utcnow()
+    approval.approved_at = utc_now()
     approval.is_approved = data.is_approved
     approval.comment = data.comment
 
@@ -1015,7 +1016,7 @@ def submit_approval(
         old_status = request.status
         request.status = "REJECTED"
         request.rejection_reason = data.comment or f"Rejected by {approval.approver_type} approver"
-        request.final_reviewed_at = datetime.utcnow()
+        request.final_reviewed_at = utc_now()
         create_status_history(db, request_id, old_status, "REJECTED", current_user.user_id, data.comment)
 
         # Revert model status
@@ -1029,7 +1030,7 @@ def submit_approval(
         if check_all_approvals_complete(db, request_id):
             old_status = request.status
             request.status = "APPROVED"
-            request.final_reviewed_at = datetime.utcnow()
+            request.final_reviewed_at = utc_now()
             create_status_history(db, request_id, old_status, "APPROVED", current_user.user_id, "All approvals complete")
 
             # Update model status to RETIRED
@@ -1103,7 +1104,7 @@ def withdraw_request(
 
     old_status = request.status
     request.status = "WITHDRAWN"
-    request.final_reviewed_at = datetime.utcnow()
+    request.final_reviewed_at = utc_now()
     create_status_history(db, request_id, old_status, "WITHDRAWN", current_user.user_id, data.reason)
 
     # Revert model status

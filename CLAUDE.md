@@ -480,3 +480,31 @@ const { sortedData, requestSort, getSortIcon } = useTableSort<Validation>(valida
 - PostgreSQL 15 running on port 5433 (mapped from container's 5432)
 - Connection string provided via DATABASE_URL environment variable
 - Volume-persisted data via `postgres_data` volume
+
+### Time Utilities (Backend)
+
+**IMPORTANT**: Never use `datetime.utcnow()` - it is deprecated in Python 3.12+.
+
+The application uses a central time utility at `api/app/core/time.py` that provides the `utc_now()` function. This function returns a **naive datetime** (no timezone info) to maintain compatibility with existing database columns using `TIMESTAMP WITHOUT TIME ZONE`.
+
+**Always use `utc_now()` instead of `datetime.utcnow()` for:**
+- SQLAlchemy column defaults: `default=utc_now`
+- SQLAlchemy column updates: `onupdate=utc_now`
+- Direct datetime calls in code: `utc_now()` instead of `datetime.utcnow()`
+
+**Example usage:**
+```python
+from app.core.time import utc_now
+
+# In SQLAlchemy models
+class MyModel(Base):
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now, onupdate=utc_now)
+
+# In API code
+from app.core.time import utc_now
+current_time = utc_now()
+```
+
+**Why naive datetime?**
+The database columns use `TIMESTAMP WITHOUT TIME ZONE`. Using timezone-aware datetimes would cause "can't compare offset-naive and offset-aware datetimes" errors. The `utc_now()` function uses the modern `datetime.now(timezone.utc).replace(tzinfo=None)` pattern to get UTC time without the deprecation warning while remaining compatible with existing data.

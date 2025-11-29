@@ -8,7 +8,7 @@ Create Date: 2025-11-27 12:00:00.000000
 from typing import Sequence, Union
 from alembic import op
 import sqlalchemy as sa
-from datetime import datetime
+from app.core.time import utc_now
 
 # revision identifiers, used by Alembic.
 revision: str = 'm3n4o5p6q7r8'
@@ -38,7 +38,7 @@ def upgrade() -> None:
             '9', 'Model Performance Monitoring Requirements', '9b',
             'Performance Monitoring Plan Review',
             false, 'Required', 'Required', 'IfApplicable', 'NotExpected',
-            29, true, '{datetime.utcnow().isoformat()}', '{datetime.utcnow().isoformat()}'
+            29, true, '{utc_now().isoformat()}', '{utc_now().isoformat()}'
         )
         ON CONFLICT (component_code) DO NOTHING
     """)

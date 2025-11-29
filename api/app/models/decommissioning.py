@@ -4,6 +4,7 @@ from typing import Optional, List
 from sqlalchemy import String, Integer, Text, DateTime, Date, ForeignKey, Boolean, CheckConstraint, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.models.base import Base
+from app.core.time import utc_now
 
 
 class DecommissioningRequest(Base):
@@ -29,7 +30,7 @@ class DecommissioningRequest(Base):
     downstream_impact_verified: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 
     # Creation
-    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=utc_now)
     created_by_id: Mapped[int] = mapped_column(
         Integer, ForeignKey("users.user_id"), nullable=False
     )
@@ -102,7 +103,7 @@ class DecommissioningStatusHistory(Base):
     changed_by_id: Mapped[int] = mapped_column(
         Integer, ForeignKey("users.user_id"), nullable=False
     )
-    changed_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow)
+    changed_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=utc_now)
     notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
     # Relationships

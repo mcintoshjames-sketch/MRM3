@@ -12,6 +12,7 @@ Run this script to populate test data for the Regional Compliance Report.
 """
 from datetime import datetime, timedelta
 from app.core.database import SessionLocal
+from app.core.time import utc_now
 from app.models.user import User
 from app.models.model import Model
 from app.models.model_version import ModelVersion
@@ -77,7 +78,7 @@ def seed_regional_compliance_demo():
                 development_type="In-House",
                 owner_id=admin.user_id,
                 developer_id=validator.user_id,
-                created_at=datetime.utcnow() - timedelta(days=180)
+                created_at=utc_now() - timedelta(days=180)
             )
             db.add(model1)
             db.commit()
@@ -97,8 +98,8 @@ def seed_regional_compliance_demo():
             validation_210 = ValidationRequest(
                 model_id=model1.model_id,
                 current_status_id=status_approved.value_id if status_approved else None,
-                created_at=datetime.utcnow() - timedelta(days=60),
-                updated_at=datetime.utcnow() - timedelta(days=45)
+                created_at=utc_now() - timedelta(days=60),
+                updated_at=utc_now() - timedelta(days=45)
             )
             db.add(validation_210)
             db.commit()
@@ -114,7 +115,7 @@ def seed_regional_compliance_demo():
                 model_id=model1.model_id,
                 version_number="2.1.0",
                 validation_request_id=validation_210.request_id,
-                created_at=datetime.utcnow() - timedelta(days=60)
+                created_at=utc_now() - timedelta(days=60)
             )
             db.add(version_210)
             db.commit()
@@ -128,7 +129,7 @@ def seed_regional_compliance_demo():
                 approval_type="Regional",
                 region_id=us_region.region_id,
                 approval_status="Approved",
-                approved_at=datetime.utcnow() - timedelta(days=45),
+                approved_at=utc_now() - timedelta(days=45),
                 comments="Approved for US deployment. All validation checks passed."
             )
             db.add(us_approval)
@@ -141,7 +142,7 @@ def seed_regional_compliance_demo():
                 approval_type="Regional",
                 region_id=eu_region.region_id,
                 approval_status="Approved",
-                approved_at=datetime.utcnow() - timedelta(days=44),
+                approved_at=utc_now() - timedelta(days=44),
                 comments="Approved for EU deployment. Meets regulatory requirements."
             )
             db.add(eu_approval)
@@ -164,14 +165,14 @@ def seed_regional_compliance_demo():
                 model_id=model1.model_id,
                 region_id=us_region.region_id,
                 version_id=version_210.version_id,
-                deployed_at=datetime.utcnow() - timedelta(days=40),
+                deployed_at=utc_now() - timedelta(days=40),
                 deployment_notes="Production deployment - US region"
             )
             db.add(us_deployment)
             print(f"  ✓ Deployed v2.1.0 to US region")
         else:
             us_deployment.version_id = version_210.version_id
-            us_deployment.deployed_at = datetime.utcnow() - timedelta(days=40)
+            us_deployment.deployed_at = utc_now() - timedelta(days=40)
             print(f"  ✓ Updated US deployment to v2.1.0")
 
         # Deploy version 2.1.0 to EU
@@ -185,14 +186,14 @@ def seed_regional_compliance_demo():
                 model_id=model1.model_id,
                 region_id=eu_region.region_id,
                 version_id=version_210.version_id,
-                deployed_at=datetime.utcnow() - timedelta(days=38),
+                deployed_at=utc_now() - timedelta(days=38),
                 deployment_notes="Production deployment - EU region"
             )
             db.add(eu_deployment)
             print(f"  ✓ Deployed v2.1.0 to EU region")
         else:
             eu_deployment.version_id = version_210.version_id
-            eu_deployment.deployed_at = datetime.utcnow() - timedelta(days=38)
+            eu_deployment.deployed_at = utc_now() - timedelta(days=38)
             print(f"  ✓ Updated EU deployment to v2.1.0")
 
         db.commit()
@@ -212,7 +213,7 @@ def seed_regional_compliance_demo():
                 development_type="In-House",
                 owner_id=admin.user_id,
                 developer_id=validator.user_id,
-                created_at=datetime.utcnow() - timedelta(days=120)
+                created_at=utc_now() - timedelta(days=120)
             )
             db.add(model2)
             db.commit()
@@ -232,8 +233,8 @@ def seed_regional_compliance_demo():
             validation_300 = ValidationRequest(
                 model_id=model2.model_id,
                 current_status_id=status_pending.value_id if status_pending else None,
-                created_at=datetime.utcnow() - timedelta(days=30),
-                updated_at=datetime.utcnow() - timedelta(days=5)
+                created_at=utc_now() - timedelta(days=30),
+                updated_at=utc_now() - timedelta(days=5)
             )
             db.add(validation_300)
             db.commit()
@@ -249,7 +250,7 @@ def seed_regional_compliance_demo():
                 model_id=model2.model_id,
                 version_number="3.0.0",
                 validation_request_id=validation_300.request_id,
-                created_at=datetime.utcnow() - timedelta(days=30)
+                created_at=utc_now() - timedelta(days=30)
             )
             db.add(version_300)
             db.commit()
@@ -263,7 +264,7 @@ def seed_regional_compliance_demo():
                 approval_type="Regional",
                 region_id=us_region.region_id,
                 approval_status="Approved",
-                approved_at=datetime.utcnow() - timedelta(days=7),
+                approved_at=utc_now() - timedelta(days=7),
                 comments="Approved for US deployment after comprehensive testing."
             )
             db.add(us_approval_2)
@@ -298,14 +299,14 @@ def seed_regional_compliance_demo():
                 model_id=model2.model_id,
                 region_id=us_region.region_id,
                 version_id=version_300.version_id,
-                deployed_at=datetime.utcnow() - timedelta(days=5),
+                deployed_at=utc_now() - timedelta(days=5),
                 deployment_notes="Production deployment - US region"
             )
             db.add(us_deployment_2)
             print(f"  ✓ Deployed v3.0.0 to US region")
         else:
             us_deployment_2.version_id = version_300.version_id
-            us_deployment_2.deployed_at = datetime.utcnow() - timedelta(days=5)
+            us_deployment_2.deployed_at = utc_now() - timedelta(days=5)
             print(f"  ✓ Updated US deployment to v3.0.0")
 
         # Create UK model_region link but without deployed version (pending approval)
@@ -341,7 +342,7 @@ def seed_regional_compliance_demo():
                 development_type="In-House",
                 owner_id=admin.user_id,
                 developer_id=validator.user_id,
-                created_at=datetime.utcnow() - timedelta(days=90)
+                created_at=utc_now() - timedelta(days=90)
             )
             db.add(model3)
             db.commit()
@@ -361,8 +362,8 @@ def seed_regional_compliance_demo():
             validation_150 = ValidationRequest(
                 model_id=model3.model_id,
                 current_status_id=status_in_progress.value_id if status_in_progress else None,
-                created_at=datetime.utcnow() - timedelta(days=15),
-                updated_at=datetime.utcnow() - timedelta(days=1)
+                created_at=utc_now() - timedelta(days=15),
+                updated_at=utc_now() - timedelta(days=1)
             )
             db.add(validation_150)
             db.commit()
@@ -377,7 +378,7 @@ def seed_regional_compliance_demo():
                 model_id=model3.model_id,
                 version_number="1.5.0",
                 validation_request_id=validation_150.request_id,
-                created_at=datetime.utcnow() - timedelta(days=15)
+                created_at=utc_now() - timedelta(days=15)
             )
             db.add(version_150)
             db.commit()
@@ -399,8 +400,8 @@ def seed_regional_compliance_demo():
             validation_140 = ValidationRequest(
                 model_id=model3.model_id,
                 current_status_id=status_approved.value_id if status_approved else None,
-                created_at=datetime.utcnow() - timedelta(days=120),
-                updated_at=datetime.utcnow() - timedelta(days=100)
+                created_at=utc_now() - timedelta(days=120),
+                updated_at=utc_now() - timedelta(days=100)
             )
             db.add(validation_140)
             db.commit()
@@ -413,7 +414,7 @@ def seed_regional_compliance_demo():
                 model_id=model3.model_id,
                 version_number="1.4.0",
                 validation_request_id=validation_140.request_id,
-                created_at=datetime.utcnow() - timedelta(days=120)
+                created_at=utc_now() - timedelta(days=120)
             )
             db.add(version_140)
             db.commit()
@@ -427,7 +428,7 @@ def seed_regional_compliance_demo():
                 approval_type="Regional",
                 region_id=us_region.region_id,
                 approval_status="Approved",
-                approved_at=datetime.utcnow() - timedelta(days=100)
+                approved_at=utc_now() - timedelta(days=100)
             )
             db.add(us_approval_old)
             db.commit()
@@ -445,14 +446,14 @@ def seed_regional_compliance_demo():
                 model_id=model3.model_id,
                 region_id=us_region.region_id,
                 version_id=version_140.version_id,
-                deployed_at=datetime.utcnow() - timedelta(days=95),
+                deployed_at=utc_now() - timedelta(days=95),
                 deployment_notes="Production deployment - older version still active"
             )
             db.add(us_deployment_3)
             print(f"  ✓ Deployed v1.4.0 to US region (newer version being validated)")
         else:
             us_deployment_3.version_id = version_140.version_id
-            us_deployment_3.deployed_at = datetime.utcnow() - timedelta(days=95)
+            us_deployment_3.deployed_at = utc_now() - timedelta(days=95)
             print(f"  ✓ Updated US deployment to v1.4.0")
 
         db.commit()

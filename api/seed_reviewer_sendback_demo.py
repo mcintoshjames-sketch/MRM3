@@ -20,6 +20,7 @@ sys.path.append(str(Path(__file__).parent))
 
 from sqlalchemy.orm import Session
 from app.core.database import engine
+from app.core.time import utc_now
 from app.models.validation import (
     ValidationRequest,
     ValidationStatusHistory,
@@ -77,7 +78,7 @@ def seed_reviewer_sendback():
 
             # Move to Review
             request.current_status_id = review_status.value_id
-            request.updated_at = datetime.utcnow()
+            request.updated_at = utc_now()
 
             # Create status history for move to Review
             review_history = ValidationStatusHistory(
@@ -85,7 +86,7 @@ def seed_reviewer_sendback():
                 old_status_id=old_status_id,
                 new_status_id=review_status.value_id,
                 changed_by_id=reviewer.user_id,
-                changed_at=datetime.utcnow(),
+                changed_at=utc_now(),
                 change_reason="Moved to Review for quality check"
             )
             db.add(review_history)
@@ -103,7 +104,7 @@ def seed_reviewer_sendback():
                 recommended_review_frequency=12,  # 12 months
                 effective_date=date.today(),
                 expiration_date=None,
-                created_at=datetime.utcnow()
+                created_at=utc_now()
             )
             db.add(outcome)
             db.flush()
@@ -118,7 +119,7 @@ def seed_reviewer_sendback():
                 reviewer_id=reviewer.user_id,
                 decision="SEND_BACK",
                 comments="Documentation gaps identified that must be addressed before approval. Model owner needs to:\n1. Complete sections 3.5 and 4.2 with detailed methodology\n2. Provide explanation for back-testing anomalies in Q3 2024\n3. Obtain final governance sign-off from Risk Committee",
-                review_date=datetime.utcnow()
+                review_date=utc_now()
             )
             db.add(review_outcome)
             db.flush()
@@ -130,7 +131,7 @@ def seed_reviewer_sendback():
 
             old_review_status_id = request.current_status_id
             request.current_status_id = in_progress_status.value_id
-            request.updated_at = datetime.utcnow()
+            request.updated_at = utc_now()
 
             # Create status history for send-back
             sendback_history = ValidationStatusHistory(
@@ -138,7 +139,7 @@ def seed_reviewer_sendback():
                 old_status_id=old_review_status_id,
                 new_status_id=in_progress_status.value_id,
                 changed_by_id=reviewer.user_id,
-                changed_at=datetime.utcnow(),
+                changed_at=utc_now(),
                 change_reason=f"Reviewer sent back for revision: {review_outcome.comments}"
             )
             db.add(sendback_history)

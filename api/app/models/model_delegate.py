@@ -4,6 +4,7 @@ from typing import Optional
 from sqlalchemy import Integer, Boolean, DateTime, ForeignKey, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.models.base import Base
+from app.core.time import utc_now
 
 
 class ModelDelegate(Base):
@@ -22,7 +23,7 @@ class ModelDelegate(Base):
     delegated_by_id: Mapped[int] = mapped_column(
         Integer, ForeignKey("users.user_id", ondelete="RESTRICT"), nullable=False
     )
-    delegated_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow)
+    delegated_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=utc_now)
     revoked_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     revoked_by_id: Mapped[Optional[int]] = mapped_column(
         Integer, ForeignKey("users.user_id", ondelete="SET NULL"), nullable=True

@@ -4,6 +4,7 @@ from typing import Optional
 from sqlalchemy import String, Integer, Text, DateTime, ForeignKey, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.models.base import Base
+from app.core.time import utc_now
 
 
 class ModelRegion(Base):
@@ -30,9 +31,9 @@ class ModelRegion(Base):
     regional_risk_level: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
     notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
-        DateTime, default=datetime.utcnow, nullable=False)
+        DateTime, default=utc_now, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+        DateTime, default=utc_now, onupdate=utc_now, nullable=False)
 
     # Unique constraint: one model-region link per combination
     __table_args__ = (

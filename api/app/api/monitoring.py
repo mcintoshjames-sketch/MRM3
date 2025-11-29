@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import func
 from app.core.database import get_db
+from app.core.time import utc_now
 from app.core.deps import get_current_user
 from app.models.user import User, UserRole
 from app.models.model import Model
@@ -3004,7 +3005,7 @@ def start_cycle(
 
     # Lock cycle to active version
     cycle.plan_version_id = active_version.version_id
-    cycle.version_locked_at = datetime.utcnow()
+    cycle.version_locked_at = utc_now()
     cycle.version_locked_by_user_id = current_user.user_id
     cycle.status = MonitoringCycleStatus.DATA_COLLECTION.value
 
@@ -3052,7 +3053,7 @@ def submit_cycle(
     validate_results_completeness(db, cycle)
 
     cycle.status = MonitoringCycleStatus.UNDER_REVIEW.value
-    cycle.submitted_at = datetime.utcnow()
+    cycle.submitted_at = utc_now()
     cycle.submitted_by_user_id = current_user.user_id
 
     create_audit_log(
@@ -3373,7 +3374,7 @@ def _check_and_complete_cycle(db: Session, cycle: MonitoringCycle, current_user:
 
     if all_approved and required_approvals:
         cycle.status = MonitoringCycleStatus.APPROVED.value
-        cycle.completed_at = datetime.utcnow()
+        cycle.completed_at = utc_now()
         cycle.completed_by_user_id = current_user.user_id
 
         create_audit_log(
@@ -3488,7 +3489,7 @@ def approve_cycle(
     approval.approver_id = current_user.user_id
     approval.approval_status = "Approved"
     approval.comments = approval_data.comments
-    approval.approved_at = datetime.utcnow()
+    approval.approved_at = utc_now()
     approval.represented_region_id = represented_region_id
     approval.approval_evidence = approval_data.approval_evidence if is_proxy_approval else None
 
@@ -3598,7 +3599,7 @@ def reject_cycle_approval(
     approval.approver_id = current_user.user_id
     approval.approval_status = "Rejected"
     approval.comments = reject_data.comments
-    approval.approved_at = datetime.utcnow()
+    approval.approved_at = utc_now()
 
     # Return cycle to UNDER_REVIEW for corrections
     old_status = approval.cycle.status
@@ -3685,7 +3686,7 @@ def void_cycle_approval(
     # Void the approval
     approval.voided_by_id = current_user.user_id
     approval.void_reason = void_data.void_reason
-    approval.voided_at = datetime.utcnow()
+    approval.voided_at = utc_now()
     approval.approval_status = "Voided"
 
     create_audit_log(

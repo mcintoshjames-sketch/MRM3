@@ -1,6 +1,7 @@
 """Simple seed for Regional Compliance Report demo."""
 from datetime import datetime, timedelta, date
 from app.core.database import SessionLocal
+from app.core.time import utc_now
 from app.models.user import User
 from app.models.model import Model
 from app.models.model_version import ModelVersion
@@ -109,7 +110,7 @@ try:
         approval_type="Regional",
         region_id=us_region.region_id,
         approval_status="Approved",
-        approved_at=datetime.utcnow() - timedelta(days=45),
+        approved_at=utc_now() - timedelta(days=45),
         comments="Approved for US deployment"
     )
     db.add(us_appr1)
@@ -122,7 +123,7 @@ try:
         approval_type="Regional",
         region_id=eu_region.region_id,
         approval_status="Approved",
-        approved_at=datetime.utcnow() - timedelta(days=44),
+        approved_at=utc_now() - timedelta(days=44),
         comments="Approved for EU deployment"
     )
     db.add(eu_appr1)
@@ -133,7 +134,7 @@ try:
         model_id=model1.model_id,
         region_id=us_region.region_id,
         version_id=version1.version_id,
-        deployed_at=datetime.utcnow() - timedelta(days=40),
+        deployed_at=utc_now() - timedelta(days=40),
         deployment_notes="Production deployment to US"
     )
     db.add(us_deploy1)
@@ -143,7 +144,7 @@ try:
         model_id=model1.model_id,
         region_id=eu_region.region_id,
         version_id=version1.version_id,
-        deployed_at=datetime.utcnow() - timedelta(days=38),
+        deployed_at=utc_now() - timedelta(days=38),
         deployment_notes="Production deployment to EU"
     )
     db.add(eu_deploy1)
@@ -217,7 +218,7 @@ try:
         approval_type="Regional",
         region_id=us_region.region_id,
         approval_status="Approved",
-        approved_at=datetime.utcnow() - timedelta(days=7),
+        approved_at=utc_now() - timedelta(days=7),
         comments="Approved for US deployment"
     )
     db.add(us_appr2)
@@ -240,7 +241,7 @@ try:
         model_id=model2.model_id,
         region_id=us_region.region_id,
         version_id=version2.version_id,
-        deployed_at=datetime.utcnow() - timedelta(days=5),
+        deployed_at=utc_now() - timedelta(days=5),
         deployment_notes="Production deployment to US"
     )
     db.add(us_deploy2)
@@ -318,7 +319,7 @@ try:
         approval_type="Regional",
         region_id=us_region.region_id,
         approval_status="Approved",
-        approved_at=datetime.utcnow() - timedelta(days=100)
+        approved_at=utc_now() - timedelta(days=100)
     )
     db.add(us_appr3_old)
     db.commit()
@@ -328,7 +329,7 @@ try:
         model_id=model3.model_id,
         region_id=us_region.region_id,
         version_id=version3_old.version_id,
-        deployed_at=datetime.utcnow() - timedelta(days=95),
+        deployed_at=utc_now() - timedelta(days=95),
         deployment_notes="Production deployment - older version"
     )
     db.add(us_deploy3)

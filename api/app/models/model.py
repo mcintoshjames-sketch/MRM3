@@ -5,6 +5,7 @@ from typing import Optional, List
 from sqlalchemy import String, Integer, Text, DateTime, ForeignKey, Table, Column, Boolean
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.models.base import Base
+from app.core.time import utc_now
 
 
 class ModelStatus(str, enum.Enum):
@@ -71,9 +72,9 @@ class Model(Base):
     wholly_owned_region_id: Mapped[Optional[int]] = mapped_column(
         Integer, ForeignKey("regions.region_id", ondelete="SET NULL"), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
-        DateTime, default=datetime.utcnow, nullable=False)
+        DateTime, default=utc_now, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+        DateTime, default=utc_now, onupdate=utc_now, nullable=False)
 
     # Row-level approval workflow fields
     row_approval_status: Mapped[Optional[str]] = mapped_column(

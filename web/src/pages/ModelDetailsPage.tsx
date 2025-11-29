@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useParams, useNavigate, Link } from 'react-router-dom';
+import { useParams, useNavigate, Link, useSearchParams } from 'react-router-dom';
 import api from '../api/client';
 import Layout from '../components/Layout';
 import ModelRegionsSection from '../components/ModelRegionsSection';
@@ -185,9 +185,23 @@ interface NameHistoryItem {
     change_reason: string | null;
 }
 
+interface PendingEdit {
+    pending_edit_id: number;
+    model_id: number;
+    requested_by: { user_id: number; full_name: string; email: string };
+    requested_at: string;
+    proposed_changes: Record<string, unknown>;
+    original_values: Record<string, unknown>;
+    status: string;
+    reviewed_by: { user_id: number; full_name: string; email: string } | null;
+    reviewed_at: string | null;
+    review_comment: string | null;
+}
+
 export default function ModelDetailsPage() {
     const { id } = useParams<{ id: string }>();
     const navigate = useNavigate();
+    const [searchParams, setSearchParams] = useSearchParams();
     const { user } = useAuth();
     const [model, setModel] = useState<Model | null>(null);
     const [users, setUsers] = useState<User[]>([]);
@@ -222,6 +236,11 @@ export default function ModelDetailsPage() {
     const [commentaryModalType, setCommentaryModalType] = useState<OverdueType>('PRE_SUBMISSION');
     const [nameHistory, setNameHistory] = useState<NameHistoryItem[]>([]);
     const [showNameHistory, setShowNameHistory] = useState(false);
+    const [pendingEdits, setPendingEdits] = useState<PendingEdit[]>([]);
+    const [selectedPendingEditId, setSelectedPendingEditId] = useState<number | null>(null);
+    const [showPendingEditReview, setShowPendingEditReview] = useState(false);
+    const [pendingEditComment, setPendingEditComment] = useState('');
+    const [submittingPendingEdit, setSubmittingPendingEdit] = useState(false);
     const [formData, setFormData] = useState({
         model_name: '',
         description: '',
@@ -269,6 +288,33 @@ export default function ModelDetailsPage() {
         };
         fetchOverdueCommentary();
     }, [revalidationStatus]);
+
+    // Fetch pending edits and check URL parameter
+    useEffect(() => {
+        const fetchPendingEdits = async () => {
+            if (!id || !user) return;
+            try {
+                const response = await api.get(`/models/${id}/pending-edits`);
+                setPendingEdits(response.data);
+
+                // Check if URL has reviewEdit parameter
+                const reviewEditId = searchParams.get('reviewEdit');
+                if (reviewEditId && user?.role === 'Admin') {
+                    const editId = parseInt(reviewEditId, 10);
+                    const editExists = response.data.some((e: PendingEdit) => e.pending_edit_id === editId);
+                    if (editExists) {
+                        setSelectedPendingEditId(editId);
+                        setShowPendingEditReview(true);
+                    }
+                    // Clear the URL parameter
+                    setSearchParams({});
+                }
+            } catch (error) {
+                console.error('Failed to fetch pending edits:', error);
+            }
+        };
+        fetchPendingEdits();
+    }, [id, user, searchParams, setSearchParams]);
 
     const handleOpenCommentaryModal = (type: OverdueType) => {
         setCommentaryModalType(type);
@@ -537,6 +583,60 @@ export default function ModelDetailsPage() {
         } finally {
             setSubmittingApproval(false);
         }
+    };
+
+    const handleApprovePendingEdit = async (editId: number) => {
+        if (!model) return;
+        setSubmittingPendingEdit(true);
+        try {
+            await api.post(`/models/${model.model_id}/pending-edits/${editId}/approve`, {
+                comment: pendingEditComment || 'Changes approved.'
+            });
+            // Refresh the data
+            await fetchData();
+            // Refresh pending edits
+            const response = await api.get(`/models/${id}/pending-edits`);
+            setPendingEdits(response.data);
+            setShowPendingEditReview(false);
+            setSelectedPendingEditId(null);
+            setPendingEditComment('');
+        } catch (error: any) {
+            console.error('Failed to approve pending edit:', error);
+            alert(error.response?.data?.detail || 'Failed to approve pending edit');
+        } finally {
+            setSubmittingPendingEdit(false);
+        }
+    };
+
+    const handleRejectPendingEdit = async (editId: number) => {
+        if (!model || !pendingEditComment.trim()) {
+            alert('Please provide a reason for rejection.');
+            return;
+        }
+        setSubmittingPendingEdit(true);
+        try {
+            await api.post(`/models/${model.model_id}/pending-edits/${editId}/reject`, {
+                comment: pendingEditComment
+            });
+            // Refresh pending edits
+            const response = await api.get(`/models/${id}/pending-edits`);
+            setPendingEdits(response.data);
+            setShowPendingEditReview(false);
+            setSelectedPendingEditId(null);
+            setPendingEditComment('');
+        } catch (error: any) {
+            console.error('Failed to reject pending edit:', error);
+            alert(error.response?.data?.detail || 'Failed to reject pending edit');
+        } finally {
+            setSubmittingPendingEdit(false);
+        }
+    };
+
+    const formatFieldName = (field: string): string => {
+        return field
+            .replace(/_id$/, '')
+            .replace(/_/g, ' ')
+            .replace(/\b\w/g, l => l.toUpperCase());
     };
 
     const getActivityIcon = (activityType: string) => {
@@ -880,6 +980,138 @@ export default function ModelDetailsPage() {
                                     </div>
                                 ))}
                             </div>
+                        </div>
+                    )}
+                </div>
+            )}
+
+            {/* Pending Edits Banner (Admin only) */}
+            {user?.role === 'Admin' && pendingEdits.length > 0 && (
+                <div className="mb-6 p-4 rounded-lg border-l-4 bg-amber-50 border-amber-500">
+                    <div className="flex items-start justify-between gap-4">
+                        <div className="flex items-start gap-3 flex-1">
+                            <svg className="w-6 h-6 flex-shrink-0 mt-0.5 text-amber-600" fill="currentColor" viewBox="0 0 20 20">
+                                <path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L3 14.172V17h2.828l8.38-8.379-2.83-2.828z" />
+                            </svg>
+                            <div className="flex-1">
+                                <h3 className="text-sm font-semibold text-amber-900 mb-1">
+                                    Pending Model Changes ({pendingEdits.length})
+                                </h3>
+                                <p className="text-sm text-amber-800">
+                                    There are proposed changes to this model awaiting your review.
+                                </p>
+                            </div>
+                        </div>
+                        <button
+                            onClick={() => {
+                                setSelectedPendingEditId(pendingEdits[0].pending_edit_id);
+                                setShowPendingEditReview(true);
+                            }}
+                            className="inline-flex items-center px-4 py-2 text-sm font-medium text-white bg-amber-600 hover:bg-amber-700 rounded transition-colors flex-shrink-0"
+                        >
+                            Review Changes
+                        </button>
+                    </div>
+
+                    {/* Pending Edit Review Panel */}
+                    {showPendingEditReview && selectedPendingEditId && (
+                        <div className="mt-4 pt-4 border-t border-amber-200">
+                            {pendingEdits.filter(e => e.pending_edit_id === selectedPendingEditId).map(edit => (
+                                <div key={edit.pending_edit_id} className="space-y-4">
+                                    <div className="flex items-center justify-between">
+                                        <div className="text-sm text-gray-600">
+                                            Submitted by <span className="font-medium">{edit.requested_by.full_name}</span> on {edit.requested_at.split('T')[0]}
+                                        </div>
+                                        {pendingEdits.length > 1 && (
+                                            <select
+                                                value={selectedPendingEditId}
+                                                onChange={(e) => setSelectedPendingEditId(parseInt(e.target.value, 10))}
+                                                className="text-sm border border-gray-300 rounded px-2 py-1"
+                                            >
+                                                {pendingEdits.map(pe => (
+                                                    <option key={pe.pending_edit_id} value={pe.pending_edit_id}>
+                                                        Edit #{pe.pending_edit_id} - {pe.requested_at.split('T')[0]}
+                                                    </option>
+                                                ))}
+                                            </select>
+                                        )}
+                                    </div>
+
+                                    {/* Proposed Changes Table */}
+                                    <div className="bg-white rounded border border-gray-200 overflow-hidden">
+                                        <table className="min-w-full divide-y divide-gray-200">
+                                            <thead className="bg-gray-50">
+                                                <tr>
+                                                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Field</th>
+                                                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Current Value</th>
+                                                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Proposed Value</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody className="divide-y divide-gray-200">
+                                                {Object.entries(edit.proposed_changes).map(([field, newValue]) => (
+                                                    <tr key={field}>
+                                                        <td className="px-4 py-2 text-sm font-medium text-gray-900">
+                                                            {formatFieldName(field)}
+                                                        </td>
+                                                        <td className="px-4 py-2 text-sm text-gray-500">
+                                                            {edit.original_values[field] != null
+                                                                ? String(edit.original_values[field])
+                                                                : <span className="text-gray-400 italic">empty</span>}
+                                                        </td>
+                                                        <td className="px-4 py-2 text-sm text-green-700 font-medium">
+                                                            {newValue != null
+                                                                ? String(newValue)
+                                                                : <span className="text-gray-400 italic">empty</span>}
+                                                        </td>
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                        </table>
+                                    </div>
+
+                                    {/* Review Actions */}
+                                    <div className="space-y-3">
+                                        <div>
+                                            <label className="block text-sm font-medium text-gray-700 mb-1">
+                                                Review Comment
+                                            </label>
+                                            <textarea
+                                                value={pendingEditComment}
+                                                onChange={(e) => setPendingEditComment(e.target.value)}
+                                                placeholder="Optional for approval, required for rejection..."
+                                                className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
+                                                rows={3}
+                                            />
+                                        </div>
+                                        <div className="flex gap-3 justify-end">
+                                            <button
+                                                onClick={() => {
+                                                    setShowPendingEditReview(false);
+                                                    setSelectedPendingEditId(null);
+                                                    setPendingEditComment('');
+                                                }}
+                                                className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded hover:bg-gray-50"
+                                            >
+                                                Cancel
+                                            </button>
+                                            <button
+                                                onClick={() => handleRejectPendingEdit(edit.pending_edit_id)}
+                                                disabled={submittingPendingEdit || !pendingEditComment.trim()}
+                                                className="px-4 py-2 text-sm font-medium text-white bg-red-600 hover:bg-red-700 rounded disabled:opacity-50"
+                                            >
+                                                {submittingPendingEdit ? 'Rejecting...' : 'Reject Changes'}
+                                            </button>
+                                            <button
+                                                onClick={() => handleApprovePendingEdit(edit.pending_edit_id)}
+                                                disabled={submittingPendingEdit}
+                                                className="px-4 py-2 text-sm font-medium text-white bg-green-600 hover:bg-green-700 rounded disabled:opacity-50"
+                                            >
+                                                {submittingPendingEdit ? 'Approving...' : 'Approve & Apply Changes'}
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            ))}
                         </div>
                     )}
                 </div>

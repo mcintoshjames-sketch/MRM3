@@ -4,6 +4,7 @@ from typing import Optional
 from sqlalchemy import String, Integer, Text, DateTime, Date, ForeignKey, Boolean
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.models.base import Base
+from app.core.time import utc_now
 
 
 class VersionDeploymentTask(Base):
@@ -71,7 +72,7 @@ class VersionDeploymentTask(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime,
         nullable=False,
-        default=datetime.utcnow
+        default=utc_now
     )
 
     # Relationships

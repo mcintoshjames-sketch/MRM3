@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import or_
 from app.core.database import get_db
+from app.core.time import utc_now
 from app.core.deps import get_current_user
 from app.models.user import User
 from app.models.version_deployment_task import VersionDeploymentTask
@@ -304,7 +305,7 @@ def confirm_deployment(
     task.confirmation_notes = confirmation_data.confirmation_notes
     task.deployed_before_validation_approved = deployed_before_validation
     task.validation_override_reason = validation_override_reason
-    task.confirmed_at = datetime.utcnow()
+    task.confirmed_at = utc_now()
     task.confirmed_by_id = current_user.user_id
 
     # Update version's actual_production_date
@@ -321,7 +322,7 @@ def confirm_deployment(
 
         if model_region:
             model_region.version_id = task.version_id
-            model_region.deployed_at = datetime.utcnow()
+            model_region.deployed_at = utc_now()
             if confirmation_data.confirmation_notes:
                 model_region.deployment_notes = confirmation_data.confirmation_notes
     else:
@@ -332,7 +333,7 @@ def confirm_deployment(
 
         for mr in model_regions:
             mr.version_id = task.version_id
-            mr.deployed_at = datetime.utcnow()
+            mr.deployed_at = utc_now()
 
     db.commit()
     db.refresh(task)

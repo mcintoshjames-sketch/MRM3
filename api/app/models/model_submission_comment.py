@@ -4,6 +4,7 @@ from typing import Optional
 from sqlalchemy import String, Integer, Text, DateTime, ForeignKey
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.models.base import Base
+from app.core.time import utc_now
 
 
 class ModelSubmissionComment(Base):
@@ -20,7 +21,7 @@ class ModelSubmissionComment(Base):
         String(50), nullable=True,
         comment="Action: submitted, sent_back, resubmitted, approved, rejected")
     created_at: Mapped[datetime] = mapped_column(
-        DateTime, default=datetime.utcnow, nullable=False)
+        DateTime, default=utc_now, nullable=False)
 
     # Relationships
     model: Mapped["Model"] = relationship("Model", back_populates="submission_comments")

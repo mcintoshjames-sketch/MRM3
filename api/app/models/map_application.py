@@ -4,6 +4,7 @@ from typing import Optional
 from sqlalchemy import String, Integer, Text, DateTime
 from sqlalchemy.orm import Mapped, mapped_column
 from app.models.base import Base
+from app.core.time import utc_now
 
 
 class MapApplication(Base):
@@ -58,8 +59,8 @@ class MapApplication(Base):
         comment="Link to MAP system record for this application"
     )
     created_at: Mapped[datetime] = mapped_column(
-        DateTime, default=datetime.utcnow, nullable=False
+        DateTime, default=utc_now, nullable=False
     )
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
+        DateTime, default=utc_now, onupdate=utc_now, nullable=False
     )

@@ -4,6 +4,7 @@ from sqlalchemy import String, Integer, DateTime, Boolean
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from typing import List, TYPE_CHECKING
 from app.models.base import Base
+from app.core.time import utc_now
 
 if TYPE_CHECKING:
     from app.models.user import User
@@ -24,7 +25,7 @@ class Region(Base):
         comment="When true, validation plans are required for requests scoped to this region"
     )
     created_at: Mapped[datetime] = mapped_column(
-        DateTime, default=datetime.utcnow, nullable=False
+        DateTime, default=utc_now, nullable=False
     )
 
     # Users who can approve validations in this region

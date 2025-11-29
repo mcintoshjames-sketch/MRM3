@@ -5,6 +5,7 @@ from typing import Optional, List
 from sqlalchemy import String, Integer, Text, Boolean, ForeignKey, Table, Column, DateTime, Date, Enum as SQLEnum, JSON, Float, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.models.base import Base
+from app.core.time import utc_now
 
 
 class MonitoringFrequency(str, enum.Enum):
@@ -46,9 +47,9 @@ class MonitoringTeam(Base):
     description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     created_at: Mapped[datetime] = mapped_column(
-        DateTime, default=datetime.utcnow, nullable=False)
+        DateTime, default=utc_now, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+        DateTime, default=utc_now, onupdate=utc_now, nullable=False)
 
     # Relationships
     members: Mapped[List["User"]] = relationship(
@@ -103,9 +104,9 @@ class MonitoringPlan(Base):
 
     # Timestamps
     created_at: Mapped[datetime] = mapped_column(
-        DateTime, default=datetime.utcnow, nullable=False)
+        DateTime, default=utc_now, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+        DateTime, default=utc_now, onupdate=utc_now, nullable=False)
 
     # Relationships
     team: Mapped[Optional["MonitoringTeam"]] = relationship(
@@ -199,11 +200,11 @@ class MonitoringPlanVersion(Base):
         Integer, ForeignKey("users.user_id", ondelete="SET NULL"), nullable=True
     )
     published_at: Mapped[datetime] = mapped_column(
-        DateTime, default=datetime.utcnow, nullable=False
+        DateTime, default=utc_now, nullable=False
     )
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     created_at: Mapped[datetime] = mapped_column(
-        DateTime, default=datetime.utcnow, nullable=False
+        DateTime, default=utc_now, nullable=False
     )
 
     __table_args__ = (
@@ -259,7 +260,7 @@ class MonitoringPlanMetricSnapshot(Base):
     evaluation_type: Mapped[str] = mapped_column(String(50), nullable=False, default="Quantitative")
 
     created_at: Mapped[datetime] = mapped_column(
-        DateTime, default=datetime.utcnow, nullable=False
+        DateTime, default=utc_now, nullable=False
     )
 
     __table_args__ = (
@@ -290,7 +291,7 @@ class MonitoringPlanModelSnapshot(Base):
     model_name: Mapped[str] = mapped_column(String(255), nullable=False)
 
     created_at: Mapped[datetime] = mapped_column(
-        DateTime, default=datetime.utcnow, nullable=False
+        DateTime, default=utc_now, nullable=False
     )
 
     __table_args__ = (
@@ -376,10 +377,10 @@ class MonitoringCycle(Base):
 
     # Timestamps
     created_at: Mapped[datetime] = mapped_column(
-        DateTime, default=datetime.utcnow, nullable=False
+        DateTime, default=utc_now, nullable=False
     )
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
+        DateTime, default=utc_now, onupdate=utc_now, nullable=False
     )
 
     # Relationships
@@ -461,7 +462,7 @@ class MonitoringCycleApproval(Base):
 
     # Timestamps
     created_at: Mapped[datetime] = mapped_column(
-        DateTime, default=datetime.utcnow, nullable=False
+        DateTime, default=utc_now, nullable=False
     )
 
     # Relationships
@@ -523,10 +524,10 @@ class MonitoringResult(Base):
         Integer, ForeignKey("users.user_id"), nullable=False
     )
     entered_at: Mapped[datetime] = mapped_column(
-        DateTime, default=datetime.utcnow, nullable=False
+        DateTime, default=utc_now, nullable=False
     )
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
+        DateTime, default=utc_now, onupdate=utc_now, nullable=False
     )
 
     # Relationships

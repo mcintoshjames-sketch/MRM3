@@ -4,6 +4,7 @@ from typing import Optional
 from sqlalchemy import Integer, Text, ForeignKey, DateTime, Boolean
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.models.base import Base
+from app.core.time import utc_now
 
 
 class ValidationGroupingMemory(Base):
@@ -39,8 +40,8 @@ class ValidationGroupingMemory(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime,
         nullable=False,
-        default=datetime.utcnow,
-        onupdate=datetime.utcnow
+        default=utc_now,
+        onupdate=utc_now
     )
 
     # Relationships

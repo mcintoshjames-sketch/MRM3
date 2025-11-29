@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, Query
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session, joinedload
 from app.core.database import get_db
+from app.core.time import utc_now
 from app.core.deps import get_current_user
 from app.models.user import User
 from app.models.model import Model
@@ -184,7 +185,7 @@ def create_model(
     if not is_admin:
         model.row_approval_status = "pending"
         model.submitted_by_user_id = current_user.user_id
-        model.submitted_at = datetime.utcnow()
+        model.submitted_at = utc_now()
 
     # Add model users
     if user_ids:
@@ -233,7 +234,7 @@ def create_model(
             new_model_region = ModelRegion(
                 model_id=model.model_id,
                 region_id=region_id,
-                created_at=datetime.utcnow()
+                created_at=utc_now()
             )
             db.add(new_model_region)
         db.commit()
@@ -286,7 +287,7 @@ def create_model(
             user_id=current_user.user_id,
             comment_text=f"Model '{model.model_name}' submitted for admin approval.",
             action_taken="submitted",
-            created_at=datetime.utcnow()
+            created_at=utc_now()
         )
         db.add(initial_comment)
 
@@ -355,8 +356,8 @@ def create_model(
                 target_completion_date=validation_request_data['target_date'],
                 trigger_reason=validation_request_data['trigger_reason'] or "Auto-created with new model",
                 current_status_id=intake_status.value_id,
-                created_at=datetime.utcnow(),
-                updated_at=datetime.utcnow()
+                created_at=utc_now(),
+                updated_at=utc_now()
             )
             db.add(validation_request)
             db.flush()
@@ -376,7 +377,7 @@ def create_model(
                 old_status_id=None,
                 new_status_id=intake_status.value_id,
                 changed_by_id=current_user.user_id,
-                changed_at=datetime.utcnow(),
+                changed_at=utc_now(),
                 change_reason="Auto-created with new model"
             )
             db.add(status_history)
@@ -392,7 +393,7 @@ def create_model(
                     "model_name": model.model_name,
                     "auto_created": True
                 },
-                timestamp=datetime.utcnow()
+                timestamp=utc_now()
             )
             db.add(validation_audit)
             db.commit()
@@ -450,7 +451,7 @@ def get_name_change_statistics(
     """
     from sqlalchemy import func, distinct
 
-    now = datetime.utcnow()
+    now = utc_now()
     ninety_days_ago = now - timedelta(days=90)
     thirty_days_ago = now - timedelta(days=30)
 
@@ -958,7 +959,7 @@ def update_model(
             new_model_region = ModelRegion(
                 model_id=model_id,
                 region_id=new_region_id,
-                created_at=datetime.utcnow()
+                created_at=utc_now()
             )
             db.add(new_model_region)
             changes_made["auto_added_deployment_region"] = new_region_id
@@ -981,7 +982,7 @@ def update_model(
             old_name=old_model_name,
             new_name=model.model_name,
             changed_by_id=current_user.user_id,
-            changed_at=datetime.utcnow()
+            changed_at=utc_now()
         )
         db.add(name_history)
 
@@ -1228,7 +1229,7 @@ def add_submission_comment(
         user_id=current_user.user_id,
         comment_text=comment_data.comment_text,
         action_taken=None,
-        created_at=datetime.utcnow()
+        created_at=utc_now()
     )
     db.add(comment)
     db.commit()
@@ -1296,7 +1297,7 @@ def approve_model_submission(
         user_id=current_user.user_id,
         comment_text=comment_text,
         action_taken="approved",
-        created_at=datetime.utcnow()
+        created_at=utc_now()
     )
     db.add(approval_comment)
 
@@ -1419,7 +1420,7 @@ def send_back_model_submission(
         user_id=current_user.user_id,
         comment_text=feedback.comment,
         action_taken="sent_back",
-        created_at=datetime.utcnow()
+        created_at=utc_now()
     )
     db.add(feedback_comment)
 
@@ -1490,7 +1491,7 @@ def resubmit_model(
         user_id=current_user.user_id,
         comment_text=note_text,
         action_taken="resubmitted",
-        created_at=datetime.utcnow()
+        created_at=utc_now()
     )
     db.add(resubmit_comment)
 

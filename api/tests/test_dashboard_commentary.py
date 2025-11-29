@@ -1,6 +1,7 @@
 """Tests for dashboard endpoints with commentary fields (Phase 2)."""
 import pytest
 from datetime import date, datetime, timedelta
+from app.core.time import utc_now
 from app.models import (
     User, Model, ValidationRequest, ValidationRequestModelVersion,
     ValidationAssignment, TaxonomyValue, Taxonomy, OverdueRevalidationComment,
@@ -162,7 +163,7 @@ class TestDashboardCommentaryAPI:
             target_completion_date=date.today() + timedelta(days=60),
             submission_received_date=None,
             # Set submission due date in the past to make it overdue
-            created_at=datetime.utcnow() - timedelta(days=100)
+            created_at=utc_now() - timedelta(days=100)
         )
         db_session.add(request)
         db_session.flush()
@@ -237,7 +238,7 @@ class TestDashboardCommentaryAPI:
             reason_comment="Working on gathering required data.",
             target_date=date.today() + timedelta(days=30),
             created_by_user_id=admin_user.user_id,
-            created_at=datetime.utcnow(),
+            created_at=utc_now(),
             is_current=True
         )
         db_session.add(comment)
@@ -269,7 +270,7 @@ class TestDashboardCommentaryAPI:
             reason_comment="Was supposed to be done by now.",
             target_date=date.today() - timedelta(days=5),  # Target passed
             created_by_user_id=admin_user.user_id,
-            created_at=datetime.utcnow() - timedelta(days=10),
+            created_at=utc_now() - timedelta(days=10),
             is_current=True
         )
         db_session.add(comment)
@@ -331,7 +332,7 @@ class TestDashboardCommentaryAPI:
             reason_comment="Awaiting additional documentation from model owner.",
             target_date=date.today() + timedelta(days=20),
             created_by_user_id=admin_user.user_id,
-            created_at=datetime.utcnow(),
+            created_at=utc_now(),
             is_current=True
         )
         db_session.add(comment)
@@ -396,7 +397,7 @@ class TestDashboardCommentaryAPI:
             priority_id=validation_taxonomies["statuses"]["intake"].value_id,
             target_completion_date=date.today() + timedelta(days=30),
             submission_received_date=None,
-            created_at=datetime.utcnow() - timedelta(days=100)
+            created_at=utc_now() - timedelta(days=100)
         )
         db_session.add(request)
         db_session.flush()
@@ -496,7 +497,7 @@ class TestDashboardCommentaryAPI:
             priority_id=validation_taxonomies["statuses"]["intake"].value_id,
             target_completion_date=date.today() + timedelta(days=30),
             submission_received_date=None,
-            created_at=datetime.utcnow() - timedelta(days=100)
+            created_at=utc_now() - timedelta(days=100)
         )
         db_session.add(request)
         db_session.flush()
@@ -558,7 +559,7 @@ class TestDashboardCommentaryAPI:
             reason_comment="Testing commentary integration.",
             target_date=date.today() + timedelta(days=15),
             created_by_user_id=validator_user.user_id,
-            created_at=datetime.utcnow(),
+            created_at=utc_now(),
             is_current=True
         )
         db_session.add(comment)

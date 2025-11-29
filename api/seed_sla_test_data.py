@@ -1,6 +1,7 @@
 """Seed test data for SLA validation testing."""
 from datetime import datetime, timedelta, date
 from app.core.database import SessionLocal
+from app.core.time import utc_now
 from app.models import (
     User, Model, TaxonomyValue, ValidationRequest,
     ValidationStatusHistory, ValidationAssignment
@@ -91,8 +92,8 @@ def seed_sla_test_data():
             trigger_reason="Risk assessment update required",
             business_justification="Regulatory requirement",
             current_status_id=intake_status.value_id,
-            created_at=datetime.utcnow() - timedelta(days=15),
-            updated_at=datetime.utcnow() - timedelta(days=15)
+            created_at=utc_now() - timedelta(days=15),
+            updated_at=utc_now() - timedelta(days=15)
         )
         db.add(req1)
         db.flush()
@@ -103,7 +104,7 @@ def seed_sla_test_data():
             old_status_id=None,
             new_status_id=intake_status.value_id,
             changed_by_id=admin.user_id,
-            changed_at=datetime.utcnow() - timedelta(days=15),
+            changed_at=utc_now() - timedelta(days=15),
             change_reason="Initial request"
         )
         db.add(hist1)
@@ -120,8 +121,8 @@ def seed_sla_test_data():
             trigger_reason="Comprehensive review",
             business_justification="Scheduled validation",
             current_status_id=planning_status.value_id,
-            created_at=datetime.utcnow() - timedelta(days=10),
-            updated_at=datetime.utcnow() - timedelta(days=8)
+            created_at=utc_now() - timedelta(days=10),
+            updated_at=utc_now() - timedelta(days=8)
         )
         db.add(req2)
         db.flush()
@@ -135,7 +136,7 @@ def seed_sla_test_data():
             assignment_date=date.today() - timedelta(days=8),
             estimated_hours=40.0,
             independence_attestation=True,
-            created_at=datetime.utcnow() - timedelta(days=8)
+            created_at=utc_now() - timedelta(days=8)
         )
         db.add(assign2)
 
@@ -145,7 +146,7 @@ def seed_sla_test_data():
             old_status_id=None,
             new_status_id=intake_status.value_id,
             changed_by_id=admin.user_id,
-            changed_at=datetime.utcnow() - timedelta(days=10),
+            changed_at=utc_now() - timedelta(days=10),
             change_reason="Initial request"
         )
         db.add(hist2a)
@@ -155,7 +156,7 @@ def seed_sla_test_data():
             old_status_id=intake_status.value_id,
             new_status_id=planning_status.value_id,
             changed_by_id=validator.user_id,
-            changed_at=datetime.utcnow() - timedelta(days=8),
+            changed_at=utc_now() - timedelta(days=8),
             change_reason="Validator assigned"
         )
         db.add(hist2b)
@@ -172,8 +173,8 @@ def seed_sla_test_data():
             trigger_reason="Model update validation",
             business_justification="Code changes deployed",
             current_status_id=in_progress_status.value_id,
-            created_at=datetime.utcnow() - timedelta(days=100),
-            updated_at=datetime.utcnow() - timedelta(days=5)
+            created_at=utc_now() - timedelta(days=100),
+            updated_at=utc_now() - timedelta(days=5)
         )
         db.add(req3)
         db.flush()
@@ -187,7 +188,7 @@ def seed_sla_test_data():
             assignment_date=date.today() - timedelta(days=95),
             estimated_hours=60.0,
             independence_attestation=True,
-            created_at=datetime.utcnow() - timedelta(days=95)
+            created_at=utc_now() - timedelta(days=95)
         )
         db.add(assign3)
 
@@ -197,7 +198,7 @@ def seed_sla_test_data():
             old_status_id=None,
             new_status_id=intake_status.value_id,
             changed_by_id=admin.user_id,
-            changed_at=datetime.utcnow() - timedelta(days=100),
+            changed_at=utc_now() - timedelta(days=100),
             change_reason="Initial request"
         )
         db.add(hist3a)
@@ -207,7 +208,7 @@ def seed_sla_test_data():
             old_status_id=intake_status.value_id,
             new_status_id=planning_status.value_id,
             changed_by_id=validator.user_id,
-            changed_at=datetime.utcnow() - timedelta(days=95),
+            changed_at=utc_now() - timedelta(days=95),
             change_reason="Validator assigned"
         )
         db.add(hist3b)
@@ -217,7 +218,7 @@ def seed_sla_test_data():
             old_status_id=planning_status.value_id,
             new_status_id=in_progress_status.value_id,
             changed_by_id=validator.user_id,
-            changed_at=datetime.utcnow() - timedelta(days=90),
+            changed_at=utc_now() - timedelta(days=90),
             change_reason="Started validation work"
         )
         db.add(hist3c)
@@ -234,8 +235,8 @@ def seed_sla_test_data():
             trigger_reason="Regulatory compliance check",
             business_justification="Required by policy",
             current_status_id=pending_approval_status.value_id,
-            created_at=datetime.utcnow() - timedelta(days=100),
-            updated_at=datetime.utcnow() - timedelta(days=15)
+            created_at=utc_now() - timedelta(days=100),
+            updated_at=utc_now() - timedelta(days=15)
         )
         db.add(req4)
         db.flush()
@@ -249,7 +250,7 @@ def seed_sla_test_data():
             assignment_date=date.today() - timedelta(days=90),
             estimated_hours=50.0,
             independence_attestation=True,
-            created_at=datetime.utcnow() - timedelta(days=90)
+            created_at=utc_now() - timedelta(days=90)
         )
         db.add(assign4)
 
@@ -259,7 +260,7 @@ def seed_sla_test_data():
             old_status_id=in_progress_status.value_id,
             new_status_id=pending_approval_status.value_id,
             changed_by_id=validator.user_id,
-            changed_at=datetime.utcnow() - timedelta(days=15),
+            changed_at=utc_now() - timedelta(days=15),
             change_reason="Work completed, ready for approval"
         )
         db.add(hist4d)
@@ -276,8 +277,8 @@ def seed_sla_test_data():
             trigger_reason="Quarterly review",
             business_justification="Routine check",
             current_status_id=in_progress_status.value_id,
-            created_at=datetime.utcnow() - timedelta(days=35),
-            updated_at=datetime.utcnow() - timedelta(days=5)
+            created_at=utc_now() - timedelta(days=35),
+            updated_at=utc_now() - timedelta(days=5)
         )
         db.add(req5)
         db.flush()
@@ -291,7 +292,7 @@ def seed_sla_test_data():
             assignment_date=date.today() - timedelta(days=30),
             estimated_hours=40.0,
             independence_attestation=True,
-            created_at=datetime.utcnow() - timedelta(days=30)
+            created_at=utc_now() - timedelta(days=30)
         )
         db.add(assign5)
 
@@ -301,7 +302,7 @@ def seed_sla_test_data():
             old_status_id=planning_status.value_id,
             new_status_id=in_progress_status.value_id,
             changed_by_id=validator.user_id,
-            changed_at=datetime.utcnow() - timedelta(days=28),
+            changed_at=utc_now() - timedelta(days=28),
             change_reason="Started validation work"
         )
         db.add(hist5c)

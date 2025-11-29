@@ -321,7 +321,7 @@ cd web && pnpm test:coverage
 - [x] Admin creating model is auto-approved
 - [x] User creating model is pending approval
 - [x] User can edit their own pending model
-- [x] User cannot edit approved model (workflow restriction)
+- [x] User editing approved model creates pending edit (not direct edit)
 - [x] Admin can approve pending model
 - [x] Admin can send back model for revision
 - [x] User can resubmit model after revision
@@ -331,6 +331,17 @@ cd web && pnpm test:coverage
 - [x] User cannot approve their own model
 - [x] Dashboard news feed retrieval
 - [x] Non-admin must include themselves as model user
+
+#### Model Pending Edits (`test_model_submission_workflow.py` - Pending Edit endpoints)
+- [x] User editing approved model creates pending edit record
+- [x] Pending edit captures proposed_changes and original_values
+- [x] Admin can list all pending edits (`GET /models/pending-edits/all`)
+- [x] Admin can list pending edits for specific model (`GET /models/{id}/pending-edits`)
+- [x] Admin can approve pending edit and changes are applied (`POST /models/{id}/pending-edits/{edit_id}/approve`)
+- [x] Admin can reject pending edit with comment (`POST /models/{id}/pending-edits/{edit_id}/reject`)
+- [x] Non-admin cannot approve/reject pending edits (403) - `test_non_admin_cannot_approve_pending_edit`, `test_non_admin_cannot_reject_pending_edit`
+- [ ] Dashboard widget shows pending edits count
+- [ ] Model details page shows pending edits banner for admins
 
 #### Regional Version Scope (`test_regional_versions.py`)
 - [x] Create GLOBAL version (scope field and null affected_region_ids)

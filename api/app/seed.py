@@ -3,6 +3,7 @@ import re
 from datetime import datetime, date, timedelta
 from typing import Dict, List
 from app.core.database import SessionLocal
+from app.core.time import utc_now
 from app.core.security import get_password_hash
 from app.models import User, UserRole, Vendor, EntraUser, Taxonomy, TaxonomyValue, ValidationWorkflowSLA, ValidationPolicy, Region, ValidationComponentDefinition, ComponentDefinitionConfiguration, ComponentDefinitionConfigItem, ModelTypeCategory, ModelType, ValidationRequest, ValidationOutcome, ValidationRequestModelVersion, ApproverRole, ConditionalApprovalRule, RuleRequiredApprover, MapApplication
 from app.models.kpm import KpmCategory, Kpm
@@ -268,7 +269,7 @@ def _upsert_taxonomy_with_values(
             name=name,
             description=description,
             is_system=is_system,
-            created_at=datetime.utcnow(),
+            created_at=utc_now(),
         )
         db.add(taxonomy)
         db.flush()
@@ -299,7 +300,7 @@ def _upsert_taxonomy_with_values(
                     description=entry.get("description"),
                     sort_order=sort_order,
                     is_active=True,
-                    created_at=datetime.utcnow(),
+                    created_at=utc_now(),
                 )
             )
 
@@ -688,7 +689,7 @@ def seed_database():
                 "office_location": "New York",
                 "mobile_phone": "+1-212-555-0101",
                 "account_enabled": True,
-                "created_at": datetime.utcnow()
+                "created_at": utc_now()
             },
             {
                 "entra_id": "b2c3d4e5-f6a7-8901-bcde-f23456789012",
@@ -702,7 +703,7 @@ def seed_database():
                 "office_location": "Chicago",
                 "mobile_phone": "+1-312-555-0202",
                 "account_enabled": True,
-                "created_at": datetime.utcnow()
+                "created_at": utc_now()
             },
             {
                 "entra_id": "c3d4e5f6-a7b8-9012-cdef-345678901234",
@@ -716,7 +717,7 @@ def seed_database():
                 "office_location": "San Francisco",
                 "mobile_phone": "+1-415-555-0303",
                 "account_enabled": True,
-                "created_at": datetime.utcnow()
+                "created_at": utc_now()
             },
             {
                 "entra_id": "d4e5f6a7-b8c9-0123-defa-456789012345",
@@ -730,7 +731,7 @@ def seed_database():
                 "office_location": "Boston",
                 "mobile_phone": "+1-617-555-0404",
                 "account_enabled": True,
-                "created_at": datetime.utcnow()
+                "created_at": utc_now()
             },
             {
                 "entra_id": "e5f6a7b8-c9d0-1234-efab-567890123456",
@@ -744,7 +745,7 @@ def seed_database():
                 "office_location": "New York",
                 "mobile_phone": "+1-212-555-0505",
                 "account_enabled": True,
-                "created_at": datetime.utcnow()
+                "created_at": utc_now()
             },
             {
                 "entra_id": "f6a7b8c9-d0e1-2345-fabc-678901234567",
@@ -758,7 +759,7 @@ def seed_database():
                 "office_location": "New York",
                 "mobile_phone": "+1-212-555-0606",
                 "account_enabled": True,
-                "created_at": datetime.utcnow()
+                "created_at": utc_now()
             },
             {
                 "entra_id": "a7b8c9d0-e1f2-3456-abcd-789012345678",
@@ -772,7 +773,7 @@ def seed_database():
                 "office_location": "Chicago",
                 "mobile_phone": "+1-312-555-0707",
                 "account_enabled": True,
-                "created_at": datetime.utcnow()
+                "created_at": utc_now()
             },
             {
                 "entra_id": "b8c9d0e1-f2a3-4567-bcde-890123456789",
@@ -786,7 +787,7 @@ def seed_database():
                 "office_location": "Austin",
                 "mobile_phone": "+1-512-555-0808",
                 "account_enabled": False,  # Disabled account
-                "created_at": datetime.utcnow()
+                "created_at": utc_now()
             },
         ]
 
@@ -1205,7 +1206,7 @@ def seed_database():
                     name=tax_data["name"],
                     description=tax_data["description"],
                     is_system=tax_data["is_system"],
-                    created_at=datetime.utcnow()
+                    created_at=utc_now()
                 )
                 db.add(taxonomy)
                 db.commit()
@@ -1220,7 +1221,7 @@ def seed_database():
                         description=val_data["description"],
                         sort_order=val_data["sort_order"],
                         is_active=True,
-                        created_at=datetime.utcnow()
+                        created_at=utc_now()
                     )
                     db.add(value)
                 print(
@@ -1241,7 +1242,7 @@ def seed_database():
                             description=val_data["description"],
                             sort_order=val_data["sort_order"],
                             is_active=True,
-                            created_at=datetime.utcnow()
+                            created_at=utc_now()
                         )
                         db.add(value)
                         added_count += 1
@@ -1277,8 +1278,8 @@ def seed_database():
                 begin_work_days=5,
                 complete_work_days=80,
                 approval_days=10,
-                created_at=datetime.utcnow(),
-                updated_at=datetime.utcnow()
+                created_at=utc_now(),
+                updated_at=utc_now()
             )
             db.add(sla_config)
             db.commit()
@@ -1338,8 +1339,8 @@ def seed_database():
                             grace_period_months=policy_config["grace_period_months"],
                             model_change_lead_time_days=policy_config["model_change_lead_time_days"],
                             description=policy_config["description"],
-                            created_at=datetime.utcnow(),
-                            updated_at=datetime.utcnow()
+                            created_at=utc_now(),
+                            updated_at=utc_now()
                         )
                         db.add(policy)
                         print(
@@ -1397,7 +1398,7 @@ def seed_database():
                     status="Active",
                     owner_id=admin.user_id,
                     risk_tier_id=tier_2.value_id,
-                    created_at=datetime.utcnow()
+                    created_at=utc_now()
                 )
                 db.add(model_a)
                 db.flush()
@@ -1445,7 +1446,7 @@ def seed_database():
                     status="Active",
                     owner_id=admin.user_id,
                     risk_tier_id=tier_2.value_id,
-                    created_at=datetime.utcnow()
+                    created_at=utc_now()
                 )
                 db.add(model_b)
                 db.flush()
@@ -1493,7 +1494,7 @@ def seed_database():
                     status="Active",
                     owner_id=admin.user_id,
                     risk_tier_id=tier_2.value_id,
-                    created_at=datetime.utcnow()
+                    created_at=utc_now()
                 )
                 db.add(model_c)
                 db.flush()
@@ -1541,7 +1542,7 @@ def seed_database():
                     status="Active",
                     owner_id=admin.user_id,
                     risk_tier_id=tier_3.value_id,
-                    created_at=datetime.utcnow()
+                    created_at=utc_now()
                 )
                 db.add(model_d)
                 print("✓ Created 'Demo: Never Validated' (no validation history)")
@@ -1557,7 +1558,7 @@ def seed_database():
                     status="Active",
                     owner_id=admin.user_id,
                     risk_tier_id=tier_2.value_id,
-                    created_at=datetime.utcnow()
+                    created_at=utc_now()
                 )
                 db.add(model_e)
                 db.flush()
@@ -1829,8 +1830,8 @@ def seed_map_applications(db):
             criticality_tier=app_data["criticality_tier"],
             status=app_data["status"],
             external_url=app_data["external_url"],
-            created_at=datetime.utcnow(),
-            updated_at=datetime.utcnow()
+            created_at=utc_now(),
+            updated_at=utc_now()
         )
         db.add(app)
 

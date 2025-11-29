@@ -4,12 +4,13 @@ import requests
 from datetime import datetime, timedelta
 from jose import jwt
 import os
+from app.core.time import utc_now
 
 # Generate token using same secret as API
 SECRET_KEY = os.getenv('SECRET_KEY', 'your-secret-key-keep-this-very-secret-in-production')
 token_data = {
     'sub': 'admin@example.com',
-    'exp': datetime.utcnow() + timedelta(days=1)
+    'exp': utc_now() + timedelta(days=1)
 }
 token = jwt.encode(token_data, SECRET_KEY, algorithm='HS256')
 

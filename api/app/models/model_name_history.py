@@ -3,6 +3,7 @@ from datetime import datetime
 from sqlalchemy import Integer, String, DateTime, ForeignKey, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.models.base import Base
+from app.core.time import utc_now
 
 
 class ModelNameHistory(Base):
@@ -19,7 +20,7 @@ class ModelNameHistory(Base):
         Integer, ForeignKey("users.user_id", ondelete="SET NULL"), nullable=True
     )
     changed_at: Mapped[datetime] = mapped_column(
-        DateTime, default=datetime.utcnow, nullable=False, index=True
+        DateTime, default=utc_now, nullable=False, index=True
     )
     change_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
 

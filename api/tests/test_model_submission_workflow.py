@@ -1,6 +1,7 @@
 import pytest
 from datetime import datetime
 from app.models.model import Model, ModelStatus
+from app.core.time import utc_now
 from app.models.model_submission_comment import ModelSubmissionComment
 
 
@@ -58,7 +59,7 @@ def test_user_can_edit_pending_model(client, auth_headers, test_user, db_session
         status="In Development",
         row_approval_status="pending",
         submitted_by_user_id=test_user.user_id,
-        submitted_at=datetime.utcnow()
+        submitted_at=utc_now()
     )
     db_session.add(model)
     db_session.commit()
@@ -115,6 +116,88 @@ def test_user_edit_approved_model_creates_pending_edit(client, auth_headers, tes
     # Verify the model was NOT actually updated
     db_session.refresh(model)
     assert model.description == "Original description"
+
+
+def test_non_admin_cannot_approve_pending_edit(client, auth_headers, admin_headers, test_user, db_session):
+    """Test that non-admin users cannot approve pending edits (403)."""
+    from app.models.model_pending_edit import ModelPendingEdit
+
+    # Create an approved model
+    model = Model(
+        model_name="Approved Model",
+        description="Original description",
+        development_type="In-House",
+        owner_id=test_user.user_id,
+        status="In Development",
+        row_approval_status=None,  # Approved
+    )
+    db_session.add(model)
+    db_session.commit()
+
+    # Create a pending edit
+    pending_edit = ModelPendingEdit(
+        model_id=model.model_id,
+        requested_by_id=test_user.user_id,
+        proposed_changes={"description": "New description"},
+        original_values={"description": "Original description"},
+        status="pending"
+    )
+    db_session.add(pending_edit)
+    db_session.commit()
+
+    # Try to approve as non-admin - should get 403
+    response = client.post(
+        f"/models/{model.model_id}/pending-edits/{pending_edit.pending_edit_id}/approve",
+        headers=auth_headers,
+        json={"comment": "Trying to approve"}
+    )
+    assert response.status_code == 403
+    assert "admin" in response.json()["detail"].lower()
+
+    # Verify pending edit is still pending
+    db_session.refresh(pending_edit)
+    assert pending_edit.status == "pending"
+
+
+def test_non_admin_cannot_reject_pending_edit(client, auth_headers, admin_headers, test_user, db_session):
+    """Test that non-admin users cannot reject pending edits (403)."""
+    from app.models.model_pending_edit import ModelPendingEdit
+
+    # Create an approved model
+    model = Model(
+        model_name="Approved Model for Reject Test",
+        description="Original description",
+        development_type="In-House",
+        owner_id=test_user.user_id,
+        status="In Development",
+        row_approval_status=None,  # Approved
+    )
+    db_session.add(model)
+    db_session.commit()
+
+    # Create a pending edit
+    pending_edit = ModelPendingEdit(
+        model_id=model.model_id,
+        requested_by_id=test_user.user_id,
+        proposed_changes={"description": "New description"},
+        original_values={"description": "Original description"},
+        status="pending"
+    )
+    db_session.add(pending_edit)
+    db_session.commit()
+
+    # Try to reject as non-admin - should get 403
+    response = client.post(
+        f"/models/{model.model_id}/pending-edits/{pending_edit.pending_edit_id}/reject",
+        headers=auth_headers,
+        json={"comment": "Trying to reject"}
+    )
+    assert response.status_code == 403
+    assert "admin" in response.json()["detail"].lower()
+
+    # Verify pending edit is still pending
+    db_session.refresh(pending_edit)
+    assert pending_edit.status == "pending"
 
 
 def test_admin_approve_model(client, admin_headers, test_user, db_session):
@@ -188,8 +271,8 @@ def test_rls_user_sees_own_pending_submissions(client, auth_headers, test_user, 
         owner_id=test_user.user_id,
         row_approval_status="pending",
         submitted_by_user_id=test_user.user_id,
-        created_at=datetime.utcnow(),
-        updated_at=datetime.utcnow()
+        created_at=utc_now(),
+        updated_at=utc_now()
     )
     # Model 2: Pending, submitted by second_user
     model2 = Model(
@@ -197,8 +280,8 @@ def test_rls_user_sees_own_pending_submissions(client, auth_headers, test_user, 
         owner_id=second_user.user_id,
         row_approval_status="pending",
         submitted_by_user_id=second_user.user_id,
-        created_at=datetime.utcnow(),
-        updated_at=datetime.utcnow()
+        created_at=utc_now(),
+        updated_at=utc_now()
     )
     db_session.add_all([model1, model2])
     db_session.commit()

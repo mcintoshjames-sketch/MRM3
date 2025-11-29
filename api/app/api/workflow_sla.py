@@ -3,6 +3,7 @@ from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from app.core.database import get_db
+from app.core.time import utc_now
 from app.core.deps import get_current_user
 from app.models.user import User
 from app.models.validation import ValidationWorkflowSLA
@@ -102,7 +103,7 @@ def update_validation_sla(
         }
         sla.approval_days = sla_data.approval_days
 
-    sla.updated_at = datetime.utcnow()
+    sla.updated_at = utc_now()
 
     # Create audit log if changes were made
     if changes:

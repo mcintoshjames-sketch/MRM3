@@ -3,6 +3,7 @@ from datetime import datetime
 from sqlalchemy import String, Text, Integer, Boolean, DateTime, ForeignKey
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.models.base import Base
+from app.core.time import utc_now
 
 
 class Taxonomy(Base):
@@ -13,7 +14,7 @@ class Taxonomy(Base):
     name: Mapped[str] = mapped_column(String(100), unique=True, nullable=False)
     description: Mapped[str] = mapped_column(Text, nullable=True)
     is_system: Mapped[bool] = mapped_column(Boolean, default=False)  # System taxonomies can't be deleted
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
 
     # Relationship to values (ordered by sort_order)
     values: Mapped[list["TaxonomyValue"]] = relationship(
@@ -33,7 +34,7 @@ class TaxonomyValue(Base):
     description: Mapped[str] = mapped_column(Text, nullable=True)
     sort_order: Mapped[int] = mapped_column(Integer, default=0)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
 
     # Relationship back to taxonomy
     taxonomy: Mapped["Taxonomy"] = relationship("Taxonomy", back_populates="values")

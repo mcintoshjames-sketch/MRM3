@@ -3,6 +3,7 @@ from typing import List
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session, joinedload
 from app.core.database import get_db
+from app.core.time import utc_now
 from app.core.deps import get_current_user
 from app.models.user import User, UserRole
 from app.models.validation import ValidationPolicy
@@ -71,8 +72,8 @@ def create_validation_policy(
         grace_period_months=policy_data.grace_period_months,
         model_change_lead_time_days=policy_data.model_change_lead_time_days,
         description=policy_data.description,
-        created_at=datetime.utcnow(),
-        updated_at=datetime.utcnow()
+        created_at=utc_now(),
+        updated_at=utc_now()
     )
 
     db.add(policy)
@@ -153,7 +154,7 @@ def update_validation_policy(
         }
         policy.description = policy_data.description
 
-    policy.updated_at = datetime.utcnow()
+    policy.updated_at = utc_now()
 
     # Create audit log if changes were made
     if changes:

@@ -80,6 +80,7 @@ Model Risk Management inventory system with a FastAPI backend, React/TypeScript 
 ## Data Model (conceptual)
 - User & EntraUser directory entries; roles drive permissions.
 - Model with vendor, owner/developer, taxonomy links (risk tier, model type, etc.), regulatory categories, delegates, and region assignments via ModelRegion. **Note**: Validation Type is associated with ValidationRequest, not Model (deprecated from Model UI).
+- **ModelPendingEdit**: Edit approval workflow for approved models. When non-admin users edit an already-approved model, a pending edit record is created with `proposed_changes` and `original_values` (JSON). Admin reviews the changes via dashboard widget or model details page and can approve (applies changes) or reject (with comment). Includes `requested_by_id`, `reviewed_by_id`, `status` (pending/approved/rejected), `review_comment`, and timestamps.
 - **Model Types**: Hierarchical classification with Categories (e.g., "Financial", "Operational") and Types (e.g., "Credit Risk", "Fraud Detection").
 - **Model Relationships** (Admin-managed with full audit logging):
   - **ModelHierarchy**: Parent-child relationships (e.g., sub-models) with relation type taxonomy, effective/end dates, and notes. Prevents self-reference via database constraints.

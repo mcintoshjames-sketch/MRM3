@@ -12,6 +12,7 @@ import tempfile
 import os
 
 from app.core.database import get_db
+from app.core.time import utc_now
 from app.core.deps import get_current_user
 from app.core.rule_evaluation import get_required_approver_roles
 from app.models import (
@@ -413,7 +414,7 @@ def create_status_history_entry(
         new_status_id=new_status_id,
         changed_by_id=changed_by_id,
         change_reason=change_reason,
-        changed_at=datetime.utcnow()
+        changed_at=utc_now()
     )
     db.add(history)
 
@@ -515,11 +516,11 @@ def calculate_days_in_status(request: ValidationRequest) -> int:
     )
 
     if latest_history:
-        delta = datetime.utcnow() - latest_history.changed_at
+        delta = utc_now() - latest_history.changed_at
         return delta.days
     else:
         # If no history, use creation date
-        delta = datetime.utcnow() - request.created_at
+        delta = utc_now() - request.created_at
         return delta.days
 
 
@@ -562,7 +563,7 @@ def update_grouping_memory(db: Session, validation_request: ValidationRequest, m
             existing_memory.last_validation_request_id = validation_request.request_id
             existing_memory.grouped_model_ids = json.dumps(other_model_ids)
             existing_memory.is_regular_validation = True
-            existing_memory.updated_at = datetime.utcnow()
+            existing_memory.updated_at = utc_now()
         else:
             # Create new record
             new_memory = ValidationGroupingMemory(
@@ -570,7 +571,7 @@ def update_grouping_memory(db: Session, validation_request: ValidationRequest, m
                 last_validation_request_id=validation_request.request_id,
                 grouped_model_ids=json.dumps(other_model_ids),
                 is_regular_validation=True,
-                updated_at=datetime.utcnow()
+                updated_at=utc_now()
             )
             db.add(new_memory)
 
@@ -689,7 +690,7 @@ def auto_assign_approvers(
                         is_required=True,
                         approval_status="Pending",
                         represented_region_id=wholly_owned_region_id,  # Snapshot region context
-                        created_at=datetime.utcnow()
+                        created_at=utc_now()
                     ))
                     assigned_approver_ids.add(approver.user_id)
         else:
@@ -711,7 +712,7 @@ def auto_assign_approvers(
                         is_required=True,
                         approval_status="Pending",
                         represented_region_id=None,  # Global approver - no specific region
-                        created_at=datetime.utcnow()
+                        created_at=utc_now()
                     ))
                     assigned_approver_ids.add(approver.user_id)
 
@@ -738,7 +739,7 @@ def auto_assign_approvers(
                                 is_required=True,
                                 approval_status="Pending",
                                 represented_region_id=region_id,  # Snapshot region context
-                                created_at=datetime.utcnow()
+                                created_at=utc_now()
                             ))
                             assigned_approver_ids.add(approver.user_id)
 
@@ -762,7 +763,7 @@ def auto_assign_approvers(
                 "approvers": approver_info,
                 "assignment_type": "Automatic"
             },
-            timestamp=datetime.utcnow()
+            timestamp=utc_now()
         )
         db.add(audit_log)
 
@@ -812,7 +813,7 @@ def evaluate_and_create_conditional_approvals(
             approval_status="Pending",
             is_required=True,
             comments=f"Additional approval required from {required_role['role_name']}",
-            created_at=datetime.utcnow()
+            created_at=utc_now()
         )
         db.add(approval)
 
@@ -1147,8 +1148,8 @@ def create_validation_request(
         current_status_id=intake_status.value_id,
         prior_validation_request_id=prior_validation_id,
         prior_full_validation_request_id=prior_full_validation_id,
-        created_at=datetime.utcnow(),
-        updated_at=datetime.utcnow()
+        created_at=utc_now(),
+        updated_at=utc_now()
     )
     db.add(validation_request)
     db.flush()
@@ -1211,7 +1212,7 @@ def create_validation_request(
             "priority": priority.label,
             "status": "Intake"
         },
-        timestamp=datetime.utcnow()
+        timestamp=utc_now()
     )
     db.add(audit_log)
 
@@ -1486,7 +1487,7 @@ def update_validation_request(
             changes[field] = {"old": str(old_value), "new": str(new_value)}
 
     if changes:
-        validation_request.updated_at = datetime.utcnow()
+        validation_request.updated_at = utc_now()
 
         audit_log = AuditLog(
             entity_type="ValidationRequest",
@@ -1494,7 +1495,7 @@ def update_validation_request(
             action="UPDATE",
             user_id=current_user.user_id,
             changes=changes,
-            timestamp=datetime.utcnow()
+            timestamp=utc_now()
         )
         db.add(audit_log)
 
@@ -1570,11 +1571,11 @@ def mark_submission_received(
                 new_status_id=in_progress_status.value_id,
                 changed_by_id=current_user.user_id,
                 change_reason=f"Auto-transitioned when submission received on {submission_data.submission_received_date}",
-                changed_at=datetime.utcnow()
+                changed_at=utc_now()
             )
             db.add(status_history)
 
-    validation_request.updated_at = datetime.utcnow()
+    validation_request.updated_at = utc_now()
 
     # Create audit log
     changes = {
@@ -1600,7 +1601,7 @@ def mark_submission_received(
         action="MARK_SUBMISSION_RECEIVED",
         user_id=current_user.user_id,
         changes=changes,
-        timestamp=datetime.utcnow()
+        timestamp=utc_now()
     )
     db.add(audit_log)
 
@@ -1768,7 +1769,7 @@ def update_validation_request_status(
     # Update status
     old_status_id = validation_request.current_status_id
     validation_request.current_status_id = new_status.value_id
-    validation_request.updated_at = datetime.utcnow()
+    validation_request.updated_at = utc_now()
 
     # Create status history
     create_status_history_entry(
@@ -1787,7 +1788,7 @@ def update_validation_request_status(
             "new_status": new_status.label,
             "reason": status_update.change_reason
         },
-        timestamp=datetime.utcnow()
+        timestamp=utc_now()
     )
     db.add(audit_log)
 
@@ -1807,7 +1808,7 @@ def update_validation_request_status(
 
             if active_config:
                 plan.config_id = active_config.config_id
-                plan.locked_at = datetime.utcnow()
+                plan.locked_at = utc_now()
                 plan.locked_by_user_id = current_user.user_id
 
                 # Audit log for plan lock
@@ -1823,7 +1824,7 @@ def update_validation_request_status(
                         "old_status": old_status.label if old_status else None,
                         "new_status": new_status.label
                     },
-                    timestamp=datetime.utcnow()
+                    timestamp=utc_now()
                 )
                 db.add(plan_lock_audit)
 
@@ -1845,7 +1846,7 @@ def update_validation_request_status(
                     "new_status": new_status.label,
                     "config_id_preserved": plan.config_id  # Still linked to original config
                 },
-                timestamp=datetime.utcnow()
+                timestamp=utc_now()
             )
             db.add(plan_unlock_audit)
 
@@ -1863,8 +1864,8 @@ def update_validation_request_status(
         for approval in conditional_approvals:
             approval.voided_by_id = current_user.user_id
             approval.void_reason = f"Validation sent back to In Progress from Pending Approval: {status_update.change_reason or 'No reason provided'}"
-            approval.voided_at = datetime.utcnow()
-            approval.updated_at = datetime.utcnow()
+            approval.voided_at = utc_now()
+            approval.updated_at = utc_now()
 
             # Create audit log for each voided approval
             void_audit = AuditLog(
@@ -1879,7 +1880,7 @@ def update_validation_request_status(
                     "request_id": request_id,
                     "status_change": f"{old_status.label} → {new_status.label}"
                 },
-                timestamp=datetime.utcnow()
+                timestamp=utc_now()
             )
             db.add(void_audit)
 
@@ -1899,7 +1900,7 @@ def update_validation_request_status(
                         "validation_request_id": request_id,
                         "status_change": f"{old_status.label} → {new_status.label}"
                     },
-                    timestamp=datetime.utcnow()
+                    timestamp=utc_now()
                 )
                 db.add(model_audit)
 
@@ -1960,8 +1961,8 @@ def decline_validation_request(
     validation_request.current_status_id = cancelled_status.value_id
     validation_request.declined_by_id = current_user.user_id
     validation_request.decline_reason = decline_data.decline_reason
-    validation_request.declined_at = datetime.utcnow()
-    validation_request.updated_at = datetime.utcnow()
+    validation_request.declined_at = utc_now()
+    validation_request.updated_at = utc_now()
 
     # Create status history
     create_status_history_entry(
@@ -1981,7 +1982,7 @@ def decline_validation_request(
             "decline_reason": decline_data.decline_reason,
             "declined_by": current_user.full_name
         },
-        timestamp=datetime.utcnow()
+        timestamp=utc_now()
     )
     db.add(audit_log)
 
@@ -2018,7 +2019,7 @@ def delete_validation_request(
         action="DELETE",
         user_id=current_user.user_id,
         changes={"request_id": request_id},
-        timestamp=datetime.utcnow()
+        timestamp=utc_now()
     )
     db.add(audit_log)
 
@@ -2100,7 +2101,7 @@ def create_assignment(
         estimated_hours=assignment_data.estimated_hours,
         actual_hours=0.0,
         independence_attestation=assignment_data.independence_attestation,
-        created_at=datetime.utcnow()
+        created_at=utc_now()
     )
     db.add(assignment)
     db.flush()
@@ -2124,7 +2125,7 @@ def create_assignment(
             "role": role_str,
             "estimated_hours": assignment_data.estimated_hours
         },
-        timestamp=datetime.utcnow()
+        timestamp=utc_now()
     )
     db.add(audit_log)
 
@@ -2139,7 +2140,7 @@ def create_assignment(
         if planning_status:
             old_status_id = validation_request.current_status_id
             validation_request.current_status_id = planning_status.value_id
-            validation_request.updated_at = datetime.utcnow()
+            validation_request.updated_at = utc_now()
 
             # Create status history entry
             create_status_history_entry(
@@ -2163,7 +2164,7 @@ def create_assignment(
                     "new_value": "PLANNING",
                     "reason": "Auto-transitioned when validator assigned"
                 },
-                timestamp=datetime.utcnow()
+                timestamp=utc_now()
             )
             db.add(status_audit)
 
@@ -2254,7 +2255,7 @@ def update_assignment(
                 "validator": assignment.validator.full_name,
                 **changes
             },
-            timestamp=datetime.utcnow()
+            timestamp=utc_now()
         )
         db.add(audit_log)
 
@@ -2314,7 +2315,7 @@ def delete_assignment(
                     "is_primary": {"old": "False", "new": "True"},
                     "reason": "Auto-promoted when previous primary was removed"
                 },
-                timestamp=datetime.utcnow()
+                timestamp=utc_now()
             )
             db.add(audit_log_promotion)
         elif len(remaining_validators) > 1:
@@ -2346,7 +2347,7 @@ def delete_assignment(
                     "is_primary": {"old": "False", "new": "True"},
                     "reason": "Promoted to primary when previous primary was removed"
                 },
-                timestamp=datetime.utcnow()
+                timestamp=utc_now()
             )
             db.add(audit_log_promotion)
 
@@ -2368,7 +2369,7 @@ def delete_assignment(
             "validator": assignment.validator.full_name,
             "role": role_str
         },
-        timestamp=datetime.utcnow()
+        timestamp=utc_now()
     )
     db.add(audit_log)
 
@@ -2418,7 +2419,7 @@ def reviewer_sign_off(
 
     # Perform sign-off
     assignment.reviewer_signed_off = True
-    assignment.reviewer_signed_off_at = datetime.utcnow()
+    assignment.reviewer_signed_off_at = utc_now()
     assignment.reviewer_sign_off_comments = sign_off_data.comments
 
     # Create audit log
@@ -2432,7 +2433,7 @@ def reviewer_sign_off(
             "reviewer": current_user.full_name,
             "comments": sign_off_data.comments
         },
-        timestamp=datetime.utcnow()
+        timestamp=utc_now()
     )
     db.add(audit_log)
 
@@ -2503,7 +2504,7 @@ def reviewer_send_back(
     # Update validation request status to In Progress
     old_status_id = request.current_status_id
     request.current_status_id = in_progress_status.value_id
-    request.updated_at = datetime.utcnow()
+    request.updated_at = utc_now()
 
     # Record status history with reviewer comments
     change_reason = f"Sent back by reviewer {current_user.full_name}"
@@ -2536,7 +2537,7 @@ def reviewer_send_back(
             "old_status": "Review",
             "new_status": "In Progress"
         },
-        timestamp=datetime.utcnow()
+        timestamp=utc_now()
     )
     db.add(audit_log)
 
@@ -2595,8 +2596,8 @@ def create_outcome(
         recommended_review_frequency=outcome_data.recommended_review_frequency,
         effective_date=outcome_data.effective_date,
         expiration_date=outcome_data.expiration_date,
-        created_at=datetime.utcnow(),
-        updated_at=datetime.utcnow()
+        created_at=utc_now(),
+        updated_at=utc_now()
     )
     db.add(outcome)
 
@@ -2610,7 +2611,7 @@ def create_outcome(
             "overall_rating": rating.label,
             "recommended_review_frequency": outcome_data.recommended_review_frequency
         },
-        timestamp=datetime.utcnow()
+        timestamp=utc_now()
     )
     db.add(audit_log)
 
@@ -2660,7 +2661,7 @@ def update_outcome(
             else:
                 changes[field] = value
 
-    outcome.updated_at = datetime.utcnow()
+    outcome.updated_at = utc_now()
 
     # Create audit log if changes were made
     if changes:
@@ -2670,7 +2671,7 @@ def update_outcome(
             action="UPDATE",
             user_id=current_user.user_id,
             changes=changes,
-            timestamp=datetime.utcnow()
+            timestamp=utc_now()
         )
         db.add(audit_log)
 
@@ -2740,9 +2741,9 @@ def create_review_outcome(
         decision=review_data.decision,
         comments=review_data.comments,
         agrees_with_rating=review_data.agrees_with_rating,
-        review_date=datetime.utcnow(),
-        created_at=datetime.utcnow(),
-        updated_at=datetime.utcnow()
+        review_date=utc_now(),
+        created_at=utc_now(),
+        updated_at=utc_now()
     )
     db.add(review_outcome)
 
@@ -2753,7 +2754,7 @@ def create_review_outcome(
             db, "Validation Request Status", "PENDING_APPROVAL")
         old_status_id = validation_request.current_status_id
         validation_request.current_status_id = pending_approval_status.value_id
-        validation_request.updated_at = datetime.utcnow()
+        validation_request.updated_at = utc_now()
 
         # Create status history
         create_status_history_entry(
@@ -2766,7 +2767,7 @@ def create_review_outcome(
             db, "Validation Request Status", "IN_PROGRESS")
         old_status_id = validation_request.current_status_id
         validation_request.current_status_id = in_progress_status.value_id
-        validation_request.updated_at = datetime.utcnow()
+        validation_request.updated_at = utc_now()
 
         # Create status history
         create_status_history_entry(
@@ -2785,7 +2786,7 @@ def create_review_outcome(
             "agrees_with_rating": review_data.agrees_with_rating,
             "comments": review_data.comments
         },
-        timestamp=datetime.utcnow()
+        timestamp=utc_now()
     )
     db.add(audit_log)
 
@@ -2833,7 +2834,7 @@ def update_review_outcome(
             setattr(review_outcome, field, value)
             changes[field] = value
 
-    review_outcome.updated_at = datetime.utcnow()
+    review_outcome.updated_at = utc_now()
 
     # Create audit log if changes were made
     if changes:
@@ -2843,7 +2844,7 @@ def update_review_outcome(
             action="UPDATE",
             user_id=current_user.user_id,
             changes=changes,
-            timestamp=datetime.utcnow()
+            timestamp=utc_now()
         )
         db.add(audit_log)
 
@@ -2896,7 +2897,7 @@ def create_approval_requirement(
         region_id=region_id,
         approval_status="Pending",
         represented_region_id=represented_region_id,
-        created_at=datetime.utcnow()
+        created_at=utc_now()
     )
     db.add(approval)
     db.commit()
@@ -2930,7 +2931,7 @@ def submit_approval(
     approval.comments = update_data.comments
 
     if update_data.approval_status in ["Approved", "Rejected"]:
-        approval.approved_at = datetime.utcnow()
+        approval.approved_at = utc_now()
     elif update_data.approval_status == "Pending":
         # Clear approved_at when withdrawing approval
         approval.approved_at = None
@@ -2960,7 +2961,7 @@ def submit_approval(
                                 "validation_request_id": approval.request_id,
                                 "approval_id": approval_id
                             },
-                            timestamp=datetime.utcnow()
+                            timestamp=utc_now()
                         )
                         db.add(model_audit)
 
@@ -2990,7 +2991,7 @@ def submit_approval(
         action=action,
         user_id=current_user.user_id,
         changes=changes_dict,
-        timestamp=datetime.utcnow()
+        timestamp=utc_now()
     )
     db.add(audit_log)
 
@@ -3040,7 +3041,7 @@ def unlink_regional_approval(
     # Update approval record
     approval.unlinked_by_id = current_user.user_id
     approval.unlink_reason = unlink_data.unlink_reason
-    approval.unlinked_at = datetime.utcnow()
+    approval.unlinked_at = utc_now()
     approval.approval_status = "Removed"
     approval.is_required = False  # No longer required
 
@@ -3056,7 +3057,7 @@ def unlink_regional_approval(
             "unlink_reason": unlink_data.unlink_reason,
             "unlinked_by": current_user.full_name
         },
-        timestamp=datetime.utcnow()
+        timestamp=utc_now()
     )
     db.add(audit_log)
 
@@ -3229,7 +3230,7 @@ def get_sla_violations(
     ).all()
 
     violations = []
-    now = datetime.utcnow()
+    now = utc_now()
 
     for req in requests:
         if not req.models:
@@ -3376,7 +3377,7 @@ def get_pending_validator_assignments(
     ).all()
 
     pending = []
-    now = datetime.utcnow()
+    now = utc_now()
 
     for req in requests:
         # Check if there's a primary validator assigned
@@ -3521,7 +3522,7 @@ def submit_documentation(
             "submission_status": validation_request.submission_status,
             "validation_team_sla_due_date": validation_request.validation_team_sla_due_date.isoformat() if validation_request.validation_team_sla_due_date else None
         },
-        timestamp=datetime.utcnow()
+        timestamp=utc_now()
     )
     db.add(audit_log)
     db.commit()
@@ -4275,7 +4276,7 @@ def update_validation_component_definition(
             action="UPDATE",
             user_id=current_user.user_id,
             changes=changes,
-            timestamp=datetime.utcnow()
+            timestamp=utc_now()
         )
         db.add(audit_log)
         db.commit()
@@ -4710,7 +4711,7 @@ def create_validation_plan(
                 "template_config_id": template_plan.config_id,
                 "template_config_name": template_plan.configuration.config_name if template_plan.configuration else None
             },
-            timestamp=datetime.utcnow()
+            timestamp=utc_now()
         )
         db.add(audit_log)
 
@@ -5380,7 +5381,7 @@ def delete_validation_plan(
             "was_locked": False,
             "reason": "Validation plan deleted before lock-in"
         },
-        timestamp=datetime.utcnow()
+        timestamp=utc_now()
     )
     db.add(audit_log)
 
@@ -5514,7 +5515,7 @@ def publish_new_configuration(
             "component_count": len(components),
             "previous_active_config_id": current_active.config_id if current_active else None
         },
-        timestamp=datetime.utcnow()
+        timestamp=utc_now()
     )
     db.add(audit_log)
     db.commit()
@@ -5781,7 +5782,7 @@ def submit_conditional_approval(
     # Update approval
     approval.approval_status = approval_data.approval_status
     approval.approver_id = current_user.user_id  # Admin who submitted the approval
-    approval.approved_at = datetime.utcnow()
+    approval.approved_at = utc_now()
     approval.approval_evidence = approval_data.approval_evidence
     approval.comments = approval_data.comments
 
@@ -5813,7 +5814,7 @@ def submit_conditional_approval(
             if all_approved:
                 # Update use_approval_date for all models in this validation
                 for model in validation_request.models:
-                    model.use_approval_date = datetime.utcnow()
+                    model.use_approval_date = utc_now()
 
     # Create audit log
     audit_log = AuditLog(
@@ -5826,7 +5827,7 @@ def submit_conditional_approval(
             "approval_status": approval_data.approval_status,
             "approval_evidence": approval_data.approval_evidence
         },
-        timestamp=datetime.utcnow()
+        timestamp=utc_now()
     )
     db.add(audit_log)
 
@@ -5881,8 +5882,8 @@ def void_approval_requirement(
     # Void the approval
     approval.voided_by_id = current_user.user_id
     approval.void_reason = void_data.void_reason
-    approval.voided_at = datetime.utcnow()
-    approval.updated_at = datetime.utcnow()
+    approval.voided_at = utc_now()
+    approval.updated_at = utc_now()
 
     # If model was previously approved, clear the use_approval_date
     # because additional approvals are no longer all complete
@@ -5911,7 +5912,7 @@ def void_approval_requirement(
                         "validation_request_id": approval.request_id,
                         "voided_approval_id": approval_id
                     },
-                    timestamp=datetime.utcnow()
+                    timestamp=utc_now()
                 )
                 db.add(model_audit)
 
@@ -5924,7 +5925,7 @@ def void_approval_requirement(
         changes={
             "void_reason": void_data.void_reason
         },
-        timestamp=datetime.utcnow()
+        timestamp=utc_now()
     )
     db.add(audit_log)
 
@@ -5987,7 +5988,7 @@ def get_pending_conditional_approvals(
                 model_id = model.model_id
 
             # Calculate days pending
-            days_pending = (datetime.utcnow() - approval.created_at).days
+            days_pending = (utc_now() - approval.created_at).days
 
             requests_map[req_id] = {
                 "request_id": req_id,
@@ -6004,7 +6005,7 @@ def get_pending_conditional_approvals(
             "approval_id": approval.approval_id,
             "approver_role_id": approval.approver_role_id,
             "approver_role_name": approval.approver_role_ref.role_name if approval.approver_role_ref else "Unknown",
-            "days_pending": (datetime.utcnow() - approval.created_at).days
+            "days_pending": (utc_now() - approval.created_at).days
         })
 
     # Sort by days pending (oldest first)
@@ -6031,7 +6032,7 @@ def get_recent_approvals(
     """
     from app.models.model_delegate import ModelDelegate
 
-    cutoff_date = datetime.utcnow() - timedelta(days=days_back)
+    cutoff_date = utc_now() - timedelta(days=days_back)
 
     # Query models with recent use_approval_date
     query = db.query(Model).filter(
@@ -6093,7 +6094,7 @@ def get_recent_approvals(
             "use_approval_date": model.use_approval_date.isoformat() if model.use_approval_date else None,
             "validation_request_id": validation_req.request_id if validation_req else None,
             "validation_type": validation_req.validation_type.label if validation_req and validation_req.validation_type else "Unknown",
-            "days_ago": (datetime.utcnow() - model.use_approval_date).days if model.use_approval_date else None
+            "days_ago": (utc_now() - model.use_approval_date).days if model.use_approval_date else None
         })
 
     return results

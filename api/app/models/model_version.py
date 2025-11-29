@@ -4,6 +4,7 @@ from typing import Optional, List
 from sqlalchemy import String, Integer, Text, DateTime, Date, ForeignKey, Boolean
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.models.base import Base
+from app.core.time import utc_now
 
 
 class ModelVersion(Base):
@@ -25,7 +26,7 @@ class ModelVersion(Base):
         Integer, ForeignKey("users.user_id", ondelete="RESTRICT"), nullable=False
     )
     created_at: Mapped[datetime] = mapped_column(
-        DateTime, nullable=False, default=datetime.utcnow
+        DateTime, nullable=False, default=utc_now
     )
 
     # Point-in-time compliance snapshot

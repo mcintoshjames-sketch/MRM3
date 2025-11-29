@@ -108,6 +108,18 @@ interface PendingModelSubmission {
     row_approval_status: string;
 }
 
+interface PendingModelEdit {
+    pending_edit_id: number;
+    model_id: number;
+    model_name: string;
+    model_owner: { user_id: number; full_name: string; email: string } | null;
+    requested_by: { user_id: number; full_name: string; email: string };
+    requested_at: string;
+    proposed_changes: Record<string, unknown>;
+    original_values: Record<string, unknown>;
+    status: string;
+}
+
 interface PendingAdditionalApproval {
     request_id: number;
     model_id: number;
@@ -148,6 +160,7 @@ export default function AdminDashboardPage() {
     const [overdueValidations, setOverdueValidations] = useState<OverdueValidation[]>([]);
     const [upcomingRevalidations, setUpcomingRevalidations] = useState<UpcomingRevalidation[]>([]);
     const [pendingModelSubmissions, setPendingModelSubmissions] = useState<PendingModelSubmission[]>([]);
+    const [pendingModelEdits, setPendingModelEdits] = useState<PendingModelEdit[]>([]);
     const [pendingAdditionalApprovals, setPendingAdditionalApprovals] = useState<PendingAdditionalApproval[]>([]);
     const [myOverdueItems, setMyOverdueItems] = useState<MyOverdueItem[]>([]);
     const [overdueMonitoringCycles, setOverdueMonitoringCycles] = useState<OverdueMonitoringCycle[]>([]);
@@ -173,6 +186,7 @@ export default function AdminDashboardPage() {
                 overdueValidationsRes,
                 upcomingRevalidationsRes,
                 pendingModelsRes,
+                pendingEditsRes,
                 conditionalApprovalsRes,
                 myOverdueRes,
                 monitoringOverviewRes
@@ -184,6 +198,7 @@ export default function AdminDashboardPage() {
                 api.get('/validation-workflow/dashboard/overdue-validations'),
                 api.get('/validation-workflow/dashboard/upcoming-revalidations?days_ahead=90'),
                 api.get('/models/pending-submissions'),
+                api.get('/models/pending-edits/all'),
                 api.get('/validation-workflow/dashboard/pending-additional-approvals'),
                 overdueCommentaryApi.getMyOverdueItems(),
                 api.get('/monitoring/admin-overview')
@@ -195,6 +210,7 @@ export default function AdminDashboardPage() {
             setOverdueValidations(overdueValidationsRes.data);
             setUpcomingRevalidations(upcomingRevalidationsRes.data);
             setPendingModelSubmissions(pendingModelsRes.data);
+            setPendingModelEdits(pendingEditsRes.data);
             setPendingAdditionalApprovals(conditionalApprovalsRes.data);
             setMyOverdueItems(myOverdueRes);
             // Filter monitoring cycles for overdue ones only
@@ -347,6 +363,72 @@ export default function AdminDashboardPage() {
                             >
                                 View all {pendingModelSubmissions.length} pending records &rarr;
                             </Link>
+                        </div>
+                    )}
+                </div>
+            )}
+
+            {/* Pending Model Edits Widget */}
+            {pendingModelEdits.length > 0 && (
+                <div className="bg-white p-4 rounded-lg shadow mb-6">
+                    <div className="flex items-center gap-2 mb-3 pb-2 border-b">
+                        <svg className="w-4 h-4 text-amber-500" fill="currentColor" viewBox="0 0 20 20">
+                            <path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L3 14.172V17h2.828l8.38-8.379-2.83-2.828z" />
+                        </svg>
+                        <h3 className="text-sm font-semibold text-gray-700">Model Changes Awaiting Approval</h3>
+                        <span className="text-xs text-gray-500 ml-auto">{pendingModelEdits.length} pending</span>
+                    </div>
+                    <div className="space-y-2 max-h-64 overflow-y-auto">
+                        {pendingModelEdits.slice(0, 5).map((edit) => (
+                            <div
+                                key={edit.pending_edit_id}
+                                className="border-l-3 pl-3 py-2 hover:bg-gray-50 rounded-r"
+                                style={{
+                                    borderLeftWidth: '3px',
+                                    borderLeftColor: '#f59e0b'
+                                }}
+                            >
+                                <div className="flex items-start justify-between gap-2">
+                                    <div className="flex-1 min-w-0">
+                                        <div className="flex items-center gap-2 mb-1">
+                                            <span className="px-1.5 py-0.5 text-xs font-medium rounded bg-amber-100 text-amber-700">
+                                                Edit Request
+                                            </span>
+                                            <span className="text-xs text-gray-400">
+                                                {formatTimeAgo(edit.requested_at)}
+                                            </span>
+                                        </div>
+                                        <Link
+                                            to={`/models/${edit.model_id}`}
+                                            className="text-sm font-medium text-gray-800 hover:text-blue-600 truncate block"
+                                        >
+                                            {edit.model_name}
+                                        </Link>
+                                        <p className="text-xs text-gray-600 mt-0.5">
+                                            Requested by: {edit.requested_by.full_name}
+                                            {edit.model_owner && ` • Owner: ${edit.model_owner.full_name}`}
+                                        </p>
+                                        <p className="text-xs text-gray-500 mt-0.5">
+                                            Fields to change: {Object.keys(edit.proposed_changes).join(', ')}
+                                        </p>
+                                    </div>
+                                    <div className="flex-shrink-0">
+                                        <Link
+                                            to={`/models/${edit.model_id}?reviewEdit=${edit.pending_edit_id}`}
+                                            className="inline-flex items-center px-3 py-1.5 text-xs font-medium text-white bg-amber-600 hover:bg-amber-700 rounded transition-colors"
+                                        >
+                                            Review
+                                        </Link>
+                                    </div>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                    {pendingModelEdits.length > 5 && (
+                        <div className="mt-3 pt-2 border-t text-center">
+                            <span className="text-xs text-gray-500">
+                                Showing 5 of {pendingModelEdits.length} pending model edits
+                            </span>
                         </div>
                     )}
                 </div>

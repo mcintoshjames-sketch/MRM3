@@ -1,6 +1,7 @@
 import pytest
 from datetime import datetime
 from app.models.model import Model
+from app.core.time import utc_now
 from app.models.model_delegate import ModelDelegate
 from app.core.rls import apply_model_rls, can_access_model
 from app.models.validation import ValidationRequest, ValidationRequestModelVersion
@@ -154,7 +155,7 @@ def test_user_can_see_delegated_models(db_session, test_user, second_user):
         model_id=model.model_id,
         user_id=test_user.user_id,
         delegated_by_id=second_user.user_id,
-        delegated_at=datetime.utcnow()
+        delegated_at=utc_now()
     )
     db_session.add(delegate)
     db_session.commit()
@@ -189,8 +190,8 @@ def test_user_cannot_see_revoked_delegated_models(db_session, test_user, second_
         model_id=model.model_id,
         user_id=test_user.user_id,
         delegated_by_id=second_user.user_id,
-        delegated_at=datetime.utcnow(),
-        revoked_at=datetime.utcnow(),
+        delegated_at=utc_now(),
+        revoked_at=utc_now(),
         revoked_by_id=second_user.user_id
     )
     db_session.add(delegate)
@@ -222,16 +223,16 @@ def test_user_can_see_validation_requests_for_accessible_models(db_session, test
 
     # Create validation request for this model
     val_req = ValidationRequest(
-        request_date=datetime.utcnow().date(),
+        request_date=utc_now().date(),
         requestor_id=test_user.user_id,
         validation_type_id=taxonomy_values["initial"].value_id,
         # Using tier1 as priority for simplicity
         priority_id=taxonomy_values["tier1"].value_id,
         # Using initial as status for simplicity
         current_status_id=taxonomy_values["initial"].value_id,
-        target_completion_date=datetime.utcnow().date(),
-        created_at=datetime.utcnow(),
-        updated_at=datetime.utcnow()
+        target_completion_date=utc_now().date(),
+        created_at=utc_now(),
+        updated_at=utc_now()
     )
     db_session.add(val_req)
     db_session.flush()
@@ -272,14 +273,14 @@ def test_user_cannot_see_validation_requests_for_inaccessible_models(db_session,
 
     # Create validation request for this model
     val_req = ValidationRequest(
-        request_date=datetime.utcnow().date(),
+        request_date=utc_now().date(),
         requestor_id=second_user.user_id,
         validation_type_id=taxonomy_values["initial"].value_id,
         priority_id=taxonomy_values["tier1"].value_id,
         current_status_id=taxonomy_values["initial"].value_id,
-        target_completion_date=datetime.utcnow().date(),
-        created_at=datetime.utcnow(),
-        updated_at=datetime.utcnow()
+        target_completion_date=utc_now().date(),
+        created_at=utc_now(),
+        updated_at=utc_now()
     )
     db_session.add(val_req)
     db_session.flush()

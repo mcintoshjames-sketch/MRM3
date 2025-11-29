@@ -4,6 +4,7 @@ from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session, joinedload
 from app.core.database import get_db
+from app.core.time import utc_now
 from app.core.deps import get_current_user
 from app.models.user import User
 from app.models.model import Model
@@ -102,7 +103,7 @@ def create_delegate(
             existing.can_submit_changes = delegate_data.can_submit_changes
             existing.can_manage_regional = delegate_data.can_manage_regional
             existing.delegated_by_id = current_user.user_id
-            existing.delegated_at = datetime.utcnow()
+            existing.delegated_at = utc_now()
             existing.revoked_at = None
             existing.revoked_by_id = None
 
@@ -130,7 +131,7 @@ def create_delegate(
         can_submit_changes=delegate_data.can_submit_changes,
         can_manage_regional=delegate_data.can_manage_regional,
         delegated_by_id=current_user.user_id,
-        delegated_at=datetime.utcnow()
+        delegated_at=utc_now()
     )
 
     db.add(new_delegate)
@@ -278,7 +279,7 @@ def revoke_delegate(
         )
 
     # Revoke delegation
-    delegate.revoked_at = datetime.utcnow()
+    delegate.revoked_at = utc_now()
     delegate.revoked_by_id = current_user.user_id
 
     create_audit_log(
@@ -408,7 +409,7 @@ def batch_add_delegates(
             ).all()
 
             for other_delegate in other_delegates:
-                other_delegate.revoked_at = datetime.utcnow()
+                other_delegate.revoked_at = utc_now()
                 other_delegate.revoked_by_id = current_user.user_id
                 delegations_revoked += 1
 
@@ -430,7 +431,7 @@ def batch_add_delegates(
                 existing.can_submit_changes = batch_request.can_submit_changes
                 existing.can_manage_regional = batch_request.can_manage_regional
                 existing.delegated_by_id = current_user.user_id
-                existing.delegated_at = datetime.utcnow()
+                existing.delegated_at = utc_now()
                 existing.revoked_at = None
                 existing.revoked_by_id = None
                 delegations_created += 1
@@ -443,7 +444,7 @@ def batch_add_delegates(
                 can_submit_changes=batch_request.can_submit_changes,
                 can_manage_regional=batch_request.can_manage_regional,
                 delegated_by_id=current_user.user_id,
-                delegated_at=datetime.utcnow()
+                delegated_at=utc_now()
             )
             db.add(new_delegate)
             delegations_created += 1
