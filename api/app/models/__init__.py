@@ -65,6 +65,15 @@ from app.models.monitoring import (
     MonitoringCycleApproval,
     MonitoringResult,
 )
+from app.models.recommendation import (
+    Recommendation,
+    ActionPlanTask,
+    RecommendationRebuttal,
+    ClosureEvidence,
+    RecommendationStatusHistory,
+    RecommendationApproval,
+    RecommendationPriorityConfig,
+)
 
 __all__ = [
     "User", "UserRole", "user_regions",
@@ -147,4 +156,12 @@ __all__ = [
     "MonitoringCycle",
     "MonitoringCycleApproval",
     "MonitoringResult",
+    # Recommendations
+    "Recommendation",
+    "ActionPlanTask",
+    "RecommendationRebuttal",
+    "ClosureEvidence",
+    "RecommendationStatusHistory",
+    "RecommendationApproval",
+    "RecommendationPriorityConfig",
 ]

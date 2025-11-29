@@ -184,3 +184,9 @@ class Model(Base):
         "ModelPendingEdit", back_populates="model", cascade="all, delete-orphan",
         order_by="desc(ModelPendingEdit.requested_at)"
     )
+
+    # Recommendations (issues) identified during validation
+    recommendations: Mapped[List["Recommendation"]] = relationship(
+        "Recommendation", back_populates="model", cascade="all, delete-orphan",
+        order_by="desc(Recommendation.created_at)"
+    )
