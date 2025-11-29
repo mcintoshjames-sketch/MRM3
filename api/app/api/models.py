@@ -19,6 +19,7 @@ from app.models.model_version import ModelVersion
 from app.models.model_region import ModelRegion
 from app.models.validation_grouping import ValidationGroupingMemory
 from app.models.model_hierarchy import ModelHierarchy
+from app.models.monitoring import MonitoringCycle, MonitoringCycleApproval, MonitoringPlan, monitoring_plan_models
 from app.schemas.model import (
     ModelCreate, ModelUpdate, ModelDetailResponse, ValidationGroupingSuggestion, ModelCreateResponse,
     ModelNameHistoryItem, ModelNameHistoryResponse, NameChangeStatistics
@@ -1529,6 +1530,7 @@ def get_model_activity_timeline(
     - Comments added
     - Deployment tasks confirmed
     - Decommissioning requests/reviews/approvals
+    - Monitoring cycles (created/submitted/completed/approvals)
     """
     from app.core.rls import can_access_model
     from app.models.model_delegate import ModelDelegate
@@ -1869,6 +1871,85 @@ def get_model_activity_timeline(
                     entity_type="DecommissioningApproval",
                     entity_id=approval.approval_id,
                     icon="✅" if approval.is_approved else "❌"
+                ))
+
+    # 9. Monitoring cycles (performance monitoring)
+    # Find monitoring plans that include this model
+    monitoring_cycles = db.query(MonitoringCycle).options(
+        joinedload(MonitoringCycle.plan),
+        joinedload(MonitoringCycle.submitted_by),
+        joinedload(MonitoringCycle.completed_by),
+        joinedload(MonitoringCycle.approvals).joinedload(MonitoringCycleApproval.approver),
+        joinedload(MonitoringCycle.approvals).joinedload(MonitoringCycleApproval.region)
+    ).join(
+        MonitoringPlan, MonitoringCycle.plan_id == MonitoringPlan.plan_id
+    ).join(
+        monitoring_plan_models,
+        MonitoringPlan.plan_id == monitoring_plan_models.c.plan_id
+    ).filter(
+        monitoring_plan_models.c.model_id == model_id
+    ).all()
+
+    for cycle in monitoring_cycles:
+        plan_name = cycle.plan.name if cycle.plan else "Unknown Plan"
+        period_text = f"{cycle.period_start_date} to {cycle.period_end_date}"
+
+        # Cycle created
+        activities.append(ActivityTimelineItem(
+            timestamp=cycle.created_at,
+            activity_type="monitoring_cycle_created",
+            title=f"Monitoring cycle started: {plan_name}",
+            description=f"Period: {period_text}",
+            user_name=None,
+            user_id=None,
+            entity_type="MonitoringCycle",
+            entity_id=cycle.cycle_id,
+            icon="📊"
+        ))
+
+        # Cycle submitted (if submitted)
+        if cycle.submitted_at:
+            activities.append(ActivityTimelineItem(
+                timestamp=cycle.submitted_at,
+                activity_type="monitoring_cycle_submitted",
+                title=f"Monitoring data submitted: {plan_name}",
+                description=f"Period: {period_text}",
+                user_name=cycle.submitted_by.full_name if cycle.submitted_by else None,
+                user_id=cycle.submitted_by_user_id,
+                entity_type="MonitoringCycle",
+                entity_id=cycle.cycle_id,
+                icon="📤"
+            ))
+
+        # Cycle completed/approved (if completed)
+        if cycle.completed_at and cycle.status == "APPROVED":
+            activities.append(ActivityTimelineItem(
+                timestamp=cycle.completed_at,
+                activity_type="monitoring_cycle_completed",
+                title=f"Monitoring cycle completed: {plan_name}",
+                description=f"Period: {period_text}",
+                user_name=cycle.completed_by.full_name if cycle.completed_by else None,
+                user_id=cycle.completed_by_user_id,
+                entity_type="MonitoringCycle",
+                entity_id=cycle.cycle_id,
+                icon="✅"
+            ))
+
+        # Individual approvals
+        for approval in cycle.approvals:
+            if approval.approved_at and approval.approval_status in ["Approved", "Rejected"]:
+                region_text = f" ({approval.region.name})" if approval.region else ""
+                approval_status = "approved" if approval.approval_status == "Approved" else "rejected"
+                activities.append(ActivityTimelineItem(
+                    timestamp=approval.approved_at,
+                    activity_type="monitoring_cycle_approval",
+                    title=f"Monitoring {approval.approval_type}{region_text} {approval_status}: {plan_name}",
+                    description=approval.comments,
+                    user_name=approval.approver.full_name if approval.approver else None,
+                    user_id=approval.approver_id,
+                    entity_type="MonitoringCycleApproval",
+                    entity_id=approval.approval_id,
+                    icon="✅" if approval.approval_status == "Approved" else "❌"
                 ))
 
     # Sort all activities by timestamp (newest first)

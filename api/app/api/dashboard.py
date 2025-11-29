@@ -8,6 +8,7 @@ from app.models.user import User
 from app.models.model import Model
 from app.models.model_submission_comment import ModelSubmissionComment
 from app.models.decommissioning import DecommissioningStatusHistory, DecommissioningRequest
+from app.models.monitoring import MonitoringCycle, MonitoringCycleApproval, MonitoringPlan, monitoring_plan_models
 from app.core.rls import apply_model_rls
 
 router = APIRouter()
@@ -21,7 +22,7 @@ def get_news_feed(
     """
     Get news feed for the dashboard.
 
-    Returns recent activity (comments, status changes) for models the user has access to.
+    Returns recent activity (comments, status changes, monitoring cycles) for models the user has access to.
     """
     # Get models user has access to
     models_query = db.query(Model)
@@ -75,6 +76,62 @@ def get_news_feed(
             "model_id": history.request.model_id,
             "created_at": history.changed_at
         })
+
+    # Get recent monitoring cycle completions for accessible models
+    # Query cycles via the monitoring_plan_models association table
+    monitoring_cycles = db.query(MonitoringCycle).options(
+        joinedload(MonitoringCycle.plan).joinedload(MonitoringPlan.models),
+        joinedload(MonitoringCycle.submitted_by),
+        joinedload(MonitoringCycle.completed_by),
+        joinedload(MonitoringCycle.approvals).joinedload(MonitoringCycleApproval.approver),
+        joinedload(MonitoringCycle.approvals).joinedload(MonitoringCycleApproval.region)
+    ).join(
+        MonitoringPlan, MonitoringCycle.plan_id == MonitoringPlan.plan_id
+    ).join(
+        monitoring_plan_models,
+        MonitoringPlan.plan_id == monitoring_plan_models.c.plan_id
+    ).filter(
+        monitoring_plan_models.c.model_id.in_(accessible_model_ids)
+    ).order_by(MonitoringCycle.updated_at.desc()).limit(50).all()
+
+    # Add monitoring activity to feed
+    for cycle in monitoring_cycles:
+        plan_name = cycle.plan.name if cycle.plan else "Unknown Plan"
+        period_text = f"{cycle.period_start_date} to {cycle.period_end_date}"
+
+        # Get model names for context (may be multiple models in a plan)
+        model_names = [m.model_name for m in cycle.plan.models if m.model_id in accessible_model_ids]
+        model_context = model_names[0] if len(model_names) == 1 else f"{len(model_names)} models"
+        first_model_id = next((m.model_id for m in cycle.plan.models if m.model_id in accessible_model_ids), None)
+
+        # Add completed/approved cycles
+        if cycle.status == "APPROVED" and cycle.completed_at:
+            feed.append({
+                "id": f"monitoring_cycle_{cycle.cycle_id}",
+                "type": "monitoring",
+                "action": "completed",
+                "text": f"Monitoring cycle completed: {plan_name} ({period_text})",
+                "user_name": cycle.completed_by.full_name if cycle.completed_by else None,
+                "model_name": model_context,
+                "model_id": first_model_id,
+                "created_at": cycle.completed_at
+            })
+
+        # Add individual approvals
+        for approval in cycle.approvals:
+            if approval.approved_at and approval.approval_status in ["Approved", "Rejected"]:
+                region_text = f" ({approval.region.name})" if approval.region else ""
+                approval_status = "approved" if approval.approval_status == "Approved" else "rejected"
+                feed.append({
+                    "id": f"monitoring_approval_{approval.approval_id}",
+                    "type": "monitoring",
+                    "action": approval_status,
+                    "text": f"Monitoring {approval.approval_type}{region_text} {approval_status}: {plan_name}",
+                    "user_name": approval.approver.full_name if approval.approver else None,
+                    "model_name": model_context,
+                    "model_id": first_model_id,
+                    "created_at": approval.approved_at
+                })
 
     # Sort combined feed by created_at descending and limit to 50
     feed.sort(key=lambda x: x["created_at"], reverse=True)

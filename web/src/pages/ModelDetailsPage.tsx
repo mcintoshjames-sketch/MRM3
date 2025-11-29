@@ -231,6 +231,7 @@ export default function ModelDetailsPage() {
     const [activities, setActivities] = useState<ActivityTimelineItem[]>([]);
     const [activitiesLoading, setActivitiesLoading] = useState(false);
     const [editError, setEditError] = useState<string | null>(null);
+    const [pendingEditSuccess, setPendingEditSuccess] = useState<string | null>(null);
     const [overdueCommentary, setOverdueCommentary] = useState<CurrentOverdueCommentaryResponse | null>(null);
     const [showCommentaryModal, setShowCommentaryModal] = useState(false);
     const [commentaryModalType, setCommentaryModalType] = useState<OverdueType>('PRE_SUBMISSION');
@@ -420,9 +421,12 @@ export default function ModelDetailsPage() {
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         setEditError(null);
+        setPendingEditSuccess(null);
         try {
+            // Exclude 'status' string field - use status_id instead
+            const { status, ...formDataWithoutStatus } = formData;
             const payload = {
-                ...formData,
+                ...formDataWithoutStatus,
                 developer_id: formData.developer_id || null,
                 vendor_id: formData.vendor_id || null,
                 risk_tier_id: formData.risk_tier_id || null,
@@ -431,9 +435,18 @@ export default function ModelDetailsPage() {
                 user_ids: formData.user_ids.length > 0 ? formData.user_ids : [],
                 regulatory_category_ids: formData.regulatory_category_ids.length > 0 ? formData.regulatory_category_ids : []
             };
-            await api.patch(`/models/${id}`, payload);
+            const response = await api.patch(`/models/${id}`, payload);
             setEditing(false);
             setEditError(null);
+
+            // Check if changes were submitted for approval (202 Accepted)
+            if (response.status === 202) {
+                setPendingEditSuccess('Your changes have been submitted for admin approval. You will be notified when they are reviewed.');
+                // Refresh pending edits list
+                const pendingResponse = await api.get(`/models/${id}/pending-edits`);
+                setPendingEdits(pendingResponse.data);
+            }
+
             fetchData();
         } catch (error: any) {
             const errorMessage = error.response?.status === 403
@@ -634,9 +647,103 @@ export default function ModelDetailsPage() {
 
     const formatFieldName = (field: string): string => {
         return field
+            .replace(/_ids$/, ' IDs')
             .replace(/_id$/, '')
             .replace(/_/g, ' ')
-            .replace(/\b\w/g, l => l.toUpperCase());
+            .replace(/\b\w/g, l => l.toUpperCase())
+            .replace(/\bIds\b/g, 'IDs'); // Ensure "IDs" is capitalized correctly
+    };
+
+    // Resolve lookup IDs to human-readable labels for pending edit review
+    const resolveLookupValue = (field: string, value: unknown): string => {
+        if (value == null) return '';
+
+        // Handle array fields (regulatory_category_ids, user_ids)
+        if (Array.isArray(value)) {
+            if (value.length === 0) return '';
+
+            switch (field) {
+                case 'regulatory_category_ids': {
+                    const regCatTax = taxonomies.find(t => t.name === 'Regulatory Category');
+                    if (!regCatTax) return value.join(', ');
+                    const labels = value.map(id => {
+                        const catValue = regCatTax.values.find(v => v.value_id === id);
+                        return catValue ? catValue.label : String(id);
+                    });
+                    return labels.join(', ');
+                }
+                case 'user_ids': {
+                    const names = value.map(id => {
+                        const user = users.find(u => u.user_id === id);
+                        return user ? user.full_name : String(id);
+                    });
+                    return names.join(', ');
+                }
+                default:
+                    return value.join(', ');
+            }
+        }
+
+        const numValue = typeof value === 'number' ? value : parseInt(String(value), 10);
+        if (isNaN(numValue)) return String(value);
+
+        switch (field) {
+            case 'owner_id':
+            case 'developer_id': {
+                const user = users.find(u => u.user_id === numValue);
+                return user ? user.full_name : String(value);
+            }
+            case 'vendor_id': {
+                const vendor = vendors.find(v => v.vendor_id === numValue);
+                return vendor ? vendor.name : String(value);
+            }
+            case 'risk_tier_id': {
+                const riskTierTax = taxonomies.find(t => t.name === 'Model Risk Tier');
+                const tierValue = riskTierTax?.values.find(v => v.value_id === numValue);
+                return tierValue ? tierValue.label : String(value);
+            }
+            case 'validation_type_id': {
+                const valTypeTax = taxonomies.find(t => t.name === 'Validation Type');
+                const typeValue = valTypeTax?.values.find(v => v.value_id === numValue);
+                return typeValue ? typeValue.label : String(value);
+            }
+            case 'status_id': {
+                const statusTax = taxonomies.find(t => t.name === 'Model Status');
+                const statusValue = statusTax?.values.find(v => v.value_id === numValue);
+                return statusValue ? statusValue.label : String(value);
+            }
+            case 'model_type_id': {
+                for (const category of modelTypes) {
+                    const modelType = category.model_types.find(t => t.type_id === numValue);
+                    if (modelType) return modelType.name;
+                }
+                return String(value);
+            }
+            case 'wholly_owned_region_id': {
+                const region = regions.find(r => r.region_id === numValue);
+                return region ? region.name : String(value);
+            }
+            default:
+                return String(value);
+        }
+    };
+
+    // Check if two values are different (for showing "Changed" badge)
+    const valuesAreDifferent = (oldValue: unknown, newValue: unknown): boolean => {
+        // Handle null/undefined
+        if (oldValue == null && newValue == null) return false;
+        if (oldValue == null || newValue == null) return true;
+
+        // Handle arrays
+        if (Array.isArray(oldValue) && Array.isArray(newValue)) {
+            if (oldValue.length !== newValue.length) return true;
+            const sortedOld = [...oldValue].sort();
+            const sortedNew = [...newValue].sort();
+            return sortedOld.some((v, i) => v !== sortedNew[i]);
+        }
+
+        // Simple comparison
+        return oldValue !== newValue;
     };
 
     const getActivityIcon = (activityType: string) => {
@@ -985,6 +1092,36 @@ export default function ModelDetailsPage() {
                 </div>
             )}
 
+            {/* Success Banner for Pending Edit Submission */}
+            {pendingEditSuccess && (
+                <div className="mb-6 p-4 rounded-lg border-l-4 bg-green-50 border-green-500">
+                    <div className="flex items-start justify-between gap-4">
+                        <div className="flex items-start gap-3 flex-1">
+                            <svg className="w-6 h-6 flex-shrink-0 mt-0.5 text-green-600" fill="currentColor" viewBox="0 0 20 20">
+                                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                            </svg>
+                            <div className="flex-1">
+                                <h3 className="text-sm font-semibold text-green-900 mb-1">
+                                    Changes Submitted for Approval
+                                </h3>
+                                <p className="text-sm text-green-800">
+                                    {pendingEditSuccess}
+                                </p>
+                            </div>
+                        </div>
+                        <button
+                            onClick={() => setPendingEditSuccess(null)}
+                            className="text-green-600 hover:text-green-800"
+                            aria-label="Dismiss"
+                        >
+                            <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                                <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
+                            </svg>
+                        </button>
+                    </div>
+                </div>
+            )}
+
             {/* Pending Edits Banner (Admin only) */}
             {user?.role === 'Admin' && pendingEdits.length > 0 && (
                 <div className="mb-6 p-4 rounded-lg border-l-4 bg-amber-50 border-amber-500">
@@ -1002,15 +1139,17 @@ export default function ModelDetailsPage() {
                                 </p>
                             </div>
                         </div>
-                        <button
-                            onClick={() => {
-                                setSelectedPendingEditId(pendingEdits[0].pending_edit_id);
-                                setShowPendingEditReview(true);
-                            }}
-                            className="inline-flex items-center px-4 py-2 text-sm font-medium text-white bg-amber-600 hover:bg-amber-700 rounded transition-colors flex-shrink-0"
-                        >
-                            Review Changes
-                        </button>
+                        {!showPendingEditReview && (
+                            <button
+                                onClick={() => {
+                                    setSelectedPendingEditId(pendingEdits[0].pending_edit_id);
+                                    setShowPendingEditReview(true);
+                                }}
+                                className="inline-flex items-center px-4 py-2 text-sm font-medium text-white bg-amber-600 hover:bg-amber-700 rounded transition-colors flex-shrink-0"
+                            >
+                                Review Changes
+                            </button>
+                        )}
                     </div>
 
                     {/* Pending Edit Review Panel */}
@@ -1048,23 +1187,33 @@ export default function ModelDetailsPage() {
                                                 </tr>
                                             </thead>
                                             <tbody className="divide-y divide-gray-200">
-                                                {Object.entries(edit.proposed_changes).map(([field, newValue]) => (
-                                                    <tr key={field}>
-                                                        <td className="px-4 py-2 text-sm font-medium text-gray-900">
-                                                            {formatFieldName(field)}
-                                                        </td>
-                                                        <td className="px-4 py-2 text-sm text-gray-500">
-                                                            {edit.original_values[field] != null
-                                                                ? String(edit.original_values[field])
-                                                                : <span className="text-gray-400 italic">empty</span>}
-                                                        </td>
-                                                        <td className="px-4 py-2 text-sm text-green-700 font-medium">
-                                                            {newValue != null
-                                                                ? String(newValue)
-                                                                : <span className="text-gray-400 italic">empty</span>}
-                                                        </td>
-                                                    </tr>
-                                                ))}
+                                                {Object.entries(edit.proposed_changes).map(([field, newValue]) => {
+                                                    const isChanged = valuesAreDifferent(edit.original_values[field], newValue);
+                                                    return (
+                                                        <tr key={field} className={isChanged ? 'bg-amber-50/50' : ''}>
+                                                            <td className="px-4 py-2 text-sm font-medium text-gray-900">
+                                                                <div className="flex items-center gap-2">
+                                                                    {formatFieldName(field)}
+                                                                    {isChanged && (
+                                                                        <span className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-amber-100 text-amber-800">
+                                                                            Changed
+                                                                        </span>
+                                                                    )}
+                                                                </div>
+                                                            </td>
+                                                            <td className="px-4 py-2 text-sm text-gray-500">
+                                                                {edit.original_values[field] != null
+                                                                    ? resolveLookupValue(field, edit.original_values[field])
+                                                                    : <span className="text-gray-400 italic">empty</span>}
+                                                            </td>
+                                                            <td className="px-4 py-2 text-sm text-green-700 font-medium">
+                                                                {newValue != null
+                                                                    ? resolveLookupValue(field, newValue)
+                                                                    : <span className="text-gray-400 italic">empty</span>}
+                                                            </td>
+                                                        </tr>
+                                                    );
+                                                })}
                                             </tbody>
                                         </table>
                                     </div>
@@ -1083,7 +1232,12 @@ export default function ModelDetailsPage() {
                                                 rows={3}
                                             />
                                         </div>
-                                        <div className="flex gap-3 justify-end">
+                                        <div className="flex items-center gap-3 justify-end">
+                                            {!pendingEditComment.trim() && (
+                                                <span className="text-sm text-amber-600">
+                                                    Comment required to reject
+                                                </span>
+                                            )}
                                             <button
                                                 onClick={() => {
                                                     setShowPendingEditReview(false);
