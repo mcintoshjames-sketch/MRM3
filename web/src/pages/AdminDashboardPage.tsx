@@ -151,6 +151,25 @@ interface OverdueMonitoringCycle {
     red_count: number;
 }
 
+interface RecommendationsSummary {
+    total_open: number;
+    overdue_count: number;
+    by_status: { status_code: string; status_label: string; count: number }[];
+    by_priority: { priority_code: string; priority_label: string; count: number }[];
+}
+
+interface OverdueRecommendation {
+    recommendation_id: number;
+    recommendation_code: string;
+    title: string;
+    model: { model_id: number; model_name: string };
+    priority: { code: string; label: string };
+    current_status: { code: string; label: string };
+    assigned_to: { full_name: string };
+    current_target_date: string;
+    days_overdue: number;
+}
+
 export default function AdminDashboardPage() {
     const { user } = useAuth();
     const [slaViolations, setSlaViolations] = useState<SLAViolation[]>([]);
@@ -164,6 +183,8 @@ export default function AdminDashboardPage() {
     const [pendingAdditionalApprovals, setPendingAdditionalApprovals] = useState<PendingAdditionalApproval[]>([]);
     const [myOverdueItems, setMyOverdueItems] = useState<MyOverdueItem[]>([]);
     const [overdueMonitoringCycles, setOverdueMonitoringCycles] = useState<OverdueMonitoringCycle[]>([]);
+    const [recommendationsSummary, setRecommendationsSummary] = useState<RecommendationsSummary | null>(null);
+    const [overdueRecommendations, setOverdueRecommendations] = useState<OverdueRecommendation[]>([]);
     const [loading, setLoading] = useState(true);
 
     // Commentary modal state
@@ -189,7 +210,9 @@ export default function AdminDashboardPage() {
                 pendingEditsRes,
                 conditionalApprovalsRes,
                 myOverdueRes,
-                monitoringOverviewRes
+                monitoringOverviewRes,
+                recommendationsOpenRes,
+                recommendationsOverdueRes
             ] = await Promise.all([
                 api.get('/validation-workflow/dashboard/sla-violations'),
                 api.get('/validation-workflow/dashboard/out-of-order'),
@@ -201,7 +224,9 @@ export default function AdminDashboardPage() {
                 api.get('/models/pending-edits/all'),
                 api.get('/validation-workflow/dashboard/pending-additional-approvals'),
                 overdueCommentaryApi.getMyOverdueItems(),
-                api.get('/monitoring/admin-overview')
+                api.get('/monitoring/admin-overview'),
+                api.get('/recommendations/dashboard/open'),
+                api.get('/recommendations/dashboard/overdue')
             ]);
             setSlaViolations(violationsRes.data);
             setOutOfOrder(outOfOrderRes.data);
@@ -218,6 +243,9 @@ export default function AdminDashboardPage() {
                 (cycle: OverdueMonitoringCycle & { priority: string }) => cycle.priority === 'overdue'
             );
             setOverdueMonitoringCycles(overdueCycles);
+            // Set recommendations data
+            setRecommendationsSummary(recommendationsOpenRes.data);
+            setOverdueRecommendations(recommendationsOverdueRes.data.recommendations || []);
         } catch (error) {
             console.error('Failed to fetch dashboard data:', error);
         } finally {
@@ -504,7 +532,7 @@ export default function AdminDashboardPage() {
             )}
 
             {/* Summary Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-8 gap-4 mb-6">
+            <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-8 gap-4 mb-6">
                 <div className="bg-white p-4 rounded-lg shadow-md">
                     <h3 className="text-xs font-medium text-gray-500 uppercase">Pending Assignment</h3>
                     <p className="text-3xl font-bold text-blue-600 mt-2">{pendingAssignments.length}</p>
@@ -536,10 +564,24 @@ export default function AdminDashboardPage() {
                     <p className="text-xs text-gray-600 mt-1">Past report due</p>
                 </div>
                 <div className="bg-white p-4 rounded-lg shadow-md">
+                    <h3 className="text-xs font-medium text-gray-500 uppercase">Open Recommendations</h3>
+                    <p className="text-3xl font-bold text-orange-600 mt-2">{recommendationsSummary?.total_open || 0}</p>
+                    <p className="text-xs text-gray-600 mt-1">
+                        {overdueRecommendations.length > 0 ? (
+                            <span className="text-red-600 font-medium">{overdueRecommendations.length} overdue</span>
+                        ) : (
+                            'None overdue'
+                        )}
+                    </p>
+                </div>
+                <div className="bg-white p-4 rounded-lg shadow-md">
                     <h3 className="text-xs font-medium text-gray-500 uppercase">Quick Actions</h3>
                     <div className="mt-2 space-y-1">
                         <Link to="/validation-workflow" className="block text-blue-600 hover:text-blue-800 text-xs">
                             View All Validations &rarr;
+                        </Link>
+                        <Link to="/recommendations" className="block text-orange-600 hover:text-orange-800 text-xs">
+                            View Recommendations &rarr;
                         </Link>
                         <Link to="/workflow-config" className="block text-blue-600 hover:text-blue-800 text-xs">
                             Configure Workflow SLA &rarr;
@@ -1147,6 +1189,105 @@ export default function AdminDashboardPage() {
                                 ))}
                             </tbody>
                         </table>
+                    </div>
+                )}
+
+                {/* Overdue Recommendations */}
+                {overdueRecommendations.length > 0 && (
+                    <div className="bg-white rounded-lg shadow-md overflow-hidden">
+                        <div className="p-4 border-b bg-orange-50">
+                            <div className="flex items-center">
+                                <svg className="h-5 w-5 text-orange-600 mr-2" fill="currentColor" viewBox="0 0 20 20">
+                                    <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                                </svg>
+                                <h3 className="text-lg font-bold text-orange-900">
+                                    Overdue Recommendations ({overdueRecommendations.length})
+                                </h3>
+                            </div>
+                            <p className="text-sm text-orange-700 ml-7">Recommendations past their target remediation date</p>
+                        </div>
+                        <table className="min-w-full divide-y divide-gray-200">
+                            <thead className="bg-gray-50">
+                                <tr>
+                                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Code</th>
+                                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Title</th>
+                                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Model</th>
+                                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Priority</th>
+                                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+                                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Assigned To</th>
+                                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Target Date</th>
+                                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Days Overdue</th>
+                                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody className="bg-white divide-y divide-gray-200">
+                                {overdueRecommendations.slice(0, 10).map((rec) => (
+                                    <tr key={rec.recommendation_id} className="hover:bg-orange-50">
+                                        <td className="px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-900">
+                                            {rec.recommendation_code}
+                                        </td>
+                                        <td className="px-4 py-3 whitespace-nowrap">
+                                            <Link
+                                                to={`/recommendations/${rec.recommendation_id}`}
+                                                className="text-blue-600 hover:text-blue-800 font-medium text-sm truncate block max-w-48"
+                                                title={rec.title}
+                                            >
+                                                {rec.title}
+                                            </Link>
+                                        </td>
+                                        <td className="px-4 py-3 whitespace-nowrap">
+                                            <Link
+                                                to={`/models/${rec.model.model_id}`}
+                                                className="text-blue-600 hover:text-blue-800 text-sm"
+                                            >
+                                                {rec.model.model_name}
+                                            </Link>
+                                        </td>
+                                        <td className="px-4 py-3 whitespace-nowrap">
+                                            <span className={`px-2 py-1 text-xs font-semibold rounded ${
+                                                rec.priority.code === 'CRITICAL' ? 'bg-red-100 text-red-800' :
+                                                rec.priority.code === 'HIGH' ? 'bg-orange-100 text-orange-800' :
+                                                rec.priority.code === 'MEDIUM' ? 'bg-yellow-100 text-yellow-800' :
+                                                'bg-gray-100 text-gray-800'
+                                            }`}>
+                                                {rec.priority.label}
+                                            </span>
+                                        </td>
+                                        <td className="px-4 py-3 whitespace-nowrap">
+                                            <span className="px-2 py-1 text-xs font-medium rounded bg-gray-100 text-gray-700">
+                                                {rec.current_status.label}
+                                            </span>
+                                        </td>
+                                        <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-600">
+                                            {rec.assigned_to?.full_name || '-'}
+                                        </td>
+                                        <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-600">
+                                            {rec.current_target_date?.split('T')[0]}
+                                        </td>
+                                        <td className="px-4 py-3 whitespace-nowrap">
+                                            <span className="px-2 py-1 text-xs font-semibold rounded bg-red-100 text-red-800">
+                                                {rec.days_overdue} days
+                                            </span>
+                                        </td>
+                                        <td className="px-4 py-3 whitespace-nowrap">
+                                            <Link
+                                                to={`/recommendations/${rec.recommendation_id}`}
+                                                className="text-blue-600 hover:text-blue-800 text-sm"
+                                            >
+                                                View
+                                            </Link>
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                        {overdueRecommendations.length > 10 && (
+                            <div className="p-3 bg-gray-50 text-sm text-gray-600 text-center">
+                                <Link to="/recommendations?overdue_only=true" className="text-orange-600 hover:text-orange-800">
+                                    View all {overdueRecommendations.length} overdue recommendations &rarr;
+                                </Link>
+                            </div>
+                        )}
                     </div>
                 )}
 

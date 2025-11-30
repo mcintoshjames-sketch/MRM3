@@ -37,6 +37,8 @@ import PendingDecommissioningPage from './pages/PendingDecommissioningPage';
 import MonitoringPlansPage from './pages/MonitoringPlansPage';
 import MonitoringPlanDetailPage from './pages/MonitoringPlanDetailPage';
 import MyMonitoringPage from './pages/MyMonitoringPage';
+import RecommendationsPage from './pages/RecommendationsPage';
+import RecommendationDetailPage from './pages/RecommendationDetailPage';
 
 function App() {
     const { user, loading } = useAuth();
@@ -65,6 +67,8 @@ function App() {
             <Route path="/validation-workflow" element={user ? <ValidationWorkflowPage /> : <Navigate to="/login" />} />
             <Route path="/validation-workflow/new" element={user ? <ValidationWorkflowPage /> : <Navigate to="/login" />} />
             <Route path="/validation-workflow/:id" element={user ? <ValidationRequestDetailPage /> : <Navigate to="/login" />} />
+            <Route path="/recommendations" element={user ? <RecommendationsPage /> : <Navigate to="/login" />} />
+            <Route path="/recommendations/:id" element={user ? <RecommendationDetailPage /> : <Navigate to="/login" />} />
             <Route path="/my-pending-submissions" element={user ? <MyPendingSubmissionsPage /> : <Navigate to="/login" />} />
             <Route path="/my-deployment-tasks" element={user ? <MyDeploymentTasksPage /> : <Navigate to="/login" />} />
             <Route path="/my-monitoring" element={user ? <MyMonitoringPage /> : <Navigate to="/login" />} />

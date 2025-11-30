@@ -1,0 +1,184 @@
+import { useState } from 'react';
+import { recommendationsApi, Recommendation } from '../api/recommendations';
+
+interface EvidenceSectionProps {
+    recommendation: Recommendation;
+    canUpload: boolean;
+    onRefresh: () => void;
+}
+
+export default function EvidenceSection({ recommendation, canUpload, onRefresh }: EvidenceSectionProps) {
+    const [showUploadForm, setShowUploadForm] = useState(false);
+    const [description, setDescription] = useState('');
+    const [evidenceUrl, setEvidenceUrl] = useState('');  // Optional URL field
+    const [loading, setLoading] = useState(false);
+    const [error, setError] = useState<string | null>(null);
+
+    const handleUpload = async (e: React.FormEvent) => {
+        e.preventDefault();
+        setError(null);
+
+        if (!description.trim()) {
+            setError('Please provide a description of the evidence');
+            return;
+        }
+
+        try {
+            setLoading(true);
+            await recommendationsApi.uploadEvidence(recommendation.recommendation_id, {
+                description: description.trim(),
+                evidence_url: evidenceUrl.trim() || undefined  // Only include if provided
+            });
+            setDescription('');
+            setEvidenceUrl('');
+            setShowUploadForm(false);
+            onRefresh();
+        } catch (err: any) {
+            setError(err.response?.data?.detail || 'Failed to upload evidence');
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const handleDelete = async (evidenceId: number) => {
+        if (!confirm('Are you sure you want to delete this evidence?')) return;
+
+        try {
+            await recommendationsApi.deleteEvidence(recommendation.recommendation_id, evidenceId);
+            onRefresh();
+        } catch (err: any) {
+            alert(err.response?.data?.detail || 'Failed to delete evidence');
+        }
+    };
+
+    const evidence = recommendation.closure_evidence || [];
+
+    return (
+        <div>
+            {/* Upload Button / Form */}
+            {canUpload && (
+                <div className="mb-4">
+                    {showUploadForm ? (
+                        <form onSubmit={handleUpload} className="border rounded-lg p-4 bg-gray-50">
+                            <h4 className="font-medium mb-3">Add Evidence</h4>
+
+                            {error && (
+                                <div className="bg-red-100 border border-red-400 text-red-700 px-3 py-2 rounded mb-3 text-sm">
+                                    {error}
+                                </div>
+                            )}
+
+                            <div className="space-y-3">
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                                        Description <span className="text-red-500">*</span>
+                                    </label>
+                                    <textarea
+                                        value={description}
+                                        onChange={(e) => setDescription(e.target.value)}
+                                        rows={3}
+                                        className="input-field"
+                                        placeholder="Describe the evidence being uploaded..."
+                                        required
+                                    />
+                                </div>
+
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                                        Evidence URL <span className="text-gray-400">(Optional)</span>
+                                    </label>
+                                    <input
+                                        type="url"
+                                        value={evidenceUrl}
+                                        onChange={(e) => setEvidenceUrl(e.target.value)}
+                                        className="input-field"
+                                        placeholder="https://... (link to document, SharePoint, etc.)"
+                                    />
+                                    <p className="text-xs text-gray-500 mt-1">
+                                        Optional: Link to supporting documents, SharePoint files, or external systems
+                                    </p>
+                                </div>
+                            </div>
+
+                            <div className="flex justify-end gap-2 mt-4">
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        setShowUploadForm(false);
+                                        setDescription('');
+                                        setEvidenceUrl('');
+                                        setError(null);
+                                    }}
+                                    className="px-3 py-1.5 text-sm bg-gray-200 text-gray-700 rounded hover:bg-gray-300"
+                                    disabled={loading}
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    type="submit"
+                                    className="px-3 py-1.5 text-sm bg-blue-600 text-white rounded hover:bg-blue-700"
+                                    disabled={loading}
+                                >
+                                    {loading ? 'Adding...' : 'Add Evidence'}
+                                </button>
+                            </div>
+                        </form>
+                    ) : (
+                        <button
+                            onClick={() => setShowUploadForm(true)}
+                            className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+                        >
+                            + Add Evidence
+                        </button>
+                    )}
+                </div>
+            )}
+
+            {/* Evidence List */}
+            {evidence.length > 0 ? (
+                <div className="space-y-3">
+                    {evidence.map((item) => (
+                        <div key={item.evidence_id} className="border rounded-lg p-4">
+                            <div className="flex justify-between items-start">
+                                <div className="flex-1">
+                                    <p className="text-gray-900">{item.description}</p>
+                                    {item.evidence_url && (
+                                        <a
+                                            href={item.evidence_url}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className="text-blue-600 hover:text-blue-800 hover:underline text-sm mt-1 inline-flex items-center gap-1"
+                                        >
+                                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                                            </svg>
+                                            View Document
+                                        </a>
+                                    )}
+                                    <div className="mt-2 text-sm text-gray-500">
+                                        <span>Uploaded by {item.uploaded_by?.full_name}</span>
+                                        <span className="mx-2">•</span>
+                                        <span>{item.uploaded_at?.split('T')[0]}</span>
+                                    </div>
+                                </div>
+                                {canUpload && (
+                                    <button
+                                        onClick={() => handleDelete(item.evidence_id)}
+                                        className="ml-4 text-red-500 hover:text-red-700"
+                                        title="Delete evidence"
+                                    >
+                                        <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                        </svg>
+                                    </button>
+                                )}
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            ) : (
+                <p className="text-gray-500 text-center py-8">No evidence uploaded yet.</p>
+            )}
+        </div>
+    );
+}

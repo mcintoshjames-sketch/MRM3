@@ -325,6 +325,18 @@ def create_recommendation(
             detail="Assigned user not found"
         )
 
+    # Validate monitoring cycle if provided
+    if rec_data.monitoring_cycle_id:
+        from app.models.monitoring import MonitoringCycle
+        cycle = db.query(MonitoringCycle).filter(
+            MonitoringCycle.cycle_id == rec_data.monitoring_cycle_id
+        ).first()
+        if not cycle:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Monitoring cycle not found"
+            )
+
     # Get draft status
     draft_status = get_status_by_code(db, "REC_DRAFT")
 
@@ -336,6 +348,7 @@ def create_recommendation(
         recommendation_code=rec_code,
         model_id=rec_data.model_id,
         validation_request_id=rec_data.validation_request_id,
+        monitoring_cycle_id=rec_data.monitoring_cycle_id,
         title=rec_data.title,
         description=rec_data.description,
         root_cause_analysis=rec_data.root_cause_analysis,
@@ -778,6 +791,8 @@ def get_recommendation(
     """Get a recommendation by ID with all nested relationships."""
     recommendation = db.query(Recommendation).options(
         joinedload(Recommendation.model),
+        joinedload(Recommendation.validation_request),
+        joinedload(Recommendation.monitoring_cycle),
         joinedload(Recommendation.priority),
         joinedload(Recommendation.category),
         joinedload(Recommendation.current_status),

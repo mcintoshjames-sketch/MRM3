@@ -1192,6 +1192,191 @@ def seed_database():
                         "sort_order": 9
                     },
                 ]
+            },
+            # Recommendation taxonomies
+            {
+                "name": "Recommendation Priority",
+                "description": "Priority levels for recommendations - determines closure approval requirements",
+                "is_system": True,
+                "values": [
+                    {
+                        "code": "CRITICAL",
+                        "label": "Critical",
+                        "description": "Highest priority - requires immediate action and executive oversight. Full approval workflow required.",
+                        "sort_order": 1
+                    },
+                    {
+                        "code": "HIGH",
+                        "label": "High",
+                        "description": "High priority - should be addressed promptly with senior oversight. Full approval workflow required.",
+                        "sort_order": 2
+                    },
+                    {
+                        "code": "MEDIUM",
+                        "label": "Medium",
+                        "description": "Standard priority - requires timely remediation. Validator approval sufficient.",
+                        "sort_order": 3
+                    },
+                    {
+                        "code": "LOW",
+                        "label": "Low",
+                        "description": "Low priority - can be scheduled as resources permit. Validator approval sufficient.",
+                        "sort_order": 4
+                    },
+                ]
+            },
+            {
+                "name": "Recommendation Status",
+                "description": "Workflow status for recommendations",
+                "is_system": True,
+                "values": [
+                    {
+                        "code": "REC_DRAFT",
+                        "label": "Draft",
+                        "description": "Initial draft - validator is still composing the recommendation",
+                        "sort_order": 1
+                    },
+                    {
+                        "code": "REC_PENDING_RESPONSE",
+                        "label": "Pending Response",
+                        "description": "Finalized and sent to developer - awaiting acknowledgement",
+                        "sort_order": 2
+                    },
+                    {
+                        "code": "REC_PENDING_ACKNOWLEDGEMENT",
+                        "label": "Pending Acknowledgement",
+                        "description": "Developer must acknowledge or submit rebuttal",
+                        "sort_order": 3
+                    },
+                    {
+                        "code": "REC_IN_REBUTTAL",
+                        "label": "In Rebuttal",
+                        "description": "Developer submitted rebuttal - awaiting validator review",
+                        "sort_order": 4
+                    },
+                    {
+                        "code": "REC_PENDING_ACTION_PLAN",
+                        "label": "Pending Action Plan",
+                        "description": "Acknowledged - developer must submit action plan",
+                        "sort_order": 5
+                    },
+                    {
+                        "code": "REC_PENDING_VALIDATOR_REVIEW",
+                        "label": "Pending Validator Review",
+                        "description": "Action plan submitted - awaiting validator approval",
+                        "sort_order": 6
+                    },
+                    {
+                        "code": "REC_OPEN",
+                        "label": "Open",
+                        "description": "Action plan approved - remediation work in progress",
+                        "sort_order": 7
+                    },
+                    {
+                        "code": "REC_REWORK_REQUIRED",
+                        "label": "Rework Required",
+                        "description": "Validator rejected closure evidence - additional work needed",
+                        "sort_order": 8
+                    },
+                    {
+                        "code": "REC_PENDING_CLOSURE_REVIEW",
+                        "label": "Pending Closure Review",
+                        "description": "Closure evidence submitted - awaiting validator review",
+                        "sort_order": 9
+                    },
+                    {
+                        "code": "REC_PENDING_APPROVAL",
+                        "label": "Pending Final Approval",
+                        "description": "Validator approved closure - awaiting stakeholder approvals",
+                        "sort_order": 10
+                    },
+                    {
+                        "code": "REC_CLOSED",
+                        "label": "Closed",
+                        "description": "All approvals received - recommendation successfully closed",
+                        "sort_order": 11
+                    },
+                    {
+                        "code": "REC_DROPPED",
+                        "label": "Dropped",
+                        "description": "Rebuttal accepted - recommendation withdrawn",
+                        "sort_order": 12
+                    },
+                ]
+            },
+            {
+                "name": "Recommendation Category",
+                "description": "Categories for classifying recommendations by type of issue",
+                "is_system": True,
+                "values": [
+                    {
+                        "code": "DATA_QUALITY",
+                        "label": "Data Quality",
+                        "description": "Issues related to input data, data sources, or data transformations",
+                        "sort_order": 1
+                    },
+                    {
+                        "code": "METHODOLOGY",
+                        "label": "Methodology",
+                        "description": "Issues with model theory, algorithms, or statistical methods",
+                        "sort_order": 2
+                    },
+                    {
+                        "code": "IMPLEMENTATION",
+                        "label": "Implementation",
+                        "description": "Issues with code, systems, or technical implementation",
+                        "sort_order": 3
+                    },
+                    {
+                        "code": "DOCUMENTATION",
+                        "label": "Documentation",
+                        "description": "Issues with model documentation, specifications, or user guides",
+                        "sort_order": 4
+                    },
+                    {
+                        "code": "MONITORING",
+                        "label": "Monitoring",
+                        "description": "Issues with ongoing performance monitoring or controls",
+                        "sort_order": 5
+                    },
+                    {
+                        "code": "GOVERNANCE",
+                        "label": "Governance",
+                        "description": "Issues with model governance, ownership, or approval processes",
+                        "sort_order": 6
+                    },
+                    {
+                        "code": "OTHER",
+                        "label": "Other",
+                        "description": "Other issues not covered by standard categories",
+                        "sort_order": 7
+                    },
+                ]
+            },
+            {
+                "name": "Action Plan Task Status",
+                "description": "Status tracking for individual action plan tasks",
+                "is_system": True,
+                "values": [
+                    {
+                        "code": "NOT_STARTED",
+                        "label": "Not Started",
+                        "description": "Task has not been started yet",
+                        "sort_order": 1
+                    },
+                    {
+                        "code": "IN_PROGRESS",
+                        "label": "In Progress",
+                        "description": "Task is currently being worked on",
+                        "sort_order": 2
+                    },
+                    {
+                        "code": "COMPLETED",
+                        "label": "Completed",
+                        "description": "Task has been completed",
+                        "sort_order": 3
+                    },
+                ]
             }
         ]
 

@@ -198,6 +198,17 @@ interface PendingEdit {
     review_comment: string | null;
 }
 
+interface RecommendationListItem {
+    recommendation_id: number;
+    recommendation_code: string;
+    title: string;
+    priority: { code: string; label: string } | null;
+    current_status: { code: string; label: string } | null;
+    assigned_to: { full_name: string } | null;
+    current_target_date: string;
+    created_at: string;
+}
+
 export default function ModelDetailsPage() {
     const { id } = useParams<{ id: string }>();
     const navigate = useNavigate();
@@ -215,7 +226,7 @@ export default function ModelDetailsPage() {
     const [decommissioningRequests, setDecommissioningRequests] = useState<DecommissioningRequestListItem[]>([]);
     const [loading, setLoading] = useState(true);
     const [editing, setEditing] = useState(false);
-    const [activeTab, setActiveTab] = useState<'details' | 'versions' | 'delegates' | 'validations' | 'hierarchy' | 'dependencies' | 'applications' | 'lineage' | 'activity' | 'decommissioning'>('details');
+    const [activeTab, setActiveTab] = useState<'details' | 'versions' | 'delegates' | 'validations' | 'hierarchy' | 'dependencies' | 'applications' | 'lineage' | 'activity' | 'recommendations' | 'decommissioning'>('details');
     const [showSubmitChangeModal, setShowSubmitChangeModal] = useState(false);
     const [selectedVersion, setSelectedVersion] = useState<ModelVersion | null>(null);
     const [versionsRefreshTrigger, setVersionsRefreshTrigger] = useState(0);
@@ -242,6 +253,8 @@ export default function ModelDetailsPage() {
     const [showPendingEditReview, setShowPendingEditReview] = useState(false);
     const [pendingEditComment, setPendingEditComment] = useState('');
     const [submittingPendingEdit, setSubmittingPendingEdit] = useState(false);
+    const [recommendations, setRecommendations] = useState<RecommendationListItem[]>([]);
+    const [recommendationsLoading, setRecommendationsLoading] = useState(false);
     const [formData, setFormData] = useState({
         model_name: '',
         description: '',
@@ -269,6 +282,9 @@ export default function ModelDetailsPage() {
             fetchActivities();
             const interval = setInterval(fetchActivities, 30000); // Poll every 30 seconds
             return () => clearInterval(interval);
+        }
+        if (activeTab === 'recommendations') {
+            fetchRecommendations();
         }
     }, [activeTab, id]);
 
@@ -415,6 +431,19 @@ export default function ModelDetailsPage() {
             console.error('Failed to fetch activities:', error);
         } finally {
             setActivitiesLoading(false);
+        }
+    };
+
+    const fetchRecommendations = async () => {
+        if (!id) return;
+        setRecommendationsLoading(true);
+        try {
+            const response = await api.get(`/recommendations/`, { params: { model_id: parseInt(id) } });
+            setRecommendations(response.data);
+        } catch (error) {
+            console.error('Failed to fetch recommendations:', error);
+        } finally {
+            setRecommendationsLoading(false);
         }
     };
 
@@ -1376,6 +1405,20 @@ export default function ModelDetailsPage() {
                                 }`}
                         >
                             Activity
+                        </button>
+                        <button
+                            onClick={() => setActiveTab('recommendations')}
+                            className={`py-2 px-1 border-b-2 font-medium text-sm ${activeTab === 'recommendations'
+                                ? 'border-blue-500 text-blue-600'
+                                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                                }`}
+                        >
+                            Recommendations
+                            {recommendations.filter(r => !['REC_CLOSED', 'REC_DROPPED'].includes(r.current_status?.code || '')).length > 0 && (
+                                <span className="ml-1 px-1.5 py-0.5 text-xs bg-orange-100 text-orange-800 rounded-full">
+                                    {recommendations.filter(r => !['REC_CLOSED', 'REC_DROPPED'].includes(r.current_status?.code || '')).length}
+                                </span>
+                            )}
                         </button>
                         <button
                             onClick={() => setActiveTab('decommissioning')}
@@ -2595,6 +2638,104 @@ export default function ModelDetailsPage() {
                                     </div>
                                 </div>
                             ))}
+                        </div>
+                    )}
+                </div>
+            ) : activeTab === 'recommendations' ? (
+                <div className="bg-white p-6 rounded-lg shadow-md">
+                    <div className="flex justify-between items-center mb-6">
+                        <h3 className="text-xl font-bold">Recommendations</h3>
+                        {(user?.role === 'Admin' || user?.role === 'Validator') && (
+                            <Link
+                                to={`/recommendations?model_id=${model.model_id}`}
+                                className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 text-sm"
+                            >
+                                Create Recommendation
+                            </Link>
+                        )}
+                    </div>
+
+                    {recommendationsLoading ? (
+                        <div className="text-center py-8 text-gray-500">
+                            Loading recommendations...
+                        </div>
+                    ) : recommendations.length === 0 ? (
+                        <div className="text-center py-12 text-gray-500">
+                            <svg className="mx-auto h-12 w-12 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
+                            </svg>
+                            <p className="mt-4 text-lg">No recommendations</p>
+                            <p className="mt-2 text-sm">
+                                Recommendations track remediation actions from validation findings.
+                            </p>
+                        </div>
+                    ) : (
+                        <div className="overflow-x-auto">
+                            <table className="min-w-full divide-y divide-gray-200">
+                                <thead className="bg-gray-50">
+                                    <tr>
+                                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Code</th>
+                                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Title</th>
+                                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Priority</th>
+                                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+                                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Assigned To</th>
+                                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Target Date</th>
+                                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="bg-white divide-y divide-gray-200">
+                                    {recommendations.map((rec) => {
+                                        const isOverdue = !['REC_CLOSED', 'REC_DROPPED'].includes(rec.current_status?.code || '') &&
+                                            new Date(rec.current_target_date) < new Date();
+                                        return (
+                                            <tr key={rec.recommendation_id} className="hover:bg-gray-50">
+                                                <td className="px-4 py-3 whitespace-nowrap">
+                                                    <span className="font-mono text-sm text-blue-600">{rec.recommendation_code}</span>
+                                                </td>
+                                                <td className="px-4 py-3">
+                                                    <span className="text-sm">{rec.title}</span>
+                                                </td>
+                                                <td className="px-4 py-3 whitespace-nowrap">
+                                                    <span className={`px-2 py-1 text-xs rounded ${
+                                                        rec.priority?.code === 'HIGH' ? 'bg-red-100 text-red-800' :
+                                                        rec.priority?.code === 'MEDIUM' ? 'bg-yellow-100 text-yellow-800' :
+                                                        'bg-green-100 text-green-800'
+                                                    }`}>
+                                                        {rec.priority?.label || '-'}
+                                                    </span>
+                                                </td>
+                                                <td className="px-4 py-3 whitespace-nowrap">
+                                                    <span className={`px-2 py-1 text-xs rounded ${
+                                                        rec.current_status?.code === 'REC_CLOSED' ? 'bg-emerald-100 text-emerald-800' :
+                                                        rec.current_status?.code === 'REC_DROPPED' ? 'bg-gray-400 text-white' :
+                                                        rec.current_status?.code === 'REC_OPEN' ? 'bg-green-100 text-green-800' :
+                                                        'bg-blue-100 text-blue-800'
+                                                    }`}>
+                                                        {rec.current_status?.label || '-'}
+                                                    </span>
+                                                </td>
+                                                <td className="px-4 py-3 whitespace-nowrap text-sm">
+                                                    {rec.assigned_to?.full_name || '-'}
+                                                </td>
+                                                <td className="px-4 py-3 whitespace-nowrap">
+                                                    <span className={`text-sm ${isOverdue ? 'text-red-600 font-medium' : ''}`}>
+                                                        {rec.current_target_date}
+                                                        {isOverdue && ' (Overdue)'}
+                                                    </span>
+                                                </td>
+                                                <td className="px-4 py-3 whitespace-nowrap">
+                                                    <Link
+                                                        to={`/recommendations/${rec.recommendation_id}`}
+                                                        className="text-blue-600 hover:text-blue-800 text-sm"
+                                                    >
+                                                        View Details
+                                                    </Link>
+                                                </td>
+                                            </tr>
+                                        );
+                                    })}
+                                </tbody>
+                            </table>
                         </div>
                     )}
                 </div>

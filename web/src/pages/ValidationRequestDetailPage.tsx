@@ -7,6 +7,8 @@ import ValidationPlanForm, { ValidationPlanFormHandle } from '../components/Vali
 import ConditionalApprovalsSection from '../components/ConditionalApprovalsSection';
 import OverdueCommentaryModal, { OverdueType } from '../components/OverdueCommentaryModal';
 import { overdueCommentaryApi, CurrentOverdueCommentaryResponse } from '../api/overdueCommentary';
+import { recommendationsApi, RecommendationListItem, TaxonomyValue as RecTaxonomyValue } from '../api/recommendations';
+import RecommendationCreateModal from '../components/RecommendationCreateModal';
 
 interface TaxonomyValue {
     value_id: number;
@@ -176,6 +178,12 @@ export default function ValidationRequestDetailPage() {
     const [statusOptions, setStatusOptions] = useState<TaxonomyValue[]>([]);
     const [ratingOptions, setRatingOptions] = useState<TaxonomyValue[]>([]);
     const [users, setUsers] = useState<UserSummary[]>([]);
+
+    // Recommendations state
+    const [recommendations, setRecommendations] = useState<RecommendationListItem[]>([]);
+    const [showRecommendationModal, setShowRecommendationModal] = useState(false);
+    const [recPriorities, setRecPriorities] = useState<RecTaxonomyValue[]>([]);
+    const [recCategories, setRecCategories] = useState<RecTaxonomyValue[]>([]);
 
     const [newStatus, setNewStatus] = useState({ status_id: 0, reason: '' });
     const [newAssignment, setNewAssignment] = useState({
@@ -380,6 +388,32 @@ export default function ValidationRequestDetailPage() {
 
             if (statusTax) setStatusOptions(statusTax.values || []);
             if (ratingTax) setRatingOptions(ratingTax.values || []);
+
+            // Fetch recommendation taxonomies for create modal
+            const recPriorityTax = taxonomies.find((t: any) => t.name === 'Recommendation Priority');
+            const recCategoryTax = taxonomies.find((t: any) => t.name === 'Recommendation Category');
+            if (recPriorityTax) setRecPriorities(recPriorityTax.values || []);
+            if (recCategoryTax) setRecCategories(recCategoryTax.values || []);
+
+            // Fetch recommendations for the models in this validation
+            if (requestRes.data.models && requestRes.data.models.length > 0) {
+                try {
+                    const modelIds = requestRes.data.models.map((m: any) => m.model_id);
+                    // Fetch recommendations for all models
+                    const recPromises = modelIds.map((modelId: number) =>
+                        recommendationsApi.list({ model_id: modelId })
+                    );
+                    const recResults = await Promise.all(recPromises);
+                    // Flatten and dedupe by recommendation_id
+                    const allRecs = recResults.flat();
+                    const uniqueRecs = allRecs.filter((rec, index, self) =>
+                        index === self.findIndex(r => r.recommendation_id === rec.recommendation_id)
+                    );
+                    setRecommendations(uniqueRecs);
+                } catch (err) {
+                    console.error('Failed to fetch recommendations:', err);
+                }
+            }
 
         } catch (err: any) {
             console.error('Failed to fetch request details:', err);
@@ -1086,10 +1120,11 @@ export default function ValidationRequestDetailPage() {
                                 : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
                                 }`}
                         >
-                            {tab}
+                            {tab === 'outcome' ? 'Outcome & Recommendations' : tab}
                             {tab === 'assignments' && ` (${request.assignments.length})`}
                             {tab === 'approvals' && ` (${request.approvals.length})`}
                             {tab === 'history' && ` (${request.status_history.length + assignmentAuditLogs.length + approvalAuditLogs.length + commentaryAuditLogs.length})`}
+                            {tab === 'outcome' && recommendations.length > 0 && ` (${recommendations.length})`}
                         </button>
                     ))}
                 </nav>
@@ -1409,6 +1444,7 @@ export default function ValidationRequestDetailPage() {
                                 })}
                             </div>
                         </div>
+
                     </div>
                 )}
 
@@ -1704,6 +1740,96 @@ export default function ValidationRequestDetailPage() {
                                 </div>
                             </div>
                         )}
+
+                        {/* Recommendations Section */}
+                        <div className="mt-8 pt-6 border-t">
+                            <div className="flex justify-between items-center mb-4">
+                                <div>
+                                    <h3 className="text-lg font-bold">Recommendations</h3>
+                                    <p className="text-sm text-gray-600">
+                                        Track and manage remediation actions from this validation's findings.
+                                    </p>
+                                </div>
+                                {(user?.role === 'Admin' || user?.role === 'Validator') && (
+                                    <button
+                                        onClick={() => setShowRecommendationModal(true)}
+                                        className="bg-orange-600 text-white px-4 py-2 rounded text-sm hover:bg-orange-700"
+                                    >
+                                        + Create Recommendation
+                                    </button>
+                                )}
+                            </div>
+
+                            {recommendations.length === 0 ? (
+                                <div className="text-gray-500 text-center py-8 bg-gray-50 rounded-lg">
+                                    No recommendations have been created for this validation yet.
+                                </div>
+                            ) : (
+                                <div className="overflow-x-auto">
+                                    <table className="min-w-full divide-y divide-gray-200">
+                                        <thead className="bg-gray-50">
+                                            <tr>
+                                                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Code</th>
+                                                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Title</th>
+                                                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Model</th>
+                                                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Priority</th>
+                                                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+                                                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Assigned To</th>
+                                                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Target Date</th>
+                                                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody className="bg-white divide-y divide-gray-200">
+                                            {recommendations.map((rec) => (
+                                                <tr key={rec.recommendation_id} className="hover:bg-gray-50">
+                                                    <td className="px-4 py-3 text-sm font-mono text-gray-900">
+                                                        {rec.recommendation_code}
+                                                    </td>
+                                                    <td className="px-4 py-3 text-sm text-gray-900 max-w-xs truncate" title={rec.title}>
+                                                        {rec.title}
+                                                    </td>
+                                                    <td className="px-4 py-3 text-sm text-gray-600">
+                                                        {rec.model?.model_name || '-'}
+                                                    </td>
+                                                    <td className="px-4 py-3 text-sm">
+                                                        <span className={`px-2 py-1 rounded text-xs font-medium ${
+                                                            rec.priority?.code === 'HIGH' ? 'bg-red-100 text-red-800' :
+                                                            rec.priority?.code === 'MEDIUM' ? 'bg-yellow-100 text-yellow-800' :
+                                                            'bg-green-100 text-green-800'
+                                                        }`}>
+                                                            {rec.priority?.label || '-'}
+                                                        </span>
+                                                    </td>
+                                                    <td className="px-4 py-3 text-sm">
+                                                        <span className={`px-2 py-1 rounded text-xs font-medium ${
+                                                            rec.current_status?.code === 'CLOSED' ? 'bg-green-100 text-green-800' :
+                                                            rec.current_status?.code === 'DRAFT' ? 'bg-gray-100 text-gray-800' :
+                                                            'bg-blue-100 text-blue-800'
+                                                        }`}>
+                                                            {rec.current_status?.label || '-'}
+                                                        </span>
+                                                    </td>
+                                                    <td className="px-4 py-3 text-sm text-gray-600">
+                                                        {rec.assigned_to?.full_name || '-'}
+                                                    </td>
+                                                    <td className="px-4 py-3 text-sm text-gray-600">
+                                                        {rec.current_target_date}
+                                                    </td>
+                                                    <td className="px-4 py-3 text-sm">
+                                                        <Link
+                                                            to={`/recommendations/${rec.recommendation_id}`}
+                                                            className="text-blue-600 hover:text-blue-800 text-sm"
+                                                        >
+                                                            View →
+                                                        </Link>
+                                                    </td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            )}
+                        </div>
                     </div>
                 )}
 
@@ -2552,6 +2678,39 @@ export default function ValidationRequestDetailPage() {
                     currentComment={overdueCommentary?.current_comment}
                     onClose={() => setShowCommentaryModal(false)}
                     onSuccess={handleCommentarySuccess}
+                />
+            )}
+
+            {/* Create Recommendation Modal */}
+            {showRecommendationModal && request && (
+                <RecommendationCreateModal
+                    onClose={() => setShowRecommendationModal(false)}
+                    onCreated={async () => {
+                        setShowRecommendationModal(false);
+                        // Refresh recommendations
+                        if (request.models && request.models.length > 0) {
+                            try {
+                                const modelIds = request.models.map((m) => m.model_id);
+                                const recPromises = modelIds.map((modelId) =>
+                                    recommendationsApi.list({ model_id: modelId })
+                                );
+                                const recResults = await Promise.all(recPromises);
+                                const allRecs = recResults.flat();
+                                const uniqueRecs = allRecs.filter((rec, index, self) =>
+                                    index === self.findIndex(r => r.recommendation_id === rec.recommendation_id)
+                                );
+                                setRecommendations(uniqueRecs);
+                            } catch (err) {
+                                console.error('Failed to refresh recommendations:', err);
+                            }
+                        }
+                    }}
+                    models={request.models.map(m => ({ model_id: m.model_id, model_name: m.model_name }))}
+                    users={users.map(u => ({ user_id: u.user_id, email: u.email, full_name: u.full_name }))}
+                    priorities={recPriorities}
+                    categories={recCategories}
+                    preselectedModelId={request.models[0]?.model_id}
+                    preselectedValidationRequestId={request.request_id}
                 />
             )}
         </Layout>

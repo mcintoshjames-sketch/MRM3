@@ -1,7 +1,7 @@
 """Model Recommendations schemas."""
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from datetime import datetime, date
-from typing import Optional, List
+from typing import Optional, List, Any
 from app.schemas.taxonomy import TaxonomyValueResponse
 from app.schemas.region import Region
 
@@ -27,6 +27,62 @@ class ModelSummary(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class ValidationRequestSummary(BaseModel):
+    """Minimal validation request info for recommendation responses."""
+    request_id: int
+    validation_type: Optional[str] = None
+
+    class Config:
+        from_attributes = True
+
+    @model_validator(mode='before')
+    @classmethod
+    def extract_validation_type_label(cls, data: Any) -> Any:
+        """Extract validation_type label from ORM relationship object."""
+        if isinstance(data, dict):
+            return data
+        # Handle ORM object - extract label from validation_type relationship
+        if hasattr(data, 'request_id'):
+            validation_type_label = None
+            if hasattr(data, 'validation_type') and data.validation_type is not None:
+                validation_type_label = getattr(data.validation_type, 'label', None)
+            return {
+                'request_id': data.request_id,
+                'validation_type': validation_type_label
+            }
+        return data
+
+
+class MonitoringCycleSummary(BaseModel):
+    """Minimal monitoring cycle info for recommendation responses."""
+    cycle_id: int
+    period_start: date
+    period_end: date
+    plan_name: Optional[str] = None
+
+    class Config:
+        from_attributes = True
+
+    @model_validator(mode='before')
+    @classmethod
+    def extract_plan_name(cls, data: Any) -> Any:
+        """Extract plan_name from ORM relationship object."""
+        if isinstance(data, dict):
+            return data
+        # Handle ORM object - extract plan_name from plan relationship
+        if hasattr(data, 'cycle_id'):
+            plan_name = None
+            if hasattr(data, 'plan') and data.plan is not None:
+                plan_name = getattr(data.plan, 'plan_name', None)
+            return {
+                'cycle_id': data.cycle_id,
+                'period_start': data.period_start,
+                'period_end': data.period_end,
+                'plan_name': plan_name
+            }
+        return data
 
 
 # ==================== ACTION PLAN TASK SCHEMAS ====================
@@ -228,6 +284,7 @@ class RecommendationBase(BaseModel):
     """Base schema for recommendation."""
     model_id: int
     validation_request_id: Optional[int] = None
+    monitoring_cycle_id: Optional[int] = None
     title: str
     description: str
     root_cause_analysis: Optional[str] = None
@@ -257,7 +314,11 @@ class RecommendationResponse(BaseModel):
     recommendation_id: int
     recommendation_code: str
     model: ModelSummary
+    # Source linkage (optional - at least one should be set)
     validation_request_id: Optional[int] = None
+    validation_request: Optional[ValidationRequestSummary] = None
+    monitoring_cycle_id: Optional[int] = None
+    monitoring_cycle: Optional[MonitoringCycleSummary] = None
     title: str
     description: str
     root_cause_analysis: Optional[str] = None
@@ -294,6 +355,10 @@ class RecommendationListResponse(BaseModel):
     recommendation_code: str
     model: ModelSummary
     title: str
+    # Source linkage info
+    validation_request_id: Optional[int] = None
+    monitoring_cycle_id: Optional[int] = None
+    source_type: Optional[str] = None  # "validation" or "monitoring" or None
     priority: TaxonomyValueResponse
     category: Optional[TaxonomyValueResponse] = None
     current_status: TaxonomyValueResponse
@@ -301,6 +366,7 @@ class RecommendationListResponse(BaseModel):
     original_target_date: date
     current_target_date: date
     created_at: datetime
+    updated_at: datetime
 
     class Config:
         from_attributes = True

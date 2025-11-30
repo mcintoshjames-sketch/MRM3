@@ -38,6 +38,11 @@ class Recommendation(Base):
         nullable=True, index=True,
         comment="Link to originating validation (if applicable)"
     )
+    monitoring_cycle_id: Mapped[Optional[int]] = mapped_column(
+        Integer, ForeignKey("monitoring_cycles.cycle_id", ondelete="SET NULL"),
+        nullable=True, index=True,
+        comment="Link to originating monitoring cycle (if applicable)"
+    )
 
     # Content
     title: Mapped[str] = mapped_column(String(500), nullable=False)
@@ -99,6 +104,7 @@ class Recommendation(Base):
     # Relationships
     model = relationship("Model", back_populates="recommendations")
     validation_request = relationship("ValidationRequest")
+    monitoring_cycle = relationship("MonitoringCycle")
     priority = relationship("TaxonomyValue", foreign_keys=[priority_id])
     category = relationship("TaxonomyValue", foreign_keys=[category_id])
     current_status = relationship("TaxonomyValue", foreign_keys=[current_status_id])
