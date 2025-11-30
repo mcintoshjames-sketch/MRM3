@@ -39,6 +39,9 @@ export default function RecommendationDetailPage() {
     const [users, setUsers] = useState<User[]>([]);
     const [taskStatuses, setTaskStatuses] = useState<TaxonomyValue[]>([]);
 
+    // Action plan skip state
+    const [canSkipActionPlanState, setCanSkipActionPlanState] = useState(false);
+
     useEffect(() => {
         if (id) {
             fetchRecommendation();
@@ -46,6 +49,13 @@ export default function RecommendationDetailPage() {
             fetchTaskStatuses();
         }
     }, [id]);
+
+    // Fetch can-skip-action-plan status when recommendation changes
+    useEffect(() => {
+        if (recommendation?.recommendation_id) {
+            fetchCanSkipActionPlan(recommendation.recommendation_id);
+        }
+    }, [recommendation?.recommendation_id, recommendation?.current_status_id]);
 
     const fetchRecommendation = async () => {
         try {
@@ -82,6 +92,16 @@ export default function RecommendationDetailPage() {
         }
     };
 
+    const fetchCanSkipActionPlan = async (recId: number) => {
+        try {
+            const result = await recommendationsApi.canSkipActionPlan(recId);
+            setCanSkipActionPlanState(result.can_skip_action_plan);
+        } catch (err) {
+            console.error('Failed to check if action plan can be skipped:', err);
+            setCanSkipActionPlanState(false);
+        }
+    };
+
     // Permission helpers
     const isAdmin = user?.role === 'Admin';
     const isValidator = user?.role === 'Validator';
@@ -101,6 +121,8 @@ export default function RecommendationDetailPage() {
     const canReviewClosure = (isValidator || isAdmin) && currentStatus === 'REC_PENDING_CLOSURE_REVIEW';
     const canUploadEvidence = (isAssignedDeveloper || isAdmin) &&
         ['REC_OPEN', 'REC_REWORK_REQUIRED', 'REC_PENDING_CLOSURE_REVIEW'].includes(currentStatus);
+    // Skip action plan - must be assigned dev/admin and backend must confirm skip is allowed
+    const canSkipActionPlan = (isAssignedDeveloper || isAdmin) && canSkipActionPlanState;
 
     const getStatusColor = (code: string) => {
         switch (code) {
@@ -125,6 +147,7 @@ export default function RecommendationDetailPage() {
             case 'HIGH': return 'bg-red-100 text-red-800';
             case 'MEDIUM': return 'bg-yellow-100 text-yellow-800';
             case 'LOW': return 'bg-green-100 text-green-800';
+            case 'CONSIDERATION': return 'bg-blue-100 text-blue-800';
             default: return 'bg-gray-100 text-gray-800';
         }
     };
@@ -159,6 +182,19 @@ export default function RecommendationDetailPage() {
             fetchRecommendation();
         } catch (err: any) {
             alert(err.response?.data?.detail || 'Failed to decline');
+        }
+    };
+
+    const handleSkipActionPlan = async () => {
+        if (!recommendation) return;
+        if (!confirm('Skip action plan for this recommendation? The validator will still need to review and approve.')) {
+            return;
+        }
+        try {
+            await recommendationsApi.skipActionPlan(recommendation.recommendation_id);
+            fetchRecommendation();
+        } catch (err: any) {
+            alert(err.response?.data?.detail || 'Failed to skip action plan');
         }
     };
 
@@ -395,6 +431,7 @@ export default function RecommendationDetailPage() {
                     canFinalize={canFinalize}
                     canSubmitRebuttal={canSubmitRebuttal}
                     canSubmitActionPlan={canSubmitActionPlan}
+                    canSkipActionPlan={canSkipActionPlan}
                     canReviewRebuttal={canReviewRebuttal}
                     canReviewActionPlan={canReviewActionPlan}
                     canAcknowledge={canAcknowledge}
@@ -405,6 +442,7 @@ export default function RecommendationDetailPage() {
                     onDeclineAcknowledge={handleDeclineAcknowledge}
                     onShowRebuttalModal={() => setShowRebuttalModal(true)}
                     onShowActionPlanModal={() => setShowActionPlanModal(true)}
+                    onSkipActionPlan={handleSkipActionPlan}
                     onShowClosureSubmitModal={() => setShowClosureSubmitModal(true)}
                     onShowClosureReviewModal={() => setShowClosureReviewModal(true)}
                     onRefresh={fetchRecommendation}

@@ -257,6 +257,7 @@ export interface PriorityConfig {
     config_id: number;
     priority_id: number;
     requires_final_approval: boolean;
+    requires_action_plan: boolean;
     description: string | null;
     created_at: string;
     updated_at: string;
@@ -399,6 +400,23 @@ export const recommendationsApi = {
         return response.data;
     },
 
+    // Skip action plan for low-priority recommendations (Consideration priority)
+    skipActionPlan: async (id: number): Promise<Recommendation> => {
+        const response = await api.post(`/recommendations/${id}/skip-action-plan`);
+        return response.data;
+    },
+
+    // Check if action plan can be skipped for a recommendation
+    canSkipActionPlan: async (id: number): Promise<{
+        recommendation_id: number;
+        requires_action_plan: boolean;
+        current_status_code: string;
+        can_skip_action_plan: boolean;
+    }> => {
+        const response = await api.get(`/recommendations/${id}/can-skip-action-plan`);
+        return response.data;
+    },
+
     approveActionPlan: async (id: number, comments?: string): Promise<Recommendation> => {
         const response = await api.post(`/recommendations/${id}/action-plan/approve`, { comments });
         return response.data;
@@ -466,7 +484,7 @@ export const recommendationsApi = {
         return response.data;
     },
 
-    updatePriorityConfig: async (configId: number, data: { requires_final_approval?: boolean; description?: string }): Promise<PriorityConfig> => {
+    updatePriorityConfig: async (configId: number, data: { requires_final_approval?: boolean; requires_action_plan?: boolean; description?: string }): Promise<PriorityConfig> => {
         const response = await api.patch(`/recommendations/priority-config/${configId}`, data);
         return response.data;
     },

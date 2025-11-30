@@ -6,6 +6,7 @@ from app.core.database import SessionLocal
 from app.core.time import utc_now
 from app.core.security import get_password_hash
 from app.models import User, UserRole, Vendor, EntraUser, Taxonomy, TaxonomyValue, ValidationWorkflowSLA, ValidationPolicy, Region, ValidationComponentDefinition, ComponentDefinitionConfiguration, ComponentDefinitionConfigItem, ModelTypeCategory, ModelType, ValidationRequest, ValidationOutcome, ValidationRequestModelVersion, ApproverRole, ConditionalApprovalRule, RuleRequiredApprover, MapApplication
+from app.models.recommendation import RecommendationPriorityConfig
 from app.models.kpm import KpmCategory, Kpm
 from app.models.model import Model
 
@@ -1196,31 +1197,31 @@ def seed_database():
             # Recommendation taxonomies
             {
                 "name": "Recommendation Priority",
-                "description": "Priority levels for recommendations - determines closure approval requirements",
+                "description": "Priority levels for recommendations - determines closure approval requirements and workflow",
                 "is_system": True,
                 "values": [
                     {
-                        "code": "CRITICAL",
-                        "label": "Critical",
-                        "description": "Highest priority - requires immediate action and executive oversight. Full approval workflow required.",
-                        "sort_order": 1
-                    },
-                    {
                         "code": "HIGH",
                         "label": "High",
-                        "description": "High priority - should be addressed promptly with senior oversight. Full approval workflow required.",
-                        "sort_order": 2
+                        "description": "High priority - requires prompt action with senior oversight. Full approval workflow required.",
+                        "sort_order": 1
                     },
                     {
                         "code": "MEDIUM",
                         "label": "Medium",
-                        "description": "Standard priority - requires timely remediation. Validator approval sufficient.",
-                        "sort_order": 3
+                        "description": "Standard priority - requires timely remediation. Full approval workflow required.",
+                        "sort_order": 2
                     },
                     {
                         "code": "LOW",
                         "label": "Low",
                         "description": "Low priority - can be scheduled as resources permit. Validator approval sufficient.",
+                        "sort_order": 3
+                    },
+                    {
+                        "code": "CONSIDERATION",
+                        "label": "Consideration",
+                        "description": "Minor suggestion or observation - action plan not required. Developer acknowledges and closes.",
                         "sort_order": 4
                     },
                 ]
@@ -1538,6 +1539,69 @@ def seed_database():
         else:
             print(
                 "⚠ Model Risk Tier taxonomy not found - skipping validation policy seeding")
+
+        # Seed Recommendation Priority Configurations
+        print("\n=== Seeding Recommendation Priority Configurations ===")
+        rec_priority_taxonomy = db.query(Taxonomy).filter(
+            Taxonomy.name == "Recommendation Priority"
+        ).first()
+
+        if rec_priority_taxonomy:
+            # Configuration for each priority level
+            # HIGH/MEDIUM: Full workflow with action plan required
+            # LOW: Validator approval sufficient, action plan required
+            # CONSIDERATION: Action plan NOT required, simplified workflow
+            priority_configs = {
+                "HIGH": {
+                    "requires_final_approval": True,
+                    "requires_action_plan": True,
+                    "description": "High priority - full approval workflow and action plan required"
+                },
+                "MEDIUM": {
+                    "requires_final_approval": True,
+                    "requires_action_plan": True,
+                    "description": "Medium priority - full approval workflow and action plan required"
+                },
+                "LOW": {
+                    "requires_final_approval": False,
+                    "requires_action_plan": True,
+                    "description": "Low priority - validator approval sufficient, action plan required"
+                },
+                "CONSIDERATION": {
+                    "requires_final_approval": False,
+                    "requires_action_plan": False,
+                    "description": "Consideration - action plan not required, simplified workflow"
+                },
+            }
+
+            for priority_code, config_data in priority_configs.items():
+                priority_value = db.query(TaxonomyValue).filter(
+                    TaxonomyValue.taxonomy_id == rec_priority_taxonomy.taxonomy_id,
+                    TaxonomyValue.code == priority_code
+                ).first()
+
+                if priority_value:
+                    existing_config = db.query(RecommendationPriorityConfig).filter(
+                        RecommendationPriorityConfig.priority_id == priority_value.value_id
+                    ).first()
+
+                    if not existing_config:
+                        config = RecommendationPriorityConfig(
+                            priority_id=priority_value.value_id,
+                            requires_final_approval=config_data["requires_final_approval"],
+                            requires_action_plan=config_data["requires_action_plan"],
+                            description=config_data["description"],
+                            created_at=utc_now(),
+                            updated_at=utc_now()
+                        )
+                        db.add(config)
+                        print(f"✓ Created priority config for {priority_value.label}")
+                    else:
+                        print(f"✓ Priority config already exists for {priority_value.label}")
+
+            db.commit()
+        else:
+            print("⚠ Recommendation Priority taxonomy not found - skipping priority config seeding")
 
         # Create demo models with validations to demonstrate overdue logic
         print("\n=== Creating Demo Data for Overdue Validation Dashboard ===")

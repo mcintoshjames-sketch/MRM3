@@ -4,6 +4,7 @@ interface RecommendationWorkflowActionsProps {
     canFinalize: boolean;
     canSubmitRebuttal: boolean;
     canSubmitActionPlan: boolean;
+    canSkipActionPlan: boolean;
     canReviewRebuttal: boolean;
     canReviewActionPlan: boolean;
     canAcknowledge: boolean;
@@ -14,6 +15,7 @@ interface RecommendationWorkflowActionsProps {
     onDeclineAcknowledge: () => void;
     onShowRebuttalModal: () => void;
     onShowActionPlanModal: () => void;
+    onSkipActionPlan: () => void;
     onShowClosureSubmitModal: () => void;
     onShowClosureReviewModal: () => void;
     onRefresh: () => void;
@@ -24,6 +26,7 @@ export default function RecommendationWorkflowActions({
     canFinalize,
     canSubmitRebuttal,
     canSubmitActionPlan,
+    canSkipActionPlan,
     canReviewRebuttal,
     canReviewActionPlan,
     canAcknowledge,
@@ -34,6 +37,7 @@ export default function RecommendationWorkflowActions({
     onDeclineAcknowledge,
     onShowRebuttalModal,
     onShowActionPlanModal,
+    onSkipActionPlan,
     onShowClosureSubmitModal,
     onShowClosureReviewModal,
 }: RecommendationWorkflowActionsProps) {
@@ -66,7 +70,7 @@ export default function RecommendationWorkflowActions({
     };
 
     const hasActions = canFinalize || canSubmitRebuttal || canSubmitActionPlan ||
-        canReviewRebuttal || canReviewActionPlan || canAcknowledge ||
+        canSkipActionPlan || canReviewRebuttal || canReviewActionPlan || canAcknowledge ||
         canSubmitForClosure || canReviewClosure;
 
     if (!hasActions) {
@@ -132,6 +136,17 @@ export default function RecommendationWorkflowActions({
                             className="px-4 py-2 bg-yellow-600 text-white rounded hover:bg-yellow-700"
                         >
                             Submit Action Plan
+                        </button>
+                    )}
+
+                    {/* Skip Action Plan (for low-priority recommendations) */}
+                    {canSkipActionPlan && (
+                        <button
+                            onClick={onSkipActionPlan}
+                            className="px-4 py-2 bg-gray-500 text-white rounded hover:bg-gray-600"
+                            title="This priority level does not require an action plan"
+                        >
+                            Skip Action Plan
                         </button>
                     )}
 

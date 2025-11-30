@@ -365,11 +365,15 @@ class RecommendationPriorityConfig(Base):
     config_id: Mapped[int] = mapped_column(Integer, primary_key=True)
     priority_id: Mapped[int] = mapped_column(
         Integer, ForeignKey("taxonomy_values.value_id"), nullable=False, unique=True,
-        comment="FK to priority taxonomy value (High/Medium/Low)"
+        comment="FK to priority taxonomy value (High/Medium/Low/Consideration)"
     )
     requires_final_approval: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=True,
         comment="If true, closure requires Global + Regional approvals after Validator approval"
+    )
+    requires_action_plan: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True,
+        comment="If false, recommendations with this priority can skip action plan submission"
     )
     description: Mapped[Optional[str]] = mapped_column(
         Text, nullable=True,
@@ -383,3 +387,55 @@ class RecommendationPriorityConfig(Base):
 
     # Relationships
     priority = relationship("TaxonomyValue", foreign_keys=[priority_id])
+
+
+class RecommendationPriorityRegionalOverride(Base):
+    """
+    Regional overrides for recommendation priority configuration.
+
+    Allows different workflow requirements based on model deployment regions.
+    NULL values for requires_action_plan/requires_final_approval mean
+    "inherit from base RecommendationPriorityConfig".
+
+    Resolution logic (implemented in check_requires_action_plan):
+    1. Get model's deployed regions from ModelRegion
+    2. Check for regional overrides matching priority + region
+    3. Most restrictive wins: if ANY region requires action plan, require it
+    4. If no overrides exist or all are NULL, fall back to base config
+    """
+    __tablename__ = "recommendation_priority_regional_overrides"
+
+    override_id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    priority_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("taxonomy_values.value_id"), nullable=False,
+        comment="FK to priority taxonomy value (High/Medium/Low/Consideration)"
+    )
+    region_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("regions.region_id"), nullable=False,
+        comment="FK to region for this override"
+    )
+    requires_action_plan: Mapped[Optional[bool]] = mapped_column(
+        Boolean, nullable=True,
+        comment="Override for action plan requirement. NULL = inherit from base config"
+    )
+    requires_final_approval: Mapped[Optional[bool]] = mapped_column(
+        Boolean, nullable=True,
+        comment="Override for final approval requirement. NULL = inherit from base config"
+    )
+    description: Mapped[Optional[str]] = mapped_column(
+        Text, nullable=True,
+        comment="Admin notes explaining why this regional override exists"
+    )
+
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=utc_now)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, default=utc_now, onupdate=utc_now
+    )
+
+    # Relationships
+    priority = relationship("TaxonomyValue", foreign_keys=[priority_id])
+    region = relationship("Region", foreign_keys=[region_id])
+
+    __table_args__ = (
+        UniqueConstraint('priority_id', 'region_id', name='uq_priority_region_override'),
+    )

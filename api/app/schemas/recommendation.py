@@ -256,12 +256,14 @@ class PriorityConfigCreate(BaseModel):
     """Schema for creating priority configuration."""
     priority_id: int
     requires_final_approval: bool = True
+    requires_action_plan: bool = True
     description: Optional[str] = None
 
 
 class PriorityConfigUpdate(BaseModel):
     """Schema for updating priority configuration."""
     requires_final_approval: Optional[bool] = None
+    requires_action_plan: Optional[bool] = None
     description: Optional[str] = None
 
 
@@ -270,6 +272,50 @@ class PriorityConfigResponse(BaseModel):
     config_id: int
     priority: TaxonomyValueResponse
     requires_final_approval: bool
+    requires_action_plan: bool
+    description: Optional[str] = None
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+# ==================== REGIONAL OVERRIDE SCHEMAS ====================
+
+class RegionalOverrideCreate(BaseModel):
+    """Schema for creating a regional priority override."""
+    priority_id: int
+    region_id: int
+    requires_action_plan: Optional[bool] = None
+    requires_final_approval: Optional[bool] = None
+    description: Optional[str] = None
+
+
+class RegionalOverrideUpdate(BaseModel):
+    """Schema for updating a regional priority override."""
+    requires_action_plan: Optional[bool] = None
+    requires_final_approval: Optional[bool] = None
+    description: Optional[str] = None
+
+
+class RegionSummary(BaseModel):
+    """Minimal region info for regional override responses."""
+    region_id: int
+    code: str
+    name: str
+
+    class Config:
+        from_attributes = True
+
+
+class RegionalOverrideResponse(BaseModel):
+    """Response schema for regional priority override."""
+    override_id: int
+    priority: TaxonomyValueResponse
+    region: RegionSummary
+    requires_action_plan: Optional[bool] = None
+    requires_final_approval: Optional[bool] = None
     description: Optional[str] = None
     created_at: datetime
     updated_at: datetime

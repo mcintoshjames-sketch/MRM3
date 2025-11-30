@@ -132,9 +132,68 @@ interface FryReport {
     schedules?: FrySchedule[];
 }
 
+// ============================================================================
+// TYPES - Recommendation Priority Configuration
+// ============================================================================
+
+interface RecommendationPriorityConfig {
+    config_id: number;
+    priority: {
+        value_id: number;
+        code: string;
+        label: string;
+    };
+    requires_final_approval: boolean;
+    requires_action_plan: boolean;
+    description: string | null;
+    created_at: string;
+    updated_at: string;
+}
+
+interface RegionalOverride {
+    override_id: number;
+    priority: {
+        value_id: number;
+        code: string;
+        label: string;
+    };
+    region: {
+        region_id: number;
+        code: string;
+        name: string;
+    };
+    requires_action_plan: boolean | null;
+    requires_final_approval: boolean | null;
+    description: string | null;
+    created_at: string;
+    updated_at: string;
+}
+
+interface Region {
+    region_id: number;
+    code: string;
+    name: string;
+}
+
 export default function TaxonomyPage() {
     // Tab management
-    const [activeTab, setActiveTab] = useState<'general' | 'change-type' | 'model-type' | 'kpm' | 'fry'>('general');
+    const [activeTab, setActiveTab] = useState<'general' | 'change-type' | 'model-type' | 'kpm' | 'fry' | 'recommendation-priority'>('general');
+
+    // Recommendation Priority Config state
+    const [priorityConfigs, setPriorityConfigs] = useState<RecommendationPriorityConfig[]>([]);
+    const [priorityConfigLoading, setPriorityConfigLoading] = useState(false);
+    const [priorityConfigError, setPriorityConfigError] = useState<string | null>(null);
+    const [editingPriorityConfig, setEditingPriorityConfig] = useState<RecommendationPriorityConfig | null>(null);
+
+    // Regional Override state
+    const [regionalOverrides, setRegionalOverrides] = useState<Record<number, RegionalOverride[]>>({});
+    const [regions, setRegions] = useState<Region[]>([]);
+    const [expandedPriorityIds, setExpandedPriorityIds] = useState<Set<number>>(new Set());
+    const [editingRegionalOverride, setEditingRegionalOverride] = useState<{
+        isNew: boolean;
+        priorityId: number;
+        override: Partial<RegionalOverride>;
+    } | null>(null);
 
     // General taxonomy state
     const [taxonomies, setTaxonomies] = useState<Taxonomy[]>([]);
@@ -236,6 +295,8 @@ export default function TaxonomyPage() {
             fetchKpmCategories();
         } else if (activeTab === 'fry') {
             fetchFryReports();
+        } else if (activeTab === 'recommendation-priority') {
+            fetchPriorityConfigs();
         }
     }, [activeTab]);
 
@@ -845,6 +906,129 @@ export default function TaxonomyPage() {
         setEditingFryItem(null);
     };
 
+    // ============================================================================
+    // RECOMMENDATION PRIORITY CONFIG FUNCTIONS
+    // ============================================================================
+
+    const fetchPriorityConfigs = async () => {
+        try {
+            setPriorityConfigLoading(true);
+            setPriorityConfigError(null);
+            const response = await api.get('/recommendations/priority-config/');
+            setPriorityConfigs(response.data);
+        } catch (error) {
+            console.error('Error fetching priority configs:', error);
+            setPriorityConfigError('Failed to load priority configurations');
+        } finally {
+            setPriorityConfigLoading(false);
+            setLoading(false);
+        }
+    };
+
+    const handleSavePriorityConfig = async (config: RecommendationPriorityConfig) => {
+        try {
+            await api.patch(`/recommendations/priority-config/${config.priority.value_id}`, {
+                requires_final_approval: config.requires_final_approval,
+                requires_action_plan: config.requires_action_plan,
+                description: config.description
+            });
+            await fetchPriorityConfigs();
+            setEditingPriorityConfig(null);
+        } catch (error) {
+            console.error('Error updating priority config:', error);
+            alert('Failed to update priority configuration');
+        }
+    };
+
+    // ============================================================================
+    // REGIONAL OVERRIDE FUNCTIONS
+    // ============================================================================
+
+    const fetchRegions = async () => {
+        try {
+            const response = await api.get('/regions/');
+            setRegions(response.data);
+        } catch (error) {
+            console.error('Error fetching regions:', error);
+        }
+    };
+
+    const fetchRegionalOverrides = async (priorityId: number) => {
+        try {
+            const response = await api.get(`/recommendations/priority-config/${priorityId}/regional-overrides/`);
+            setRegionalOverrides(prev => ({
+                ...prev,
+                [priorityId]: response.data
+            }));
+        } catch (error) {
+            console.error('Error fetching regional overrides:', error);
+        }
+    };
+
+    const togglePriorityExpanded = async (priorityId: number) => {
+        const newExpanded = new Set(expandedPriorityIds);
+        if (newExpanded.has(priorityId)) {
+            newExpanded.delete(priorityId);
+        } else {
+            newExpanded.add(priorityId);
+            // Fetch regions and overrides when expanding
+            if (regions.length === 0) {
+                await fetchRegions();
+            }
+            await fetchRegionalOverrides(priorityId);
+        }
+        setExpandedPriorityIds(newExpanded);
+    };
+
+    const handleSaveRegionalOverride = async () => {
+        if (!editingRegionalOverride) return;
+
+        try {
+            const { isNew, priorityId, override } = editingRegionalOverride;
+
+            if (isNew) {
+                await api.post('/recommendations/priority-config/regional-overrides/', {
+                    priority_id: priorityId,
+                    region_id: override.region?.region_id,
+                    requires_action_plan: override.requires_action_plan,
+                    requires_final_approval: override.requires_final_approval,
+                    description: override.description
+                });
+            } else {
+                await api.patch(`/recommendations/priority-config/regional-overrides/${override.override_id}`, {
+                    requires_action_plan: override.requires_action_plan,
+                    requires_final_approval: override.requires_final_approval,
+                    description: override.description
+                });
+            }
+
+            await fetchRegionalOverrides(priorityId);
+            setEditingRegionalOverride(null);
+        } catch (error) {
+            console.error('Error saving regional override:', error);
+            alert('Failed to save regional override');
+        }
+    };
+
+    const handleDeleteRegionalOverride = async (overrideId: number, priorityId: number) => {
+        if (!confirm('Are you sure you want to delete this regional override?')) return;
+
+        try {
+            await api.delete(`/recommendations/priority-config/regional-overrides/${overrideId}`);
+            await fetchRegionalOverrides(priorityId);
+        } catch (error) {
+            console.error('Error deleting regional override:', error);
+            alert('Failed to delete regional override');
+        }
+    };
+
+    const getAvailableRegionsForOverride = (priorityId: number): Region[] => {
+        const existingRegionIds = new Set(
+            (regionalOverrides[priorityId] || []).map(o => o.region.region_id)
+        );
+        return regions.filter(r => !existingRegionIds.has(r.region_id));
+    };
+
     if (loading) {
         return (
             <Layout>
@@ -907,6 +1091,15 @@ export default function TaxonomyPage() {
                                 } whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm`}
                         >
                             FRY 14 Config
+                        </button>
+                        <button
+                            onClick={() => setActiveTab('recommendation-priority')}
+                            className={`${activeTab === 'recommendation-priority'
+                                ? 'border-blue-500 text-blue-600'
+                                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                                } whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm`}
+                        >
+                            Recommendation Priority
                         </button>
                     </nav>
                 </div>
@@ -2431,6 +2624,516 @@ export default function TaxonomyPage() {
                                         className="px-4 py-2 text-sm font-medium text-white bg-blue-600 border border-transparent rounded-md hover:bg-blue-700"
                                     >
                                         Save Changes
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+                </>
+            )}
+
+            {/* RECOMMENDATION PRIORITY CONFIGURATION TAB */}
+            {activeTab === 'recommendation-priority' && (
+                <>
+                    <div className="mb-4">
+                        <p className="text-sm text-gray-700">
+                            Configure how each recommendation priority level affects the workflow. Settings determine whether action plans and final approvals are required.
+                        </p>
+                    </div>
+
+                    {priorityConfigLoading ? (
+                        <div className="text-center py-12 bg-white shadow rounded-lg">
+                            <p className="text-gray-500">Loading priority configurations...</p>
+                        </div>
+                    ) : priorityConfigError ? (
+                        <div className="text-center py-12 bg-white shadow rounded-lg">
+                            <p className="text-red-500">{priorityConfigError}</p>
+                            <button
+                                onClick={fetchPriorityConfigs}
+                                className="mt-4 px-4 py-2 text-sm font-medium text-blue-600 hover:text-blue-800"
+                            >
+                                Retry
+                            </button>
+                        </div>
+                    ) : priorityConfigs.length === 0 ? (
+                        <div className="text-center py-12 bg-white shadow rounded-lg">
+                            <p className="text-gray-500">No priority configurations found.</p>
+                        </div>
+                    ) : (
+                        <div className="bg-white shadow rounded-lg overflow-hidden">
+                            <table className="min-w-full divide-y divide-gray-200">
+                                <thead className="bg-gray-50">
+                                    <tr>
+                                        <th className="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-10">
+                                            {/* Expand */}
+                                        </th>
+                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                            Priority
+                                        </th>
+                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                            Requires Action Plan
+                                        </th>
+                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                            Requires Final Approval
+                                        </th>
+                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                            Description
+                                        </th>
+                                        <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                            Actions
+                                        </th>
+                                    </tr>
+                                </thead>
+                                <tbody className="bg-white divide-y divide-gray-200">
+                                    {priorityConfigs.map((config) => (
+                                        <>
+                                            <tr key={config.config_id} className="hover:bg-gray-50">
+                                                <td className="px-2 py-4">
+                                                    <button
+                                                        onClick={() => togglePriorityExpanded(config.priority.value_id)}
+                                                        className="text-gray-500 hover:text-gray-700"
+                                                        title={expandedPriorityIds.has(config.priority.value_id) ? 'Collapse regional overrides' : 'Expand regional overrides'}
+                                                    >
+                                                        <svg
+                                                            className={`h-5 w-5 transform transition-transform ${
+                                                                expandedPriorityIds.has(config.priority.value_id) ? 'rotate-90' : ''
+                                                            }`}
+                                                            fill="none"
+                                                            viewBox="0 0 24 24"
+                                                            stroke="currentColor"
+                                                        >
+                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                                                        </svg>
+                                                    </button>
+                                                </td>
+                                                <td className="px-6 py-4 whitespace-nowrap">
+                                                    <div className="flex items-center">
+                                                        <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
+                                                            config.priority.code === 'HIGH' ? 'bg-red-100 text-red-800' :
+                                                            config.priority.code === 'MEDIUM' ? 'bg-yellow-100 text-yellow-800' :
+                                                            config.priority.code === 'LOW' ? 'bg-blue-100 text-blue-800' :
+                                                            config.priority.code === 'CONSIDERATION' ? 'bg-gray-100 text-gray-600' :
+                                                            'bg-gray-100 text-gray-800'
+                                                        }`}>
+                                                            {config.priority.label}
+                                                        </span>
+                                                        <span className="ml-2 text-xs text-gray-500">({config.priority.code})</span>
+                                                    </div>
+                                                </td>
+                                                <td className="px-6 py-4 whitespace-nowrap">
+                                                    <span className={`inline-flex px-2 py-1 text-xs font-medium rounded-full ${
+                                                        config.requires_action_plan ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-600'
+                                                    }`}>
+                                                        {config.requires_action_plan ? 'Yes' : 'No'}
+                                                    </span>
+                                                    <span className="ml-1 text-xs text-gray-400">(default)</span>
+                                                </td>
+                                                <td className="px-6 py-4 whitespace-nowrap">
+                                                    <span className={`inline-flex px-2 py-1 text-xs font-medium rounded-full ${
+                                                        config.requires_final_approval ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-600'
+                                                    }`}>
+                                                        {config.requires_final_approval ? 'Yes' : 'No'}
+                                                    </span>
+                                                    <span className="ml-1 text-xs text-gray-400">(default)</span>
+                                                </td>
+                                                <td className="px-6 py-4">
+                                                    <p className="text-sm text-gray-600 max-w-xs truncate" title={config.description || ''}>
+                                                        {config.description || '—'}
+                                                    </p>
+                                                </td>
+                                                <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                                                    <button
+                                                        onClick={() => setEditingPriorityConfig(config)}
+                                                        className="text-blue-600 hover:text-blue-800"
+                                                    >
+                                                        Edit
+                                                    </button>
+                                                </td>
+                                            </tr>
+
+                                            {/* Expanded Regional Overrides Section */}
+                                            {expandedPriorityIds.has(config.priority.value_id) && (
+                                                <tr key={`${config.config_id}-overrides`}>
+                                                    <td colSpan={6} className="bg-gray-50 px-6 py-4">
+                                                        <div className="ml-8">
+                                                            <div className="flex justify-between items-center mb-3">
+                                                                <h4 className="text-sm font-medium text-gray-700">
+                                                                    Regional Overrides for {config.priority.label} Priority
+                                                                </h4>
+                                                                <button
+                                                                    onClick={() => {
+                                                                        const availableRegions = getAvailableRegionsForOverride(config.priority.value_id);
+                                                                        if (availableRegions.length === 0) {
+                                                                            alert('All regions already have overrides for this priority.');
+                                                                            return;
+                                                                        }
+                                                                        setEditingRegionalOverride({
+                                                                            isNew: true,
+                                                                            priorityId: config.priority.value_id,
+                                                                            override: {
+                                                                                requires_action_plan: null,
+                                                                                requires_final_approval: null,
+                                                                                description: ''
+                                                                            }
+                                                                        });
+                                                                    }}
+                                                                    className="text-sm text-blue-600 hover:text-blue-800"
+                                                                >
+                                                                    + Add Regional Override
+                                                                </button>
+                                                            </div>
+
+                                                            {(regionalOverrides[config.priority.value_id] || []).length === 0 ? (
+                                                                <p className="text-sm text-gray-500 italic">
+                                                                    No regional overrides configured. Default settings apply to all regions.
+                                                                </p>
+                                                            ) : (
+                                                                <table className="min-w-full border border-gray-200 rounded">
+                                                                    <thead className="bg-gray-100">
+                                                                        <tr>
+                                                                            <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Region</th>
+                                                                            <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Requires Action Plan</th>
+                                                                            <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Requires Final Approval</th>
+                                                                            <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Description</th>
+                                                                            <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">Actions</th>
+                                                                        </tr>
+                                                                    </thead>
+                                                                    <tbody className="divide-y divide-gray-200">
+                                                                        {(regionalOverrides[config.priority.value_id] || []).map((override) => (
+                                                                            <tr key={override.override_id} className="bg-white">
+                                                                                <td className="px-4 py-2">
+                                                                                    <span className="text-sm font-medium text-gray-900">
+                                                                                        {override.region.name}
+                                                                                    </span>
+                                                                                    <span className="ml-1 text-xs text-gray-500">({override.region.code})</span>
+                                                                                </td>
+                                                                                <td className="px-4 py-2">
+                                                                                    {override.requires_action_plan === null ? (
+                                                                                        <span className="text-xs text-gray-400 italic">Inherit default</span>
+                                                                                    ) : (
+                                                                                        <span className={`inline-flex px-2 py-1 text-xs font-medium rounded-full ${
+                                                                                            override.requires_action_plan ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-600'
+                                                                                        }`}>
+                                                                                            {override.requires_action_plan ? 'Yes' : 'No'}
+                                                                                        </span>
+                                                                                    )}
+                                                                                </td>
+                                                                                <td className="px-4 py-2">
+                                                                                    {override.requires_final_approval === null ? (
+                                                                                        <span className="text-xs text-gray-400 italic">Inherit default</span>
+                                                                                    ) : (
+                                                                                        <span className={`inline-flex px-2 py-1 text-xs font-medium rounded-full ${
+                                                                                            override.requires_final_approval ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-600'
+                                                                                        }`}>
+                                                                                            {override.requires_final_approval ? 'Yes' : 'No'}
+                                                                                        </span>
+                                                                                    )}
+                                                                                </td>
+                                                                                <td className="px-4 py-2">
+                                                                                    <span className="text-xs text-gray-600">
+                                                                                        {override.description || '—'}
+                                                                                    </span>
+                                                                                </td>
+                                                                                <td className="px-4 py-2 text-right">
+                                                                                    <button
+                                                                                        onClick={() => setEditingRegionalOverride({
+                                                                                            isNew: false,
+                                                                                            priorityId: config.priority.value_id,
+                                                                                            override: { ...override }
+                                                                                        })}
+                                                                                        className="text-blue-600 hover:text-blue-800 text-xs mr-3"
+                                                                                    >
+                                                                                        Edit
+                                                                                    </button>
+                                                                                    <button
+                                                                                        onClick={() => handleDeleteRegionalOverride(override.override_id, config.priority.value_id)}
+                                                                                        className="text-red-600 hover:text-red-800 text-xs"
+                                                                                    >
+                                                                                        Delete
+                                                                                    </button>
+                                                                                </td>
+                                                                            </tr>
+                                                                        ))}
+                                                                    </tbody>
+                                                                </table>
+                                                            )}
+
+                                                            <p className="mt-2 text-xs text-gray-500">
+                                                                Regional overrides apply when a model is deployed in the specified region.
+                                                                If multiple regions apply, the most restrictive setting wins.
+                                                            </p>
+                                                        </div>
+                                                    </td>
+                                                </tr>
+                                            )}
+                                        </>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    )}
+
+                    {/* Edit Priority Config Modal */}
+                    {editingPriorityConfig && (
+                        <div className="fixed inset-0 bg-gray-500 bg-opacity-75 flex items-center justify-center z-50">
+                            <div className="bg-white rounded-lg p-6 max-w-lg w-full">
+                                <h3 className="text-lg font-medium text-gray-900 mb-4">
+                                    Edit Priority Configuration: {editingPriorityConfig.priority.label}
+                                </h3>
+
+                                <div className="space-y-4">
+                                    <div>
+                                        <label className="flex items-center">
+                                            <input
+                                                type="checkbox"
+                                                checked={editingPriorityConfig.requires_action_plan}
+                                                onChange={(e) => setEditingPriorityConfig({
+                                                    ...editingPriorityConfig,
+                                                    requires_action_plan: e.target.checked
+                                                })}
+                                                className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                                            />
+                                            <span className="ml-2 text-sm text-gray-700">Requires Action Plan</span>
+                                        </label>
+                                        <p className="mt-1 text-xs text-gray-500 ml-6">
+                                            If unchecked, developers can skip action plan submission and proceed directly to validator review.
+                                        </p>
+                                    </div>
+
+                                    <div>
+                                        <label className="flex items-center">
+                                            <input
+                                                type="checkbox"
+                                                checked={editingPriorityConfig.requires_final_approval}
+                                                onChange={(e) => setEditingPriorityConfig({
+                                                    ...editingPriorityConfig,
+                                                    requires_final_approval: e.target.checked
+                                                })}
+                                                className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                                            />
+                                            <span className="ml-2 text-sm text-gray-700">Requires Final Approval</span>
+                                        </label>
+                                        <p className="mt-1 text-xs text-gray-500 ml-6">
+                                            If checked, closure requires approval from designated approvers before the recommendation can be closed.
+                                        </p>
+                                    </div>
+
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700">Description</label>
+                                        <textarea
+                                            value={editingPriorityConfig.description || ''}
+                                            onChange={(e) => setEditingPriorityConfig({
+                                                ...editingPriorityConfig,
+                                                description: e.target.value
+                                            })}
+                                            rows={3}
+                                            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 input-field"
+                                            placeholder="Optional description of this priority level's workflow..."
+                                        />
+                                    </div>
+                                </div>
+
+                                <div className="mt-6 flex justify-end space-x-3">
+                                    <button
+                                        onClick={() => setEditingPriorityConfig(null)}
+                                        className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50"
+                                    >
+                                        Cancel
+                                    </button>
+                                    <button
+                                        onClick={() => handleSavePriorityConfig(editingPriorityConfig)}
+                                        className="px-4 py-2 text-sm font-medium text-white bg-blue-600 border border-transparent rounded-md hover:bg-blue-700"
+                                    >
+                                        Save Changes
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Regional Override Modal */}
+                    {editingRegionalOverride && (
+                        <div className="fixed inset-0 bg-gray-500 bg-opacity-75 flex items-center justify-center z-50">
+                            <div className="bg-white rounded-lg p-6 max-w-lg w-full">
+                                <h3 className="text-lg font-medium text-gray-900 mb-4">
+                                    {editingRegionalOverride.isNew ? 'Add Regional Override' : 'Edit Regional Override'}
+                                </h3>
+
+                                <div className="space-y-4">
+                                    {/* Region selector (only for new overrides) */}
+                                    {editingRegionalOverride.isNew && (
+                                        <div>
+                                            <label className="block text-sm font-medium text-gray-700">Region</label>
+                                            <select
+                                                value={editingRegionalOverride.override.region?.region_id || ''}
+                                                onChange={(e) => {
+                                                    const regionId = parseInt(e.target.value);
+                                                    const selectedRegion = regions.find(r => r.region_id === regionId);
+                                                    setEditingRegionalOverride({
+                                                        ...editingRegionalOverride,
+                                                        override: {
+                                                            ...editingRegionalOverride.override,
+                                                            region: selectedRegion ? {
+                                                                region_id: selectedRegion.region_id,
+                                                                code: selectedRegion.code,
+                                                                name: selectedRegion.name
+                                                            } : undefined
+                                                        }
+                                                    });
+                                                }}
+                                                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 input-field"
+                                            >
+                                                <option value="">Select a region...</option>
+                                                {getAvailableRegionsForOverride(editingRegionalOverride.priorityId).map(region => (
+                                                    <option key={region.region_id} value={region.region_id}>
+                                                        {region.name} ({region.code})
+                                                    </option>
+                                                ))}
+                                            </select>
+                                        </div>
+                                    )}
+
+                                    {/* Display region for existing overrides */}
+                                    {!editingRegionalOverride.isNew && editingRegionalOverride.override.region && (
+                                        <div>
+                                            <label className="block text-sm font-medium text-gray-700">Region</label>
+                                            <p className="mt-1 text-sm text-gray-900">
+                                                {editingRegionalOverride.override.region.name} ({editingRegionalOverride.override.region.code})
+                                            </p>
+                                        </div>
+                                    )}
+
+                                    {/* Requires Action Plan */}
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 mb-2">Requires Action Plan</label>
+                                        <div className="flex space-x-4">
+                                            <label className="flex items-center">
+                                                <input
+                                                    type="radio"
+                                                    name="requires_action_plan"
+                                                    checked={editingRegionalOverride.override.requires_action_plan === null}
+                                                    onChange={() => setEditingRegionalOverride({
+                                                        ...editingRegionalOverride,
+                                                        override: { ...editingRegionalOverride.override, requires_action_plan: null }
+                                                    })}
+                                                    className="mr-2"
+                                                />
+                                                <span className="text-sm text-gray-700">Inherit default</span>
+                                            </label>
+                                            <label className="flex items-center">
+                                                <input
+                                                    type="radio"
+                                                    name="requires_action_plan"
+                                                    checked={editingRegionalOverride.override.requires_action_plan === true}
+                                                    onChange={() => setEditingRegionalOverride({
+                                                        ...editingRegionalOverride,
+                                                        override: { ...editingRegionalOverride.override, requires_action_plan: true }
+                                                    })}
+                                                    className="mr-2"
+                                                />
+                                                <span className="text-sm text-gray-700">Yes</span>
+                                            </label>
+                                            <label className="flex items-center">
+                                                <input
+                                                    type="radio"
+                                                    name="requires_action_plan"
+                                                    checked={editingRegionalOverride.override.requires_action_plan === false}
+                                                    onChange={() => setEditingRegionalOverride({
+                                                        ...editingRegionalOverride,
+                                                        override: { ...editingRegionalOverride.override, requires_action_plan: false }
+                                                    })}
+                                                    className="mr-2"
+                                                />
+                                                <span className="text-sm text-gray-700">No</span>
+                                            </label>
+                                        </div>
+                                        <p className="mt-1 text-xs text-gray-500">
+                                            Override the default action plan requirement for models deployed in this region.
+                                        </p>
+                                    </div>
+
+                                    {/* Requires Final Approval */}
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 mb-2">Requires Final Approval</label>
+                                        <div className="flex space-x-4">
+                                            <label className="flex items-center">
+                                                <input
+                                                    type="radio"
+                                                    name="requires_final_approval"
+                                                    checked={editingRegionalOverride.override.requires_final_approval === null}
+                                                    onChange={() => setEditingRegionalOverride({
+                                                        ...editingRegionalOverride,
+                                                        override: { ...editingRegionalOverride.override, requires_final_approval: null }
+                                                    })}
+                                                    className="mr-2"
+                                                />
+                                                <span className="text-sm text-gray-700">Inherit default</span>
+                                            </label>
+                                            <label className="flex items-center">
+                                                <input
+                                                    type="radio"
+                                                    name="requires_final_approval"
+                                                    checked={editingRegionalOverride.override.requires_final_approval === true}
+                                                    onChange={() => setEditingRegionalOverride({
+                                                        ...editingRegionalOverride,
+                                                        override: { ...editingRegionalOverride.override, requires_final_approval: true }
+                                                    })}
+                                                    className="mr-2"
+                                                />
+                                                <span className="text-sm text-gray-700">Yes</span>
+                                            </label>
+                                            <label className="flex items-center">
+                                                <input
+                                                    type="radio"
+                                                    name="requires_final_approval"
+                                                    checked={editingRegionalOverride.override.requires_final_approval === false}
+                                                    onChange={() => setEditingRegionalOverride({
+                                                        ...editingRegionalOverride,
+                                                        override: { ...editingRegionalOverride.override, requires_final_approval: false }
+                                                    })}
+                                                    className="mr-2"
+                                                />
+                                                <span className="text-sm text-gray-700">No</span>
+                                            </label>
+                                        </div>
+                                        <p className="mt-1 text-xs text-gray-500">
+                                            Override the default final approval requirement for models deployed in this region.
+                                        </p>
+                                    </div>
+
+                                    {/* Description */}
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700">Description</label>
+                                        <textarea
+                                            value={editingRegionalOverride.override.description || ''}
+                                            onChange={(e) => setEditingRegionalOverride({
+                                                ...editingRegionalOverride,
+                                                override: { ...editingRegionalOverride.override, description: e.target.value }
+                                            })}
+                                            rows={2}
+                                            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 input-field"
+                                            placeholder="Optional description of this regional override..."
+                                        />
+                                    </div>
+                                </div>
+
+                                <div className="mt-6 flex justify-end space-x-3">
+                                    <button
+                                        onClick={() => setEditingRegionalOverride(null)}
+                                        className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50"
+                                    >
+                                        Cancel
+                                    </button>
+                                    <button
+                                        onClick={handleSaveRegionalOverride}
+                                        disabled={editingRegionalOverride.isNew && !editingRegionalOverride.override.region}
+                                        className={`px-4 py-2 text-sm font-medium text-white border border-transparent rounded-md ${
+                                            editingRegionalOverride.isNew && !editingRegionalOverride.override.region
+                                                ? 'bg-blue-400 cursor-not-allowed'
+                                                : 'bg-blue-600 hover:bg-blue-700'
+                                        }`}
+                                    >
+                                        {editingRegionalOverride.isNew ? 'Create Override' : 'Save Changes'}
                                     </button>
                                 </div>
                             </div>

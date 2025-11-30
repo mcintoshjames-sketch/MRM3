@@ -18,6 +18,7 @@ from app.models import (
     ClosureEvidence, RecommendationStatusHistory, RecommendationApproval,
     RecommendationPriorityConfig
 )
+from app.models.recommendation import RecommendationPriorityRegionalOverride
 from app.schemas.recommendation import (
     RecommendationCreate, RecommendationUpdate, RecommendationResponse, RecommendationListResponse,
     ActionPlanTaskCreate, ActionPlanTaskUpdate, ActionPlanTaskResponse,
@@ -26,6 +27,7 @@ from app.schemas.recommendation import (
     ClosureEvidenceCreate, ClosureEvidenceResponse,
     StatusHistoryResponse, ApprovalResponse, ApprovalRequest, ApprovalRejectRequest,
     PriorityConfigCreate, PriorityConfigUpdate, PriorityConfigResponse,
+    RegionalOverrideCreate, RegionalOverrideUpdate, RegionalOverrideResponse,
     ClosureReviewRequest, DeclineAcknowledgementRequest,
     # Dashboard & Reports
     MyTasksResponse, MyTaskItem, OpenRecommendationsSummary, StatusSummary, PrioritySummary,
@@ -192,6 +194,66 @@ def check_not_terminal(recommendation: Recommendation, db: Session):
         )
 
 
+def check_requires_action_plan(db: Session, recommendation: Recommendation) -> bool:
+    """Check if recommendation's priority requires an action plan.
+
+    Returns True if action plan is required, False if it can be skipped.
+
+    Resolution logic with regional overrides:
+    1. Get base config for the priority
+    2. Get the model's deployed regions
+    3. If model has regions, check for regional overrides
+    4. Apply "most restrictive wins" logic:
+       - If ANY override says True, return True
+       - If ALL overrides say False (explicit), return False
+       - NULL overrides are ignored (inherit from base)
+       - If no overrides apply, use base config
+    """
+    # Get base config
+    config = db.query(RecommendationPriorityConfig).filter(
+        RecommendationPriorityConfig.priority_id == recommendation.priority_id
+    ).first()
+
+    base_requires = config.requires_action_plan if config else True
+
+    # Get model's deployed region IDs
+    model_region_ids = db.query(ModelRegion.region_id).filter(
+        ModelRegion.model_id == recommendation.model_id
+    ).all()
+    region_ids = [r[0] for r in model_region_ids]
+
+    # If no regions, use base config only
+    if not region_ids:
+        return base_requires
+
+    # Get regional overrides for this priority + model's regions
+    overrides = db.query(RecommendationPriorityRegionalOverride).filter(
+        RecommendationPriorityRegionalOverride.priority_id == recommendation.priority_id,
+        RecommendationPriorityRegionalOverride.region_id.in_(region_ids)
+    ).all()
+
+    # If no overrides, use base config
+    if not overrides:
+        return base_requires
+
+    # Apply "most restrictive wins" logic
+    # First check if ANY override explicitly requires action plan
+    for override in overrides:
+        if override.requires_action_plan is True:
+            return True
+
+    # Check if ALL overrides explicitly say no action plan required
+    # (NULL values inherit from base, so don't count them)
+    explicit_false_count = sum(1 for o in overrides if o.requires_action_plan is False)
+    if explicit_false_count == len(overrides):
+        # All overrides explicitly say no action plan required
+        return False
+
+    # Some overrides are NULL (inherit) and none explicitly require it
+    # Fall back to base config
+    return base_requires
+
+
 def create_final_approvals(
     db: Session,
     recommendation: Recommendation
@@ -247,6 +309,139 @@ def list_priority_configs(
     return configs
 
 
+# ==================== REGIONAL OVERRIDE ENDPOINTS ====================
+# NOTE: These must be defined BEFORE /priority-config/{priority_id} routes
+# to avoid FastAPI matching "regional-overrides" as a priority_id.
+
+@router.get("/priority-config/regional-overrides/", response_model=List[RegionalOverrideResponse])
+def list_regional_overrides(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """List all regional priority overrides."""
+    overrides = db.query(RecommendationPriorityRegionalOverride).options(
+        joinedload(RecommendationPriorityRegionalOverride.priority),
+        joinedload(RecommendationPriorityRegionalOverride.region)
+    ).all()
+    return overrides
+
+
+@router.post("/priority-config/regional-overrides/", response_model=RegionalOverrideResponse, status_code=status.HTTP_201_CREATED)
+def create_regional_override(
+    override_data: RegionalOverrideCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Create a regional priority override. Admin only."""
+    check_admin(current_user)
+
+    # Validate priority exists
+    priority = db.query(TaxonomyValue).filter(
+        TaxonomyValue.value_id == override_data.priority_id
+    ).first()
+    if not priority:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Priority not found"
+        )
+
+    # Validate region exists
+    region = db.query(Region).filter(
+        Region.region_id == override_data.region_id
+    ).first()
+    if not region:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Region not found"
+        )
+
+    # Check for existing override (unique constraint)
+    existing = db.query(RecommendationPriorityRegionalOverride).filter(
+        RecommendationPriorityRegionalOverride.priority_id == override_data.priority_id,
+        RecommendationPriorityRegionalOverride.region_id == override_data.region_id
+    ).first()
+    if existing:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Regional override already exists for this priority and region"
+        )
+
+    override = RecommendationPriorityRegionalOverride(
+        priority_id=override_data.priority_id,
+        region_id=override_data.region_id,
+        requires_action_plan=override_data.requires_action_plan,
+        requires_final_approval=override_data.requires_final_approval,
+        description=override_data.description
+    )
+    db.add(override)
+    db.commit()
+    db.refresh(override)
+
+    # Load relationships for response
+    db.refresh(override, ["priority", "region"])
+    return override
+
+
+@router.patch("/priority-config/regional-overrides/{override_id}", response_model=RegionalOverrideResponse)
+def update_regional_override(
+    override_id: int,
+    override_update: RegionalOverrideUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Update a regional priority override. Admin only."""
+    check_admin(current_user)
+
+    override = db.query(RecommendationPriorityRegionalOverride).filter(
+        RecommendationPriorityRegionalOverride.override_id == override_id
+    ).first()
+
+    if not override:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Regional override not found"
+        )
+
+    # Allow setting to None explicitly (to inherit from base)
+    if override_update.requires_action_plan is not None or 'requires_action_plan' in override_update.model_dump(exclude_unset=True):
+        override.requires_action_plan = override_update.requires_action_plan
+    if override_update.requires_final_approval is not None or 'requires_final_approval' in override_update.model_dump(exclude_unset=True):
+        override.requires_final_approval = override_update.requires_final_approval
+    if override_update.description is not None:
+        override.description = override_update.description
+
+    db.commit()
+    db.refresh(override, ["priority", "region"])
+    return override
+
+
+@router.delete("/priority-config/regional-overrides/{override_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_regional_override(
+    override_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Delete a regional priority override. Admin only."""
+    check_admin(current_user)
+
+    override = db.query(RecommendationPriorityRegionalOverride).filter(
+        RecommendationPriorityRegionalOverride.override_id == override_id
+    ).first()
+
+    if not override:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Regional override not found"
+        )
+
+    db.delete(override)
+    db.commit()
+    return None
+
+
+# ==================== PRIORITY CONFIG DYNAMIC ROUTES ====================
+# NOTE: These must be defined AFTER the static /regional-overrides/ routes
+
 @router.patch("/priority-config/{priority_id}", response_model=PriorityConfigResponse)
 def update_priority_config(
     priority_id: int,
@@ -269,12 +464,30 @@ def update_priority_config(
 
     if config_update.requires_final_approval is not None:
         config.requires_final_approval = config_update.requires_final_approval
+    if config_update.requires_action_plan is not None:
+        config.requires_action_plan = config_update.requires_action_plan
     if config_update.description is not None:
         config.description = config_update.description
 
     db.commit()
     db.refresh(config)
     return config
+
+
+@router.get("/priority-config/{priority_id}/regional-overrides/", response_model=List[RegionalOverrideResponse])
+def list_regional_overrides_for_priority(
+    priority_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """List regional overrides for a specific priority."""
+    overrides = db.query(RecommendationPriorityRegionalOverride).filter(
+        RecommendationPriorityRegionalOverride.priority_id == priority_id
+    ).options(
+        joinedload(RecommendationPriorityRegionalOverride.priority),
+        joinedload(RecommendationPriorityRegionalOverride.region)
+    ).all()
+    return overrides
 
 
 # ==================== RECOMMENDATION CRUD ENDPOINTS ====================
@@ -1154,6 +1367,102 @@ def submit_action_plan(
     db.commit()
     db.refresh(recommendation)
     return recommendation
+
+
+@router.post("/{recommendation_id}/skip-action-plan", response_model=RecommendationResponse)
+def skip_action_plan(
+    recommendation_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Skip action plan for low-priority recommendations.
+    Only allowed for priorities with requires_action_plan=False (e.g., Consideration).
+
+    Workflow: PENDING_RESPONSE -> PENDING_VALIDATOR_REVIEW (validator still finalizes)
+    Then: validator finalizes -> PENDING_ACKNOWLEDGEMENT -> developer acknowledges -> OPEN
+    """
+    recommendation = db.query(Recommendation).filter(
+        Recommendation.recommendation_id == recommendation_id
+    ).first()
+
+    if not recommendation:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Recommendation not found"
+        )
+
+    check_not_terminal(recommendation, db)
+    check_developer_or_admin(current_user, recommendation)
+
+    # Verify priority allows skipping action plan
+    if check_requires_action_plan(db, recommendation):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="This priority level requires an action plan. Use the standard workflow."
+        )
+
+    # Check current status
+    current_status = db.query(TaxonomyValue).filter(
+        TaxonomyValue.value_id == recommendation.current_status_id
+    ).first()
+
+    if current_status.code != "REC_PENDING_RESPONSE":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Cannot skip action plan from {current_status.label} status. Expected Pending Response."
+        )
+
+    # Skip to PENDING_VALIDATOR_REVIEW (validator still needs to finalize)
+    new_status = get_status_by_code(db, "REC_PENDING_VALIDATOR_REVIEW")
+    create_status_history(
+        db, recommendation, new_status, current_user,
+        "Action plan skipped - not required for this priority level"
+    )
+
+    db.commit()
+    db.refresh(recommendation)
+    return recommendation
+
+
+@router.get("/{recommendation_id}/can-skip-action-plan")
+def can_skip_action_plan(
+    recommendation_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Check if a recommendation's priority allows skipping action plan.
+    Returns information about whether the action plan can be skipped.
+    """
+    recommendation = db.query(Recommendation).filter(
+        Recommendation.recommendation_id == recommendation_id
+    ).first()
+
+    if not recommendation:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Recommendation not found"
+        )
+
+    requires_action_plan = check_requires_action_plan(db, recommendation)
+
+    # Check if in correct status to skip
+    current_status = db.query(TaxonomyValue).filter(
+        TaxonomyValue.value_id == recommendation.current_status_id
+    ).first()
+
+    can_skip = (
+        not requires_action_plan and
+        current_status.code == "REC_PENDING_RESPONSE"
+    )
+
+    return {
+        "recommendation_id": recommendation_id,
+        "requires_action_plan": requires_action_plan,
+        "current_status_code": current_status.code,
+        "can_skip_action_plan": can_skip
+    }
 
 
 @router.post("/{recommendation_id}/action-plan/request-revisions", response_model=RecommendationResponse)

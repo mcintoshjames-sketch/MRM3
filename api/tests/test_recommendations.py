@@ -53,9 +53,10 @@ def recommendation_taxonomies(db_session):
     db_session.add(priority_tax)
     db_session.flush()
 
-    high = TaxonomyValue(taxonomy_id=priority_tax.taxonomy_id, code="REC_HIGH", label="High", sort_order=1)
-    medium = TaxonomyValue(taxonomy_id=priority_tax.taxonomy_id, code="REC_MEDIUM", label="Medium", sort_order=2)
-    low = TaxonomyValue(taxonomy_id=priority_tax.taxonomy_id, code="REC_LOW", label="Low", sort_order=3)
+    high = TaxonomyValue(taxonomy_id=priority_tax.taxonomy_id, code="HIGH", label="High", sort_order=1)
+    medium = TaxonomyValue(taxonomy_id=priority_tax.taxonomy_id, code="MEDIUM", label="Medium", sort_order=2)
+    low = TaxonomyValue(taxonomy_id=priority_tax.taxonomy_id, code="LOW", label="Low", sort_order=3)
+    consideration = TaxonomyValue(taxonomy_id=priority_tax.taxonomy_id, code="CONSIDERATION", label="Consideration", sort_order=4)
 
     # Recommendation Category
     category_tax = Taxonomy(name="Recommendation Category", is_system=True)
@@ -83,7 +84,7 @@ def recommendation_taxonomies(db_session):
         draft, pending_response, in_rebuttal, dropped, pending_action_plan,
         pending_validator_review, pending_acknowledgement, open_status,
         pending_closure_review, rework_required, pending_final_approval, closed,
-        high, medium, low,
+        high, medium, low, consideration,
         cat_data, cat_method, cat_impl, cat_doc, cat_monitor, cat_govern, cat_other,
         task_not_started, task_in_progress, task_completed
     ])
@@ -98,7 +99,7 @@ def recommendation_taxonomies(db_session):
             "pending_closure_review": pending_closure_review, "rework_required": rework_required,
             "pending_final_approval": pending_final_approval, "closed": closed
         },
-        "priority": {"high": high, "medium": medium, "low": low},
+        "priority": {"high": high, "medium": medium, "low": low, "consideration": consideration},
         "category": {
             "data": cat_data, "method": cat_method, "impl": cat_impl,
             "doc": cat_doc, "monitor": cat_monitor, "govern": cat_govern, "other": cat_other
@@ -117,23 +118,32 @@ def priority_configs(db_session, recommendation_taxonomies):
     high_config = RecommendationPriorityConfig(
         priority_id=recommendation_taxonomies["priority"]["high"].value_id,
         requires_final_approval=True,
+        requires_action_plan=True,
         description="High priority requires Global/Regional approvals"
     )
     medium_config = RecommendationPriorityConfig(
         priority_id=recommendation_taxonomies["priority"]["medium"].value_id,
         requires_final_approval=True,
+        requires_action_plan=True,
         description="Medium priority requires Global/Regional approvals"
     )
     low_config = RecommendationPriorityConfig(
         priority_id=recommendation_taxonomies["priority"]["low"].value_id,
         requires_final_approval=False,
+        requires_action_plan=True,
         description="Low priority closes with Validator approval only"
     )
+    consideration_config = RecommendationPriorityConfig(
+        priority_id=recommendation_taxonomies["priority"]["consideration"].value_id,
+        requires_final_approval=False,
+        requires_action_plan=False,
+        description="Consideration priority - no action plan required, acknowledgement only"
+    )
 
-    db_session.add_all([high_config, medium_config, low_config])
+    db_session.add_all([high_config, medium_config, low_config, consideration_config])
     db_session.commit()
 
-    return {"high": high_config, "medium": medium_config, "low": low_config}
+    return {"high": high_config, "medium": medium_config, "low": low_config, "consideration": consideration_config}
 
 
 @pytest.fixture
@@ -910,16 +920,17 @@ class TestPriorityAndApprovalRules:
     def test_priority_config_exists_for_all_levels(
         self, client, admin_headers, recommendation_taxonomies, priority_configs
     ):
-        """Priority seeding: RecommendationPriorityConfig rows exist for High/Medium/Low."""
+        """Priority seeding: RecommendationPriorityConfig rows exist for High/Medium/Low/Consideration."""
         response = client.get("/recommendations/priority-config/", headers=admin_headers)
         assert response.status_code == 200
         configs = response.json()
-        assert len(configs) == 3
+        assert len(configs) == 4
 
         codes = [c["priority"]["code"] for c in configs]
-        assert "REC_HIGH" in codes
-        assert "REC_MEDIUM" in codes
-        assert "REC_LOW" in codes
+        assert "HIGH" in codes
+        assert "MEDIUM" in codes
+        assert "LOW" in codes
+        assert "CONSIDERATION" in codes
 
     def test_high_priority_requires_final_approval(
         self, client, admin_headers, recommendation_taxonomies, priority_configs
@@ -928,8 +939,8 @@ class TestPriorityAndApprovalRules:
         response = client.get("/recommendations/priority-config/", headers=admin_headers)
         configs = response.json()
 
-        high_config = next(c for c in configs if c["priority"]["code"] == "REC_HIGH")
-        medium_config = next(c for c in configs if c["priority"]["code"] == "REC_MEDIUM")
+        high_config = next(c for c in configs if c["priority"]["code"] == "HIGH")
+        medium_config = next(c for c in configs if c["priority"]["code"] == "MEDIUM")
 
         assert high_config["requires_final_approval"] is True
         assert medium_config["requires_final_approval"] is True
@@ -941,8 +952,34 @@ class TestPriorityAndApprovalRules:
         response = client.get("/recommendations/priority-config/", headers=admin_headers)
         configs = response.json()
 
-        low_config = next(c for c in configs if c["priority"]["code"] == "REC_LOW")
+        low_config = next(c for c in configs if c["priority"]["code"] == "LOW")
         assert low_config["requires_final_approval"] is False
+
+    def test_consideration_priority_skips_action_plan(
+        self, client, admin_headers, recommendation_taxonomies, priority_configs
+    ):
+        """Consideration priority has requires_action_plan=False and requires_final_approval=False."""
+        response = client.get("/recommendations/priority-config/", headers=admin_headers)
+        configs = response.json()
+
+        consideration_config = next(c for c in configs if c["priority"]["code"] == "CONSIDERATION")
+        assert consideration_config["requires_final_approval"] is False
+        assert consideration_config["requires_action_plan"] is False
+
+    def test_high_medium_low_require_action_plan(
+        self, client, admin_headers, recommendation_taxonomies, priority_configs
+    ):
+        """High/Medium/Low priorities require action plan (requires_action_plan=True)."""
+        response = client.get("/recommendations/priority-config/", headers=admin_headers)
+        configs = response.json()
+
+        high_config = next(c for c in configs if c["priority"]["code"] == "HIGH")
+        medium_config = next(c for c in configs if c["priority"]["code"] == "MEDIUM")
+        low_config = next(c for c in configs if c["priority"]["code"] == "LOW")
+
+        assert high_config["requires_action_plan"] is True
+        assert medium_config["requires_action_plan"] is True
+        assert low_config["requires_action_plan"] is True
 
     def test_admin_can_update_priority_config(
         self, client, admin_headers, recommendation_taxonomies, priority_configs
@@ -3132,3 +3169,630 @@ class TestDashboardAndReports:
         status_codes = [s["status_code"] for s in data["by_status"]]
         assert "REC_DROPPED" not in status_codes
         assert "REC_CLOSED" not in status_codes
+
+
+# ============================================================================
+# Phase 7: Regional Override Tests (TDD)
+# ============================================================================
+
+@pytest.fixture
+def multiple_regions(db_session):
+    """Create multiple regions for testing regional overrides."""
+    us_region = Region(code="US", name="United States", requires_regional_approval=True)
+    emea_region = Region(code="EMEA", name="Europe, Middle East & Africa", requires_regional_approval=True)
+    apac_region = Region(code="APAC", name="Asia Pacific", requires_regional_approval=True)
+    global_region = Region(code="GLOBAL", name="Global", requires_regional_approval=False)
+
+    db_session.add_all([us_region, emea_region, apac_region, global_region])
+    db_session.commit()
+    db_session.refresh(us_region)
+    db_session.refresh(emea_region)
+    db_session.refresh(apac_region)
+    db_session.refresh(global_region)
+
+    return {"us": us_region, "emea": emea_region, "apac": apac_region, "global": global_region}
+
+
+@pytest.fixture
+def model_deployed_us(db_session, test_user, multiple_regions):
+    """Create a model deployed to US region only."""
+    model = Model(
+        model_name="US Model",
+        description="Model deployed only in US",
+        development_type="In-House",
+        status="In Production",
+        owner_id=test_user.user_id,
+        row_approval_status="approved"
+    )
+    db_session.add(model)
+    db_session.flush()
+
+    model_region = ModelRegion(
+        model_id=model.model_id,
+        region_id=multiple_regions["us"].region_id
+    )
+    db_session.add(model_region)
+    db_session.commit()
+    db_session.refresh(model)
+    return model
+
+
+@pytest.fixture
+def model_deployed_us_emea(db_session, test_user, multiple_regions):
+    """Create a model deployed to US and EMEA regions."""
+    model = Model(
+        model_name="US EMEA Model",
+        description="Model deployed in US and EMEA",
+        development_type="In-House",
+        status="In Production",
+        owner_id=test_user.user_id,
+        row_approval_status="approved"
+    )
+    db_session.add(model)
+    db_session.flush()
+
+    us_region = ModelRegion(model_id=model.model_id, region_id=multiple_regions["us"].region_id)
+    emea_region = ModelRegion(model_id=model.model_id, region_id=multiple_regions["emea"].region_id)
+    db_session.add_all([us_region, emea_region])
+    db_session.commit()
+    db_session.refresh(model)
+    return model
+
+
+@pytest.fixture
+def model_global_only(db_session, test_user):
+    """Create a model with no regional deployments (global only)."""
+    model = Model(
+        model_name="Global Model",
+        description="Model with no specific regional deployment",
+        development_type="In-House",
+        status="In Production",
+        owner_id=test_user.user_id,
+        row_approval_status="approved"
+    )
+    db_session.add(model)
+    db_session.commit()
+    db_session.refresh(model)
+    return model
+
+
+class TestRegionalOverrideModel:
+    """Test the RecommendationPriorityRegionalOverride model."""
+
+    def test_create_regional_override(
+        self, db_session, recommendation_taxonomies, multiple_regions
+    ):
+        """Can create a regional override for a priority-region combination."""
+        from app.models.recommendation import RecommendationPriorityRegionalOverride
+
+        override = RecommendationPriorityRegionalOverride(
+            priority_id=recommendation_taxonomies["priority"]["consideration"].value_id,
+            region_id=multiple_regions["us"].region_id,
+            requires_action_plan=True,  # Override: US requires action plan for CONSIDERATION
+            requires_final_approval=None,  # Inherit from base
+            description="US regulations require action plan even for Consideration priority"
+        )
+        db_session.add(override)
+        db_session.commit()
+        db_session.refresh(override)
+
+        assert override.override_id is not None
+        assert override.requires_action_plan is True
+        assert override.requires_final_approval is None
+
+    def test_unique_constraint_priority_region(
+        self, db_session, recommendation_taxonomies, multiple_regions
+    ):
+        """Cannot create duplicate override for same priority-region combination."""
+        from app.models.recommendation import RecommendationPriorityRegionalOverride
+        from sqlalchemy.exc import IntegrityError
+
+        override1 = RecommendationPriorityRegionalOverride(
+            priority_id=recommendation_taxonomies["priority"]["low"].value_id,
+            region_id=multiple_regions["us"].region_id,
+            requires_action_plan=False
+        )
+        db_session.add(override1)
+        db_session.commit()
+
+        override2 = RecommendationPriorityRegionalOverride(
+            priority_id=recommendation_taxonomies["priority"]["low"].value_id,
+            region_id=multiple_regions["us"].region_id,
+            requires_action_plan=True
+        )
+        db_session.add(override2)
+
+        with pytest.raises(IntegrityError):
+            db_session.commit()
+
+
+def _generate_rec_code(db_session):
+    """Generate a unique recommendation code for tests."""
+    from app.models.recommendation import Recommendation
+    count = db_session.query(Recommendation).count()
+    return f"REC-TEST-{count + 1:05d}"
+
+
+class TestRegionalOverrideLogic:
+    """Test the regional override resolution logic in check_requires_action_plan."""
+
+    def test_no_override_uses_base_config(
+        self, db_session, recommendation_taxonomies, priority_configs, model_deployed_us, developer_user
+    ):
+        """When no regional override exists, use base priority config."""
+        from app.models.recommendation import Recommendation
+        from app.api.recommendations import check_requires_action_plan
+
+        # CONSIDERATION base config has requires_action_plan=False
+        target = date.today() + timedelta(days=30)
+        rec = Recommendation(
+            recommendation_code=_generate_rec_code(db_session),
+            model_id=model_deployed_us.model_id,
+            title="Test",
+            description="Test",
+            priority_id=recommendation_taxonomies["priority"]["consideration"].value_id,
+            current_status_id=recommendation_taxonomies["status"]["draft"].value_id,
+            created_by_id=developer_user.user_id,
+            assigned_to_id=developer_user.user_id,
+            original_target_date=target,
+            current_target_date=target
+        )
+        db_session.add(rec)
+        db_session.commit()
+        db_session.refresh(rec)
+
+        # No regional override exists, so use base config (requires_action_plan=False)
+        result = check_requires_action_plan(db_session, rec)
+        assert result is False
+
+    def test_regional_override_requires_action_plan(
+        self, db_session, recommendation_taxonomies, priority_configs,
+        model_deployed_us, multiple_regions, developer_user
+    ):
+        """Regional override can require action plan when base config doesn't."""
+        from app.models.recommendation import Recommendation, RecommendationPriorityRegionalOverride
+        from app.api.recommendations import check_requires_action_plan
+
+        # Create US override requiring action plan for CONSIDERATION
+        us_override = RecommendationPriorityRegionalOverride(
+            priority_id=recommendation_taxonomies["priority"]["consideration"].value_id,
+            region_id=multiple_regions["us"].region_id,
+            requires_action_plan=True,
+            description="US requires action plan for all priorities"
+        )
+        db_session.add(us_override)
+        db_session.commit()
+
+        # Create CONSIDERATION recommendation for US-deployed model
+        target = date.today() + timedelta(days=30)
+        rec = Recommendation(
+            recommendation_code=_generate_rec_code(db_session),
+            model_id=model_deployed_us.model_id,
+            title="Test",
+            description="Test",
+            priority_id=recommendation_taxonomies["priority"]["consideration"].value_id,
+            current_status_id=recommendation_taxonomies["status"]["draft"].value_id,
+            created_by_id=developer_user.user_id,
+            assigned_to_id=developer_user.user_id,
+            original_target_date=target,
+            current_target_date=target
+        )
+        db_session.add(rec)
+        db_session.commit()
+        db_session.refresh(rec)
+
+        # US override should require action plan
+        result = check_requires_action_plan(db_session, rec)
+        assert result is True
+
+    def test_most_restrictive_wins_multiple_regions(
+        self, db_session, recommendation_taxonomies, priority_configs,
+        model_deployed_us_emea, multiple_regions, developer_user
+    ):
+        """When model deployed in multiple regions, most restrictive override wins."""
+        from app.models.recommendation import Recommendation, RecommendationPriorityRegionalOverride
+        from app.api.recommendations import check_requires_action_plan
+
+        # US override: requires action plan
+        us_override = RecommendationPriorityRegionalOverride(
+            priority_id=recommendation_taxonomies["priority"]["consideration"].value_id,
+            region_id=multiple_regions["us"].region_id,
+            requires_action_plan=True
+        )
+        # EMEA override: does NOT require action plan
+        emea_override = RecommendationPriorityRegionalOverride(
+            priority_id=recommendation_taxonomies["priority"]["consideration"].value_id,
+            region_id=multiple_regions["emea"].region_id,
+            requires_action_plan=False
+        )
+        db_session.add_all([us_override, emea_override])
+        db_session.commit()
+
+        # Model is deployed in both US and EMEA
+        target = date.today() + timedelta(days=30)
+        rec = Recommendation(
+            recommendation_code=_generate_rec_code(db_session),
+            model_id=model_deployed_us_emea.model_id,
+            title="Test",
+            description="Test",
+            priority_id=recommendation_taxonomies["priority"]["consideration"].value_id,
+            current_status_id=recommendation_taxonomies["status"]["draft"].value_id,
+            created_by_id=developer_user.user_id,
+            assigned_to_id=developer_user.user_id,
+            original_target_date=target,
+            current_target_date=target
+        )
+        db_session.add(rec)
+        db_session.commit()
+        db_session.refresh(rec)
+
+        # Most restrictive wins: US requires, so result is True
+        result = check_requires_action_plan(db_session, rec)
+        assert result is True
+
+    def test_all_overrides_false_returns_false(
+        self, db_session, recommendation_taxonomies, priority_configs,
+        model_deployed_us_emea, multiple_regions, developer_user
+    ):
+        """When all applicable regional overrides say no action plan, return False."""
+        from app.models.recommendation import Recommendation, RecommendationPriorityRegionalOverride
+        from app.api.recommendations import check_requires_action_plan
+
+        # Both regions explicitly don't require action plan
+        us_override = RecommendationPriorityRegionalOverride(
+            priority_id=recommendation_taxonomies["priority"]["high"].value_id,
+            region_id=multiple_regions["us"].region_id,
+            requires_action_plan=False
+        )
+        emea_override = RecommendationPriorityRegionalOverride(
+            priority_id=recommendation_taxonomies["priority"]["high"].value_id,
+            region_id=multiple_regions["emea"].region_id,
+            requires_action_plan=False
+        )
+        db_session.add_all([us_override, emea_override])
+        db_session.commit()
+
+        # HIGH priority base config has requires_action_plan=True
+        target = date.today() + timedelta(days=30)
+        rec = Recommendation(
+            recommendation_code=_generate_rec_code(db_session),
+            model_id=model_deployed_us_emea.model_id,
+            title="Test",
+            description="Test",
+            priority_id=recommendation_taxonomies["priority"]["high"].value_id,
+            current_status_id=recommendation_taxonomies["status"]["draft"].value_id,
+            created_by_id=developer_user.user_id,
+            assigned_to_id=developer_user.user_id,
+            original_target_date=target,
+            current_target_date=target
+        )
+        db_session.add(rec)
+        db_session.commit()
+        db_session.refresh(rec)
+
+        # All overrides say False, so result is False (even though base says True)
+        result = check_requires_action_plan(db_session, rec)
+        assert result is False
+
+    def test_global_only_model_uses_base_config(
+        self, db_session, recommendation_taxonomies, priority_configs,
+        model_global_only, multiple_regions, developer_user
+    ):
+        """Model with no regional deployments uses base config only."""
+        from app.models.recommendation import Recommendation, RecommendationPriorityRegionalOverride
+        from app.api.recommendations import check_requires_action_plan
+
+        # Create a US override (should be ignored for global-only model)
+        us_override = RecommendationPriorityRegionalOverride(
+            priority_id=recommendation_taxonomies["priority"]["consideration"].value_id,
+            region_id=multiple_regions["us"].region_id,
+            requires_action_plan=True
+        )
+        db_session.add(us_override)
+        db_session.commit()
+
+        # CONSIDERATION for global model (no regions)
+        target = date.today() + timedelta(days=30)
+        rec = Recommendation(
+            recommendation_code=_generate_rec_code(db_session),
+            model_id=model_global_only.model_id,
+            title="Test",
+            description="Test",
+            priority_id=recommendation_taxonomies["priority"]["consideration"].value_id,
+            current_status_id=recommendation_taxonomies["status"]["draft"].value_id,
+            created_by_id=developer_user.user_id,
+            assigned_to_id=developer_user.user_id,
+            original_target_date=target,
+            current_target_date=target
+        )
+        db_session.add(rec)
+        db_session.commit()
+        db_session.refresh(rec)
+
+        # Model has no regions, so US override is ignored; base config is False
+        result = check_requires_action_plan(db_session, rec)
+        assert result is False
+
+    def test_null_override_inherits_from_base(
+        self, db_session, recommendation_taxonomies, priority_configs,
+        model_deployed_us, multiple_regions, developer_user
+    ):
+        """Override with NULL requires_action_plan inherits from base config."""
+        from app.models.recommendation import Recommendation, RecommendationPriorityRegionalOverride
+        from app.api.recommendations import check_requires_action_plan
+
+        # US override with NULL (inherits from base)
+        us_override = RecommendationPriorityRegionalOverride(
+            priority_id=recommendation_taxonomies["priority"]["high"].value_id,
+            region_id=multiple_regions["us"].region_id,
+            requires_action_plan=None,  # Inherit
+            requires_final_approval=False  # Only override final approval
+        )
+        db_session.add(us_override)
+        db_session.commit()
+
+        # HIGH priority base config has requires_action_plan=True
+        target = date.today() + timedelta(days=30)
+        rec = Recommendation(
+            recommendation_code=_generate_rec_code(db_session),
+            model_id=model_deployed_us.model_id,
+            title="Test",
+            description="Test",
+            priority_id=recommendation_taxonomies["priority"]["high"].value_id,
+            current_status_id=recommendation_taxonomies["status"]["draft"].value_id,
+            created_by_id=developer_user.user_id,
+            assigned_to_id=developer_user.user_id,
+            original_target_date=target,
+            current_target_date=target
+        )
+        db_session.add(rec)
+        db_session.commit()
+        db_session.refresh(rec)
+
+        # NULL override is ignored for action_plan; base config is True
+        result = check_requires_action_plan(db_session, rec)
+        assert result is True
+
+
+class TestRegionalOverrideAPI:
+    """Test API endpoints for managing regional overrides."""
+
+    def test_list_regional_overrides(
+        self, client, admin_headers, db_session, recommendation_taxonomies, multiple_regions
+    ):
+        """Admin can list all regional overrides."""
+        from app.models.recommendation import RecommendationPriorityRegionalOverride
+
+        # Create some overrides
+        override1 = RecommendationPriorityRegionalOverride(
+            priority_id=recommendation_taxonomies["priority"]["consideration"].value_id,
+            region_id=multiple_regions["us"].region_id,
+            requires_action_plan=True
+        )
+        override2 = RecommendationPriorityRegionalOverride(
+            priority_id=recommendation_taxonomies["priority"]["low"].value_id,
+            region_id=multiple_regions["emea"].region_id,
+            requires_action_plan=False
+        )
+        db_session.add_all([override1, override2])
+        db_session.commit()
+
+        response = client.get(
+            "/recommendations/priority-config/regional-overrides/",
+            headers=admin_headers
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert len(data) == 2
+
+    def test_create_regional_override(
+        self, client, admin_headers, recommendation_taxonomies, multiple_regions, priority_configs
+    ):
+        """Admin can create a regional override."""
+        response = client.post(
+            "/recommendations/priority-config/regional-overrides/",
+            headers=admin_headers,
+            json={
+                "priority_id": recommendation_taxonomies["priority"]["consideration"].value_id,
+                "region_id": multiple_regions["us"].region_id,
+                "requires_action_plan": True,
+                "requires_final_approval": None,
+                "description": "US requires action plan for Consideration"
+            }
+        )
+        assert response.status_code == 201
+        data = response.json()
+        assert data["requires_action_plan"] is True
+        assert data["region"]["region_id"] == multiple_regions["us"].region_id
+
+    def test_update_regional_override(
+        self, client, admin_headers, db_session, recommendation_taxonomies, multiple_regions
+    ):
+        """Admin can update a regional override."""
+        from app.models.recommendation import RecommendationPriorityRegionalOverride
+
+        override = RecommendationPriorityRegionalOverride(
+            priority_id=recommendation_taxonomies["priority"]["consideration"].value_id,
+            region_id=multiple_regions["us"].region_id,
+            requires_action_plan=True
+        )
+        db_session.add(override)
+        db_session.commit()
+        db_session.refresh(override)
+
+        response = client.patch(
+            f"/recommendations/priority-config/regional-overrides/{override.override_id}",
+            headers=admin_headers,
+            json={"requires_action_plan": False, "description": "Updated"}
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["requires_action_plan"] is False
+        assert data["description"] == "Updated"
+
+    def test_delete_regional_override(
+        self, client, admin_headers, db_session, recommendation_taxonomies, multiple_regions
+    ):
+        """Admin can delete a regional override."""
+        from app.models.recommendation import RecommendationPriorityRegionalOverride
+
+        override = RecommendationPriorityRegionalOverride(
+            priority_id=recommendation_taxonomies["priority"]["consideration"].value_id,
+            region_id=multiple_regions["us"].region_id,
+            requires_action_plan=True
+        )
+        db_session.add(override)
+        db_session.commit()
+        db_session.refresh(override)
+
+        response = client.delete(
+            f"/recommendations/priority-config/regional-overrides/{override.override_id}",
+            headers=admin_headers
+        )
+        assert response.status_code == 204
+
+        # Verify deleted
+        deleted = db_session.query(RecommendationPriorityRegionalOverride).filter(
+            RecommendationPriorityRegionalOverride.override_id == override.override_id
+        ).first()
+        assert deleted is None
+
+    def test_non_admin_cannot_create_override(
+        self, client, auth_headers, recommendation_taxonomies, multiple_regions, priority_configs
+    ):
+        """Non-admin users cannot create regional overrides."""
+        response = client.post(
+            "/recommendations/priority-config/regional-overrides/",
+            headers=auth_headers,
+            json={
+                "priority_id": recommendation_taxonomies["priority"]["consideration"].value_id,
+                "region_id": multiple_regions["us"].region_id,
+                "requires_action_plan": True
+            }
+        )
+        assert response.status_code == 403
+
+    def test_list_overrides_for_specific_priority(
+        self, client, admin_headers, db_session, recommendation_taxonomies, multiple_regions
+    ):
+        """Can list regional overrides for a specific priority."""
+        from app.models.recommendation import RecommendationPriorityRegionalOverride
+
+        # Create overrides for different priorities
+        consideration_us = RecommendationPriorityRegionalOverride(
+            priority_id=recommendation_taxonomies["priority"]["consideration"].value_id,
+            region_id=multiple_regions["us"].region_id,
+            requires_action_plan=True
+        )
+        consideration_emea = RecommendationPriorityRegionalOverride(
+            priority_id=recommendation_taxonomies["priority"]["consideration"].value_id,
+            region_id=multiple_regions["emea"].region_id,
+            requires_action_plan=True
+        )
+        low_us = RecommendationPriorityRegionalOverride(
+            priority_id=recommendation_taxonomies["priority"]["low"].value_id,
+            region_id=multiple_regions["us"].region_id,
+            requires_action_plan=False
+        )
+        db_session.add_all([consideration_us, consideration_emea, low_us])
+        db_session.commit()
+
+        # Get only CONSIDERATION overrides
+        response = client.get(
+            f"/recommendations/priority-config/{recommendation_taxonomies['priority']['consideration'].value_id}/regional-overrides/",
+            headers=admin_headers
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert len(data) == 2  # US and EMEA for CONSIDERATION
+
+
+class TestCanSkipActionPlanWithRegionalOverride:
+    """Test can-skip-action-plan endpoint with regional overrides."""
+
+    def test_can_skip_action_plan_respects_regional_override(
+        self, client, validator_headers, developer_headers, db_session,
+        recommendation_taxonomies, priority_configs, model_deployed_us,
+        multiple_regions, developer_user
+    ):
+        """can-skip-action-plan endpoint considers regional overrides."""
+        from app.models.recommendation import RecommendationPriorityRegionalOverride
+
+        # Create US override requiring action plan for CONSIDERATION
+        us_override = RecommendationPriorityRegionalOverride(
+            priority_id=recommendation_taxonomies["priority"]["consideration"].value_id,
+            region_id=multiple_regions["us"].region_id,
+            requires_action_plan=True
+        )
+        db_session.add(us_override)
+        db_session.commit()
+
+        # Create CONSIDERATION recommendation for US-deployed model
+        target_date = (date.today() + timedelta(days=30)).isoformat()
+        create_resp = client.post(
+            "/recommendations/",
+            headers=validator_headers,
+            json={
+                "model_id": model_deployed_us.model_id,
+                "title": "Test",
+                "description": "Test",
+                "priority_id": recommendation_taxonomies["priority"]["consideration"].value_id,
+                "assigned_to_id": developer_user.user_id,
+                "original_target_date": target_date
+            }
+        )
+        rec_id = create_resp.json()["recommendation_id"]
+        client.post(f"/recommendations/{rec_id}/submit", headers=validator_headers)
+
+        # Check can-skip-action-plan
+        response = client.get(
+            f"/recommendations/{rec_id}/can-skip-action-plan",
+            headers=developer_headers
+        )
+        assert response.status_code == 200
+        data = response.json()
+        # US override requires action plan, so can_skip should be False
+        assert data["can_skip_action_plan"] is False
+        assert data["requires_action_plan"] is True
+
+    def test_skip_action_plan_blocked_by_regional_override(
+        self, client, validator_headers, developer_headers, db_session,
+        recommendation_taxonomies, priority_configs, model_deployed_us,
+        multiple_regions, developer_user
+    ):
+        """skip-action-plan endpoint is blocked when regional override requires it."""
+        from app.models.recommendation import RecommendationPriorityRegionalOverride
+
+        # Create US override requiring action plan for CONSIDERATION
+        us_override = RecommendationPriorityRegionalOverride(
+            priority_id=recommendation_taxonomies["priority"]["consideration"].value_id,
+            region_id=multiple_regions["us"].region_id,
+            requires_action_plan=True
+        )
+        db_session.add(us_override)
+        db_session.commit()
+
+        # Create and submit CONSIDERATION recommendation for US-deployed model
+        target_date = (date.today() + timedelta(days=30)).isoformat()
+        create_resp = client.post(
+            "/recommendations/",
+            headers=validator_headers,
+            json={
+                "model_id": model_deployed_us.model_id,
+                "title": "Test",
+                "description": "Test",
+                "priority_id": recommendation_taxonomies["priority"]["consideration"].value_id,
+                "assigned_to_id": developer_user.user_id,
+                "original_target_date": target_date
+            }
+        )
+        rec_id = create_resp.json()["recommendation_id"]
+        client.post(f"/recommendations/{rec_id}/submit", headers=validator_headers)
+
+        # Attempt to skip action plan (should fail)
+        response = client.post(
+            f"/recommendations/{rec_id}/skip-action-plan",
+            headers=developer_headers
+        )
+        assert response.status_code == 400
+        assert "requires an action plan" in response.json()["detail"]
