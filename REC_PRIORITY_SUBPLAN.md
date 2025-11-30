@@ -417,7 +417,7 @@ CREATE TABLE recommendation_priority_regional_overrides (
 );
 ```
 
-**Status**: [ ] Not Started
+**Status**: [x] Completed - Migration `add_recommendation_priority_regional_overrides`
 
 ### 7.3 SQLAlchemy Model
 
@@ -455,7 +455,7 @@ class RecommendationPriorityRegionalOverride(Base):
     )
 ```
 
-**Status**: [ ] Not Started
+**Status**: [x] Completed - `RecommendationPriorityRegionalOverride` model added
 
 ### 7.4 Updated Helper Functions
 
@@ -497,7 +497,7 @@ def check_requires_action_plan(db: Session, recommendation: Recommendation) -> b
     return config.requires_action_plan if config else True
 ```
 
-**Status**: [ ] Not Started
+**Status**: [x] Completed - `check_requires_action_plan()` updated with regional override logic
 
 ### 7.5 API Endpoints
 
@@ -511,7 +511,7 @@ def check_requires_action_plan(db: Session, recommendation: Recommendation) -> b
 | PATCH | `/recommendations/priority-config/regional-overrides/{override_id}` | Update regional override |
 | DELETE | `/recommendations/priority-config/regional-overrides/{override_id}` | Delete regional override |
 
-**Status**: [ ] Not Started
+**Status**: [x] Completed - All CRUD endpoints implemented (POST uses body param for priority_id)
 
 ### 7.6 Pydantic Schemas
 
@@ -542,7 +542,7 @@ class RegionalOverrideResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 ```
 
-**Status**: [ ] Not Started
+**Status**: [x] Completed - Schemas added to `app/schemas/recommendation.py`
 
 ### 7.7 Admin UI Enhancement
 
@@ -550,12 +550,13 @@ Extend Recommendation Priority tab in TaxonomyPage.tsx:
 
 1. Show base configuration table (existing)
 2. Add "Regional Overrides" section below with:
-   - Grid/matrix view: Priorities × Regions
-   - Cells show: "✓" (requires), "✗" (skip), "—" (inherit base)
-   - Click cell to create/edit override
+   - Expandable rows per priority (click arrow to expand)
+   - Nested table showing regional overrides
+   - Add/Edit/Delete buttons for overrides
+   - Radio buttons for three-state options (Inherit/Yes/No)
 3. Add explanation text about resolution logic
 
-**Status**: [ ] Not Started
+**Status**: [x] Completed - Expandable rows with nested regional override tables in TaxonomyPage.tsx
 
 ### 7.8 Example Configuration
 
@@ -582,16 +583,16 @@ Extend Recommendation Priority tab in TaxonomyPage.tsx:
 
 | Task | Status | Notes |
 |------|--------|-------|
-| 7.1 | Write unit tests for regional overrides | [ ] | TDD approach |
-| 7.2 | Database migration | [ ] | |
-| 7.3 | SQLAlchemy model | [ ] | |
-| 7.4 | Update check_requires_action_plan() | [ ] | |
-| 7.5 | Update check_requires_final_approval() | [ ] | |
-| 7.6 | Pydantic schemas | [ ] | |
-| 7.7 | API endpoints (CRUD) | [ ] | |
-| 7.8 | Seed data for regional overrides | [ ] | Optional |
-| 7.9 | Admin UI - Regional Overrides section | [ ] | |
-| 7.10 | User-facing - Show which region triggered requirement | [ ] | |
+| 7.1 | Write unit tests for regional overrides | [x] | TDD approach - 16 new tests |
+| 7.2 | Database migration | [x] | `add_recommendation_priority_regional_overrides` |
+| 7.3 | SQLAlchemy model | [x] | `RecommendationPriorityRegionalOverride` |
+| 7.4 | Update check_requires_action_plan() | [x] | "Most restrictive wins" logic |
+| 7.5 | Update check_requires_final_approval() | [ ] | Future enhancement |
+| 7.6 | Pydantic schemas | [x] | `RegionalOverride*` schemas |
+| 7.7 | API endpoints (CRUD) | [x] | 5 endpoints for regional overrides |
+| 7.8 | Seed data for regional overrides | [ ] | Optional - configured via UI |
+| 7.9 | Admin UI - Regional Overrides section | [x] | Expandable rows in TaxonomyPage.tsx |
+| 7.10 | User-facing - Show which region triggered requirement | [ ] | Future enhancement |
 
 ---
 

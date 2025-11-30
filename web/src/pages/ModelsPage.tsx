@@ -88,6 +88,7 @@ export default function ModelsPage() {
         vendor_id: null as number | null,
         wholly_owned_region_id: null as number | null,
         model_type_id: null as number | null,
+        usage_frequency_id: 0,
         status: 'In Development',
         user_ids: [] as number[],
         region_ids: [] as number[],
@@ -104,6 +105,7 @@ export default function ModelsPage() {
     const [userSearchTerm, setUserSearchTerm] = useState('');
     const [validationTypes, setValidationTypes] = useState<any[]>([]);
     const [validationPriorities, setValidationPriorities] = useState<any[]>([]);
+    const [usageFrequencies, setUsageFrequencies] = useState<any[]>([]);
 
     // Check if form has unsaved changes
     const formIsDirty = showForm && (
@@ -114,6 +116,7 @@ export default function ModelsPage() {
         formData.vendor_id !== null ||
         formData.wholly_owned_region_id !== null ||
         formData.model_type_id !== null ||
+        formData.usage_frequency_id !== 0 ||
         formData.user_ids.length > 0 ||
         formData.region_ids.length > 0 ||
         formData.initial_version_number !== '' ||
@@ -151,6 +154,7 @@ export default function ModelsPage() {
             vendor_id: null,
             wholly_owned_region_id: null,
             model_type_id: null,
+            usage_frequency_id: 0,
             status: 'In Development',
             user_ids: [],
             region_ids: [],
@@ -358,12 +362,16 @@ export default function ModelsPage() {
 
             const valType = taxonomies.find((t: any) => t.name === 'Validation Type');
             const valPriority = taxonomies.find((t: any) => t.name === 'Validation Priority');
+            const usageFreq = taxonomies.find((t: any) => t.name === 'Model Usage Frequency');
 
             if (valType) {
                 setValidationTypes(valType.values || []);
             }
             if (valPriority) {
                 setValidationPriorities(valPriority.values || []);
+            }
+            if (usageFreq) {
+                setUsageFrequencies(usageFreq.values || []);
             }
         } catch (error) {
             console.error('Failed to fetch data:', error);
@@ -374,6 +382,12 @@ export default function ModelsPage() {
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
+
+        // Validate required fields
+        if (!formData.usage_frequency_id || formData.usage_frequency_id === 0) {
+            alert('Please select a Usage Frequency.');
+            return;
+        }
 
         // Validate auto-create validation fields if checkbox is checked
         if (formData.auto_create_validation) {
@@ -394,6 +408,7 @@ export default function ModelsPage() {
                 vendor_id: formData.vendor_id || null,
                 wholly_owned_region_id: formData.wholly_owned_region_id || null,
                 model_type_id: formData.model_type_id || null,
+                usage_frequency_id: formData.usage_frequency_id,
                 user_ids: formData.user_ids.length > 0 ? formData.user_ids : null,
                 region_ids: formData.region_ids.length > 0 ? formData.region_ids : null,
                 initial_version_number: formData.initial_version_number || null,
@@ -427,6 +442,7 @@ export default function ModelsPage() {
                 vendor_id: null,
                 wholly_owned_region_id: null,
                 model_type_id: null,
+                usage_frequency_id: 0,
                 status: 'In Development',
                 user_ids: [],
                 region_ids: [],
@@ -903,6 +919,33 @@ export default function ModelsPage() {
                                     />
                                     <p className="text-xs text-gray-500 mt-1">
                                         Select regions where this model will be deployed. The wholly-owned region (if selected) will be automatically included.
+                                    </p>
+                                </div>
+
+                                <div className="mb-4">
+                                    <label htmlFor="usage_frequency_id" className="block text-sm font-medium mb-2">
+                                        Typical Usage Frequency <span className="text-red-500">*</span>
+                                    </label>
+                                    <select
+                                        id="usage_frequency_id"
+                                        className="input-field"
+                                        value={formData.usage_frequency_id || ''}
+                                        onChange={(e) => setFormData({
+                                            ...formData,
+                                            usage_frequency_id: e.target.value ? parseInt(e.target.value) : 0
+                                        })}
+                                        required
+                                    >
+                                        <option value="">Select Usage Frequency</option>
+                                        {usageFrequencies
+                                            .filter(v => v.is_active)
+                                            .sort((a: any, b: any) => a.sort_order - b.sort_order)
+                                            .map((v: any) => (
+                                                <option key={v.value_id} value={v.value_id}>{v.label}</option>
+                                            ))}
+                                    </select>
+                                    <p className="text-xs text-gray-500 mt-1">
+                                        How often is this model typically used in production?
                                     </p>
                                 </div>
 

@@ -1,6 +1,6 @@
 ## Overview
 
-Model Risk Management inventory system with a FastAPI backend, React/TypeScript frontend, and PostgreSQL database. Supports model cataloging, validation workflow, regional deployment tracking, configurable taxonomies, and compliance reporting. Primary user roles: Admin (full control), Validator (workflow execution), Model Owner/Contributor (submit and track models), Regional/Global approvers (deployment approvals).
+Model Risk Management inventory system with a FastAPI backend, React/TypeScript frontend, and PostgreSQL database. Supports model cataloging, validation workflow, recommendations tracking, performance monitoring, regional deployment tracking, configurable taxonomies, and compliance reporting. Primary user roles: Admin (full control), Validator (workflow execution), Model Owner/Contributor (submit and track models), Regional/Global approvers (deployment approvals).
 
 ## Tech Stack
 - Backend: FastAPI, SQLAlchemy 2.x ORM, Pydantic v2 schemas, Alembic migrations, JWT auth via python-jose, passlib/bcrypt for hashing.
@@ -44,6 +44,7 @@ Model Risk Management inventory system with a FastAPI backend, React/TypeScript 
   - `analytics.py`, `saved_queries.py`: analytics aggregations and saved-query storage.
   - `kpm.py`: KPM (Key Performance Metrics) library management - categories and individual metrics for ongoing model monitoring.
   - `monitoring.py`: Performance monitoring teams, plans, and plan metrics configuration with scheduling logic for submission/report due dates.
+  - `recommendations.py`: Validation/monitoring findings lifecycle - action plans, rebuttals, closure workflow, approvals, and priority configuration with regional overrides.
 - Core services:
   - DB session management (`core/database.py`), auth dependency (`core/deps.py`), security utilities (`core/security.py`), row-level security filters (`core/rls.py`).
   - PDF/report helpers in `validation_workflow.py` (FPDF) for generated artifacts.
@@ -58,6 +59,7 @@ Model Risk Management inventory system with a FastAPI backend, React/TypeScript 
   - MAP Applications: `map_application.py` (mock application inventory), `model_application.py` (model-application links with relationship types).
   - KPM (Key Performance Metrics): `kpm.py` (KpmCategory, Kpm - library of ongoing monitoring metrics).
   - Performance Monitoring: `monitoring.py` (MonitoringTeam, MonitoringPlan, MonitoringPlanMetric, MonitoringPlanVersion, MonitoringPlanMetricSnapshot, monitoring_team_members, monitoring_plan_models junction tables).
+  - Recommendations: `recommendation.py` (Recommendation, ActionPlanTask, RecommendationRebuttal, ClosureEvidence, RecommendationStatusHistory, RecommendationApproval, RecommendationPriorityConfig, RecommendationPriorityRegionalOverride).
   - Compliance/analytics: `audit_log.py`, `export_view.py`, `saved_query.py`, `version_deployment_task.py`, `validation_grouping.py`.
 - Schemas: mirrored Pydantic models in `app/schemas/` for requests/responses.
 - Authn/z: HTTP Bearer JWT tokens; `get_current_user` dependency enforces auth; role checks per endpoint; RLS utilities narrow visibility for non-privileged users.
@@ -341,6 +343,49 @@ Model Risk Management inventory system with a FastAPI backend, React/TypeScript 
   - `GET /monitoring/metrics/{plan_metric_id}/trend` - Time series trend data for a metric
   - `GET /monitoring/plans/{plan_id}/performance-summary` - Aggregate performance across cycles
   - `GET /monitoring/plans/{plan_id}/cycles/{cycle_id}/export` - Export cycle results to CSV
+
+## Model Recommendations System
+- **Purpose**: Track and manage validation/monitoring findings with action plans, rebuttals, and closure workflow.
+- **Data Model**:
+  - **Recommendation**: Core entity for tracking findings. Fields: recommendation_id, recommendation_code (auto-generated), model_id, validation_request_id (optional), monitoring_cycle_id (optional), title, description, root_cause_analysis, priority_id (taxonomy), category_id (taxonomy), current_status_id (taxonomy), assigned_to_id, original_target_date, current_target_date, created_by_id, finalized_at/by, acknowledged_at/by, closed_at/by, closure_summary.
+  - **ActionPlanTask**: Tasks within action plan for a recommendation. Fields: task_id, recommendation_id, task_order, description, owner_id, target_date, completed_date, completion_status_id (taxonomy), completion_notes.
+  - **RecommendationRebuttal**: Challenge to a recommendation with validator review. Fields: rebuttal_id, recommendation_id, submitted_by_id, rationale, supporting_evidence, submitted_at, reviewed_by_id, reviewed_at, review_decision (ACCEPT/OVERRIDE), review_comments, is_current.
+  - **ClosureEvidence**: Supporting documentation for closure. Fields: evidence_id, recommendation_id, file_name, file_path, file_type, file_size_bytes, description, uploaded_by_id.
+  - **RecommendationStatusHistory**: Audit trail of status changes with reason/context.
+  - **RecommendationApproval**: Global/Regional approval requirements for closure. Fields: approval_id, recommendation_id, approval_type (GLOBAL/REGIONAL), region_id, approver_id, approval_status, comments, approval_evidence, voided_by_id, void_reason.
+  - **RecommendationPriorityConfig**: Admin-configurable workflow settings per priority. Fields: config_id, priority_id, requires_final_approval, requires_action_plan, description.
+  - **RecommendationPriorityRegionalOverride**: Regional overrides for priority configuration. Fields: override_id, priority_id, region_id, requires_action_plan (nullable), requires_final_approval (nullable), description. Unique constraint on (priority_id, region_id).
+- **Priority Configuration with Regional Overrides**:
+  - Base config per priority (High/Medium/Low/Consideration) sets default requires_action_plan and requires_final_approval.
+  - Regional overrides allow different settings for models deployed in specific regions.
+  - **Resolution Logic** (Most Restrictive Wins): If ANY region override requires action plan, it's required.
+  - NULL values in overrides inherit from base config.
+  - Example: Consideration priority may skip action plan globally, but US-deployed models require it.
+- **Workflow States**:
+  ```
+  DRAFT → PENDING_RESPONSE → [Submit Action Plan OR Skip] → PENDING_VALIDATOR_REVIEW →
+    PENDING_ACKNOWLEDGEMENT → OPEN → PENDING_CLOSURE → PENDING_APPROVAL → CLOSED
+                           ↘ REBUTTAL_SUBMITTED → PENDING_RESPONSE (if rejected)
+                                                → WITHDRAWN (if accepted)
+  ```
+- **Key Workflow Features**:
+  - **Finalization**: Validator finalizes draft → moves to PENDING_RESPONSE
+  - **Developer Response**: Submit action plan OR skip (if priority allows)
+  - **Rebuttal**: Developer can challenge recommendation; validator reviews (ACCEPT/OVERRIDE)
+  - **Acknowledgement**: Developer acknowledges finding → OPEN (active tracking)
+  - **Closure**: Submit evidence → validator reviews → approval workflow (if required)
+  - **Approvals**: Global + Regional (per model deployment regions) approval requirements
+- **API Endpoints** (prefix: `/recommendations`):
+  - CRUD: `POST /`, `GET /`, `GET /{id}`, `PATCH /{id}`
+  - Workflow: `/finalize`, `/acknowledge`, `/decline-acknowledgement`, `/skip-action-plan`
+  - Action Plan: `/action-plan`, `/action-plan/approve`, `/action-plan/reject`, `/action-plan/request-revisions`
+  - Rebuttal: `/rebuttal`, `/rebuttal/{id}/review`
+  - Closure: `/submit-closure`, `/review-closure`, `/evidence`
+  - Approvals: `/approvals/{id}/approve`, `/approvals/{id}/reject`, `/approvals/{id}/void`
+  - Priority Config: `GET/PATCH /priority-config/`, `/priority-config/{id}`, `/priority-config/regional-overrides/` (CRUD)
+  - Dashboard: `/my-tasks`, `/open-summary`, `/overdue`
+- **Frontend**: RecommendationsPage (list), RecommendationDetailPage (detail with workflow actions), TaxonomyPage "Recommendation Priority" tab (admin config with expandable regional overrides).
+- **Testing**: 82 tests in `tests/test_recommendations.py` covering workflow, rebuttals, action plans, approvals, and regional overrides.
 
 ## Security, Error Handling, Logging
 - JWT auth with token expiry; passwords hashed with bcrypt.

@@ -1042,7 +1042,15 @@ def update_recommendation(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Update a recommendation. Only in DRAFT status."""
+    """Update a recommendation.
+
+    Editing permissions depend on status:
+    - DRAFT, PENDING_RESPONSE, PENDING_VALIDATOR_REVIEW: All fields editable
+    - PENDING_ACKNOWLEDGEMENT, OPEN, REC_REWORK_REQUIRED: Limited (assigned_to, target_date only)
+    - PENDING_CLOSURE, PENDING_APPROVAL, CLOSED, WITHDRAWN: No updates allowed
+
+    Only Validators and Admins can edit recommendations.
+    """
     recommendation = db.query(Recommendation).filter(
         Recommendation.recommendation_id == recommendation_id
     ).first()
@@ -1054,32 +1062,107 @@ def update_recommendation(
         )
 
     check_not_terminal(recommendation, db)
+    check_validator_or_admin(current_user)
 
-    # Check status is DRAFT
+    # Check status and determine allowed fields
     current_status = db.query(TaxonomyValue).filter(
         TaxonomyValue.value_id == recommendation.current_status_id
     ).first()
-    if current_status.code != "REC_DRAFT":
+
+    # Statuses that allow full editing
+    full_edit_statuses = ["REC_DRAFT", "REC_PENDING_RESPONSE", "REC_PENDING_VALIDATOR_REVIEW"]
+
+    # Statuses that allow limited editing (assigned_to, target_date only)
+    limited_edit_statuses = ["REC_PENDING_ACKNOWLEDGEMENT", "REC_OPEN", "REC_REWORK_REQUIRED"]
+
+    # Statuses that don't allow editing
+    no_edit_statuses = ["REC_PENDING_CLOSURE", "REC_PENDING_APPROVAL", "REC_CLOSED", "REC_WITHDRAWN"]
+
+    if current_status.code in no_edit_statuses:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Can only update recommendations in DRAFT status"
+            detail=f"Cannot edit recommendations in {current_status.label} status"
         )
 
-    check_validator_or_admin(current_user)
+    if current_status.code in limited_edit_statuses:
+        # Only allow assigned_to and current_target_date changes
+        has_restricted_fields = any([
+            rec_update.title is not None,
+            rec_update.description is not None,
+            rec_update.root_cause_analysis is not None,
+            rec_update.priority_id is not None,
+            rec_update.category_id is not None,
+        ])
+        if has_restricted_fields:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"In {current_status.label} status, only assigned_to and current_target_date can be modified"
+            )
 
-    # Apply updates
-    if rec_update.title is not None:
+    # Capture old values for audit log
+    old_values = {}
+    new_values = {}
+
+    # Apply updates based on what's provided
+    if rec_update.title is not None and rec_update.title != recommendation.title:
+        old_values["title"] = recommendation.title
+        new_values["title"] = rec_update.title
         recommendation.title = rec_update.title
-    if rec_update.description is not None:
+    if rec_update.description is not None and rec_update.description != recommendation.description:
+        old_values["description"] = recommendation.description
+        new_values["description"] = rec_update.description
         recommendation.description = rec_update.description
-    if rec_update.root_cause_analysis is not None:
+    if rec_update.root_cause_analysis is not None and rec_update.root_cause_analysis != recommendation.root_cause_analysis:
+        old_values["root_cause_analysis"] = recommendation.root_cause_analysis
+        new_values["root_cause_analysis"] = rec_update.root_cause_analysis
         recommendation.root_cause_analysis = rec_update.root_cause_analysis
-    if rec_update.category_id is not None:
+    if rec_update.priority_id is not None and rec_update.priority_id != recommendation.priority_id:
+        # Validate priority exists
+        priority = db.query(TaxonomyValue).filter(
+            TaxonomyValue.value_id == rec_update.priority_id
+        ).first()
+        if not priority:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid priority_id"
+            )
+        old_values["priority_id"] = recommendation.priority_id
+        new_values["priority_id"] = rec_update.priority_id
+        recommendation.priority_id = rec_update.priority_id
+    if rec_update.category_id is not None and rec_update.category_id != recommendation.category_id:
+        old_values["category_id"] = recommendation.category_id
+        new_values["category_id"] = rec_update.category_id
         recommendation.category_id = rec_update.category_id
-    if rec_update.assigned_to_id is not None:
+    if rec_update.assigned_to_id is not None and rec_update.assigned_to_id != recommendation.assigned_to_id:
+        # Validate user exists
+        assignee = db.query(User).filter(User.user_id == rec_update.assigned_to_id).first()
+        if not assignee:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid assigned_to_id"
+            )
+        old_values["assigned_to_id"] = recommendation.assigned_to_id
+        new_values["assigned_to_id"] = rec_update.assigned_to_id
         recommendation.assigned_to_id = rec_update.assigned_to_id
     if rec_update.current_target_date is not None:
-        recommendation.current_target_date = rec_update.current_target_date
+        old_date = str(recommendation.current_target_date) if recommendation.current_target_date else None
+        new_date = str(rec_update.current_target_date)
+        if old_date != new_date:
+            old_values["current_target_date"] = old_date
+            new_values["current_target_date"] = new_date
+            recommendation.current_target_date = rec_update.current_target_date
+
+    # Only create audit log if there were actual changes
+    if new_values:
+        create_audit_log(
+            db=db,
+            entity_type="Recommendation",
+            entity_id=recommendation.recommendation_id,
+            action="UPDATE",
+            user=current_user,
+            old_values=old_values,
+            new_values=new_values
+        )
 
     db.commit()
     db.refresh(recommendation)

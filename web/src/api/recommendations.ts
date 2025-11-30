@@ -7,6 +7,7 @@ export interface TaxonomyValue {
     code: string;
     label: string;
     description?: string;
+    is_active?: boolean;
 }
 
 export interface UserSummary {

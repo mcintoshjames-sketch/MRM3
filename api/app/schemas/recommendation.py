@@ -346,10 +346,17 @@ class RecommendationCreate(RecommendationBase):
 
 
 class RecommendationUpdate(BaseModel):
-    """Schema for updating a recommendation."""
+    """Schema for updating a recommendation.
+
+    Allowed fields depend on recommendation status:
+    - DRAFT, PENDING_RESPONSE, PENDING_VALIDATOR_REVIEW: All fields
+    - PENDING_ACKNOWLEDGEMENT, OPEN, REC_REWORK_REQUIRED: Limited (assigned_to, target_date)
+    - PENDING_CLOSURE, PENDING_APPROVAL, CLOSED, WITHDRAWN: No updates allowed
+    """
     title: Optional[str] = None
     description: Optional[str] = None
     root_cause_analysis: Optional[str] = None
+    priority_id: Optional[int] = None
     category_id: Optional[int] = None
     assigned_to_id: Optional[int] = None
     current_target_date: Optional[date] = None

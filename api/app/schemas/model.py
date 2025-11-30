@@ -22,6 +22,7 @@ class ModelBase(BaseModel):
 
 class ModelCreate(ModelBase):
     owner_id: int
+    usage_frequency_id: int  # Required field
     developer_id: Optional[int] = None
     vendor_id: Optional[int] = None
     risk_tier_id: Optional[int] = None
@@ -62,6 +63,7 @@ class ModelUpdate(BaseModel):
     validation_type_id: Optional[int] = None
     model_type_id: Optional[int] = None
     ownership_type_id: Optional[int] = None
+    usage_frequency_id: Optional[int] = None
     status_id: Optional[int] = None
     wholly_owned_region_id: Optional[int] = None
     status: Optional[str] = None  # Deprecated, use status_id
@@ -73,6 +75,7 @@ class ModelUpdate(BaseModel):
 class ModelResponse(ModelBase):
     model_id: int
     owner_id: int
+    usage_frequency_id: int  # Required field
     developer_id: Optional[int] = None
     vendor_id: Optional[int] = None
     risk_tier_id: Optional[int] = None
@@ -106,6 +109,7 @@ class ModelRegionListItem(BaseModel):
 class ModelDetailResponse(ModelResponse):
     """Model response with nested user and vendor details."""
     owner: UserResponse
+    usage_frequency: TaxonomyValueResponse  # Required field
     developer: Optional[UserResponse] = None
     submitted_by_user: Optional[UserResponse] = None
     vendor: Optional[VendorResponse] = None
@@ -149,6 +153,7 @@ class ModelCreateResponse(BaseModel):
     development_type: str
     status: str
     owner_id: int
+    usage_frequency_id: int  # Required field
     developer_id: Optional[int] = None
     vendor_id: Optional[int] = None
     risk_tier_id: Optional[int] = None
@@ -166,6 +171,7 @@ class ModelCreateResponse(BaseModel):
     submitted_at: Optional[datetime] = None
     # Relationships
     owner: UserResponse
+    usage_frequency: TaxonomyValueResponse  # Required field
     developer: Optional[UserResponse] = None
     submitted_by_user: Optional[UserResponse] = None
     vendor: Optional[VendorResponse] = None

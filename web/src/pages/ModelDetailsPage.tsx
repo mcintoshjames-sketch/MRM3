@@ -93,6 +93,7 @@ interface Model {
     risk_tier_id: number | null;
     validation_type_id: number | null;
     model_type_id: number | null;
+    usage_frequency_id: number | null;
     wholly_owned_region_id: number | null;
     status: string;
     status_id: number | null;
@@ -108,6 +109,7 @@ interface Model {
     risk_tier: TaxonomyValue | null;
     validation_type: TaxonomyValue | null;
     model_type: ModelType | null;
+    usage_frequency: TaxonomyValue | null;
     status_value: TaxonomyValue | null;
     wholly_owned_region: Region | null;
     users: User[];
@@ -264,6 +266,7 @@ export default function ModelDetailsPage() {
         vendor_id: null as number | null,
         risk_tier_id: null as number | null,
         model_type_id: null as number | null,
+        usage_frequency_id: null as number | null,
         wholly_owned_region_id: null as number | null,
         status: 'In Development',
         status_id: null as number | null,
@@ -383,6 +386,7 @@ export default function ModelDetailsPage() {
                 vendor_id: modelData.vendor_id,
                 risk_tier_id: modelData.risk_tier_id,
                 model_type_id: modelData.model_type_id,
+                usage_frequency_id: modelData.usage_frequency_id,
                 wholly_owned_region_id: modelData.wholly_owned_region_id,
                 status: modelData.status,
                 status_id: modelData.status_id,
@@ -487,6 +491,7 @@ export default function ModelDetailsPage() {
     };
 
     const getRiskTierTaxonomy = () => taxonomies.find(t => t.name === 'Model Risk Tier');
+    const getUsageFrequencyTaxonomy = () => taxonomies.find(t => t.name === 'Model Usage Frequency');
     const getRegulatoryCategoryTaxonomy = () => taxonomies.find(t => t.name === 'Regulatory Category');
     const getModelStatusTaxonomy = () => taxonomies.find(t => t.name === 'Model Status');
 
@@ -740,6 +745,11 @@ export default function ModelDetailsPage() {
                 const statusTax = taxonomies.find(t => t.name === 'Model Status');
                 const statusValue = statusTax?.values.find(v => v.value_id === numValue);
                 return statusValue ? statusValue.label : String(value);
+            }
+            case 'usage_frequency_id': {
+                const usageFreqTax = taxonomies.find(t => t.name === 'Model Usage Frequency');
+                const usageFreqValue = usageFreqTax?.values.find(v => v.value_id === numValue);
+                return usageFreqValue ? usageFreqValue.label : String(value);
             }
             case 'model_type_id': {
                 for (const category of modelTypes) {
@@ -1823,6 +1833,32 @@ export default function ModelDetailsPage() {
                                 </div>
                             )}
 
+                            {getUsageFrequencyTaxonomy() && (
+                                <div className="mb-4">
+                                    <label htmlFor="usage_frequency_id" className="block text-sm font-medium mb-2">
+                                        Typical Usage Frequency <span className="text-red-500">*</span>
+                                    </label>
+                                    <select
+                                        id="usage_frequency_id"
+                                        className="input-field"
+                                        required
+                                        value={formData.usage_frequency_id || ''}
+                                        onChange={(e) => setFormData({
+                                            ...formData,
+                                            usage_frequency_id: e.target.value ? parseInt(e.target.value) : null
+                                        })}
+                                    >
+                                        <option value="" disabled>Select Usage Frequency</option>
+                                        {getUsageFrequencyTaxonomy()?.values
+                                            .filter(v => v.is_active)
+                                            .sort((a, b) => a.sort_order - b.sort_order)
+                                            .map(v => (
+                                                <option key={v.value_id} value={v.value_id}>{v.label}</option>
+                                            ))}
+                                    </select>
+                                </div>
+                            )}
+
                             <div className="mb-4">
                                 <label htmlFor="model_type_id" className="block text-sm font-medium mb-2">
                                     Model Type
@@ -2045,6 +2081,16 @@ export default function ModelDetailsPage() {
                             {model.risk_tier ? (
                                 <span className="px-2 py-1 text-sm rounded bg-orange-100 text-orange-800">
                                     {model.risk_tier.label}
+                                </span>
+                            ) : (
+                                <p className="text-lg">-</p>
+                            )}
+                        </div>
+                        <div>
+                            <h4 className="text-sm font-medium text-gray-500 mb-1">Usage Frequency</h4>
+                            {model.usage_frequency ? (
+                                <span className="px-2 py-1 text-sm rounded bg-blue-100 text-blue-800">
+                                    {model.usage_frequency.label}
                                 </span>
                             ) : (
                                 <p className="text-lg">-</p>

@@ -1378,6 +1378,37 @@ def seed_database():
                         "sort_order": 3
                     },
                 ]
+            },
+            {
+                "name": "Model Usage Frequency",
+                "description": "How frequently a model is typically used in production",
+                "is_system": True,
+                "values": [
+                    {
+                        "code": "DAILY",
+                        "label": "Daily",
+                        "description": "Model runs daily or more frequently",
+                        "sort_order": 1
+                    },
+                    {
+                        "code": "MONTHLY",
+                        "label": "Monthly",
+                        "description": "Model runs monthly",
+                        "sort_order": 2
+                    },
+                    {
+                        "code": "QUARTERLY",
+                        "label": "Quarterly",
+                        "description": "Model runs quarterly",
+                        "sort_order": 3
+                    },
+                    {
+                        "code": "ANNUALLY",
+                        "label": "Annually",
+                        "description": "Model runs annually",
+                        "sort_order": 4
+                    },
+                ]
             }
         ]
 
