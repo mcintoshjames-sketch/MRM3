@@ -45,6 +45,8 @@ Model Risk Management inventory system with a FastAPI backend, React/TypeScript 
   - `kpm.py`: KPM (Key Performance Metrics) library management - categories and individual metrics for ongoing model monitoring.
   - `monitoring.py`: Performance monitoring teams, plans, and plan metrics configuration with scheduling logic for submission/report due dates.
   - `recommendations.py`: Validation/monitoring findings lifecycle - action plans, rebuttals, closure workflow, approvals, and priority configuration with regional overrides.
+  - `risk_assessment.py`: Model risk assessment CRUD with qualitative/quantitative scoring, inherent risk matrix calculation, overrides at three levels, per-region assessments, and automatic tier sync.
+  - `qualitative_factors.py`: Admin-configurable qualitative risk factor management (CRUD for factors and rating guidance with weighted scoring).
 - Core services:
   - DB session management (`core/database.py`), auth dependency (`core/deps.py`), security utilities (`core/security.py`), row-level security filters (`core/rls.py`).
   - PDF/report helpers in `validation_workflow.py` (FPDF) for generated artifacts.
@@ -60,6 +62,7 @@ Model Risk Management inventory system with a FastAPI backend, React/TypeScript 
   - KPM (Key Performance Metrics): `kpm.py` (KpmCategory, Kpm - library of ongoing monitoring metrics).
   - Performance Monitoring: `monitoring.py` (MonitoringTeam, MonitoringPlan, MonitoringPlanMetric, MonitoringPlanVersion, MonitoringPlanMetricSnapshot, monitoring_team_members, monitoring_plan_models junction tables).
   - Recommendations: `recommendation.py` (Recommendation, ActionPlanTask, RecommendationRebuttal, ClosureEvidence, RecommendationStatusHistory, RecommendationApproval, RecommendationPriorityConfig, RecommendationPriorityRegionalOverride).
+  - Risk Assessment: `risk_assessment.py` (QualitativeRiskFactor, QualitativeFactorGuidance, ModelRiskAssessment, QualitativeFactorAssessment) - qualitative/quantitative scoring with inherent risk matrix and tier derivation.
   - Compliance/analytics: `audit_log.py`, `export_view.py`, `saved_query.py`, `version_deployment_task.py`, `validation_grouping.py`.
 - Schemas: mirrored Pydantic models in `app/schemas/` for requests/responses.
 - Authn/z: HTTP Bearer JWT tokens; `get_current_user` dependency enforces auth; role checks per endpoint; RLS utilities narrow visibility for non-privileged users.
@@ -386,6 +389,40 @@ Model Risk Management inventory system with a FastAPI backend, React/TypeScript 
   - Dashboard: `/my-tasks`, `/open-summary`, `/overdue`
 - **Frontend**: RecommendationsPage (list), RecommendationDetailPage (detail with workflow actions), TaxonomyPage "Recommendation Priority" tab (admin config with expandable regional overrides).
 - **Testing**: 82 tests in `tests/test_recommendations.py` covering workflow, rebuttals, action plans, approvals, and regional overrides.
+
+## Model Risk Assessment System
+- **Purpose**: Derive model inherent risk tier from qualitative and quantitative factors using a standardized matrix approach with optional overrides at three levels.
+- **Data Model**:
+  - **QualitativeRiskFactor**: Admin-configurable assessment factors (e.g., "Model Complexity", "Data Quality", "Documentation", "Operational Impact"). Fields: factor_id, code, name, description, weight (0.0-1.0), sort_order, is_active.
+  - **QualitativeFactorGuidance**: Rating guidance for each factor. Fields: guidance_id, factor_id, rating (HIGH/MEDIUM/LOW), points (1-3), description, sort_order.
+  - **ModelRiskAssessment**: Per-model risk assessment with per-region support. Fields: assessment_id, model_id, region_id (null for global), quantitative_rating/comment/override, qualitative_override, derived_risk_tier_override (with comments), derived_risk_tier, derived_risk_tier_effective, final_tier_id, assessed_by_user_id, assessed_at, is_complete.
+  - **QualitativeFactorAssessment**: Individual factor ratings for an assessment. Fields: factor_assessment_id, assessment_id, factor_id, rating (HIGH/MEDIUM/LOW), comment, score.
+- **Scoring Logic**:
+  - **Qualitative Score**: Weighted average of factor ratings where HIGH=3, MEDIUM=2, LOW=1
+  - **Score Thresholds**: HIGH ≥2.1, MEDIUM ≥1.6, LOW <1.6
+  - **Inherent Risk Matrix**: 3×3 grid combining Quantitative (rows) × Qualitative (columns):
+    ```
+              HIGH      MEDIUM    LOW
+    HIGH      HIGH      MEDIUM    LOW
+    MEDIUM    MEDIUM    MEDIUM    LOW
+    LOW       LOW       LOW       VERY_LOW
+    ```
+  - **Tier Mapping**: HIGH→TIER_1, MEDIUM→TIER_2, LOW→TIER_3, VERY_LOW→TIER_4
+- **Three Override Opportunities**:
+  1. **Quantitative Override**: Override the quantitative rating with justification
+  2. **Qualitative Override**: Override the calculated qualitative level with justification
+  3. **Final Tier Override**: Override the derived inherent risk tier with justification
+- **Per-Region Assessments**: Models can have both a global assessment (region_id=null) and region-specific assessments for deployment regions.
+- **Automatic Tier Sync**: When assessment is completed (is_complete=true), the model's risk_tier_id is automatically updated to match the final_tier_id.
+- **API Endpoints**:
+  - Factor Config (Admin): `GET/POST /risk-assessment/factors/`, `PUT/DELETE /risk-assessment/factors/{id}`, `PATCH /risk-assessment/factors/{id}/weight`, `POST /risk-assessment/factors/validate-weights`, `POST /risk-assessment/factors/reorder`
+  - Guidance: `POST /risk-assessment/factors/{id}/guidance`, `PUT/DELETE /risk-assessment/factors/guidance/{id}`
+  - Assessments: `GET/POST /models/{id}/risk-assessments/`, `GET/PUT/DELETE /models/{id}/risk-assessments/{assessment_id}`
+- **Frontend**:
+  - ModelDetailsPage "Risk Assessment" tab with assessment form and results display
+  - TaxonomyPage "Risk Factors" tab for admin factor configuration with weighted guidance
+- **Audit Logging**: All factor changes, guidance updates, and assessment modifications are logged.
+- **Testing**: 54 tests in `tests/test_risk_assessment_audit.py` covering factor CRUD, guidance management, weight validation, assessment workflow, scoring logic, and override handling.
 
 ## Security, Error Handling, Logging
 - JWT auth with token expiry; passwords hashed with bcrypt.

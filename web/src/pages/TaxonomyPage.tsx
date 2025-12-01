@@ -1,6 +1,19 @@
 import React, { useState, useEffect } from 'react';
 import api from '../api/client';
 import Layout from '../components/Layout';
+import {
+    listFactors,
+    createFactor,
+    updateFactor,
+    deleteFactor,
+    validateWeights,
+    addGuidance,
+    updateGuidance,
+    deleteGuidance,
+    FactorResponse,
+    GuidanceResponse,
+    WeightValidationResponse
+} from '../api/qualitativeFactors';
 
 // ============================================================================
 // TYPES - General Taxonomy
@@ -179,7 +192,7 @@ interface Region {
 
 export default function TaxonomyPage() {
     // Tab management
-    const [activeTab, setActiveTab] = useState<'general' | 'change-type' | 'model-type' | 'kpm' | 'fry' | 'recommendation-priority'>('general');
+    const [activeTab, setActiveTab] = useState<'general' | 'change-type' | 'model-type' | 'kpm' | 'fry' | 'recommendation-priority' | 'risk-factors'>('general');
 
     // Recommendation Priority Config state
     const [priorityConfigs, setPriorityConfigs] = useState<RecommendationPriorityConfig[]>([]);
@@ -202,6 +215,30 @@ export default function TaxonomyPage() {
         priorityId: number;
         override: Partial<RegionalOverride>;
     } | null>(null);
+
+    // Risk Factors state
+    const [riskFactors, setRiskFactors] = useState<FactorResponse[]>([]);
+    const [riskFactorsLoading, setRiskFactorsLoading] = useState(false);
+    const [riskFactorsError, setRiskFactorsError] = useState<string | null>(null);
+    const [selectedFactor, setSelectedFactor] = useState<FactorResponse | null>(null);
+    const [showFactorForm, setShowFactorForm] = useState(false);
+    const [editingFactor, setEditingFactor] = useState<FactorResponse | null>(null);
+    const [factorFormData, setFactorFormData] = useState({
+        code: '',
+        name: '',
+        description: '',
+        weight: 0.25,
+        sort_order: 0
+    });
+    const [showGuidanceForm, setShowGuidanceForm] = useState(false);
+    const [editingGuidance, setEditingGuidance] = useState<GuidanceResponse | null>(null);
+    const [guidanceFormData, setGuidanceFormData] = useState({
+        rating: 'MEDIUM' as 'HIGH' | 'MEDIUM' | 'LOW' | 'VERY_HIGH' | 'VERY_LOW',
+        points: 2,
+        description: '',
+        sort_order: 0
+    });
+    const [weightValidation, setWeightValidation] = useState<WeightValidationResponse | null>(null);
 
     // General taxonomy state
     const [taxonomies, setTaxonomies] = useState<Taxonomy[]>([]);
@@ -305,8 +342,174 @@ export default function TaxonomyPage() {
             fetchFryReports();
         } else if (activeTab === 'recommendation-priority') {
             fetchPriorityConfigs();
+        } else if (activeTab === 'risk-factors') {
+            fetchRiskFactors();
         }
     }, [activeTab]);
+
+    // ============================================================================
+    // RISK FACTOR FUNCTIONS
+    // ============================================================================
+
+    const fetchRiskFactors = async () => {
+        setRiskFactorsLoading(true);
+        setRiskFactorsError(null);
+        try {
+            const factors = await listFactors(true); // Include inactive
+            setRiskFactors(factors);
+            if (factors.length > 0 && !selectedFactor) {
+                setSelectedFactor(factors[0]);
+            }
+            // Validate weights
+            const validation = await validateWeights();
+            setWeightValidation(validation);
+        } catch (error) {
+            console.error('Failed to fetch risk factors:', error);
+            setRiskFactorsError('Failed to load risk factors');
+        } finally {
+            setRiskFactorsLoading(false);
+        }
+    };
+
+    const resetFactorForm = () => {
+        setFactorFormData({
+            code: '',
+            name: '',
+            description: '',
+            weight: 0.25,
+            sort_order: 0
+        });
+        setShowFactorForm(false);
+        setEditingFactor(null);
+    };
+
+    const resetGuidanceForm = () => {
+        setGuidanceFormData({
+            rating: 'MEDIUM',
+            points: 2,
+            description: '',
+            sort_order: 0
+        });
+        setShowGuidanceForm(false);
+        setEditingGuidance(null);
+    };
+
+    const handleCreateFactor = async () => {
+        try {
+            await createFactor({
+                code: factorFormData.code,
+                name: factorFormData.name,
+                description: factorFormData.description || undefined,
+                weight: factorFormData.weight,
+                sort_order: factorFormData.sort_order
+            });
+            resetFactorForm();
+            fetchRiskFactors();
+        } catch (error) {
+            console.error('Failed to create factor:', error);
+            setRiskFactorsError('Failed to create factor');
+        }
+    };
+
+    const handleUpdateFactor = async () => {
+        if (!editingFactor) return;
+        try {
+            await updateFactor(editingFactor.factor_id, {
+                code: factorFormData.code,
+                name: factorFormData.name,
+                description: factorFormData.description || undefined,
+                weight: factorFormData.weight,
+                sort_order: factorFormData.sort_order
+            });
+            resetFactorForm();
+            fetchRiskFactors();
+        } catch (error) {
+            console.error('Failed to update factor:', error);
+            setRiskFactorsError('Failed to update factor');
+        }
+    };
+
+    const handleDeleteFactor = async (factorId: number) => {
+        if (!confirm('Are you sure you want to deactivate this factor?')) return;
+        try {
+            await deleteFactor(factorId);
+            fetchRiskFactors();
+            if (selectedFactor?.factor_id === factorId) {
+                setSelectedFactor(null);
+            }
+        } catch (error) {
+            console.error('Failed to delete factor:', error);
+            setRiskFactorsError('Failed to deactivate factor');
+        }
+    };
+
+    const handleCreateGuidance = async () => {
+        if (!selectedFactor) return;
+        try {
+            await addGuidance(selectedFactor.factor_id, {
+                rating: guidanceFormData.rating,
+                points: guidanceFormData.points,
+                description: guidanceFormData.description,
+                sort_order: guidanceFormData.sort_order
+            });
+            resetGuidanceForm();
+            fetchRiskFactors();
+        } catch (error) {
+            console.error('Failed to create guidance:', error);
+            setRiskFactorsError('Failed to create guidance');
+        }
+    };
+
+    const handleUpdateGuidance = async () => {
+        if (!editingGuidance) return;
+        try {
+            await updateGuidance(editingGuidance.guidance_id, {
+                rating: guidanceFormData.rating,
+                points: guidanceFormData.points,
+                description: guidanceFormData.description,
+                sort_order: guidanceFormData.sort_order
+            });
+            resetGuidanceForm();
+            fetchRiskFactors();
+        } catch (error) {
+            console.error('Failed to update guidance:', error);
+            setRiskFactorsError('Failed to update guidance');
+        }
+    };
+
+    const handleDeleteGuidance = async (guidanceId: number) => {
+        if (!confirm('Are you sure you want to delete this guidance?')) return;
+        try {
+            await deleteGuidance(guidanceId);
+            fetchRiskFactors();
+        } catch (error) {
+            console.error('Failed to delete guidance:', error);
+            setRiskFactorsError('Failed to delete guidance');
+        }
+    };
+
+    const startEditFactor = (factor: FactorResponse) => {
+        setEditingFactor(factor);
+        setFactorFormData({
+            code: factor.code,
+            name: factor.name,
+            description: factor.description || '',
+            weight: factor.weight,
+            sort_order: factor.sort_order
+        });
+        setShowFactorForm(true);
+    };
+
+    const startEditGuidance = (guidance: GuidanceResponse) => {
+        setEditingGuidance(guidance);
+        setGuidanceFormData({
+            rating: guidance.rating as 'HIGH' | 'MEDIUM' | 'LOW' | 'VERY_HIGH' | 'VERY_LOW',
+            points: guidance.points,
+            description: guidance.description,
+            sort_order: guidance.sort_order
+        });
+        setShowGuidanceForm(true);
+    };
 
     // ============================================================================
     // GENERAL TAXONOMY FUNCTIONS
@@ -1150,6 +1353,15 @@ export default function TaxonomyPage() {
                                 } whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm`}
                         >
                             Recommendation Priority
+                        </button>
+                        <button
+                            onClick={() => setActiveTab('risk-factors')}
+                            className={`${activeTab === 'risk-factors'
+                                ? 'border-blue-500 text-blue-600'
+                                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                                } whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm`}
+                        >
+                            Risk Factors
                         </button>
                     </nav>
                 </div>
@@ -3525,6 +3737,340 @@ export default function TaxonomyPage() {
                             </div>
                         </div>
                     )}
+                </>
+            )}
+
+            {/* RISK FACTORS TAB */}
+            {activeTab === 'risk-factors' && (
+                <>
+                    {/* Weight Validation Banner */}
+                    {weightValidation && !weightValidation.valid && (
+                        <div className="mb-4 bg-yellow-50 border-l-4 border-yellow-400 p-4">
+                            <div className="flex">
+                                <div className="flex-shrink-0">
+                                    <svg className="h-5 w-5 text-yellow-400" viewBox="0 0 20 20" fill="currentColor">
+                                        <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                                    </svg>
+                                </div>
+                                <div className="ml-3">
+                                    <p className="text-sm text-yellow-700">
+                                        <strong>Weight Validation:</strong> {weightValidation.message || `Total weight is ${(weightValidation.total * 100).toFixed(0)}% (should be 100%)`}
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {riskFactorsError && (
+                        <div className="mb-4 bg-red-50 border-l-4 border-red-400 p-4">
+                            <p className="text-sm text-red-700">{riskFactorsError}</p>
+                        </div>
+                    )}
+
+                    <div className="mb-6 flex justify-end">
+                        <button
+                            onClick={() => {
+                                resetFactorForm();
+                                setShowFactorForm(true);
+                            }}
+                            className="btn-primary"
+                        >
+                            + New Factor
+                        </button>
+                    </div>
+
+                    {/* Factor Form Modal */}
+                    {showFactorForm && (
+                        <div className="bg-white p-6 rounded-lg shadow-md mb-6">
+                            <h3 className="text-lg font-bold mb-4">
+                                {editingFactor ? 'Edit Factor' : 'Create New Factor'}
+                            </h3>
+                            <div className="grid grid-cols-2 gap-4">
+                                <div className="mb-4">
+                                    <label className="block text-sm font-medium mb-2">Code</label>
+                                    <input
+                                        type="text"
+                                        value={factorFormData.code}
+                                        onChange={(e) => setFactorFormData({ ...factorFormData, code: e.target.value })}
+                                        className="input-field w-full"
+                                        placeholder="e.g., COMPLEXITY"
+                                    />
+                                </div>
+                                <div className="mb-4">
+                                    <label className="block text-sm font-medium mb-2">Name</label>
+                                    <input
+                                        type="text"
+                                        value={factorFormData.name}
+                                        onChange={(e) => setFactorFormData({ ...factorFormData, name: e.target.value })}
+                                        className="input-field w-full"
+                                        placeholder="e.g., Model Complexity"
+                                    />
+                                </div>
+                                <div className="mb-4">
+                                    <label className="block text-sm font-medium mb-2">Weight (0.0 - 1.0)</label>
+                                    <input
+                                        type="number"
+                                        step="0.01"
+                                        min="0"
+                                        max="1"
+                                        value={factorFormData.weight}
+                                        onChange={(e) => setFactorFormData({ ...factorFormData, weight: parseFloat(e.target.value) || 0 })}
+                                        className="input-field w-full"
+                                    />
+                                    <p className="text-xs text-gray-500 mt-1">All active factor weights must sum to 1.0</p>
+                                </div>
+                                <div className="mb-4">
+                                    <label className="block text-sm font-medium mb-2">Sort Order</label>
+                                    <input
+                                        type="number"
+                                        value={factorFormData.sort_order}
+                                        onChange={(e) => setFactorFormData({ ...factorFormData, sort_order: parseInt(e.target.value) || 0 })}
+                                        className="input-field w-full"
+                                    />
+                                </div>
+                                <div className="mb-4 col-span-2">
+                                    <label className="block text-sm font-medium mb-2">Description</label>
+                                    <textarea
+                                        value={factorFormData.description}
+                                        onChange={(e) => setFactorFormData({ ...factorFormData, description: e.target.value })}
+                                        className="input-field w-full"
+                                        rows={2}
+                                        placeholder="Description of the factor..."
+                                    />
+                                </div>
+                            </div>
+                            <div className="flex gap-2">
+                                <button
+                                    onClick={editingFactor ? handleUpdateFactor : handleCreateFactor}
+                                    className="btn-primary"
+                                >
+                                    {editingFactor ? 'Update' : 'Create'}
+                                </button>
+                                <button onClick={resetFactorForm} className="btn-secondary">
+                                    Cancel
+                                </button>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Factors Master-Detail Layout */}
+                    <div className="grid grid-cols-3 gap-6">
+                        {/* Factors List */}
+                        <div className="col-span-1 bg-white rounded-lg shadow-md p-4">
+                            <h3 className="text-lg font-bold mb-4">Factors</h3>
+                            {riskFactorsLoading ? (
+                                <p className="text-gray-500">Loading...</p>
+                            ) : riskFactors.length === 0 ? (
+                                <p className="text-gray-500">No factors defined</p>
+                            ) : (
+                                <ul className="space-y-2">
+                                    {riskFactors.map((factor) => (
+                                        <li
+                                            key={factor.factor_id}
+                                            onClick={() => setSelectedFactor(factor)}
+                                            className={`p-3 rounded-lg cursor-pointer border ${
+                                                selectedFactor?.factor_id === factor.factor_id
+                                                    ? 'border-blue-500 bg-blue-50'
+                                                    : 'border-gray-200 hover:bg-gray-50'
+                                            } ${!factor.is_active ? 'opacity-50' : ''}`}
+                                        >
+                                            <div className="flex justify-between items-start">
+                                                <div>
+                                                    <p className="font-medium">{factor.name}</p>
+                                                    <p className="text-sm text-gray-500">{factor.code}</p>
+                                                </div>
+                                                <span className={`text-xs px-2 py-1 rounded ${
+                                                    factor.is_active
+                                                        ? 'bg-green-100 text-green-800'
+                                                        : 'bg-gray-100 text-gray-600'
+                                                }`}>
+                                                    {(factor.weight * 100).toFixed(0)}%
+                                                </span>
+                                            </div>
+                                        </li>
+                                    ))}
+                                </ul>
+                            )}
+                        </div>
+
+                        {/* Factor Details */}
+                        <div className="col-span-2 bg-white rounded-lg shadow-md p-4">
+                            {selectedFactor ? (
+                                <>
+                                    <div className="flex justify-between items-start mb-4">
+                                        <div>
+                                            <h3 className="text-lg font-bold">{selectedFactor.name}</h3>
+                                            <p className="text-sm text-gray-500">{selectedFactor.code}</p>
+                                        </div>
+                                        <div className="flex gap-2">
+                                            <button
+                                                onClick={() => startEditFactor(selectedFactor)}
+                                                className="btn-secondary text-sm"
+                                            >
+                                                Edit
+                                            </button>
+                                            {selectedFactor.is_active && (
+                                                <button
+                                                    onClick={() => handleDeleteFactor(selectedFactor.factor_id)}
+                                                    className="text-sm px-3 py-1 text-red-600 hover:bg-red-50 rounded"
+                                                >
+                                                    Deactivate
+                                                </button>
+                                            )}
+                                        </div>
+                                    </div>
+
+                                    <div className="grid grid-cols-3 gap-4 mb-6 p-4 bg-gray-50 rounded-lg">
+                                        <div>
+                                            <p className="text-xs text-gray-500 uppercase">Weight</p>
+                                            <p className="font-bold text-lg">{(selectedFactor.weight * 100).toFixed(0)}%</p>
+                                        </div>
+                                        <div>
+                                            <p className="text-xs text-gray-500 uppercase">Status</p>
+                                            <span className={`inline-flex px-2 py-1 text-xs rounded ${
+                                                selectedFactor.is_active
+                                                    ? 'bg-green-100 text-green-800'
+                                                    : 'bg-gray-100 text-gray-600'
+                                            }`}>
+                                                {selectedFactor.is_active ? 'Active' : 'Inactive'}
+                                            </span>
+                                        </div>
+                                        <div>
+                                            <p className="text-xs text-gray-500 uppercase">Sort Order</p>
+                                            <p className="font-medium">{selectedFactor.sort_order}</p>
+                                        </div>
+                                    </div>
+
+                                    {selectedFactor.description && (
+                                        <div className="mb-6">
+                                            <p className="text-xs text-gray-500 uppercase mb-1">Description</p>
+                                            <p className="text-gray-700">{selectedFactor.description}</p>
+                                        </div>
+                                    )}
+
+                                    {/* Guidance Section */}
+                                    <div className="border-t pt-4">
+                                        <div className="flex justify-between items-center mb-4">
+                                            <h4 className="font-bold">Rating Guidance</h4>
+                                            <button
+                                                onClick={() => {
+                                                    resetGuidanceForm();
+                                                    setShowGuidanceForm(true);
+                                                }}
+                                                className="text-sm text-blue-600 hover:text-blue-800"
+                                            >
+                                                + Add Guidance
+                                            </button>
+                                        </div>
+
+                                        {/* Guidance Form */}
+                                        {showGuidanceForm && (
+                                            <div className="bg-gray-50 p-4 rounded-lg mb-4">
+                                                <div className="grid grid-cols-3 gap-4">
+                                                    <div>
+                                                        <label className="block text-sm font-medium mb-1">Rating</label>
+                                                        <select
+                                                            value={guidanceFormData.rating}
+                                                            onChange={(e) => setGuidanceFormData({
+                                                                ...guidanceFormData,
+                                                                rating: e.target.value as 'HIGH' | 'MEDIUM' | 'LOW',
+                                                                points: e.target.value === 'HIGH' ? 3 : e.target.value === 'MEDIUM' ? 2 : 1
+                                                            })}
+                                                            className="input-field w-full"
+                                                        >
+                                                            <option value="HIGH">HIGH</option>
+                                                            <option value="MEDIUM">MEDIUM</option>
+                                                            <option value="LOW">LOW</option>
+                                                        </select>
+                                                    </div>
+                                                    <div>
+                                                        <label className="block text-sm font-medium mb-1">Points</label>
+                                                        <input
+                                                            type="number"
+                                                            value={guidanceFormData.points}
+                                                            onChange={(e) => setGuidanceFormData({ ...guidanceFormData, points: parseInt(e.target.value) || 0 })}
+                                                            className="input-field w-full"
+                                                        />
+                                                    </div>
+                                                    <div>
+                                                        <label className="block text-sm font-medium mb-1">Sort Order</label>
+                                                        <input
+                                                            type="number"
+                                                            value={guidanceFormData.sort_order}
+                                                            onChange={(e) => setGuidanceFormData({ ...guidanceFormData, sort_order: parseInt(e.target.value) || 0 })}
+                                                            className="input-field w-full"
+                                                        />
+                                                    </div>
+                                                    <div className="col-span-3">
+                                                        <label className="block text-sm font-medium mb-1">Description</label>
+                                                        <textarea
+                                                            value={guidanceFormData.description}
+                                                            onChange={(e) => setGuidanceFormData({ ...guidanceFormData, description: e.target.value })}
+                                                            className="input-field w-full"
+                                                            rows={2}
+                                                            placeholder="Guidance description..."
+                                                        />
+                                                    </div>
+                                                </div>
+                                                <div className="flex gap-2 mt-3">
+                                                    <button
+                                                        onClick={editingGuidance ? handleUpdateGuidance : handleCreateGuidance}
+                                                        className="btn-primary text-sm"
+                                                    >
+                                                        {editingGuidance ? 'Update' : 'Add'}
+                                                    </button>
+                                                    <button onClick={resetGuidanceForm} className="btn-secondary text-sm">
+                                                        Cancel
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        {/* Guidance List */}
+                                        {selectedFactor.guidance.length === 0 ? (
+                                            <p className="text-gray-500 text-sm">No guidance defined for this factor</p>
+                                        ) : (
+                                            <div className="space-y-2">
+                                                {selectedFactor.guidance.map((g) => (
+                                                    <div key={g.guidance_id} className="flex items-start justify-between p-3 border rounded-lg">
+                                                        <div className="flex-1">
+                                                            <div className="flex items-center gap-2">
+                                                                <span className={`px-2 py-0.5 text-xs font-medium rounded ${
+                                                                    g.rating === 'HIGH' ? 'bg-red-100 text-red-800' :
+                                                                    g.rating === 'MEDIUM' ? 'bg-yellow-100 text-yellow-800' :
+                                                                    'bg-green-100 text-green-800'
+                                                                }`}>
+                                                                    {g.rating}
+                                                                </span>
+                                                                <span className="text-sm text-gray-500">({g.points} pts)</span>
+                                                            </div>
+                                                            <p className="text-sm text-gray-700 mt-1">{g.description}</p>
+                                                        </div>
+                                                        <div className="flex gap-1 ml-2">
+                                                            <button
+                                                                onClick={() => startEditGuidance(g)}
+                                                                className="text-xs text-blue-600 hover:text-blue-800 px-2 py-1"
+                                                            >
+                                                                Edit
+                                                            </button>
+                                                            <button
+                                                                onClick={() => handleDeleteGuidance(g.guidance_id)}
+                                                                className="text-xs text-red-600 hover:text-red-800 px-2 py-1"
+                                                            >
+                                                                Delete
+                                                            </button>
+                                                        </div>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        )}
+                                    </div>
+                                </>
+                            ) : (
+                                <p className="text-gray-500">Select a factor to view details</p>
+                            )}
+                        </div>
+                    </div>
                 </>
             )}
         </Layout>

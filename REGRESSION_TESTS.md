@@ -5,12 +5,13 @@ This document tracks the regression testing strategy and test coverage for itera
 ## Quick Reference
 
 ```bash
-# Run all backend tests (~478 tests passing)
-# Note: 3 pre-existing test failures unrelated to recent changes
+# Run all backend tests (~564 tests passing)
+# Note: Some pre-existing test failures in recommendations/regional scope tests
 # Added: 36 tests for Overdue Revalidation Commentary (23 core + 13 dashboard integration)
 # Added: 15 tests for Model Decommissioning workflow
 # Added: 63 tests for Monitoring Cycles, Results, and Approval Workflow
 # Added: Monitoring Plan Versioning and Component 9b tests (integrated into test_monitoring.py)
+# Added: 54 tests for Model Risk Assessment (qualitative/quantitative scoring, factor config)
 cd api && python -m pytest
 
 # Run all frontend tests (128 tests passing)
@@ -627,6 +628,76 @@ cd web && pnpm test:coverage
 - [x] 9b Planned status requires version selection
 - [x] 9b NotPlanned/NotApplicable requires rationale when model has monitoring plan
 
+#### Model Risk Assessment (`test_risk_assessment_audit.py`)
+
+##### Qualitative Risk Factor CRUD (12 tests)
+- [x] List factors when empty
+- [x] List factors with data
+- [x] List factors includes guidance
+- [x] List factors excludes inactive by default
+- [x] List factors includes inactive when requested
+- [x] Create factor as Admin succeeds
+- [x] Create factor as non-Admin fails (403)
+- [x] Create factor with duplicate code fails (400)
+- [x] Create factor with guidance in single request
+- [x] Update factor as Admin succeeds
+- [x] Soft delete factor (sets is_active=false)
+- [x] Cannot delete factor with active assessments
+
+##### Factor Guidance CRUD (8 tests)
+- [x] Add guidance to factor
+- [x] Add guidance with duplicate rating fails (400)
+- [x] Update guidance description
+- [x] Update guidance points
+- [x] Delete guidance
+- [x] Guidance sorted by sort_order
+- [x] Rating must be valid enum (HIGH/MEDIUM/LOW)
+- [x] Points must be 1-3
+
+##### Weight Validation (6 tests)
+- [x] Validate weights: active factors sum to 1.0
+- [x] Validate weights: sum != 1.0 returns invalid
+- [x] Update factor weight as Admin succeeds
+- [x] Update weight via PATCH endpoint
+- [x] Reorder factors updates sort_order
+- [x] Weight must be between 0.0 and 1.0
+
+##### Model Risk Assessment CRUD (10 tests)
+- [x] List assessments when empty
+- [x] List assessments with data
+- [x] Create global assessment (region_id=null)
+- [x] Create regional assessment (region_id specified)
+- [x] Create assessment with factor ratings
+- [x] Update assessment quantitative rating
+- [x] Update assessment with override
+- [x] Delete assessment
+- [x] Get assessment includes all factor details
+- [x] Assessment unique constraint: one per (model_id, region_id)
+
+##### Scoring & Calculation Logic (10 tests)
+- [x] Qualitative score calculated as weighted average
+- [x] HIGH rating contributes 3 points
+- [x] MEDIUM rating contributes 2 points
+- [x] LOW rating contributes 1 point
+- [x] Score >= 2.1 maps to HIGH level
+- [x] Score >= 1.6 and < 2.1 maps to MEDIUM level
+- [x] Score < 1.6 maps to LOW level
+- [x] Inherent risk matrix lookup (HIGH × HIGH = HIGH)
+- [x] Inherent risk matrix lookup (LOW × LOW = VERY_LOW)
+- [x] Tier mapping: HIGH→TIER_1, MEDIUM→TIER_2, LOW→TIER_3, VERY_LOW→TIER_4
+
+##### Override Handling (5 tests)
+- [x] Quantitative override replaces base rating
+- [x] Qualitative override replaces calculated level
+- [x] Final tier override replaces derived tier
+- [x] Override requires comment/justification
+- [x] Effective values reflect overrides when present
+
+##### Audit Logging (3 tests)
+- [x] Factor create generates audit log
+- [x] Factor update generates audit log with changes
+- [x] Assessment update generates audit log
+
 ### Frontend Component Tests (web/src/) - ✅ FULLY OPERATIONAL
 
 **Note**: All tests pass using happy-dom environment with direct module mocking (no MSW).
@@ -940,6 +1011,7 @@ describe('NewPage', () => {
 | **Component 9b (Monitoring Plan Review)** | ✅ seed data + validation logic in validation_workflow.py | ✅ ValidationPlanForm 9b special handling | 2025-11-27 |
 | **My Monitoring Tasks** | ✅ /monitoring/my-tasks endpoint (12 manual tests) | ✅ MyMonitoringPage with role-based filters | 2025-11-28 |
 | **Monitoring Workflow Permissions** | ✅ Permission helpers + validation (19 manual tests) | ✅ Permission-based UI button visibility | 2025-11-28 |
+| **Model Risk Assessment** | ✅ test_risk_assessment_audit.py (54 tests) | ✅ ModelDetailsPage Risk Assessment tab + TaxonomyPage Risk Factors tab | 2025-11-30 |
 
 **Features Added:**
 - Development type (In-House / Third-Party)
@@ -972,11 +1044,12 @@ describe('NewPage', () => {
 - **Component 9b (Performance Monitoring Plan Review)** (validation plan component for assessing model's monitoring plan; ValidationPlanComponent extended with monitoring_plan_version_id and monitoring_review_notes; Required for Tier 1/2, IfApplicable for Tier 3; special UI rendering with version picker dropdown; validation enforced before Review/Pending Approval transitions)
 - **My Monitoring Tasks** (centralized view for users to see all monitoring cycles requiring their attention; supports three roles: data_provider, team_member, assignee; includes action_needed guidance, due dates, overdue status; MyMonitoringPage with role-based filtering)
 - **Monitoring Workflow Permission Model** (role-based access control for workflow actions; Monitoring Team = Risk function with full workflow control; Data Provider = can only submit results; Admin = full access; `check_team_member_or_admin()` helper for protected actions; `validate_results_completeness()` ensures complete submissions; `user_permissions` object in plan responses for frontend permission display)
+- **Model Risk Assessment** (qualitative/quantitative risk scoring with inherent risk matrix; admin-configurable weighted factors with rating guidance; three-level overrides with justification; per-region assessments; automatic tier sync to model; TaxonomyPage Risk Factors tab for admin configuration; ModelDetailsPage Risk Assessment tab for assessment entry)
 
-**Total: 560+ tests (430+ backend + 128 frontend)**
-- Backend: ~486 passing, 3 failing (pre-existing issues unrelated to versioning/9b changes)
+**Total: 692+ tests (564+ backend + 128 frontend)**
+- Backend: 564 passing (some pre-existing failures in recommendations/regional scope tests unrelated to risk assessment)
 - Frontend: 128 passing
-- **Note**: Core regression suite stable. Added monitoring plan versioning tests and component 9b integration. Backend tests include version CRUD, metric snapshotting, cycle version binding, and validation plan component 9b handling.
+- **Note**: Core regression suite stable. Risk assessment tests (54 tests) fully passing. Added model risk assessment feature with qualitative/quantitative scoring, inherent risk matrix, admin factor configuration, and per-region assessment support.
 - **2025-11-29 Test Hardening**: Added 8 new tests to guard against regressions in monitoring module:
   - Submit cycle completeness validation (multi-metric, N/A narrative requirements)
   - Plan delete cascade verification

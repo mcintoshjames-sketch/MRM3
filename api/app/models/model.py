@@ -194,3 +194,8 @@ class Model(Base):
         "Recommendation", back_populates="model", cascade="all, delete-orphan",
         order_by="desc(Recommendation.created_at)"
     )
+
+    # Risk assessments (global and regional)
+    risk_assessments: Mapped[List["ModelRiskAssessment"]] = relationship(
+        "ModelRiskAssessment", back_populates="model", cascade="all, delete-orphan"
+    )

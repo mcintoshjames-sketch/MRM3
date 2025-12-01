@@ -12,6 +12,7 @@ import ModelHierarchySection from '../components/ModelHierarchySection';
 import ModelDependenciesSection from '../components/ModelDependenciesSection';
 import ModelApplicationsSection from '../components/ModelApplicationsSection';
 import LineageViewer from '../components/LineageViewer';
+import ModelRiskAssessmentTab from '../components/ModelRiskAssessmentTab';
 import OverdueCommentaryModal, { OverdueType } from '../components/OverdueCommentaryModal';
 import { useAuth } from '../contexts/AuthContext';
 import { ModelVersion } from '../api/versions';
@@ -228,7 +229,7 @@ export default function ModelDetailsPage() {
     const [decommissioningRequests, setDecommissioningRequests] = useState<DecommissioningRequestListItem[]>([]);
     const [loading, setLoading] = useState(true);
     const [editing, setEditing] = useState(false);
-    const [activeTab, setActiveTab] = useState<'details' | 'versions' | 'delegates' | 'validations' | 'hierarchy' | 'dependencies' | 'applications' | 'lineage' | 'activity' | 'recommendations' | 'decommissioning'>('details');
+    const [activeTab, setActiveTab] = useState<'details' | 'versions' | 'delegates' | 'validations' | 'hierarchy' | 'dependencies' | 'applications' | 'lineage' | 'activity' | 'recommendations' | 'decommissioning' | 'risk-assessment'>('details');
     const [showSubmitChangeModal, setShowSubmitChangeModal] = useState(false);
     const [selectedVersion, setSelectedVersion] = useState<ModelVersion | null>(null);
     const [versionsRefreshTrigger, setVersionsRefreshTrigger] = useState(0);
@@ -1345,6 +1346,15 @@ export default function ModelDetailsPage() {
                             Model Details
                         </button>
                         <button
+                            onClick={() => setActiveTab('risk-assessment')}
+                            className={`py-2 px-1 border-b-2 font-medium text-sm ${activeTab === 'risk-assessment'
+                                ? 'border-blue-500 text-blue-600'
+                                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                                }`}
+                        >
+                            Risk Assessment
+                        </button>
+                        <button
                             onClick={() => setActiveTab('versions')}
                             className={`py-2 px-1 border-b-2 font-medium text-sm ${activeTab === 'versions'
                                 ? 'border-blue-500 text-blue-600'
@@ -2237,6 +2247,11 @@ export default function ModelDetailsPage() {
                         </div>
                     )}
                 </div>
+            ) : activeTab === 'risk-assessment' ? (
+                <ModelRiskAssessmentTab
+                    modelId={model.model_id}
+                    regions={regions}
+                />
             ) : activeTab === 'versions' ? (
                 <div className="space-y-6">
                     {/* Regional Version Deployments */}

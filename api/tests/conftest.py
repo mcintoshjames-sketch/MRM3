@@ -103,7 +103,32 @@ def admin_headers(admin_user):
 
 
 @pytest.fixture
-def sample_model(db_session, test_user):
+def usage_frequency(db_session):
+    """Create usage frequency taxonomy values required for models."""
+    from app.models.taxonomy import Taxonomy, TaxonomyValue
+
+    # Create Usage Frequency taxonomy
+    freq_tax = Taxonomy(name="Usage Frequency", is_system=True)
+    db_session.add(freq_tax)
+    db_session.flush()
+
+    # Create frequency values
+    daily = TaxonomyValue(taxonomy_id=freq_tax.taxonomy_id, code="DAILY", label="Daily", sort_order=1)
+    weekly = TaxonomyValue(taxonomy_id=freq_tax.taxonomy_id, code="WEEKLY", label="Weekly", sort_order=2)
+    monthly = TaxonomyValue(taxonomy_id=freq_tax.taxonomy_id, code="MONTHLY", label="Monthly", sort_order=3)
+
+    db_session.add_all([daily, weekly, monthly])
+    db_session.commit()
+
+    return {
+        "daily": daily,
+        "weekly": weekly,
+        "monthly": monthly
+    }
+
+
+@pytest.fixture
+def sample_model(db_session, test_user, usage_frequency):
     """Create a sample model in pending state (editable by submitter).
 
     Note: Model is in 'pending' approval state with test_user as submitter.
@@ -116,7 +141,8 @@ def sample_model(db_session, test_user):
         status="In Development",
         owner_id=test_user.user_id,
         row_approval_status="pending",  # Pending models are editable by submitter
-        submitted_by_user_id=test_user.user_id  # test_user is the submitter
+        submitted_by_user_id=test_user.user_id,  # test_user is the submitter
+        usage_frequency_id=usage_frequency["daily"].value_id  # Required field
     )
     db_session.add(model)
     db_session.commit()
@@ -179,6 +205,33 @@ def validator_headers(validator_user):
     """Get authorization headers for validator user."""
     token = create_access_token(data={"sub": validator_user.email})
     return {"Authorization": f"Bearer {token}"}
+
+
+@pytest.fixture
+def risk_tier_taxonomy(db_session):
+    """Create Model Risk Tier taxonomy with TIER_1-4 values for risk assessment tests."""
+    from app.models.taxonomy import Taxonomy, TaxonomyValue
+
+    taxonomy = Taxonomy(name="Model Risk Tier", is_system=True)
+    db_session.add(taxonomy)
+    db_session.flush()
+
+    tiers = [
+        TaxonomyValue(taxonomy_id=taxonomy.taxonomy_id, code="TIER_1", label="Tier 1 (High)", sort_order=1),
+        TaxonomyValue(taxonomy_id=taxonomy.taxonomy_id, code="TIER_2", label="Tier 2 (Medium)", sort_order=2),
+        TaxonomyValue(taxonomy_id=taxonomy.taxonomy_id, code="TIER_3", label="Tier 3 (Low)", sort_order=3),
+        TaxonomyValue(taxonomy_id=taxonomy.taxonomy_id, code="TIER_4", label="Tier 4 (Very Low)", sort_order=4),
+    ]
+    db_session.add_all(tiers)
+    db_session.commit()
+
+    return {
+        "taxonomy": taxonomy,
+        "TIER_1": tiers[0],
+        "TIER_2": tiers[1],
+        "TIER_3": tiers[2],
+        "TIER_4": tiers[3],
+    }
 
 
 @pytest.fixture

@@ -1,7 +1,7 @@
 """FastAPI application entry point."""
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.api import auth, models, vendors, taxonomies, audit_logs, validation_workflow, validation_policies, workflow_sla, regions, model_regions, model_versions, model_delegates, model_change_taxonomy, model_types, dashboard, export_views, version_deployment_tasks, regional_compliance_report, analytics, saved_queries, model_hierarchy, model_dependencies, approver_roles, conditional_approval_rules, fry, map_applications, model_applications, overdue_commentary, overdue_revalidation_report, decommissioning, kpm, monitoring, recommendations
+from app.api import auth, models, vendors, taxonomies, audit_logs, validation_workflow, validation_policies, workflow_sla, regions, model_regions, model_versions, model_delegates, model_change_taxonomy, model_types, dashboard, export_views, version_deployment_tasks, regional_compliance_report, analytics, saved_queries, model_hierarchy, model_dependencies, approver_roles, conditional_approval_rules, fry, map_applications, model_applications, overdue_commentary, overdue_revalidation_report, decommissioning, kpm, monitoring, recommendations, risk_assessment, qualitative_factors
 
 app = FastAPI(title="MRM System v3", version="3.0.0")
 
@@ -78,6 +78,11 @@ app.include_router(kpm.router, tags=["kpm"])
 app.include_router(monitoring.router, tags=["monitoring"])
 # Model Recommendations
 app.include_router(recommendations.router, tags=["recommendations"])
+# Model Risk Assessment
+app.include_router(risk_assessment.router, tags=["risk-assessment"])
+# Qualitative Risk Factor Configuration (Admin)
+app.include_router(qualitative_factors.router,
+                   prefix="/risk-assessment/factors", tags=["risk-assessment"])
 
 
 @app.get("/")

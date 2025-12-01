@@ -9,6 +9,7 @@ from app.models import User, UserRole, Vendor, EntraUser, Taxonomy, TaxonomyValu
 from app.models.recommendation import RecommendationPriorityConfig, RecommendationTimeframeConfig
 from app.models.kpm import KpmCategory, Kpm
 from app.models.model import Model
+from app.models.risk_assessment import QualitativeRiskFactor, QualitativeFactorGuidance
 
 
 REGULATORY_CATEGORY_VALUES = [
@@ -2112,6 +2113,9 @@ def seed_database():
         # Seed Conditional Approvals
         seed_conditional_approvals(db)
 
+        # Seed Qualitative Risk Factors (for Model Risk Assessment)
+        seed_qualitative_risk_factors(db)
+
         print("Seeding completed successfully!")
 
     except Exception as e:
@@ -2806,6 +2810,175 @@ def seed_kpm(db):
 
     db.commit()
     print("✓ KPM library seeded")
+
+
+# Initial qualitative risk factors for Model Risk Assessment
+QUALITATIVE_RISK_FACTORS = [
+    {
+        "code": "REPUTATION_LEGAL",
+        "name": "Reputation, Regulatory Compliance and/or Financial Reporting Risk",
+        "description": "Reputation Risk is defined as the risk of negative publicity regarding business conduct or practices which, whether true or not, could significantly harm the institution's reputation as a leading financial institution, or could materially and adversely affect business, operations or financial condition.",
+        "weight": "0.3000",
+        "sort_order": 1,
+        "guidance": [
+            {
+                "rating": "HIGH",
+                "points": 3,
+                "description": "Failure of the model could significantly impact the institution's reputation, regulatory compliance and/or financial reporting.",
+                "sort_order": 1
+            },
+            {
+                "rating": "MEDIUM",
+                "points": 2,
+                "description": "Misuse or errors in the model could impact the institution's reputation, regulatory compliance, and/or financial reporting with moderate to low impact.",
+                "sort_order": 2
+            },
+            {
+                "rating": "LOW",
+                "points": 1,
+                "description": "Misuse or errors in the model would have limited impact on the institution's reputation, regulatory compliance, and/or financial reporting.",
+                "sort_order": 3
+            }
+        ]
+    },
+    {
+        "code": "COMPLEXITY",
+        "name": "Complexity of the Model",
+        "description": "The complexity of the model refers to the mathematical sophistication of the model including the number of model inputs, data sources, transformations, and assumptions.",
+        "weight": "0.3000",
+        "sort_order": 2,
+        "guidance": [
+            {
+                "rating": "HIGH",
+                "points": 3,
+                "description": "Multiple inputs or data sources or complex transformation of input data/parameters or non-standard methodologies and assumptions. Mathematical sophistication: Complex mathematical calculation, analysis, or assumptions or simplifications (e.g. regression, calculus, etc.)",
+                "sort_order": 1
+            },
+            {
+                "rating": "MEDIUM",
+                "points": 2,
+                "description": "A few inputs or data sources or simple transformation of input data/parameters. Mathematical sophistication: Moderate mathematics or calculations, few assumptions or simplifications, etc.",
+                "sort_order": 2
+            },
+            {
+                "rating": "LOW",
+                "points": 1,
+                "description": "Limited inputs or data sources. Mathematical sophistication: Basic mathematics and limited calculations.",
+                "sort_order": 3
+            }
+        ]
+    },
+    {
+        "code": "USAGE_DEPENDENCY",
+        "name": "Model Usage and Model Dependency",
+        "description": "The model usage and model dependency assesses the strategic importance of the model usage, any model interdependence and potential impact across the organization.",
+        "weight": "0.2000",
+        "sort_order": 3,
+        "guidance": [
+            {
+                "rating": "HIGH",
+                "points": 3,
+                "description": "If error occurs, it would impact institutions reporting to third parties (e.g., rating agencies, shareholders, etc.). Business decisions are taken based on the individual model. The model is a key input to other models. If error occurs, it would impact several LOBs (departments) at the bank.",
+                "sort_order": 1
+            },
+            {
+                "rating": "MEDIUM",
+                "points": 2,
+                "description": "Business decisions are taken using the model results, however, other inputs are also taken into account. The model is fed to other models. If a model error occurs, it would impact several LOBs (departments).",
+                "sort_order": 2
+            },
+            {
+                "rating": "LOW",
+                "points": 1,
+                "description": "If a model error occurs, it would impact one department. Business decisions are taken using different inputs, the model is only one factor.",
+                "sort_order": 3
+            }
+        ]
+    },
+    {
+        "code": "STABILITY",
+        "name": "Stability of the Model",
+        "description": "The stability of the model refers to the likelihood of model error, the uncertainty of the model outcomes (unobservable factors), and the ability to monitor the model.",
+        "weight": "0.2000",
+        "sort_order": 4,
+        "guidance": [
+            {
+                "rating": "HIGH",
+                "points": 3,
+                "description": "The likelihood of error is high, and/or the magnitude of the impact of an error is high. The output of the model is not predictable. Third party models where the Bank does not have access to proprietary elements and performance monitoring is not conducted.",
+                "sort_order": 1
+            },
+            {
+                "rating": "MEDIUM",
+                "points": 2,
+                "description": "If there is a model error, the magnitude of the impact may be low to moderate. The output of the model is predictable and an occurrence of error is moderate. Third party models with little or no information, regular performance monitoring is conducted, or models whose information is known, but proper regular monitoring process has not been developed.",
+                "sort_order": 2
+            },
+            {
+                "rating": "LOW",
+                "points": 1,
+                "description": "The likelihood of error is low, and/or the magnitude of the impact of an error is immaterial. The outputs or factors predictable enough, and therefore the likelihood that an error occurs is low. Third party models with detailed information and can be monitored regularly.",
+                "sort_order": 3
+            }
+        ]
+    }
+]
+
+
+def seed_qualitative_risk_factors(db):
+    """Seed the qualitative risk factors for Model Risk Assessment."""
+    from decimal import Decimal
+    print("Seeding qualitative risk factors...")
+
+    for factor_data in QUALITATIVE_RISK_FACTORS:
+        # Check if factor already exists
+        factor = db.query(QualitativeRiskFactor).filter(
+            QualitativeRiskFactor.code == factor_data["code"]
+        ).first()
+
+        if not factor:
+            factor = QualitativeRiskFactor(
+                code=factor_data["code"],
+                name=factor_data["name"],
+                description=factor_data["description"],
+                weight=Decimal(factor_data["weight"]),
+                sort_order=factor_data["sort_order"],
+                is_active=True
+            )
+            db.add(factor)
+            db.flush()
+            print(f"✓ Created risk factor: {factor.name}")
+        else:
+            # Update existing factor
+            factor.name = factor_data["name"]
+            factor.description = factor_data["description"]
+            factor.weight = Decimal(factor_data["weight"])
+            factor.sort_order = factor_data["sort_order"]
+            print(f"✓ Updated risk factor: {factor.name}")
+
+        # Create or update guidance for each rating level
+        for guidance_data in factor_data["guidance"]:
+            guidance = db.query(QualitativeFactorGuidance).filter(
+                QualitativeFactorGuidance.factor_id == factor.factor_id,
+                QualitativeFactorGuidance.rating == guidance_data["rating"]
+            ).first()
+
+            if not guidance:
+                guidance = QualitativeFactorGuidance(
+                    factor_id=factor.factor_id,
+                    rating=guidance_data["rating"],
+                    points=guidance_data["points"],
+                    description=guidance_data["description"],
+                    sort_order=guidance_data["sort_order"]
+                )
+                db.add(guidance)
+            else:
+                guidance.points = guidance_data["points"]
+                guidance.description = guidance_data["description"]
+                guidance.sort_order = guidance_data["sort_order"]
+
+    db.commit()
+    print("✓ Qualitative risk factors seeded")
 
 
 if __name__ == "__main__":

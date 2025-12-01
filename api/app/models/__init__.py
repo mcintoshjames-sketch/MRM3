@@ -74,6 +74,12 @@ from app.models.recommendation import (
     RecommendationApproval,
     RecommendationPriorityConfig,
 )
+from app.models.risk_assessment import (
+    QualitativeRiskFactor,
+    QualitativeFactorGuidance,
+    ModelRiskAssessment,
+    QualitativeFactorAssessment,
+)
 
 __all__ = [
     "User", "UserRole", "user_regions",
@@ -164,4 +170,9 @@ __all__ = [
     "RecommendationStatusHistory",
     "RecommendationApproval",
     "RecommendationPriorityConfig",
+    # Risk Assessment
+    "QualitativeRiskFactor",
+    "QualitativeFactorGuidance",
+    "ModelRiskAssessment",
+    "QualitativeFactorAssessment",
 ]
