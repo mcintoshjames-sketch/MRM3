@@ -309,13 +309,12 @@ def create_model_version(
                 is_interim = True
                 validation_type_code = "INTERIM"
                 priority_code = "HIGH"  # High priority
-                msg = f"WARNING: Production date ({target_production_date}) is within {days_until_production} days. " \
-                    f"Standard validation SLA is {total_sla_days} days. Expedited INTERIM review required."
+                # Only add SLA message if no lead time warning already set (avoid redundant messaging)
+                if not validation_warning:
+                    validation_warning = f"WARNING: Production date ({target_production_date}) is within {days_until_production} days. " \
+                        f"Standard validation SLA is {total_sla_days} days. Expedited INTERIM review required."
 
-                if validation_warning:
-                    validation_warning += " " + msg
-                else:
-                    validation_warning = msg        # Get validation type from taxonomy
+        # Get validation type from taxonomy
         validation_type = db.query(TaxonomyValue).join(
             TaxonomyValue.taxonomy
         ).filter(

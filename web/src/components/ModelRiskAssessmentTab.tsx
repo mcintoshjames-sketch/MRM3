@@ -14,8 +14,12 @@ import {
     createAssessment,
     updateAssessment,
     deleteAssessment,
+    getAssessmentHistory,
+    checkOpenValidationsForModel,
     RiskAssessmentResponse,
+    RiskAssessmentHistoryItem,
     FactorRatingInput,
+    OpenValidationsCheckResponse,
     RATING_COLORS,
     lookupInherentRisk,
     TIER_LABELS,
@@ -41,6 +45,8 @@ const ModelRiskAssessmentTab: React.FC<Props> = ({ modelId, regions = [] }) => {
     // State
     const [assessments, setAssessments] = useState<RiskAssessmentResponse[]>([]);
     const [factors, setFactors] = useState<FactorResponse[]>([]);
+    const [history, setHistory] = useState<RiskAssessmentHistoryItem[]>([]);
+    const [showHistory, setShowHistory] = useState(false);
     const [selectedRegionId, setSelectedRegionId] = useState<number | null>(null);
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
@@ -57,6 +63,11 @@ const ModelRiskAssessmentTab: React.FC<Props> = ({ modelId, regions = [] }) => {
     const [derivedOverride, setDerivedOverride] = useState<InherentRating>(null);
     const [derivedOverrideComment, setDerivedOverrideComment] = useState('');
 
+    // Risk tier change warning modal state
+    const [showTierChangeWarning, setShowTierChangeWarning] = useState(false);
+    const [tierChangeImpact, setTierChangeImpact] = useState<OpenValidationsCheckResponse | null>(null);
+    const [pendingSaveAction, setPendingSaveAction] = useState<(() => Promise<void>) | null>(null);
+
     // Current assessment for selected region
     const currentAssessment = assessments.find(a =>
         selectedRegionId === null ? a.region === null : a.region?.region_id === selectedRegionId
@@ -67,12 +78,14 @@ const ModelRiskAssessmentTab: React.FC<Props> = ({ modelId, regions = [] }) => {
         setLoading(true);
         setError(null);
         try {
-            const [assessmentsData, factorsData] = await Promise.all([
+            const [assessmentsData, factorsData, historyData] = await Promise.all([
                 listAssessments(modelId),
-                listFactors()
+                listFactors(),
+                getAssessmentHistory(modelId)
             ]);
             setAssessments(assessmentsData);
             setFactors(factorsData);
+            setHistory(historyData);
         } catch (err) {
             setError('Failed to load risk assessment data');
             console.error(err);
@@ -160,45 +173,8 @@ const ModelRiskAssessmentTab: React.FC<Props> = ({ modelId, regions = [] }) => {
     }
     const effectiveTier = derivedOverride || derivedTier;
 
-    // Handle save
-    const handleSave = async () => {
-        if (!isAdminOrValidator) return;
-
-        // Validate overrides: must change the value and have justification
-        const overrideErrors: string[] = [];
-
-        // Quantitative override validation
-        if (quantitativeOverride !== null) {
-            if (quantitativeOverride === quantitativeRating) {
-                overrideErrors.push('Quantitative Override must differ from the base rating');
-            } else if (!quantitativeOverrideComment.trim()) {
-                overrideErrors.push('Quantitative Override requires justification');
-            }
-        }
-
-        // Qualitative override validation
-        if (qualitativeOverride !== null) {
-            if (qualitativeOverride === qualitativeLevel) {
-                overrideErrors.push('Qualitative Override must differ from the calculated level');
-            } else if (!qualitativeOverrideComment.trim()) {
-                overrideErrors.push('Qualitative Override requires justification');
-            }
-        }
-
-        // Final tier override validation
-        if (derivedOverride !== null) {
-            if (derivedOverride === derivedTier) {
-                overrideErrors.push('Final Tier Override must differ from the derived tier');
-            } else if (!derivedOverrideComment.trim()) {
-                overrideErrors.push('Final Tier Override requires justification');
-            }
-        }
-
-        if (overrideErrors.length > 0) {
-            setError(overrideErrors.join('. '));
-            return;
-        }
-
+    // Perform the actual save operation
+    const performSave = async () => {
         setSaving(true);
         setError(null);
 
@@ -244,6 +220,90 @@ const ModelRiskAssessmentTab: React.FC<Props> = ({ modelId, regions = [] }) => {
         } finally {
             setSaving(false);
         }
+    };
+
+    // Handle save with tier change warning check
+    const handleSave = async () => {
+        if (!isAdminOrValidator) return;
+
+        // Validate overrides: must change the value and have justification
+        const overrideErrors: string[] = [];
+
+        // Quantitative override validation
+        if (quantitativeOverride !== null) {
+            if (quantitativeOverride === quantitativeRating) {
+                overrideErrors.push('Quantitative Override must differ from the base rating');
+            } else if (!quantitativeOverrideComment.trim()) {
+                overrideErrors.push('Quantitative Override requires justification');
+            }
+        }
+
+        // Qualitative override validation
+        if (qualitativeOverride !== null) {
+            if (qualitativeOverride === qualitativeLevel) {
+                overrideErrors.push('Qualitative Override must differ from the calculated level');
+            } else if (!qualitativeOverrideComment.trim()) {
+                overrideErrors.push('Qualitative Override requires justification');
+            }
+        }
+
+        // Final tier override validation
+        if (derivedOverride !== null) {
+            if (derivedOverride === derivedTier) {
+                overrideErrors.push('Final Tier Override must differ from the derived tier');
+            } else if (!derivedOverrideComment.trim()) {
+                overrideErrors.push('Final Tier Override requires justification');
+            }
+        }
+
+        if (overrideErrors.length > 0) {
+            setError(overrideErrors.join('. '));
+            return;
+        }
+
+        // Check if this is a Global assessment (region_id is null) and if tier will change
+        const isGlobalAssessment = selectedRegionId === null;
+        const currentTier = currentAssessment?.final_tier?.code || null;
+        const newTier = effectiveTier; // This is derived from form values
+
+        // Only check for tier change impact on Global assessments
+        if (isGlobalAssessment && currentTier !== newTier) {
+            try {
+                // Check for open validations that would be affected
+                const impact = await checkOpenValidationsForModel(modelId);
+
+                if (impact.has_open_validations) {
+                    // Show warning modal and store the save action
+                    setTierChangeImpact(impact);
+                    setPendingSaveAction(() => performSave);
+                    setShowTierChangeWarning(true);
+                    return;
+                }
+            } catch (err) {
+                console.error('Failed to check for open validations:', err);
+                // Continue with save even if check fails
+            }
+        }
+
+        // No tier change or no open validations - proceed with save
+        await performSave();
+    };
+
+    // Handle confirmation of tier change warning
+    const handleConfirmTierChange = async () => {
+        setShowTierChangeWarning(false);
+        if (pendingSaveAction) {
+            await pendingSaveAction();
+        }
+        setPendingSaveAction(null);
+        setTierChangeImpact(null);
+    };
+
+    // Handle cancellation of tier change warning
+    const handleCancelTierChange = () => {
+        setShowTierChangeWarning(false);
+        setPendingSaveAction(null);
+        setTierChangeImpact(null);
     };
 
     // Handle delete
@@ -305,6 +365,70 @@ const ModelRiskAssessmentTab: React.FC<Props> = ({ modelId, regions = [] }) => {
 
     return (
         <div className="space-y-6">
+            {/* Risk Tier Change Warning Modal */}
+            {showTierChangeWarning && tierChangeImpact && (
+                <div className="fixed inset-0 z-50 overflow-y-auto">
+                    <div className="flex items-center justify-center min-h-screen px-4 pt-4 pb-20 text-center sm:block sm:p-0">
+                        <div className="fixed inset-0 transition-opacity bg-gray-500 bg-opacity-75" onClick={handleCancelTierChange}></div>
+                        <div className="inline-block overflow-hidden text-left align-bottom transition-all transform bg-white rounded-lg shadow-xl sm:my-8 sm:align-middle sm:max-w-lg sm:w-full">
+                            <div className="px-4 pt-5 pb-4 bg-white sm:p-6 sm:pb-4">
+                                <div className="sm:flex sm:items-start">
+                                    <div className="flex items-center justify-center flex-shrink-0 w-12 h-12 mx-auto bg-yellow-100 rounded-full sm:mx-0 sm:h-10 sm:w-10">
+                                        <svg className="w-6 h-6 text-yellow-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                                        </svg>
+                                    </div>
+                                    <div className="mt-3 text-center sm:mt-0 sm:ml-4 sm:text-left">
+                                        <h3 className="text-lg font-medium leading-6 text-gray-900">
+                                            Risk Tier Change Warning
+                                        </h3>
+                                        <div className="mt-2">
+                                            <p className="text-sm text-gray-500 mb-3">
+                                                {tierChangeImpact.warning_message}
+                                            </p>
+                                            <div className="bg-yellow-50 border border-yellow-200 rounded-md p-3 mb-3">
+                                                <p className="text-sm font-medium text-yellow-800 mb-2">
+                                                    Affected Validation Requests:
+                                                </p>
+                                                <ul className="text-sm text-yellow-700 space-y-1">
+                                                    {tierChangeImpact.open_validations.map(v => (
+                                                        <li key={v.request_id} className="flex items-center">
+                                                            <span className="w-2 h-2 bg-yellow-400 rounded-full mr-2"></span>
+                                                            Request #{v.request_id} - {v.validation_type} ({v.current_status})
+                                                            {v.primary_validator && <span className="ml-1 text-gray-500">- {v.primary_validator}</span>}
+                                                        </li>
+                                                    ))}
+                                                </ul>
+                                            </div>
+                                            <p className="text-sm text-gray-500">
+                                                Proceeding will reset validation plan components and void any pending approvals.
+                                                Are you sure you want to continue?
+                                            </p>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div className="px-4 py-3 bg-gray-50 sm:px-6 sm:flex sm:flex-row-reverse">
+                                <button
+                                    type="button"
+                                    onClick={handleConfirmTierChange}
+                                    className="inline-flex justify-center w-full px-4 py-2 text-base font-medium text-white bg-yellow-600 border border-transparent rounded-md shadow-sm hover:bg-yellow-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-yellow-500 sm:ml-3 sm:w-auto sm:text-sm"
+                                >
+                                    Yes, Proceed with Change
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={handleCancelTierChange}
+                                    className="inline-flex justify-center w-full px-4 py-2 mt-3 text-base font-medium text-gray-700 bg-white border border-gray-300 rounded-md shadow-sm hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 sm:mt-0 sm:ml-3 sm:w-auto sm:text-sm"
+                                >
+                                    Cancel
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
             {/* Header */}
             <div className="flex items-center justify-between">
                 <div>
@@ -686,6 +810,74 @@ const ModelRiskAssessmentTab: React.FC<Props> = ({ modelId, regions = [] }) => {
                     >
                         {saving ? 'Saving...' : currentAssessment ? 'Update Assessment' : 'Save Assessment'}
                     </button>
+                </div>
+            )}
+
+            {/* Assessment History Section (Collapsible) */}
+            {history.length > 0 && (
+                <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
+                    <button
+                        onClick={() => setShowHistory(!showHistory)}
+                        className="flex items-center justify-between w-full text-left"
+                    >
+                        <h4 className="text-sm font-medium text-gray-700 flex items-center gap-2">
+                            <svg className="w-4 h-4 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                            </svg>
+                            Risk Assessment History ({history.length} change{history.length !== 1 ? 's' : ''})
+                        </h4>
+                        <svg
+                            className={`w-5 h-5 text-gray-500 transform transition-transform ${showHistory ? 'rotate-180' : ''}`}
+                            fill="none"
+                            viewBox="0 0 24 24"
+                            stroke="currentColor"
+                        >
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                        </svg>
+                    </button>
+                    {showHistory && (
+                        <div className="mt-3 overflow-x-auto">
+                            <table className="min-w-full divide-y divide-gray-200">
+                                <thead className="bg-gray-100">
+                                    <tr>
+                                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Date</th>
+                                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Action</th>
+                                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Region</th>
+                                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">User</th>
+                                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Changes</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="bg-white divide-y divide-gray-200">
+                                    {history.map(item => (
+                                        <tr key={item.log_id}>
+                                            <td className="px-4 py-2 text-sm text-gray-900 whitespace-nowrap">
+                                                {item.timestamp.split('T')[0]}
+                                            </td>
+                                            <td className="px-4 py-2 text-sm whitespace-nowrap">
+                                                <span className={`px-2 py-1 rounded text-xs font-medium ${
+                                                    item.action === 'CREATE' ? 'bg-green-100 text-green-800' :
+                                                    item.action === 'UPDATE' ? 'bg-blue-100 text-blue-800' :
+                                                    item.action === 'DELETE' ? 'bg-red-100 text-red-800' :
+                                                    'bg-gray-100 text-gray-800'
+                                                }`}>
+                                                    {item.action}
+                                                </span>
+                                            </td>
+                                            <td className="px-4 py-2 text-sm text-gray-500 whitespace-nowrap">
+                                                {item.region_name || 'Global'}
+                                            </td>
+                                            <td className="px-4 py-2 text-sm text-gray-500 whitespace-nowrap">
+                                                {item.user_name || 'Unknown'}
+                                            </td>
+                                            <td className="px-4 py-2 text-sm text-gray-500">
+                                                {item.changes_summary}
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    )}
                 </div>
             )}
         </div>

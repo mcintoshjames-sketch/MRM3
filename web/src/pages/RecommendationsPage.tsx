@@ -558,12 +558,16 @@ export default function RecommendationsPage() {
                                         </div>
                                     </td>
                                     <td className="px-6 py-4 whitespace-nowrap text-sm">
-                                        <Link
-                                            to={`/models/${rec.model_id}`}
-                                            className="text-blue-600 hover:text-blue-800 hover:underline"
-                                        >
-                                            {rec.model?.model_name}
-                                        </Link>
+                                        {rec.model ? (
+                                            <Link
+                                                to={`/models/${rec.model.model_id}`}
+                                                className="text-blue-600 hover:text-blue-800 hover:underline"
+                                            >
+                                                {rec.model.model_name}
+                                            </Link>
+                                        ) : (
+                                            <span className="text-gray-400">-</span>
+                                        )}
                                     </td>
                                     <td className="px-6 py-4 whitespace-nowrap">
                                         <span className={`px-2 py-1 text-xs rounded ${getPriorityColor(rec.priority?.code || '')}`}>

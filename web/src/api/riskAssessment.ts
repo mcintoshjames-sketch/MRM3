@@ -94,6 +94,23 @@ export interface RiskAssessmentResponse {
     updated_at: string;
 }
 
+export interface RiskAssessmentHistoryItem {
+    log_id: number;
+    action: string;
+    timestamp: string;
+    user_id: number | null;
+    user_name: string | null;
+    region_id: number | null;
+    region_name: string | null;
+    old_tier: string | null;
+    new_tier: string | null;
+    old_quantitative: string | null;
+    new_quantitative: string | null;
+    old_qualitative: string | null;
+    new_qualitative: string | null;
+    changes_summary: string;
+}
+
 // ============================================================================
 // API Functions
 // ============================================================================
@@ -147,6 +164,14 @@ export async function deleteAssessment(modelId: number, assessmentId: number): P
     await client.delete(`/models/${modelId}/risk-assessments/${assessmentId}`);
 }
 
+/**
+ * Get risk assessment history for a model.
+ */
+export async function getAssessmentHistory(modelId: number): Promise<RiskAssessmentHistoryItem[]> {
+    const response = await client.get(`/models/${modelId}/risk-assessments/history`);
+    return response.data;
+}
+
 // ============================================================================
 // Risk Calculation Helpers
 // ============================================================================
@@ -193,13 +218,50 @@ export function lookupInherentRisk(
     return matrix[quantitative][qualitative];
 }
 
+// ============================================================================
+// Risk Tier Change Impact Check
+// ============================================================================
+
+export interface OpenValidationSummary {
+    request_id: number;
+    current_status: string;
+    validation_type: string;
+    has_plan: boolean;
+    pending_approvals_count: number;
+    primary_validator: string | null;
+}
+
+export interface OpenValidationsCheckResponse {
+    model_id: number;
+    model_name: string;
+    current_risk_tier: string | null;
+    proposed_risk_tier: string | null;
+    has_open_validations: boolean;
+    open_validation_count: number;
+    open_validations: OpenValidationSummary[];
+    warning_message: string | null;
+    requires_confirmation: boolean;
+}
+
+/**
+ * Check if a model has open validation requests that will be affected by a risk tier change.
+ */
+export async function checkOpenValidationsForModel(modelId: number): Promise<OpenValidationsCheckResponse> {
+    const response = await client.get<OpenValidationsCheckResponse>(
+        `/validation-workflow/risk-tier-impact/check/${modelId}`
+    );
+    return response.data;
+}
+
 export default {
     listAssessments,
     getAssessment,
     createAssessment,
     updateAssessment,
     deleteAssessment,
+    getAssessmentHistory,
     lookupInherentRisk,
+    checkOpenValidationsForModel,
     RATING_SCORES,
     RATING_COLORS,
     TIER_MAP,

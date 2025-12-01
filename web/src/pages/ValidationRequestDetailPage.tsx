@@ -9,6 +9,7 @@ import OverdueCommentaryModal, { OverdueType } from '../components/OverdueCommen
 import { overdueCommentaryApi, CurrentOverdueCommentaryResponse } from '../api/overdueCommentary';
 import { recommendationsApi, RecommendationListItem, TaxonomyValue as RecTaxonomyValue } from '../api/recommendations';
 import RecommendationCreateModal from '../components/RecommendationCreateModal';
+import ValidationScorecardTab from '../components/ValidationScorecardTab';
 
 interface TaxonomyValue {
     value_id: number;
@@ -99,6 +100,7 @@ interface ModelVersion {
     status: string;
     created_at: string;
     created_by_name: string;
+    validation_request_id: number | null;
 }
 
 interface ValidationRequestDetail {
@@ -146,7 +148,7 @@ interface WorkflowSLA {
     updated_at: string;
 }
 
-type TabType = 'overview' | 'plan' | 'assignments' | 'outcome' | 'approvals' | 'history';
+type TabType = 'overview' | 'plan' | 'assignments' | 'outcome' | 'scorecard' | 'approvals' | 'history';
 
 export default function ValidationRequestDetailPage() {
     const { id } = useParams<{ id: string }>();
@@ -195,6 +197,12 @@ export default function ValidationRequestDetailPage() {
     });
     const [submissionReceivedDate, setSubmissionReceivedDate] = useState(new Date().toISOString().split('T')[0]);
     const [submissionNotes, setSubmissionNotes] = useState('');
+    // Submission metadata fields
+    const [submissionConfirmedVersionId, setSubmissionConfirmedVersionId] = useState<number | null>(null);
+    const [submissionDocVersion, setSubmissionDocVersion] = useState('');
+    const [submissionModelVersion, setSubmissionModelVersion] = useState('');
+    const [submissionDocId, setSubmissionDocId] = useState('');
+    const [availableVersions, setAvailableVersions] = useState<ModelVersion[]>([]);
 
     const [newOutcome, setNewOutcome] = useState({
         overall_rating_id: 0,
@@ -717,6 +725,38 @@ export default function ValidationRequestDetailPage() {
         }
     };
 
+    const handleOpenSubmissionModal = async () => {
+        if (!request || !request.models || request.models.length === 0) return;
+
+        // Load available versions for the first model
+        try {
+            const modelId = request.models[0].model_id;
+            const versionsRes = await api.get(`/models/${modelId}/versions`);
+            setAvailableVersions(versionsRes.data);
+
+            // Pre-select the currently associated version if there is one linked to this validation
+            const linkedVersion = versionsRes.data.find((v: ModelVersion) =>
+                v.validation_request_id === request.request_id
+            );
+            if (linkedVersion) {
+                setSubmissionConfirmedVersionId(linkedVersion.version_id);
+            } else {
+                setSubmissionConfirmedVersionId(null);
+            }
+        } catch (err) {
+            console.error('Failed to fetch versions:', err);
+            setAvailableVersions([]);
+            setSubmissionConfirmedVersionId(null);
+        }
+
+        // Reset the metadata fields
+        setSubmissionDocVersion('');
+        setSubmissionModelVersion('');
+        setSubmissionDocId('');
+        setSubmissionNotes('');
+        setShowSubmissionModal(true);
+    };
+
     const handleMarkSubmissionReceived = async () => {
         if (!request) return;
 
@@ -724,10 +764,18 @@ export default function ValidationRequestDetailPage() {
         try {
             await api.post(`/validation-workflow/requests/${id}/mark-submission`, {
                 submission_received_date: submissionReceivedDate,
-                notes: submissionNotes.trim() || null
+                notes: submissionNotes.trim() || null,
+                confirmed_model_version_id: submissionConfirmedVersionId || null,
+                model_documentation_version: submissionDocVersion.trim() || null,
+                model_submission_version: submissionModelVersion.trim() || null,
+                model_documentation_id: submissionDocId.trim() || null
             });
             setShowSubmissionModal(false);
             setSubmissionNotes('');
+            setSubmissionDocVersion('');
+            setSubmissionModelVersion('');
+            setSubmissionDocId('');
+            setSubmissionConfirmedVersionId(null);
             await fetchData();
         } catch (err: any) {
             setError(err.response?.data?.detail || 'Failed to mark submission as received');
@@ -924,7 +972,7 @@ export default function ValidationRequestDetailPage() {
                     {/* Mark Submission Received Button */}
                     {isPrimaryValidator && request.current_status.code === 'PLANNING' && (
                         <button
-                            onClick={() => setShowSubmissionModal(true)}
+                            onClick={handleOpenSubmissionModal}
                             disabled={actionLoading}
                             className="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700 disabled:opacity-50"
                         >
@@ -1098,7 +1146,7 @@ export default function ValidationRequestDetailPage() {
             {/* Tabs */}
             <div className="border-b border-gray-200 mb-6">
                 <nav className="-mb-px flex space-x-8">
-                    {(['overview', 'plan', 'assignments', 'outcome', 'approvals', 'history'] as TabType[]).map((tab) => (
+                    {(['overview', 'plan', 'assignments', 'scorecard', 'outcome', 'approvals', 'history'] as TabType[]).map((tab) => (
                         <button
                             key={tab}
                             onClick={() => {
@@ -1830,6 +1878,20 @@ export default function ValidationRequestDetailPage() {
                                 </div>
                             )}
                         </div>
+                    </div>
+                )}
+
+                {activeTab === 'scorecard' && (
+                    <div>
+                        <h3 className="text-lg font-bold mb-4">Validation Scorecard</h3>
+                        <ValidationScorecardTab
+                            requestId={request.request_id}
+                            canEdit={
+                                (user?.role === 'Admin' || user?.role === 'Validator') &&
+                                !['APPROVED', 'CANCELLED'].includes(request.current_status.code)
+                            }
+                            onScorecardChange={fetchData}
+                        />
                     </div>
                 )}
 
@@ -2610,7 +2672,7 @@ export default function ValidationRequestDetailPage() {
             {/* Mark Submission Received Modal */}
             {showSubmissionModal && (
                 <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-                    <div className="bg-white rounded-lg p-6 w-full max-w-md">
+                    <div className="bg-white rounded-lg p-6 w-full max-w-lg max-h-[90vh] overflow-y-auto">
                         <h3 className="text-lg font-bold mb-4">Mark Submission Received</h3>
                         <p className="text-sm text-gray-600 mb-4">
                             Recording when the validation documentation was received will start the validation team's SLA timer
@@ -2633,7 +2695,78 @@ export default function ValidationRequestDetailPage() {
                             </p>
                         </div>
 
+                        {/* Model Version Confirmation */}
                         <div className="mb-4">
+                            <label className="block text-sm font-medium text-gray-700 mb-1">
+                                Model Version
+                            </label>
+                            <select
+                                value={submissionConfirmedVersionId || ''}
+                                onChange={(e) => setSubmissionConfirmedVersionId(e.target.value ? parseInt(e.target.value) : null)}
+                                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            >
+                                <option value="">-- No version selected --</option>
+                                {availableVersions.map((v) => (
+                                    <option key={v.version_id} value={v.version_id}>
+                                        Version {v.version_number} - {v.change_type} ({v.status})
+                                    </option>
+                                ))}
+                            </select>
+                            <p className="text-xs text-gray-500 mt-1">
+                                Confirm or correct the model version being validated
+                            </p>
+                        </div>
+
+                        {/* Optional submission metadata fields */}
+                        <div className="border-t border-gray-200 pt-4 mt-4">
+                            <p className="text-sm font-medium text-gray-700 mb-3">
+                                Optional Submission Details
+                            </p>
+
+                            <div className="mb-3">
+                                <label className="block text-sm font-medium text-gray-600 mb-1">
+                                    Model Documentation Version
+                                </label>
+                                <input
+                                    type="text"
+                                    value={submissionDocVersion}
+                                    onChange={(e) => setSubmissionDocVersion(e.target.value)}
+                                    placeholder="e.g., v2.1.0"
+                                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                />
+                            </div>
+
+                            <div className="mb-3">
+                                <label className="block text-sm font-medium text-gray-600 mb-1">
+                                    Model Submission Version
+                                </label>
+                                <input
+                                    type="text"
+                                    value={submissionModelVersion}
+                                    onChange={(e) => setSubmissionModelVersion(e.target.value)}
+                                    placeholder="e.g., 1.5.2"
+                                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                />
+                            </div>
+
+                            <div className="mb-3">
+                                <label className="block text-sm font-medium text-gray-600 mb-1">
+                                    Model Documentation ID
+                                </label>
+                                <input
+                                    type="text"
+                                    value={submissionDocId}
+                                    onChange={(e) => setSubmissionDocId(e.target.value)}
+                                    placeholder="e.g., DOC-2025-001234"
+                                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                />
+                                <p className="text-xs text-gray-500 mt-1">
+                                    External reference ID (e.g., from document management system)
+                                </p>
+                            </div>
+                        </div>
+
+                        <div className="mb-4 mt-4">
                             <label className="block text-sm font-medium text-gray-700 mb-1">
                                 Notes (Optional)
                             </label>
@@ -2651,6 +2784,10 @@ export default function ValidationRequestDetailPage() {
                                 onClick={() => {
                                     setShowSubmissionModal(false);
                                     setSubmissionNotes('');
+                                    setSubmissionDocVersion('');
+                                    setSubmissionModelVersion('');
+                                    setSubmissionDocId('');
+                                    setSubmissionConfirmedVersionId(null);
                                 }}
                                 className="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50"
                                 disabled={actionLoading}

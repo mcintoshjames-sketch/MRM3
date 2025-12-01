@@ -33,6 +33,7 @@ services:
         condition: service_healthy
     volumes:
       - ./api:/app
+      - ./SCORE_CRITERIA.json:/app/SCORE_CRITERIA.json:ro
     command: >
       sh -c "
         echo 'Waiting for database...' &&

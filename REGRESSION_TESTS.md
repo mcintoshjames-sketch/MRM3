@@ -5,13 +5,14 @@ This document tracks the regression testing strategy and test coverage for itera
 ## Quick Reference
 
 ```bash
-# Run all backend tests (~564 tests passing)
+# Run all backend tests (~620 tests passing)
 # Note: Some pre-existing test failures in recommendations/regional scope tests
 # Added: 36 tests for Overdue Revalidation Commentary (23 core + 13 dashboard integration)
 # Added: 15 tests for Model Decommissioning workflow
 # Added: 63 tests for Monitoring Cycles, Results, and Approval Workflow
 # Added: Monitoring Plan Versioning and Component 9b tests (integrated into test_monitoring.py)
 # Added: 54 tests for Model Risk Assessment (qualitative/quantitative scoring, factor config)
+# Added: 56 tests for Validation Scorecard (rating conversions, score computation, config loading)
 cd api && python -m pytest
 
 # Run all frontend tests (128 tests passing)
@@ -698,6 +699,80 @@ cd web && pnpm test:coverage
 - [x] Factor update generates audit log with changes
 - [x] Assessment update generates audit log
 
+#### Validation Scorecard (`test_scorecard.py`)
+
+##### Rating to Score Conversion (11 tests)
+- [x] Green returns 6
+- [x] Green- returns 5
+- [x] Yellow+ returns 4
+- [x] Yellow returns 3
+- [x] Yellow- returns 2
+- [x] Red returns 1
+- [x] None returns 0
+- [x] Empty string returns 0
+- [x] N/A returns 0
+- [x] Unrated returns 0
+- [x] Invalid rating returns 0
+
+##### Score to Rating Conversion (9 tests)
+- [x] 6 returns Green
+- [x] 5 returns Green-
+- [x] 4 returns Yellow+
+- [x] 3 returns Yellow
+- [x] 2 returns Yellow-
+- [x] 1 returns Red
+- [x] 0 returns None
+- [x] Negative score raises error
+- [x] Above 6 raises error
+
+##### Rounding (Half-Up) (7 tests)
+- [x] 3.5 rounds to 4
+- [x] 3.49 rounds to 3
+- [x] 3.51 rounds to 4
+- [x] 2.5 rounds to 3
+- [x] Integer unchanged
+- [x] 4.5 rounds to 5
+- [x] 5.5 rounds to 6
+
+##### Section Summary Computation (9 tests)
+- [x] All Green returns score 6
+- [x] Mixed ratings computes mean
+- [x] N/A excluded from average
+- [x] All N/A returns score 0
+- [x] Rounding half-up 3.5 to 4
+- [x] Weighted average
+- [x] Weighted average excludes N/A
+- [x] Missing criterion treated as N/A
+- [x] Returns section metadata
+
+##### Overall Assessment Computation (6 tests)
+- [x] All sections rated
+- [x] One section N/A excluded
+- [x] Only one section rated
+- [x] All sections N/A
+- [x] Rounding half-up 4.5 to 5
+- [x] Returns section counts
+
+##### Full Scorecard Computation (5 tests)
+- [x] Full scorecard structure
+- [x] Unknown criterion ignored
+- [x] Empty ratings all N/A
+- [x] Section summaries computed correctly
+- [x] Overall from sections
+
+##### Edge Cases (6 tests)
+- [x] Explicit N/A treated as 0
+- [x] Case insensitive N/A
+- [x] Single criterion section
+- [x] Very low weighted mean
+- [x] Empty config no criteria
+- [x] Section not in config
+
+##### Config Loading (3 tests)
+- [x] Load from JSON file
+- [x] Config criteria have required fields
+- [x] Config sections have required fields
+
 ### Frontend Component Tests (web/src/) - ✅ FULLY OPERATIONAL
 
 **Note**: All tests pass using happy-dom environment with direct module mocking (no MSW).
@@ -1012,6 +1087,7 @@ describe('NewPage', () => {
 | **My Monitoring Tasks** | ✅ /monitoring/my-tasks endpoint (12 manual tests) | ✅ MyMonitoringPage with role-based filters | 2025-11-28 |
 | **Monitoring Workflow Permissions** | ✅ Permission helpers + validation (19 manual tests) | ✅ Permission-based UI button visibility | 2025-11-28 |
 | **Model Risk Assessment** | ✅ test_risk_assessment_audit.py (54 tests) | ✅ ModelDetailsPage Risk Assessment tab + TaxonomyPage Risk Factors tab | 2025-11-30 |
+| **Validation Scorecard** | ✅ test_scorecard.py (56 tests) | ✅ ValidationScorecardTab.tsx (auto-save, section summaries, progress indicator) | 2025-12-01 |
 
 **Features Added:**
 - Development type (In-House / Third-Party)
@@ -1045,11 +1121,12 @@ describe('NewPage', () => {
 - **My Monitoring Tasks** (centralized view for users to see all monitoring cycles requiring their attention; supports three roles: data_provider, team_member, assignee; includes action_needed guidance, due dates, overdue status; MyMonitoringPage with role-based filtering)
 - **Monitoring Workflow Permission Model** (role-based access control for workflow actions; Monitoring Team = Risk function with full workflow control; Data Provider = can only submit results; Admin = full access; `check_team_member_or_admin()` helper for protected actions; `validate_results_completeness()` ensures complete submissions; `user_permissions` object in plan responses for frontend permission display)
 - **Model Risk Assessment** (qualitative/quantitative risk scoring with inherent risk matrix; admin-configurable weighted factors with rating guidance; three-level overrides with justification; per-region assessments; automatic tier sync to model; TaxonomyPage Risk Factors tab for admin configuration; ModelDetailsPage Risk Assessment tab for assessment entry)
+- **Validation Scorecard** (standardized rating framework for validators; 3 sections with 14 criteria loaded from SCORE_CRITERIA.json; rating scale Green(6) to Red(1) with N/A(0); weighted section summaries with half-up rounding; overall assessment computation; auto-save on rating change; linked to ValidationRequest enabling scorecard completion before outcome determination; ValidationScorecardTab.tsx with summary card, progress indicator, collapsible sections)
 
-**Total: 692+ tests (564+ backend + 128 frontend)**
-- Backend: 564 passing (some pre-existing failures in recommendations/regional scope tests unrelated to risk assessment)
+**Total: 748+ tests (620+ backend + 128 frontend)**
+- Backend: 620 passing (some pre-existing failures in recommendations/regional scope tests)
 - Frontend: 128 passing
-- **Note**: Core regression suite stable. Risk assessment tests (54 tests) fully passing. Added model risk assessment feature with qualitative/quantitative scoring, inherent risk matrix, admin factor configuration, and per-region assessment support.
+- **Note**: Core regression suite stable. Validation scorecard tests (56 tests) fully passing. Added validation scorecard feature with rating scale (Green=6 to Red=1), weighted section summaries, overall assessment computation, and auto-save functionality.
 - **2025-11-29 Test Hardening**: Added 8 new tests to guard against regressions in monitoring module:
   - Submit cycle completeness validation (multi-metric, N/A narrative requirements)
   - Plan delete cascade verification

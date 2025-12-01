@@ -1883,7 +1883,11 @@ def seed_database():
         fit_for_purpose = db.query(TaxonomyValue).filter(
             TaxonomyValue.code == "FIT_FOR_PURPOSE").first()
 
-        if tier_2 and tier_3 and initial_val_type and comprehensive_val_type and pass_outcome and admin and validator and medium_priority and approved_status and fit_for_purpose:
+        # Get usage frequency for demo models
+        usage_freq_monthly = db.query(TaxonomyValue).filter(
+            TaxonomyValue.code == "MONTHLY").first()
+
+        if tier_2 and tier_3 and initial_val_type and comprehensive_val_type and pass_outcome and admin and validator and medium_priority and approved_status and fit_for_purpose and usage_freq_monthly:
             # Calculate strategic dates for Tier 2 (18 month frequency, 90 day lead time)
             # Total overdue threshold: 18 months + 3 months grace + 90 days = ~21.5 months
             today = date.today()
@@ -1899,6 +1903,7 @@ def seed_database():
                     status="Active",
                     owner_id=admin.user_id,
                     risk_tier_id=tier_2.value_id,
+                    usage_frequency_id=usage_freq_monthly.value_id,
                     created_at=utc_now()
                 )
                 db.add(model_a)
@@ -1947,6 +1952,7 @@ def seed_database():
                     status="Active",
                     owner_id=admin.user_id,
                     risk_tier_id=tier_2.value_id,
+                    usage_frequency_id=usage_freq_monthly.value_id,
                     created_at=utc_now()
                 )
                 db.add(model_b)
@@ -1995,6 +2001,7 @@ def seed_database():
                     status="Active",
                     owner_id=admin.user_id,
                     risk_tier_id=tier_2.value_id,
+                    usage_frequency_id=usage_freq_monthly.value_id,
                     created_at=utc_now()
                 )
                 db.add(model_c)
@@ -2043,6 +2050,7 @@ def seed_database():
                     status="Active",
                     owner_id=admin.user_id,
                     risk_tier_id=tier_3.value_id,
+                    usage_frequency_id=usage_freq_monthly.value_id,
                     created_at=utc_now()
                 )
                 db.add(model_d)
@@ -2059,6 +2067,7 @@ def seed_database():
                     status="Active",
                     owner_id=admin.user_id,
                     risk_tier_id=tier_2.value_id,
+                    usage_frequency_id=usage_freq_monthly.value_id,
                     created_at=utc_now()
                 )
                 db.add(model_e)

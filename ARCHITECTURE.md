@@ -390,6 +390,42 @@ Model Risk Management inventory system with a FastAPI backend, React/TypeScript 
 - **Frontend**: RecommendationsPage (list), RecommendationDetailPage (detail with workflow actions), TaxonomyPage "Recommendation Priority" tab (admin config with expandable regional overrides).
 - **Testing**: 82 tests in `tests/test_recommendations.py` covering workflow, rebuttals, action plans, approvals, and regional overrides.
 
+## Validation Scorecard System
+- **Purpose**: Standardized framework for validators to assess and rate validation criteria across multiple sections, producing computed section and overall scores.
+- **Workflow Position**: Completed AFTER validation plan/assignments and BEFORE final outcome determination. Scorecard ratings inform the outcome decision but are independent of it.
+- **Data Model**:
+  - **ScorecardSection**: Configurable assessment sections (e.g., "Evaluation of Conceptual Soundness", "Ongoing Monitoring/Benchmarking", "Outcome Analysis"). Fields: section_id, code, name, description, sort_order, is_active.
+  - **ScorecardCriterion**: Individual criteria within sections. Fields: criterion_id, code, section_id, name, description_prompt, comments_prompt, include_in_summary, allow_zero, weight, sort_order, is_active.
+  - **ValidationScorecardRating**: Per-criterion ratings for a validation request. Fields: rating_id, request_id (FK to ValidationRequest), criterion_code, rating, description, comments, created_at, updated_at.
+  - **ValidationScorecardResult**: Computed scorecard results with configuration snapshot. Fields: result_id, request_id, overall_numeric_score, overall_rating, section_summaries (JSON), config_snapshot (JSON), computed_at.
+- **Rating Scale**:
+  - **Green (6)**: Excellent - fully meets expectations
+  - **Green- (5)**: Good - meets expectations with minor observations
+  - **Yellow+ (4)**: Acceptable - meets minimum with some concerns
+  - **Yellow (3)**: Adequate - meets minimum requirements
+  - **Yellow- (2)**: Marginal - barely acceptable
+  - **Red (1)**: Unsatisfactory - fails to meet requirements
+  - **N/A (0)**: Not Applicable - excluded from calculations
+- **Score Computation**:
+  - **Section Score**: Weighted average of criterion scores (N/A excluded), rounded half-up to nearest integer
+  - **Overall Score**: Average of section scores (sections with all N/A excluded), rounded half-up
+  - **Rating Derivation**: Score maps to rating (6→Green, 5→Green-, 4→Yellow+, 3→Yellow, 2→Yellow-, 1→Red, 0→null)
+- **Configuration Source**: Criteria loaded from `SCORE_CRITERIA.json` at seed time into database tables. Admin can modify criteria via database.
+- **Pre-seeded Configuration**: 3 sections with 14 criteria total:
+  - Section 1 "Evaluation of Conceptual Soundness": 5 criteria (Documentation, Data, Methodology, Inputs/Outputs, Limitations)
+  - Section 2 "Ongoing Monitoring/Benchmarking": 3 criteria (Benchmarking, Process Verification, Sensitivity Analysis)
+  - Section 3 "Outcome Analysis": 6 criteria (Backtesting, Stress Testing, Boundary Testing, Accuracy Testing, Impact Analysis, Other Testing)
+- **API Endpoints** (prefix: `/scorecard`):
+  - `GET /config` - Get scorecard configuration (sections with nested criteria)
+  - `GET /validation/{request_id}` - Get scorecard for a validation request
+  - `POST /validation/{request_id}` - Create/update all ratings (bulk save)
+  - `PATCH /validation/{request_id}/ratings/{criterion_code}` - Update single criterion rating
+- **Frontend Components**:
+  - `ValidationScorecardTab.tsx`: Full scorecard entry form with summary card, progress indicator, collapsible sections, auto-save on rating change
+  - Integrated into ValidationRequestDetailPage as "Scorecard" tab (positioned after Plan, before Outcome)
+- **Audit Logging**: CREATE and UPDATE actions logged with rating counts and overall score
+- **Testing**: 56 unit tests covering rating conversions, score computations, section summaries, overall assessment, config loading, and edge cases
+
 ## Model Risk Assessment System
 - **Purpose**: Derive model inherent risk tier from qualitative and quantitative factors using a standardized matrix approach with optional overrides at three levels.
 - **Data Model**:
