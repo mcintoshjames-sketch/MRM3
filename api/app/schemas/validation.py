@@ -131,6 +131,11 @@ class ValidationRequestMarkSubmission(BaseModel):
     """Schema for marking submission received."""
     submission_received_date: date
     notes: Optional[str] = None
+    # Optional fields to capture submission metadata
+    confirmed_model_version_id: Optional[int] = None  # Allow confirming/correcting the model version
+    model_documentation_version: Optional[str] = None  # Version of model documentation
+    model_submission_version: Optional[str] = None  # Version of model code/artifacts
+    model_documentation_id: Optional[str] = None  # External document ID (e.g., DMS reference)
 
 
 class ValidationApprovalUnlink(BaseModel):
@@ -396,10 +401,20 @@ class ValidationRequestResponse(BaseModel):
     updated_at: datetime
     completion_date: Optional[datetime] = Field(None, description="Date when validation was completed (latest approval date)")
 
+    # Risk tier snapshot at validation approval
+    validated_risk_tier_id: Optional[int] = Field(None, description="Snapshot of model's risk tier at approval time")
+    validated_risk_tier: Optional[TaxonomyValueResponse] = Field(None, description="Risk tier at time of validation approval")
+
     # Revalidation Lifecycle Fields
     prior_validation_request_id: Optional[int] = None
     prior_full_validation_request_id: Optional[int] = None
     submission_received_date: Optional[date] = None
+
+    # Submission metadata fields (captured when marking submission received)
+    confirmed_model_version_id: Optional[int] = None
+    model_documentation_version: Optional[str] = None
+    model_submission_version: Optional[str] = None
+    model_documentation_id: Optional[str] = None
 
     # Computed revalidation lifecycle properties
     is_periodic_revalidation: bool = False
@@ -707,3 +722,71 @@ class ConfigurationPublishRequest(BaseModel):
     config_name: str
     description: Optional[str] = None
     effective_date: Optional[date] = None  # Defaults to today if not provided
+
+
+# ==================== RISK TIER CHANGE IMPACT SCHEMAS ====================
+
+class OpenValidationSummary(BaseModel):
+    """Summary of an open validation request that would be affected by risk tier change."""
+    request_id: int
+    current_status: str
+    validation_type: str
+    has_plan: bool
+    pending_approvals_count: int
+    primary_validator: Optional[str] = None
+
+
+class OpenValidationsCheckResponse(BaseModel):
+    """Response for checking open validations that would be affected by risk tier change."""
+    model_id: int
+    model_name: str
+    current_risk_tier: Optional[str] = None
+    proposed_risk_tier: Optional[str] = None
+    has_open_validations: bool
+    open_validation_count: int
+    open_validations: List[OpenValidationSummary] = []
+    warning_message: Optional[str] = None
+    requires_confirmation: bool = False
+
+
+class ForceResetRequest(BaseModel):
+    """Request to force reset validation plans after risk tier change."""
+    model_id: int
+    new_risk_tier_id: int
+    confirm_reset: bool = False  # Must be True to proceed
+
+
+class ForceResetResponse(BaseModel):
+    """Response after force resetting validation plans."""
+    success: bool
+    reset_count: int
+    request_ids: List[int]
+    components_regenerated: int
+    approvals_voided: int
+    message: str
+
+
+# ==================== RISK MISMATCH REPORT SCHEMAS ====================
+
+class RiskMismatchItem(BaseModel):
+    """A model where current risk tier doesn't match validated risk tier."""
+    model_id: int
+    model_name: str
+    current_risk_tier_id: Optional[int] = None
+    current_risk_tier_code: Optional[str] = None
+    current_risk_tier_label: Optional[str] = None
+    validated_risk_tier_id: Optional[int] = None
+    validated_risk_tier_code: Optional[str] = None
+    validated_risk_tier_label: Optional[str] = None
+    last_validation_request_id: Optional[int] = None
+    last_validation_date: Optional[date] = None
+    tier_change_direction: str  # "INCREASED", "DECREASED", or "CHANGED"
+    requires_revalidation: bool
+
+
+class RiskMismatchReportResponse(BaseModel):
+    """Response for risk mismatch audit report."""
+    total_models_checked: int
+    models_with_mismatch: int
+    items: List[RiskMismatchItem]
+    generated_at: datetime

@@ -26,11 +26,14 @@ from app.schemas.risk_assessment import (
     RiskAssessmentCreate,
     RiskAssessmentUpdate,
     RiskAssessmentResponse,
+    RiskAssessmentHistoryItem,
     QualitativeFactorResponse,
     RegionBrief,
     UserBrief,
     TaxonomyValueBrief,
 )
+from app.models.region import Region
+from app.api.validation_workflow import reset_validation_plan_for_tier_change
 
 router = APIRouter()
 
@@ -186,21 +189,50 @@ def build_assessment_response(
 
 
 def sync_model_tier(
-    db: Session, model: Model, assessment: ModelRiskAssessment, tier_code: Optional[str]
+    db: Session, model: Model, assessment: ModelRiskAssessment, tier_code: Optional[str],
+    user_id: Optional[int] = None
 ) -> None:
-    """Sync model's risk_tier_id with the global assessment's final tier."""
+    """Sync model's risk_tier_id with the global assessment's final tier.
+
+    If the tier is changing and there are open validation requests,
+    this will reset their validation plan components and void approvals.
+    """
     # Only sync for global assessments (region_id is None)
     if assessment.region_id is not None:
         return
 
+    # Track old tier for change detection
+    old_tier_id = model.risk_tier_id
+
     if tier_code:
         tier_value = get_tier_value(db, tier_code)
         if tier_value:
-            model.risk_tier_id = tier_value.value_id
-            assessment.final_tier_id = tier_value.value_id
+            new_tier_id = tier_value.value_id
+            model.risk_tier_id = new_tier_id
+            assessment.final_tier_id = new_tier_id
+
+            # Force reset validation plans if tier actually changed
+            if old_tier_id != new_tier_id and user_id:
+                reset_validation_plan_for_tier_change(
+                    db=db,
+                    model_id=model.model_id,
+                    new_tier_id=new_tier_id,
+                    user_id=user_id,
+                    force=True  # Auto-apply the reset
+                )
     else:
         model.risk_tier_id = None
         assessment.final_tier_id = None
+
+        # Force reset if tier changed to None
+        if old_tier_id is not None and user_id:
+            reset_validation_plan_for_tier_change(
+                db=db,
+                model_id=model.model_id,
+                new_tier_id=None,
+                user_id=user_id,
+                force=True
+            )
 
 
 # ============================================================================
@@ -234,6 +266,172 @@ def list_assessments(
     )
 
     return [build_assessment_response(a, db) for a in assessments]
+
+
+@router.get(
+    "/models/{model_id}/risk-assessments/history",
+    response_model=List[RiskAssessmentHistoryItem],
+)
+def get_assessment_history(
+    model_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> List[RiskAssessmentHistoryItem]:
+    """Get risk assessment change history for a model."""
+    # Verify model exists
+    get_model_or_404(db, model_id)
+
+    # Get all assessment IDs for this model (including deleted ones from audit logs)
+    assessment_ids = (
+        db.query(ModelRiskAssessment.assessment_id)
+        .filter(ModelRiskAssessment.model_id == model_id)
+        .all()
+    )
+    assessment_ids = [a[0] for a in assessment_ids]
+
+    # Also find assessment IDs from audit logs (for deleted assessments)
+    audit_logs_with_model = (
+        db.query(AuditLog)
+        .filter(
+            AuditLog.entity_type == "ModelRiskAssessment",
+        )
+        .all()
+    )
+
+    # Filter logs that belong to this model
+    relevant_logs = []
+    for log in audit_logs_with_model:
+        if log.entity_id in assessment_ids:
+            relevant_logs.append(log)
+        elif log.changes and isinstance(log.changes, dict):
+            # Check if this log's changes dict has model_id matching
+            if log.changes.get("model_id") == model_id:
+                relevant_logs.append(log)
+            elif log.changes.get("old", {}).get("model_id") == model_id:
+                relevant_logs.append(log)
+            elif log.changes.get("new", {}).get("model_id") == model_id:
+                relevant_logs.append(log)
+
+    # Build history items
+    history_items = []
+    for log in relevant_logs:
+        # Get user name
+        user_name = None
+        if log.user_id:
+            user = db.query(User).filter(User.user_id == log.user_id).first()
+            if user:
+                user_name = user.full_name
+
+        # Extract region info
+        region_id = None
+        region_name = None
+        if log.changes and isinstance(log.changes, dict):
+            region_id = log.changes.get("region_id")
+            if region_id is None and "old" in log.changes:
+                region_id = log.changes.get("old", {}).get("region_id")
+            if region_id is None and "new" in log.changes:
+                region_id = log.changes.get("new", {}).get("region_id")
+
+        if region_id:
+            region = db.query(Region).filter(Region.region_id == region_id).first()
+            if region:
+                region_name = region.name
+
+        # Extract tier changes
+        old_tier = None
+        new_tier = None
+        old_quantitative = None
+        new_quantitative = None
+        old_qualitative = None
+        new_qualitative = None
+
+        if log.changes and isinstance(log.changes, dict):
+            if log.action == "CREATE":
+                new_quantitative = log.changes.get("quantitative_rating")
+                new_qualitative = log.changes.get("qualitative_override")
+                new_tier = log.changes.get("derived_risk_tier_override")
+            elif log.action == "UPDATE":
+                old_data = log.changes.get("old", {})
+                new_data = log.changes.get("new", {})
+                old_quantitative = old_data.get("quantitative_rating")
+                new_quantitative = new_data.get("quantitative_rating")
+                old_qualitative = old_data.get("qualitative_override") or old_data.get("qualitative_calculated_level")
+                new_qualitative = new_data.get("qualitative_override") or new_data.get("qualitative_calculated_level")
+                old_tier = old_data.get("derived_risk_tier_override") or old_data.get("derived_risk_tier")
+                new_tier = new_data.get("derived_risk_tier_override") or new_data.get("derived_risk_tier")
+            elif log.action == "DELETE":
+                old_tier = log.changes.get("derived_risk_tier_override")
+
+        # Build summary
+        changes_summary = _build_changes_summary(
+            log.action, region_name,
+            old_tier, new_tier,
+            old_quantitative, new_quantitative,
+            old_qualitative, new_qualitative
+        )
+
+        history_items.append(
+            RiskAssessmentHistoryItem(
+                log_id=log.log_id,
+                action=log.action,
+                timestamp=log.timestamp,
+                user_id=log.user_id,
+                user_name=user_name,
+                region_id=region_id,
+                region_name=region_name,
+                old_tier=old_tier,
+                new_tier=new_tier,
+                old_quantitative=old_quantitative,
+                new_quantitative=new_quantitative,
+                old_qualitative=old_qualitative,
+                new_qualitative=new_qualitative,
+                changes_summary=changes_summary,
+            )
+        )
+
+    # Sort by timestamp descending (most recent first)
+    history_items.sort(key=lambda x: x.timestamp, reverse=True)
+    return history_items
+
+
+def _build_changes_summary(
+    action: str,
+    region_name: Optional[str],
+    old_tier: Optional[str],
+    new_tier: Optional[str],
+    old_quantitative: Optional[str],
+    new_quantitative: Optional[str],
+    old_qualitative: Optional[str],
+    new_qualitative: Optional[str],
+) -> str:
+    """Build a human-readable summary of assessment changes."""
+    scope = f"({region_name})" if region_name else "(Global)"
+
+    if action == "CREATE":
+        parts = [f"Created {scope} assessment"]
+        if new_quantitative:
+            parts.append(f"Quantitative: {new_quantitative}")
+        if new_tier:
+            parts.append(f"Tier: {new_tier}")
+        return ". ".join(parts)
+
+    elif action == "DELETE":
+        return f"Deleted {scope} assessment"
+
+    elif action == "UPDATE":
+        changes = []
+        if old_quantitative != new_quantitative:
+            changes.append(f"Quantitative: {old_quantitative or 'None'} → {new_quantitative or 'None'}")
+        if old_qualitative != new_qualitative:
+            changes.append(f"Qualitative: {old_qualitative or 'None'} → {new_qualitative or 'None'}")
+        if old_tier != new_tier:
+            changes.append(f"Tier: {old_tier or 'None'} → {new_tier or 'None'}")
+
+        if changes:
+            return f"Updated {scope}: " + ", ".join(changes)
+        return f"Updated {scope} assessment"
+
+    return f"{action} {scope} assessment"
 
 
 @router.get(
@@ -366,8 +564,8 @@ def create_assessment(
     eff_final = assessment.derived_risk_tier_override or derived
     tier_code = map_to_tier_code(eff_final)
 
-    # Sync model tier (for global assessments)
-    sync_model_tier(db, model, assessment, tier_code)
+    # Sync model tier (for global assessments) - includes force reset if tier changed
+    sync_model_tier(db, model, assessment, tier_code, user_id=current_user.user_id)
 
     db.commit()
 
@@ -468,8 +666,8 @@ def update_assessment(
     eff_final = assessment.derived_risk_tier_override or derived
     tier_code = map_to_tier_code(eff_final)
 
-    # Sync model tier (for global assessments)
-    sync_model_tier(db, model, assessment, tier_code)
+    # Sync model tier (for global assessments) - includes force reset if tier changed
+    sync_model_tier(db, model, assessment, tier_code, user_id=current_user.user_id)
 
     # Create audit log for update
     new_values = {

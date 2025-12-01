@@ -155,3 +155,27 @@ class RiskAssessmentResponse(BaseModel):
 class RiskAssessmentListResponse(BaseModel):
     """List response for risk assessments."""
     assessments: List[RiskAssessmentResponse]
+
+
+# ============================================================================
+# Assessment History Schema
+# ============================================================================
+
+class RiskAssessmentHistoryItem(BaseModel):
+    """A single history item for risk assessment changes."""
+    model_config = ConfigDict(from_attributes=True)
+
+    log_id: int
+    action: str  # CREATE, UPDATE, DELETE
+    timestamp: datetime
+    user_id: Optional[int] = None
+    user_name: Optional[str] = None
+    region_id: Optional[int] = None
+    region_name: Optional[str] = None
+    old_tier: Optional[str] = None
+    new_tier: Optional[str] = None
+    old_quantitative: Optional[str] = None
+    new_quantitative: Optional[str] = None
+    old_qualitative: Optional[str] = None
+    new_qualitative: Optional[str] = None
+    changes_summary: str  # Human-readable summary

@@ -1,7 +1,7 @@
 """Model Version model for tracking model changes and versioning."""
 from datetime import datetime, date
 from typing import Optional, List
-from sqlalchemy import String, Integer, Text, DateTime, Date, ForeignKey, Boolean
+from sqlalchemy import String, Integer, Text, DateTime, Date, ForeignKey, Boolean, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.models.base import Base
 from app.core.time import utc_now
@@ -10,6 +10,9 @@ from app.core.time import utc_now
 class ModelVersion(Base):
     """Track model versions and changes over time."""
     __tablename__ = "model_versions"
+    __table_args__ = (
+        UniqueConstraint('model_id', 'version_number', name='uq_model_versions_model_id_version_number'),
+    )
 
     version_id: Mapped[int] = mapped_column(Integer, primary_key=True)
     model_id: Mapped[int] = mapped_column(

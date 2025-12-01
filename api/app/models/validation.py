@@ -1,10 +1,13 @@
 """Validation workflow models."""
 from datetime import datetime, date
-from typing import Optional, List
+from typing import Optional, List, TYPE_CHECKING
 from sqlalchemy import String, Integer, Text, ForeignKey, DateTime, Date, Boolean, Float, Table, Column
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.models.base import Base
 from app.core.time import utc_now
+
+if TYPE_CHECKING:
+    from app.models.scorecard import ValidationScorecardRating, ValidationScorecardResult
 
 
 # Association class for validation request models with version tracking
@@ -162,6 +165,29 @@ class ValidationRequest(Base):
         comment="Date model owner actually submitted documentation"
     )
 
+    # Submission metadata fields - captured when marking submission received
+    confirmed_model_version_id: Mapped[Optional[int]] = mapped_column(
+        Integer,
+        ForeignKey("model_versions.version_id", ondelete="SET NULL"),
+        nullable=True,
+        comment="Confirmed model version at time of submission (may differ from originally associated version)"
+    )
+    model_documentation_version: Mapped[Optional[str]] = mapped_column(
+        String(100),
+        nullable=True,
+        comment="Version identifier for the model documentation submitted"
+    )
+    model_submission_version: Mapped[Optional[str]] = mapped_column(
+        String(100),
+        nullable=True,
+        comment="Version identifier for the model code/artifacts submitted"
+    )
+    model_documentation_id: Mapped[Optional[str]] = mapped_column(
+        String(255),
+        nullable=True,
+        comment="External ID or reference for the model documentation (e.g., document management system ID)"
+    )
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime, nullable=False, default=utc_now
     )
@@ -172,6 +198,14 @@ class ValidationRequest(Base):
         DateTime(timezone=True),
         nullable=True,
         comment="Date when validation was completed (latest approval date)"
+    )
+
+    # Risk tier snapshot at validation approval
+    validated_risk_tier_id: Mapped[Optional[int]] = mapped_column(
+        Integer,
+        ForeignKey("taxonomy_values.value_id", ondelete="SET NULL"),
+        nullable=True,
+        comment="Snapshot of model's risk tier at the moment of validation approval"
     )
 
     # Relationships
@@ -193,6 +227,10 @@ class ValidationRequest(Base):
     priority = relationship("TaxonomyValue", foreign_keys=[priority_id])
     current_status = relationship(
         "TaxonomyValue", foreign_keys=[current_status_id])
+    confirmed_model_version = relationship(
+        "ModelVersion", foreign_keys=[confirmed_model_version_id])
+    validated_risk_tier = relationship(
+        "TaxonomyValue", foreign_keys=[validated_risk_tier_id])
 
     # Self-referential relationship for revalidation chain
     prior_validation_request = relationship(
@@ -239,6 +277,19 @@ class ValidationRequest(Base):
     overdue_comments: Mapped[List["OverdueRevalidationComment"]] = relationship(
         back_populates="validation_request", cascade="all, delete-orphan",
         order_by="desc(OverdueRevalidationComment.created_at)"
+    )
+
+    # Scorecard relationships (ratings and computed result)
+    scorecard_ratings: Mapped[List["ValidationScorecardRating"]] = relationship(
+        "ValidationScorecardRating",
+        back_populates="request",
+        cascade="all, delete-orphan"
+    )
+    scorecard_result: Mapped[Optional["ValidationScorecardResult"]] = relationship(
+        "ValidationScorecardResult",
+        back_populates="request",
+        uselist=False,
+        cascade="all, delete-orphan"
     )
 
     # Computed properties for revalidation lifecycle

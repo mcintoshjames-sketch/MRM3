@@ -80,6 +80,12 @@ from app.models.risk_assessment import (
     ModelRiskAssessment,
     QualitativeFactorAssessment,
 )
+from app.models.scorecard import (
+    ScorecardSection,
+    ScorecardCriterion,
+    ValidationScorecardRating,
+    ValidationScorecardResult,
+)
 
 __all__ = [
     "User", "UserRole", "user_regions",
@@ -175,4 +181,9 @@ __all__ = [
     "QualitativeFactorGuidance",
     "ModelRiskAssessment",
     "QualitativeFactorAssessment",
+    # Validation Scorecard
+    "ScorecardSection",
+    "ScorecardCriterion",
+    "ValidationScorecardRating",
+    "ValidationScorecardResult",
 ]

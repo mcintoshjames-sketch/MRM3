@@ -39,7 +39,9 @@ from app.schemas.validation import (
     ValidationComponentDefinitionResponse, ValidationComponentDefinitionUpdate,
     ValidationPlanCreate, ValidationPlanUpdate, ValidationPlanResponse,
     PlanTemplateSuggestion, PlanTemplateSuggestionsResponse,
-    ConfigurationResponse, ConfigurationDetailResponse, ConfigurationItemResponse, ConfigurationPublishRequest
+    ConfigurationResponse, ConfigurationDetailResponse, ConfigurationItemResponse, ConfigurationPublishRequest,
+    OpenValidationSummary, OpenValidationsCheckResponse, ForceResetRequest, ForceResetResponse,
+    RiskMismatchItem, RiskMismatchReportResponse
 )
 from app.schemas.conditional_approval import (
     ConditionalApprovalsEvaluationResponse,
@@ -74,6 +76,175 @@ def check_admin(user: User):
 
 # Staleness threshold for overdue comments (matches overdue_commentary.py)
 COMMENT_STALENESS_DAYS = 45
+
+# Open/Active status codes (not closed)
+CLOSED_STATUS_CODES = {"APPROVED", "CANCELLED"}
+
+
+def get_open_validations_for_model(db: Session, model_id: int) -> List[ValidationRequest]:
+    """
+    Find all open (active, non-approved) validation requests for a model.
+
+    Open status = NOT in APPROVED or CANCELLED status.
+    Returns validation requests that could be affected by risk tier changes.
+    """
+    # Get closed status value_ids
+    closed_statuses = db.query(TaxonomyValue.value_id).join(
+        Taxonomy, TaxonomyValue.taxonomy_id == Taxonomy.taxonomy_id
+    ).filter(
+        Taxonomy.name == "Validation Request Status",
+        TaxonomyValue.code.in_(CLOSED_STATUS_CODES)
+    ).subquery()
+
+    # Find validation requests for this model that are not closed
+    open_requests = db.query(ValidationRequest).join(
+        ValidationRequestModelVersion,
+        ValidationRequest.request_id == ValidationRequestModelVersion.request_id
+    ).filter(
+        ValidationRequestModelVersion.model_id == model_id,
+        ~ValidationRequest.current_status_id.in_(select(closed_statuses))
+    ).all()
+
+    return open_requests
+
+
+def reset_validation_plan_for_tier_change(
+    db: Session,
+    model_id: int,
+    new_tier_id: int,
+    user_id: int,
+    force: bool = False
+) -> dict:
+    """
+    Reset validation plan components and void approvals when a model's risk tier changes.
+
+    This is called when a risk assessment finalizes a new tier for a model.
+
+    Args:
+        db: Database session
+        model_id: Model whose risk tier changed
+        new_tier_id: New risk tier taxonomy value ID
+        user_id: User performing the change
+        force: If True, proceed without checking for open validations first
+
+    Returns:
+        dict with:
+        - reset_count: Number of validation requests affected
+        - request_ids: List of affected request IDs
+        - components_regenerated: Total components regenerated
+        - approvals_voided: Total approvals voided
+    """
+    result = {
+        "reset_count": 0,
+        "request_ids": [],
+        "components_regenerated": 0,
+        "approvals_voided": 0
+    }
+
+    # Find open validation requests for this model
+    open_requests = get_open_validations_for_model(db, model_id)
+
+    if not open_requests:
+        return result
+
+    # Get the new risk tier code
+    new_tier = db.query(TaxonomyValue).filter(TaxonomyValue.value_id == new_tier_id).first()
+    new_tier_code = new_tier.code if new_tier else "TIER_2"
+
+    for request in open_requests:
+        # Get the validation plan if it exists
+        plan = db.query(ValidationPlan).filter(
+            ValidationPlan.request_id == request.request_id
+        ).first()
+
+        if plan:
+            # Delete existing plan components
+            old_component_count = db.query(ValidationPlanComponent).filter(
+                ValidationPlanComponent.plan_id == plan.plan_id
+            ).count()
+
+            db.query(ValidationPlanComponent).filter(
+                ValidationPlanComponent.plan_id == plan.plan_id
+            ).delete()
+
+            # Regenerate components with new tier expectations
+            all_components = db.query(ValidationComponentDefinition).filter(
+                ValidationComponentDefinition.is_active == True
+            ).order_by(ValidationComponentDefinition.sort_order).all()
+
+            for comp_def in all_components:
+                default_expectation = get_expectation_for_tier(comp_def, new_tier_code)
+
+                # Default all to Planned (no deviations after reset)
+                plan_comp = ValidationPlanComponent(
+                    plan_id=plan.plan_id,
+                    component_id=comp_def.component_id,
+                    default_expectation=default_expectation,
+                    planned_treatment="Planned",
+                    is_deviation=False,
+                    rationale=None,
+                    additional_notes=None
+                )
+                db.add(plan_comp)
+                result["components_regenerated"] += 1
+
+            # Update plan metadata
+            plan.updated_at = utc_now()
+            plan.material_deviation_from_standard = False
+            plan.overall_deviation_rationale = None
+
+            # Create audit log for plan reset
+            audit_log = AuditLog(
+                entity_type="ValidationPlan",
+                entity_id=plan.plan_id,
+                action="RISK_TIER_RESET",
+                user_id=user_id,
+                changes={
+                    "reason": "Model risk tier changed",
+                    "model_id": model_id,
+                    "new_risk_tier_id": new_tier_id,
+                    "new_risk_tier_code": new_tier_code,
+                    "old_component_count": old_component_count,
+                    "new_component_count": len(all_components)
+                },
+                timestamp=utc_now()
+            )
+            db.add(audit_log)
+
+        # Void all pending approvals for this request
+        pending_approvals = db.query(ValidationApproval).filter(
+            ValidationApproval.request_id == request.request_id,
+            ValidationApproval.approval_status == "Pending",
+            ValidationApproval.voided_at.is_(None)
+        ).all()
+
+        for approval in pending_approvals:
+            approval.voided_by_id = user_id
+            approval.void_reason = f"Voided due to model risk tier change to {new_tier_code}"
+            approval.voided_at = utc_now()
+            result["approvals_voided"] += 1
+
+        # Create audit log for approvals voided
+        if pending_approvals:
+            approval_audit = AuditLog(
+                entity_type="ValidationApproval",
+                entity_id=request.request_id,
+                action="BULK_VOID",
+                user_id=user_id,
+                changes={
+                    "reason": "Model risk tier changed",
+                    "model_id": model_id,
+                    "new_risk_tier_code": new_tier_code,
+                    "voided_approval_ids": [a.approval_id for a in pending_approvals]
+                },
+                timestamp=utc_now()
+            )
+            db.add(approval_audit)
+
+        result["reset_count"] += 1
+        result["request_ids"].append(request.request_id)
+
+    return result
 
 
 def get_commentary_status_for_request(
@@ -1550,6 +1721,23 @@ def mark_submission_received(
     old_date = validation_request.submission_received_date
     validation_request.submission_received_date = submission_data.submission_received_date
 
+    # Update optional submission metadata fields
+    if submission_data.confirmed_model_version_id is not None:
+        validation_request.confirmed_model_version_id = submission_data.confirmed_model_version_id
+        # Also update the ModelVersion to link back to this validation request
+        from app.models.model_version import ModelVersion
+        version = db.query(ModelVersion).filter(
+            ModelVersion.version_id == submission_data.confirmed_model_version_id
+        ).first()
+        if version:
+            version.validation_request_id = request_id
+    if submission_data.model_documentation_version is not None:
+        validation_request.model_documentation_version = submission_data.model_documentation_version
+    if submission_data.model_submission_version is not None:
+        validation_request.model_submission_version = submission_data.model_submission_version
+    if submission_data.model_documentation_id is not None:
+        validation_request.model_documentation_id = submission_data.model_documentation_id
+
     # Auto-transition from Planning to In Progress
     current_status_code = validation_request.current_status.code if validation_request.current_status else None
     auto_transitioned = False
@@ -1584,6 +1772,16 @@ def mark_submission_received(
             "new": str(submission_data.submission_received_date)
         }
     }
+
+    # Include submission metadata fields in audit log if provided
+    if submission_data.confirmed_model_version_id is not None:
+        changes["confirmed_model_version_id"] = submission_data.confirmed_model_version_id
+    if submission_data.model_documentation_version:
+        changes["model_documentation_version"] = submission_data.model_documentation_version
+    if submission_data.model_submission_version:
+        changes["model_submission_version"] = submission_data.model_submission_version
+    if submission_data.model_documentation_id:
+        changes["model_documentation_id"] = submission_data.model_documentation_id
 
     if auto_transitioned:
         changes["status_auto_transition"] = {
@@ -1791,6 +1989,41 @@ def update_validation_request_status(
         timestamp=utc_now()
     )
     db.add(audit_log)
+
+    # ===== SNAPSHOT RISK TIER ON APPROVAL =====
+    # When validation is approved, capture the model's risk tier at that moment
+    if new_status_code == "APPROVED":
+        # Find the most conservative (highest) risk tier among associated models
+        models = validation_request.models
+        if models:
+            # Risk tier hierarchy: TIER_1 (High) > TIER_2 (Medium) > TIER_3 (Low) > TIER_4 (Very Low)
+            # Lower sort_order = higher risk
+            best_tier_id = None
+            best_sort_order = 999
+
+            for model in models:
+                if model.risk_tier_id and model.risk_tier:
+                    if model.risk_tier.sort_order < best_sort_order:
+                        best_sort_order = model.risk_tier.sort_order
+                        best_tier_id = model.risk_tier_id
+
+            if best_tier_id:
+                validation_request.validated_risk_tier_id = best_tier_id
+
+                # Audit log for risk tier snapshot
+                tier_snapshot_audit = AuditLog(
+                    entity_type="ValidationRequest",
+                    entity_id=request_id,
+                    action="RISK_TIER_SNAPSHOT",
+                    user_id=current_user.user_id,
+                    changes={
+                        "validated_risk_tier_id": best_tier_id,
+                        "model_count": len(models),
+                        "reason": "Risk tier captured at validation approval"
+                    },
+                    timestamp=utc_now()
+                )
+                db.add(tier_snapshot_audit)
 
     # ===== VALIDATION PLAN LOCKING/UNLOCKING LOGIC =====
     # Lock plan when moving to Review or Pending Approval
@@ -4291,11 +4524,6 @@ def get_expectation_for_tier(component: ValidationComponentDefinition, risk_tier
         "TIER_2": component.expectation_medium,
         "TIER_3": component.expectation_low,
         "TIER_4": component.expectation_very_low,
-        # Legacy fallbacks for backwards compatibility
-        "HIGH": component.expectation_high,
-        "MEDIUM": component.expectation_medium,
-        "LOW": component.expectation_low,
-        "VERY_LOW": component.expectation_very_low
     }
     return tier_mapping.get(risk_tier_code, "Required")
 
@@ -4758,11 +4986,6 @@ def create_validation_plan(
         "TIER_2": "Standard",
         "TIER_3": "Conceptual",
         "TIER_4": "Executive Summary",
-        # Legacy fallbacks
-        "HIGH": "Comprehensive",
-        "MEDIUM": "Standard",
-        "LOW": "Conceptual",
-        "VERY_LOW": "Executive Summary"
     }
     response_data.validation_approach = tier_to_approach.get(
         risk_tier_code, "Standard")
@@ -4929,12 +5152,12 @@ def get_validation_plan(
         response_data.model_name = model.model_name
         response_data.risk_tier = model.risk_tier.label if model.risk_tier else "Unknown"
 
-        risk_tier_code = model.risk_tier.code if model.risk_tier else "MEDIUM"
+        risk_tier_code = model.risk_tier.code if model.risk_tier else "TIER_2"
         tier_to_approach = {
-            "HIGH": "Comprehensive",
-            "MEDIUM": "Standard",
-            "LOW": "Conceptual",
-            "VERY_LOW": "Executive Summary"
+            "TIER_1": "Comprehensive",
+            "TIER_2": "Standard",
+            "TIER_3": "Conceptual",
+            "TIER_4": "Executive Summary",
         }
         response_data.validation_approach = tier_to_approach.get(
             risk_tier_code, "Standard")
@@ -4982,12 +5205,12 @@ def export_validation_plan_pdf(
     risk_tier = model.risk_tier.label if model and model.risk_tier else "Unknown"
 
     # Determine validation approach
-    risk_tier_code = model.risk_tier.code if model and model.risk_tier else "MEDIUM"
+    risk_tier_code = model.risk_tier.code if model and model.risk_tier else "TIER_2"
     tier_to_approach = {
-        "HIGH": "Comprehensive",
-        "MEDIUM": "Standard",
-        "LOW": "Conceptual",
-        "VERY_LOW": "Executive Summary"
+        "TIER_1": "Comprehensive",
+        "TIER_2": "Standard",
+        "TIER_3": "Conceptual",
+        "TIER_4": "Executive Summary",
     }
     validation_approach = tier_to_approach.get(risk_tier_code, "Standard")
 
@@ -5314,12 +5537,12 @@ def update_validation_plan(
         response_data.model_name = model.model_name
         response_data.risk_tier = model.risk_tier.label if model.risk_tier else "Unknown"
 
-        risk_tier_code = model.risk_tier.code if model.risk_tier else "MEDIUM"
+        risk_tier_code = model.risk_tier.code if model.risk_tier else "TIER_2"
         tier_to_approach = {
-            "HIGH": "Comprehensive",
-            "MEDIUM": "Standard",
-            "LOW": "Conceptual",
-            "VERY_LOW": "Executive Summary"
+            "TIER_1": "Comprehensive",
+            "TIER_2": "Standard",
+            "TIER_3": "Conceptual",
+            "TIER_4": "Executive Summary",
         }
         response_data.validation_approach = tier_to_approach.get(
             risk_tier_code, "Standard")
@@ -6098,3 +6321,310 @@ def get_recent_approvals(
         })
 
     return results
+
+
+# ==================== RISK TIER CHANGE IMPACT ENDPOINTS ====================
+
+@router.get("/risk-tier-impact/check/{model_id}", response_model=OpenValidationsCheckResponse)
+def check_open_validations_for_risk_tier_change(
+    model_id: int,
+    proposed_tier_id: Optional[int] = Query(None, description="Proposed new risk tier ID (optional, for warning message)"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Check if a model has open validation requests that would be affected by a risk tier change.
+
+    This endpoint should be called before changing a model's risk tier (via Risk Assessment
+    finalization or Model Edit) to warn the user about potential impacts.
+
+    Returns:
+    - has_open_validations: Whether there are active validation requests
+    - open_validations: List of affected validation request summaries
+    - warning_message: Human-readable warning if action needed
+    - requires_confirmation: Whether user should confirm before proceeding
+    """
+    # Get model
+    model = db.query(Model).filter(Model.model_id == model_id).first()
+    if not model:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Model {model_id} not found"
+        )
+
+    # Get current and proposed tier labels
+    current_tier_label = None
+    proposed_tier_label = None
+
+    if model.risk_tier_id:
+        current_tier = db.query(TaxonomyValue).filter(TaxonomyValue.value_id == model.risk_tier_id).first()
+        current_tier_label = current_tier.label if current_tier else None
+
+    if proposed_tier_id:
+        proposed_tier = db.query(TaxonomyValue).filter(TaxonomyValue.value_id == proposed_tier_id).first()
+        proposed_tier_label = proposed_tier.label if proposed_tier else None
+
+    # Find open validation requests
+    open_requests = get_open_validations_for_model(db, model_id)
+
+    # Build summaries
+    validation_summaries = []
+    for req in open_requests:
+        # Get primary validator
+        primary_assignment = next(
+            (a for a in req.assignments if a.is_primary),
+            None
+        )
+
+        # Count pending approvals
+        pending_count = sum(
+            1 for a in req.approvals
+            if a.approval_status == "Pending" and a.voided_at is None
+        )
+
+        # Check if plan exists
+        plan = db.query(ValidationPlan).filter(
+            ValidationPlan.request_id == req.request_id
+        ).first()
+
+        validation_summaries.append(OpenValidationSummary(
+            request_id=req.request_id,
+            current_status=req.current_status.label if req.current_status else "Unknown",
+            validation_type=req.validation_type.label if req.validation_type else "Unknown",
+            has_plan=plan is not None,
+            pending_approvals_count=pending_count,
+            primary_validator=primary_assignment.validator.full_name if primary_assignment and primary_assignment.validator else None
+        ))
+
+    # Build warning message
+    warning_message = None
+    requires_confirmation = False
+
+    if open_requests:
+        requires_confirmation = True
+        plan_count = sum(1 for v in validation_summaries if v.has_plan)
+        approval_count = sum(v.pending_approvals_count for v in validation_summaries)
+
+        warning_parts = []
+        if plan_count > 0:
+            warning_parts.append(f"{plan_count} validation plan(s) will be reset")
+        if approval_count > 0:
+            warning_parts.append(f"{approval_count} pending approval(s) will be voided")
+
+        tier_change_text = ""
+        if proposed_tier_label and current_tier_label:
+            tier_change_text = f" from '{current_tier_label}' to '{proposed_tier_label}'"
+
+        warning_message = (
+            f"Changing the Risk Tier{tier_change_text} will affect {len(open_requests)} "
+            f"active validation request(s). "
+            + " and ".join(warning_parts) + "."
+            if warning_parts else
+            f"Changing the Risk Tier{tier_change_text} will affect {len(open_requests)} "
+            f"active validation request(s)."
+        )
+
+    return OpenValidationsCheckResponse(
+        model_id=model_id,
+        model_name=model.model_name,
+        current_risk_tier=current_tier_label,
+        proposed_risk_tier=proposed_tier_label,
+        has_open_validations=len(open_requests) > 0,
+        open_validation_count=len(open_requests),
+        open_validations=validation_summaries,
+        warning_message=warning_message,
+        requires_confirmation=requires_confirmation
+    )
+
+
+@router.post("/risk-tier-impact/force-reset", response_model=ForceResetResponse)
+def force_reset_validation_plans(
+    request: ForceResetRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Force reset validation plans and void approvals after a model's risk tier changes.
+
+    This should be called after confirming the user wants to proceed with a risk tier
+    change that affects open validations.
+
+    Requires Admin role and confirm_reset=True to proceed.
+
+    Actions performed:
+    1. Delete existing ValidationPlanComponents for affected requests
+    2. Regenerate components based on new risk tier's expectations
+    3. Void all pending ValidationApprovals for affected requests
+    4. Create audit log entries for compliance tracking
+    """
+    check_admin(current_user)
+
+    if not request.confirm_reset:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="confirm_reset must be True to proceed with force reset"
+        )
+
+    # Check model exists
+    model = db.query(Model).filter(Model.model_id == request.model_id).first()
+    if not model:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Model {request.model_id} not found"
+        )
+
+    # Check new tier exists
+    new_tier = db.query(TaxonomyValue).filter(TaxonomyValue.value_id == request.new_risk_tier_id).first()
+    if not new_tier:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Risk tier {request.new_risk_tier_id} not found"
+        )
+
+    # Perform reset
+    result = reset_validation_plan_for_tier_change(
+        db=db,
+        model_id=request.model_id,
+        new_tier_id=request.new_risk_tier_id,
+        user_id=current_user.user_id,
+        force=True
+    )
+
+    db.commit()
+
+    # Build message
+    if result["reset_count"] == 0:
+        message = "No open validation requests found for this model."
+    else:
+        message = (
+            f"Successfully reset {result['reset_count']} validation request(s). "
+            f"Regenerated {result['components_regenerated']} plan component(s). "
+            f"Voided {result['approvals_voided']} pending approval(s)."
+        )
+
+    return ForceResetResponse(
+        success=True,
+        reset_count=result["reset_count"],
+        request_ids=result["request_ids"],
+        components_regenerated=result["components_regenerated"],
+        approvals_voided=result["approvals_voided"],
+        message=message
+    )
+
+
+# ==================== RISK MISMATCH REPORT ENDPOINT ====================
+
+@router.get("/reports/risk-mismatch", response_model=RiskMismatchReportResponse)
+def get_risk_mismatch_report(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Generate a report of models where the current risk tier doesn't match
+    the risk tier at the time of their last approved validation.
+
+    This helps identify models that may need revalidation due to risk tier changes
+    that occurred after their last validation.
+
+    Returns models where:
+    - Model is Active (status = Active or similar)
+    - Model has an approved validation request with validated_risk_tier_id set
+    - Current risk_tier_id differs from validated_risk_tier_id
+
+    Note: Models with NULL validated_risk_tier_id are excluded as we can't determine
+    if there's a mismatch.
+    """
+    # Get approved status ID
+    approved_status = db.query(TaxonomyValue).join(
+        Taxonomy, TaxonomyValue.taxonomy_id == Taxonomy.taxonomy_id
+    ).filter(
+        Taxonomy.name == "Validation Request Status",
+        TaxonomyValue.code == "APPROVED"
+    ).first()
+
+    if not approved_status:
+        return RiskMismatchReportResponse(
+            total_models_checked=0,
+            models_with_mismatch=0,
+            items=[],
+            generated_at=utc_now()
+        )
+
+    # Get active model status ID
+    active_status = db.query(TaxonomyValue).join(
+        Taxonomy, TaxonomyValue.taxonomy_id == Taxonomy.taxonomy_id
+    ).filter(
+        Taxonomy.name == "Model Status",
+        TaxonomyValue.code == "ACTIVE"
+    ).first()
+
+    # Find all active models
+    active_models_query = db.query(Model).filter(
+        Model.risk_tier_id.isnot(None)
+    )
+
+    if active_status:
+        active_models_query = active_models_query.filter(
+            Model.status_id == active_status.value_id
+        )
+
+    active_models = active_models_query.all()
+    total_checked = len(active_models)
+
+    mismatch_items = []
+
+    for model in active_models:
+        # Find the most recent approved validation request for this model
+        latest_approved = db.query(ValidationRequest).join(
+            ValidationRequestModelVersion,
+            ValidationRequest.request_id == ValidationRequestModelVersion.request_id
+        ).filter(
+            ValidationRequestModelVersion.model_id == model.model_id,
+            ValidationRequest.current_status_id == approved_status.value_id,
+            ValidationRequest.validated_risk_tier_id.isnot(None)
+        ).order_by(desc(ValidationRequest.completion_date)).first()
+
+        if not latest_approved:
+            continue  # No approved validation with risk tier snapshot
+
+        # Check for mismatch
+        if model.risk_tier_id != latest_approved.validated_risk_tier_id:
+            # Get tier details
+            current_tier = model.risk_tier
+            validated_tier = latest_approved.validated_risk_tier
+
+            # Determine direction of change
+            current_sort = current_tier.sort_order if current_tier else 99
+            validated_sort = validated_tier.sort_order if validated_tier else 99
+
+            if current_sort < validated_sort:
+                direction = "INCREASED"  # Lower sort_order = higher risk
+                requires_reval = True
+            elif current_sort > validated_sort:
+                direction = "DECREASED"
+                requires_reval = False  # May not need revalidation for lower risk
+            else:
+                direction = "CHANGED"
+                requires_reval = True
+
+            mismatch_items.append(RiskMismatchItem(
+                model_id=model.model_id,
+                model_name=model.model_name,
+                current_risk_tier_id=model.risk_tier_id,
+                current_risk_tier_code=current_tier.code if current_tier else None,
+                current_risk_tier_label=current_tier.label if current_tier else None,
+                validated_risk_tier_id=latest_approved.validated_risk_tier_id,
+                validated_risk_tier_code=validated_tier.code if validated_tier else None,
+                validated_risk_tier_label=validated_tier.label if validated_tier else None,
+                last_validation_request_id=latest_approved.request_id,
+                last_validation_date=latest_approved.completion_date.date() if latest_approved.completion_date else None,
+                tier_change_direction=direction,
+                requires_revalidation=requires_reval
+            ))
+
+    return RiskMismatchReportResponse(
+        total_models_checked=total_checked,
+        models_with_mismatch=len(mismatch_items),
+        items=mismatch_items,
+        generated_at=utc_now()
+    )

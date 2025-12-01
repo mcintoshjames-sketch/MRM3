@@ -990,16 +990,21 @@ def update_model(
     db.commit()
     db.refresh(model)
 
-    # Recalculate validation plan expectations if risk tier changed
-    if risk_tier_changed and model.risk_tier:
-        from app.api.validation_workflow import recalculate_plan_expectations_for_model
-        plans_updated = recalculate_plan_expectations_for_model(
+    # Force reset validation plans if risk tier changed (voids approvals, regenerates components)
+    if risk_tier_changed:
+        from app.api.validation_workflow import reset_validation_plan_for_tier_change
+        new_tier_id = model.risk_tier_id  # Could be None if tier was cleared
+        reset_result = reset_validation_plan_for_tier_change(
             db=db,
             model_id=model_id,
-            new_risk_tier_code=model.risk_tier.code
+            new_tier_id=new_tier_id,
+            user_id=current_user.user_id,
+            force=True
         )
-        if plans_updated > 0:
-            changes_made["validation_plans_recalculated"] = plans_updated
+        if reset_result["reset_count"] > 0:
+            changes_made["validation_plans_reset"] = reset_result["reset_count"]
+            changes_made["approvals_voided"] = reset_result["approvals_voided"]
+            db.commit()  # Commit the reset changes
 
     # Reload with relationships
     from app.models import ModelSubmissionComment
@@ -2198,22 +2203,29 @@ def approve_pending_edit(
 
     for field, value in proposed_changes.items():
         if field == 'user_ids':
-            # Handle user_ids separately
+            # Handle user_ids separately - only log if actually changed
             if value is not None:
-                users = db.query(User).filter(User.user_id.in_(value)).all()
-                model.users = users
-                changes_applied[field] = "modified"
+                old_user_ids = sorted([u.user_id for u in model.users])
+                new_user_ids = sorted(value)
+                if old_user_ids != new_user_ids:
+                    users = db.query(User).filter(User.user_id.in_(value)).all()
+                    model.users = users
+                    changes_applied[field] = {"old": old_user_ids, "new": new_user_ids}
         elif field == 'regulatory_category_ids':
-            # Handle regulatory_category_ids separately
+            # Handle regulatory_category_ids separately - only log if actually changed
             if value is not None:
-                categories = db.query(TaxonomyValue).filter(
-                    TaxonomyValue.value_id.in_(value)).all()
-                model.regulatory_categories = categories
-                changes_applied[field] = "modified"
+                old_category_ids = sorted([c.value_id for c in model.regulatory_categories])
+                new_category_ids = sorted(value)
+                if old_category_ids != new_category_ids:
+                    categories = db.query(TaxonomyValue).filter(
+                        TaxonomyValue.value_id.in_(value)).all()
+                    model.regulatory_categories = categories
+                    changes_applied[field] = {"old": old_category_ids, "new": new_category_ids}
         else:
             old_value = getattr(model, field, None)
-            setattr(model, field, value)
-            changes_applied[field] = {"old": old_value, "new": value}
+            if old_value != value:
+                setattr(model, field, value)
+                changes_applied[field] = {"old": old_value, "new": value}
 
     # Update pending edit status
     pending_edit.status = "approved"

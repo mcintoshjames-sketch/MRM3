@@ -10,6 +10,7 @@ from app.models.recommendation import RecommendationPriorityConfig, Recommendati
 from app.models.kpm import KpmCategory, Kpm
 from app.models.model import Model
 from app.models.risk_assessment import QualitativeRiskFactor, QualitativeFactorGuidance
+from app.models.scorecard import ScorecardSection, ScorecardCriterion
 
 
 REGULATORY_CATEGORY_VALUES = [
@@ -2116,6 +2117,9 @@ def seed_database():
         # Seed Qualitative Risk Factors (for Model Risk Assessment)
         seed_qualitative_risk_factors(db)
 
+        # Seed Validation Scorecard Configuration
+        seed_scorecard_config(db)
+
         print("Seeding completed successfully!")
 
     except Exception as e:
@@ -2979,6 +2983,73 @@ def seed_qualitative_risk_factors(db):
 
     db.commit()
     print("✓ Qualitative risk factors seeded")
+
+
+def seed_scorecard_config(db):
+    """Seed scorecard sections and criteria from SCORE_CRITERIA.json."""
+    import json
+    from pathlib import Path
+    from decimal import Decimal
+
+    print("Seeding scorecard configuration...")
+
+    # Check if already seeded
+    existing_sections = db.query(ScorecardSection).count()
+    if existing_sections > 0:
+        print(f"✓ Scorecard configuration already seeded ({existing_sections} sections)")
+        return
+
+    # Load configuration from SCORE_CRITERIA.json
+    # In Docker, it's mounted at /app/SCORE_CRITERIA.json
+    # Locally (for tests), it's at the repo root
+    config_path = Path("/app/SCORE_CRITERIA.json")
+    if not config_path.exists():
+        # Fallback for local development/testing
+        repo_root = Path(__file__).parent.parent.parent
+        config_path = repo_root / "SCORE_CRITERIA.json"
+
+    with open(config_path, "r") as f:
+        config = json.load(f)
+
+    # Create sections
+    section_map = {}  # code -> ScorecardSection for linking criteria
+    for i, section_data in enumerate(config.get("sections", [])):
+        section = ScorecardSection(
+            code=section_data["code"],
+            name=section_data["name"],
+            sort_order=i + 1,
+            is_active=True
+        )
+        db.add(section)
+        db.flush()
+        section_map[section_data["code"]] = section
+        print(f"✓ Created scorecard section: {section.name}")
+
+    # Create criteria
+    for i, criterion_data in enumerate(config.get("criteria", [])):
+        section_code = criterion_data.get("section")
+        section = section_map.get(section_code)
+        if not section:
+            print(f"⚠ Unknown section '{section_code}' for criterion {criterion_data['code']}")
+            continue
+
+        criterion = ScorecardCriterion(
+            code=criterion_data["code"],
+            section_id=section.section_id,
+            name=criterion_data["name"],
+            description_prompt=criterion_data.get("description_prompt"),
+            comments_prompt=criterion_data.get("comments_prompt"),
+            include_in_summary=criterion_data.get("include_in_summary", True),
+            allow_zero=criterion_data.get("allow_zero", True),
+            weight=Decimal(str(criterion_data.get("weight", 1.0))),
+            sort_order=i + 1,
+            is_active=True
+        )
+        db.add(criterion)
+        print(f"✓ Created scorecard criterion: {criterion.code} - {criterion.name}")
+
+    db.commit()
+    print("✓ Scorecard configuration seeded successfully")
 
 
 if __name__ == "__main__":
