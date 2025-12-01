@@ -3,7 +3,8 @@
 Implements full lifecycle management of recommendations identified during validation,
 including action plan tasks, rebuttals, evidence upload, and multi-stakeholder approvals.
 """
-from datetime import datetime, date
+from dataclasses import dataclass
+from datetime import datetime, date, timedelta
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session, joinedload
@@ -18,7 +19,7 @@ from app.models import (
     ClosureEvidence, RecommendationStatusHistory, RecommendationApproval,
     RecommendationPriorityConfig
 )
-from app.models.recommendation import RecommendationPriorityRegionalOverride
+from app.models.recommendation import RecommendationPriorityRegionalOverride, RecommendationTimeframeConfig
 from app.schemas.recommendation import (
     RecommendationCreate, RecommendationUpdate, RecommendationResponse, RecommendationListResponse,
     ActionPlanTaskCreate, ActionPlanTaskUpdate, ActionPlanTaskResponse,
@@ -29,11 +30,27 @@ from app.schemas.recommendation import (
     PriorityConfigCreate, PriorityConfigUpdate, PriorityConfigResponse,
     RegionalOverrideCreate, RegionalOverrideUpdate, RegionalOverrideResponse,
     ClosureReviewRequest, DeclineAcknowledgementRequest,
+    # Timeframe Config
+    TimeframeConfigUpdate, TimeframeConfigResponse,
+    TimeframeCalculationRequest, TimeframeCalculationResponse,
     # Dashboard & Reports
     MyTasksResponse, MyTaskItem, OpenRecommendationsSummary, StatusSummary, PrioritySummary,
     OverdueRecommendationsReport, OverdueRecommendation, ModelSummary
 )
 from app.schemas.taxonomy import TaxonomyValueResponse
+
+
+# ==================== DATA CLASSES ====================
+
+@dataclass
+class TargetDateValidationResult:
+    """Result of target date validation."""
+    is_valid: bool
+    is_enforced: bool
+    max_target_date: Optional[date]
+    reason_required: bool
+    message: str
+
 
 router = APIRouter(prefix="/recommendations")
 
@@ -194,6 +211,308 @@ def check_not_terminal(recommendation: Recommendation, db: Session):
         )
 
 
+def get_max_days_for_recommendation(
+    db: Session,
+    priority_id: int,
+    risk_tier_id: int,
+    usage_frequency_id: int
+) -> Optional[int]:
+    """Look up the maximum days allowed for a priority/risk/frequency combination.
+
+    Args:
+        db: Database session
+        priority_id: FK to Recommendation Priority taxonomy value
+        risk_tier_id: FK to Model Risk Tier taxonomy value
+        usage_frequency_id: FK to Model Usage Frequency taxonomy value
+
+    Returns:
+        max_days if a configuration exists for this combination, None otherwise
+    """
+    config = db.query(RecommendationTimeframeConfig).filter(
+        RecommendationTimeframeConfig.priority_id == priority_id,
+        RecommendationTimeframeConfig.risk_tier_id == risk_tier_id,
+        RecommendationTimeframeConfig.usage_frequency_id == usage_frequency_id
+    ).first()
+    return config.max_days if config else None
+
+
+def calculate_max_target_date(
+    db: Session,
+    priority_id: int,
+    risk_tier_id: int,
+    usage_frequency_id: int,
+    creation_date: date
+) -> Optional[date]:
+    """Calculate the maximum allowed target date for a recommendation.
+
+    Args:
+        db: Database session
+        priority_id: FK to Recommendation Priority taxonomy value
+        risk_tier_id: FK to Model Risk Tier taxonomy value
+        usage_frequency_id: FK to Model Usage Frequency taxonomy value
+        creation_date: The date the recommendation was created
+
+    Returns:
+        The maximum allowed target date (creation_date + max_days),
+        or None if no configuration exists for the combination.
+        A max_days of 0 means immediate resolution (same day as creation).
+    """
+    max_days = get_max_days_for_recommendation(
+        db, priority_id, risk_tier_id, usage_frequency_id
+    )
+
+    if max_days is None:
+        return None
+
+    return creation_date + timedelta(days=max_days)
+
+
+def is_timeframe_enforced(db: Session, recommendation: Recommendation) -> bool:
+    """Check if timeframe enforcement applies for this recommendation.
+
+    Returns True if target dates must be within max allowed timeframe,
+    False if timeframes are advisory only.
+
+    Resolution logic with regional overrides:
+    1. Get base config for the priority
+    2. Get the model's deployed regions
+    3. If model has regions, check for regional overrides
+    4. Apply "most restrictive wins" logic:
+       - If ANY override says True, return True (enforce)
+       - If ALL overrides say False (explicit), return False (advisory)
+       - NULL overrides are ignored (inherit from base)
+       - If no overrides apply, use base config
+    5. If no config exists, default to True (fail-safe: enforce by default)
+    """
+    # Get base config
+    config = db.query(RecommendationPriorityConfig).filter(
+        RecommendationPriorityConfig.priority_id == recommendation.priority_id
+    ).first()
+
+    # Default to True if no config exists (fail-safe: enforce by default)
+    base_enforced = config.enforce_timeframes if config else True
+
+    # Get model's deployed region IDs
+    model_region_ids = db.query(ModelRegion.region_id).filter(
+        ModelRegion.model_id == recommendation.model_id
+    ).all()
+    region_ids = [r[0] for r in model_region_ids]
+
+    # If no regions, use base config only
+    if not region_ids:
+        return base_enforced
+
+    # Get regional overrides for this priority + model's regions
+    overrides = db.query(RecommendationPriorityRegionalOverride).filter(
+        RecommendationPriorityRegionalOverride.priority_id == recommendation.priority_id,
+        RecommendationPriorityRegionalOverride.region_id.in_(region_ids)
+    ).all()
+
+    # If no overrides, use base config
+    if not overrides:
+        return base_enforced
+
+    # Apply "most restrictive wins" logic
+    # First check if ANY override explicitly enforces timeframes
+    for override in overrides:
+        if override.enforce_timeframes is True:
+            return True
+
+    # Check if ALL overrides explicitly say no enforcement
+    # (NULL values inherit from base, so don't count them)
+    explicit_false_count = sum(1 for o in overrides if o.enforce_timeframes is False)
+    if explicit_false_count == len(overrides):
+        # All overrides explicitly say no enforcement
+        return False
+
+    # Some overrides are NULL (inherit) and none explicitly require enforcement
+    # Fall back to base config
+    return base_enforced
+
+
+def _check_timeframe_enforced_for_model(
+    db: Session,
+    priority_id: int,
+    model_id: int
+) -> bool:
+    """Check if timeframe enforcement applies for a given priority and model.
+
+    This is a helper version of is_timeframe_enforced that doesn't require
+    a Recommendation object. Used during validation before creating a recommendation.
+
+    Returns True if target dates must be within max allowed timeframe,
+    False if timeframes are advisory only.
+    """
+    # Get base config
+    config = db.query(RecommendationPriorityConfig).filter(
+        RecommendationPriorityConfig.priority_id == priority_id
+    ).first()
+
+    # Default to True if no config exists (fail-safe: enforce by default)
+    base_enforced = config.enforce_timeframes if config else True
+
+    # Get model's deployed region IDs
+    model_region_ids = db.query(ModelRegion.region_id).filter(
+        ModelRegion.model_id == model_id
+    ).all()
+    region_ids = [r[0] for r in model_region_ids]
+
+    # If no regions, use base config only
+    if not region_ids:
+        return base_enforced
+
+    # Get regional overrides for this priority + model's regions
+    overrides = db.query(RecommendationPriorityRegionalOverride).filter(
+        RecommendationPriorityRegionalOverride.priority_id == priority_id,
+        RecommendationPriorityRegionalOverride.region_id.in_(region_ids)
+    ).all()
+
+    # If no overrides, use base config
+    if not overrides:
+        return base_enforced
+
+    # Apply "most restrictive wins" logic
+    for override in overrides:
+        if override.enforce_timeframes is True:
+            return True
+
+    explicit_false_count = sum(1 for o in overrides if o.enforce_timeframes is False)
+    if explicit_false_count == len(overrides):
+        return False
+
+    return base_enforced
+
+
+def validate_target_date(
+    db: Session,
+    priority_id: int,
+    model_id: int,
+    proposed_target_date: date,
+    creation_date: date
+) -> TargetDateValidationResult:
+    """Validate a proposed target date against timeframe configurations.
+
+    Args:
+        db: Database session
+        priority_id: FK to Recommendation Priority taxonomy value
+        model_id: FK to Model
+        proposed_target_date: The target date being validated
+        creation_date: The recommendation creation date
+
+    Returns:
+        TargetDateValidationResult with validation status, enforcement info,
+        max date, reason requirement, and message.
+    """
+    # Check if target date is before creation date
+    if proposed_target_date < creation_date:
+        return TargetDateValidationResult(
+            is_valid=False,
+            is_enforced=True,  # This is always enforced
+            max_target_date=None,
+            reason_required=False,
+            message="Target date cannot be before the creation date"
+        )
+
+    # Get model to retrieve risk_tier_id and usage_frequency_id
+    model = db.query(Model).filter(Model.model_id == model_id).first()
+    if not model:
+        return TargetDateValidationResult(
+            is_valid=False,
+            is_enforced=True,
+            max_target_date=None,
+            reason_required=False,
+            message="Model not found"
+        )
+
+    # Get model's risk tier and usage frequency
+    risk_tier_id = model.risk_tier_id
+    usage_frequency_id = model.usage_frequency_id
+
+    # Handle case where model doesn't have required fields
+    if not risk_tier_id or not usage_frequency_id:
+        return TargetDateValidationResult(
+            is_valid=True,
+            is_enforced=False,
+            max_target_date=None,
+            reason_required=False,
+            message="Model does not have risk tier or usage frequency configured. No timeframe validation applied."
+        )
+
+    # Calculate max target date
+    max_target = calculate_max_target_date(
+        db, priority_id, risk_tier_id, usage_frequency_id, creation_date
+    )
+
+    # If no config exists, return valid with warning
+    if max_target is None:
+        return TargetDateValidationResult(
+            is_valid=True,
+            is_enforced=False,
+            max_target_date=None,
+            reason_required=False,
+            message="No timeframe configuration exists for this priority/risk/frequency combination"
+        )
+
+    # Check if enforcement applies
+    is_enforced = _check_timeframe_enforced_for_model(db, priority_id, model_id)
+
+    # Calculate days from creation to max and to proposed
+    max_days = (max_target - creation_date).days
+    proposed_days = (proposed_target_date - creation_date).days
+
+    # Check if proposed date exceeds max
+    exceeds_max = proposed_target_date > max_target
+
+    # Check if proposed is significantly sooner than max (less than 25% of max days, with min threshold)
+    # This catches cases where timelines are aggressively accelerated without explanation
+    significantly_sooner = False
+    if max_days > 30 and proposed_days < (max_days * 0.25):
+        significantly_sooner = True
+
+    if is_enforced:
+        # Strict enforcement mode
+        if exceeds_max:
+            return TargetDateValidationResult(
+                is_valid=False,
+                is_enforced=True,
+                max_target_date=max_target,
+                reason_required=False,
+                message=f"Target date exceeds maximum allowed date of {max_target}. "
+                        f"When timeframes are enforced, target date must be on or before the maximum."
+            )
+        else:
+            # Within limits
+            return TargetDateValidationResult(
+                is_valid=True,
+                is_enforced=True,
+                max_target_date=max_target,
+                reason_required=significantly_sooner,
+                message="Target date is within the enforced maximum timeframe"
+                        + (". Explanation recommended for accelerated timeline." if significantly_sooner else "")
+            )
+    else:
+        # Advisory mode (not enforced)
+        if exceeds_max:
+            return TargetDateValidationResult(
+                is_valid=True,  # Valid because not enforced
+                is_enforced=False,
+                max_target_date=max_target,
+                reason_required=True,  # But reason is required
+                message=f"Target date exceeds the recommended maximum of {max_target}. "
+                        f"Timeframe is advisory only. Explanation required for extended timeline."
+            )
+        else:
+            # Within limits
+            return TargetDateValidationResult(
+                is_valid=True,
+                is_enforced=False,
+                max_target_date=max_target,
+                reason_required=significantly_sooner,
+                message="Target date is within the recommended timeframe"
+                        + (". Explanation recommended for accelerated timeline." if significantly_sooner else "")
+            )
+
+
 def check_requires_action_plan(db: Session, recommendation: Recommendation) -> bool:
     """Check if recommendation's priority requires an action plan.
 
@@ -295,6 +614,135 @@ def check_all_approvals_complete(recommendation: Recommendation) -> bool:
     return True
 
 
+# ==================== TIMEFRAME CONFIG ENDPOINTS ====================
+
+@router.get("/timeframe-config/", response_model=List[TimeframeConfigResponse])
+def list_timeframe_configs(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """List all timeframe configurations."""
+    configs = db.query(RecommendationTimeframeConfig).options(
+        joinedload(RecommendationTimeframeConfig.priority),
+        joinedload(RecommendationTimeframeConfig.risk_tier),
+        joinedload(RecommendationTimeframeConfig.usage_frequency)
+    ).all()
+    return configs
+
+
+@router.get("/timeframe-config/{config_id}", response_model=TimeframeConfigResponse)
+def get_timeframe_config(
+    config_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Get single timeframe configuration."""
+    config = db.query(RecommendationTimeframeConfig).options(
+        joinedload(RecommendationTimeframeConfig.priority),
+        joinedload(RecommendationTimeframeConfig.risk_tier),
+        joinedload(RecommendationTimeframeConfig.usage_frequency)
+    ).filter(RecommendationTimeframeConfig.config_id == config_id).first()
+
+    if not config:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Timeframe config not found"
+        )
+    return config
+
+
+@router.patch("/timeframe-config/{config_id}", response_model=TimeframeConfigResponse)
+def update_timeframe_config(
+    config_id: int,
+    update_data: TimeframeConfigUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Update timeframe configuration (Admin only)."""
+    check_admin(current_user)
+
+    config = db.query(RecommendationTimeframeConfig).filter(
+        RecommendationTimeframeConfig.config_id == config_id
+    ).first()
+
+    if not config:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Timeframe config not found"
+        )
+
+    if update_data.max_days is not None:
+        config.max_days = update_data.max_days
+    if update_data.description is not None:
+        config.description = update_data.description
+
+    db.commit()
+    db.refresh(config)
+
+    # Load relationships for response
+    db.refresh(config, ["priority", "risk_tier", "usage_frequency"])
+    return config
+
+
+@router.post("/timeframe-config/calculate", response_model=TimeframeCalculationResponse)
+def calculate_timeframe(
+    request: TimeframeCalculationRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Calculate maximum target date for a model/priority combination."""
+    model = db.query(Model).filter(Model.model_id == request.model_id).first()
+    if not model:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Model not found"
+        )
+
+    if not model.risk_tier_id or not model.usage_frequency_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Model must have risk tier and usage frequency set"
+        )
+
+    today = date.today()
+    max_target = calculate_max_target_date(
+        db,
+        priority_id=request.priority_id,
+        risk_tier_id=model.risk_tier_id,
+        usage_frequency_id=model.usage_frequency_id,
+        creation_date=today
+    )
+
+    # Get taxonomy value codes for response
+    priority = db.query(TaxonomyValue).filter(
+        TaxonomyValue.value_id == request.priority_id
+    ).first()
+    risk_tier = db.query(TaxonomyValue).filter(
+        TaxonomyValue.value_id == model.risk_tier_id
+    ).first()
+    usage_freq = db.query(TaxonomyValue).filter(
+        TaxonomyValue.value_id == model.usage_frequency_id
+    ).first()
+
+    # Get max days from config
+    max_days = get_max_days_for_recommendation(
+        db, request.priority_id, model.risk_tier_id, model.usage_frequency_id
+    )
+
+    # Check enforcement
+    enforce = _check_timeframe_enforced_for_model(db, request.priority_id, request.model_id)
+
+    return TimeframeCalculationResponse(
+        priority_code=priority.code if priority else "UNKNOWN",
+        risk_tier_code=risk_tier.code if risk_tier else "UNKNOWN",
+        usage_frequency_code=usage_freq.code if usage_freq else "UNKNOWN",
+        max_days=max_days if max_days is not None else 365,
+        calculated_max_date=max_target if max_target else today + timedelta(days=365),
+        enforce_timeframes=enforce,
+        enforced_by_region=None  # Could enhance to return region name
+    )
+
+
 # ==================== PRIORITY CONFIG ENDPOINTS ====================
 
 @router.get("/priority-config/", response_model=List[PriorityConfigResponse])
@@ -371,6 +819,7 @@ def create_regional_override(
         region_id=override_data.region_id,
         requires_action_plan=override_data.requires_action_plan,
         requires_final_approval=override_data.requires_final_approval,
+        enforce_timeframes=override_data.enforce_timeframes,
         description=override_data.description
     )
     db.add(override)
@@ -407,6 +856,8 @@ def update_regional_override(
         override.requires_action_plan = override_update.requires_action_plan
     if override_update.requires_final_approval is not None or 'requires_final_approval' in override_update.model_dump(exclude_unset=True):
         override.requires_final_approval = override_update.requires_final_approval
+    if override_update.enforce_timeframes is not None or 'enforce_timeframes' in override_update.model_dump(exclude_unset=True):
+        override.enforce_timeframes = override_update.enforce_timeframes
     if override_update.description is not None:
         override.description = override_update.description
 
@@ -466,6 +917,8 @@ def update_priority_config(
         config.requires_final_approval = config_update.requires_final_approval
     if config_update.requires_action_plan is not None:
         config.requires_action_plan = config_update.requires_action_plan
+    if config_update.enforce_timeframes is not None:
+        config.enforce_timeframes = config_update.enforce_timeframes
     if config_update.description is not None:
         config.description = config_update.description
 
@@ -550,6 +1003,28 @@ def create_recommendation(
                 detail="Monitoring cycle not found"
             )
 
+    # Validate target date against timeframe configuration
+    creation_date = date.today()
+    validation_result = validate_target_date(
+        db,
+        priority_id=rec_data.priority_id,
+        model_id=rec_data.model_id,
+        proposed_target_date=rec_data.original_target_date,
+        creation_date=creation_date
+    )
+
+    if not validation_result.is_valid:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=validation_result.message
+        )
+
+    if validation_result.reason_required and not rec_data.target_date_change_reason:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Target date is significantly earlier than the maximum allowed. Please provide a reason/explanation for this shorter timeframe."
+        )
+
     # Get draft status
     draft_status = get_status_by_code(db, "REC_DRAFT")
 
@@ -571,7 +1046,8 @@ def create_recommendation(
         created_by_id=current_user.user_id,
         assigned_to_id=rec_data.assigned_to_id,
         original_target_date=rec_data.original_target_date,
-        current_target_date=rec_data.original_target_date
+        current_target_date=rec_data.original_target_date,
+        target_date_change_reason=rec_data.target_date_change_reason
     )
     db.add(recommendation)
     db.flush()
@@ -1148,9 +1624,32 @@ def update_recommendation(
         old_date = str(recommendation.current_target_date) if recommendation.current_target_date else None
         new_date = str(rec_update.current_target_date)
         if old_date != new_date:
+            # Validate the new target date against timeframe configuration
+            validation_result = validate_target_date(
+                db,
+                priority_id=recommendation.priority_id,
+                model_id=recommendation.model_id,
+                proposed_target_date=rec_update.current_target_date,
+                creation_date=recommendation.original_target_date  # Use original date as creation date
+            )
+
+            if not validation_result.is_valid:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=validation_result.message
+                )
+
+            # Require reason when changing target date
+            if not rec_update.target_date_change_reason:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="A reason/explanation is required when changing the target date."
+                )
+
             old_values["current_target_date"] = old_date
             new_values["current_target_date"] = new_date
             recommendation.current_target_date = rec_update.current_target_date
+            recommendation.target_date_change_reason = rec_update.target_date_change_reason
 
     # Only create audit log if there were actual changes
     if new_values:

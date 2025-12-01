@@ -1,0 +1,64 @@
+{
+    "recommendation_timeframes": {
+        "high_priority": {
+            "high_inherent_risk": {
+                "daily": 0,
+                "monthly": 0,
+                "quarterly": 90,
+                "annually": 90
+            },
+            "medium_inherent_risk": {
+                "daily": 0,
+                "monthly": 90,
+                "quarterly": 90,
+                "annually": 180
+            },
+            "low_inherent_risk": {
+                "daily": 90,
+                "monthly": 90,
+                "quarterly": 180,
+                "annually": 180
+            }
+        },
+        "medium_priority": {
+            "high_inherent_risk": {
+                "daily": 180,
+                "monthly": 180,
+                "quarterly": 180,
+                "annually": 180
+            },
+            "medium_inherent_risk": {
+                "daily": 180,
+                "monthly": 180,
+                "quarterly": 180,
+                "annually": 365
+            },
+            "low_inherent_risk": {
+                "daily": 180,
+                "monthly": 180,
+                "quarterly": 365,
+                "annually": 365
+            }
+        },
+        "low_priority": {
+            "high_inherent_risk": {
+                "daily": 365,
+                "monthly": 365,
+                "quarterly": 365,
+                "annually": 365
+            },
+            "medium_inherent_risk": {
+                "daily": 365,
+                "monthly": 365,
+                "quarterly": 365,
+                "annually": 1095
+            },
+            "low_inherent_risk": {
+                "daily": 365,
+                "monthly": 365,
+                "quarterly": 1095,
+                "annually": 1095
+            }
+        }
+    }
+}

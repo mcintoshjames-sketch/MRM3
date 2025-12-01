@@ -1,0 +1,51 @@
+{
+  "matrixTitle": "Matrix for Global",
+  "yAxisLabel": "Materiality Assessment",
+  "xAxisLabel": "Model Validation Assessment",
+  "data": [
+    {
+      "materiality": "High",
+      "assessments": {
+        "Red": "High",
+        "Yellow-": "High",
+        "Yellow": "High",
+        "Yellow+": "Medium",
+        "Green-": "Medium",
+        "Green": "Low"
+      }
+    },
+    {
+      "materiality": "Medium",
+      "assessments": {
+        "Red": "High",
+        "Yellow-": "High",
+        "Yellow": "Medium",
+        "Yellow+": "Medium",
+        "Green-": "Low",
+        "Green": "Low"
+      }
+    },
+    {
+      "materiality": "Low",
+      "assessments": {
+        "Red": "High",
+        "Yellow-": "Medium",
+        "Yellow": "Medium",
+        "Yellow+": "Low",
+        "Green-": "Low",
+        "Green": "Low"
+      }
+    },
+    {
+      "materiality": "Very Low",
+      "assessments": {
+        "Red": "Medium",
+        "Yellow-": "Medium",
+        "Yellow": "Low",
+        "Yellow+": "Low",
+        "Green-": "Low",
+        "Green": "Low"
+      }
+    }
+  ]
+}

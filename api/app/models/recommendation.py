@@ -77,6 +77,10 @@ class Recommendation(Base):
     # Target dates
     original_target_date: Mapped[date] = mapped_column(Date, nullable=False)
     current_target_date: Mapped[date] = mapped_column(Date, nullable=False)
+    target_date_change_reason: Mapped[Optional[str]] = mapped_column(
+        Text, nullable=True,
+        comment="Explanation for why target date differs from calculated max or has been changed"
+    )
 
     # Closure fields
     closed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
@@ -375,6 +379,10 @@ class RecommendationPriorityConfig(Base):
         Boolean, nullable=False, default=True,
         comment="If false, recommendations with this priority can skip action plan submission"
     )
+    enforce_timeframes: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True,
+        comment="If true, target dates must be within max allowed timeframe; if false, timeframe is advisory only"
+    )
     description: Mapped[Optional[str]] = mapped_column(
         Text, nullable=True,
         comment="Admin notes explaining the configuration"
@@ -422,6 +430,10 @@ class RecommendationPriorityRegionalOverride(Base):
         Boolean, nullable=True,
         comment="Override for final approval requirement. NULL = inherit from base config"
     )
+    enforce_timeframes: Mapped[Optional[bool]] = mapped_column(
+        Boolean, nullable=True,
+        comment="Override for timeframe enforcement. NULL = inherit from base config"
+    )
     description: Mapped[Optional[str]] = mapped_column(
         Text, nullable=True,
         comment="Admin notes explaining why this regional override exists"
@@ -438,4 +450,57 @@ class RecommendationPriorityRegionalOverride(Base):
 
     __table_args__ = (
         UniqueConstraint('priority_id', 'region_id', name='uq_priority_region_override'),
+    )
+
+
+class RecommendationTimeframeConfig(Base):
+    """
+    Admin-configurable maximum remediation timeframes based on:
+    - Recommendation priority (High/Medium/Low)
+    - Model risk tier (Tier 1/2/3/4)
+    - Model usage frequency (Daily/Monthly/Quarterly/Annually)
+
+    The max_days value defines the maximum number of days allowed between
+    recommendation creation and target date when timeframes are enforced.
+    A value of 0 means immediate resolution required (target_date = creation_date).
+    """
+    __tablename__ = "recommendation_timeframe_configs"
+
+    config_id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    priority_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("taxonomy_values.value_id"), nullable=False,
+        comment="FK to priority taxonomy value (High/Medium/Low)"
+    )
+    risk_tier_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("taxonomy_values.value_id"), nullable=False,
+        comment="FK to model risk tier taxonomy value (Tier 1/2/3/4)"
+    )
+    usage_frequency_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("taxonomy_values.value_id"), nullable=False,
+        comment="FK to model usage frequency taxonomy value (Daily/Monthly/Quarterly/Annually)"
+    )
+    max_days: Mapped[int] = mapped_column(
+        Integer, nullable=False,
+        comment="Maximum days allowed from creation to target date (0 = immediate)"
+    )
+    description: Mapped[Optional[str]] = mapped_column(
+        Text, nullable=True,
+        comment="Admin notes explaining this timeframe configuration"
+    )
+
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=utc_now)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, default=utc_now, onupdate=utc_now
+    )
+
+    # Relationships
+    priority = relationship("TaxonomyValue", foreign_keys=[priority_id])
+    risk_tier = relationship("TaxonomyValue", foreign_keys=[risk_tier_id])
+    usage_frequency = relationship("TaxonomyValue", foreign_keys=[usage_frequency_id])
+
+    __table_args__ = (
+        UniqueConstraint(
+            'priority_id', 'risk_tier_id', 'usage_frequency_id',
+            name='uq_timeframe_priority_risk_freq'
+        ),
     )

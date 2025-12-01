@@ -33,6 +33,7 @@ export default function RecommendationEditModal({
     const [users, setUsers] = useState<User[]>([]);
     const [saving, setSaving] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const [targetDateChangeReason, setTargetDateChangeReason] = useState('');
 
     const currentStatusCode = recommendation.current_status?.code || '';
     const isFullEdit = FULL_EDIT_STATUSES.includes(currentStatusCode);
@@ -51,6 +52,7 @@ export default function RecommendationEditModal({
                 assigned_to_id: recommendation.assigned_to?.user_id || recommendation.assigned_to_id,
                 current_target_date: recommendation.current_target_date,
             });
+            setTargetDateChangeReason('');
             setError(null);
             fetchTaxonomies();
             fetchUsers();
@@ -127,6 +129,13 @@ export default function RecommendationEditModal({
             }
             if (formData.current_target_date !== recommendation.current_target_date) {
                 updatePayload.current_target_date = formData.current_target_date;
+                // Require reason when changing target date
+                if (!targetDateChangeReason.trim()) {
+                    setError('A reason is required when changing the target date.');
+                    setSaving(false);
+                    return;
+                }
+                updatePayload.target_date_change_reason = targetDateChangeReason.trim();
             }
 
             // Only submit if there are changes
@@ -307,6 +316,26 @@ export default function RecommendationEditModal({
                             </p>
                         )}
                     </div>
+
+                    {/* Target Date Change Reason - Required when date changes */}
+                    {formData.current_target_date !== recommendation.current_target_date && (
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700">
+                                Reason for Target Date Change <span className="text-red-500">*</span>
+                            </label>
+                            <textarea
+                                value={targetDateChangeReason}
+                                onChange={(e) => setTargetDateChangeReason(e.target.value)}
+                                rows={2}
+                                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 input-field"
+                                placeholder="Explain why the target date is being changed..."
+                                required
+                            />
+                            <p className="mt-1 text-xs text-gray-500">
+                                Required: explain why the target date is changing from {recommendation.current_target_date} to {formData.current_target_date}
+                            </p>
+                        </div>
+                    )}
 
                     {/* Form Actions */}
                     <div className="flex justify-end space-x-3 pt-4 border-t">

@@ -264,6 +264,7 @@ class PriorityConfigUpdate(BaseModel):
     """Schema for updating priority configuration."""
     requires_final_approval: Optional[bool] = None
     requires_action_plan: Optional[bool] = None
+    enforce_timeframes: Optional[bool] = None
     description: Optional[str] = None
 
 
@@ -273,6 +274,7 @@ class PriorityConfigResponse(BaseModel):
     priority: TaxonomyValueResponse
     requires_final_approval: bool
     requires_action_plan: bool
+    enforce_timeframes: bool
     description: Optional[str] = None
     created_at: datetime
     updated_at: datetime
@@ -289,6 +291,7 @@ class RegionalOverrideCreate(BaseModel):
     region_id: int
     requires_action_plan: Optional[bool] = None
     requires_final_approval: Optional[bool] = None
+    enforce_timeframes: Optional[bool] = None
     description: Optional[str] = None
 
 
@@ -296,6 +299,7 @@ class RegionalOverrideUpdate(BaseModel):
     """Schema for updating a regional priority override."""
     requires_action_plan: Optional[bool] = None
     requires_final_approval: Optional[bool] = None
+    enforce_timeframes: Optional[bool] = None
     description: Optional[str] = None
 
 
@@ -316,12 +320,53 @@ class RegionalOverrideResponse(BaseModel):
     region: RegionSummary
     requires_action_plan: Optional[bool] = None
     requires_final_approval: Optional[bool] = None
+    enforce_timeframes: Optional[bool] = None
     description: Optional[str] = None
     created_at: datetime
     updated_at: datetime
 
     class Config:
         from_attributes = True
+
+
+# ==================== TIMEFRAME CONFIG SCHEMAS ====================
+
+class TimeframeConfigUpdate(BaseModel):
+    """Schema for updating a timeframe configuration."""
+    max_days: Optional[int] = Field(None, ge=0, description="Max days allowed (must be >= 0)")
+    description: Optional[str] = None
+
+
+class TimeframeConfigResponse(BaseModel):
+    """Response schema for timeframe configuration."""
+    config_id: int
+    priority: TaxonomyValueResponse
+    risk_tier: TaxonomyValueResponse
+    usage_frequency: TaxonomyValueResponse
+    max_days: int
+    description: Optional[str] = None
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class TimeframeCalculationRequest(BaseModel):
+    """Request schema for calculating max target date."""
+    priority_id: int
+    model_id: int
+
+
+class TimeframeCalculationResponse(BaseModel):
+    """Response schema for calculated timeframe information."""
+    priority_code: str
+    risk_tier_code: str
+    usage_frequency_code: str
+    max_days: int
+    calculated_max_date: date
+    enforce_timeframes: bool
+    enforced_by_region: Optional[str] = None
 
 
 # ==================== RECOMMENDATION SCHEMAS ====================
@@ -342,7 +387,7 @@ class RecommendationBase(BaseModel):
 
 class RecommendationCreate(RecommendationBase):
     """Schema for creating a recommendation."""
-    pass
+    target_date_change_reason: Optional[str] = None
 
 
 class RecommendationUpdate(BaseModel):
@@ -360,6 +405,7 @@ class RecommendationUpdate(BaseModel):
     category_id: Optional[int] = None
     assigned_to_id: Optional[int] = None
     current_target_date: Optional[date] = None
+    target_date_change_reason: Optional[str] = None
 
 
 class RecommendationResponse(BaseModel):
@@ -382,6 +428,7 @@ class RecommendationResponse(BaseModel):
     assigned_to: UserSummary
     original_target_date: date
     current_target_date: date
+    target_date_change_reason: Optional[str] = None
     finalized_at: Optional[datetime] = None
     finalized_by: Optional[UserSummary] = None
     acknowledged_at: Optional[datetime] = None

@@ -27,6 +27,13 @@ interface WhollyOwnedRegion {
     name: string;
 }
 
+// Region as returned in model list (different from Region API)
+interface ModelRegionItem {
+    region_id: number;
+    region_code: string;
+    region_name: string;
+}
+
 interface ModelType {
     type_id: number;
     category_id: number;
@@ -66,7 +73,7 @@ interface Model {
     developer: User | null;
     vendor: Vendor | null;
     users: User[];
-    regions: Region[];
+    regions: ModelRegionItem[];
 }
 
 export default function ModelsPage() {
@@ -661,7 +668,7 @@ export default function ModelsPage() {
                             value = model.wholly_owned_region ? `${model.wholly_owned_region.name} (${model.wholly_owned_region.code})` : '';
                             break;
                         case 'regions':
-                            value = model.regions ? model.regions.map(r => r.code).join('; ') : '';
+                            value = model.regions ? model.regions.map(r => r.region_code).join('; ') : '';
                             break;
                         case 'row_approval_status':
                             value = model.row_approval_status || 'Approved';
@@ -1655,7 +1662,7 @@ export default function ModelsPage() {
                                                 <div className="flex flex-wrap gap-1">
                                                     {model.regions.map(r => (
                                                         <span key={r.region_id} className="px-2 py-0.5 bg-blue-100 text-blue-800 rounded text-xs font-semibold">
-                                                            {r.code}
+                                                            {r.region_code}
                                                         </span>
                                                     ))}
                                                 </div>

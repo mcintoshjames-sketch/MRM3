@@ -1,10 +1,20 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import api from '../api/client';
 import { recommendationsApi, TaxonomyValue } from '../api/recommendations';
 
 interface Model {
     model_id: number;
     model_name: string;
+}
+
+interface TimeframeInfo {
+    priority_code: string;
+    risk_tier_code: string;
+    usage_frequency_code: string;
+    max_days: number;
+    calculated_max_date: string;
+    enforce_timeframes: boolean;
+    enforced_by_region: string | null;
 }
 
 interface User {
@@ -59,13 +69,16 @@ export default function RecommendationCreateModal({
         priority_id: 0,
         category_id: null as number | null,
         assigned_to_id: 0,
-        original_target_date: ''
+        original_target_date: '',
+        target_date_change_reason: ''
     });
 
     const [validationRequests, setValidationRequests] = useState<ValidationRequest[]>([]);
     const [monitoringCycles, setMonitoringCycles] = useState<MonitoringCycle[]>([]);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const [timeframeInfo, setTimeframeInfo] = useState<TimeframeInfo | null>(null);
+    const [timeframeLoading, setTimeframeLoading] = useState(false);
 
     // Fetch validation requests and monitoring cycles for selected model
     useEffect(() => {
@@ -120,15 +133,58 @@ export default function RecommendationCreateModal({
         fetchMonitoringCycles();
     }, [formData.model_id, models]);
 
-    // Set default target date (30 days from now)
-    useEffect(() => {
-        const defaultDate = new Date();
-        defaultDate.setDate(defaultDate.getDate() + 30);
-        setFormData(prev => ({
-            ...prev,
-            original_target_date: defaultDate.toISOString().split('T')[0]
-        }));
+    // Calculate timeframe when model and priority are selected
+    const calculateTimeframe = useCallback(async (modelId: number, priorityId: number) => {
+        if (!modelId || !priorityId) {
+            setTimeframeInfo(null);
+            return;
+        }
+
+        setTimeframeLoading(true);
+        try {
+            const response = await api.post('/recommendations/timeframe-config/calculate', {
+                model_id: modelId,
+                priority_id: priorityId
+            });
+            const info = response.data as TimeframeInfo;
+            setTimeframeInfo(info);
+
+            // Set default target date to calculated max date
+            setFormData(prev => ({
+                ...prev,
+                original_target_date: info.calculated_max_date,
+                target_date_change_reason: '' // Clear reason when switching to default
+            }));
+        } catch (err) {
+            console.error('Failed to calculate timeframe:', err);
+            setTimeframeInfo(null);
+            // Fall back to default 30 days if calculation fails
+            const defaultDate = new Date();
+            defaultDate.setDate(defaultDate.getDate() + 30);
+            setFormData(prev => ({
+                ...prev,
+                original_target_date: defaultDate.toISOString().split('T')[0]
+            }));
+        } finally {
+            setTimeframeLoading(false);
+        }
     }, []);
+
+    // Trigger timeframe calculation when model or priority changes
+    useEffect(() => {
+        if (formData.model_id && formData.priority_id) {
+            calculateTimeframe(formData.model_id, formData.priority_id);
+        } else {
+            setTimeframeInfo(null);
+            // Set default 30 days if no model/priority yet
+            const defaultDate = new Date();
+            defaultDate.setDate(defaultDate.getDate() + 30);
+            setFormData(prev => ({
+                ...prev,
+                original_target_date: defaultDate.toISOString().split('T')[0]
+            }));
+        }
+    }, [formData.model_id, formData.priority_id, calculateTimeframe]);
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -171,7 +227,8 @@ export default function RecommendationCreateModal({
                 priority_id: formData.priority_id,
                 category_id: formData.category_id || undefined,
                 assigned_to_id: formData.assigned_to_id,
-                original_target_date: formData.original_target_date
+                original_target_date: formData.original_target_date,
+                target_date_change_reason: formData.target_date_change_reason?.trim() || undefined
             });
             onCreated();
         } catch (err: any) {
@@ -401,12 +458,56 @@ export default function RecommendationCreateModal({
                                         onChange={(e) => setFormData({ ...formData, original_target_date: e.target.value })}
                                         required
                                         min={new Date().toISOString().split('T')[0]}
+                                        max={timeframeInfo?.enforce_timeframes ? timeframeInfo.calculated_max_date : undefined}
                                     />
-                                    <p className="text-xs text-gray-500 mt-1">
-                                        Deadline for remediation
-                                    </p>
+                                    {timeframeLoading && (
+                                        <p className="text-xs text-gray-500 mt-1">
+                                            Calculating timeframe...
+                                        </p>
+                                    )}
+                                    {timeframeInfo && !timeframeLoading && (
+                                        <div className="mt-2 space-y-1">
+                                            <p className="text-xs text-gray-600">
+                                                <span className="font-medium">Max allowed:</span> {timeframeInfo.calculated_max_date}
+                                                {' '}({timeframeInfo.max_days} days from creation)
+                                            </p>
+                                            {timeframeInfo.enforce_timeframes ? (
+                                                <p className="text-xs text-amber-600 bg-amber-50 px-2 py-1 rounded">
+                                                    ⚠️ Timeframe enforced
+                                                    {timeframeInfo.enforced_by_region && ` by ${timeframeInfo.enforced_by_region}`}
+                                                    — target date cannot exceed {timeframeInfo.calculated_max_date}
+                                                </p>
+                                            ) : (
+                                                <p className="text-xs text-blue-600 bg-blue-50 px-2 py-1 rounded">
+                                                    ℹ️ Suggested deadline based on priority, risk tier, and usage frequency
+                                                </p>
+                                            )}
+                                        </div>
+                                    )}
                                 </div>
                             </div>
+
+                            {/* Target Date Change Reason (required when date differs from calculated max) */}
+                            {timeframeInfo && formData.original_target_date &&
+                             formData.original_target_date !== timeframeInfo.calculated_max_date && (
+                                <div>
+                                    <label htmlFor="target_date_reason" className="block text-sm font-medium text-gray-700 mb-1">
+                                        Reason for Target Date <span className="text-red-500">*</span>
+                                    </label>
+                                    <textarea
+                                        id="target_date_reason"
+                                        className="input-field"
+                                        rows={2}
+                                        value={formData.target_date_change_reason}
+                                        onChange={(e) => setFormData({ ...formData, target_date_change_reason: e.target.value })}
+                                        placeholder="Explain why this target date differs from the calculated maximum..."
+                                        required
+                                    />
+                                    <p className="text-xs text-gray-500 mt-1">
+                                        Required because target date ({formData.original_target_date}) differs from calculated max ({timeframeInfo.calculated_max_date})
+                                    </p>
+                                </div>
+                            )}
                         </div>
 
                         {/* Actions */}

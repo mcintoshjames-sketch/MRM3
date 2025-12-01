@@ -53,6 +53,7 @@ export interface Recommendation {
     assigned_to_id: number;
     original_target_date: string;
     current_target_date: string;
+    target_date_change_reason: string | null;
     closed_at: string | null;
     closed_by_id: number | null;
     closure_summary: string | null;
@@ -113,6 +114,7 @@ export interface RecommendationCreate {
     category_id?: number | null;
     assigned_to_id: number;
     original_target_date: string;
+    target_date_change_reason?: string;
 }
 
 export interface RecommendationUpdate {
@@ -123,6 +125,7 @@ export interface RecommendationUpdate {
     category_id?: number | null;
     assigned_to_id?: number;
     current_target_date?: string;
+    target_date_change_reason?: string;
 }
 
 // Action Plan Tasks

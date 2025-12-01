@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import api from '../api/client';
 import Layout from '../components/Layout';
 
@@ -145,6 +145,7 @@ interface RecommendationPriorityConfig {
     };
     requires_final_approval: boolean;
     requires_action_plan: boolean;
+    enforce_timeframes: boolean;
     description: string | null;
     created_at: string;
     updated_at: string;
@@ -164,6 +165,7 @@ interface RegionalOverride {
     };
     requires_action_plan: boolean | null;
     requires_final_approval: boolean | null;
+    enforce_timeframes: boolean | null;
     description: string | null;
     created_at: string;
     updated_at: string;
@@ -184,6 +186,12 @@ export default function TaxonomyPage() {
     const [priorityConfigLoading, setPriorityConfigLoading] = useState(false);
     const [priorityConfigError, setPriorityConfigError] = useState<string | null>(null);
     const [editingPriorityConfig, setEditingPriorityConfig] = useState<RecommendationPriorityConfig | null>(null);
+
+    // Timeframe Config state
+    const [timeframeConfigs, setTimeframeConfigs] = useState<any[]>([]);
+    const [timeframeConfigsLoading, setTimeframeConfigsLoading] = useState(false);
+    const [showTimeframeSection, setShowTimeframeSection] = useState(false);
+    const [editingTimeframeConfig, setEditingTimeframeConfig] = useState<any | null>(null);
 
     // Regional Override state
     const [regionalOverrides, setRegionalOverrides] = useState<Record<number, RegionalOverride[]>>({});
@@ -930,6 +938,7 @@ export default function TaxonomyPage() {
             await api.patch(`/recommendations/priority-config/${config.priority.value_id}`, {
                 requires_final_approval: config.requires_final_approval,
                 requires_action_plan: config.requires_action_plan,
+                enforce_timeframes: config.enforce_timeframes,
                 description: config.description
             });
             await fetchPriorityConfigs();
@@ -938,6 +947,45 @@ export default function TaxonomyPage() {
             console.error('Error updating priority config:', error);
             alert('Failed to update priority configuration');
         }
+    };
+
+    // ============================================================================
+    // TIMEFRAME CONFIG FUNCTIONS
+    // ============================================================================
+
+    const fetchTimeframeConfigs = async () => {
+        try {
+            setTimeframeConfigsLoading(true);
+            const response = await api.get('/recommendations/timeframe-config/');
+            setTimeframeConfigs(response.data);
+        } catch (error) {
+            console.error('Error fetching timeframe configs:', error);
+        } finally {
+            setTimeframeConfigsLoading(false);
+        }
+    };
+
+    const handleSaveTimeframeConfig = async () => {
+        if (!editingTimeframeConfig) return;
+
+        try {
+            await api.patch(`/recommendations/timeframe-config/${editingTimeframeConfig.config_id}`, {
+                max_days: editingTimeframeConfig.max_days,
+                description: editingTimeframeConfig.description
+            });
+            await fetchTimeframeConfigs();
+            setEditingTimeframeConfig(null);
+        } catch (error) {
+            console.error('Error updating timeframe config:', error);
+            alert('Failed to update timeframe configuration');
+        }
+    };
+
+    const toggleTimeframeSection = async () => {
+        if (!showTimeframeSection) {
+            await fetchTimeframeConfigs();
+        }
+        setShowTimeframeSection(!showTimeframeSection);
     };
 
     // ============================================================================
@@ -992,12 +1040,14 @@ export default function TaxonomyPage() {
                     region_id: override.region?.region_id,
                     requires_action_plan: override.requires_action_plan,
                     requires_final_approval: override.requires_final_approval,
+                    enforce_timeframes: override.enforce_timeframes,
                     description: override.description
                 });
             } else {
                 await api.patch(`/recommendations/priority-config/regional-overrides/${override.override_id}`, {
                     requires_action_plan: override.requires_action_plan,
                     requires_final_approval: override.requires_final_approval,
+                    enforce_timeframes: override.enforce_timeframes,
                     description: override.description
                 });
             }
@@ -2677,6 +2727,9 @@ export default function TaxonomyPage() {
                                             Requires Final Approval
                                         </th>
                                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                            Enforce Timeframes
+                                        </th>
+                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                                             Description
                                         </th>
                                         <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -2686,8 +2739,8 @@ export default function TaxonomyPage() {
                                 </thead>
                                 <tbody className="bg-white divide-y divide-gray-200">
                                     {priorityConfigs.map((config) => (
-                                        <>
-                                            <tr key={config.config_id} className="hover:bg-gray-50">
+                                        <React.Fragment key={config.config_id}>
+                                            <tr className="hover:bg-gray-50">
                                                 <td className="px-2 py-4">
                                                     <button
                                                         onClick={() => togglePriorityExpanded(config.priority.value_id)}
@@ -2736,6 +2789,14 @@ export default function TaxonomyPage() {
                                                     </span>
                                                     <span className="ml-1 text-xs text-gray-400">(default)</span>
                                                 </td>
+                                                <td className="px-6 py-4 whitespace-nowrap">
+                                                    <span className={`inline-flex px-2 py-1 text-xs font-medium rounded-full ${
+                                                        config.enforce_timeframes ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-600'
+                                                    }`}>
+                                                        {config.enforce_timeframes ? 'Yes' : 'No'}
+                                                    </span>
+                                                    <span className="ml-1 text-xs text-gray-400">(default)</span>
+                                                </td>
                                                 <td className="px-6 py-4">
                                                     <p className="text-sm text-gray-600 max-w-xs truncate" title={config.description || ''}>
                                                         {config.description || '—'}
@@ -2753,8 +2814,8 @@ export default function TaxonomyPage() {
 
                                             {/* Expanded Regional Overrides Section */}
                                             {expandedPriorityIds.has(config.priority.value_id) && (
-                                                <tr key={`${config.config_id}-overrides`}>
-                                                    <td colSpan={6} className="bg-gray-50 px-6 py-4">
+                                                <tr>
+                                                    <td colSpan={7} className="bg-gray-50 px-6 py-4">
                                                         <div className="ml-8">
                                                             <div className="flex justify-between items-center mb-3">
                                                                 <h4 className="text-sm font-medium text-gray-700">
@@ -2773,6 +2834,7 @@ export default function TaxonomyPage() {
                                                                             override: {
                                                                                 requires_action_plan: null,
                                                                                 requires_final_approval: null,
+                                                                                enforce_timeframes: null,
                                                                                 description: ''
                                                                             }
                                                                         });
@@ -2794,6 +2856,7 @@ export default function TaxonomyPage() {
                                                                             <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Region</th>
                                                                             <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Requires Action Plan</th>
                                                                             <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Requires Final Approval</th>
+                                                                            <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Enforce Timeframes</th>
                                                                             <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Description</th>
                                                                             <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">Actions</th>
                                                                         </tr>
@@ -2826,6 +2889,17 @@ export default function TaxonomyPage() {
                                                                                             override.requires_final_approval ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-600'
                                                                                         }`}>
                                                                                             {override.requires_final_approval ? 'Yes' : 'No'}
+                                                                                        </span>
+                                                                                    )}
+                                                                                </td>
+                                                                                <td className="px-4 py-2">
+                                                                                    {override.enforce_timeframes === null ? (
+                                                                                        <span className="text-xs text-gray-400 italic">Inherit default</span>
+                                                                                    ) : (
+                                                                                        <span className={`inline-flex px-2 py-1 text-xs font-medium rounded-full ${
+                                                                                            override.enforce_timeframes ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-600'
+                                                                                        }`}>
+                                                                                            {override.enforce_timeframes ? 'Yes' : 'No'}
                                                                                         </span>
                                                                                     )}
                                                                                 </td>
@@ -2866,7 +2940,7 @@ export default function TaxonomyPage() {
                                                     </td>
                                                 </tr>
                                             )}
-                                        </>
+                                        </React.Fragment>
                                     ))}
                                 </tbody>
                             </table>
@@ -2915,6 +2989,24 @@ export default function TaxonomyPage() {
                                         </label>
                                         <p className="mt-1 text-xs text-gray-500 ml-6">
                                             If checked, closure requires approval from designated approvers before the recommendation can be closed.
+                                        </p>
+                                    </div>
+
+                                    <div>
+                                        <label className="flex items-center">
+                                            <input
+                                                type="checkbox"
+                                                checked={editingPriorityConfig.enforce_timeframes}
+                                                onChange={(e) => setEditingPriorityConfig({
+                                                    ...editingPriorityConfig,
+                                                    enforce_timeframes: e.target.checked
+                                                })}
+                                                className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                                            />
+                                            <span className="ml-2 text-sm text-gray-700">Enforce Timeframes</span>
+                                        </label>
+                                        <p className="mt-1 text-xs text-gray-500 ml-6">
+                                            If checked, target dates must be within the maximum allowed timeframe. If unchecked, timeframe limits are advisory only.
                                         </p>
                                     </div>
 
@@ -3101,6 +3193,55 @@ export default function TaxonomyPage() {
                                         </p>
                                     </div>
 
+                                    {/* Enforce Timeframes */}
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 mb-2">Enforce Timeframes</label>
+                                        <div className="flex space-x-4">
+                                            <label className="flex items-center">
+                                                <input
+                                                    type="radio"
+                                                    name="enforce_timeframes"
+                                                    checked={editingRegionalOverride.override.enforce_timeframes === null}
+                                                    onChange={() => setEditingRegionalOverride({
+                                                        ...editingRegionalOverride,
+                                                        override: { ...editingRegionalOverride.override, enforce_timeframes: null }
+                                                    })}
+                                                    className="mr-2"
+                                                />
+                                                <span className="text-sm text-gray-700">Inherit default</span>
+                                            </label>
+                                            <label className="flex items-center">
+                                                <input
+                                                    type="radio"
+                                                    name="enforce_timeframes"
+                                                    checked={editingRegionalOverride.override.enforce_timeframes === true}
+                                                    onChange={() => setEditingRegionalOverride({
+                                                        ...editingRegionalOverride,
+                                                        override: { ...editingRegionalOverride.override, enforce_timeframes: true }
+                                                    })}
+                                                    className="mr-2"
+                                                />
+                                                <span className="text-sm text-gray-700">Yes</span>
+                                            </label>
+                                            <label className="flex items-center">
+                                                <input
+                                                    type="radio"
+                                                    name="enforce_timeframes"
+                                                    checked={editingRegionalOverride.override.enforce_timeframes === false}
+                                                    onChange={() => setEditingRegionalOverride({
+                                                        ...editingRegionalOverride,
+                                                        override: { ...editingRegionalOverride.override, enforce_timeframes: false }
+                                                    })}
+                                                    className="mr-2"
+                                                />
+                                                <span className="text-sm text-gray-700">No</span>
+                                            </label>
+                                        </div>
+                                        <p className="mt-1 text-xs text-gray-500">
+                                            Override the default timeframe enforcement for models deployed in this region.
+                                        </p>
+                                    </div>
+
                                     {/* Description */}
                                     <div>
                                         <label className="block text-sm font-medium text-gray-700">Description</label>
@@ -3134,6 +3275,251 @@ export default function TaxonomyPage() {
                                         }`}
                                     >
                                         {editingRegionalOverride.isNew ? 'Create Override' : 'Save Changes'}
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Timeframe Configuration Section */}
+                    <div className="mt-8 border-t pt-6">
+                        <button
+                            onClick={toggleTimeframeSection}
+                            className="flex items-center justify-between w-full text-left"
+                        >
+                            <div>
+                                <h3 className="text-lg font-medium text-gray-900">Timeframe Configurations</h3>
+                                <p className="text-sm text-gray-500">
+                                    Configure maximum remediation days by priority, risk tier, and usage frequency
+                                </p>
+                            </div>
+                            <svg
+                                className={`h-5 w-5 text-gray-500 transform transition-transform ${showTimeframeSection ? 'rotate-180' : ''}`}
+                                fill="none"
+                                viewBox="0 0 24 24"
+                                stroke="currentColor"
+                            >
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                            </svg>
+                        </button>
+
+                        {showTimeframeSection && (
+                            <div className="mt-4">
+                                {timeframeConfigsLoading ? (
+                                    <div className="text-center py-8">
+                                        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto"></div>
+                                        <p className="mt-2 text-sm text-gray-500">Loading timeframe configurations...</p>
+                                    </div>
+                                ) : (
+                                    <>
+                                        {/* Color Legend */}
+                                        <div className="mb-4 flex flex-wrap gap-4 text-xs">
+                                            <span className="flex items-center gap-1">
+                                                <span className="inline-block w-4 h-4 rounded bg-red-100 border border-red-200"></span>
+                                                <span className="text-gray-600">Immediate (0 days)</span>
+                                            </span>
+                                            <span className="flex items-center gap-1">
+                                                <span className="inline-block w-4 h-4 rounded bg-orange-100 border border-orange-200"></span>
+                                                <span className="text-gray-600">1-90 days</span>
+                                            </span>
+                                            <span className="flex items-center gap-1">
+                                                <span className="inline-block w-4 h-4 rounded bg-yellow-100 border border-yellow-200"></span>
+                                                <span className="text-gray-600">91-180 days</span>
+                                            </span>
+                                            <span className="flex items-center gap-1">
+                                                <span className="inline-block w-4 h-4 rounded bg-blue-100 border border-blue-200"></span>
+                                                <span className="text-gray-600">181-365 days</span>
+                                            </span>
+                                            <span className="flex items-center gap-1">
+                                                <span className="inline-block w-4 h-4 rounded bg-green-100 border border-green-200"></span>
+                                                <span className="text-gray-600">&gt;365 days</span>
+                                            </span>
+                                        </div>
+
+                                        {/* 2D Matrix Grid by Priority */}
+                                        {['HIGH', 'MEDIUM', 'LOW'].map((priority) => {
+                                            const priorityConfigs = timeframeConfigs.filter(c => c.priority?.code === priority);
+                                            if (priorityConfigs.length === 0) return null;
+
+                                            const riskTiers = ['TIER_1', 'TIER_2', 'TIER_3', 'TIER_4'];
+                                            const usageFrequencies = ['DAILY', 'MONTHLY', 'QUARTERLY', 'ANNUALLY'];
+
+                                            const riskTierLabels: Record<string, string> = {
+                                                'TIER_1': 'Tier 1 (High)',
+                                                'TIER_2': 'Tier 2 (Medium)',
+                                                'TIER_3': 'Tier 3 (Low)',
+                                                'TIER_4': 'Tier 4 (Very Low)'
+                                            };
+
+                                            const frequencyLabels: Record<string, string> = {
+                                                'DAILY': 'Daily',
+                                                'MONTHLY': 'Monthly',
+                                                'QUARTERLY': 'Quarterly',
+                                                'ANNUALLY': 'Annually'
+                                            };
+
+                                            // Helper to find config for a specific tier/frequency combination
+                                            const findConfig = (tierCode: string, freqCode: string) => {
+                                                return priorityConfigs.find(
+                                                    c => c.risk_tier?.code === tierCode && c.usage_frequency?.code === freqCode
+                                                );
+                                            };
+
+                                            // Get background color class for cell (without text color)
+                                            const getCellBgColor = (maxDays: number): string => {
+                                                if (maxDays === 0) return 'bg-red-100 hover:bg-red-200';
+                                                if (maxDays <= 90) return 'bg-orange-100 hover:bg-orange-200';
+                                                if (maxDays <= 180) return 'bg-yellow-100 hover:bg-yellow-200';
+                                                if (maxDays <= 365) return 'bg-blue-100 hover:bg-blue-200';
+                                                return 'bg-green-100 hover:bg-green-200';
+                                            };
+
+                                            return (
+                                                <div key={priority} className="mb-8">
+                                                    <h4 className={`text-sm font-semibold mb-3 ${
+                                                        priority === 'HIGH' ? 'text-red-700' :
+                                                        priority === 'MEDIUM' ? 'text-amber-700' :
+                                                        'text-green-700'
+                                                    }`}>
+                                                        {priority} Priority
+                                                    </h4>
+                                                    <div className="overflow-x-auto">
+                                                        <table className="border-collapse border border-gray-300 rounded-lg">
+                                                            <thead>
+                                                                <tr>
+                                                                    <th className="border border-gray-300 bg-gray-100 px-4 py-2 text-xs font-medium text-gray-600 uppercase w-32">
+                                                                        Risk Tier
+                                                                    </th>
+                                                                    {usageFrequencies.map(freq => (
+                                                                        <th key={freq} className="border border-gray-300 bg-gray-100 px-4 py-2 text-xs font-medium text-gray-600 uppercase text-center min-w-[100px]">
+                                                                            {frequencyLabels[freq]}
+                                                                        </th>
+                                                                    ))}
+                                                                </tr>
+                                                            </thead>
+                                                            <tbody>
+                                                                {riskTiers.map(tier => (
+                                                                    <tr key={tier}>
+                                                                        <td className="border border-gray-300 bg-gray-50 px-4 py-2 text-sm font-medium text-gray-700">
+                                                                            {riskTierLabels[tier]}
+                                                                        </td>
+                                                                        {usageFrequencies.map(freq => {
+                                                                            const config = findConfig(tier, freq);
+                                                                            return (
+                                                                                <td
+                                                                                    key={`${tier}-${freq}`}
+                                                                                    className={`border border-gray-300 px-4 py-3 text-center cursor-pointer transition-colors ${
+                                                                                        config ? getCellBgColor(config.max_days) : 'bg-gray-50 hover:bg-gray-100'
+                                                                                    }`}
+                                                                                    onClick={() => config && setEditingTimeframeConfig({...config})}
+                                                                                    title={config ? `Click to edit: ${config.max_days} days` : 'No configuration'}
+                                                                                >
+                                                                                    {config ? (
+                                                                                        <span className="text-sm font-semibold text-gray-800">
+                                                                                            {config.max_days === 0 ? 'Immediate' : `${config.max_days}d`}
+                                                                                        </span>
+                                                                                    ) : (
+                                                                                        <span className="text-gray-400">-</span>
+                                                                                    )}
+                                                                                </td>
+                                                                            );
+                                                                        })}
+                                                                    </tr>
+                                                                ))}
+                                                            </tbody>
+                                                        </table>
+                                                    </div>
+                                                    <p className="mt-2 text-xs text-gray-500">
+                                                        Click any cell to edit the maximum remediation days
+                                                    </p>
+                                                </div>
+                                            );
+                                        })}
+
+                                        {timeframeConfigs.length === 0 && (
+                                            <p className="text-sm text-gray-500 text-center py-4">
+                                                No timeframe configurations found. Run database seed to create default configurations.
+                                            </p>
+                                        )}
+                                    </>
+                                )}
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Timeframe Config Edit Modal */}
+                    {editingTimeframeConfig && (
+                        <div className="fixed inset-0 bg-gray-500 bg-opacity-75 flex items-center justify-center z-50">
+                            <div className="bg-white rounded-lg shadow-xl max-w-md w-full">
+                                <div className="px-6 py-4 border-b border-gray-200">
+                                    <h3 className="text-lg font-medium text-gray-900">
+                                        Edit Timeframe Configuration
+                                    </h3>
+                                </div>
+                                <div className="px-6 py-4 space-y-4">
+                                    {/* Read-only fields */}
+                                    <div className="grid grid-cols-3 gap-4">
+                                        <div>
+                                            <label className="block text-xs font-medium text-gray-500">Priority</label>
+                                            <p className="mt-1 text-sm font-medium text-gray-900">{editingTimeframeConfig.priority?.label || editingTimeframeConfig.priority?.code}</p>
+                                        </div>
+                                        <div>
+                                            <label className="block text-xs font-medium text-gray-500">Risk Tier</label>
+                                            <p className="mt-1 text-sm font-medium text-gray-900">{editingTimeframeConfig.risk_tier?.label || editingTimeframeConfig.risk_tier?.code?.replace('_', ' ')}</p>
+                                        </div>
+                                        <div>
+                                            <label className="block text-xs font-medium text-gray-500">Frequency</label>
+                                            <p className="mt-1 text-sm font-medium text-gray-900">{editingTimeframeConfig.usage_frequency?.label || editingTimeframeConfig.usage_frequency?.code}</p>
+                                        </div>
+                                    </div>
+
+                                    {/* Editable fields */}
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700">
+                                            Maximum Days <span className="text-red-500">*</span>
+                                        </label>
+                                        <input
+                                            type="number"
+                                            min="0"
+                                            value={editingTimeframeConfig.max_days}
+                                            onChange={(e) => setEditingTimeframeConfig({
+                                                ...editingTimeframeConfig,
+                                                max_days: parseInt(e.target.value) || 0
+                                            })}
+                                            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 input-field"
+                                        />
+                                        <p className="mt-1 text-xs text-gray-500">
+                                            Use 0 for immediate remediation requirement
+                                        </p>
+                                    </div>
+
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700">Description</label>
+                                        <textarea
+                                            value={editingTimeframeConfig.description || ''}
+                                            onChange={(e) => setEditingTimeframeConfig({
+                                                ...editingTimeframeConfig,
+                                                description: e.target.value
+                                            })}
+                                            rows={2}
+                                            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 input-field"
+                                            placeholder="Optional description..."
+                                        />
+                                    </div>
+                                </div>
+
+                                <div className="px-6 py-4 border-t border-gray-200 flex justify-end space-x-3">
+                                    <button
+                                        onClick={() => setEditingTimeframeConfig(null)}
+                                        className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50"
+                                    >
+                                        Cancel
+                                    </button>
+                                    <button
+                                        onClick={handleSaveTimeframeConfig}
+                                        className="px-4 py-2 text-sm font-medium text-white bg-blue-600 border border-transparent rounded-md hover:bg-blue-700"
+                                    >
+                                        Save Changes
                                     </button>
                                 </div>
                             </div>

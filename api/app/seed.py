@@ -6,7 +6,7 @@ from app.core.database import SessionLocal
 from app.core.time import utc_now
 from app.core.security import get_password_hash
 from app.models import User, UserRole, Vendor, EntraUser, Taxonomy, TaxonomyValue, ValidationWorkflowSLA, ValidationPolicy, Region, ValidationComponentDefinition, ComponentDefinitionConfiguration, ComponentDefinitionConfigItem, ModelTypeCategory, ModelType, ValidationRequest, ValidationOutcome, ValidationRequestModelVersion, ApproverRole, ConditionalApprovalRule, RuleRequiredApprover, MapApplication
-from app.models.recommendation import RecommendationPriorityConfig
+from app.models.recommendation import RecommendationPriorityConfig, RecommendationTimeframeConfig
 from app.models.kpm import KpmCategory, Kpm
 from app.models.model import Model
 
@@ -491,6 +491,222 @@ def seed_initial_component_configuration(db, admin_user):
         f"✓ Created initial configuration (config_id: {initial_config.config_id}) with {len(components)} component snapshots")
 
     return initial_config
+
+
+def seed_priority_configs(db):
+    """
+    Seed RecommendationPriorityConfig entries with enforce_timeframes settings.
+
+    Configuration per priority level:
+    - HIGH/MEDIUM/LOW: enforce_timeframes=True (strict enforcement)
+    - CONSIDERATION: enforce_timeframes=False (no remediation tracking)
+    """
+    print("\n=== Seeding Recommendation Priority Configurations ===")
+
+    rec_priority_taxonomy = db.query(Taxonomy).filter(
+        Taxonomy.name == "Recommendation Priority"
+    ).first()
+
+    if not rec_priority_taxonomy:
+        print("⚠ Recommendation Priority taxonomy not found - skipping priority config seeding")
+        return
+
+    # Configuration for each priority level
+    priority_configs = {
+        "HIGH": {
+            "requires_final_approval": True,
+            "requires_action_plan": True,
+            "enforce_timeframes": True,
+            "description": "High priority - full approval workflow, action plan required, strict timeframe enforcement"
+        },
+        "MEDIUM": {
+            "requires_final_approval": True,
+            "requires_action_plan": True,
+            "enforce_timeframes": True,
+            "description": "Medium priority - full approval workflow, action plan required, strict timeframe enforcement"
+        },
+        "LOW": {
+            "requires_final_approval": False,
+            "requires_action_plan": True,
+            "enforce_timeframes": True,
+            "description": "Low priority - validator approval sufficient, action plan required, strict timeframe enforcement"
+        },
+        "CONSIDERATION": {
+            "requires_final_approval": False,
+            "requires_action_plan": False,
+            "enforce_timeframes": False,
+            "description": "Consideration - no action plan required, no timeframe enforcement"
+        },
+    }
+
+    for priority_code, config_data in priority_configs.items():
+        priority_value = db.query(TaxonomyValue).filter(
+            TaxonomyValue.taxonomy_id == rec_priority_taxonomy.taxonomy_id,
+            TaxonomyValue.code == priority_code
+        ).first()
+
+        if priority_value:
+            existing_config = db.query(RecommendationPriorityConfig).filter(
+                RecommendationPriorityConfig.priority_id == priority_value.value_id
+            ).first()
+
+            if not existing_config:
+                config = RecommendationPriorityConfig(
+                    priority_id=priority_value.value_id,
+                    requires_final_approval=config_data["requires_final_approval"],
+                    requires_action_plan=config_data["requires_action_plan"],
+                    enforce_timeframes=config_data["enforce_timeframes"],
+                    description=config_data["description"],
+                    created_at=utc_now(),
+                    updated_at=utc_now()
+                )
+                db.add(config)
+                print(f"✓ Created priority config for {priority_value.label}")
+            else:
+                # Update existing config if enforce_timeframes not set correctly
+                if existing_config.enforce_timeframes != config_data["enforce_timeframes"]:
+                    existing_config.enforce_timeframes = config_data["enforce_timeframes"]
+                    print(f"✓ Updated enforce_timeframes for {priority_value.label}")
+                else:
+                    print(f"✓ Priority config already exists for {priority_value.label}")
+
+    db.commit()
+
+
+def seed_timeframe_configs(db):
+    """
+    Seed RecommendationTimeframeConfig entries for all priority/risk/frequency combinations.
+
+    Creates 48 configs: 3 priorities (HIGH, MEDIUM, LOW) × 4 risk tiers × 4 frequencies
+    CONSIDERATION priority is excluded as it has no timeframe enforcement.
+
+    Values are based on REC_TIMES.json specification.
+    """
+    print("\n=== Seeding Recommendation Timeframe Configurations ===")
+
+    # Get required taxonomies
+    rec_priority_taxonomy = db.query(Taxonomy).filter(
+        Taxonomy.name == "Recommendation Priority"
+    ).first()
+    risk_tier_taxonomy = db.query(Taxonomy).filter(
+        Taxonomy.name == "Model Risk Tier"
+    ).first()
+    usage_freq_taxonomy = db.query(Taxonomy).filter(
+        Taxonomy.name == "Model Usage Frequency"
+    ).first()
+
+    if not rec_priority_taxonomy or not risk_tier_taxonomy or not usage_freq_taxonomy:
+        print("⚠ Required taxonomies not found - skipping timeframe config seeding")
+        return
+
+    # Get taxonomy values
+    priorities = {v.code: v.value_id for v in db.query(TaxonomyValue).filter(
+        TaxonomyValue.taxonomy_id == rec_priority_taxonomy.taxonomy_id,
+        TaxonomyValue.code.in_(["HIGH", "MEDIUM", "LOW"])  # Exclude CONSIDERATION
+    ).all()}
+
+    risk_tiers = {v.code: v.value_id for v in db.query(TaxonomyValue).filter(
+        TaxonomyValue.taxonomy_id == risk_tier_taxonomy.taxonomy_id
+    ).all()}
+
+    frequencies = {v.code: v.value_id for v in db.query(TaxonomyValue).filter(
+        TaxonomyValue.taxonomy_id == usage_freq_taxonomy.taxonomy_id
+    ).all()}
+
+    # Timeframe data based on REC_TIMES.json
+    # Format: (priority, risk_tier, frequency) -> max_days
+    timeframe_data = {
+        # HIGH priority - strictest timeframes
+        ("HIGH", "TIER_1", "DAILY"): 0,
+        ("HIGH", "TIER_1", "MONTHLY"): 0,
+        ("HIGH", "TIER_1", "QUARTERLY"): 90,
+        ("HIGH", "TIER_1", "ANNUALLY"): 90,
+        ("HIGH", "TIER_2", "DAILY"): 0,
+        ("HIGH", "TIER_2", "MONTHLY"): 90,
+        ("HIGH", "TIER_2", "QUARTERLY"): 90,
+        ("HIGH", "TIER_2", "ANNUALLY"): 180,
+        ("HIGH", "TIER_3", "DAILY"): 90,
+        ("HIGH", "TIER_3", "MONTHLY"): 90,
+        ("HIGH", "TIER_3", "QUARTERLY"): 180,
+        ("HIGH", "TIER_3", "ANNUALLY"): 180,
+        ("HIGH", "TIER_4", "DAILY"): 90,
+        ("HIGH", "TIER_4", "MONTHLY"): 90,
+        ("HIGH", "TIER_4", "QUARTERLY"): 180,
+        ("HIGH", "TIER_4", "ANNUALLY"): 180,
+
+        # MEDIUM priority - moderate timeframes
+        ("MEDIUM", "TIER_1", "DAILY"): 180,
+        ("MEDIUM", "TIER_1", "MONTHLY"): 180,
+        ("MEDIUM", "TIER_1", "QUARTERLY"): 180,
+        ("MEDIUM", "TIER_1", "ANNUALLY"): 180,
+        ("MEDIUM", "TIER_2", "DAILY"): 180,
+        ("MEDIUM", "TIER_2", "MONTHLY"): 180,
+        ("MEDIUM", "TIER_2", "QUARTERLY"): 180,
+        ("MEDIUM", "TIER_2", "ANNUALLY"): 365,
+        ("MEDIUM", "TIER_3", "DAILY"): 180,
+        ("MEDIUM", "TIER_3", "MONTHLY"): 180,
+        ("MEDIUM", "TIER_3", "QUARTERLY"): 365,
+        ("MEDIUM", "TIER_3", "ANNUALLY"): 365,
+        ("MEDIUM", "TIER_4", "DAILY"): 180,
+        ("MEDIUM", "TIER_4", "MONTHLY"): 180,
+        ("MEDIUM", "TIER_4", "QUARTERLY"): 365,
+        ("MEDIUM", "TIER_4", "ANNUALLY"): 365,
+
+        # LOW priority - longest timeframes
+        ("LOW", "TIER_1", "DAILY"): 365,
+        ("LOW", "TIER_1", "MONTHLY"): 365,
+        ("LOW", "TIER_1", "QUARTERLY"): 365,
+        ("LOW", "TIER_1", "ANNUALLY"): 365,
+        ("LOW", "TIER_2", "DAILY"): 365,
+        ("LOW", "TIER_2", "MONTHLY"): 365,
+        ("LOW", "TIER_2", "QUARTERLY"): 365,
+        ("LOW", "TIER_2", "ANNUALLY"): 1095,
+        ("LOW", "TIER_3", "DAILY"): 365,
+        ("LOW", "TIER_3", "MONTHLY"): 365,
+        ("LOW", "TIER_3", "QUARTERLY"): 1095,
+        ("LOW", "TIER_3", "ANNUALLY"): 1095,
+        ("LOW", "TIER_4", "DAILY"): 365,
+        ("LOW", "TIER_4", "MONTHLY"): 365,
+        ("LOW", "TIER_4", "QUARTERLY"): 1095,
+        ("LOW", "TIER_4", "ANNUALLY"): 1095,
+    }
+
+    created_count = 0
+    skipped_count = 0
+
+    for (priority_code, risk_code, freq_code), max_days in timeframe_data.items():
+        priority_id = priorities.get(priority_code)
+        risk_tier_id = risk_tiers.get(risk_code)
+        freq_id = frequencies.get(freq_code)
+
+        if not priority_id or not risk_tier_id or not freq_id:
+            print(f"⚠ Skipping {priority_code}/{risk_code}/{freq_code} - missing taxonomy values")
+            continue
+
+        # Check if config already exists
+        existing = db.query(RecommendationTimeframeConfig).filter(
+            RecommendationTimeframeConfig.priority_id == priority_id,
+            RecommendationTimeframeConfig.risk_tier_id == risk_tier_id,
+            RecommendationTimeframeConfig.usage_frequency_id == freq_id
+        ).first()
+
+        if not existing:
+            config = RecommendationTimeframeConfig(
+                priority_id=priority_id,
+                risk_tier_id=risk_tier_id,
+                usage_frequency_id=freq_id,
+                max_days=max_days,
+                description=f"{priority_code} priority, {risk_code}, {freq_code} usage - {max_days} days max",
+                created_at=utc_now(),
+                updated_at=utc_now()
+            )
+            db.add(config)
+            created_count += 1
+        else:
+            skipped_count += 1
+
+    db.commit()
+    print(f"✓ Created {created_count} timeframe configs, skipped {skipped_count} existing")
 
 
 def seed_database():
@@ -1633,6 +1849,9 @@ def seed_database():
             db.commit()
         else:
             print("⚠ Recommendation Priority taxonomy not found - skipping priority config seeding")
+
+        # Seed timeframe configurations
+        seed_timeframe_configs(db)
 
         # Create demo models with validations to demonstrate overdue logic
         print("\n=== Creating Demo Data for Overdue Validation Dashboard ===")
