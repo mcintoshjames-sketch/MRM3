@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
+import { useState, useEffect, useRef } from 'react';
+import { Link, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import api from '../api/client';
 import Layout from '../components/Layout';
@@ -64,6 +64,7 @@ interface MonitoringPlan {
     metric_count?: number;
     version_count?: number;
     active_version_number?: number | null;
+    has_unpublished_changes?: boolean;
     monitoring_team_id?: number | null;
     data_provider_user_id?: number | null;
     reporting_lead_days?: number;
@@ -173,12 +174,39 @@ export default function MonitoringPlansPage() {
 
     const [error, setError] = useState<string | null>(null);
 
+    // URL parameters for pre-population
+    const [searchParams, setSearchParams] = useSearchParams();
+    const preselectedModelId = searchParams.get('model');
+    const hasProcessedModelParam = useRef(false);
+
     // Fetch data on mount
     useEffect(() => {
         fetchTeams();
         fetchPlans();
         fetchReferenceData();
     }, []);
+
+    // Handle pre-selected model from URL parameter
+    useEffect(() => {
+        // Only process once to avoid re-triggering on re-renders
+        if (preselectedModelId && allModels.length > 0 && !hasProcessedModelParam.current) {
+            const modelId = parseInt(preselectedModelId, 10);
+            const model = allModels.find(m => m.model_id === modelId);
+            if (model) {
+                hasProcessedModelParam.current = true;
+                // Pre-populate form with the model and auto-open
+                setPlanFormData(prev => ({
+                    ...prev,
+                    name: `Monitoring Plan - ${model.model_name}`,
+                    model_ids: [modelId]
+                }));
+                setShowPlanForm(true);
+                setActiveTab('plans');
+                // Clear URL param after state is set (in next tick to avoid race)
+                setTimeout(() => setSearchParams({}), 0);
+            }
+        }
+    }, [preselectedModelId, allModels, setSearchParams]);
 
     const fetchReferenceData = async () => {
         try {
@@ -827,7 +855,7 @@ export default function MonitoringPlansPage() {
                     onClose={() => {
                         setShowMetricsModal(false);
                         setSelectedPlanForMetrics(null);
-                        fetchPlans(); // Refresh to update metric counts
+                        fetchPlans(); // Refresh to update metric counts and has_unpublished_changes
                     }}
                 />
             )}
@@ -838,7 +866,7 @@ export default function MonitoringPlansPage() {
                     onClose={() => {
                         setShowVersionsModal(false);
                         setSelectedPlanForVersions(null);
-                        fetchPlans(); // Refresh to update version counts
+                        fetchPlans(); // Refresh to update version counts and has_unpublished_changes
                     }}
                 />
             )}
@@ -1445,6 +1473,8 @@ interface VersionsModalProps {
 }
 
 function VersionsModal({ plan, onClose }: VersionsModalProps) {
+    // Use backend-computed flag for unpublished changes
+    const hasUnpublishedChanges = plan.has_unpublished_changes ?? false;
     const [versions, setVersions] = useState<PlanVersion[]>([]);
     const [loading, setLoading] = useState(true);
     const [showPublishForm, setShowPublishForm] = useState(false);
@@ -1675,13 +1705,33 @@ function VersionsModal({ plan, onClose }: VersionsModalProps) {
                                 <p className="text-sm text-gray-600">
                                     Manage version history for this monitoring plan. Each version captures a snapshot of the metric configuration.
                                 </p>
-                                <button
-                                    onClick={() => setShowPublishForm(true)}
-                                    className="btn-primary text-sm"
-                                >
-                                    Publish New Version
-                                </button>
+                                {hasUnpublishedChanges && (
+                                    <button
+                                        onClick={() => setShowPublishForm(true)}
+                                        className="btn-primary text-sm"
+                                    >
+                                        Publish New Version
+                                    </button>
+                                )}
                             </div>
+
+                            {/* Unpublished Changes Warning */}
+                            {hasUnpublishedChanges && !showPublishForm && (
+                                <div className="bg-amber-50 border border-amber-300 rounded-lg p-4 mb-4">
+                                    <div className="flex items-start gap-3">
+                                        <svg className="w-5 h-5 text-amber-500 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                                        </svg>
+                                        <div>
+                                            <h4 className="font-medium text-amber-800">Unpublished Changes</h4>
+                                            <p className="text-sm text-amber-700 mt-1">
+                                                Metrics or thresholds have been modified since the last published version.
+                                                Publish a new version to make these changes available for future cycles.
+                                            </p>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
 
                             {/* Publish Form */}
                             {showPublishForm && (

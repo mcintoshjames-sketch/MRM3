@@ -239,6 +239,12 @@ export default function Layout({ children }: LayoutProps) {
                                 )}
                             </NavLink>
                         </li>
+                        {/* Monitoring Section */}
+                        <li className="pt-4 pb-1">
+                            <span className="px-4 text-xs font-semibold text-gray-400 uppercase tracking-wider">
+                                Monitoring
+                            </span>
+                        </li>
                         <li>
                             <NavLink
                                 to="/my-monitoring"
@@ -251,7 +257,7 @@ export default function Layout({ children }: LayoutProps) {
                             >
                                 {({ isActive }) => (
                                     <div className="flex items-center justify-between">
-                                        <span>My Monitoring</span>
+                                        <span>My Monitoring Tasks</span>
                                         {pendingCounts.monitoring > 0 && (
                                             <span className={`ml-2 px-2 py-0.5 text-xs font-bold rounded-full ${
                                                 isActive ? 'bg-white text-blue-600' : 'bg-green-500 text-white'
@@ -263,6 +269,21 @@ export default function Layout({ children }: LayoutProps) {
                                 )}
                             </NavLink>
                         </li>
+                        {user?.role === 'Admin' && (
+                            <li>
+                                <NavLink
+                                    to="/monitoring-plans"
+                                    className={({ isActive }) =>
+                                        `block px-4 py-2 rounded transition-colors ${isActive
+                                            ? 'bg-blue-600 text-white'
+                                            : 'text-gray-700 hover:bg-gray-100'
+                                        }`
+                                    }
+                                >
+                                    Monitoring Plans
+                                </NavLink>
+                            </li>
+                        )}
                         {(user?.role === 'Admin' || user?.role === 'Validator') && (
                             <>
                                 <li>
@@ -438,19 +459,6 @@ export default function Layout({ children }: LayoutProps) {
                                         }
                                     >
                                         Additional Approvals
-                                    </NavLink>
-                                </li>
-                                <li>
-                                    <NavLink
-                                        to="/monitoring-plans"
-                                        className={({ isActive }) =>
-                                            `block px-4 py-2 rounded transition-colors ${isActive
-                                                ? 'bg-blue-600 text-white'
-                                                : 'text-gray-700 hover:bg-gray-100'
-                                            }`
-                                        }
-                                    >
-                                        Monitoring Plans
                                     </NavLink>
                                 </li>
                                 <li>

@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import api from '../api/client';
 import Layout from '../components/Layout';
 import {
@@ -191,8 +192,26 @@ interface Region {
 }
 
 export default function TaxonomyPage() {
-    // Tab management
-    const [activeTab, setActiveTab] = useState<'general' | 'change-type' | 'model-type' | 'kpm' | 'fry' | 'recommendation-priority' | 'risk-factors'>('general');
+    // URL search params for direct tab linking
+    const [searchParams, setSearchParams] = useSearchParams();
+
+    // Tab management - initialize from URL param or default to 'general'
+    const tabParam = searchParams.get('tab');
+    const validTabs = ['general', 'change-type', 'model-type', 'kpm', 'fry', 'recommendation-priority', 'risk-factors'] as const;
+    type TabType = typeof validTabs[number];
+    const initialTab: TabType = validTabs.includes(tabParam as TabType) ? (tabParam as TabType) : 'general';
+    const [activeTab, setActiveTab] = useState<TabType>(initialTab);
+
+    // Update URL when tab changes
+    const handleTabChange = (tab: TabType) => {
+        setActiveTab(tab);
+        if (tab === 'general') {
+            searchParams.delete('tab');
+        } else {
+            searchParams.set('tab', tab);
+        }
+        setSearchParams(searchParams, { replace: true });
+    };
 
     // Recommendation Priority Config state
     const [priorityConfigs, setPriorityConfigs] = useState<RecommendationPriorityConfig[]>([]);
@@ -1301,7 +1320,7 @@ export default function TaxonomyPage() {
                 <div className="border-b border-gray-200">
                     <nav className="-mb-px flex space-x-8">
                         <button
-                            onClick={() => setActiveTab('general')}
+                            onClick={() => handleTabChange('general')}
                             className={`${activeTab === 'general'
                                 ? 'border-blue-500 text-blue-600'
                                 : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
@@ -1310,7 +1329,7 @@ export default function TaxonomyPage() {
                             General Taxonomies
                         </button>
                         <button
-                            onClick={() => setActiveTab('change-type')}
+                            onClick={() => handleTabChange('change-type')}
                             className={`${activeTab === 'change-type'
                                 ? 'border-blue-500 text-blue-600'
                                 : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
@@ -1319,7 +1338,7 @@ export default function TaxonomyPage() {
                             Change Type Taxonomy
                         </button>
                         <button
-                            onClick={() => setActiveTab('model-type')}
+                            onClick={() => handleTabChange('model-type')}
                             className={`${activeTab === 'model-type'
                                 ? 'border-blue-500 text-blue-600'
                                 : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
@@ -1328,7 +1347,7 @@ export default function TaxonomyPage() {
                             Model Type Taxonomy
                         </button>
                         <button
-                            onClick={() => setActiveTab('kpm')}
+                            onClick={() => handleTabChange('kpm')}
                             className={`${activeTab === 'kpm'
                                 ? 'border-blue-500 text-blue-600'
                                 : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
@@ -1337,7 +1356,7 @@ export default function TaxonomyPage() {
                             KPM Library
                         </button>
                         <button
-                            onClick={() => setActiveTab('fry')}
+                            onClick={() => handleTabChange('fry')}
                             className={`${activeTab === 'fry'
                                 ? 'border-blue-500 text-blue-600'
                                 : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
@@ -1346,7 +1365,7 @@ export default function TaxonomyPage() {
                             FRY 14 Config
                         </button>
                         <button
-                            onClick={() => setActiveTab('recommendation-priority')}
+                            onClick={() => handleTabChange('recommendation-priority')}
                             className={`${activeTab === 'recommendation-priority'
                                 ? 'border-blue-500 text-blue-600'
                                 : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
@@ -1355,7 +1374,7 @@ export default function TaxonomyPage() {
                             Recommendation Priority
                         </button>
                         <button
-                            onClick={() => setActiveTab('risk-factors')}
+                            onClick={() => handleTabChange('risk-factors')}
                             className={`${activeTab === 'risk-factors'
                                 ? 'border-blue-500 text-blue-600'
                                 : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'

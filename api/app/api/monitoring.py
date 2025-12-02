@@ -139,6 +139,85 @@ def check_plan_edit_permission(db: Session, plan_id: int, current_user: User) ->
     )
 
 
+def compute_has_unpublished_changes(db: Session, plan_id: int) -> bool:
+    """
+    Compare current active metrics AND models with the latest published version to determine
+    if there are unpublished changes.
+
+    Returns True if:
+    - No versions exist (metrics or models configured but never published)
+    - Active metrics differ from latest version's snapshot (different KPMs, thresholds, or guidance)
+    - Current models differ from latest version's model snapshot
+    """
+    # Get current active metrics for the plan
+    current_metrics = db.query(MonitoringPlanMetric).filter(
+        MonitoringPlanMetric.plan_id == plan_id,
+        MonitoringPlanMetric.is_active == True
+    ).all()
+
+    # Get current models for the plan
+    plan = db.query(MonitoringPlan).options(
+        joinedload(MonitoringPlan.models)
+    ).filter(MonitoringPlan.plan_id == plan_id).first()
+    current_model_ids = {m.model_id for m in plan.models} if plan else set()
+
+    # Get the latest version
+    latest_version = db.query(MonitoringPlanVersion).filter(
+        MonitoringPlanVersion.plan_id == plan_id,
+        MonitoringPlanVersion.is_active == True
+    ).order_by(MonitoringPlanVersion.version_number.desc()).first()
+
+    # If there are metrics or models but no version, there are unpublished changes
+    if (current_metrics or current_model_ids) and not latest_version:
+        return True
+
+    # If no metrics, no models, and no version, no unpublished changes
+    if not current_metrics and not current_model_ids and not latest_version:
+        return False
+
+    # If no version but no metrics and no models, no unpublished changes (nothing to publish)
+    if not latest_version:
+        return False
+
+    # Get metric snapshots from the latest version
+    version_metric_snapshots = db.query(MonitoringPlanMetricSnapshot).filter(
+        MonitoringPlanMetricSnapshot.version_id == latest_version.version_id,
+        MonitoringPlanMetricSnapshot.is_active == True
+    ).all()
+
+    # Get model snapshots from the latest version
+    version_model_snapshots = db.query(MonitoringPlanModelSnapshot).filter(
+        MonitoringPlanModelSnapshot.version_id == latest_version.version_id
+    ).all()
+    snapshot_model_ids = {s.model_id for s in version_model_snapshots}
+
+    # Compare metrics by creating sets of comparable tuples
+    # A metric is defined by: kpm_id, thresholds, guidance, sort_order
+    def metric_key(m):
+        return (
+            m.kpm_id,
+            m.yellow_min,
+            m.yellow_max,
+            m.red_min,
+            m.red_max,
+            m.qualitative_guidance or '',
+            m.sort_order
+        )
+
+    current_metric_set = {metric_key(m) for m in current_metrics}
+    snapshot_metric_set = {metric_key(s) for s in version_metric_snapshots}
+
+    # Check if metrics changed
+    if current_metric_set != snapshot_metric_set:
+        return True
+
+    # Check if models changed
+    if current_model_ids != snapshot_model_ids:
+        return True
+
+    return False
+
+
 def validate_metric_thresholds(
     yellow_min: Optional[float],
     yellow_max: Optional[float],
@@ -467,7 +546,8 @@ def list_monitoring_plans(
             "model_count": len(plan.models),
             "metric_count": len([m for m in plan.metrics if m.is_active]),
             "version_count": len(plan.versions),
-            "active_version_number": active_version.version_number if active_version else None
+            "active_version_number": active_version.version_number if active_version else None,
+            "has_unpublished_changes": compute_has_unpublished_changes(db, plan.plan_id)
         })
 
     return result
@@ -571,7 +651,8 @@ def get_monitoring_plan(
             }
             for metric in plan.metrics
         ],
-        "active_version_number": active_version.version_number if active_version else None
+        "active_version_number": active_version.version_number if active_version else None,
+        "has_unpublished_changes": compute_has_unpublished_changes(db, plan.plan_id)
     }
 
 

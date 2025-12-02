@@ -219,6 +219,7 @@ class MonitoringPlanResponse(MonitoringPlanBase):
     models: List[ModelRef] = []
     metrics: List[MonitoringPlanMetricResponse] = []
     active_version_number: Optional[int] = None
+    has_unpublished_changes: bool = False
     created_at: datetime
     updated_at: datetime
 
@@ -241,6 +242,7 @@ class MonitoringPlanListResponse(BaseModel):
     metric_count: int = 0
     version_count: int = 0
     active_version_number: Optional[int] = None
+    has_unpublished_changes: bool = False
 
     class Config:
         from_attributes = True

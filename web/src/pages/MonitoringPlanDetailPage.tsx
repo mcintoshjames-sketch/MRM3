@@ -63,6 +63,20 @@ interface PlanMetric {
     is_active: boolean;
 }
 
+interface Kpm {
+    kpm_id: number;
+    name: string;
+    description: string | null;
+    evaluation_type: 'Quantitative' | 'Qualitative' | 'Outcome Only';
+}
+
+interface KpmCategory {
+    category_id: number;
+    code: string;
+    name: string;
+    kpms: Kpm[];
+}
+
 interface PlanVersion {
     version_id: number;
     version_number: number;
@@ -89,6 +103,7 @@ interface MonitoringPlan {
     models?: Model[];
     metrics?: PlanMetric[];
     active_version_number?: number | null;
+    has_unpublished_changes?: boolean;
     version_count?: number;
     user_permissions?: UserPermissions;
 }
@@ -487,6 +502,26 @@ const MonitoringPlanDetailPage: React.FC = () => {
     const [cancelCycleId, setCancelCycleId] = useState<number | null>(null);
     const [cancelReason, setCancelReason] = useState('');
 
+    // Start cycle modal state
+    const [showStartCycleModal, setShowStartCycleModal] = useState(false);
+    const [startCycleId, setStartCycleId] = useState<number | null>(null);
+
+    // Edit assignee state
+    const [editingAssignee, setEditingAssignee] = useState(false);
+    const [newAssigneeId, setNewAssigneeId] = useState<number | null>(null);
+    const [savingAssignee, setSavingAssignee] = useState(false);
+
+    // Edit plan details state
+    const [editingPlanDetails, setEditingPlanDetails] = useState(false);
+    const [planDetailsForm, setPlanDetailsForm] = useState({
+        data_provider_user_id: null as number | null,
+        reporting_lead_days: 5
+    });
+    const [savingPlanDetails, setSavingPlanDetails] = useState(false);
+    const [availableUsers, setAvailableUsers] = useState<{ user_id: number; full_name: string }[]>([]);
+    const [showUpdateCycleAssigneePrompt, setShowUpdateCycleAssigneePrompt] = useState(false);
+    const [pendingDataProviderChange, setPendingDataProviderChange] = useState<number | null>(null);
+
     // Request approval modal state
     const [showRequestApprovalModal, setShowRequestApprovalModal] = useState(false);
     const [requestApprovalCycleId, setRequestApprovalCycleId] = useState<number | null>(null);
@@ -536,6 +571,29 @@ const MonitoringPlanDetailPage: React.FC = () => {
     const [savingMetric, setSavingMetric] = useState(false);
     const [metricError, setMetricError] = useState<string | null>(null);
 
+    // Add metric state
+    const [showAddMetricModal, setShowAddMetricModal] = useState(false);
+    const [kpmCategories, setKpmCategories] = useState<KpmCategory[]>([]);
+    const [addMetricForm, setAddMetricForm] = useState({
+        kpm_id: 0,
+        yellow_min: '' as string,
+        yellow_max: '' as string,
+        red_min: '' as string,
+        red_max: '' as string,
+        qualitative_guidance: '',
+        sort_order: 0
+    });
+    const [addingMetric, setAddingMetric] = useState(false);
+    const [addMetricError, setAddMetricError] = useState<string | null>(null);
+
+    // Add model state
+    const [showAddModelModal, setShowAddModelModal] = useState(false);
+    const [allModels, setAllModels] = useState<Model[]>([]);
+    const [loadingAllModels, setLoadingAllModels] = useState(false);
+    const [addingModel, setAddingModel] = useState(false);
+    const [removingModelId, setRemovingModelId] = useState<number | null>(null);
+    const [modelSearchTerm, setModelSearchTerm] = useState('');
+
     useEffect(() => {
         if (id) {
             fetchPlan();
@@ -556,6 +614,101 @@ const MonitoringPlanDetailPage: React.FC = () => {
             fetchVersions();
         }
     }, [id, activeTab]);
+
+    // Fetch KPM categories when metrics tab is selected (for adding new metrics)
+    useEffect(() => {
+        if (id && activeTab === 'metrics' && kpmCategories.length === 0) {
+            fetchKpmCategories();
+        }
+    }, [id, activeTab]);
+
+    const fetchKpmCategories = async () => {
+        try {
+            const response = await api.get('/kpm/categories?active_only=false');
+            setKpmCategories(response.data);
+        } catch (err) {
+            console.error('Failed to load KPM categories:', err);
+        }
+    };
+
+    // Fetch all models when Add Model modal is opened
+    const fetchAllModels = async () => {
+        setLoadingAllModels(true);
+        try {
+            const response = await api.get('/models/?limit=1000');
+            setAllModels(response.data.items || response.data);
+        } catch (err) {
+            console.error('Failed to load models:', err);
+        } finally {
+            setLoadingAllModels(false);
+        }
+    };
+
+    // Add model to the plan
+    const handleAddModel = async (modelId: number) => {
+        if (!plan) return;
+        setAddingModel(true);
+        try {
+            const currentModelIds = plan.models?.map(m => m.model_id) || [];
+            const updatedModelIds = [...currentModelIds, modelId];
+            await api.patch(`/monitoring/plans/${id}`, {
+                model_ids: updatedModelIds
+            });
+            await fetchPlan();
+            setShowAddModelModal(false);
+            setModelSearchTerm('');
+        } catch (err: any) {
+            console.error('Failed to add model:', err);
+            alert(err.response?.data?.detail || 'Failed to add model');
+        } finally {
+            setAddingModel(false);
+        }
+    };
+
+    // Remove model from the plan
+    const handleRemoveModel = async (modelId: number) => {
+        if (!plan) return;
+        if (!window.confirm('Are you sure you want to remove this model from the plan?')) return;
+        setRemovingModelId(modelId);
+        try {
+            const currentModelIds = plan.models?.map(m => m.model_id) || [];
+            const updatedModelIds = currentModelIds.filter(id => id !== modelId);
+            await api.patch(`/monitoring/plans/${id}`, {
+                model_ids: updatedModelIds
+            });
+            await fetchPlan();
+        } catch (err: any) {
+            console.error('Failed to remove model:', err);
+            alert(err.response?.data?.detail || 'Failed to remove model');
+        } finally {
+            setRemovingModelId(null);
+        }
+    };
+
+    // Open Add Model modal
+    const openAddModelModal = () => {
+        setShowAddModelModal(true);
+        setModelSearchTerm('');
+        if (allModels.length === 0) {
+            fetchAllModels();
+        }
+    };
+
+    // Filter models not already in plan
+    const availableModels = useMemo(() => {
+        const planModelIds = new Set(plan?.models?.map(m => m.model_id) || []);
+        return allModels.filter(m => !planModelIds.has(m.model_id));
+    }, [allModels, plan?.models]);
+
+    // Filter by search term
+    const filteredAvailableModels = useMemo(() => {
+        if (!modelSearchTerm.trim()) return availableModels;
+        const term = modelSearchTerm.toLowerCase();
+        return availableModels.filter(m =>
+            m.model_name.toLowerCase().includes(term) ||
+            m.model_id.toString().includes(term)
+        );
+    }, [availableModels, modelSearchTerm]);
 
     const fetchPlan = async () => {
         setLoading(true);
@@ -700,7 +853,7 @@ const MonitoringPlanDetailPage: React.FC = () => {
                 effective_date: new Date().toISOString().split('T')[0]
             });
             fetchVersions();
-            fetchPlan(); // Refresh plan to get updated version count
+            fetchPlan(); // Refresh plan to get updated version count and has_unpublished_changes
         } catch (err: any) {
             setPublishError(err.response?.data?.detail || 'Failed to publish version');
         } finally {
@@ -784,11 +937,63 @@ const MonitoringPlanDetailPage: React.FC = () => {
             });
             setShowMetricModal(false);
             setEditingMetric(null);
-            fetchPlan(); // Refresh to show updated thresholds
+            fetchPlan(); // Refresh to show updated thresholds and has_unpublished_changes
         } catch (err: any) {
             setMetricError(err.response?.data?.detail || 'Failed to save metric');
         } finally {
             setSavingMetric(false);
+        }
+    };
+
+    // Handle adding a new metric to the plan
+    const handleAddMetric = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!addMetricForm.kpm_id) {
+            setAddMetricError('Please select a KPM');
+            return;
+        }
+
+        setAddingMetric(true);
+        setAddMetricError(null);
+
+        try {
+            await api.post(`/monitoring/plans/${id}/metrics`, {
+                kpm_id: addMetricForm.kpm_id,
+                yellow_min: addMetricForm.yellow_min ? parseFloat(addMetricForm.yellow_min) : null,
+                yellow_max: addMetricForm.yellow_max ? parseFloat(addMetricForm.yellow_max) : null,
+                red_min: addMetricForm.red_min ? parseFloat(addMetricForm.red_min) : null,
+                red_max: addMetricForm.red_max ? parseFloat(addMetricForm.red_max) : null,
+                qualitative_guidance: addMetricForm.qualitative_guidance || null,
+                sort_order: plan?.metrics?.length || 0,
+                is_active: true
+            });
+            setShowAddMetricModal(false);
+            setAddMetricForm({
+                kpm_id: 0,
+                yellow_min: '',
+                yellow_max: '',
+                red_min: '',
+                red_max: '',
+                qualitative_guidance: '',
+                sort_order: 0
+            });
+            fetchPlan(); // Refresh to show new metric and has_unpublished_changes
+        } catch (err: any) {
+            setAddMetricError(err.response?.data?.detail || 'Failed to add metric');
+        } finally {
+            setAddingMetric(false);
+        }
+    };
+
+    // Handle deactivating a metric from the plan (soft delete)
+    const handleDeactivateMetric = async (metricId: number) => {
+        if (!confirm('Deactivate this metric from the plan? It will be hidden but can be reactivated later.')) return;
+
+        try {
+            await api.patch(`/monitoring/plans/${id}/metrics/${metricId}`, { is_active: false });
+            fetchPlan(); // Refresh to show updated metrics list and has_unpublished_changes
+        } catch (err: any) {
+            alert(err.response?.data?.detail || 'Failed to deactivate metric');
         }
     };
 
@@ -859,6 +1064,177 @@ const MonitoringPlanDetailPage: React.FC = () => {
         } finally {
             setActionLoading(false);
         }
+    };
+
+    // Start cycle functions
+    const openStartCycleModal = (cycleId: number) => {
+        setStartCycleId(cycleId);
+        setActionError(null);
+        setShowStartCycleModal(true);
+    };
+
+    const handleStartCycle = async () => {
+        if (!startCycleId) return;
+
+        setActionLoading(true);
+        setActionError(null);
+
+        try {
+            await api.post(`/monitoring/cycles/${startCycleId}/start`);
+            setShowStartCycleModal(false);
+            setStartCycleId(null);
+            fetchCycles();
+            fetchPlan(); // Refresh plan to update version status
+        } catch (err: any) {
+            setActionError(err.response?.data?.detail || 'Failed to start cycle');
+        } finally {
+            setActionLoading(false);
+        }
+    };
+
+    // Edit assignee functions
+    const startEditingAssignee = () => {
+        if (selectedCycle) {
+            setNewAssigneeId(selectedCycle.assigned_to?.user_id || null);
+            setEditingAssignee(true);
+        }
+    };
+
+    const cancelEditingAssignee = () => {
+        setEditingAssignee(false);
+        setNewAssigneeId(null);
+    };
+
+    const handleSaveAssignee = async () => {
+        if (!selectedCycle) return;
+
+        setSavingAssignee(true);
+        setActionError(null);
+
+        try {
+            await api.patch(`/monitoring/cycles/${selectedCycle.cycle_id}`, {
+                assigned_to_user_id: newAssigneeId || 0  // 0 means unassign
+            });
+            // Refresh cycle detail
+            await fetchCycleDetail(selectedCycle.cycle_id);
+            fetchCycles(); // Refresh cycles list too
+            setEditingAssignee(false);
+        } catch (err: any) {
+            setActionError(err.response?.data?.detail || 'Failed to update assignee');
+        } finally {
+            setSavingAssignee(false);
+        }
+    };
+
+    // Get available assignees (team members + data provider)
+    const getAvailableAssignees = (): { user_id: number; full_name: string }[] => {
+        const assignees: { user_id: number; full_name: string }[] = [];
+        const seenIds = new Set<number>();
+
+        // Add team members
+        if (plan?.team?.members) {
+            for (const member of plan.team.members) {
+                if (!seenIds.has(member.user_id)) {
+                    assignees.push({ user_id: member.user_id, full_name: member.full_name });
+                    seenIds.add(member.user_id);
+                }
+            }
+        }
+
+        // Add data provider if not already in list
+        if (plan?.data_provider && !seenIds.has(plan.data_provider.user_id)) {
+            assignees.push({ user_id: plan.data_provider.user_id, full_name: plan.data_provider.full_name });
+        }
+
+        return assignees.sort((a, b) => a.full_name.localeCompare(b.full_name));
+    };
+
+    // Edit plan details functions
+    const fetchAvailableUsers = async () => {
+        try {
+            const response = await api.get('/auth/users');
+            setAvailableUsers(response.data.map((u: any) => ({
+                user_id: u.user_id,
+                full_name: u.full_name
+            })));
+        } catch (err) {
+            console.error('Failed to fetch users:', err);
+        }
+    };
+
+    const startEditingPlanDetails = () => {
+        if (plan) {
+            setPlanDetailsForm({
+                data_provider_user_id: plan.data_provider_user_id,
+                reporting_lead_days: plan.reporting_lead_days
+            });
+            fetchAvailableUsers();
+            setEditingPlanDetails(true);
+        }
+    };
+
+    const cancelEditingPlanDetails = () => {
+        setEditingPlanDetails(false);
+        setPlanDetailsForm({
+            data_provider_user_id: null,
+            reporting_lead_days: 5
+        });
+    };
+
+    // Get active cycle that could have assignee updated (PENDING or DATA_COLLECTION)
+    const getActiveCycleForAssigneeUpdate = (): MonitoringCycle | null => {
+        return cycles.find(c =>
+            c.status === 'PENDING' || c.status === 'DATA_COLLECTION'
+        ) || null;
+    };
+
+    const handleSavePlanDetails = async (updateCycleAssignee: boolean = false) => {
+        if (!plan) return;
+
+        // Check if data provider is changing and there's an active cycle
+        const dataProviderChanged = planDetailsForm.data_provider_user_id !== plan.data_provider_user_id;
+        const activeCycle = getActiveCycleForAssigneeUpdate();
+
+        // If data provider changed and there's an active cycle, ask about updating assignee
+        if (dataProviderChanged && activeCycle && !showUpdateCycleAssigneePrompt && planDetailsForm.data_provider_user_id) {
+            setPendingDataProviderChange(planDetailsForm.data_provider_user_id);
+            setShowUpdateCycleAssigneePrompt(true);
+            return;
+        }
+
+        setSavingPlanDetails(true);
+        setActionError(null);
+
+        try {
+            // Update plan details
+            await api.patch(`/monitoring/plans/${plan.plan_id}`, {
+                data_provider_user_id: planDetailsForm.data_provider_user_id || 0,
+                reporting_lead_days: planDetailsForm.reporting_lead_days
+            });
+
+            // If user chose to update cycle assignee
+            if (updateCycleAssignee && activeCycle && pendingDataProviderChange) {
+                await api.patch(`/monitoring/cycles/${activeCycle.cycle_id}`, {
+                    assigned_to_user_id: pendingDataProviderChange
+                });
+                fetchCycles();
+            }
+
+            // Refresh plan data
+            await fetchPlan();
+            setEditingPlanDetails(false);
+            setShowUpdateCycleAssigneePrompt(false);
+            setPendingDataProviderChange(null);
+        } catch (err: any) {
+            setActionError(err.response?.data?.detail || 'Failed to update plan details');
+        } finally {
+            setSavingPlanDetails(false);
+        }
+    };
+
+    const handleCycleAssigneePromptResponse = (updateAssignee: boolean) => {
+        setShowUpdateCycleAssigneePrompt(false);
+        handleSavePlanDetails(updateAssignee);
     };
 
     // Request approval functions
@@ -1535,6 +1911,33 @@ const MonitoringPlanDetailPage: React.FC = () => {
                     </nav>
                 </div>
 
+                {/* Unpublished Changes Warning Banner - Above all tabs */}
+                {plan?.has_unpublished_changes && (plan.user_permissions?.is_admin || plan.user_permissions?.is_team_member) && (
+                    <div className="bg-amber-50 border border-amber-300 rounded-lg p-4 mt-4">
+                        <div className="flex items-start gap-3">
+                            <svg className="w-5 h-5 text-amber-500 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                            </svg>
+                            <div className="flex-1">
+                                <h4 className="font-medium text-amber-800">Unpublished Changes</h4>
+                                <p className="text-sm text-amber-700 mt-1">
+                                    You have made changes to the plan configuration (models or metrics) that have not been published yet.
+                                    Publish a new version to make these changes available for future cycles.
+                                </p>
+                            </div>
+                            <button
+                                onClick={() => setShowPublishModal(true)}
+                                className="px-3 py-1.5 bg-amber-600 text-white rounded-lg hover:bg-amber-700 text-sm font-medium flex items-center gap-1.5"
+                            >
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                                </svg>
+                                Publish Now
+                            </button>
+                        </div>
+                    </div>
+                )}
+
                 {/* Tab Content */}
                 <div className="bg-white rounded-lg border p-6">
                     {/* Dashboard Tab */}
@@ -1644,6 +2047,8 @@ const MonitoringPlanDetailPage: React.FC = () => {
                                                             openCancelModal(currentCycle.cycle_id);
                                                         } else if (action.action === 'request-approval') {
                                                             openRequestApprovalModal(currentCycle.cycle_id);
+                                                        } else if (action.action === 'start') {
+                                                            openStartCycleModal(currentCycle.cycle_id);
                                                         } else {
                                                             handleCycleAction(currentCycle.cycle_id, action.action);
                                                         }
@@ -1763,25 +2168,91 @@ const MonitoringPlanDetailPage: React.FC = () => {
                                     </div>
                                     {/* Plan Details */}
                                     <div className="bg-white rounded-lg border p-4">
-                                        <h4 className="text-sm font-semibold text-gray-500 uppercase mb-3">Plan Details</h4>
-                                        <div className="grid grid-cols-2 gap-3 text-sm">
-                                            <div>
-                                                <span className="text-gray-500">Data Provider</span>
-                                                <p className="font-medium">{plan.data_provider?.full_name || '-'}</p>
-                                            </div>
-                                            <div>
-                                                <span className="text-gray-500">Lead Time</span>
-                                                <p className="font-medium">{plan.reporting_lead_days} days</p>
-                                            </div>
-                                            <div>
-                                                <span className="text-gray-500">Next Due</span>
-                                                <p className="font-medium">{plan.next_submission_due_date || '-'}</p>
-                                            </div>
-                                            <div>
-                                                <span className="text-gray-500">Report Due</span>
-                                                <p className="font-medium">{plan.next_report_due_date || '-'}</p>
-                                            </div>
+                                        <div className="flex items-center justify-between mb-3">
+                                            <h4 className="text-sm font-semibold text-gray-500 uppercase">Plan Details</h4>
+                                            {(plan.user_permissions?.is_admin || plan.user_permissions?.is_team_member) && !editingPlanDetails && (
+                                                <button
+                                                    onClick={startEditingPlanDetails}
+                                                    className="text-blue-600 hover:text-blue-800 text-sm"
+                                                    title="Edit plan details"
+                                                >
+                                                    ✏️ Edit
+                                                </button>
+                                            )}
                                         </div>
+                                        {editingPlanDetails ? (
+                                            <div className="space-y-3">
+                                                <div>
+                                                    <label className="block text-sm text-gray-500 mb-1">Data Provider</label>
+                                                    <select
+                                                        value={planDetailsForm.data_provider_user_id || ''}
+                                                        onChange={(e) => setPlanDetailsForm({
+                                                            ...planDetailsForm,
+                                                            data_provider_user_id: e.target.value ? parseInt(e.target.value) : null
+                                                        })}
+                                                        className="w-full border border-gray-300 rounded px-2 py-1 text-sm"
+                                                        disabled={savingPlanDetails}
+                                                    >
+                                                        <option value="">None</option>
+                                                        {availableUsers.map(user => (
+                                                            <option key={user.user_id} value={user.user_id}>
+                                                                {user.full_name}
+                                                            </option>
+                                                        ))}
+                                                    </select>
+                                                </div>
+                                                <div>
+                                                    <label className="block text-sm text-gray-500 mb-1">Lead Time (days)</label>
+                                                    <input
+                                                        type="number"
+                                                        min="0"
+                                                        max="90"
+                                                        value={planDetailsForm.reporting_lead_days}
+                                                        onChange={(e) => setPlanDetailsForm({
+                                                            ...planDetailsForm,
+                                                            reporting_lead_days: parseInt(e.target.value) || 0
+                                                        })}
+                                                        className="w-full border border-gray-300 rounded px-2 py-1 text-sm"
+                                                        disabled={savingPlanDetails}
+                                                    />
+                                                </div>
+                                                <div className="flex items-center gap-2 pt-2">
+                                                    <button
+                                                        onClick={() => handleSavePlanDetails(false)}
+                                                        disabled={savingPlanDetails}
+                                                        className="px-3 py-1 text-sm bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50"
+                                                    >
+                                                        {savingPlanDetails ? 'Saving...' : 'Save'}
+                                                    </button>
+                                                    <button
+                                                        onClick={cancelEditingPlanDetails}
+                                                        disabled={savingPlanDetails}
+                                                        className="px-3 py-1 text-sm text-gray-600 hover:text-gray-800"
+                                                    >
+                                                        Cancel
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        ) : (
+                                            <div className="grid grid-cols-2 gap-3 text-sm">
+                                                <div>
+                                                    <span className="text-gray-500">Data Provider</span>
+                                                    <p className="font-medium">{plan.data_provider?.full_name || '-'}</p>
+                                                </div>
+                                                <div>
+                                                    <span className="text-gray-500">Lead Time</span>
+                                                    <p className="font-medium">{plan.reporting_lead_days} days</p>
+                                                </div>
+                                                <div>
+                                                    <span className="text-gray-500">Next Due</span>
+                                                    <p className="font-medium">{plan.next_submission_due_date || '-'}</p>
+                                                </div>
+                                                <div>
+                                                    <span className="text-gray-500">Report Due</span>
+                                                    <p className="font-medium">{plan.next_report_due_date || '-'}</p>
+                                                </div>
+                                            </div>
+                                        )}
                                     </div>
                                 </div>
 
@@ -1842,15 +2313,51 @@ const MonitoringPlanDetailPage: React.FC = () => {
                     {/* Models Tab */}
                     {activeTab === 'models' && (
                         <div>
-                            <h3 className="text-lg font-semibold mb-4">Covered Models ({plan.models?.length || 0})</h3>
+                            <div className="flex justify-between items-center mb-4">
+                                <div>
+                                    <h3 className="text-lg font-semibold">Covered Models ({plan.models?.length || 0})</h3>
+                                    {(plan.user_permissions?.is_admin || plan.user_permissions?.is_team_member) && (
+                                        <p className="text-sm text-gray-500 mt-1">
+                                            Add or remove models from this monitoring plan
+                                        </p>
+                                    )}
+                                </div>
+                                {(plan.user_permissions?.is_admin || plan.user_permissions?.is_team_member) && (
+                                    <button
+                                        onClick={openAddModelModal}
+                                        className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 flex items-center gap-2"
+                                    >
+                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                                        </svg>
+                                        Add Model
+                                    </button>
+                                )}
+                            </div>
                             {!plan.models?.length ? (
-                                <p className="text-gray-500">No models assigned to this plan.</p>
+                                <div className="text-center py-8 text-gray-500">
+                                    <svg className="mx-auto h-12 w-12 text-gray-400 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+                                    </svg>
+                                    <p>No models assigned to this plan.</p>
+                                    {(plan.user_permissions?.is_admin || plan.user_permissions?.is_team_member) && (
+                                        <button
+                                            onClick={openAddModelModal}
+                                            className="mt-3 text-blue-600 hover:text-blue-800 text-sm"
+                                        >
+                                            + Add your first model
+                                        </button>
+                                    )}
+                                </div>
                             ) : (
                                 <table className="min-w-full divide-y divide-gray-200">
                                     <thead className="bg-gray-50">
                                         <tr>
                                             <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Model ID</th>
                                             <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Model Name</th>
+                                            {(plan.user_permissions?.is_admin || plan.user_permissions?.is_team_member) && (
+                                                <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">Actions</th>
+                                            )}
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y divide-gray-200">
@@ -1862,6 +2369,24 @@ const MonitoringPlanDetailPage: React.FC = () => {
                                                         {model.model_name}
                                                     </Link>
                                                 </td>
+                                                {(plan.user_permissions?.is_admin || plan.user_permissions?.is_team_member) && (
+                                                    <td className="px-4 py-2 text-sm text-right">
+                                                        <button
+                                                            onClick={() => handleRemoveModel(model.model_id)}
+                                                            disabled={removingModelId === model.model_id}
+                                                            className="text-red-600 hover:text-red-800 disabled:opacity-50 flex items-center gap-1 ml-auto"
+                                                        >
+                                                            {removingModelId === model.model_id ? (
+                                                                <span className="animate-spin h-4 w-4 border-2 border-red-500 border-t-transparent rounded-full" />
+                                                            ) : (
+                                                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                                                </svg>
+                                                            )}
+                                                            Remove
+                                                        </button>
+                                                    </td>
+                                                )}
                                             </tr>
                                         ))}
                                     </tbody>
@@ -1878,19 +2403,19 @@ const MonitoringPlanDetailPage: React.FC = () => {
                                     <h3 className="text-lg font-semibold">Configured Metrics ({plan.metrics?.length || 0})</h3>
                                     {(plan.user_permissions?.is_admin || plan.user_permissions?.is_team_member) && (
                                         <p className="text-sm text-gray-500 mt-1">
-                                            Edit thresholds below and publish a new version when ready
+                                            Add metrics, edit thresholds, and publish a new version when ready
                                         </p>
                                     )}
                                 </div>
                                 {(plan.user_permissions?.is_admin || plan.user_permissions?.is_team_member) && (
                                     <button
-                                        onClick={() => setShowPublishModal(true)}
-                                        className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center gap-2"
+                                        onClick={() => setShowAddMetricModal(true)}
+                                        className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 flex items-center gap-2"
                                     >
                                         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
                                         </svg>
-                                        Publish Version
+                                        Add Metric
                                     </button>
                                 )}
                             </div>
@@ -1916,16 +2441,28 @@ const MonitoringPlanDetailPage: React.FC = () => {
                                                 </div>
                                                 <div className="flex items-center gap-3">
                                                     {(plan.user_permissions?.is_admin || plan.user_permissions?.is_team_member) && (
-                                                        <button
-                                                            onClick={() => openEditMetric(metric)}
-                                                            className="text-gray-600 hover:text-gray-800 text-sm flex items-center gap-1"
-                                                            title="Edit thresholds"
-                                                        >
-                                                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                                                            </svg>
-                                                            Edit
-                                                        </button>
+                                                        <>
+                                                            <button
+                                                                onClick={() => openEditMetric(metric)}
+                                                                className="text-gray-600 hover:text-gray-800 text-sm flex items-center gap-1"
+                                                                title="Edit thresholds"
+                                                            >
+                                                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                                                                </svg>
+                                                                Edit
+                                                            </button>
+                                                            <button
+                                                                onClick={() => handleDeactivateMetric(metric.metric_id)}
+                                                                className="text-red-600 hover:text-red-800 text-sm flex items-center gap-1"
+                                                                title="Deactivate metric"
+                                                            >
+                                                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
+                                                                </svg>
+                                                                Deactivate
+                                                            </button>
+                                                        </>
                                                     )}
                                                     {metric.kpm?.evaluation_type === 'Quantitative' && (
                                                         <button
@@ -2303,6 +2840,8 @@ const MonitoringPlanDetailPage: React.FC = () => {
                                                                 openCancelModal(currentCycle.cycle_id);
                                                             } else if (action.action === 'request-approval') {
                                                                 openRequestApprovalModal(currentCycle.cycle_id);
+                                                            } else if (action.action === 'start') {
+                                                                openStartCycleModal(currentCycle.cycle_id);
                                                             } else {
                                                                 handleCycleAction(currentCycle.cycle_id, action.action);
                                                             }
@@ -2485,7 +3024,7 @@ const MonitoringPlanDetailPage: React.FC = () => {
                                 <h3 className="text-lg font-bold">
                                     Cycle Details: {formatPeriod(selectedCycle.period_start_date, selectedCycle.period_end_date)}
                                 </h3>
-                                <button onClick={() => setSelectedCycle(null)} className="text-gray-500 hover:text-gray-700">
+                                <button onClick={() => { setSelectedCycle(null); setEditingAssignee(false); }} className="text-gray-500 hover:text-gray-700">
                                     <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                                     </svg>
@@ -2498,18 +3037,29 @@ const MonitoringPlanDetailPage: React.FC = () => {
                                 ) : (
                                     <div className="space-y-6">
                                         {/* Status & Version */}
-                                        <div className="flex items-center gap-3">
+                                        <div className="flex items-center gap-3 flex-wrap">
                                             <span className={`px-3 py-1 rounded-full text-sm ${getStatusBadgeColor(selectedCycle.status)}`}>
                                                 {formatStatus(selectedCycle.status)}
                                             </span>
-                                            {selectedCycle.plan_version && (
+                                            {selectedCycle.plan_version ? (
                                                 <span className="px-3 py-1 rounded-full text-sm bg-blue-100 text-blue-800">
-                                                    v{selectedCycle.plan_version.version_number} metrics
-                                                    {selectedCycle.version_locked_at && (
-                                                        <span className="text-blue-600 ml-1">
-                                                            (locked {selectedCycle.version_locked_at.split('T')[0]})
-                                                        </span>
+                                                    Using Plan Version {selectedCycle.plan_version.version_number}
+                                                    {selectedCycle.plan_version.version_name && (
+                                                        <span className="ml-1">({selectedCycle.plan_version.version_name})</span>
                                                     )}
+                                                </span>
+                                            ) : selectedCycle.status === 'PENDING' && plan?.active_version_number ? (
+                                                <span className="px-3 py-1 rounded-full text-sm bg-gray-100 text-gray-600 italic">
+                                                    Will use Version {plan.active_version_number} (current active)
+                                                </span>
+                                            ) : selectedCycle.status === 'PENDING' && !plan?.active_version_number ? (
+                                                <span className="px-3 py-1 rounded-full text-sm bg-amber-100 text-amber-800">
+                                                    No published version available
+                                                </span>
+                                            ) : null}
+                                            {selectedCycle.version_locked_at && (
+                                                <span className="px-3 py-1 rounded-full text-sm bg-gray-100 text-gray-600">
+                                                    Locked {selectedCycle.version_locked_at.split('T')[0]}
                                                 </span>
                                             )}
                                         </div>
@@ -2530,7 +3080,51 @@ const MonitoringPlanDetailPage: React.FC = () => {
                                             </div>
                                             <div>
                                                 <label className="text-sm text-gray-500">Assigned To</label>
-                                                <p className="font-medium">{selectedCycle.assigned_to?.full_name || '-'}</p>
+                                                {editingAssignee ? (
+                                                    <div className="flex items-center gap-2 mt-1">
+                                                        <select
+                                                            value={newAssigneeId || ''}
+                                                            onChange={(e) => setNewAssigneeId(e.target.value ? parseInt(e.target.value) : null)}
+                                                            className="flex-1 border border-gray-300 rounded px-2 py-1 text-sm"
+                                                            disabled={savingAssignee}
+                                                        >
+                                                            <option value="">Unassigned</option>
+                                                            {getAvailableAssignees().map(user => (
+                                                                <option key={user.user_id} value={user.user_id}>
+                                                                    {user.full_name}
+                                                                </option>
+                                                            ))}
+                                                        </select>
+                                                        <button
+                                                            onClick={handleSaveAssignee}
+                                                            disabled={savingAssignee}
+                                                            className="px-2 py-1 text-sm bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50"
+                                                        >
+                                                            {savingAssignee ? '...' : 'Save'}
+                                                        </button>
+                                                        <button
+                                                            onClick={cancelEditingAssignee}
+                                                            disabled={savingAssignee}
+                                                            className="px-2 py-1 text-sm text-gray-600 hover:text-gray-800"
+                                                        >
+                                                            Cancel
+                                                        </button>
+                                                    </div>
+                                                ) : (
+                                                    <div className="flex items-center gap-2">
+                                                        <p className="font-medium">{selectedCycle.assigned_to?.full_name || '-'}</p>
+                                                        {selectedCycle.status === 'DATA_COLLECTION' &&
+                                                         (plan?.user_permissions?.is_admin || plan?.user_permissions?.is_team_member) && (
+                                                            <button
+                                                                onClick={startEditingAssignee}
+                                                                className="text-blue-600 hover:text-blue-800 text-sm"
+                                                                title="Change assignee"
+                                                            >
+                                                                ✏️
+                                                            </button>
+                                                        )}
+                                                    </div>
+                                                )}
                                             </div>
                                             {selectedCycle.submitted_at && (
                                                 <div>
@@ -2692,7 +3286,7 @@ const MonitoringPlanDetailPage: React.FC = () => {
                             </div>
 
                             <div className="p-4 border-t bg-gray-50 flex justify-end">
-                                <button onClick={() => setSelectedCycle(null)} className="btn-secondary">
+                                <button onClick={() => { setSelectedCycle(null); setEditingAssignee(false); }} className="btn-secondary">
                                     Close
                                 </button>
                             </div>
@@ -3430,6 +4024,115 @@ const MonitoringPlanDetailPage: React.FC = () => {
                     </div>
                 )}
 
+                {/* Start Cycle Modal */}
+                {showStartCycleModal && startCycleId && (
+                    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+                        <div className="bg-white rounded-lg shadow-xl w-full max-w-md">
+                            <div className="p-4 border-b bg-blue-50">
+                                <h3 className="text-lg font-bold text-blue-800">Start Cycle</h3>
+                            </div>
+
+                            <div className="p-4 space-y-4">
+                                {actionError && (
+                                    <div className="bg-red-100 border border-red-400 text-red-700 px-3 py-2 rounded text-sm">
+                                        {actionError}
+                                    </div>
+                                )}
+
+                                {!plan?.active_version_number ? (
+                                    <div className="bg-red-50 border border-red-300 rounded-lg p-3">
+                                        <p className="text-red-800 text-sm">
+                                            <strong>Cannot Start:</strong> No published plan version exists.
+                                            You must publish a version before starting data collection.
+                                        </p>
+                                    </div>
+                                ) : (
+                                    <>
+                                        <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                                            <p className="text-blue-800 text-sm">
+                                                Starting this cycle will lock it to <strong>Version {plan.active_version_number}</strong> (current active version).
+                                                Once started, the cycle will use the metrics defined in that version.
+                                            </p>
+                                        </div>
+
+                                        {plan.has_unpublished_changes && (
+                                            <div className="bg-amber-50 border border-amber-300 rounded-lg p-3">
+                                                <p className="text-amber-800 text-sm">
+                                                    <strong>Note:</strong> You have unpublished metric changes.
+                                                    This cycle will use the metrics from Version {plan.active_version_number},
+                                                    not your pending changes. Consider publishing a new version first if you want the updated metrics.
+                                                </p>
+                                            </div>
+                                        )}
+                                    </>
+                                )}
+                            </div>
+
+                            <div className="p-4 border-t bg-gray-50 flex justify-end gap-2">
+                                <button
+                                    onClick={() => {
+                                        setShowStartCycleModal(false);
+                                        setStartCycleId(null);
+                                        setActionError(null);
+                                    }}
+                                    disabled={actionLoading}
+                                    className="btn-secondary"
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    onClick={handleStartCycle}
+                                    disabled={actionLoading || !plan?.active_version_number}
+                                    className="px-4 py-2 rounded text-white font-medium bg-blue-600 hover:bg-blue-700 disabled:opacity-50"
+                                >
+                                    {actionLoading ? 'Starting...' : 'Start Data Collection'}
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                {/* Update Cycle Assignee Prompt Modal */}
+                {showUpdateCycleAssigneePrompt && (
+                    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+                        <div className="bg-white rounded-lg shadow-xl w-full max-w-md">
+                            <div className="p-4 border-b bg-blue-50">
+                                <h3 className="text-lg font-bold text-blue-800">Update Current Cycle?</h3>
+                            </div>
+
+                            <div className="p-4 space-y-4">
+                                <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                                    <p className="text-blue-800 text-sm">
+                                        You're changing the Data Provider for this plan. There is an active cycle
+                                        ({getActiveCycleForAssigneeUpdate()?.status === 'PENDING' ? 'Pending' : 'Data Collection in progress'})
+                                        that hasn't been submitted for review yet.
+                                    </p>
+                                </div>
+                                <p className="text-sm text-gray-700">
+                                    Would you like to also update the assignee for the current cycle to the new Data Provider?
+                                </p>
+                            </div>
+
+                            <div className="p-4 border-t bg-gray-50 flex justify-end gap-2">
+                                <button
+                                    onClick={() => handleCycleAssigneePromptResponse(false)}
+                                    disabled={savingPlanDetails}
+                                    className="px-4 py-2 rounded text-gray-700 font-medium bg-gray-200 hover:bg-gray-300 disabled:opacity-50"
+                                >
+                                    No, Keep Current Assignee
+                                </button>
+                                <button
+                                    onClick={() => handleCycleAssigneePromptResponse(true)}
+                                    disabled={savingPlanDetails}
+                                    className="px-4 py-2 rounded text-white font-medium bg-blue-600 hover:bg-blue-700 disabled:opacity-50"
+                                >
+                                    {savingPlanDetails ? 'Updating...' : 'Yes, Update Assignee'}
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                )}
+
                 {/* Request Approval Modal */}
                 {showRequestApprovalModal && requestApprovalCycleId && (
                     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
@@ -3725,6 +4428,297 @@ const MonitoringPlanDetailPage: React.FC = () => {
                                     </button>
                                 </div>
                             </form>
+                        </div>
+                    </div>
+                )}
+
+                {/* Add Metric Modal */}
+                {showAddMetricModal && (
+                    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+                        <div className="bg-white rounded-lg shadow-xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
+                            <div className="p-4 border-b">
+                                <h3 className="text-lg font-bold">Add Metric to Plan</h3>
+                                <p className="text-sm text-gray-500 mt-1">
+                                    Select a KPM and configure thresholds
+                                </p>
+                            </div>
+
+                            <form onSubmit={handleAddMetric}>
+                                <div className="p-4 space-y-4">
+                                    {addMetricError && (
+                                        <div className="bg-red-100 border border-red-400 text-red-700 px-3 py-2 rounded text-sm">
+                                            {addMetricError}
+                                        </div>
+                                    )}
+
+                                    {/* KPM Selection */}
+                                    <div>
+                                        <div className="flex items-center justify-between mb-1">
+                                            <label className="block text-sm font-medium text-gray-700">
+                                                Select KPM *
+                                            </label>
+                                            <a
+                                                href="/taxonomy?tab=kpm"
+                                                target="_blank"
+                                                rel="noopener noreferrer"
+                                                className="text-xs text-blue-600 hover:text-blue-800 hover:underline flex items-center gap-1"
+                                            >
+                                                + Create New KPM
+                                                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                                                </svg>
+                                            </a>
+                                        </div>
+                                        <select
+                                            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                                            value={addMetricForm.kpm_id}
+                                            onChange={(e) => setAddMetricForm(prev => ({ ...prev, kpm_id: parseInt(e.target.value) || 0 }))}
+                                            required
+                                        >
+                                            <option value={0}>-- Select a KPM --</option>
+                                            {kpmCategories.map(cat => (
+                                                <optgroup key={cat.category_id} label={cat.name}>
+                                                    {cat.kpms
+                                                        .filter(kpm => !plan?.metrics?.some(m => m.kpm_id === kpm.kpm_id))
+                                                        .map(kpm => (
+                                                            <option key={kpm.kpm_id} value={kpm.kpm_id}>
+                                                                {kpm.name} ({kpm.evaluation_type})
+                                                            </option>
+                                                        ))
+                                                    }
+                                                </optgroup>
+                                            ))}
+                                        </select>
+                                    </div>
+
+                                    {/* Threshold Configuration */}
+                                    {addMetricForm.kpm_id > 0 && (() => {
+                                        const selectedKpm = kpmCategories.flatMap(c => c.kpms).find(k => k.kpm_id === addMetricForm.kpm_id);
+                                        const isQuantitative = selectedKpm?.evaluation_type === 'Quantitative';
+
+                                        if (isQuantitative) {
+                                            return (
+                                                <>
+                                                    <div className="bg-gray-50 rounded-lg p-3">
+                                                        <p className="text-sm text-gray-600">
+                                                            Configure threshold boundaries. Leave fields blank for no threshold.
+                                                        </p>
+                                                    </div>
+
+                                                    <div className="grid grid-cols-2 gap-4">
+                                                        <div>
+                                                            <label className="block text-sm font-medium text-yellow-700 mb-1">
+                                                                Yellow Min
+                                                            </label>
+                                                            <input
+                                                                type="number"
+                                                                step="any"
+                                                                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                                                                value={addMetricForm.yellow_min}
+                                                                onChange={(e) => setAddMetricForm(prev => ({ ...prev, yellow_min: e.target.value }))}
+                                                                placeholder="No minimum"
+                                                            />
+                                                        </div>
+                                                        <div>
+                                                            <label className="block text-sm font-medium text-yellow-700 mb-1">
+                                                                Yellow Max
+                                                            </label>
+                                                            <input
+                                                                type="number"
+                                                                step="any"
+                                                                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                                                                value={addMetricForm.yellow_max}
+                                                                onChange={(e) => setAddMetricForm(prev => ({ ...prev, yellow_max: e.target.value }))}
+                                                                placeholder="No maximum"
+                                                            />
+                                                        </div>
+                                                    </div>
+
+                                                    <div className="grid grid-cols-2 gap-4">
+                                                        <div>
+                                                            <label className="block text-sm font-medium text-red-700 mb-1">
+                                                                Red Min
+                                                            </label>
+                                                            <input
+                                                                type="number"
+                                                                step="any"
+                                                                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                                                                value={addMetricForm.red_min}
+                                                                onChange={(e) => setAddMetricForm(prev => ({ ...prev, red_min: e.target.value }))}
+                                                                placeholder="No minimum"
+                                                            />
+                                                        </div>
+                                                        <div>
+                                                            <label className="block text-sm font-medium text-red-700 mb-1">
+                                                                Red Max
+                                                            </label>
+                                                            <input
+                                                                type="number"
+                                                                step="any"
+                                                                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                                                                value={addMetricForm.red_max}
+                                                                onChange={(e) => setAddMetricForm(prev => ({ ...prev, red_max: e.target.value }))}
+                                                                placeholder="No maximum"
+                                                            />
+                                                        </div>
+                                                    </div>
+
+                                                    {/* Additional Guidance for Quantitative */}
+                                                    <div>
+                                                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                                                            Additional Guidance
+                                                        </label>
+                                                        <textarea
+                                                            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                                                            rows={2}
+                                                            value={addMetricForm.qualitative_guidance}
+                                                            onChange={(e) => setAddMetricForm(prev => ({ ...prev, qualitative_guidance: e.target.value }))}
+                                                            placeholder="Additional guidance for interpreting this metric..."
+                                                        />
+                                                    </div>
+                                                </>
+                                            );
+                                        } else {
+                                            return (
+                                                <div>
+                                                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                                                        Assessment Guidance *
+                                                    </label>
+                                                    <textarea
+                                                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                                                        rows={4}
+                                                        value={addMetricForm.qualitative_guidance}
+                                                        onChange={(e) => setAddMetricForm(prev => ({ ...prev, qualitative_guidance: e.target.value }))}
+                                                        placeholder="Describe the criteria for Green/Yellow/Red outcomes..."
+                                                        required
+                                                    />
+                                                    <p className="text-xs text-gray-500 mt-1">
+                                                        For qualitative metrics, guidance is required to define how outcomes should be assessed.
+                                                    </p>
+                                                </div>
+                                            );
+                                        }
+                                    })()}
+                                </div>
+
+                                <div className="p-4 border-t bg-gray-50 flex justify-end gap-2">
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            setShowAddMetricModal(false);
+                                            setAddMetricForm({
+                                                kpm_id: 0,
+                                                yellow_min: '',
+                                                yellow_max: '',
+                                                red_min: '',
+                                                red_max: '',
+                                                qualitative_guidance: '',
+                                                sort_order: 0
+                                            });
+                                            setAddMetricError(null);
+                                        }}
+                                        disabled={addingMetric}
+                                        className="btn-secondary"
+                                    >
+                                        Cancel
+                                    </button>
+                                    <button
+                                        type="submit"
+                                        disabled={addingMetric || !addMetricForm.kpm_id}
+                                        className="px-4 py-2 rounded text-white font-medium bg-blue-600 hover:bg-blue-700 disabled:opacity-50"
+                                    >
+                                        {addingMetric ? 'Adding...' : 'Add Metric'}
+                                    </button>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+                )}
+
+                {/* Add Model Modal */}
+                {showAddModelModal && (
+                    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+                        <div className="bg-white rounded-lg shadow-xl w-full max-w-lg max-h-[90vh] overflow-hidden flex flex-col">
+                            <div className="p-4 border-b">
+                                <h3 className="text-lg font-bold">Add Model to Plan</h3>
+                                <p className="text-sm text-gray-500 mt-1">
+                                    Select a model to add to this monitoring plan
+                                </p>
+                            </div>
+
+                            <div className="p-4 border-b">
+                                <input
+                                    type="text"
+                                    placeholder="Search by model name or ID..."
+                                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                                    value={modelSearchTerm}
+                                    onChange={(e) => setModelSearchTerm(e.target.value)}
+                                    autoFocus
+                                />
+                            </div>
+
+                            <div className="flex-1 overflow-y-auto p-4" style={{ maxHeight: '400px' }}>
+                                {loadingAllModels ? (
+                                    <div className="flex items-center justify-center py-8">
+                                        <span className="animate-spin h-6 w-6 border-2 border-blue-500 border-t-transparent rounded-full mr-2" />
+                                        Loading models...
+                                    </div>
+                                ) : filteredAvailableModels.length === 0 ? (
+                                    <div className="text-center py-8 text-gray-500">
+                                        {modelSearchTerm ? (
+                                            <p>No models found matching "{modelSearchTerm}"</p>
+                                        ) : availableModels.length === 0 ? (
+                                            <p>All models are already added to this plan</p>
+                                        ) : (
+                                            <p>No available models</p>
+                                        )}
+                                    </div>
+                                ) : (
+                                    <div className="space-y-2">
+                                        {filteredAvailableModels.map(model => (
+                                            <div
+                                                key={model.model_id}
+                                                className="flex items-center justify-between p-3 border rounded-lg hover:bg-gray-50"
+                                            >
+                                                <div>
+                                                    <div className="font-medium text-gray-900">{model.model_name}</div>
+                                                    <div className="text-sm text-gray-500">ID: {model.model_id}</div>
+                                                </div>
+                                                <button
+                                                    onClick={() => handleAddModel(model.model_id)}
+                                                    disabled={addingModel}
+                                                    className="px-3 py-1.5 bg-blue-600 text-white rounded text-sm hover:bg-blue-700 disabled:opacity-50 flex items-center gap-1"
+                                                >
+                                                    {addingModel ? (
+                                                        <span className="animate-spin h-4 w-4 border-2 border-white border-t-transparent rounded-full" />
+                                                    ) : (
+                                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                                                        </svg>
+                                                    )}
+                                                    Add
+                                                </button>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+
+                            <div className="p-4 border-t bg-gray-50 flex justify-between items-center">
+                                <span className="text-sm text-gray-500">
+                                    {filteredAvailableModels.length} model{filteredAvailableModels.length !== 1 ? 's' : ''} available
+                                </span>
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        setShowAddModelModal(false);
+                                        setModelSearchTerm('');
+                                    }}
+                                    className="btn-secondary"
+                                >
+                                    Close
+                                </button>
+                            </div>
                         </div>
                     </div>
                 )}

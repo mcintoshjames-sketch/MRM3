@@ -13,6 +13,7 @@ import ModelDependenciesSection from '../components/ModelDependenciesSection';
 import ModelApplicationsSection from '../components/ModelApplicationsSection';
 import LineageViewer from '../components/LineageViewer';
 import ModelRiskAssessmentTab from '../components/ModelRiskAssessmentTab';
+import ModelMonitoringTab from '../components/ModelMonitoringTab';
 import OverdueCommentaryModal, { OverdueType } from '../components/OverdueCommentaryModal';
 import { useAuth } from '../contexts/AuthContext';
 import { ModelVersion } from '../api/versions';
@@ -229,7 +230,7 @@ export default function ModelDetailsPage() {
     const [decommissioningRequests, setDecommissioningRequests] = useState<DecommissioningRequestListItem[]>([]);
     const [loading, setLoading] = useState(true);
     const [editing, setEditing] = useState(false);
-    const [activeTab, setActiveTab] = useState<'details' | 'versions' | 'delegates' | 'validations' | 'hierarchy' | 'dependencies' | 'applications' | 'lineage' | 'activity' | 'recommendations' | 'decommissioning' | 'risk-assessment'>('details');
+    const [activeTab, setActiveTab] = useState<'details' | 'versions' | 'delegates' | 'validations' | 'hierarchy' | 'dependencies' | 'applications' | 'lineage' | 'activity' | 'recommendations' | 'monitoring' | 'decommissioning' | 'risk-assessment'>('details');
     const [showSubmitChangeModal, setShowSubmitChangeModal] = useState(false);
     const [selectedVersion, setSelectedVersion] = useState<ModelVersion | null>(null);
     const [versionsRefreshTrigger, setVersionsRefreshTrigger] = useState(0);
@@ -1439,6 +1440,15 @@ export default function ModelDetailsPage() {
                                     {recommendations.filter(r => !['REC_CLOSED', 'REC_DROPPED'].includes(r.current_status?.code || '')).length}
                                 </span>
                             )}
+                        </button>
+                        <button
+                            onClick={() => setActiveTab('monitoring')}
+                            className={`py-2 px-1 border-b-2 font-medium text-sm ${activeTab === 'monitoring'
+                                ? 'border-blue-500 text-blue-600'
+                                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                                }`}
+                        >
+                            Monitoring
                         </button>
                         <button
                             onClick={() => setActiveTab('decommissioning')}
@@ -2799,6 +2809,10 @@ export default function ModelDetailsPage() {
                             </table>
                         </div>
                     )}
+                </div>
+            ) : activeTab === 'monitoring' ? (
+                <div className="bg-white p-6 rounded-lg shadow-md">
+                    <ModelMonitoringTab modelId={model.model_id} modelName={model.model_name} />
                 </div>
             ) : activeTab === 'decommissioning' ? (
                 <div className="bg-white p-6 rounded-lg shadow-md">
