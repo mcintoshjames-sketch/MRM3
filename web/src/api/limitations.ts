@@ -204,3 +204,17 @@ export async function listValidationRequestLimitations(
     const response = await client.get(`/validation-requests/${requestId}/limitations`, { params });
     return response.data;
 }
+
+/**
+ * List limitations linked to a recommendation.
+ * Returns limitations that have this recommendation set as their mitigation recommendation.
+ */
+export async function listRecommendationLimitations(
+    recommendationId: number,
+    params?: {
+        include_retired?: boolean;
+    }
+): Promise<LimitationListItem[]> {
+    const response = await client.get(`/recommendations/${recommendationId}/limitations`, { params });
+    return response.data;
+}

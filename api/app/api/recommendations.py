@@ -17,7 +17,7 @@ from app.models import (
     User, Model, TaxonomyValue, Taxonomy, AuditLog, Region, ModelRegion,
     Recommendation, ActionPlanTask, RecommendationRebuttal,
     ClosureEvidence, RecommendationStatusHistory, RecommendationApproval,
-    RecommendationPriorityConfig
+    RecommendationPriorityConfig, ModelLimitation
 )
 from app.models.recommendation import RecommendationPriorityRegionalOverride, RecommendationTimeframeConfig
 from app.schemas.recommendation import (
@@ -38,6 +38,7 @@ from app.schemas.recommendation import (
     OverdueRecommendationsReport, OverdueRecommendation, ModelSummary
 )
 from app.schemas.taxonomy import TaxonomyValueResponse
+from app.schemas.limitation import LimitationListResponse
 
 
 # ==================== DATA CLASSES ====================
@@ -457,17 +458,8 @@ def validate_target_date(
     is_enforced = _check_timeframe_enforced_for_model(db, priority_id, model_id)
 
     # Calculate days from creation to max and to proposed
-    max_days = (max_target - creation_date).days
-    proposed_days = (proposed_target_date - creation_date).days
-
     # Check if proposed date exceeds max
     exceeds_max = proposed_target_date > max_target
-
-    # Check if proposed is significantly sooner than max (less than 25% of max days, with min threshold)
-    # This catches cases where timelines are aggressively accelerated without explanation
-    significantly_sooner = False
-    if max_days > 30 and proposed_days < (max_days * 0.25):
-        significantly_sooner = True
 
     if is_enforced:
         # Strict enforcement mode
@@ -486,9 +478,8 @@ def validate_target_date(
                 is_valid=True,
                 is_enforced=True,
                 max_target_date=max_target,
-                reason_required=significantly_sooner,
+                reason_required=False,
                 message="Target date is within the enforced maximum timeframe"
-                        + (". Explanation recommended for accelerated timeline." if significantly_sooner else "")
             )
     else:
         # Advisory mode (not enforced)
@@ -507,9 +498,8 @@ def validate_target_date(
                 is_valid=True,
                 is_enforced=False,
                 max_target_date=max_target,
-                reason_required=significantly_sooner,
+                reason_required=False,
                 message="Target date is within the recommended timeframe"
-                        + (". Explanation recommended for accelerated timeline." if significantly_sooner else "")
             )
 
 
@@ -1019,12 +1009,6 @@ def create_recommendation(
             detail=validation_result.message
         )
 
-    if validation_result.reason_required and not rec_data.target_date_change_reason:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Target date is significantly earlier than the maximum allowed. Please provide a reason/explanation for this shorter timeframe."
-        )
-
     # Get draft status
     draft_status = get_status_by_code(db, "REC_DRAFT")
 
@@ -1509,6 +1493,40 @@ def get_recommendation(
         )
 
     return recommendation
+
+
+@router.get("/{recommendation_id}/limitations", response_model=List[LimitationListResponse])
+def get_recommendation_limitations(
+    recommendation_id: int,
+    include_retired: bool = Query(False, description="Include retired limitations"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Get all limitations linked to this recommendation.
+
+    Returns limitations that have this recommendation set as their
+    mitigation recommendation (i.e., limitation.recommendation_id = recommendation_id).
+    """
+    # Verify recommendation exists
+    recommendation = db.query(Recommendation).filter(
+        Recommendation.recommendation_id == recommendation_id
+    ).first()
+    if not recommendation:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Recommendation not found"
+        )
+
+    query = db.query(ModelLimitation).options(
+        joinedload(ModelLimitation.category),
+        joinedload(ModelLimitation.model)
+    ).filter(ModelLimitation.recommendation_id == recommendation_id)
+
+    if not include_retired:
+        query = query.filter(ModelLimitation.is_retired == False)
+
+    limitations = query.order_by(ModelLimitation.created_at.desc()).all()
+    return limitations
 
 
 @router.patch("/{recommendation_id}", response_model=RecommendationResponse)

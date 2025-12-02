@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import Layout from '../components/Layout';
 import { recommendationsApi, Recommendation, TaxonomyValue } from '../api/recommendations';
+import { listRecommendationLimitations, LimitationListItem } from '../api/limitations';
 import { useAuth } from '../contexts/AuthContext';
 import api from '../api/client';
 
@@ -28,7 +29,8 @@ export default function RecommendationDetailPage() {
     const [recommendation, setRecommendation] = useState<Recommendation | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
-    const [activeTab, setActiveTab] = useState<'details' | 'action-plan' | 'rebuttals' | 'evidence' | 'approvals' | 'history'>('details');
+    const [activeTab, setActiveTab] = useState<'details' | 'action-plan' | 'rebuttals' | 'evidence' | 'approvals' | 'history' | 'limitations'>('details');
+    const [limitations, setLimitations] = useState<LimitationListItem[]>([]);
 
     // Modal states
     const [showRebuttalModal, setShowRebuttalModal] = useState(false);
@@ -49,6 +51,7 @@ export default function RecommendationDetailPage() {
             fetchRecommendation();
             fetchUsers();
             fetchTaskStatuses();
+            fetchLimitations();
         }
     }, [id]);
 
@@ -91,6 +94,15 @@ export default function RecommendationDetailPage() {
             }
         } catch (err) {
             console.error('Failed to fetch task statuses:', err);
+        }
+    };
+
+    const fetchLimitations = async () => {
+        try {
+            const data = await listRecommendationLimitations(parseInt(id!));
+            setLimitations(data);
+        } catch (err) {
+            console.error('Failed to fetch limitations:', err);
         }
     };
 
@@ -477,6 +489,7 @@ export default function RecommendationDetailPage() {
                         { key: 'rebuttals', label: `Rebuttals (${recommendation.rebuttals?.length || 0})` },
                         { key: 'evidence', label: `Evidence (${recommendation.closure_evidence?.length || 0})` },
                         { key: 'approvals', label: `Approvals (${recommendation.approvals?.length || 0})` },
+                        { key: 'limitations', label: `Limitations (${limitations.length})` },
                         { key: 'history', label: 'History' },
                     ].map(tab => (
                         <button
@@ -680,6 +693,77 @@ export default function RecommendationDetailPage() {
                         currentUser={user}
                         onRefresh={fetchRecommendation}
                     />
+                )}
+
+                {/* Limitations Tab */}
+                {activeTab === 'limitations' && (
+                    <div>
+                        {limitations.length > 0 ? (
+                            <div className="overflow-x-auto">
+                                <table className="min-w-full divide-y divide-gray-200">
+                                    <thead className="bg-gray-50">
+                                        <tr>
+                                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">ID</th>
+                                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Significance</th>
+                                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Category</th>
+                                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Description</th>
+                                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Conclusion</th>
+                                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Created</th>
+                                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="bg-white divide-y divide-gray-200">
+                                        {limitations.map(limitation => (
+                                            <tr key={limitation.limitation_id}>
+                                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                                    #{limitation.limitation_id}
+                                                </td>
+                                                <td className="px-6 py-4 whitespace-nowrap">
+                                                    <span className={`px-2 py-1 text-xs rounded ${
+                                                        limitation.significance === 'Critical'
+                                                            ? 'bg-red-100 text-red-800'
+                                                            : 'bg-blue-100 text-blue-800'
+                                                    }`}>
+                                                        {limitation.significance}
+                                                    </span>
+                                                </td>
+                                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                                    {limitation.category_label || '-'}
+                                                </td>
+                                                <td className="px-6 py-4 text-sm text-gray-900 max-w-xs truncate" title={limitation.description}>
+                                                    {limitation.description.length > 80
+                                                        ? `${limitation.description.substring(0, 80)}...`
+                                                        : limitation.description}
+                                                </td>
+                                                <td className="px-6 py-4 whitespace-nowrap">
+                                                    <span className={`px-2 py-1 text-xs rounded ${
+                                                        limitation.conclusion === 'Mitigate'
+                                                            ? 'bg-yellow-100 text-yellow-800'
+                                                            : 'bg-green-100 text-green-800'
+                                                    }`}>
+                                                        {limitation.conclusion}
+                                                    </span>
+                                                </td>
+                                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                                    {limitation.created_at?.split('T')[0]}
+                                                </td>
+                                                <td className="px-6 py-4 whitespace-nowrap text-sm">
+                                                    <Link
+                                                        to={`/models/${limitation.model_id}?tab=limitations`}
+                                                        className="text-blue-600 hover:text-blue-800 hover:underline"
+                                                    >
+                                                        View on Model
+                                                    </Link>
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        ) : (
+                            <p className="text-gray-500 text-center py-8">No limitations linked to this recommendation.</p>
+                        )}
+                    </div>
                 )}
 
                 {/* History Tab */}

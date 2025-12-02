@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import {
     listModelLimitations,
@@ -1110,9 +1111,14 @@ const LimitationDetailModal: React.FC<LimitationDetailModalProps> = ({
                                     </div>
                                 )}
                                 {limitation.recommendation && (
-                                    <div>
-                                        <span className="text-gray-500">Recommendation:</span>{' '}
-                                        <span className="text-gray-900">{limitation.recommendation.title}</span>
+                                    <div className="col-span-3">
+                                        <span className="text-gray-500">Linked Recommendation:</span>{' '}
+                                        <Link
+                                            to={`/recommendations/${limitation.recommendation.recommendation_id}`}
+                                            className="text-blue-600 hover:text-blue-800 hover:underline"
+                                        >
+                                            {limitation.recommendation.title}
+                                        </Link>
                                     </div>
                                 )}
                             </div>

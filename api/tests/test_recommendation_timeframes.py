@@ -1509,10 +1509,10 @@ class TestValidateTargetDate:
         assert result.is_valid is True
         assert result.max_target_date == date(2025, 4, 1)
 
-    def test_validate_target_date_sooner_than_max_requires_reason(
+    def test_validate_target_date_sooner_than_max_is_valid(
         self, db_session, validation_setup
     ):
-        """RED: Target date sooner than max by significant amount requires reason."""
+        """Target date sooner than max is valid (no reason requirement for early dates)."""
         from app.api.recommendations import validate_target_date
 
         # MEDIUM priority + TIER_4 + ANNUALLY = 365 days
@@ -1528,8 +1528,8 @@ class TestValidateTargetDate:
         )
 
         assert result.is_valid is True
-        # Significantly sooner target date should require explanation
-        assert result.reason_required is True
+        # Early target dates are allowed without explanation
+        assert result.reason_required is False
 
     def test_validate_target_date_no_config_returns_valid_with_warning(
         self, db_session, validation_setup
@@ -1941,17 +1941,17 @@ class TestCreateRecommendationWithTimeframe:
         assert response.status_code == 400
         assert "exceed" in response.json()["detail"].lower() or "max" in response.json()["detail"].lower()
 
-    def test_create_recommendation_significantly_early_requires_reason(
+    def test_create_recommendation_early_date_succeeds_without_reason(
         self, client, recommendation_setup
     ):
-        """RED: Should require reason when date is significantly earlier than max."""
+        """Early target dates (within limits) should succeed without requiring a reason."""
         from datetime import date, timedelta
 
         # MEDIUM priority + TIER_2 + MONTHLY = 180 days max
-        # Set date to just 14 days from now - significantly earlier than 180
+        # Set date to just 14 days from now - much earlier than 180 max, but still valid
         target_date = date.today() + timedelta(days=14)
 
-        # Without reason - should fail
+        # Early dates within limits should succeed without reason
         response = client.post(
             "/recommendations/",
             headers={"Authorization": f"Bearer {recommendation_setup['validator_token']}"},
@@ -1962,23 +1962,22 @@ class TestCreateRecommendationWithTimeframe:
                 "priority_id": recommendation_setup["taxonomies"]["recommendation_priority"]["MEDIUM"],
                 "assigned_to_id": recommendation_setup["developer_user"].user_id,
                 "original_target_date": target_date.isoformat()
-                # No target_date_change_reason!
+                # No target_date_change_reason - not required for early dates
             }
         )
-        assert response.status_code == 400
-        assert "reason" in response.json()["detail"].lower() or "explanation" in response.json()["detail"].lower()
+        assert response.status_code == 201
 
-    def test_create_recommendation_early_with_reason_succeeds(
+    def test_create_recommendation_early_with_optional_reason_succeeds(
         self, client, recommendation_setup
     ):
-        """RED: Should allow early date with explanation provided."""
+        """Early date with optional explanation provided should succeed."""
         from datetime import date, timedelta
 
         # MEDIUM priority + TIER_2 + MONTHLY = 180 days max
-        # Set date to just 14 days from now - significantly earlier than 180
+        # Set date to just 14 days from now - early but valid
         target_date = date.today() + timedelta(days=14)
 
-        # With reason - should succeed
+        # With optional reason - should succeed
         response = client.post(
             "/recommendations/",
             headers={"Authorization": f"Bearer {recommendation_setup['validator_token']}"},
