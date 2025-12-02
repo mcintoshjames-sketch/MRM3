@@ -2,6 +2,7 @@
 from typing import List, Optional
 from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy import func
 from sqlalchemy.orm import Session, joinedload
 
 from app.core.database import get_db
@@ -21,12 +22,19 @@ from app.models.scorecard import (
     ScorecardCriterion,
     ValidationScorecardRating,
     ValidationScorecardResult,
+    ScorecardConfigVersion,
+    ScorecardSectionSnapshot,
+    ScorecardCriterionSnapshot,
 )
 from app.models.validation import ValidationRequest
 from app.schemas.scorecard import (
     ScorecardSectionResponse,
     ScorecardSectionWithCriteria,
+    ScorecardSectionCreate,
+    ScorecardSectionUpdate,
     ScorecardCriterionResponse,
+    ScorecardCriterionCreate,
+    ScorecardCriterionUpdate,
     ScorecardConfigResponse,
     ScorecardRatingsCreate,
     CriterionRatingInput,
@@ -37,6 +45,12 @@ from app.schemas.scorecard import (
     SectionSummaryResponse,
     OverallAssessmentResponse,
     ScorecardResultResponse,
+    # Configuration versioning schemas
+    ScorecardConfigVersionResponse,
+    ScorecardConfigVersionDetailResponse,
+    ScorecardSectionSnapshotResponse,
+    ScorecardCriterionSnapshotResponse,
+    PublishScorecardVersionRequest,
 )
 
 router = APIRouter()
@@ -473,4 +487,780 @@ def _build_scorecard_response(
         section_summaries=section_summaries,
         overall_assessment=overall,
         computed_at=computed_at,
+    )
+
+
+# ============================================================================
+# Admin: Section CRUD Endpoints
+# ============================================================================
+
+def require_admin(current_user: User = Depends(get_current_user)) -> User:
+    """Require the current user to be an Admin."""
+    if current_user.role != "Admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin role required"
+        )
+    return current_user
+
+
+@router.get("/sections", response_model=List[ScorecardSectionWithCriteria])
+def list_sections(
+    include_inactive: bool = False,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    List all scorecard sections with their criteria.
+
+    By default, only active sections are returned.
+    Set include_inactive=true to include inactive sections.
+    """
+    query = (
+        db.query(ScorecardSection)
+        .options(joinedload(ScorecardSection.criteria))
+        .order_by(ScorecardSection.sort_order)
+    )
+    if not include_inactive:
+        query = query.filter(ScorecardSection.is_active == True)
+
+    sections = query.all()
+
+    return [
+        ScorecardSectionWithCriteria(
+            section_id=s.section_id,
+            code=s.code,
+            name=s.name,
+            description=s.description,
+            sort_order=s.sort_order,
+            is_active=s.is_active,
+            created_at=s.created_at,
+            updated_at=s.updated_at,
+            criteria=[
+                ScorecardCriterionResponse(
+                    criterion_id=c.criterion_id,
+                    code=c.code,
+                    section_id=c.section_id,
+                    name=c.name,
+                    description_prompt=c.description_prompt,
+                    comments_prompt=c.comments_prompt,
+                    include_in_summary=c.include_in_summary,
+                    allow_zero=c.allow_zero,
+                    weight=float(c.weight),
+                    sort_order=c.sort_order,
+                    is_active=c.is_active,
+                    created_at=c.created_at,
+                    updated_at=c.updated_at,
+                )
+                for c in sorted(s.criteria, key=lambda x: x.sort_order)
+            ]
+        )
+        for s in sections
+    ]
+
+
+@router.get("/sections/{section_id}", response_model=ScorecardSectionWithCriteria)
+def get_section(
+    section_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Get a single section with its criteria."""
+    section = (
+        db.query(ScorecardSection)
+        .options(joinedload(ScorecardSection.criteria))
+        .filter(ScorecardSection.section_id == section_id)
+        .first()
+    )
+    if not section:
+        raise HTTPException(status_code=404, detail="Section not found")
+
+    # Sort criteria by sort_order
+    criteria = sorted(section.criteria, key=lambda c: c.sort_order)
+
+    return ScorecardSectionWithCriteria(
+        section_id=section.section_id,
+        code=section.code,
+        name=section.name,
+        description=section.description,
+        sort_order=section.sort_order,
+        is_active=section.is_active,
+        created_at=section.created_at,
+        updated_at=section.updated_at,
+        criteria=[
+            ScorecardCriterionResponse(
+                criterion_id=c.criterion_id,
+                code=c.code,
+                section_id=c.section_id,
+                name=c.name,
+                description_prompt=c.description_prompt,
+                comments_prompt=c.comments_prompt,
+                include_in_summary=c.include_in_summary,
+                allow_zero=c.allow_zero,
+                weight=float(c.weight),
+                sort_order=c.sort_order,
+                is_active=c.is_active,
+                created_at=c.created_at,
+                updated_at=c.updated_at,
+            )
+            for c in criteria
+        ]
+    )
+
+
+@router.post("/sections", response_model=ScorecardSectionResponse, status_code=status.HTTP_201_CREATED)
+def create_section(
+    data: ScorecardSectionCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin)
+):
+    """Create a new scorecard section. Admin only."""
+    # Check for duplicate code
+    existing = db.query(ScorecardSection).filter(ScorecardSection.code == data.code).first()
+    if existing:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Section with code '{data.code}' already exists"
+        )
+
+    section = ScorecardSection(
+        code=data.code,
+        name=data.name,
+        description=data.description,
+        sort_order=data.sort_order,
+        is_active=data.is_active,
+    )
+    db.add(section)
+    db.flush()
+
+    create_audit_log(
+        db=db,
+        entity_type="ScorecardSection",
+        entity_id=section.section_id,
+        action="CREATE",
+        user_id=current_user.user_id,
+        changes={"code": data.code, "name": data.name}
+    )
+
+    db.commit()
+    db.refresh(section)
+    return section
+
+
+@router.patch("/sections/{section_id}", response_model=ScorecardSectionResponse)
+def update_section(
+    section_id: int,
+    data: ScorecardSectionUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin)
+):
+    """Update a scorecard section. Admin only."""
+    section = db.query(ScorecardSection).filter(ScorecardSection.section_id == section_id).first()
+    if not section:
+        raise HTTPException(status_code=404, detail="Section not found")
+
+    changes = {}
+    if data.name is not None and data.name != section.name:
+        changes["name"] = {"old": section.name, "new": data.name}
+        section.name = data.name
+    if data.description is not None and data.description != section.description:
+        changes["description"] = {"old": section.description, "new": data.description}
+        section.description = data.description
+    if data.sort_order is not None and data.sort_order != section.sort_order:
+        changes["sort_order"] = {"old": section.sort_order, "new": data.sort_order}
+        section.sort_order = data.sort_order
+    if data.is_active is not None and data.is_active != section.is_active:
+        changes["is_active"] = {"old": section.is_active, "new": data.is_active}
+        section.is_active = data.is_active
+
+    if changes:
+        section.updated_at = utc_now()
+        create_audit_log(
+            db=db,
+            entity_type="ScorecardSection",
+            entity_id=section.section_id,
+            action="UPDATE",
+            user_id=current_user.user_id,
+            changes=changes
+        )
+        db.commit()
+        db.refresh(section)
+
+    return section
+
+
+@router.delete("/sections/{section_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_section(
+    section_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin)
+):
+    """
+    Delete a scorecard section. Admin only.
+
+    This will also delete all criteria belonging to this section.
+    Use with caution - consider deactivating instead.
+    """
+    section = db.query(ScorecardSection).filter(ScorecardSection.section_id == section_id).first()
+    if not section:
+        raise HTTPException(status_code=404, detail="Section not found")
+
+    create_audit_log(
+        db=db,
+        entity_type="ScorecardSection",
+        entity_id=section.section_id,
+        action="DELETE",
+        user_id=current_user.user_id,
+        changes={"code": section.code, "name": section.name}
+    )
+
+    db.delete(section)
+    db.commit()
+
+
+# ============================================================================
+# Admin: Criterion CRUD Endpoints
+# ============================================================================
+
+@router.get("/criteria", response_model=List[ScorecardCriterionResponse])
+def list_criteria(
+    section_id: Optional[int] = None,
+    include_inactive: bool = False,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    List all scorecard criteria.
+
+    Optionally filter by section_id.
+    By default, only active criteria are returned.
+    """
+    query = db.query(ScorecardCriterion).order_by(
+        ScorecardCriterion.section_id,
+        ScorecardCriterion.sort_order
+    )
+    if section_id is not None:
+        query = query.filter(ScorecardCriterion.section_id == section_id)
+    if not include_inactive:
+        query = query.filter(ScorecardCriterion.is_active == True)
+
+    criteria = query.all()
+    return [
+        ScorecardCriterionResponse(
+            criterion_id=c.criterion_id,
+            code=c.code,
+            section_id=c.section_id,
+            name=c.name,
+            description_prompt=c.description_prompt,
+            comments_prompt=c.comments_prompt,
+            include_in_summary=c.include_in_summary,
+            allow_zero=c.allow_zero,
+            weight=float(c.weight),
+            sort_order=c.sort_order,
+            is_active=c.is_active,
+            created_at=c.created_at,
+            updated_at=c.updated_at,
+        )
+        for c in criteria
+    ]
+
+
+@router.get("/criteria/{criterion_id}", response_model=ScorecardCriterionResponse)
+def get_criterion(
+    criterion_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Get a single criterion."""
+    criterion = db.query(ScorecardCriterion).filter(
+        ScorecardCriterion.criterion_id == criterion_id
+    ).first()
+    if not criterion:
+        raise HTTPException(status_code=404, detail="Criterion not found")
+
+    return ScorecardCriterionResponse(
+        criterion_id=criterion.criterion_id,
+        code=criterion.code,
+        section_id=criterion.section_id,
+        name=criterion.name,
+        description_prompt=criterion.description_prompt,
+        comments_prompt=criterion.comments_prompt,
+        include_in_summary=criterion.include_in_summary,
+        allow_zero=criterion.allow_zero,
+        weight=float(criterion.weight),
+        sort_order=criterion.sort_order,
+        is_active=criterion.is_active,
+        created_at=criterion.created_at,
+        updated_at=criterion.updated_at,
+    )
+
+
+@router.post("/criteria", response_model=ScorecardCriterionResponse, status_code=status.HTTP_201_CREATED)
+def create_criterion(
+    data: ScorecardCriterionCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin)
+):
+    """Create a new scorecard criterion. Admin only."""
+    # Verify section exists
+    section = db.query(ScorecardSection).filter(ScorecardSection.section_id == data.section_id).first()
+    if not section:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Section with id {data.section_id} not found"
+        )
+
+    # Check for duplicate code
+    existing = db.query(ScorecardCriterion).filter(ScorecardCriterion.code == data.code).first()
+    if existing:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Criterion with code '{data.code}' already exists"
+        )
+
+    criterion = ScorecardCriterion(
+        code=data.code,
+        section_id=data.section_id,
+        name=data.name,
+        description_prompt=data.description_prompt,
+        comments_prompt=data.comments_prompt,
+        include_in_summary=data.include_in_summary,
+        allow_zero=data.allow_zero,
+        weight=data.weight,
+        sort_order=data.sort_order,
+        is_active=data.is_active,
+    )
+    db.add(criterion)
+    db.flush()
+
+    create_audit_log(
+        db=db,
+        entity_type="ScorecardCriterion",
+        entity_id=criterion.criterion_id,
+        action="CREATE",
+        user_id=current_user.user_id,
+        changes={"code": data.code, "name": data.name, "section_id": data.section_id}
+    )
+
+    db.commit()
+    db.refresh(criterion)
+
+    return ScorecardCriterionResponse(
+        criterion_id=criterion.criterion_id,
+        code=criterion.code,
+        section_id=criterion.section_id,
+        name=criterion.name,
+        description_prompt=criterion.description_prompt,
+        comments_prompt=criterion.comments_prompt,
+        include_in_summary=criterion.include_in_summary,
+        allow_zero=criterion.allow_zero,
+        weight=float(criterion.weight),
+        sort_order=criterion.sort_order,
+        is_active=criterion.is_active,
+        created_at=criterion.created_at,
+        updated_at=criterion.updated_at,
+    )
+
+
+@router.patch("/criteria/{criterion_id}", response_model=ScorecardCriterionResponse)
+def update_criterion(
+    criterion_id: int,
+    data: ScorecardCriterionUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin)
+):
+    """Update a scorecard criterion. Admin only."""
+    criterion = db.query(ScorecardCriterion).filter(
+        ScorecardCriterion.criterion_id == criterion_id
+    ).first()
+    if not criterion:
+        raise HTTPException(status_code=404, detail="Criterion not found")
+
+    changes = {}
+    if data.name is not None and data.name != criterion.name:
+        changes["name"] = {"old": criterion.name, "new": data.name}
+        criterion.name = data.name
+    if data.description_prompt is not None and data.description_prompt != criterion.description_prompt:
+        changes["description_prompt"] = {"old": criterion.description_prompt, "new": data.description_prompt}
+        criterion.description_prompt = data.description_prompt
+    if data.comments_prompt is not None and data.comments_prompt != criterion.comments_prompt:
+        changes["comments_prompt"] = {"old": criterion.comments_prompt, "new": data.comments_prompt}
+        criterion.comments_prompt = data.comments_prompt
+    if data.include_in_summary is not None and data.include_in_summary != criterion.include_in_summary:
+        changes["include_in_summary"] = {"old": criterion.include_in_summary, "new": data.include_in_summary}
+        criterion.include_in_summary = data.include_in_summary
+    if data.allow_zero is not None and data.allow_zero != criterion.allow_zero:
+        changes["allow_zero"] = {"old": criterion.allow_zero, "new": data.allow_zero}
+        criterion.allow_zero = data.allow_zero
+    if data.weight is not None and data.weight != float(criterion.weight):
+        changes["weight"] = {"old": float(criterion.weight), "new": data.weight}
+        criterion.weight = data.weight
+    if data.sort_order is not None and data.sort_order != criterion.sort_order:
+        changes["sort_order"] = {"old": criterion.sort_order, "new": data.sort_order}
+        criterion.sort_order = data.sort_order
+    if data.is_active is not None and data.is_active != criterion.is_active:
+        changes["is_active"] = {"old": criterion.is_active, "new": data.is_active}
+        criterion.is_active = data.is_active
+
+    if changes:
+        criterion.updated_at = utc_now()
+        create_audit_log(
+            db=db,
+            entity_type="ScorecardCriterion",
+            entity_id=criterion.criterion_id,
+            action="UPDATE",
+            user_id=current_user.user_id,
+            changes=changes
+        )
+        db.commit()
+        db.refresh(criterion)
+
+    return ScorecardCriterionResponse(
+        criterion_id=criterion.criterion_id,
+        code=criterion.code,
+        section_id=criterion.section_id,
+        name=criterion.name,
+        description_prompt=criterion.description_prompt,
+        comments_prompt=criterion.comments_prompt,
+        include_in_summary=criterion.include_in_summary,
+        allow_zero=criterion.allow_zero,
+        weight=float(criterion.weight),
+        sort_order=criterion.sort_order,
+        is_active=criterion.is_active,
+        created_at=criterion.created_at,
+        updated_at=criterion.updated_at,
+    )
+
+
+@router.delete("/criteria/{criterion_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_criterion(
+    criterion_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin)
+):
+    """
+    Delete a scorecard criterion. Admin only.
+
+    Use with caution - existing scorecard ratings that reference this criterion
+    by code will become orphaned (but preserved for historical accuracy).
+    Consider deactivating instead.
+    """
+    criterion = db.query(ScorecardCriterion).filter(
+        ScorecardCriterion.criterion_id == criterion_id
+    ).first()
+    if not criterion:
+        raise HTTPException(status_code=404, detail="Criterion not found")
+
+    create_audit_log(
+        db=db,
+        entity_type="ScorecardCriterion",
+        entity_id=criterion.criterion_id,
+        action="DELETE",
+        user_id=current_user.user_id,
+        changes={"code": criterion.code, "name": criterion.name}
+    )
+
+    db.delete(criterion)
+    db.commit()
+
+
+# ============================================================================
+# Scorecard Config Version Endpoints
+# ============================================================================
+
+
+@router.get("/versions", response_model=List[ScorecardConfigVersionResponse])
+def list_config_versions(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    List all scorecard configuration versions.
+
+    Returns versions ordered by version_number descending (newest first).
+    Includes has_unpublished_changes for the active version.
+    """
+    versions = (
+        db.query(ScorecardConfigVersion)
+        .order_by(ScorecardConfigVersion.version_number.desc())
+        .all()
+    )
+
+    # Find the active version and check for unpublished changes
+    active_version = next((v for v in versions if v.is_active), None)
+    active_has_changes = _check_unpublished_changes(db, active_version) if active_version else False
+
+    return [
+        ScorecardConfigVersionResponse(
+            version_id=v.version_id,
+            version_number=v.version_number,
+            version_name=v.version_name,
+            description=v.description,
+            published_by_name=v.published_by.full_name if v.published_by else None,
+            published_at=v.published_at,
+            is_active=v.is_active,
+            sections_count=len(v.section_snapshots),
+            criteria_count=len(v.criterion_snapshots),
+            scorecards_count=len(v.scorecard_results),
+            created_at=v.created_at,
+            has_unpublished_changes=active_has_changes if v.is_active else False,
+        )
+        for v in versions
+    ]
+
+
+@router.get("/versions/active", response_model=Optional[ScorecardConfigVersionDetailResponse])
+def get_active_config_version(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Get the currently active scorecard configuration version with all snapshots.
+
+    Returns None if no active version exists.
+    Includes has_unpublished_changes flag to indicate if config changed since publish.
+    """
+    version = (
+        db.query(ScorecardConfigVersion)
+        .options(
+            joinedload(ScorecardConfigVersion.section_snapshots),
+            joinedload(ScorecardConfigVersion.criterion_snapshots),
+            joinedload(ScorecardConfigVersion.published_by),
+        )
+        .filter(ScorecardConfigVersion.is_active == True)
+        .first()
+    )
+
+    if not version:
+        return None
+
+    # Check if there are unpublished changes
+    has_changes = _check_unpublished_changes(db, version)
+
+    return _build_version_detail_response(version, db, has_changes)
+
+
+@router.get("/versions/{version_id}", response_model=ScorecardConfigVersionDetailResponse)
+def get_config_version(
+    version_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Get a specific scorecard configuration version with all snapshots.
+    """
+    version = (
+        db.query(ScorecardConfigVersion)
+        .options(
+            joinedload(ScorecardConfigVersion.section_snapshots),
+            joinedload(ScorecardConfigVersion.criterion_snapshots),
+            joinedload(ScorecardConfigVersion.published_by),
+        )
+        .filter(ScorecardConfigVersion.version_id == version_id)
+        .first()
+    )
+
+    if not version:
+        raise HTTPException(status_code=404, detail="Version not found")
+
+    # Only check unpublished changes for active version
+    has_changes = _check_unpublished_changes(db, version) if version.is_active else False
+
+    return _build_version_detail_response(version, db, has_changes)
+
+
+@router.post("/versions/publish", response_model=ScorecardConfigVersionResponse, status_code=status.HTTP_201_CREATED)
+def publish_config_version(
+    data: PublishScorecardVersionRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin)
+):
+    """
+    Publish a new scorecard configuration version.
+
+    This snapshots all current active sections and criteria.
+    The new version becomes the active version, and previous versions are deactivated.
+
+    Admin only.
+    """
+    # Get next version number
+    max_version = db.query(func.max(ScorecardConfigVersion.version_number)).scalar() or 0
+    new_version_number = max_version + 1
+
+    # Deactivate previous active version
+    db.query(ScorecardConfigVersion).filter(
+        ScorecardConfigVersion.is_active == True
+    ).update({"is_active": False})
+
+    # Create new version
+    version_name = data.version_name or f"Version {new_version_number}"
+
+    new_version = ScorecardConfigVersion(
+        version_number=new_version_number,
+        version_name=version_name,
+        description=data.description,
+        published_by_user_id=current_user.user_id,
+        is_active=True,
+    )
+    db.add(new_version)
+    db.flush()
+
+    # Snapshot all active sections
+    sections = (
+        db.query(ScorecardSection)
+        .filter(ScorecardSection.is_active == True)
+        .order_by(ScorecardSection.sort_order)
+        .all()
+    )
+
+    for section in sections:
+        snapshot = ScorecardSectionSnapshot(
+            version_id=new_version.version_id,
+            original_section_id=section.section_id,
+            code=section.code,
+            name=section.name,
+            description=section.description,
+            sort_order=section.sort_order,
+            is_active=section.is_active,
+        )
+        db.add(snapshot)
+
+    # Snapshot all active criteria
+    criteria = (
+        db.query(ScorecardCriterion)
+        .join(ScorecardSection)
+        .filter(ScorecardCriterion.is_active == True)
+        .order_by(ScorecardCriterion.sort_order)
+        .all()
+    )
+
+    for criterion in criteria:
+        section_code = criterion.section.code
+        snapshot = ScorecardCriterionSnapshot(
+            version_id=new_version.version_id,
+            original_criterion_id=criterion.criterion_id,
+            section_code=section_code,
+            code=criterion.code,
+            name=criterion.name,
+            description_prompt=criterion.description_prompt,
+            comments_prompt=criterion.comments_prompt,
+            include_in_summary=criterion.include_in_summary,
+            allow_zero=criterion.allow_zero,
+            weight=float(criterion.weight),
+            sort_order=criterion.sort_order,
+            is_active=criterion.is_active,
+        )
+        db.add(snapshot)
+
+    # Audit log
+    create_audit_log(
+        db=db,
+        entity_type="ScorecardConfigVersion",
+        entity_id=new_version.version_id,
+        action="PUBLISH",
+        user_id=current_user.user_id,
+        changes={
+            "version_number": new_version_number,
+            "version_name": version_name,
+            "sections_count": len(sections),
+            "criteria_count": len(criteria),
+        }
+    )
+
+    db.commit()
+    db.refresh(new_version)
+
+    return ScorecardConfigVersionResponse(
+        version_id=new_version.version_id,
+        version_number=new_version.version_number,
+        version_name=new_version.version_name,
+        description=new_version.description,
+        published_by_name=current_user.full_name,
+        published_at=new_version.published_at,
+        is_active=new_version.is_active,
+        sections_count=len(sections),
+        criteria_count=len(criteria),
+        scorecards_count=0,
+        created_at=new_version.created_at,
+    )
+
+
+def _check_unpublished_changes(db: Session, version: ScorecardConfigVersion) -> bool:
+    """Check if there are unpublished changes since this version was published."""
+    if not version or not version.is_active:
+        return False
+
+    # Get the most recent update timestamp from sections
+    latest_section_update = (
+        db.query(func.max(ScorecardSection.updated_at))
+        .filter(ScorecardSection.is_active == True)
+        .scalar()
+    )
+
+    # Get the most recent update timestamp from criteria
+    latest_criterion_update = (
+        db.query(func.max(ScorecardCriterion.updated_at))
+        .filter(ScorecardCriterion.is_active == True)
+        .scalar()
+    )
+
+    # Check if either is newer than published_at
+    if latest_section_update and latest_section_update > version.published_at:
+        return True
+    if latest_criterion_update and latest_criterion_update > version.published_at:
+        return True
+
+    return False
+
+
+def _build_version_detail_response(
+    version: ScorecardConfigVersion,
+    db: Session = None,
+    has_unpublished_changes: bool = False
+) -> ScorecardConfigVersionDetailResponse:
+    """Build the detailed version response with snapshots."""
+    section_snapshots = [
+        ScorecardSectionSnapshotResponse(
+            snapshot_id=s.snapshot_id,
+            code=s.code,
+            name=s.name,
+            description=s.description,
+            sort_order=s.sort_order,
+            is_active=s.is_active,
+        )
+        for s in sorted(version.section_snapshots, key=lambda x: x.sort_order)
+    ]
+
+    criterion_snapshots = [
+        ScorecardCriterionSnapshotResponse(
+            snapshot_id=c.snapshot_id,
+            section_code=c.section_code,
+            code=c.code,
+            name=c.name,
+            description_prompt=c.description_prompt,
+            comments_prompt=c.comments_prompt,
+            include_in_summary=c.include_in_summary,
+            allow_zero=c.allow_zero,
+            weight=float(c.weight),
+            sort_order=c.sort_order,
+            is_active=c.is_active,
+        )
+        for c in sorted(version.criterion_snapshots, key=lambda x: x.sort_order)
+    ]
+
+    return ScorecardConfigVersionDetailResponse(
+        version_id=version.version_id,
+        version_number=version.version_number,
+        version_name=version.version_name,
+        description=version.description,
+        published_by_name=version.published_by.full_name if version.published_by else None,
+        published_at=version.published_at,
+        is_active=version.is_active,
+        sections_count=len(section_snapshots),
+        criteria_count=len(criterion_snapshots),
+        scorecards_count=len(version.scorecard_results),
+        created_at=version.created_at,
+        has_unpublished_changes=has_unpublished_changes,
+        section_snapshots=section_snapshots,
+        criterion_snapshots=criterion_snapshots,
     )

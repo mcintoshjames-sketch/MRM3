@@ -155,9 +155,12 @@ export default function ValidationScorecardTab({ requestId, canEdit, onScorecard
         });
     }, []);
 
-    // Handle rating change
+    // Handle rating change - preserve scroll position during update
     const handleRatingChange = useCallback(async (criterionCode: string, rating: ScorecardRating) => {
         if (!canEdit) return;
+
+        // Capture scroll position before any state changes
+        const scrollTop = window.scrollY;
 
         try {
             setSavingCriterion(criterionCode);
@@ -176,6 +179,11 @@ export default function ValidationScorecardTab({ requestId, canEdit, onScorecard
             setError(err instanceof Error ? err.message : 'Failed to save rating');
         } finally {
             setSavingCriterion(null);
+            // Restore scroll position after ALL state updates (including finally block)
+            // Use setTimeout to ensure we run after React's render cycle completes
+            setTimeout(() => {
+                window.scrollTo({ top: scrollTop, behavior: 'instant' });
+            }, 0);
         }
     }, [requestId, canEdit, criterionFields, onScorecardChange]);
 

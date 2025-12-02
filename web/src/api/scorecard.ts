@@ -227,6 +227,253 @@ export async function updateSingleRating(
     return response.data;
 }
 
+// ============================================================================
+// Admin: Section CRUD Functions
+// ============================================================================
+
+/**
+ * Input for creating a new section.
+ */
+export interface ScorecardSectionCreate {
+    code: string;
+    name: string;
+    description?: string | null;
+    sort_order?: number;
+    is_active?: boolean;
+}
+
+/**
+ * Input for updating a section.
+ */
+export interface ScorecardSectionUpdate {
+    name?: string;
+    description?: string | null;
+    sort_order?: number;
+    is_active?: boolean;
+}
+
+/**
+ * List all scorecard sections.
+ */
+export async function listSections(includeInactive = false): Promise<ScorecardSection[]> {
+    const response = await client.get(`${BASE_URL}/sections`, {
+        params: { include_inactive: includeInactive }
+    });
+    return response.data;
+}
+
+/**
+ * Get a single section with its criteria.
+ */
+export async function getSection(sectionId: number): Promise<ScorecardSection> {
+    const response = await client.get(`${BASE_URL}/sections/${sectionId}`);
+    return response.data;
+}
+
+/**
+ * Create a new section.
+ */
+export async function createSection(data: ScorecardSectionCreate): Promise<ScorecardSection> {
+    const response = await client.post(`${BASE_URL}/sections`, data);
+    return response.data;
+}
+
+/**
+ * Update a section.
+ */
+export async function updateSection(sectionId: number, data: ScorecardSectionUpdate): Promise<ScorecardSection> {
+    const response = await client.patch(`${BASE_URL}/sections/${sectionId}`, data);
+    return response.data;
+}
+
+/**
+ * Delete a section.
+ */
+export async function deleteSection(sectionId: number): Promise<void> {
+    await client.delete(`${BASE_URL}/sections/${sectionId}`);
+}
+
+// ============================================================================
+// Admin: Criterion CRUD Functions
+// ============================================================================
+
+/**
+ * Input for creating a new criterion.
+ */
+export interface ScorecardCriterionCreate {
+    code: string;
+    section_id: number;
+    name: string;
+    description_prompt?: string | null;
+    comments_prompt?: string | null;
+    include_in_summary?: boolean;
+    allow_zero?: boolean;
+    weight?: number;
+    sort_order?: number;
+    is_active?: boolean;
+}
+
+/**
+ * Input for updating a criterion.
+ */
+export interface ScorecardCriterionUpdate {
+    name?: string;
+    description_prompt?: string | null;
+    comments_prompt?: string | null;
+    include_in_summary?: boolean;
+    allow_zero?: boolean;
+    weight?: number;
+    sort_order?: number;
+    is_active?: boolean;
+}
+
+/**
+ * List all scorecard criteria.
+ */
+export async function listCriteria(sectionId?: number, includeInactive = false): Promise<ScorecardCriterion[]> {
+    const response = await client.get(`${BASE_URL}/criteria`, {
+        params: {
+            section_id: sectionId,
+            include_inactive: includeInactive
+        }
+    });
+    return response.data;
+}
+
+/**
+ * Get a single criterion.
+ */
+export async function getCriterion(criterionId: number): Promise<ScorecardCriterion> {
+    const response = await client.get(`${BASE_URL}/criteria/${criterionId}`);
+    return response.data;
+}
+
+/**
+ * Create a new criterion.
+ */
+export async function createCriterion(data: ScorecardCriterionCreate): Promise<ScorecardCriterion> {
+    const response = await client.post(`${BASE_URL}/criteria`, data);
+    return response.data;
+}
+
+/**
+ * Update a criterion.
+ */
+export async function updateCriterion(criterionId: number, data: ScorecardCriterionUpdate): Promise<ScorecardCriterion> {
+    const response = await client.patch(`${BASE_URL}/criteria/${criterionId}`, data);
+    return response.data;
+}
+
+/**
+ * Delete a criterion.
+ */
+export async function deleteCriterion(criterionId: number): Promise<void> {
+    await client.delete(`${BASE_URL}/criteria/${criterionId}`);
+}
+
+// ============================================================================
+// Configuration Versioning Types
+// ============================================================================
+
+/**
+ * Section snapshot in a config version.
+ */
+export interface ScorecardSectionSnapshot {
+    snapshot_id: number;
+    code: string;
+    name: string;
+    description: string | null;
+    sort_order: number;
+    is_active: boolean;
+}
+
+/**
+ * Criterion snapshot in a config version.
+ */
+export interface ScorecardCriterionSnapshot {
+    snapshot_id: number;
+    section_code: string;
+    code: string;
+    name: string;
+    description_prompt: string | null;
+    comments_prompt: string | null;
+    include_in_summary: boolean;
+    allow_zero: boolean;
+    weight: number;
+    sort_order: number;
+    is_active: boolean;
+}
+
+/**
+ * Scorecard configuration version summary.
+ */
+export interface ScorecardConfigVersion {
+    version_id: number;
+    version_number: number;
+    version_name: string | null;
+    description: string | null;
+    published_by_name: string | null;
+    published_at: string;
+    is_active: boolean;
+    sections_count: number;
+    criteria_count: number;
+    scorecards_count: number;
+    created_at: string;
+    has_unpublished_changes: boolean;
+}
+
+/**
+ * Scorecard configuration version with full snapshots.
+ */
+export interface ScorecardConfigVersionDetail extends ScorecardConfigVersion {
+    section_snapshots: ScorecardSectionSnapshot[];
+    criterion_snapshots: ScorecardCriterionSnapshot[];
+}
+
+/**
+ * Input for publishing a new version.
+ */
+export interface PublishScorecardVersionRequest {
+    version_name?: string | null;
+    description?: string | null;
+}
+
+// ============================================================================
+// Configuration Versioning API Functions
+// ============================================================================
+
+/**
+ * List all scorecard configuration versions.
+ */
+export async function listConfigVersions(): Promise<ScorecardConfigVersion[]> {
+    const response = await client.get(`${BASE_URL}/versions`);
+    return response.data;
+}
+
+/**
+ * Get the currently active scorecard configuration version with full details.
+ */
+export async function getActiveConfigVersion(): Promise<ScorecardConfigVersionDetail | null> {
+    const response = await client.get(`${BASE_URL}/versions/active`);
+    return response.data;
+}
+
+/**
+ * Get a specific scorecard configuration version with full details.
+ */
+export async function getConfigVersion(versionId: number): Promise<ScorecardConfigVersionDetail> {
+    const response = await client.get(`${BASE_URL}/versions/${versionId}`);
+    return response.data;
+}
+
+/**
+ * Publish a new scorecard configuration version. Admin only.
+ */
+export async function publishConfigVersion(data: PublishScorecardVersionRequest): Promise<ScorecardConfigVersion> {
+    const response = await client.post(`${BASE_URL}/versions/publish`, data);
+    return response.data;
+}
+
 export default {
     getScorecardConfig,
     getScorecard,
@@ -235,4 +482,20 @@ export default {
     getRatingColorClass,
     getScoreColorClass,
     RATING_OPTIONS,
+    // Admin functions
+    listSections,
+    getSection,
+    createSection,
+    updateSection,
+    deleteSection,
+    listCriteria,
+    getCriterion,
+    createCriterion,
+    updateCriterion,
+    deleteCriterion,
+    // Config versioning
+    listConfigVersions,
+    getActiveConfigVersion,
+    getConfigVersion,
+    publishConfigVersion,
 };

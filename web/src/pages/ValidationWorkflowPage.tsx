@@ -98,11 +98,17 @@ export default function ValidationWorkflowPage() {
         priority_filter: [] as string[],
         validation_type_filter: [] as string[],
         region_ids: [] as number[],
-        overdue_only: false
+        overdue_only: false,
+        show_cancelled: false  // Hide cancelled items by default
     });
 
     // Apply filters
     const filteredRequests = requests.filter(req => {
+        // Hide cancelled items by default (unless show_cancelled is true or user explicitly filtered for Cancelled)
+        if (!filters.show_cancelled && req.current_status === 'Cancelled' && !filters.status_filter.includes('Cancelled')) {
+            return false;
+        }
+
         // Search filter (model name) - search across all model names
         if (filters.search) {
             const searchLower = filters.search.toLowerCase();
@@ -926,8 +932,8 @@ export default function ValidationWorkflowPage() {
                     />
                 </div>
 
-                {/* Overdue Filter */}
-                <div className="mt-3 flex items-center">
+                {/* Toggle Filters */}
+                <div className="mt-3 flex items-center gap-6">
                     <label className="flex items-center cursor-pointer">
                         <input
                             type="checkbox"
@@ -944,6 +950,18 @@ export default function ValidationWorkflowPage() {
                             </span>
                         )}
                     </label>
+
+                    <label className="flex items-center cursor-pointer">
+                        <input
+                            type="checkbox"
+                            className="h-4 w-4 text-gray-600 focus:ring-gray-500 border-gray-300 rounded"
+                            checked={filters.show_cancelled}
+                            onChange={(e) => setFilters({ ...filters, show_cancelled: e.target.checked })}
+                        />
+                        <span className="ml-2 text-sm font-medium text-gray-700">
+                            Show cancelled
+                        </span>
+                    </label>
                 </div>
 
                 {/* Clear Filters and Results Count */}
@@ -959,7 +977,8 @@ export default function ValidationWorkflowPage() {
                             priority_filter: [],
                             validation_type_filter: [],
                             region_ids: [],
-                            overdue_only: false
+                            overdue_only: false,
+                            show_cancelled: false
                         })}
                         className="text-sm text-blue-600 hover:text-blue-800"
                     >

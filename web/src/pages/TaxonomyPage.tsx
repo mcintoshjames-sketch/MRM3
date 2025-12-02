@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import api from '../api/client';
 import Layout from '../components/Layout';
+import { useAuth } from '../contexts/AuthContext';
 import {
     listFactors,
     createFactor,
@@ -15,6 +16,30 @@ import {
     GuidanceResponse,
     WeightValidationResponse
 } from '../api/qualitativeFactors';
+import {
+    listSections as listScorecardSections,
+    createSection as createScorecardSection,
+    updateSection as updateScorecardSection,
+    deleteSection as deleteScorecardSection,
+    createCriterion as createScorecardCriterion,
+    updateCriterion as updateScorecardCriterion,
+    deleteCriterion as deleteScorecardCriterion,
+    getActiveConfigVersion as getScorecardActiveVersion,
+    publishConfigVersion as publishScorecardVersion,
+    ScorecardSection,
+    ScorecardCriterion,
+    ScorecardConfigVersion,
+} from '../api/scorecard';
+import {
+    getActiveConfig as getResidualRiskMapConfig,
+    listVersions as listResidualRiskMapVersions,
+    updateConfig as updateResidualRiskMapConfig,
+    ResidualRiskMapResponse,
+    DEFAULT_ROW_VALUES,
+    DEFAULT_COLUMN_VALUES,
+    DEFAULT_RESULT_VALUES,
+    getResidualRiskColorClass,
+} from '../api/residualRiskMap';
 
 // ============================================================================
 // TYPES - General Taxonomy
@@ -28,6 +53,8 @@ interface TaxonomyValue {
     description: string | null;
     sort_order: number;
     is_active: boolean;
+    min_days: number | null;
+    max_days: number | null;
     created_at: string;
 }
 
@@ -36,6 +63,7 @@ interface Taxonomy {
     name: string;
     description: string | null;
     is_system: boolean;
+    taxonomy_type: 'standard' | 'bucket';
     created_at: string;
     values: TaxonomyValue[];
 }
@@ -194,10 +222,12 @@ interface Region {
 export default function TaxonomyPage() {
     // URL search params for direct tab linking
     const [searchParams, setSearchParams] = useSearchParams();
+    const { user } = useAuth();
+    const isAdmin = user?.role === 'Admin';
 
     // Tab management - initialize from URL param or default to 'general'
     const tabParam = searchParams.get('tab');
-    const validTabs = ['general', 'change-type', 'model-type', 'kpm', 'fry', 'recommendation-priority', 'risk-factors'] as const;
+    const validTabs = ['general', 'change-type', 'model-type', 'kpm', 'fry', 'recommendation-priority', 'risk-factors', 'scorecard', 'residual-risk-map'] as const;
     type TabType = typeof validTabs[number];
     const initialTab: TabType = validTabs.includes(tabParam as TabType) ? (tabParam as TabType) : 'general';
     const [activeTab, setActiveTab] = useState<TabType>(initialTab);
@@ -259,6 +289,56 @@ export default function TaxonomyPage() {
     });
     const [weightValidation, setWeightValidation] = useState<WeightValidationResponse | null>(null);
 
+    // Scorecard configuration state
+    const [scorecardSections, setScorecardSections] = useState<ScorecardSection[]>([]);
+    const [scorecardLoading, setScorecardLoading] = useState(false);
+    const [scorecardError, setScorecardError] = useState<string | null>(null);
+    const [selectedScorecardSection, setSelectedScorecardSection] = useState<ScorecardSection | null>(null);
+    const [showScorecardSectionForm, setShowScorecardSectionForm] = useState(false);
+    const [editingScorecardSection, setEditingScorecardSection] = useState<ScorecardSection | null>(null);
+    const [scorecardSectionFormData, setScorecardSectionFormData] = useState({
+        code: '',
+        name: '',
+        description: '',
+        sort_order: 0,
+        is_active: true
+    });
+    const [showScorecardCriterionForm, setShowScorecardCriterionForm] = useState(false);
+    const [editingScorecardCriterion, setEditingScorecardCriterion] = useState<ScorecardCriterion | null>(null);
+    const [scorecardCriterionFormData, setScorecardCriterionFormData] = useState({
+        code: '',
+        name: '',
+        description_prompt: '',
+        comments_prompt: '',
+        include_in_summary: true,
+        allow_zero: true,
+        weight: 1.0,
+        sort_order: 0,
+        is_active: true
+    });
+
+    // Scorecard version state
+    const [scorecardActiveVersion, setScorecardActiveVersion] = useState<ScorecardConfigVersion | null>(null);
+    const [showScorecardPublishModal, setShowScorecardPublishModal] = useState(false);
+    const [scorecardPublishForm, setScorecardPublishForm] = useState({
+        version_name: '',
+        description: ''
+    });
+    const [scorecardPublishing, setScorecardPublishing] = useState(false);
+
+    // Residual Risk Map state
+    const [residualRiskMapConfig, setResidualRiskMapConfig] = useState<ResidualRiskMapResponse | null>(null);
+    const [residualRiskMapVersions, setResidualRiskMapVersions] = useState<ResidualRiskMapResponse[]>([]);
+    const [residualRiskMapLoading, setResidualRiskMapLoading] = useState(false);
+    const [residualRiskMapError, setResidualRiskMapError] = useState<string | null>(null);
+    const [showResidualRiskMapEditor, setShowResidualRiskMapEditor] = useState(false);
+    const [residualRiskMapEditMatrix, setResidualRiskMapEditMatrix] = useState<Record<string, Record<string, string>>>({});
+    const [residualRiskMapSaving, setResidualRiskMapSaving] = useState(false);
+    const [residualRiskMapPublishForm, setResidualRiskMapPublishForm] = useState({
+        version_name: '',
+        description: ''
+    });
+
     // General taxonomy state
     const [taxonomies, setTaxonomies] = useState<Taxonomy[]>([]);
     const [selectedTaxonomy, setSelectedTaxonomy] = useState<Taxonomy | null>(null);
@@ -274,7 +354,9 @@ export default function TaxonomyPage() {
         label: '',
         description: '',
         sort_order: 0,
-        is_active: true
+        is_active: true,
+        min_days: null as number | null,
+        max_days: null as number | null
     });
 
     // Change type taxonomy state
@@ -363,8 +445,105 @@ export default function TaxonomyPage() {
             fetchPriorityConfigs();
         } else if (activeTab === 'risk-factors') {
             fetchRiskFactors();
+        } else if (activeTab === 'scorecard') {
+            fetchScorecardSections();
+        } else if (activeTab === 'residual-risk-map') {
+            fetchResidualRiskMapConfig();
         }
     }, [activeTab]);
+
+    // ============================================================================
+    // RESIDUAL RISK MAP FUNCTIONS
+    // ============================================================================
+
+    const fetchResidualRiskMapConfig = async () => {
+        setResidualRiskMapLoading(true);
+        setResidualRiskMapError(null);
+        try {
+            const config = await getResidualRiskMapConfig();
+            setResidualRiskMapConfig(config);
+            // Also fetch version history
+            const versions = await listResidualRiskMapVersions();
+            setResidualRiskMapVersions(versions);
+        } catch (error: any) {
+            console.error('Failed to fetch residual risk map:', error);
+            if (error.response?.status === 404) {
+                // No config exists yet, use default
+                setResidualRiskMapConfig(null);
+            } else {
+                setResidualRiskMapError('Failed to load residual risk map configuration');
+            }
+        } finally {
+            setResidualRiskMapLoading(false);
+        }
+    };
+
+    const startEditResidualRiskMap = () => {
+        if (residualRiskMapConfig) {
+            // Clone the current matrix for editing
+            const matrixCopy: Record<string, Record<string, string>> = {};
+            const currentMatrix = residualRiskMapConfig.matrix_config.matrix;
+            for (const rowKey of Object.keys(currentMatrix)) {
+                matrixCopy[rowKey] = { ...currentMatrix[rowKey] };
+            }
+            setResidualRiskMapEditMatrix(matrixCopy);
+        } else {
+            // Initialize with defaults
+            const defaultMatrix: Record<string, Record<string, string>> = {};
+            for (const row of DEFAULT_ROW_VALUES) {
+                defaultMatrix[row] = {};
+                for (const col of DEFAULT_COLUMN_VALUES) {
+                    defaultMatrix[row][col] = 'Medium'; // Default value
+                }
+            }
+            setResidualRiskMapEditMatrix(defaultMatrix);
+        }
+        setShowResidualRiskMapEditor(true);
+    };
+
+    const handleResidualRiskMapCellChange = (row: string, col: string, value: string) => {
+        setResidualRiskMapEditMatrix(prev => ({
+            ...prev,
+            [row]: {
+                ...prev[row],
+                [col]: value
+            }
+        }));
+    };
+
+    const handleSaveResidualRiskMap = async (e: React.FormEvent) => {
+        e.preventDefault();
+        setResidualRiskMapSaving(true);
+        try {
+            const updateData = {
+                matrix_config: {
+                    row_axis_label: 'Inherent Risk Tier',
+                    column_axis_label: 'Scorecard Outcome',
+                    row_values: DEFAULT_ROW_VALUES,
+                    column_values: DEFAULT_COLUMN_VALUES,
+                    result_values: DEFAULT_RESULT_VALUES,
+                    matrix: residualRiskMapEditMatrix
+                },
+                version_name: residualRiskMapPublishForm.version_name || undefined,
+                description: residualRiskMapPublishForm.description || undefined
+            };
+            await updateResidualRiskMapConfig(updateData);
+            setShowResidualRiskMapEditor(false);
+            setResidualRiskMapPublishForm({ version_name: '', description: '' });
+            await fetchResidualRiskMapConfig();
+        } catch (error) {
+            console.error('Failed to save residual risk map:', error);
+            setResidualRiskMapError('Failed to save residual risk map configuration');
+        } finally {
+            setResidualRiskMapSaving(false);
+        }
+    };
+
+    const cancelEditResidualRiskMap = () => {
+        setShowResidualRiskMapEditor(false);
+        setResidualRiskMapEditMatrix({});
+        setResidualRiskMapPublishForm({ version_name: '', description: '' });
+    };
 
     // ============================================================================
     // RISK FACTOR FUNCTIONS
@@ -531,6 +710,272 @@ export default function TaxonomyPage() {
     };
 
     // ============================================================================
+    // SCORECARD FUNCTIONS
+    // ============================================================================
+
+    const fetchScorecardSections = async () => {
+        setScorecardLoading(true);
+        setScorecardError(null);
+        try {
+            // Fetch sections and active version in parallel
+            const [sections, activeVersion] = await Promise.all([
+                listScorecardSections(true), // Include inactive
+                getScorecardActiveVersion()
+            ]);
+            setScorecardSections(sections);
+            setScorecardActiveVersion(activeVersion);
+            if (sections.length > 0 && !selectedScorecardSection) {
+                setSelectedScorecardSection(sections[0]);
+            }
+        } catch (error) {
+            console.error('Failed to fetch scorecard sections:', error);
+            setScorecardError('Failed to load scorecard configuration');
+        } finally {
+            setScorecardLoading(false);
+        }
+    };
+
+    const handlePublishScorecardVersion = async (e: React.FormEvent) => {
+        e.preventDefault();
+        setScorecardPublishing(true);
+        try {
+            await publishScorecardVersion({
+                version_name: scorecardPublishForm.version_name || undefined,
+                description: scorecardPublishForm.description || undefined
+            });
+            setShowScorecardPublishModal(false);
+            setScorecardPublishForm({ version_name: '', description: '' });
+            // Refresh to get the new active version
+            await fetchScorecardSections();
+        } catch (error) {
+            console.error('Failed to publish scorecard version:', error);
+            setScorecardError('Failed to publish new version');
+        } finally {
+            setScorecardPublishing(false);
+        }
+    };
+
+    const resetScorecardSectionForm = () => {
+        setScorecardSectionFormData({
+            code: '',
+            name: '',
+            description: '',
+            sort_order: scorecardSections.length,
+            is_active: true
+        });
+        setEditingScorecardSection(null);
+    };
+
+    const handleScorecardSectionSubmit = async (e: React.FormEvent) => {
+        e.preventDefault();
+        try {
+            if (editingScorecardSection) {
+                const updated = await updateScorecardSection(editingScorecardSection.section_id, {
+                    name: scorecardSectionFormData.name,
+                    description: scorecardSectionFormData.description || null,
+                    sort_order: scorecardSectionFormData.sort_order,
+                    is_active: scorecardSectionFormData.is_active
+                });
+                setScorecardSections(prev => prev.map(s => s.section_id === updated.section_id ? { ...s, ...updated } : s));
+                if (selectedScorecardSection?.section_id === updated.section_id) {
+                    setSelectedScorecardSection({ ...selectedScorecardSection, ...updated });
+                }
+                // Refresh active version to update has_unpublished_changes flag
+                const activeVersion = await getScorecardActiveVersion();
+                setScorecardActiveVersion(activeVersion);
+            } else {
+                await createScorecardSection({
+                    code: scorecardSectionFormData.code,
+                    name: scorecardSectionFormData.name,
+                    description: scorecardSectionFormData.description || undefined,
+                    sort_order: scorecardSectionFormData.sort_order,
+                    is_active: scorecardSectionFormData.is_active
+                });
+                // Refresh to get full section with criteria
+                await fetchScorecardSections();
+            }
+            setShowScorecardSectionForm(false);
+            resetScorecardSectionForm();
+        } catch (error: any) {
+            console.error('Failed to save section:', error);
+            setScorecardError(error.response?.data?.detail || 'Failed to save section');
+        }
+    };
+
+    const handleDeleteScorecardSection = async (sectionId: number) => {
+        if (!confirm('Delete this section? All criteria in this section will also be deleted.')) return;
+        try {
+            await deleteScorecardSection(sectionId);
+            setScorecardSections(prev => prev.filter(s => s.section_id !== sectionId));
+            if (selectedScorecardSection?.section_id === sectionId) {
+                setSelectedScorecardSection(scorecardSections.find(s => s.section_id !== sectionId) || null);
+            }
+            // Refresh active version to update has_unpublished_changes flag
+            const activeVersion = await getScorecardActiveVersion();
+            setScorecardActiveVersion(activeVersion);
+        } catch (error: any) {
+            console.error('Failed to delete section:', error);
+            setScorecardError(error.response?.data?.detail || 'Failed to delete section');
+        }
+    };
+
+    const startEditScorecardSection = (section: ScorecardSection) => {
+        setEditingScorecardSection(section);
+        setScorecardSectionFormData({
+            code: section.code,
+            name: section.name,
+            description: section.description || '',
+            sort_order: section.sort_order,
+            is_active: section.is_active
+        });
+        setShowScorecardSectionForm(true);
+    };
+
+    const resetScorecardCriterionForm = () => {
+        setScorecardCriterionFormData({
+            code: '',
+            name: '',
+            description_prompt: '',
+            comments_prompt: '',
+            include_in_summary: true,
+            allow_zero: true,
+            weight: 1.0,
+            sort_order: selectedScorecardSection?.criteria?.length || 0,
+            is_active: true
+        });
+        setEditingScorecardCriterion(null);
+    };
+
+    const handleScorecardCriterionSubmit = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!selectedScorecardSection) return;
+
+        try {
+            if (editingScorecardCriterion) {
+                const updated = await updateScorecardCriterion(editingScorecardCriterion.criterion_id, {
+                    name: scorecardCriterionFormData.name,
+                    description_prompt: scorecardCriterionFormData.description_prompt || null,
+                    comments_prompt: scorecardCriterionFormData.comments_prompt || null,
+                    include_in_summary: scorecardCriterionFormData.include_in_summary,
+                    allow_zero: scorecardCriterionFormData.allow_zero,
+                    weight: scorecardCriterionFormData.weight,
+                    sort_order: scorecardCriterionFormData.sort_order,
+                    is_active: scorecardCriterionFormData.is_active
+                });
+                // Update criteria in the section
+                setSelectedScorecardSection(prev => {
+                    if (!prev) return prev;
+                    return {
+                        ...prev,
+                        criteria: prev.criteria.map(c =>
+                            c.criterion_id === updated.criterion_id ? updated : c
+                        )
+                    };
+                });
+                setScorecardSections(prev => prev.map(s => {
+                    if (s.section_id === selectedScorecardSection.section_id) {
+                        return {
+                            ...s,
+                            criteria: s.criteria.map(c =>
+                                c.criterion_id === updated.criterion_id ? updated : c
+                            )
+                        };
+                    }
+                    return s;
+                }));
+            } else {
+                const created = await createScorecardCriterion({
+                    code: scorecardCriterionFormData.code,
+                    section_id: selectedScorecardSection.section_id,
+                    name: scorecardCriterionFormData.name,
+                    description_prompt: scorecardCriterionFormData.description_prompt || undefined,
+                    comments_prompt: scorecardCriterionFormData.comments_prompt || undefined,
+                    include_in_summary: scorecardCriterionFormData.include_in_summary,
+                    allow_zero: scorecardCriterionFormData.allow_zero,
+                    weight: scorecardCriterionFormData.weight,
+                    sort_order: scorecardCriterionFormData.sort_order,
+                    is_active: scorecardCriterionFormData.is_active
+                });
+                // Add to section
+                setSelectedScorecardSection(prev => {
+                    if (!prev) return prev;
+                    return {
+                        ...prev,
+                        criteria: [...prev.criteria, created]
+                    };
+                });
+                setScorecardSections(prev => prev.map(s => {
+                    if (s.section_id === selectedScorecardSection.section_id) {
+                        return {
+                            ...s,
+                            criteria: [...s.criteria, created]
+                        };
+                    }
+                    return s;
+                }));
+            }
+
+            // Refresh active version to update has_unpublished_changes flag
+            const activeVersion = await getScorecardActiveVersion();
+            setScorecardActiveVersion(activeVersion);
+
+            setShowScorecardCriterionForm(false);
+            resetScorecardCriterionForm();
+        } catch (error: any) {
+            console.error('Failed to save criterion:', error);
+            setScorecardError(error.response?.data?.detail || 'Failed to save criterion');
+        }
+    };
+
+    const handleDeleteScorecardCriterion = async (criterionId: number) => {
+        if (!confirm('Delete this criterion? Existing ratings will be preserved but orphaned.')) return;
+        if (!selectedScorecardSection) return;
+
+        try {
+            await deleteScorecardCriterion(criterionId);
+            setSelectedScorecardSection(prev => {
+                if (!prev) return prev;
+                return {
+                    ...prev,
+                    criteria: prev.criteria.filter(c => c.criterion_id !== criterionId)
+                };
+            });
+            setScorecardSections(prev => prev.map(s => {
+                if (s.section_id === selectedScorecardSection.section_id) {
+                    return {
+                        ...s,
+                        criteria: s.criteria.filter(c => c.criterion_id !== criterionId)
+                    };
+                }
+                return s;
+            }));
+
+            // Refresh active version to update has_unpublished_changes flag
+            const activeVersion = await getScorecardActiveVersion();
+            setScorecardActiveVersion(activeVersion);
+        } catch (error: any) {
+            console.error('Failed to delete criterion:', error);
+            setScorecardError(error.response?.data?.detail || 'Failed to delete criterion');
+        }
+    };
+
+    const startEditScorecardCriterion = (criterion: ScorecardCriterion) => {
+        setEditingScorecardCriterion(criterion);
+        setScorecardCriterionFormData({
+            code: criterion.code,
+            name: criterion.name,
+            description_prompt: criterion.description_prompt || '',
+            comments_prompt: criterion.comments_prompt || '',
+            include_in_summary: criterion.include_in_summary,
+            allow_zero: criterion.allow_zero,
+            weight: criterion.weight,
+            sort_order: criterion.sort_order,
+            is_active: criterion.is_active
+        });
+        setShowScorecardCriterionForm(true);
+    };
+
+    // ============================================================================
     // GENERAL TAXONOMY FUNCTIONS
     // ============================================================================
 
@@ -569,7 +1014,9 @@ export default function TaxonomyPage() {
             label: '',
             description: '',
             sort_order: 0,
-            is_active: true
+            is_active: true,
+            min_days: null,
+            max_days: null
         });
         setEditingValue(null);
         setShowValueForm(false);
@@ -610,7 +1057,9 @@ export default function TaxonomyPage() {
             label: value.label,
             description: value.description || '',
             sort_order: value.sort_order,
-            is_active: value.is_active
+            is_active: value.is_active,
+            min_days: value.min_days,
+            max_days: value.max_days
         });
         setShowValueForm(true);
     };
@@ -1382,6 +1831,24 @@ export default function TaxonomyPage() {
                         >
                             Risk Factors
                         </button>
+                        <button
+                            onClick={() => handleTabChange('scorecard')}
+                            className={`${activeTab === 'scorecard'
+                                ? 'border-blue-500 text-blue-600'
+                                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                                } whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm`}
+                        >
+                            Scorecard Config
+                        </button>
+                        <button
+                            onClick={() => handleTabChange('residual-risk-map')}
+                            className={`${activeTab === 'residual-risk-map'
+                                ? 'border-blue-500 text-blue-600'
+                                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                                } whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm`}
+                        >
+                            Residual Risk Map
+                        </button>
                     </nav>
                 </div>
             </div>
@@ -1483,6 +1950,11 @@ export default function TaxonomyPage() {
                                                         System Taxonomy
                                                     </span>
                                                 )}
+                                                {selectedTaxonomy.taxonomy_type === 'bucket' && (
+                                                    <span className="text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded">
+                                                        Bucket Taxonomy
+                                                    </span>
+                                                )}
                                             </div>
                                         </div>
                                         <div className="flex gap-2">
@@ -1552,6 +2024,56 @@ export default function TaxonomyPage() {
                                                         />
                                                     </div>
                                                 </div>
+                                                {/* Bucket range fields - only for bucket taxonomies */}
+                                                {selectedTaxonomy.taxonomy_type === 'bucket' && (
+                                                    <div className="mb-4 p-3 bg-blue-50 rounded border border-blue-200">
+                                                        <div className="flex items-center gap-2 mb-2">
+                                                            <span className="text-sm font-medium text-blue-800">Range (Days)</span>
+                                                            {!isAdmin && (
+                                                                <span className="text-xs text-blue-600">(Admin only)</span>
+                                                            )}
+                                                        </div>
+                                                        <p className="text-xs text-blue-600 mb-3">
+                                                            Leave Min empty for "≤ Max" (first bucket). Leave Max empty for "≥ Min" (last bucket).
+                                                        </p>
+                                                        <div className="grid grid-cols-2 gap-4">
+                                                            <div>
+                                                                <label htmlFor="val_min_days" className="block text-sm font-medium mb-1">
+                                                                    Min Days
+                                                                </label>
+                                                                <input
+                                                                    id="val_min_days"
+                                                                    type="number"
+                                                                    className={`input-field ${!isAdmin ? 'bg-gray-100 cursor-not-allowed' : ''}`}
+                                                                    value={valueFormData.min_days ?? ''}
+                                                                    onChange={(e) => setValueFormData({
+                                                                        ...valueFormData,
+                                                                        min_days: e.target.value === '' ? null : parseInt(e.target.value)
+                                                                    })}
+                                                                    disabled={!isAdmin}
+                                                                    placeholder="null (unbounded)"
+                                                                />
+                                                            </div>
+                                                            <div>
+                                                                <label htmlFor="val_max_days" className="block text-sm font-medium mb-1">
+                                                                    Max Days
+                                                                </label>
+                                                                <input
+                                                                    id="val_max_days"
+                                                                    type="number"
+                                                                    className={`input-field ${!isAdmin ? 'bg-gray-100 cursor-not-allowed' : ''}`}
+                                                                    value={valueFormData.max_days ?? ''}
+                                                                    onChange={(e) => setValueFormData({
+                                                                        ...valueFormData,
+                                                                        max_days: e.target.value === '' ? null : parseInt(e.target.value)
+                                                                    })}
+                                                                    disabled={!isAdmin}
+                                                                    placeholder="null (unbounded)"
+                                                                />
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                )}
                                                 <div className="mb-3">
                                                     <label htmlFor="val_desc" className="block text-sm font-medium mb-1">
                                                         Description
@@ -1606,6 +2128,11 @@ export default function TaxonomyPage() {
                                                             <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
                                                                 Label
                                                             </th>
+                                                            {selectedTaxonomy.taxonomy_type === 'bucket' && (
+                                                                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase w-36">
+                                                                    Range (Days)
+                                                                </th>
+                                                            )}
                                                             <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
                                                                 Description
                                                             </th>
@@ -1631,6 +2158,18 @@ export default function TaxonomyPage() {
                                                                             )}
                                                                         </div>
                                                                     </td>
+                                                                    {selectedTaxonomy.taxonomy_type === 'bucket' && (
+                                                                        <td className="px-4 py-3 text-sm text-gray-600 font-mono">
+                                                                            {value.min_days === null && value.max_days === null
+                                                                                ? 'All'
+                                                                                : value.min_days === null
+                                                                                    ? `≤ ${value.max_days}`
+                                                                                    : value.max_days === null
+                                                                                        ? `≥ ${value.min_days}`
+                                                                                        : `${value.min_days} – ${value.max_days}`
+                                                                            }
+                                                                        </td>
+                                                                    )}
                                                                     <td className="px-4 py-3 text-sm text-gray-600">
                                                                         {value.description || '-'}
                                                                     </td>
@@ -4090,6 +4629,794 @@ export default function TaxonomyPage() {
                             )}
                         </div>
                     </div>
+                </>
+            )}
+
+            {/* SCORECARD CONFIG TAB */}
+            {activeTab === 'scorecard' && (
+                <>
+                    {scorecardError && (
+                        <div className="mb-4 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded">
+                            {scorecardError}
+                            <button
+                                onClick={() => setScorecardError(null)}
+                                className="float-right text-red-700 hover:text-red-900"
+                            >
+                                ×
+                            </button>
+                        </div>
+                    )}
+
+                    {/* Active Version Info */}
+                    {scorecardActiveVersion && (
+                        <div className={`mb-4 p-4 rounded-lg border ${
+                            scorecardActiveVersion.has_unpublished_changes
+                                ? 'bg-yellow-50 border-yellow-200'
+                                : 'bg-blue-50 border-blue-200'
+                        }`}>
+                            <div className="flex items-start gap-2">
+                                <span className={`text-lg ${
+                                    scorecardActiveVersion.has_unpublished_changes ? 'text-yellow-600' : 'text-blue-600'
+                                }`}>
+                                    {scorecardActiveVersion.has_unpublished_changes ? '⚠️' : 'ℹ️'}
+                                </span>
+                                <div className={`text-sm flex-1 ${
+                                    scorecardActiveVersion.has_unpublished_changes ? 'text-yellow-900' : 'text-blue-900'
+                                }`}>
+                                    <div className="font-semibold flex items-center gap-2">
+                                        Active Version: {scorecardActiveVersion.version_name || `Version ${scorecardActiveVersion.version_number}`}
+                                        {scorecardActiveVersion.has_unpublished_changes && (
+                                            <span className="bg-yellow-200 text-yellow-800 text-xs px-2 py-0.5 rounded">
+                                                Unpublished Changes
+                                            </span>
+                                        )}
+                                    </div>
+                                    {scorecardActiveVersion.description && (
+                                        <div className="mt-1">{scorecardActiveVersion.description}</div>
+                                    )}
+                                    <div className={`mt-1 text-xs ${
+                                        scorecardActiveVersion.has_unpublished_changes ? 'text-yellow-700' : 'text-blue-700'
+                                    }`}>
+                                        Published: {scorecardActiveVersion.published_at.split('T')[0]}
+                                        {scorecardActiveVersion.published_by_name && ` by ${scorecardActiveVersion.published_by_name}`} |
+                                        {' '}{scorecardActiveVersion.sections_count} sections, {scorecardActiveVersion.criteria_count} criteria |
+                                        {' '}{scorecardActiveVersion.scorecards_count} scorecard{scorecardActiveVersion.scorecards_count !== 1 ? 's' : ''} linked
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    <div className="mb-4 flex justify-between items-center">
+                        <h2 className="text-lg font-semibold text-gray-700">
+                            Scorecard Configuration
+                        </h2>
+                        <div className="flex gap-2">
+                            {/* Show publish button only if no version exists or there are unpublished changes */}
+                            {(!scorecardActiveVersion || scorecardActiveVersion.has_unpublished_changes) && (
+                                <button
+                                    onClick={() => setShowScorecardPublishModal(true)}
+                                    className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 transition-colors"
+                                >
+                                    Publish New Version
+                                </button>
+                            )}
+                            <button
+                                onClick={() => {
+                                    resetScorecardSectionForm();
+                                    setShowScorecardSectionForm(true);
+                                }}
+                                className="btn-primary"
+                            >
+                                + New Section
+                            </button>
+                        </div>
+                    </div>
+
+                    {/* Publish Version Modal */}
+                    {showScorecardPublishModal && (
+                        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+                            <div className="bg-white rounded-lg shadow-xl max-w-lg w-full mx-4">
+                                <div className="p-6">
+                                    <h3 className="text-xl font-bold mb-4">Publish New Scorecard Config Version</h3>
+                                    <p className="text-gray-600 mb-4">
+                                        Publishing a new version will snapshot the current scorecard configuration (sections, criteria, and weights).
+                                        New scorecards will use this version. Existing scorecards remain linked to their original version.
+                                    </p>
+                                    <form onSubmit={handlePublishScorecardVersion}>
+                                        <div className="mb-4">
+                                            <label className="block text-sm font-medium text-gray-700 mb-1">
+                                                Version Name
+                                            </label>
+                                            <input
+                                                type="text"
+                                                value={scorecardPublishForm.version_name}
+                                                onChange={(e) => setScorecardPublishForm({ ...scorecardPublishForm, version_name: e.target.value })}
+                                                className="input-field"
+                                                placeholder="e.g., Q4 2025 Updates"
+                                            />
+                                        </div>
+                                        <div className="mb-6">
+                                            <label className="block text-sm font-medium text-gray-700 mb-1">
+                                                Description
+                                            </label>
+                                            <textarea
+                                                value={scorecardPublishForm.description}
+                                                onChange={(e) => setScorecardPublishForm({ ...scorecardPublishForm, description: e.target.value })}
+                                                className="input-field"
+                                                rows={3}
+                                                placeholder="Changelog or notes for this version..."
+                                            />
+                                        </div>
+                                        <div className="flex justify-end gap-2">
+                                            <button
+                                                type="button"
+                                                onClick={() => {
+                                                    setShowScorecardPublishModal(false);
+                                                    setScorecardPublishForm({ version_name: '', description: '' });
+                                                }}
+                                                className="px-4 py-2 border border-gray-300 rounded hover:bg-gray-50"
+                                                disabled={scorecardPublishing}
+                                            >
+                                                Cancel
+                                            </button>
+                                            <button
+                                                type="submit"
+                                                disabled={scorecardPublishing}
+                                                className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 disabled:opacity-50"
+                                            >
+                                                {scorecardPublishing ? 'Publishing...' : 'Publish Version'}
+                                            </button>
+                                        </div>
+                                    </form>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Section Form Modal */}
+                    {showScorecardSectionForm && (
+                        <div className="bg-white p-6 rounded-lg shadow-md mb-6 border border-gray-200">
+                            <h3 className="text-lg font-bold mb-4">
+                                {editingScorecardSection ? 'Edit Section' : 'Create New Section'}
+                            </h3>
+                            <form onSubmit={handleScorecardSectionSubmit}>
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div className="mb-4">
+                                        <label className="block text-sm font-medium mb-2">Code</label>
+                                        <input
+                                            type="text"
+                                            className="input-field"
+                                            value={scorecardSectionFormData.code}
+                                            onChange={(e) => setScorecardSectionFormData({
+                                                ...scorecardSectionFormData,
+                                                code: e.target.value
+                                            })}
+                                            required
+                                            disabled={!!editingScorecardSection}
+                                            placeholder="e.g., 1, 2, 3"
+                                        />
+                                        {editingScorecardSection && (
+                                            <p className="text-xs text-gray-500 mt-1">Code cannot be changed after creation</p>
+                                        )}
+                                    </div>
+                                    <div className="mb-4">
+                                        <label className="block text-sm font-medium mb-2">Name</label>
+                                        <input
+                                            type="text"
+                                            className="input-field"
+                                            value={scorecardSectionFormData.name}
+                                            onChange={(e) => setScorecardSectionFormData({
+                                                ...scorecardSectionFormData,
+                                                name: e.target.value
+                                            })}
+                                            required
+                                            placeholder="e.g., Evaluation of Conceptual Soundness"
+                                        />
+                                    </div>
+                                    <div className="mb-4">
+                                        <label className="block text-sm font-medium mb-2">Description</label>
+                                        <textarea
+                                            className="input-field"
+                                            value={scorecardSectionFormData.description}
+                                            onChange={(e) => setScorecardSectionFormData({
+                                                ...scorecardSectionFormData,
+                                                description: e.target.value
+                                            })}
+                                            rows={2}
+                                        />
+                                    </div>
+                                    <div className="mb-4">
+                                        <label className="block text-sm font-medium mb-2">Sort Order</label>
+                                        <input
+                                            type="number"
+                                            className="input-field"
+                                            value={scorecardSectionFormData.sort_order}
+                                            onChange={(e) => setScorecardSectionFormData({
+                                                ...scorecardSectionFormData,
+                                                sort_order: parseInt(e.target.value) || 0
+                                            })}
+                                        />
+                                    </div>
+                                    <div className="mb-4">
+                                        <label className="flex items-center gap-2">
+                                            <input
+                                                type="checkbox"
+                                                checked={scorecardSectionFormData.is_active}
+                                                onChange={(e) => setScorecardSectionFormData({
+                                                    ...scorecardSectionFormData,
+                                                    is_active: e.target.checked
+                                                })}
+                                            />
+                                            <span className="text-sm font-medium">Active</span>
+                                        </label>
+                                    </div>
+                                </div>
+                                <div className="flex gap-2 mt-4">
+                                    <button type="submit" className="btn-primary">
+                                        {editingScorecardSection ? 'Update Section' : 'Create Section'}
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            setShowScorecardSectionForm(false);
+                                            resetScorecardSectionForm();
+                                        }}
+                                        className="btn-secondary"
+                                    >
+                                        Cancel
+                                    </button>
+                                </div>
+                            </form>
+                        </div>
+                    )}
+
+                    {/* Criterion Form Modal */}
+                    {showScorecardCriterionForm && selectedScorecardSection && (
+                        <div className="bg-white p-6 rounded-lg shadow-md mb-6 border border-gray-200">
+                            <h3 className="text-lg font-bold mb-4">
+                                {editingScorecardCriterion ? 'Edit Criterion' : 'Add Criterion to'} Section {selectedScorecardSection.code}
+                            </h3>
+                            <form onSubmit={handleScorecardCriterionSubmit}>
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div className="mb-4">
+                                        <label className="block text-sm font-medium mb-2">Code</label>
+                                        <input
+                                            type="text"
+                                            className="input-field"
+                                            value={scorecardCriterionFormData.code}
+                                            onChange={(e) => setScorecardCriterionFormData({
+                                                ...scorecardCriterionFormData,
+                                                code: e.target.value
+                                            })}
+                                            required
+                                            disabled={!!editingScorecardCriterion}
+                                            placeholder={`e.g., ${selectedScorecardSection.code}.1`}
+                                        />
+                                        {editingScorecardCriterion && (
+                                            <p className="text-xs text-gray-500 mt-1">Code cannot be changed after creation</p>
+                                        )}
+                                    </div>
+                                    <div className="mb-4">
+                                        <label className="block text-sm font-medium mb-2">Name</label>
+                                        <input
+                                            type="text"
+                                            className="input-field"
+                                            value={scorecardCriterionFormData.name}
+                                            onChange={(e) => setScorecardCriterionFormData({
+                                                ...scorecardCriterionFormData,
+                                                name: e.target.value
+                                            })}
+                                            required
+                                            placeholder="e.g., Model Development Documentation"
+                                        />
+                                    </div>
+                                    <div className="mb-4 col-span-2">
+                                        <label className="block text-sm font-medium mb-2">Description Prompt</label>
+                                        <textarea
+                                            className="input-field"
+                                            value={scorecardCriterionFormData.description_prompt}
+                                            onChange={(e) => setScorecardCriterionFormData({
+                                                ...scorecardCriterionFormData,
+                                                description_prompt: e.target.value
+                                            })}
+                                            rows={2}
+                                            placeholder="Prompt guiding validator's description entry"
+                                        />
+                                    </div>
+                                    <div className="mb-4 col-span-2">
+                                        <label className="block text-sm font-medium mb-2">Comments Prompt</label>
+                                        <textarea
+                                            className="input-field"
+                                            value={scorecardCriterionFormData.comments_prompt}
+                                            onChange={(e) => setScorecardCriterionFormData({
+                                                ...scorecardCriterionFormData,
+                                                comments_prompt: e.target.value
+                                            })}
+                                            rows={2}
+                                            placeholder="Prompt guiding validator's comments entry"
+                                        />
+                                    </div>
+                                    <div className="mb-4">
+                                        <label className="block text-sm font-medium mb-2">Weight</label>
+                                        <input
+                                            type="number"
+                                            step="0.1"
+                                            min="0"
+                                            className="input-field"
+                                            value={scorecardCriterionFormData.weight}
+                                            onChange={(e) => setScorecardCriterionFormData({
+                                                ...scorecardCriterionFormData,
+                                                weight: parseFloat(e.target.value) || 1.0
+                                            })}
+                                        />
+                                        <p className="text-xs text-gray-500 mt-1">Weight for scoring calculation (default: 1.0)</p>
+                                    </div>
+                                    <div className="mb-4">
+                                        <label className="block text-sm font-medium mb-2">Sort Order</label>
+                                        <input
+                                            type="number"
+                                            className="input-field"
+                                            value={scorecardCriterionFormData.sort_order}
+                                            onChange={(e) => setScorecardCriterionFormData({
+                                                ...scorecardCriterionFormData,
+                                                sort_order: parseInt(e.target.value) || 0
+                                            })}
+                                        />
+                                    </div>
+                                    <div className="mb-4 flex gap-6">
+                                        <label className="flex items-center gap-2">
+                                            <input
+                                                type="checkbox"
+                                                checked={scorecardCriterionFormData.allow_zero}
+                                                onChange={(e) => setScorecardCriterionFormData({
+                                                    ...scorecardCriterionFormData,
+                                                    allow_zero: e.target.checked
+                                                })}
+                                            />
+                                            <span className="text-sm font-medium">Allow N/A</span>
+                                        </label>
+                                        <label className="flex items-center gap-2">
+                                            <input
+                                                type="checkbox"
+                                                checked={scorecardCriterionFormData.is_active}
+                                                onChange={(e) => setScorecardCriterionFormData({
+                                                    ...scorecardCriterionFormData,
+                                                    is_active: e.target.checked
+                                                })}
+                                            />
+                                            <span className="text-sm font-medium">Active</span>
+                                        </label>
+                                    </div>
+                                </div>
+                                <div className="flex gap-2 mt-4">
+                                    <button type="submit" className="btn-primary">
+                                        {editingScorecardCriterion ? 'Update Criterion' : 'Add Criterion'}
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            setShowScorecardCriterionForm(false);
+                                            resetScorecardCriterionForm();
+                                        }}
+                                        className="btn-secondary"
+                                    >
+                                        Cancel
+                                    </button>
+                                </div>
+                            </form>
+                        </div>
+                    )}
+
+                    {/* Master-Detail Layout */}
+                    {scorecardLoading ? (
+                        <div className="text-center py-8">
+                            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto"></div>
+                            <p className="mt-2 text-gray-500">Loading scorecard configuration...</p>
+                        </div>
+                    ) : (
+                        <div className="grid grid-cols-12 gap-6">
+                            {/* Sections List (Left) */}
+                            <div className="col-span-4">
+                                <div className="bg-white rounded-lg shadow-md">
+                                    <div className="p-4 border-b border-gray-200">
+                                        <h3 className="font-semibold text-gray-700">Sections</h3>
+                                    </div>
+                                    <div className="divide-y divide-gray-200 max-h-[600px] overflow-y-auto">
+                                        {scorecardSections.length === 0 ? (
+                                            <p className="p-4 text-gray-500 text-sm">No sections configured</p>
+                                        ) : (
+                                            scorecardSections.map((section) => (
+                                                <div
+                                                    key={section.section_id}
+                                                    className={`p-4 cursor-pointer hover:bg-gray-50 ${
+                                                        selectedScorecardSection?.section_id === section.section_id
+                                                            ? 'bg-blue-50 border-l-4 border-blue-500'
+                                                            : ''
+                                                    }`}
+                                                    onClick={() => setSelectedScorecardSection(section)}
+                                                >
+                                                    <div className="flex justify-between items-start">
+                                                        <div>
+                                                            <div className="flex items-center gap-2">
+                                                                <span className="font-mono text-sm bg-gray-100 px-2 py-0.5 rounded">
+                                                                    {section.code}
+                                                                </span>
+                                                                <span className="font-medium text-gray-900">
+                                                                    {section.name}
+                                                                </span>
+                                                            </div>
+                                                            {!section.is_active && (
+                                                                <span className="text-xs text-red-600 mt-1">Inactive</span>
+                                                            )}
+                                                            <p className="text-xs text-gray-500 mt-1">
+                                                                {section.criteria?.length || 0} criteria
+                                                            </p>
+                                                        </div>
+                                                        <div className="flex gap-1">
+                                                            <button
+                                                                onClick={(e) => {
+                                                                    e.stopPropagation();
+                                                                    startEditScorecardSection(section);
+                                                                }}
+                                                                className="text-xs text-blue-600 hover:text-blue-800 px-2 py-1"
+                                                            >
+                                                                Edit
+                                                            </button>
+                                                            <button
+                                                                onClick={(e) => {
+                                                                    e.stopPropagation();
+                                                                    handleDeleteScorecardSection(section.section_id);
+                                                                }}
+                                                                className="text-xs text-red-600 hover:text-red-800 px-2 py-1"
+                                                            >
+                                                                Delete
+                                                            </button>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            ))
+                                        )}
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Criteria Detail (Right) */}
+                            <div className="col-span-8">
+                                <div className="bg-white rounded-lg shadow-md">
+                                    <div className="p-4 border-b border-gray-200 flex justify-between items-center">
+                                        <h3 className="font-semibold text-gray-700">
+                                            {selectedScorecardSection
+                                                ? `Criteria - Section ${selectedScorecardSection.code}: ${selectedScorecardSection.name}`
+                                                : 'Criteria'}
+                                        </h3>
+                                        {selectedScorecardSection && (
+                                            <button
+                                                onClick={() => {
+                                                    resetScorecardCriterionForm();
+                                                    setShowScorecardCriterionForm(true);
+                                                }}
+                                                className="btn-primary text-sm"
+                                            >
+                                                + Add Criterion
+                                            </button>
+                                        )}
+                                    </div>
+                                    <div className="p-4">
+                                        {selectedScorecardSection ? (
+                                            selectedScorecardSection.criteria?.length === 0 ? (
+                                                <p className="text-gray-500 text-sm">No criteria in this section</p>
+                                            ) : (
+                                                <div className="space-y-3">
+                                                    {selectedScorecardSection.criteria
+                                                        ?.sort((a, b) => a.sort_order - b.sort_order)
+                                                        .map((criterion) => (
+                                                            <div
+                                                                key={criterion.criterion_id}
+                                                                className={`p-4 border rounded-lg ${
+                                                                    criterion.is_active
+                                                                        ? 'border-gray-200'
+                                                                        : 'border-red-200 bg-red-50'
+                                                                }`}
+                                                            >
+                                                                <div className="flex justify-between items-start">
+                                                                    <div className="flex-1">
+                                                                        <div className="flex items-center gap-2 mb-2">
+                                                                            <span className="font-mono text-sm bg-gray-100 px-2 py-0.5 rounded">
+                                                                                {criterion.code}
+                                                                            </span>
+                                                                            <span className="font-medium text-gray-900">
+                                                                                {criterion.name}
+                                                                            </span>
+                                                                            {!criterion.is_active && (
+                                                                                <span className="text-xs text-red-600 px-2 py-0.5 bg-red-100 rounded">
+                                                                                    Inactive
+                                                                                </span>
+                                                                            )}
+                                                                        </div>
+                                                                        <div className="grid grid-cols-2 gap-4 text-sm text-gray-600">
+                                                                            <div>
+                                                                                <span className="font-medium">Weight:</span>{' '}
+                                                                                <span className={criterion.weight !== 1.0 ? 'text-blue-600 font-medium' : ''}>
+                                                                                    {criterion.weight}
+                                                                                </span>
+                                                                            </div>
+                                                                            <div>
+                                                                                <span className="font-medium">Allow N/A:</span>{' '}
+                                                                                {criterion.allow_zero ? 'Yes' : 'No'}
+                                                                            </div>
+                                                                        </div>
+                                                                        {criterion.description_prompt && (
+                                                                            <p className="text-xs text-gray-500 mt-2 truncate">
+                                                                                <span className="font-medium">Description:</span> {criterion.description_prompt}
+                                                                            </p>
+                                                                        )}
+                                                                    </div>
+                                                                    <div className="flex gap-1 ml-4">
+                                                                        <button
+                                                                            onClick={() => startEditScorecardCriterion(criterion)}
+                                                                            className="text-xs text-blue-600 hover:text-blue-800 px-2 py-1"
+                                                                        >
+                                                                            Edit
+                                                                        </button>
+                                                                        <button
+                                                                            onClick={() => handleDeleteScorecardCriterion(criterion.criterion_id)}
+                                                                            className="text-xs text-red-600 hover:text-red-800 px-2 py-1"
+                                                                        >
+                                                                            Delete
+                                                                        </button>
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+                                                        ))}
+                                                </div>
+                                            )
+                                        ) : (
+                                            <p className="text-gray-500">Select a section to view criteria</p>
+                                        )}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+                </>
+            )}
+
+            {/* RESIDUAL RISK MAP TAB */}
+            {activeTab === 'residual-risk-map' && (
+                <>
+                    {residualRiskMapError && (
+                        <div className="mb-4 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded">
+                            {residualRiskMapError}
+                            <button
+                                onClick={() => setResidualRiskMapError(null)}
+                                className="float-right text-red-700 hover:text-red-900"
+                            >
+                                ×
+                            </button>
+                        </div>
+                    )}
+
+                    {residualRiskMapLoading ? (
+                        <div className="text-center py-12">Loading...</div>
+                    ) : (
+                        <>
+                            {/* Active Version Info */}
+                            {residualRiskMapConfig && (
+                                <div className="mb-4 p-4 rounded-lg border bg-blue-50 border-blue-200">
+                                    <div className="flex items-start gap-2">
+                                        <span className="text-lg text-blue-600">ℹ️</span>
+                                        <div className="text-sm flex-1 text-blue-900">
+                                            <div className="font-semibold">
+                                                Active Version: {residualRiskMapConfig.version_name || `Version ${residualRiskMapConfig.version_number}`}
+                                            </div>
+                                            {residualRiskMapConfig.description && (
+                                                <div className="mt-1">{residualRiskMapConfig.description}</div>
+                                            )}
+                                            <div className="mt-1 text-xs text-blue-700">
+                                                Created: {residualRiskMapConfig.created_at.split('T')[0]}
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+
+                            <div className="mb-4 flex justify-between items-center">
+                                <div>
+                                    <h2 className="text-lg font-semibold text-gray-700">
+                                        Residual Risk Map Configuration
+                                    </h2>
+                                    <p className="text-sm text-gray-500">
+                                        Defines how Inherent Risk Tier and Scorecard Outcome combine to determine Residual Risk
+                                    </p>
+                                </div>
+                                {!showResidualRiskMapEditor && (
+                                    <button
+                                        onClick={startEditResidualRiskMap}
+                                        className="btn-primary"
+                                    >
+                                        Edit Matrix
+                                    </button>
+                                )}
+                            </div>
+
+                            {/* Matrix Display / Editor */}
+                            {showResidualRiskMapEditor ? (
+                                <form onSubmit={handleSaveResidualRiskMap}>
+                                    <div className="bg-white rounded-lg shadow-md p-6 mb-6">
+                                        <h3 className="text-md font-semibold mb-4">Edit Risk Matrix</h3>
+
+                                        {/* Version Info Form */}
+                                        <div className="grid grid-cols-2 gap-4 mb-6">
+                                            <div>
+                                                <label className="block text-sm font-medium text-gray-700 mb-1">
+                                                    Version Name (optional)
+                                                </label>
+                                                <input
+                                                    type="text"
+                                                    value={residualRiskMapPublishForm.version_name}
+                                                    onChange={(e) => setResidualRiskMapPublishForm(prev => ({ ...prev, version_name: e.target.value }))}
+                                                    className="input-field"
+                                                    placeholder="e.g., Q4 2025 Update"
+                                                />
+                                            </div>
+                                            <div>
+                                                <label className="block text-sm font-medium text-gray-700 mb-1">
+                                                    Description (optional)
+                                                </label>
+                                                <input
+                                                    type="text"
+                                                    value={residualRiskMapPublishForm.description}
+                                                    onChange={(e) => setResidualRiskMapPublishForm(prev => ({ ...prev, description: e.target.value }))}
+                                                    className="input-field"
+                                                    placeholder="Changelog or notes..."
+                                                />
+                                            </div>
+                                        </div>
+
+                                        {/* Matrix Editor Table */}
+                                        <div className="overflow-x-auto">
+                                            <table className="min-w-full border-collapse">
+                                                <thead>
+                                                    <tr>
+                                                        <th className="border border-gray-300 bg-gray-100 p-2 text-sm font-medium text-gray-700">
+                                                            Inherent Risk ↓ / Scorecard →
+                                                        </th>
+                                                        {DEFAULT_COLUMN_VALUES.map(col => (
+                                                            <th key={col} className="border border-gray-300 bg-gray-100 p-2 text-sm font-medium text-gray-700 text-center">
+                                                                {col}
+                                                            </th>
+                                                        ))}
+                                                    </tr>
+                                                </thead>
+                                                <tbody>
+                                                    {DEFAULT_ROW_VALUES.map(row => (
+                                                        <tr key={row}>
+                                                            <td className="border border-gray-300 bg-gray-50 p-2 text-sm font-medium text-gray-700">
+                                                                {row}
+                                                            </td>
+                                                            {DEFAULT_COLUMN_VALUES.map(col => (
+                                                                <td key={`${row}-${col}`} className="border border-gray-300 p-1">
+                                                                    <select
+                                                                        value={residualRiskMapEditMatrix[row]?.[col] || 'Medium'}
+                                                                        onChange={(e) => handleResidualRiskMapCellChange(row, col, e.target.value)}
+                                                                        className={`w-full p-2 text-sm rounded border-0 ${getResidualRiskColorClass(residualRiskMapEditMatrix[row]?.[col])}`}
+                                                                    >
+                                                                        {DEFAULT_RESULT_VALUES.map(val => (
+                                                                            <option key={val} value={val}>{val}</option>
+                                                                        ))}
+                                                                    </select>
+                                                                </td>
+                                                            ))}
+                                                        </tr>
+                                                    ))}
+                                                </tbody>
+                                            </table>
+                                        </div>
+
+                                        <div className="flex justify-end gap-2 mt-6">
+                                            <button
+                                                type="button"
+                                                onClick={cancelEditResidualRiskMap}
+                                                className="btn-secondary"
+                                                disabled={residualRiskMapSaving}
+                                            >
+                                                Cancel
+                                            </button>
+                                            <button
+                                                type="submit"
+                                                className="btn-primary"
+                                                disabled={residualRiskMapSaving}
+                                            >
+                                                {residualRiskMapSaving ? 'Saving...' : 'Save New Version'}
+                                            </button>
+                                        </div>
+                                    </div>
+                                </form>
+                            ) : (
+                                <div className="bg-white rounded-lg shadow-md p-6">
+                                    {/* Read-only Matrix Display */}
+                                    {residualRiskMapConfig ? (
+                                        <div className="overflow-x-auto">
+                                            <table className="min-w-full border-collapse">
+                                                <thead>
+                                                    <tr>
+                                                        <th className="border border-gray-300 bg-gray-100 p-3 text-sm font-medium text-gray-700">
+                                                            {residualRiskMapConfig.matrix_config.row_axis_label} ↓ / {residualRiskMapConfig.matrix_config.column_axis_label} →
+                                                        </th>
+                                                        {DEFAULT_COLUMN_VALUES.map(col => (
+                                                            <th key={col} className="border border-gray-300 bg-gray-100 p-3 text-sm font-medium text-gray-700 text-center">
+                                                                {col}
+                                                            </th>
+                                                        ))}
+                                                    </tr>
+                                                </thead>
+                                                <tbody>
+                                                    {DEFAULT_ROW_VALUES.map(row => (
+                                                        <tr key={row}>
+                                                            <td className="border border-gray-300 bg-gray-50 p-3 text-sm font-medium text-gray-700">
+                                                                {row}
+                                                            </td>
+                                                            {DEFAULT_COLUMN_VALUES.map(col => {
+                                                                const cellValue = residualRiskMapConfig.matrix_config.matrix[row]?.[col] || 'N/A';
+                                                                return (
+                                                                    <td
+                                                                        key={`${row}-${col}`}
+                                                                        className={`border border-gray-300 p-3 text-sm font-medium text-center ${getResidualRiskColorClass(cellValue)}`}
+                                                                    >
+                                                                        {cellValue}
+                                                                    </td>
+                                                                );
+                                                            })}
+                                                        </tr>
+                                                    ))}
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    ) : (
+                                        <div className="text-center py-8 text-gray-500">
+                                            <p>No residual risk map configuration found.</p>
+                                            <p className="mt-2">Click "Edit Matrix" to create one.</p>
+                                        </div>
+                                    )}
+
+                                    {/* Version History */}
+                                    {residualRiskMapVersions.length > 1 && (
+                                        <div className="mt-6 border-t pt-4">
+                                            <h4 className="text-sm font-semibold text-gray-700 mb-3">Version History</h4>
+                                            <div className="space-y-2">
+                                                {residualRiskMapVersions.map(version => (
+                                                    <div
+                                                        key={version.config_id}
+                                                        className={`flex items-center justify-between p-2 rounded text-sm ${
+                                                            version.is_active ? 'bg-blue-50 border border-blue-200' : 'bg-gray-50'
+                                                        }`}
+                                                    >
+                                                        <div>
+                                                            <span className="font-medium">
+                                                                {version.version_name || `Version ${version.version_number}`}
+                                                            </span>
+                                                            {version.is_active && (
+                                                                <span className="ml-2 text-xs bg-blue-200 text-blue-800 px-2 py-0.5 rounded">
+                                                                    Active
+                                                                </span>
+                                                            )}
+                                                            {version.description && (
+                                                                <span className="ml-2 text-gray-500">- {version.description}</span>
+                                                            )}
+                                                        </div>
+                                                        <div className="text-gray-500 text-xs">
+                                                            {version.created_at.split('T')[0]}
+                                                        </div>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+                        </>
+                    )}
                 </>
             )}
         </Layout>

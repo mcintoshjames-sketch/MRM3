@@ -1108,7 +1108,7 @@ class TestApprovalWorkflowIntegration:
 
         payload = {
             "validation_type_id": taxonomy_values["initial"].value_id,
-            "priority_id": taxonomy_values["priority_high"].value_id,
+            "priority_id": taxonomy_values["priority_standard"].value_id,
             "model_ids": [model.model_id],
             "target_completion_date": "2025-12-31"
         }
@@ -1155,7 +1155,7 @@ class TestApprovalWorkflowIntegration:
         # Create validation request
         payload = {
             "validation_type_id": taxonomy_values["initial"].value_id,
-            "priority_id": taxonomy_values["priority_high"].value_id,
+            "priority_id": taxonomy_values["priority_standard"].value_id,
             "model_ids": [model.model_id],
             "target_completion_date": "2025-12-31"
         }

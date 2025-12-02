@@ -1,0 +1,36 @@
+{
+    "field_name": "Past Due Level",
+    "description": "Classifies models based on time elapsed since revalidation due date. NOTE: This is now stored in the database as a bucket taxonomy. This file is kept for reference only.",
+    "buckets": [
+        {
+            "label": "Current",
+            "min_days": null,
+            "max_days": 0
+        },
+        {
+            "label": "Minimal",
+            "min_days": 1,
+            "max_days": 365
+        },
+        {
+            "label": "Moderate",
+            "min_days": 366,
+            "max_days": 730
+        },
+        {
+            "label": "Significant",
+            "min_days": 731,
+            "max_days": 1095
+        },
+        {
+            "label": "Critical",
+            "min_days": 1096,
+            "max_days": 1825
+        },
+        {
+            "label": "Obsolete",
+            "min_days": 1826,
+            "max_days": null
+        }
+    ]
+}

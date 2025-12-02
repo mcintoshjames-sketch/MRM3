@@ -5,10 +5,15 @@ This module defines the database models for the validation scorecard system:
 - ScorecardCriterion: User-configurable criteria within sections
 - ValidationScorecardRating: Per-criterion ratings entered by validators
 - ValidationScorecardResult: Computed scorecard results with configuration snapshot
+
+Configuration Versioning:
+- ScorecardConfigVersion: Version metadata for scorecard configurations
+- ScorecardSectionSnapshot: Point-in-time snapshot of sections
+- ScorecardCriterionSnapshot: Point-in-time snapshot of criteria with weights
 """
 
 from datetime import datetime
-from typing import Optional, TYPE_CHECKING
+from typing import Optional, List, TYPE_CHECKING
 
 from sqlalchemy import (
     Integer, String, Text, Boolean, Numeric, DateTime, ForeignKey, JSON,
@@ -21,6 +26,7 @@ from app.core.time import utc_now
 
 if TYPE_CHECKING:
     from app.models.validation import ValidationRequest
+    from app.models.user import User
 
 
 # Valid rating values for check constraint
@@ -71,7 +77,8 @@ class ScorecardSection(Base):
     criteria: Mapped[list["ScorecardCriterion"]] = relationship(
         "ScorecardCriterion",
         back_populates="section",
-        order_by="ScorecardCriterion.sort_order"
+        order_by="ScorecardCriterion.sort_order",
+        passive_deletes=True  # Let database handle CASCADE delete
     )
 
 
@@ -278,8 +285,243 @@ class ValidationScorecardResult(Base):
         comment="When the scorecard was computed"
     )
 
+    # Link to config version (for historical accuracy)
+    config_version_id: Mapped[Optional[int]] = mapped_column(
+        Integer,
+        ForeignKey("scorecard_config_versions.version_id", ondelete="SET NULL"),
+        nullable=True,
+        comment="FK to scorecard config version used for this scorecard"
+    )
+
     # Relationships
     request: Mapped["ValidationRequest"] = relationship(
         "ValidationRequest",
         back_populates="scorecard_result"
+    )
+    config_version: Mapped[Optional["ScorecardConfigVersion"]] = relationship(
+        "ScorecardConfigVersion",
+        back_populates="scorecard_results"
+    )
+
+
+# ============================================================================
+# Scorecard Configuration Versioning
+# ============================================================================
+
+class ScorecardConfigVersion(Base):
+    """Version snapshot of scorecard configuration (sections and criteria).
+
+    Similar to MonitoringPlanVersion, this captures the full configuration
+    at a point in time. When a scorecard is finalized or locked, it references
+    the active config version to preserve historical accuracy.
+    """
+    __tablename__ = "scorecard_config_versions"
+
+    version_id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    version_number: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        comment="Sequential version number (1, 2, 3...)"
+    )
+    version_name: Mapped[Optional[str]] = mapped_column(
+        String(200),
+        nullable=True,
+        comment="Optional display name (e.g., 'Q4 2025 Updates')"
+    )
+    description: Mapped[Optional[str]] = mapped_column(
+        Text,
+        nullable=True,
+        comment="Changelog or notes for this version"
+    )
+    published_by_user_id: Mapped[Optional[int]] = mapped_column(
+        Integer,
+        ForeignKey("users.user_id", ondelete="SET NULL"),
+        nullable=True
+    )
+    published_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        default=utc_now,
+        nullable=False
+    )
+    is_active: Mapped[bool] = mapped_column(
+        Boolean,
+        default=True,
+        nullable=False,
+        comment="Only one version should be active at a time"
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        default=utc_now,
+        nullable=False
+    )
+
+    __table_args__ = (
+        UniqueConstraint('version_number', name='uq_scorecard_config_version_number'),
+    )
+
+    # Relationships
+    published_by: Mapped[Optional["User"]] = relationship(
+        "User",
+        foreign_keys=[published_by_user_id]
+    )
+    section_snapshots: Mapped[List["ScorecardSectionSnapshot"]] = relationship(
+        "ScorecardSectionSnapshot",
+        back_populates="config_version",
+        cascade="all, delete-orphan",
+        order_by="ScorecardSectionSnapshot.sort_order"
+    )
+    criterion_snapshots: Mapped[List["ScorecardCriterionSnapshot"]] = relationship(
+        "ScorecardCriterionSnapshot",
+        back_populates="config_version",
+        cascade="all, delete-orphan",
+        order_by="ScorecardCriterionSnapshot.sort_order"
+    )
+    scorecard_results: Mapped[List["ValidationScorecardResult"]] = relationship(
+        "ValidationScorecardResult",
+        back_populates="config_version"
+    )
+
+
+class ScorecardSectionSnapshot(Base):
+    """Snapshot of a scorecard section at a specific config version.
+
+    Captures section metadata as it existed when the version was published.
+    """
+    __tablename__ = "scorecard_section_snapshots"
+
+    snapshot_id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    version_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("scorecard_config_versions.version_id", ondelete="CASCADE"),
+        nullable=False,
+        index=True
+    )
+    original_section_id: Mapped[Optional[int]] = mapped_column(
+        Integer,
+        nullable=True,
+        comment="Reference to original section (may be deleted)"
+    )
+    code: Mapped[str] = mapped_column(
+        String(20),
+        nullable=False,
+        comment="Section code at time of snapshot"
+    )
+    name: Mapped[str] = mapped_column(
+        String(255),
+        nullable=False
+    )
+    description: Mapped[Optional[str]] = mapped_column(
+        Text,
+        nullable=True
+    )
+    sort_order: Mapped[int] = mapped_column(
+        Integer,
+        default=0,
+        nullable=False
+    )
+    is_active: Mapped[bool] = mapped_column(
+        Boolean,
+        default=True,
+        nullable=False
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        default=utc_now,
+        nullable=False
+    )
+
+    __table_args__ = (
+        UniqueConstraint('version_id', 'code', name='uq_section_snapshot_version_code'),
+    )
+
+    # Relationships
+    config_version: Mapped["ScorecardConfigVersion"] = relationship(
+        "ScorecardConfigVersion",
+        back_populates="section_snapshots"
+    )
+
+
+class ScorecardCriterionSnapshot(Base):
+    """Snapshot of a scorecard criterion at a specific config version.
+
+    Captures criterion configuration including weight as it existed
+    when the version was published. This is critical for maintaining
+    historical accuracy of computed scores.
+    """
+    __tablename__ = "scorecard_criterion_snapshots"
+
+    snapshot_id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    version_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("scorecard_config_versions.version_id", ondelete="CASCADE"),
+        nullable=False,
+        index=True
+    )
+    original_criterion_id: Mapped[Optional[int]] = mapped_column(
+        Integer,
+        nullable=True,
+        comment="Reference to original criterion (may be deleted)"
+    )
+    section_code: Mapped[str] = mapped_column(
+        String(20),
+        nullable=False,
+        comment="Parent section code (not FK - for resilience)"
+    )
+    code: Mapped[str] = mapped_column(
+        String(20),
+        nullable=False,
+        comment="Criterion code at time of snapshot"
+    )
+    name: Mapped[str] = mapped_column(
+        String(255),
+        nullable=False
+    )
+    description_prompt: Mapped[Optional[str]] = mapped_column(
+        Text,
+        nullable=True
+    )
+    comments_prompt: Mapped[Optional[str]] = mapped_column(
+        Text,
+        nullable=True
+    )
+    include_in_summary: Mapped[bool] = mapped_column(
+        Boolean,
+        default=True,
+        nullable=False
+    )
+    allow_zero: Mapped[bool] = mapped_column(
+        Boolean,
+        default=True,
+        nullable=False
+    )
+    weight: Mapped[float] = mapped_column(
+        Numeric(5, 2),
+        default=1.0,
+        nullable=False,
+        comment="Weight as configured at snapshot time"
+    )
+    sort_order: Mapped[int] = mapped_column(
+        Integer,
+        default=0,
+        nullable=False
+    )
+    is_active: Mapped[bool] = mapped_column(
+        Boolean,
+        default=True,
+        nullable=False
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        default=utc_now,
+        nullable=False
+    )
+
+    __table_args__ = (
+        UniqueConstraint('version_id', 'code', name='uq_criterion_snapshot_version_code'),
+    )
+
+    # Relationships
+    config_version: Mapped["ScorecardConfigVersion"] = relationship(
+        "ScorecardConfigVersion",
+        back_populates="criterion_snapshots"
     )

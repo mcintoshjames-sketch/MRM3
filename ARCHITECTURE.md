@@ -47,6 +47,8 @@ Model Risk Management inventory system with a FastAPI backend, React/TypeScript 
   - `recommendations.py`: Validation/monitoring findings lifecycle - action plans, rebuttals, closure workflow, approvals, and priority configuration with regional overrides.
   - `risk_assessment.py`: Model risk assessment CRUD with qualitative/quantitative scoring, inherent risk matrix calculation, overrides at three levels, per-region assessments, and automatic tier sync.
   - `qualitative_factors.py`: Admin-configurable qualitative risk factor management (CRUD for factors and rating guidance with weighted scoring).
+  - `scorecard.py`: Validation scorecard configuration (sections, criteria, weights), ratings per validation request, computed results, and configuration versioning with publish workflow.
+  - `limitations.py`: Model limitations CRUD, retirement workflow, and critical limitations report with region filtering.
 - Core services:
   - DB session management (`core/database.py`), auth dependency (`core/deps.py`), security utilities (`core/security.py`), row-level security filters (`core/rls.py`).
   - PDF/report helpers in `validation_workflow.py` (FPDF) for generated artifacts.
@@ -63,6 +65,8 @@ Model Risk Management inventory system with a FastAPI backend, React/TypeScript 
   - Performance Monitoring: `monitoring.py` (MonitoringTeam, MonitoringPlan, MonitoringPlanMetric, MonitoringPlanVersion, MonitoringPlanMetricSnapshot, monitoring_team_members, monitoring_plan_models junction tables).
   - Recommendations: `recommendation.py` (Recommendation, ActionPlanTask, RecommendationRebuttal, ClosureEvidence, RecommendationStatusHistory, RecommendationApproval, RecommendationPriorityConfig, RecommendationPriorityRegionalOverride).
   - Risk Assessment: `risk_assessment.py` (QualitativeRiskFactor, QualitativeFactorGuidance, ModelRiskAssessment, QualitativeFactorAssessment) - qualitative/quantitative scoring with inherent risk matrix and tier derivation.
+  - Scorecard: `scorecard.py` (ScorecardSection, ScorecardCriterion, ValidationScorecardRating, ValidationScorecardResult, ScorecardConfigVersion, ScorecardSectionSnapshot, ScorecardCriterionSnapshot) - validation scorecard with configuration versioning.
+  - Model Limitations: `limitation.py` (ModelLimitation) - inherent model constraints with significance classification, conclusion tracking, and retirement workflow.
   - Compliance/analytics: `audit_log.py`, `export_view.py`, `saved_query.py`, `version_deployment_task.py`, `validation_grouping.py`.
 - Schemas: mirrored Pydantic models in `app/schemas/` for requests/responses.
 - Authn/z: HTTP Bearer JWT tokens; `get_current_user` dependency enforces auth; role checks per endpoint; RLS utilities narrow visibility for non-privileged users.
@@ -95,7 +99,7 @@ Model Risk Management inventory system with a FastAPI backend, React/TypeScript 
 - ValidationRequest lifecycle with status history, assignments (validators), plan (components and deviations), approvals (traditional + conditional), outcomes/review outcomes, deployment tasks, and policies/SLA settings per risk tier. **Prior Validation Linking**: `prior_validation_request_id` (most recent APPROVED validation) and `prior_full_validation_request_id` (most recent APPROVED INITIAL/COMPREHENSIVE validation) are auto-populated when creating new validation requests.
 - **ValidationPolicy**: Per-risk-tier configuration for validation scheduling with `frequency_months` (re-validation frequency), `grace_period_months` (additional time after submission due before overdue), and `model_change_lead_time_days` (days to complete validation after grace period). All fields are admin-configurable via `/validation-workflow/policies/` endpoints.
 - **Conditional Model Use Approvals**: ApproverRole (committees/roles), ConditionalApprovalRule (configurable rules based on validation type, risk tier, governance region, deployed regions), RuleRequiredApprover (many-to-many link). ValidationApproval extended with approver_role_id, approval_evidence, voiding fields. Model extended with use_approval_date timestamp.
-- Taxonomy/TaxonomyValue for configurable lists (risk tier, validation types, statuses, priorities, **Model Hierarchy Type, Model Dependency Type, Application Relationship Type**, etc.).
+- Taxonomy/TaxonomyValue for configurable lists (risk tier, validation types, statuses, priorities, **Model Hierarchy Type, Model Dependency Type, Application Relationship Type**, etc.). **Bucket Taxonomies**: `taxonomy_type='bucket'` enables range-based values with `min_days`/`max_days` columns for contiguous day ranges (e.g., Past Due Level taxonomy classifies overdue models into Current/Minimal/Moderate/Significant/Critical/Obsolete buckets). Bucket taxonomies enforce contiguity validation (no gaps/overlaps), require admin role for modifications, and are used in Overdue Revalidation Report for severity classification.
 - MapApplication (mock MAP inventory) and ModelApplication (model-application links with relationship type, effective/end dates for soft delete).
 - **Model Decommissioning**: DecommissioningRequest (model retirement workflow with status PENDING → VALIDATOR_APPROVED → APPROVED/REJECTED/WITHDRAWN), DecommissioningStatusHistory (audit trail), DecommissioningApproval (GLOBAL and REGIONAL approvals). Tracks reason (from Model Decommission Reason taxonomy), replacement model (required for REPLACEMENT/CONSOLIDATION reasons), last production date, gap analysis with justification, archive location. **Stage 1 Dual Approval**: When requestor is NOT the model owner, both Validator AND Owner approval are required before Stage 2 (tracked via `owner_approval_required`, `owner_reviewed_by_id`, `owner_reviewed_at`, `owner_comment`). Either can approve first; status stays PENDING until both complete. **Update Support**: PATCH endpoint allows creator or Admin to update requests while in PENDING status (with audit logging for all field changes).
 - Region and VersionDeploymentTask for regional deployment approvals.
@@ -106,17 +110,18 @@ Model Risk Management inventory system with a FastAPI backend, React/TypeScript 
 - SavedQuery/ExportView for analytics/reporting reuse.
 
 ## Request & Data Flow
-1. Frontend calls Axios client -> FastAPI routes under `/auth`, `/models`, `/validation-workflow`, `/decommissioning`, `/vendors`, `/taxonomies`, `/model-types`, `/audit-logs`, `/regions`, `/model-versions`, `/model-change-taxonomy`, `/analytics`, `/saved-queries`, `/regional-compliance-report`, `/validation-workflow/compliance-report/*`, `/models/{id}/hierarchy/*`, `/models/{id}/dependencies/*`, etc.
+1. Frontend calls Axios client -> FastAPI routes under `/auth`, `/models`, `/validation-workflow`, `/decommissioning`, `/vendors`, `/taxonomies`, `/model-types`, `/audit-logs`, `/regions`, `/model-versions`, `/model-change-taxonomy`, `/analytics`, `/saved-queries`, `/regional-compliance-report`, `/validation-workflow/compliance-report/*`, `/models/{id}/hierarchy/*`, `/models/{id}/dependencies/*`, `/scorecard/*`, etc.
 2. `get_current_user` decodes JWT, routes apply role checks and RLS filters.
 3. SQLAlchemy ORM persists/fetches entities; Alembic manages schema migrations. **Model relationships enforce business rules**: cycle detection prevents circular dependencies, self-reference constraints prevent invalid links, date range validation ensures data integrity.
 4. Responses serialized via Pydantic schemas; frontend renders tables/cards with sorting/export.
 
 ## Reporting & Analytics
-- Reports hub (`/reports`) lists available reports; detail pages for Regional Compliance, Deviation Trends, and Overdue Revalidation (CSV export, refresh).
+- Reports hub (`/reports`) lists available reports; detail pages for Regional Compliance, Deviation Trends, Overdue Revalidation, Name Changes, and Critical Limitations (CSV export, refresh).
 - Backend report endpoints:
   - `GET /regional-compliance-report/` - Regional deployment and compliance
   - `GET /validation-workflow/compliance-report/deviation-trends` - Deviation trends
   - `GET /overdue-revalidation-report/` - Overdue items with commentary status (supports filters: overdue_type, comment_status, risk_tier, days_overdue_min, needs_update_only)
+  - `GET /reports/critical-limitations` - Critical model limitations report with region filtering
   - Dashboard reports (`/validation-workflow/dashboard/*`) and analytics aggregations (`/analytics`, saved queries)
 - Export views in `export_views.py` provide CSV-friendly datasets.
 
@@ -390,6 +395,40 @@ Model Risk Management inventory system with a FastAPI backend, React/TypeScript 
 - **Frontend**: RecommendationsPage (list), RecommendationDetailPage (detail with workflow actions), TaxonomyPage "Recommendation Priority" tab (admin config with expandable regional overrides).
 - **Testing**: 82 tests in `tests/test_recommendations.py` covering workflow, rebuttals, action plans, approvals, and regional overrides.
 
+## Model Limitations
+- **Purpose**: Track inherent constraints, weaknesses, and boundaries of models that users and stakeholders need to be aware of. Limitations are discovered during validation but persist at the model level.
+- **Data Model**:
+  - **ModelLimitation**: Core entity with fields: limitation_id, model_id, validation_request_id (optional traceability), model_version_id (optional), recommendation_id (optional link to mitigation recommendation), significance (Critical/Non-Critical), category_id (from Limitation Category taxonomy), description, impact_assessment, conclusion (Mitigate/Accept), conclusion_rationale, user_awareness_description (required for Critical), is_retired, retirement_date, retirement_reason, retired_by_id, created_by_id, created_at, updated_at.
+  - **Database constraints**: CHECK constraints enforce significance values, conclusion values, critical limitations must have user_awareness_description, retirement fields must be consistent (all set or all null).
+- **Significance Classification**:
+  - **Critical**: Significant model weaknesses requiring documented user awareness
+  - **Non-Critical**: Minor limitations with lower impact
+- **Conclusion Types**:
+  - **Mitigate**: Limitation will be addressed (optionally linked to a Recommendation)
+  - **Accept**: Limitation accepted with documented rationale
+- **Limitation Categories** (taxonomy):
+  - **Data**: Limitations related to data quality, coverage, availability
+  - **Implementation**: Limitations in model implementation/coding
+  - **Methodology**: Theoretical or methodological constraints
+  - **Model Output**: Limitations affecting model outputs and decisions
+  - **Other**: Miscellaneous limitations not fitting other categories
+- **Lifecycle**:
+  - Create: Validators/Admin document limitations during validation
+  - Update: Edit non-retired limitations (significance, category, narratives)
+  - Retire: Mark as retired with reason commentary (preserves history)
+- **Authorization**: Admin and Validator roles can create, update, and retire limitations.
+- **API Endpoints**:
+  - `GET /models/{id}/limitations` - List limitations for a model (filters: include_retired, significance, conclusion, category_id)
+  - `POST /models/{id}/limitations` - Create limitation (requires Validator/Admin)
+  - `GET /limitations/{id}` - Get limitation details with relationships
+  - `PATCH /limitations/{id}` - Update limitation (requires Validator/Admin, not retired)
+  - `POST /limitations/{id}/retire` - Retire limitation with reason (requires Validator/Admin)
+  - `GET /reports/critical-limitations` - Critical limitations report (filter by region)
+- **Frontend**:
+  - **ModelLimitationsTab**: "Limitations" tab on Model Details page with table view, filters (show retired, significance), and CRUD modals
+  - **CriticalLimitationsReportPage**: Report page under `/reports/critical-limitations` with summary cards, category breakdown, and CSV export
+- **Testing**: 27 tests in `tests/test_limitations.py` covering CRUD, authorization, retirement workflow, and critical limitations report.
+
 ## Validation Scorecard System
 - **Purpose**: Standardized framework for validators to assess and rate validation criteria across multiple sections, producing computed section and overall scores.
 - **Workflow Position**: Completed AFTER validation plan/assignments and BEFORE final outcome determination. Scorecard ratings inform the outcome decision but are independent of it.
@@ -397,7 +436,10 @@ Model Risk Management inventory system with a FastAPI backend, React/TypeScript 
   - **ScorecardSection**: Configurable assessment sections (e.g., "Evaluation of Conceptual Soundness", "Ongoing Monitoring/Benchmarking", "Outcome Analysis"). Fields: section_id, code, name, description, sort_order, is_active.
   - **ScorecardCriterion**: Individual criteria within sections. Fields: criterion_id, code, section_id, name, description_prompt, comments_prompt, include_in_summary, allow_zero, weight, sort_order, is_active.
   - **ValidationScorecardRating**: Per-criterion ratings for a validation request. Fields: rating_id, request_id (FK to ValidationRequest), criterion_code, rating, description, comments, created_at, updated_at.
-  - **ValidationScorecardResult**: Computed scorecard results with configuration snapshot. Fields: result_id, request_id, overall_numeric_score, overall_rating, section_summaries (JSON), config_snapshot (JSON), computed_at.
+  - **ValidationScorecardResult**: Computed scorecard results with configuration snapshot. Fields: result_id, request_id, overall_numeric_score, overall_rating, section_summaries (JSON), config_snapshot (JSON), computed_at, config_version_id (FK to ScorecardConfigVersion).
+  - **ScorecardConfigVersion**: Version metadata for scorecard configuration snapshots. Fields: version_id, version_number, version_name, description, effective_date, published_by_user_id, published_at, is_active.
+  - **ScorecardSectionSnapshot**: Point-in-time snapshot of sections at version publish. Fields: snapshot_id, version_id, original_section_id, code, name, description, sort_order, is_active.
+  - **ScorecardCriterionSnapshot**: Point-in-time snapshot of criteria with weights at version publish. Fields: snapshot_id, version_id, original_criterion_id, section_code, code, name, description_prompt, comments_prompt, include_in_summary, allow_zero, weight, sort_order, is_active.
 - **Rating Scale**:
   - **Green (6)**: Excellent - fully meets expectations
   - **Green- (5)**: Good - meets expectations with minor observations
@@ -415,16 +457,59 @@ Model Risk Management inventory system with a FastAPI backend, React/TypeScript 
   - Section 1 "Evaluation of Conceptual Soundness": 5 criteria (Documentation, Data, Methodology, Inputs/Outputs, Limitations)
   - Section 2 "Ongoing Monitoring/Benchmarking": 3 criteria (Benchmarking, Process Verification, Sensitivity Analysis)
   - Section 3 "Outcome Analysis": 6 criteria (Backtesting, Stress Testing, Boundary Testing, Accuracy Testing, Impact Analysis, Other Testing)
+- **Configuration Versioning**:
+  - Manual "Publish" action creates immutable version snapshot (similar to MonitoringPlanVersion)
+  - Publishing deactivates previous active version and creates new version with section/criterion snapshots
+  - Scorecards can reference config_version_id to preserve historical accuracy
+  - Version history preserved for audit and compliance
+  - `has_unpublished_changes` flag computed by comparing section/criterion `updated_at` timestamps against `published_at`
+  - Publish button conditionally shown in UI only when unpublished changes exist
 - **API Endpoints** (prefix: `/scorecard`):
-  - `GET /config` - Get scorecard configuration (sections with nested criteria)
-  - `GET /validation/{request_id}` - Get scorecard for a validation request
-  - `POST /validation/{request_id}` - Create/update all ratings (bulk save)
-  - `PATCH /validation/{request_id}/ratings/{criterion_code}` - Update single criterion rating
+  - Configuration: `GET /config` - Get current scorecard configuration (sections with nested criteria)
+  - Ratings: `GET /validation/{request_id}`, `POST /validation/{request_id}`, `PATCH /validation/{request_id}/ratings/{criterion_code}`
+  - Admin Section CRUD: `GET /sections`, `GET /sections/{id}`, `POST /sections`, `PATCH /sections/{id}`, `DELETE /sections/{id}`
+  - Admin Criterion CRUD: `GET /criteria`, `GET /criteria/{id}`, `POST /criteria`, `PATCH /criteria/{id}`, `DELETE /criteria/{id}`
+  - Versioning: `GET /versions` (list all), `GET /versions/active` (current with has_unpublished_changes), `GET /versions/{id}` (detail with snapshots), `POST /versions/publish` (Admin)
 - **Frontend Components**:
   - `ValidationScorecardTab.tsx`: Full scorecard entry form with summary card, progress indicator, collapsible sections, auto-save on rating change
   - Integrated into ValidationRequestDetailPage as "Scorecard" tab (positioned after Plan, before Outcome)
+  - TaxonomyPage "Scorecard Configuration" tab: Section/criterion CRUD with version management
+    - "Unpublished Changes" indicator (yellow badge) when config modified since last publish
+    - "Publish New Version" button conditionally shown when changes exist
+    - Version list with active indicator and usage counts
 - **Audit Logging**: CREATE and UPDATE actions logged with rating counts and overall score
 - **Testing**: 56 unit tests covering rating conversions, score computations, section summaries, overall assessment, config loading, and edge cases
+
+## Residual Risk Map
+- **Purpose**: Compute Residual (Final) Risk from the combination of Inherent Risk Tier and Validation Scorecard Outcome using a configurable matrix.
+- **Data Model**:
+  - **ResidualRiskMapConfig**: Versioned configuration storing the risk matrix. Fields: config_id, version_number, version_name, matrix_config (JSON), description, is_active, created_by_user_id, created_at, updated_at.
+  - **matrix_config structure**: `{ row_axis_label, column_axis_label, row_values, column_values, result_values, matrix: { "High": { "Red": "High", "Yellow-": "High", ... }, ... } }`
+- **Default Matrix** (seeded from `RESIDUAL_RISK_MAP.json`):
+  ```
+                      Scorecard Outcome
+               Red    Yellow- Yellow  Yellow+ Green-  Green
+  High         High   High    High    Medium  Medium  Low
+  Medium       High   High    Medium  Medium  Low     Low
+  Low          High   Medium  Medium  Low     Low     Low
+  Very Low     Medium Medium  Low     Low     Low     Low
+  Inherent Risk
+  ```
+- **Result Values**: High, Medium, Low (color-coded as red, amber, green in UI)
+- **Computed Properties** (on ValidationRequest):
+  - `scorecard_overall_rating`: Derived from ValidationScorecardResult when available
+  - `residual_risk`: Computed via matrix lookup using model's inherent risk tier + scorecard outcome
+- **API Endpoints** (prefix: `/residual-risk-map`):
+  - `GET /` - Get active configuration
+  - `GET /versions` - List all versions
+  - `GET /versions/{id}` - Get specific version
+  - `PATCH /` - Update configuration (creates new version, sets as active)
+  - `POST /calculate` - Calculate residual risk for given inputs
+- **Frontend Components**:
+  - **TaxonomyPage "Residual Risk Map" tab**: Matrix display with edit capability, version history
+  - **ModelDetailsPage "Risk Assessment Summary"**: Shows Inherent Risk Tier, Scorecard Outcome, and computed Residual Risk (from latest approved validation)
+  - **OverdueRevalidationReportPage**: Residual Risk column with color-coded badges, included in CSV export
+- **API Client**: `web/src/api/residualRiskMap.ts` with helper functions for color styling
 
 ## Model Risk Assessment System
 - **Purpose**: Derive model inherent risk tier from qualitative and quantitative factors using a standardized matrix approach with optional overrides at three levels.

@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import Layout from '../components/Layout';
 import client from '../api/client';
 import OverdueCommentaryModal, { OverdueType } from '../components/OverdueCommentaryModal';
+import { getResidualRiskBadgeClass } from '../api/residualRiskMap';
 
 interface RegionInfo {
     region_id: number;
@@ -40,6 +41,10 @@ interface OverdueRevalidationRecord {
     stale_reason: string | null;
     needs_comment_update: boolean;
     computed_completion_date: string | null;
+    scorecard_overall_rating: string | null;
+    residual_risk: string | null;
+    past_due_level: string | null;
+    past_due_level_code: string | null;
 }
 
 interface EnhancedSummary {
@@ -58,6 +63,7 @@ interface EnhancedSummary {
     overdue_90_plus_days: number;
     by_risk_tier: Record<string, number>;
     by_region: Record<string, number>;
+    by_past_due_level: Record<string, number>;
     risk_weighted_overdue_score: number;
 }
 
@@ -77,6 +83,7 @@ interface OverdueRevalidationReportResponse {
         comment_status: string | null;
         owner_id: number | null;
         days_overdue_min: number | null;
+        past_due_level: string | null;
         needs_update_only: boolean;
     };
     summary: EnhancedSummary;
@@ -94,6 +101,7 @@ const OverdueRevalidationReportPage: React.FC = () => {
     const [overdueTypeFilter, setOverdueTypeFilter] = useState<string>('');
     const [regionFilter, setRegionFilter] = useState<string>('');
     const [commentStatusFilter, setCommentStatusFilter] = useState<string>('');
+    const [pastDueLevelFilter, setPastDueLevelFilter] = useState<string>('');
     const [needsUpdateOnly, setNeedsUpdateOnly] = useState(false);
     const [daysOverdueMin, setDaysOverdueMin] = useState<string>('');
 
@@ -112,7 +120,7 @@ const OverdueRevalidationReportPage: React.FC = () => {
 
     useEffect(() => {
         fetchReport();
-    }, [overdueTypeFilter, regionFilter, commentStatusFilter, needsUpdateOnly, daysOverdueMin]);
+    }, [overdueTypeFilter, regionFilter, commentStatusFilter, pastDueLevelFilter, needsUpdateOnly, daysOverdueMin]);
 
     const fetchRegions = async () => {
         try {
@@ -130,6 +138,7 @@ const OverdueRevalidationReportPage: React.FC = () => {
             if (overdueTypeFilter) params.append('overdue_type', overdueTypeFilter);
             if (regionFilter) params.append('region_id', regionFilter);
             if (commentStatusFilter) params.append('comment_status', commentStatusFilter);
+            if (pastDueLevelFilter) params.append('past_due_level', pastDueLevelFilter);
             if (needsUpdateOnly) params.append('needs_update_only', 'true');
             if (daysOverdueMin) params.append('days_overdue_min', daysOverdueMin);
 
@@ -189,6 +198,30 @@ const OverdueRevalidationReportPage: React.FC = () => {
         return 'bg-orange-100 text-orange-800';
     };
 
+    const getPastDueLevelBadge = (level: string | null): string => {
+        if (!level) return 'bg-gray-100 text-gray-700';
+        const lowerLevel = level.toLowerCase();
+        if (lowerLevel.includes('obsolete')) {
+            return 'bg-purple-200 text-purple-900';
+        }
+        if (lowerLevel.includes('critical')) {
+            return 'bg-red-300 text-red-900';
+        }
+        if (lowerLevel.includes('significant')) {
+            return 'bg-red-100 text-red-800';
+        }
+        if (lowerLevel.includes('moderate')) {
+            return 'bg-orange-100 text-orange-800';
+        }
+        if (lowerLevel.includes('minimal')) {
+            return 'bg-yellow-100 text-yellow-800';
+        }
+        if (lowerLevel.includes('current')) {
+            return 'bg-green-100 text-green-800';
+        }
+        return 'bg-gray-100 text-gray-700';
+    };
+
     const exportToCsv = () => {
         if (!reportData || reportData.records.length === 0) return;
 
@@ -198,12 +231,15 @@ const OverdueRevalidationReportPage: React.FC = () => {
             'Model ID',
             'Model Name',
             'Risk Tier',
+            'Scorecard Outcome',
+            'Residual Risk',
             'Regions',
             'Owner Name',
             'Owner Email',
             'Primary Validator',
             'Due Date',
             'Days Overdue',
+            'Past Due Level',
             'Urgency',
             'Current Status',
             'Commentary Status',
@@ -222,12 +258,15 @@ const OverdueRevalidationReportPage: React.FC = () => {
             record.model_id,
             record.model_name,
             record.risk_tier || 'N/A',
+            record.scorecard_overall_rating || 'N/A',
+            record.residual_risk || 'N/A',
             record.regions.map(r => r.region_code).join('; ') || 'N/A',
             record.model_owner_name || 'N/A',
             record.model_owner_email || 'N/A',
             record.primary_validator_name || 'N/A',
             record.due_date || 'N/A',
             record.days_overdue,
+            record.past_due_level || 'N/A',
             record.urgency === 'in_grace_period' ? 'In Grace Period' : 'Overdue',
             record.current_status,
             record.comment_status,
@@ -333,8 +372,8 @@ const OverdueRevalidationReportPage: React.FC = () => {
                             </div>
                         </div>
 
-                        {/* Breakdown by Risk Tier and Region */}
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+                        {/* Breakdown by Risk Tier, Region, and Past Due Level */}
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4">
                             {/* Risk Tier Breakdown */}
                             {Object.keys(reportData.summary.by_risk_tier).length > 0 && (
                                 <div>
@@ -356,6 +395,19 @@ const OverdueRevalidationReportPage: React.FC = () => {
                                         {Object.entries(reportData.summary.by_region).map(([region, count]) => (
                                             <span key={region} className="px-2 py-1 bg-blue-100 rounded text-xs">
                                                 {region}: <strong>{count}</strong>
+                                            </span>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+                            {/* Past Due Level Breakdown */}
+                            {Object.keys(reportData.summary.by_past_due_level).length > 0 && (
+                                <div>
+                                    <h4 className="text-xs font-medium text-gray-500 mb-2">By Past Due Level</h4>
+                                    <div className="flex flex-wrap gap-2">
+                                        {Object.entries(reportData.summary.by_past_due_level).map(([level, count]) => (
+                                            <span key={level} className={`px-2 py-1 rounded text-xs ${getPastDueLevelBadge(level)}`}>
+                                                {level}: <strong>{count}</strong>
                                             </span>
                                         ))}
                                     </div>
@@ -406,6 +458,22 @@ const OverdueRevalidationReportPage: React.FC = () => {
                                 <option value="MISSING">Missing</option>
                                 <option value="STALE">Stale</option>
                                 <option value="CURRENT">Current</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label className="block text-xs font-medium text-gray-500 mb-1">Past Due Level</label>
+                            <select
+                                value={pastDueLevelFilter}
+                                onChange={(e) => setPastDueLevelFilter(e.target.value)}
+                                className="block w-40 rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 text-sm"
+                            >
+                                <option value="">All Levels</option>
+                                <option value="CURRENT">Current</option>
+                                <option value="MINIMAL">Minimal</option>
+                                <option value="MODERATE">Moderate</option>
+                                <option value="SIGNIFICANT">Significant</option>
+                                <option value="CRITICAL">Critical</option>
+                                <option value="OBSOLETE">Obsolete</option>
                             </select>
                         </div>
                         <div>
@@ -476,10 +544,12 @@ const OverdueRevalidationReportPage: React.FC = () => {
                                         <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Type</th>
                                         <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Model</th>
                                         <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Risk Tier</th>
+                                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Residual Risk</th>
                                         <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Regions</th>
                                         <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Responsible</th>
                                         <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Due Date</th>
                                         <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Days Overdue</th>
+                                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Past Due Level</th>
                                         <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Commentary</th>
                                         <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Target</th>
                                         <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
@@ -506,6 +576,15 @@ const OverdueRevalidationReportPage: React.FC = () => {
                                             </td>
                                             <td className="px-4 py-3 whitespace-nowrap text-sm">
                                                 {record.risk_tier || <span className="text-gray-400">-</span>}
+                                            </td>
+                                            <td className="px-4 py-3 whitespace-nowrap text-sm">
+                                                {record.residual_risk ? (
+                                                    <span className={getResidualRiskBadgeClass(record.residual_risk)}>
+                                                        {record.residual_risk}
+                                                    </span>
+                                                ) : (
+                                                    <span className="text-gray-400">-</span>
+                                                )}
                                             </td>
                                             <td className="px-4 py-3 whitespace-nowrap text-sm">
                                                 {record.regions.length > 0 ? (
@@ -542,6 +621,15 @@ const OverdueRevalidationReportPage: React.FC = () => {
                                                 </span>
                                                 {record.urgency === 'in_grace_period' && (
                                                     <span className="ml-1 text-xs text-gray-500">(grace)</span>
+                                                )}
+                                            </td>
+                                            <td className="px-4 py-3 whitespace-nowrap">
+                                                {record.past_due_level ? (
+                                                    <span className={`px-2 py-1 text-xs font-semibold rounded ${getPastDueLevelBadge(record.past_due_level)}`}>
+                                                        {record.past_due_level}
+                                                    </span>
+                                                ) : (
+                                                    <span className="text-gray-400">-</span>
                                                 )}
                                             </td>
                                             <td className="px-4 py-3">

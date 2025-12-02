@@ -22,10 +22,8 @@ def workflow_taxonomies(db_session):
     db_session.add(priority_tax)
     db_session.flush()
 
-    critical = TaxonomyValue(taxonomy_id=priority_tax.taxonomy_id, code="CRITICAL", label="Critical", sort_order=1)
-    high = TaxonomyValue(taxonomy_id=priority_tax.taxonomy_id, code="HIGH", label="High", sort_order=2)
-    medium = TaxonomyValue(taxonomy_id=priority_tax.taxonomy_id, code="MEDIUM", label="Medium", sort_order=3)
-    low = TaxonomyValue(taxonomy_id=priority_tax.taxonomy_id, code="LOW", label="Low", sort_order=4)
+    urgent = TaxonomyValue(taxonomy_id=priority_tax.taxonomy_id, code="URGENT", label="Urgent", sort_order=1)
+    standard = TaxonomyValue(taxonomy_id=priority_tax.taxonomy_id, code="STANDARD", label="Standard", sort_order=2)
 
     # Validation Request Status
     status_tax = Taxonomy(name="Validation Request Status", is_system=True)
@@ -79,7 +77,7 @@ def workflow_taxonomies(db_session):
     not_fit = TaxonomyValue(taxonomy_id=rating_tax.taxonomy_id, code="NOT_FIT", label="Not Fit for Purpose", sort_order=3)
 
     db_session.add_all([
-        critical, high, medium, low,
+        urgent, standard,
         intake, planning, in_progress, review, pending_approval, approved, on_hold, cancelled,
         initial_val, comprehensive_val,
         conceptual, data_quality, implementation, performance, documentation,
@@ -89,7 +87,7 @@ def workflow_taxonomies(db_session):
     db_session.commit()
 
     return {
-        "priority": {"critical": critical, "high": high, "medium": medium, "low": low},
+        "priority": {"urgent": urgent, "standard": standard},
         "status": {
             "intake": intake, "planning": planning, "in_progress": in_progress,
             "review": review, "pending_approval": pending_approval, "approved": approved,
@@ -121,7 +119,7 @@ class TestValidationRequestCRUD:
             json={
                 "model_ids": [sample_model.model_id],  # Fixed to use model_ids (plural) from Phase 1
                 "validation_type_id": workflow_taxonomies["type"]["initial"].value_id,
-                "priority_id": workflow_taxonomies["priority"]["high"].value_id,
+                "priority_id": workflow_taxonomies["priority"]["standard"].value_id,
                 "target_completion_date": target_date,
                 "trigger_reason": "Model deployment"
             }
@@ -130,7 +128,7 @@ class TestValidationRequestCRUD:
         data = response.json()
         assert data["models"][0]["model_id"] == sample_model.model_id  # Fixed to use models (plural)
         assert data["current_status"]["label"] == "Intake"
-        assert data["priority"]["label"] == "High"
+        assert data["priority"]["label"] == "Standard"
         assert "request_id" in data
 
     def test_create_request_without_auth(self, client, sample_model, workflow_taxonomies):
@@ -141,7 +139,7 @@ class TestValidationRequestCRUD:
             json={
                 "model_ids": [sample_model.model_id],
                 "validation_type_id": workflow_taxonomies["type"]["initial"].value_id,
-                "priority_id": workflow_taxonomies["priority"]["high"].value_id,
+                "priority_id": workflow_taxonomies["priority"]["standard"].value_id,
                 "target_completion_date": target_date,
             }
         )
@@ -156,7 +154,7 @@ class TestValidationRequestCRUD:
             json={
                 "model_ids": [9999],
                 "validation_type_id": workflow_taxonomies["type"]["initial"].value_id,
-                "priority_id": workflow_taxonomies["priority"]["high"].value_id,
+                "priority_id": workflow_taxonomies["priority"]["standard"].value_id,
                 "target_completion_date": target_date,
                 "trigger_reason": "Test"
             }
@@ -173,7 +171,7 @@ class TestValidationRequestCRUD:
             json={
                 "model_ids": [sample_model.model_id],
                 "validation_type_id": 9999,
-                "priority_id": workflow_taxonomies["priority"]["high"].value_id,
+                "priority_id": workflow_taxonomies["priority"]["standard"].value_id,
                 "target_completion_date": target_date,
             }
         )
@@ -196,7 +194,7 @@ class TestValidationRequestCRUD:
             json={
                 "model_ids": [sample_model.model_id],
                 "validation_type_id": workflow_taxonomies["type"]["initial"].value_id,
-                "priority_id": workflow_taxonomies["priority"]["high"].value_id,
+                "priority_id": workflow_taxonomies["priority"]["standard"].value_id,
                 "target_completion_date": target_date,
             }
         )
@@ -216,7 +214,7 @@ class TestValidationRequestCRUD:
             json={
                 "model_ids": [sample_model.model_id],
                 "validation_type_id": workflow_taxonomies["type"]["initial"].value_id,
-                "priority_id": workflow_taxonomies["priority"]["high"].value_id,
+                "priority_id": workflow_taxonomies["priority"]["standard"].value_id,
                 "target_completion_date": target_date,
             }
         )
@@ -243,7 +241,7 @@ class TestValidationRequestCRUD:
             json={
                 "model_ids": [sample_model.model_id],
                 "validation_type_id": workflow_taxonomies["type"]["initial"].value_id,
-                "priority_id": workflow_taxonomies["priority"]["high"].value_id,
+                "priority_id": workflow_taxonomies["priority"]["standard"].value_id,
                 "target_completion_date": target_date,
             }
         )
@@ -265,7 +263,7 @@ class TestValidationRequestCRUD:
             json={
                 "model_ids": [sample_model.model_id],
                 "validation_type_id": workflow_taxonomies["type"]["initial"].value_id,
-                "priority_id": workflow_taxonomies["priority"]["high"].value_id,
+                "priority_id": workflow_taxonomies["priority"]["standard"].value_id,
                 "target_completion_date": target_date,
             }
         )
@@ -283,7 +281,7 @@ class TestValidationRequestCRUD:
             json={
                 "model_ids": [sample_model.model_id],
                 "validation_type_id": workflow_taxonomies["type"]["initial"].value_id,
-                "priority_id": workflow_taxonomies["priority"]["high"].value_id,
+                "priority_id": workflow_taxonomies["priority"]["standard"].value_id,
                 "target_completion_date": target_date,
             }
         )
@@ -309,7 +307,7 @@ class TestStatusTransitions:
             json={
                 "model_ids": [sample_model.model_id],
                 "validation_type_id": workflow_taxonomies["type"]["initial"].value_id,
-                "priority_id": workflow_taxonomies["priority"]["high"].value_id,
+                "priority_id": workflow_taxonomies["priority"]["standard"].value_id,
                 "target_completion_date": target_date,
             }
         )
@@ -342,7 +340,7 @@ class TestStatusTransitions:
             json={
                 "model_ids": [sample_model.model_id],
                 "validation_type_id": workflow_taxonomies["type"]["initial"].value_id,
-                "priority_id": workflow_taxonomies["priority"]["high"].value_id,
+                "priority_id": workflow_taxonomies["priority"]["standard"].value_id,
                 "target_completion_date": target_date,
             }
         )
@@ -368,7 +366,7 @@ class TestStatusTransitions:
             json={
                 "model_ids": [sample_model.model_id],
                 "validation_type_id": workflow_taxonomies["type"]["initial"].value_id,
-                "priority_id": workflow_taxonomies["priority"]["high"].value_id,
+                "priority_id": workflow_taxonomies["priority"]["standard"].value_id,
                 "target_completion_date": target_date,
             }
         )
@@ -408,7 +406,7 @@ class TestStatusTransitions:
             json={
                 "model_ids": [sample_model.model_id],
                 "validation_type_id": workflow_taxonomies["type"]["initial"].value_id,
-                "priority_id": workflow_taxonomies["priority"]["high"].value_id,
+                "priority_id": workflow_taxonomies["priority"]["standard"].value_id,
                 "target_completion_date": target_date,
                 "region_ids": [region.region_id]
             }
@@ -492,7 +490,7 @@ class TestStatusTransitions:
             json={
                 "model_ids": [sample_model.model_id],
                 "validation_type_id": workflow_taxonomies["type"]["initial"].value_id,
-                "priority_id": workflow_taxonomies["priority"]["high"].value_id,
+                "priority_id": workflow_taxonomies["priority"]["standard"].value_id,
                 "target_completion_date": target_date,
                 "region_ids": [region.region_id]
             }
@@ -542,7 +540,7 @@ class TestStatusTransitions:
             json={
                 "model_ids": [sample_model.model_id],
                 "validation_type_id": workflow_taxonomies["type"]["initial"].value_id,
-                "priority_id": workflow_taxonomies["priority"]["high"].value_id,
+                "priority_id": workflow_taxonomies["priority"]["standard"].value_id,
                 "target_completion_date": target_date,
             }
         )
@@ -568,7 +566,7 @@ class TestStatusTransitions:
             json={
                 "model_ids": [sample_model.model_id],
                 "validation_type_id": workflow_taxonomies["type"]["initial"].value_id,
-                "priority_id": workflow_taxonomies["priority"]["high"].value_id,
+                "priority_id": workflow_taxonomies["priority"]["standard"].value_id,
                 "target_completion_date": target_date,
             }
         )
@@ -605,7 +603,7 @@ class TestStatusTransitions:
             json={
                 "model_ids": [sample_model.model_id],
                 "validation_type_id": workflow_taxonomies["type"]["initial"].value_id,
-                "priority_id": workflow_taxonomies["priority"]["high"].value_id,
+                "priority_id": workflow_taxonomies["priority"]["standard"].value_id,
                 "target_completion_date": target_date,
             }
         )
@@ -656,7 +654,7 @@ class TestValidatorIndependence:
             json={
                 "model_ids": [sample_model.model_id],
                 "validation_type_id": workflow_taxonomies["type"]["initial"].value_id,
-                "priority_id": workflow_taxonomies["priority"]["high"].value_id,
+                "priority_id": workflow_taxonomies["priority"]["standard"].value_id,
                 "target_completion_date": target_date,
             }
         )
@@ -688,7 +686,7 @@ class TestValidatorIndependence:
             json={
                 "model_ids": [sample_model.model_id],
                 "validation_type_id": workflow_taxonomies["type"]["initial"].value_id,
-                "priority_id": workflow_taxonomies["priority"]["high"].value_id,
+                "priority_id": workflow_taxonomies["priority"]["standard"].value_id,
                 "target_completion_date": target_date,
             }
         )
@@ -716,7 +714,7 @@ class TestValidatorIndependence:
             json={
                 "model_ids": [sample_model.model_id],
                 "validation_type_id": workflow_taxonomies["type"]["initial"].value_id,
-                "priority_id": workflow_taxonomies["priority"]["high"].value_id,
+                "priority_id": workflow_taxonomies["priority"]["standard"].value_id,
                 "target_completion_date": target_date,
             }
         )
@@ -743,7 +741,7 @@ class TestValidatorIndependence:
             json={
                 "model_ids": [sample_model.model_id],
                 "validation_type_id": workflow_taxonomies["type"]["initial"].value_id,
-                "priority_id": workflow_taxonomies["priority"]["high"].value_id,
+                "priority_id": workflow_taxonomies["priority"]["standard"].value_id,
                 "target_completion_date": target_date,
             }
         )
@@ -772,7 +770,7 @@ class TestValidatorIndependence:
             json={
                 "model_ids": [sample_model.model_id],
                 "validation_type_id": workflow_taxonomies["type"]["initial"].value_id,
-                "priority_id": workflow_taxonomies["priority"]["high"].value_id,
+                "priority_id": workflow_taxonomies["priority"]["standard"].value_id,
                 "target_completion_date": target_date,
                 "current_status_id": workflow_taxonomies["status"]["intake"].value_id
             }
@@ -826,7 +824,7 @@ class TestOutcomeCreation:
             json={
                 "model_ids": [sample_model.model_id],
                 "validation_type_id": workflow_taxonomies["type"]["initial"].value_id,
-                "priority_id": workflow_taxonomies["priority"]["high"].value_id,
+                "priority_id": workflow_taxonomies["priority"]["standard"].value_id,
                 "target_completion_date": target_date,
             }
         )
@@ -890,7 +888,7 @@ class TestOutcomeCreation:
             json={
                 "model_ids": [sample_model.model_id],
                 "validation_type_id": workflow_taxonomies["type"]["initial"].value_id,
-                "priority_id": workflow_taxonomies["priority"]["high"].value_id,
+                "priority_id": workflow_taxonomies["priority"]["standard"].value_id,
                 "target_completion_date": target_date,
             }
         )
@@ -961,7 +959,7 @@ class TestApprovalWorkflow:
             json={
                 "model_ids": [sample_model.model_id],
                 "validation_type_id": workflow_taxonomies["type"]["initial"].value_id,
-                "priority_id": workflow_taxonomies["priority"]["high"].value_id,
+                "priority_id": workflow_taxonomies["priority"]["standard"].value_id,
                 "target_completion_date": target_date,
             }
         )
@@ -987,7 +985,7 @@ class TestApprovalWorkflow:
             json={
                 "model_ids": [sample_model.model_id],
                 "validation_type_id": workflow_taxonomies["type"]["initial"].value_id,
-                "priority_id": workflow_taxonomies["priority"]["high"].value_id,
+                "priority_id": workflow_taxonomies["priority"]["standard"].value_id,
                 "target_completion_date": target_date,
             }
         )
@@ -1029,7 +1027,7 @@ class TestApprovalWorkflow:
             json={
                 "model_ids": [sample_model.model_id],
                 "validation_type_id": workflow_taxonomies["type"]["initial"].value_id,
-                "priority_id": workflow_taxonomies["priority"]["high"].value_id,
+                "priority_id": workflow_taxonomies["priority"]["standard"].value_id,
                 "target_completion_date": target_date,
             }
         )
@@ -1065,7 +1063,7 @@ class TestApprovalWorkflow:
             json={
                 "model_ids": [sample_model.model_id],
                 "validation_type_id": workflow_taxonomies["type"]["initial"].value_id,
-                "priority_id": workflow_taxonomies["priority"]["high"].value_id,
+                "priority_id": workflow_taxonomies["priority"]["standard"].value_id,
                 "target_completion_date": target_date,
             }
         )
@@ -1109,7 +1107,7 @@ class TestDashboardEndpoints:
             json={
                 "model_ids": [sample_model.model_id],
                 "validation_type_id": workflow_taxonomies["type"]["initial"].value_id,
-                "priority_id": workflow_taxonomies["priority"]["critical"].value_id,
+                "priority_id": workflow_taxonomies["priority"]["urgent"].value_id,
                 "target_completion_date": target_date,
             }
         )
@@ -1118,7 +1116,7 @@ class TestDashboardEndpoints:
         assert response.status_code == 200
         data = response.json()
         assert len(data) == 1
-        assert data[0]["priority"] == "Critical"
+        assert data[0]["priority"] == "Urgent"
 
     def test_workload_report(self, client, admin_headers, sample_model, validator_user, workflow_taxonomies):
         """Test validator workload report."""
@@ -1129,7 +1127,7 @@ class TestDashboardEndpoints:
             json={
                 "model_ids": [sample_model.model_id],
                 "validation_type_id": workflow_taxonomies["type"]["initial"].value_id,
-                "priority_id": workflow_taxonomies["priority"]["high"].value_id,
+                "priority_id": workflow_taxonomies["priority"]["standard"].value_id,
                 "target_completion_date": target_date,
             }
         )
@@ -1170,7 +1168,7 @@ class TestAuditLogging:
             json={
                 "model_ids": [sample_model.model_id],
                 "validation_type_id": workflow_taxonomies["type"]["initial"].value_id,
-                "priority_id": workflow_taxonomies["priority"]["high"].value_id,
+                "priority_id": workflow_taxonomies["priority"]["standard"].value_id,
                 "target_completion_date": target_date,
             }
         )
@@ -1193,7 +1191,7 @@ class TestAuditLogging:
             json={
                 "model_ids": [sample_model.model_id],
                 "validation_type_id": workflow_taxonomies["type"]["initial"].value_id,
-                "priority_id": workflow_taxonomies["priority"]["high"].value_id,
+                "priority_id": workflow_taxonomies["priority"]["standard"].value_id,
                 "target_completion_date": target_date,
             }
         )
@@ -1564,7 +1562,7 @@ class TestValidationLifecycleEnhancements:
             json={
                 "model_ids": [sample_model.model_id],
                 "validation_type_id": workflow_taxonomies["type"]["comprehensive"].value_id,
-                "priority_id": workflow_taxonomies["priority"]["high"].value_id,
+                "priority_id": workflow_taxonomies["priority"]["standard"].value_id,
                 "target_completion_date": target_date,
                 "trigger_reason": "Comprehensive review"
             }
@@ -1607,7 +1605,7 @@ class TestValidationLifecycleEnhancements:
             json={
                 "model_ids": [sample_model.model_id],
                 "validation_type_id": workflow_taxonomies["type"]["comprehensive"].value_id,
-                "priority_id": workflow_taxonomies["priority"]["high"].value_id,
+                "priority_id": workflow_taxonomies["priority"]["standard"].value_id,
                 "target_completion_date": target_date
             }
         )
@@ -1637,7 +1635,7 @@ class TestValidationLifecycleEnhancements:
             json={
                 "model_ids": [sample_model.model_id],
                 "validation_type_id": workflow_taxonomies["type"]["comprehensive"].value_id,
-                "priority_id": workflow_taxonomies["priority"]["high"].value_id,
+                "priority_id": workflow_taxonomies["priority"]["standard"].value_id,
                 "target_completion_date": target_date
             }
         )
@@ -1737,7 +1735,7 @@ class TestValidationLifecycleEnhancements:
             json={
                 "model_ids": [sample_model.model_id],
                 "validation_type_id": workflow_taxonomies["type"]["comprehensive"].value_id,
-                "priority_id": workflow_taxonomies["priority"]["high"].value_id,
+                "priority_id": workflow_taxonomies["priority"]["standard"].value_id,
                 "target_completion_date": target_date
             }
         )
@@ -2011,7 +2009,7 @@ class TestSmartApproverAssignment:
             json={
                 "model_ids": [sample_model.model_id],
                 "validation_type_id": workflow_taxonomies["type"]["initial"].value_id,
-                "priority_id": workflow_taxonomies["priority"]["high"].value_id,
+                "priority_id": workflow_taxonomies["priority"]["standard"].value_id,
                 "target_completion_date": "2025-12-31",
                 "trigger_reason": "Comprehensive review"
                 # region_id is NOT provided → global validation
@@ -2076,7 +2074,7 @@ class TestSmartApproverAssignment:
             json={
                 "model_ids": [sample_model.model_id],
                 "validation_type_id": workflow_taxonomies["type"]["initial"].value_id,
-                "priority_id": workflow_taxonomies["priority"]["high"].value_id,
+                "priority_id": workflow_taxonomies["priority"]["standard"].value_id,
                 "target_completion_date": "2025-12-31",
                 "trigger_reason": "Regional compliance check",
                 "region_ids": [region.region_id]
@@ -2132,7 +2130,7 @@ class TestSmartApproverAssignment:
             json={
                 "model_ids": [sample_model.model_id],
                 "validation_type_id": workflow_taxonomies["type"]["initial"].value_id,
-                "priority_id": workflow_taxonomies["priority"]["high"].value_id,
+                "priority_id": workflow_taxonomies["priority"]["standard"].value_id,
                 "target_completion_date": "2025-12-31",
                 "trigger_reason": "Regional check",
                 "region_ids": [region.region_id]
@@ -2190,7 +2188,7 @@ class TestSmartApproverAssignment:
             json={
                 "model_ids": [sample_model.model_id],
                 "validation_type_id": workflow_taxonomies["type"]["initial"].value_id,
-                "priority_id": workflow_taxonomies["priority"]["high"].value_id,
+                "priority_id": workflow_taxonomies["priority"]["standard"].value_id,
                 "target_completion_date": "2025-12-31",
                 "trigger_reason": "Test multiple approvers"
             },
@@ -2232,7 +2230,7 @@ class TestSmartApproverAssignment:
             json={
                 "model_ids": [sample_model.model_id],
                 "validation_type_id": workflow_taxonomies["type"]["initial"].value_id,
-                "priority_id": workflow_taxonomies["priority"]["high"].value_id,
+                "priority_id": workflow_taxonomies["priority"]["standard"].value_id,
                 "target_completion_date": "2025-12-31",
                 "trigger_reason": "Test no approvers"
             },
@@ -2274,7 +2272,7 @@ class TestSmartApproverAssignment:
             json={
                 "model_ids": [sample_model.model_id],
                 "validation_type_id": workflow_taxonomies["type"]["initial"].value_id,
-                "priority_id": workflow_taxonomies["priority"]["high"].value_id,
+                "priority_id": workflow_taxonomies["priority"]["standard"].value_id,
                 "target_completion_date": "2025-12-31",
                 "trigger_reason": "Audit test"
             },
@@ -2312,7 +2310,7 @@ class TestPriorValidationAutoPopulation:
             json={
                 "model_ids": [sample_model.model_id],
                 "validation_type_id": workflow_taxonomies["type"]["initial"].value_id,
-                "priority_id": workflow_taxonomies["priority"]["high"].value_id,
+                "priority_id": workflow_taxonomies["priority"]["standard"].value_id,
                 "target_completion_date": target_date,
             }
         )
@@ -2355,7 +2353,7 @@ class TestPriorValidationAutoPopulation:
             json={
                 "model_ids": [sample_model.model_id],
                 "validation_type_id": workflow_taxonomies["type"]["initial"].value_id,
-                "priority_id": workflow_taxonomies["priority"]["high"].value_id,
+                "priority_id": workflow_taxonomies["priority"]["standard"].value_id,
                 "target_completion_date": target_date,
             }
         )
@@ -2398,7 +2396,7 @@ class TestPriorValidationAutoPopulation:
             json={
                 "model_ids": [sample_model.model_id],
                 "validation_type_id": workflow_taxonomies["type"]["initial"].value_id,
-                "priority_id": workflow_taxonomies["priority"]["high"].value_id,
+                "priority_id": workflow_taxonomies["priority"]["standard"].value_id,
                 "target_completion_date": target_date,
             }
         )
@@ -2420,7 +2418,7 @@ class TestPriorValidationAutoPopulation:
             json={
                 "model_ids": [sample_model.model_id],
                 "validation_type_id": workflow_taxonomies["type"]["initial"].value_id,
-                "priority_id": workflow_taxonomies["priority"]["high"].value_id,
+                "priority_id": workflow_taxonomies["priority"]["standard"].value_id,
                 "target_completion_date": target_date,
             }
         )
@@ -2464,7 +2462,7 @@ class TestPriorValidationAutoPopulation:
             json={
                 "model_ids": [sample_model.model_id],
                 "validation_type_id": workflow_taxonomies["type"]["comprehensive"].value_id,
-                "priority_id": workflow_taxonomies["priority"]["high"].value_id,
+                "priority_id": workflow_taxonomies["priority"]["standard"].value_id,
                 "target_completion_date": target_date,
                 "prior_validation_request_id": first_request["request_id"],  # Manual override
             }

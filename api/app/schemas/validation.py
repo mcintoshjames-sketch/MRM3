@@ -405,6 +405,10 @@ class ValidationRequestResponse(BaseModel):
     validated_risk_tier_id: Optional[int] = Field(None, description="Snapshot of model's risk tier at approval time")
     validated_risk_tier: Optional[TaxonomyValueResponse] = Field(None, description="Risk tier at time of validation approval")
 
+    # Scorecard and Residual Risk
+    scorecard_overall_rating: Optional[str] = Field(None, description="Overall scorecard rating (e.g., Green, Yellow, Red)")
+    residual_risk: Optional[str] = Field(None, description="Computed residual risk based on risk tier and scorecard outcome")
+
     # Revalidation Lifecycle Fields
     prior_validation_request_id: Optional[int] = None
     prior_full_validation_request_id: Optional[int] = None

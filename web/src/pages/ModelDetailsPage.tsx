@@ -14,10 +14,12 @@ import ModelApplicationsSection from '../components/ModelApplicationsSection';
 import LineageViewer from '../components/LineageViewer';
 import ModelRiskAssessmentTab from '../components/ModelRiskAssessmentTab';
 import ModelMonitoringTab from '../components/ModelMonitoringTab';
+import ModelLimitationsTab from '../components/ModelLimitationsTab';
 import OverdueCommentaryModal, { OverdueType } from '../components/OverdueCommentaryModal';
 import { useAuth } from '../contexts/AuthContext';
 import { ModelVersion } from '../api/versions';
 import { overdueCommentaryApi, CurrentOverdueCommentaryResponse } from '../api/overdueCommentary';
+import { getResidualRiskBadgeClass } from '../api/residualRiskMap';
 
 interface User {
     user_id: number;
@@ -133,6 +135,10 @@ interface ValidationRequest {
     days_in_status: number;
     primary_validator: string | null;
     created_at: string;
+    completion_date: string | null;
+    scorecard_overall_rating: string | null;
+    residual_risk: string | null;
+    validated_risk_tier: string | null;
 }
 
 interface DecommissioningRequestListItem {
@@ -230,7 +236,9 @@ export default function ModelDetailsPage() {
     const [decommissioningRequests, setDecommissioningRequests] = useState<DecommissioningRequestListItem[]>([]);
     const [loading, setLoading] = useState(true);
     const [editing, setEditing] = useState(false);
-    const [activeTab, setActiveTab] = useState<'details' | 'versions' | 'delegates' | 'validations' | 'hierarchy' | 'dependencies' | 'applications' | 'lineage' | 'activity' | 'recommendations' | 'monitoring' | 'decommissioning' | 'risk-assessment'>('details');
+    const [activeTab, setActiveTab] = useState<'details' | 'versions' | 'validations' | 'relationships' | 'activity' | 'recommendations' | 'limitations' | 'monitoring' | 'decommissioning' | 'risk-assessment'>('details');
+    const [relationshipSubTab, setRelationshipSubTab] = useState<'hierarchy' | 'dependencies' | 'applications' | 'lineage'>('hierarchy');
+    const [showDelegates, setShowDelegates] = useState(false);
     const [showSubmitChangeModal, setShowSubmitChangeModal] = useState(false);
     const [selectedVersion, setSelectedVersion] = useState<ModelVersion | null>(null);
     const [versionsRefreshTrigger, setVersionsRefreshTrigger] = useState(0);
@@ -1335,136 +1343,156 @@ export default function ModelDetailsPage() {
 
             {/* Tabs */}
             {!editing && (
-                <div className="border-b border-gray-200 mb-6">
-                    <nav className="-mb-px flex space-x-8">
-                        <button
-                            onClick={() => setActiveTab('details')}
-                            className={`py-2 px-1 border-b-2 font-medium text-sm ${activeTab === 'details'
-                                ? 'border-blue-500 text-blue-600'
-                                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                                }`}
-                        >
-                            Model Details
-                        </button>
-                        <button
-                            onClick={() => setActiveTab('risk-assessment')}
-                            className={`py-2 px-1 border-b-2 font-medium text-sm ${activeTab === 'risk-assessment'
-                                ? 'border-blue-500 text-blue-600'
-                                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                                }`}
-                        >
-                            Risk Assessment
-                        </button>
-                        <button
-                            onClick={() => setActiveTab('versions')}
-                            className={`py-2 px-1 border-b-2 font-medium text-sm ${activeTab === 'versions'
-                                ? 'border-blue-500 text-blue-600'
-                                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                                }`}
-                        >
-                            Versions
-                        </button>
-                        <button
-                            onClick={() => setActiveTab('delegates')}
-                            className={`py-2 px-1 border-b-2 font-medium text-sm ${activeTab === 'delegates'
-                                ? 'border-blue-500 text-blue-600'
-                                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                                }`}
-                        >
-                            Delegates
-                        </button>
-                        <button
-                            onClick={() => setActiveTab('validations')}
-                            className={`py-2 px-1 border-b-2 font-medium text-sm ${activeTab === 'validations'
-                                ? 'border-blue-500 text-blue-600'
-                                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                                }`}
-                        >
-                            Validation History ({validationRequests.filter(req => req.current_status !== 'Approved' && req.current_status !== 'Cancelled').length} active, {validationRequests.filter(req => req.current_status === 'Approved').length} historical)
-                        </button>
-                        <button
-                            onClick={() => setActiveTab('hierarchy')}
-                            className={`py-2 px-1 border-b-2 font-medium text-sm ${activeTab === 'hierarchy'
-                                ? 'border-blue-500 text-blue-600'
-                                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                                }`}
-                        >
-                            Hierarchy
-                        </button>
-                        <button
-                            onClick={() => setActiveTab('dependencies')}
-                            className={`py-2 px-1 border-b-2 font-medium text-sm ${activeTab === 'dependencies'
-                                ? 'border-blue-500 text-blue-600'
-                                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                                }`}
-                        >
-                            Dependencies
-                        </button>
-                        <button
-                            onClick={() => setActiveTab('applications')}
-                            className={`py-2 px-1 border-b-2 font-medium text-sm ${activeTab === 'applications'
-                                ? 'border-blue-500 text-blue-600'
-                                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                                }`}
-                        >
-                            Applications
-                        </button>
-                        <button
-                            onClick={() => setActiveTab('lineage')}
-                            className={`py-2 px-1 border-b-2 font-medium text-sm ${activeTab === 'lineage'
-                                ? 'border-blue-500 text-blue-600'
-                                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                                }`}
-                        >
-                            Lineage
-                        </button>
-                        <button
-                            onClick={() => setActiveTab('activity')}
-                            className={`py-2 px-1 border-b-2 font-medium text-sm ${activeTab === 'activity'
-                                ? 'border-blue-500 text-blue-600'
-                                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                                }`}
-                        >
-                            Activity
-                        </button>
-                        <button
-                            onClick={() => setActiveTab('recommendations')}
-                            className={`py-2 px-1 border-b-2 font-medium text-sm ${activeTab === 'recommendations'
-                                ? 'border-blue-500 text-blue-600'
-                                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                                }`}
-                        >
-                            Recommendations
-                            {recommendations.filter(r => !['REC_CLOSED', 'REC_DROPPED'].includes(r.current_status?.code || '')).length > 0 && (
-                                <span className="ml-1 px-1.5 py-0.5 text-xs bg-orange-100 text-orange-800 rounded-full">
-                                    {recommendations.filter(r => !['REC_CLOSED', 'REC_DROPPED'].includes(r.current_status?.code || '')).length}
-                                </span>
-                            )}
-                        </button>
-                        <button
-                            onClick={() => setActiveTab('monitoring')}
-                            className={`py-2 px-1 border-b-2 font-medium text-sm ${activeTab === 'monitoring'
-                                ? 'border-blue-500 text-blue-600'
-                                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                                }`}
-                        >
-                            Monitoring
-                        </button>
-                        <button
-                            onClick={() => setActiveTab('decommissioning')}
-                            className={`py-2 px-1 border-b-2 font-medium text-sm ${activeTab === 'decommissioning'
-                                ? 'border-blue-500 text-blue-600'
-                                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                                }`}
-                        >
-                            Decommissioning
-                            {decommissioningRequests.length > 0 && decommissioningRequests[0].status !== 'APPROVED' && decommissioningRequests[0].status !== 'REJECTED' && decommissioningRequests[0].status !== 'WITHDRAWN' && (
-                                <span className="ml-1 px-1.5 py-0.5 text-xs bg-orange-100 text-orange-800 rounded-full">
-                                    {decommissioningRequests[0].status}
-                                </span>
-                            )}
-                        </button>
-                    </nav>
+                <div className="mb-6">
+                    {/* Main tabs row */}
+                    <div className="border-b border-gray-200">
+                        <nav className="-mb-px flex space-x-8">
+                            <button
+                                onClick={() => setActiveTab('details')}
+                                className={`py-2 px-1 border-b-2 font-medium text-sm ${activeTab === 'details'
+                                    ? 'border-blue-500 text-blue-600'
+                                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                                    }`}
+                            >
+                                Model Details
+                            </button>
+                            <button
+                                onClick={() => setActiveTab('risk-assessment')}
+                                className={`py-2 px-1 border-b-2 font-medium text-sm ${activeTab === 'risk-assessment'
+                                    ? 'border-blue-500 text-blue-600'
+                                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                                    }`}
+                            >
+                                Risk Assessment
+                            </button>
+                            <button
+                                onClick={() => setActiveTab('versions')}
+                                className={`py-2 px-1 border-b-2 font-medium text-sm ${activeTab === 'versions'
+                                    ? 'border-blue-500 text-blue-600'
+                                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                                    }`}
+                            >
+                                Versions
+                            </button>
+                            <button
+                                onClick={() => setActiveTab('validations')}
+                                className={`py-2 px-1 border-b-2 font-medium text-sm ${activeTab === 'validations'
+                                    ? 'border-blue-500 text-blue-600'
+                                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                                    }`}
+                            >
+                                Validations ({validationRequests.filter(req => req.current_status !== 'Approved' && req.current_status !== 'Cancelled').length} active)
+                            </button>
+                            <button
+                                onClick={() => setActiveTab('relationships')}
+                                className={`py-2 px-1 border-b-2 font-medium text-sm ${activeTab === 'relationships'
+                                    ? 'border-blue-500 text-blue-600'
+                                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                                    }`}
+                            >
+                                Relationships
+                            </button>
+                            <button
+                                onClick={() => setActiveTab('activity')}
+                                className={`py-2 px-1 border-b-2 font-medium text-sm ${activeTab === 'activity'
+                                    ? 'border-blue-500 text-blue-600'
+                                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                                    }`}
+                            >
+                                Activity
+                            </button>
+                            <button
+                                onClick={() => setActiveTab('recommendations')}
+                                className={`py-2 px-1 border-b-2 font-medium text-sm ${activeTab === 'recommendations'
+                                    ? 'border-blue-500 text-blue-600'
+                                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                                    }`}
+                            >
+                                Recommendations
+                                {recommendations.filter(r => !['REC_CLOSED', 'REC_DROPPED'].includes(r.current_status?.code || '')).length > 0 && (
+                                    <span className="ml-1 px-1.5 py-0.5 text-xs bg-orange-100 text-orange-800 rounded-full">
+                                        {recommendations.filter(r => !['REC_CLOSED', 'REC_DROPPED'].includes(r.current_status?.code || '')).length}
+                                    </span>
+                                )}
+                            </button>
+                            <button
+                                onClick={() => setActiveTab('limitations')}
+                                className={`py-2 px-1 border-b-2 font-medium text-sm ${activeTab === 'limitations'
+                                    ? 'border-blue-500 text-blue-600'
+                                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                                    }`}
+                            >
+                                Limitations
+                            </button>
+                            <button
+                                onClick={() => setActiveTab('monitoring')}
+                                className={`py-2 px-1 border-b-2 font-medium text-sm ${activeTab === 'monitoring'
+                                    ? 'border-blue-500 text-blue-600'
+                                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                                    }`}
+                            >
+                                Monitoring
+                            </button>
+                            <button
+                                onClick={() => setActiveTab('decommissioning')}
+                                className={`py-2 px-1 border-b-2 font-medium text-sm ${activeTab === 'decommissioning'
+                                    ? 'border-blue-500 text-blue-600'
+                                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                                    }`}
+                            >
+                                Decommissioning
+                                {decommissioningRequests.length > 0 && decommissioningRequests[0].status !== 'APPROVED' && decommissioningRequests[0].status !== 'REJECTED' && decommissioningRequests[0].status !== 'WITHDRAWN' && (
+                                    <span className="ml-1 px-1.5 py-0.5 text-xs bg-orange-100 text-orange-800 rounded-full">
+                                        {decommissioningRequests[0].status}
+                                    </span>
+                                )}
+                            </button>
+                        </nav>
+                    </div>
+
+                    {/* Relationships sub-tabs */}
+                    {activeTab === 'relationships' && (
+                        <div className="bg-gray-50 border-b border-gray-200">
+                            <nav className="flex space-x-6 px-4">
+                                <button
+                                    onClick={() => setRelationshipSubTab('hierarchy')}
+                                    className={`py-2 px-1 text-sm font-medium ${relationshipSubTab === 'hierarchy'
+                                        ? 'text-blue-600 border-b-2 border-blue-500'
+                                        : 'text-gray-500 hover:text-gray-700'
+                                        }`}
+                                >
+                                    Hierarchy
+                                </button>
+                                <button
+                                    onClick={() => setRelationshipSubTab('dependencies')}
+                                    className={`py-2 px-1 text-sm font-medium ${relationshipSubTab === 'dependencies'
+                                        ? 'text-blue-600 border-b-2 border-blue-500'
+                                        : 'text-gray-500 hover:text-gray-700'
+                                        }`}
+                                >
+                                    Dependencies
+                                </button>
+                                <button
+                                    onClick={() => setRelationshipSubTab('applications')}
+                                    className={`py-2 px-1 text-sm font-medium ${relationshipSubTab === 'applications'
+                                        ? 'text-blue-600 border-b-2 border-blue-500'
+                                        : 'text-gray-500 hover:text-gray-700'
+                                        }`}
+                                >
+                                    Applications
+                                </button>
+                                <button
+                                    onClick={() => setRelationshipSubTab('lineage')}
+                                    className={`py-2 px-1 text-sm font-medium ${relationshipSubTab === 'lineage'
+                                        ? 'text-blue-600 border-b-2 border-blue-500'
+                                        : 'text-gray-500 hover:text-gray-700'
+                                        }`}
+                                >
+                                    Lineage
+                                </button>
+                            </nav>
+                        </div>
+                    )}
                 </div>
             )}
 
@@ -2158,6 +2186,39 @@ export default function ModelDetailsPage() {
                                 <p className="text-lg">-</p>
                             )}
                         </div>
+
+                        {/* Delegates Collapsible Section */}
+                        <div className="col-span-2">
+                            <button
+                                onClick={() => setShowDelegates(!showDelegates)}
+                                className="flex items-center gap-2 text-sm font-medium text-blue-600 hover:text-blue-800 transition-colors"
+                            >
+                                <svg
+                                    className={`w-4 h-4 transform transition-transform ${showDelegates ? 'rotate-90' : ''}`}
+                                    fill="none"
+                                    stroke="currentColor"
+                                    viewBox="0 0 24 24"
+                                >
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                                </svg>
+                                <span className="flex items-center gap-1">
+                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" />
+                                    </svg>
+                                    Manage Delegates
+                                </span>
+                            </button>
+                            {showDelegates && (
+                                <div className="mt-3 border border-gray-200 rounded-lg bg-gray-50 p-4">
+                                    <DelegatesSection
+                                        modelId={model.model_id}
+                                        modelOwnerId={model.owner_id}
+                                        currentUserId={user?.user_id || 0}
+                                    />
+                                </div>
+                            )}
+                        </div>
+
                         <div className="col-span-2">
                             <h4 className="text-sm font-medium text-gray-500 mb-1">Description and Purpose</h4>
                             <p className="text-lg">{model.description || 'No description provided'}</p>
@@ -2199,6 +2260,76 @@ export default function ModelDetailsPage() {
                             <p className="text-sm">{new Date(model.updated_at).toLocaleString()}</p>
                         </div>
                     </div>
+
+                    {/* Risk Assessment Summary Card */}
+                    {(() => {
+                        // Find the latest approved validation with scorecard data
+                        const approvedValidations = validationRequests
+                            .filter(v => v.current_status === 'APPROVED' && v.scorecard_overall_rating)
+                            .sort((a, b) => new Date(b.completion_date || b.created_at).getTime() - new Date(a.completion_date || a.created_at).getTime());
+                        const latestApproved = approvedValidations[0];
+
+                        if (!latestApproved && !model.risk_tier) return null;
+
+                        return (
+                            <div className="mt-6 bg-gradient-to-r from-gray-50 to-slate-50 p-5 rounded-lg border border-gray-200">
+                                <h4 className="text-sm font-semibold text-gray-700 mb-4 flex items-center gap-2">
+                                    <svg className="w-5 h-5 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                                    </svg>
+                                    Risk Assessment Summary
+                                </h4>
+                                <div className="grid grid-cols-3 gap-4">
+                                    <div className="bg-white p-4 rounded border border-gray-200">
+                                        <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Inherent Risk Tier</p>
+                                        {model.risk_tier ? (
+                                            <span className="px-2 py-1 text-sm rounded bg-orange-100 text-orange-800 font-medium">
+                                                {model.risk_tier.label}
+                                            </span>
+                                        ) : (
+                                            <span className="text-gray-400">Not assigned</span>
+                                        )}
+                                    </div>
+                                    <div className="bg-white p-4 rounded border border-gray-200">
+                                        <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Scorecard Outcome</p>
+                                        {latestApproved?.scorecard_overall_rating ? (
+                                            <span className={`px-2 py-1 text-sm rounded font-medium ${
+                                                latestApproved.scorecard_overall_rating.includes('Green')
+                                                    ? 'bg-green-100 text-green-800'
+                                                    : latestApproved.scorecard_overall_rating.includes('Yellow')
+                                                    ? 'bg-yellow-100 text-yellow-800'
+                                                    : 'bg-red-100 text-red-800'
+                                            }`}>
+                                                {latestApproved.scorecard_overall_rating}
+                                            </span>
+                                        ) : (
+                                            <span className="text-gray-400">No scorecard</span>
+                                        )}
+                                    </div>
+                                    <div className="bg-white p-4 rounded border border-gray-200">
+                                        <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Residual Risk</p>
+                                        {latestApproved?.residual_risk ? (
+                                            <span className={getResidualRiskBadgeClass(latestApproved.residual_risk)}>
+                                                {latestApproved.residual_risk}
+                                            </span>
+                                        ) : (
+                                            <span className="text-gray-400">Not computed</span>
+                                        )}
+                                    </div>
+                                </div>
+                                {latestApproved && (
+                                    <p className="text-xs text-gray-500 mt-3">
+                                        Based on validation approved {latestApproved.completion_date?.split('T')[0] || latestApproved.created_at.split('T')[0]}
+                                        {latestApproved.validated_risk_tier && latestApproved.validated_risk_tier !== model.risk_tier?.label && (
+                                            <span className="ml-2 text-amber-600">
+                                                (Validated tier: {latestApproved.validated_risk_tier})
+                                            </span>
+                                        )}
+                                    </p>
+                                )}
+                            </div>
+                        );
+                    })()}
 
                     {/* Model-Region Management Section */}
                     <div className="mt-6">
@@ -2277,12 +2408,6 @@ export default function ModelDetailsPage() {
                         />
                     </div>
                 </div>
-            ) : activeTab === 'delegates' ? (
-                <DelegatesSection
-                    modelId={model.model_id}
-                    modelOwnerId={model.owner_id}
-                    currentUserId={user?.user_id || 0}
-                />
             ) : activeTab === 'validations' ? (
                 <div className="space-y-6">
                     {/* Revalidation Status */}
@@ -2631,22 +2756,29 @@ export default function ModelDetailsPage() {
                         })()}
                     </div>
                 </div>
-            ) : activeTab === 'hierarchy' ? (
-                <ModelHierarchySection modelId={model.model_id} modelName={model.model_name} />
-            ) : activeTab === 'dependencies' ? (
-                <ModelDependenciesSection modelId={model.model_id} modelName={model.model_name} />
-            ) : activeTab === 'applications' ? (
-                <ModelApplicationsSection
-                    modelId={model.model_id}
-                    canEdit={
-                        user?.role === 'Admin' ||
-                        user?.role === 'Validator' ||
-                        user?.user_id === model.owner_id ||
-                        user?.user_id === model.developer_id
-                    }
-                />
-            ) : activeTab === 'lineage' ? (
-                <LineageViewer modelId={model.model_id} modelName={model.model_name} />
+            ) : activeTab === 'relationships' ? (
+                <>
+                    {relationshipSubTab === 'hierarchy' && (
+                        <ModelHierarchySection modelId={model.model_id} modelName={model.model_name} />
+                    )}
+                    {relationshipSubTab === 'dependencies' && (
+                        <ModelDependenciesSection modelId={model.model_id} modelName={model.model_name} />
+                    )}
+                    {relationshipSubTab === 'applications' && (
+                        <ModelApplicationsSection
+                            modelId={model.model_id}
+                            canEdit={
+                                user?.role === 'Admin' ||
+                                user?.role === 'Validator' ||
+                                user?.user_id === model.owner_id ||
+                                user?.user_id === model.developer_id
+                            }
+                        />
+                    )}
+                    {relationshipSubTab === 'lineage' && (
+                        <LineageViewer modelId={model.model_id} modelName={model.model_name} />
+                    )}
+                </>
             ) : activeTab === 'activity' ? (
                 <div className="bg-white p-6 rounded-lg shadow-md">
                     <div className="flex justify-between items-center mb-6">
@@ -2809,6 +2941,10 @@ export default function ModelDetailsPage() {
                             </table>
                         </div>
                     )}
+                </div>
+            ) : activeTab === 'limitations' ? (
+                <div className="bg-white p-6 rounded-lg shadow-md">
+                    <ModelLimitationsTab modelId={model.model_id} />
                 </div>
             ) : activeTab === 'monitoring' ? (
                 <div className="bg-white p-6 rounded-lg shadow-md">

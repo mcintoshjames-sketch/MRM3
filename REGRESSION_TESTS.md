@@ -13,6 +13,7 @@ This document tracks the regression testing strategy and test coverage for itera
 # Added: Monitoring Plan Versioning and Component 9b tests (integrated into test_monitoring.py)
 # Added: 54 tests for Model Risk Assessment (qualitative/quantitative scoring, factor config)
 # Added: 56 tests for Validation Scorecard (rating conversions, score computation, config loading)
+# Added: 27 tests for Model Limitations (CRUD, retirement workflow, critical limitations report)
 cd api && python -m pytest
 
 # Run all frontend tests (128 tests passing)
@@ -773,6 +774,47 @@ cd web && pnpm test:coverage
 - [x] Config criteria have required fields
 - [x] Config sections have required fields
 
+#### Model Limitations (`test_limitations.py`) - 27 tests
+
+##### List Limitations (6 tests)
+- [x] List limitations when empty returns empty list
+- [x] List limitations returns model's limitations
+- [x] List limitations for non-existent model returns 404
+- [x] List limitations excludes retired by default
+- [x] List limitations with include_retired shows retired
+- [x] List limitations filter by significance works
+
+##### Create Limitations (6 tests)
+- [x] Create non-critical limitation success
+- [x] Create critical limitation with user_awareness success
+- [x] Create critical limitation without user_awareness fails (400)
+- [x] Create limitation requires Validator or Admin role
+- [x] Create limitation with invalid category fails (400)
+- [x] Create limitation for non-existent model fails (404)
+
+##### Get/Update Limitations (4 tests)
+- [x] Get limitation returns full details
+- [x] Get non-existent limitation returns 404
+- [x] Update limitation updates fields correctly
+- [x] Update limitation requires Validator or Admin role
+
+##### Retirement Workflow (3 tests)
+- [x] Retire limitation sets retirement fields
+- [x] Retire limitation requires Validator or Admin role
+- [x] Retire already retired limitation fails (400)
+
+##### Update Validation (2 tests)
+- [x] Update retired limitation fails (400)
+- [x] Update to Critical without user_awareness fails
+
+##### Critical Limitations Report (6 tests)
+- [x] Report empty returns zero count
+- [x] Report excludes non-critical limitations
+- [x] Report includes critical limitations
+- [x] Report filter by region works
+- [x] Report with invalid region returns 404
+- [x] Report excludes retired limitations
+
 ### Frontend Component Tests (web/src/) - ✅ FULLY OPERATIONAL
 
 **Note**: All tests pass using happy-dom environment with direct module mocking (no MSW).
@@ -1088,6 +1130,7 @@ describe('NewPage', () => {
 | **Monitoring Workflow Permissions** | ✅ Permission helpers + validation (19 manual tests) | ✅ Permission-based UI button visibility | 2025-11-28 |
 | **Model Risk Assessment** | ✅ test_risk_assessment_audit.py (54 tests) | ✅ ModelDetailsPage Risk Assessment tab + TaxonomyPage Risk Factors tab | 2025-11-30 |
 | **Validation Scorecard** | ✅ test_scorecard.py (56 tests) | ✅ ValidationScorecardTab.tsx (auto-save, section summaries, progress indicator) | 2025-12-01 |
+| **Model Limitations** | ✅ test_limitations.py (30 tests) | ✅ ModelLimitationsTab.tsx (CRUD modals, retirement) + CriticalLimitationsReportPage.tsx + ValidationRequestDetailPage limitations tab | 2025-12-02 |
 
 **Features Added:**
 - Development type (In-House / Third-Party)
@@ -1122,11 +1165,12 @@ describe('NewPage', () => {
 - **Monitoring Workflow Permission Model** (role-based access control for workflow actions; Monitoring Team = Risk function with full workflow control; Data Provider = can only submit results; Admin = full access; `check_team_member_or_admin()` helper for protected actions; `validate_results_completeness()` ensures complete submissions; `user_permissions` object in plan responses for frontend permission display)
 - **Model Risk Assessment** (qualitative/quantitative risk scoring with inherent risk matrix; admin-configurable weighted factors with rating guidance; three-level overrides with justification; per-region assessments; automatic tier sync to model; TaxonomyPage Risk Factors tab for admin configuration; ModelDetailsPage Risk Assessment tab for assessment entry)
 - **Validation Scorecard** (standardized rating framework for validators; 3 sections with 14 criteria loaded from SCORE_CRITERIA.json; rating scale Green(6) to Red(1) with N/A(0); weighted section summaries with half-up rounding; overall assessment computation; auto-save on rating change; linked to ValidationRequest enabling scorecard completion before outcome determination; ValidationScorecardTab.tsx with summary card, progress indicator, collapsible sections)
+- **Model Limitations** (track inherent constraints/weaknesses discovered during validation; Critical vs Non-Critical significance; category taxonomy: Data, Implementation, Methodology, Model Output, Other; conclusion workflow: Mitigate or Accept; user_awareness_description required for Critical; optional links to validation requests, model versions, and recommendations; retirement workflow with commentary; Critical Limitations Report with region filtering and CSV export; ModelLimitationsTab.tsx with CRUD modals + CriticalLimitationsReportPage.tsx)
 
-**Total: 748+ tests (620+ backend + 128 frontend)**
-- Backend: 620 passing (some pre-existing failures in recommendations/regional scope tests)
+**Total: 778+ tests (650+ backend + 128 frontend)**
+- Backend: 650+ passing (some pre-existing failures in recommendations/regional scope tests)
 - Frontend: 128 passing
-- **Note**: Core regression suite stable. Validation scorecard tests (56 tests) fully passing. Added validation scorecard feature with rating scale (Green=6 to Red=1), weighted section summaries, overall assessment computation, and auto-save functionality.
+- **Note**: Core regression suite stable. Model Limitations tests (30 tests) fully passing. Added limitations tracking with Critical/Non-Critical significance, category taxonomy, retirement workflow, Critical Limitations Report, and validation request limitations tab.
 - **2025-11-29 Test Hardening**: Added 8 new tests to guard against regressions in monitoring module:
   - Submit cycle completeness validation (multi-metric, N/A narrative requirements)
   - Plan delete cascade verification

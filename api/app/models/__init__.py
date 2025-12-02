@@ -85,7 +85,12 @@ from app.models.scorecard import (
     ScorecardCriterion,
     ValidationScorecardRating,
     ValidationScorecardResult,
+    ScorecardConfigVersion,
+    ScorecardSectionSnapshot,
+    ScorecardCriterionSnapshot,
 )
+from app.models.residual_risk_map import ResidualRiskMapConfig
+from app.models.limitation import ModelLimitation
 
 __all__ = [
     "User", "UserRole", "user_regions",
@@ -186,4 +191,11 @@ __all__ = [
     "ScorecardCriterion",
     "ValidationScorecardRating",
     "ValidationScorecardResult",
+    "ScorecardConfigVersion",
+    "ScorecardSectionSnapshot",
+    "ScorecardCriterionSnapshot",
+    # Residual Risk Map
+    "ResidualRiskMapConfig",
+    # Model Limitations
+    "ModelLimitation",
 ]

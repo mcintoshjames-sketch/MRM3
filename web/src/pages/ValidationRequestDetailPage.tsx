@@ -8,6 +8,7 @@ import ConditionalApprovalsSection from '../components/ConditionalApprovalsSecti
 import OverdueCommentaryModal, { OverdueType } from '../components/OverdueCommentaryModal';
 import { overdueCommentaryApi, CurrentOverdueCommentaryResponse } from '../api/overdueCommentary';
 import { recommendationsApi, RecommendationListItem, TaxonomyValue as RecTaxonomyValue } from '../api/recommendations';
+import { listValidationRequestLimitations, LimitationListItem } from '../api/limitations';
 import RecommendationCreateModal from '../components/RecommendationCreateModal';
 import ValidationScorecardTab from '../components/ValidationScorecardTab';
 
@@ -148,7 +149,7 @@ interface WorkflowSLA {
     updated_at: string;
 }
 
-type TabType = 'overview' | 'plan' | 'assignments' | 'outcome' | 'scorecard' | 'approvals' | 'history';
+type TabType = 'overview' | 'plan' | 'assignments' | 'outcome' | 'scorecard' | 'limitations' | 'approvals' | 'history';
 
 export default function ValidationRequestDetailPage() {
     const { id } = useParams<{ id: string }>();
@@ -186,6 +187,9 @@ export default function ValidationRequestDetailPage() {
     const [showRecommendationModal, setShowRecommendationModal] = useState(false);
     const [recPriorities, setRecPriorities] = useState<RecTaxonomyValue[]>([]);
     const [recCategories, setRecCategories] = useState<RecTaxonomyValue[]>([]);
+
+    // Limitations state
+    const [limitations, setLimitations] = useState<LimitationListItem[]>([]);
 
     const [newStatus, setNewStatus] = useState({ status_id: 0, reason: '' });
     const [newAssignment, setNewAssignment] = useState({
@@ -421,6 +425,14 @@ export default function ValidationRequestDetailPage() {
                 } catch (err) {
                     console.error('Failed to fetch recommendations:', err);
                 }
+            }
+
+            // Fetch limitations for this validation request
+            try {
+                const limitationsData = await listValidationRequestLimitations(parseInt(id!));
+                setLimitations(limitationsData);
+            } catch (err) {
+                console.error('Failed to fetch limitations:', err);
             }
 
         } catch (err: any) {
@@ -1146,7 +1158,7 @@ export default function ValidationRequestDetailPage() {
             {/* Tabs */}
             <div className="border-b border-gray-200 mb-6">
                 <nav className="-mb-px flex space-x-8">
-                    {(['overview', 'plan', 'assignments', 'scorecard', 'outcome', 'approvals', 'history'] as TabType[]).map((tab) => (
+                    {(['overview', 'plan', 'assignments', 'scorecard', 'outcome', 'limitations', 'approvals', 'history'] as TabType[]).map((tab) => (
                         <button
                             key={tab}
                             onClick={() => {
@@ -1173,6 +1185,7 @@ export default function ValidationRequestDetailPage() {
                             {tab === 'approvals' && ` (${request.approvals.length})`}
                             {tab === 'history' && ` (${request.status_history.length + assignmentAuditLogs.length + approvalAuditLogs.length + commentaryAuditLogs.length})`}
                             {tab === 'outcome' && recommendations.length > 0 && ` (${recommendations.length})`}
+                            {tab === 'limitations' && limitations.length > 0 && ` (${limitations.length})`}
                         </button>
                     ))}
                 </nav>
@@ -1892,6 +1905,112 @@ export default function ValidationRequestDetailPage() {
                             }
                             onScorecardChange={fetchData}
                         />
+                    </div>
+                )}
+
+                {activeTab === 'limitations' && (
+                    <div>
+                        <div className="flex justify-between items-center mb-4">
+                            <h3 className="text-lg font-bold">Limitations Documented</h3>
+                            <span className="text-sm text-gray-500">
+                                Limitations linked to this validation request
+                            </span>
+                        </div>
+
+                        {limitations.length === 0 ? (
+                            <div className="text-gray-500 text-center py-8 bg-gray-50 rounded-lg">
+                                <svg className="mx-auto h-12 w-12 text-gray-400 mb-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                </svg>
+                                <p>No limitations have been documented for this validation.</p>
+                                <p className="text-xs mt-2">
+                                    Limitations can be added from the model's Limitations tab and linked to this validation.
+                                </p>
+                            </div>
+                        ) : (
+                            <div className="overflow-x-auto">
+                                <table className="min-w-full divide-y divide-gray-200">
+                                    <thead className="bg-gray-50">
+                                        <tr>
+                                            <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">ID</th>
+                                            <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Significance</th>
+                                            <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Category</th>
+                                            <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Description</th>
+                                            <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Conclusion</th>
+                                            <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="bg-white divide-y divide-gray-200">
+                                        {limitations.map((lim) => (
+                                            <tr key={lim.limitation_id} className="hover:bg-gray-50">
+                                                <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">
+                                                    #{lim.limitation_id}
+                                                </td>
+                                                <td className="px-4 py-3 whitespace-nowrap">
+                                                    <span className={`px-2 py-1 text-xs font-medium rounded ${
+                                                        lim.significance === 'Critical'
+                                                            ? 'bg-red-100 text-red-800'
+                                                            : 'bg-blue-100 text-blue-800'
+                                                    }`}>
+                                                        {lim.significance}
+                                                    </span>
+                                                </td>
+                                                <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">
+                                                    {lim.category_label || '-'}
+                                                </td>
+                                                <td className="px-4 py-3 text-sm text-gray-900 max-w-xs">
+                                                    <div className="truncate" title={lim.description}>
+                                                        {lim.description.length > 80
+                                                            ? `${lim.description.slice(0, 80)}...`
+                                                            : lim.description}
+                                                    </div>
+                                                </td>
+                                                <td className="px-4 py-3 whitespace-nowrap">
+                                                    <span className={`px-2 py-1 text-xs font-medium rounded ${
+                                                        lim.conclusion === 'Mitigate'
+                                                            ? 'bg-yellow-100 text-yellow-800'
+                                                            : 'bg-green-100 text-green-800'
+                                                    }`}>
+                                                        {lim.conclusion}
+                                                    </span>
+                                                </td>
+                                                <td className="px-4 py-3 whitespace-nowrap">
+                                                    {lim.is_retired ? (
+                                                        <span className="px-2 py-1 text-xs font-medium rounded bg-gray-100 text-gray-600">
+                                                            Retired
+                                                        </span>
+                                                    ) : (
+                                                        <span className="px-2 py-1 text-xs font-medium rounded bg-green-100 text-green-800">
+                                                            Active
+                                                        </span>
+                                                    )}
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        )}
+
+                        {/* Link to model's limitations tab for full management */}
+                        {request.models && request.models.length > 0 && (
+                            <div className="mt-4 pt-4 border-t border-gray-200">
+                                <p className="text-sm text-gray-600">
+                                    To add, edit, or retire limitations, go to the model's Limitations tab:
+                                </p>
+                                <div className="mt-2 flex flex-wrap gap-2">
+                                    {request.models.map((m) => (
+                                        <Link
+                                            key={m.model_id}
+                                            to={`/models/${m.model_id}`}
+                                            className="text-blue-600 hover:text-blue-800 text-sm hover:underline"
+                                        >
+                                            {m.model_name} →
+                                        </Link>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
                     </div>
                 )}
 

@@ -343,11 +343,23 @@ const { sortedData, requestSort, getSortIcon } = useTableSort<Validation>(valida
 - **Database**:
   - `Taxonomy` - Categories of values (e.g., Model Risk Tier, Validation Type)
   - `TaxonomyValue` - Individual values with code, label, description, sort order, active status
+  - `taxonomy_type` column: 'standard' or 'bucket' to distinguish taxonomy types
+- **Taxonomy Types**:
+  - **Standard**: Simple list of values (e.g., Risk Tier, Validation Type)
+  - **Bucket**: Range-based values with min_days/max_days for contiguous day ranges (e.g., Past Due Level)
 - **Pre-seeded Taxonomies**:
   - **Model Risk Tier**: Tier 1 (High), Tier 2 (Medium), Tier 3 (Low)
   - **Validation Type**: Initial, Comprehensive, Targeted Review
   - **Validation Outcome**: Pass, Pass with Findings, Fail
   - **Validation Scope**: Full Scope, Conceptual Soundness, Data Quality, Implementation Testing, Performance Monitoring
+  - **Past Due Level** (bucket): Current (≤0), Minimal (1-365), Moderate (366-730), Significant (731-1095), Critical (1096-1825), Obsolete (≥1826)
+- **Bucket Taxonomy Features**:
+  - Buckets must be contiguous with no gaps or overlaps
+  - First bucket must have min_days=null (unbounded lower)
+  - Last bucket must have max_days=null (unbounded upper)
+  - Validation prevents invalid configurations (gaps, overlaps, boundary errors)
+  - Admin-only editing for bucket taxonomies
+  - Used in Overdue Revalidation Report to classify models by days overdue
 - **Features**:
   - System taxonomies (is_system=True) cannot be deleted
   - Values can be deactivated without deletion
@@ -357,6 +369,8 @@ const { sortedData, requestSort, getSortIcon } = useTableSort<Validation>(valida
   - Taxonomy management page with master-detail layout
   - Add new taxonomies and values
   - Edit code, label, description, sort order, active status
+  - Bucket taxonomies show range column (e.g., "≤ 0 days", "1 - 365 days")
+  - Admin-only editing for bucket taxonomy ranges
   - Models edit form includes taxonomy dropdowns
 
 ### Model Validation Workflow Management
@@ -388,7 +402,7 @@ const { sortedData, requestSort, getSortIcon } = useTableSort<Validation>(valida
   - Complete audit trail for compliance
 
 - **Taxonomy Values**:
-  - **Validation Priority**: Critical, High, Medium, Low
+  - **Validation Priority**: Urgent, Standard
   - **Validation Request Status**: All 8 workflow states
   - **Overall Rating**: Fit for Purpose, Fit with Conditions, Not Fit for Purpose
 

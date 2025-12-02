@@ -217,3 +217,66 @@ class ScorecardJsonConfig(BaseModel):
     """Schema for SCORE_CRITERIA.json format."""
     sections: List[SimpleSectionConfig]
     criteria: List[SimpleCriterionConfig]
+
+
+# ============================================================================
+# Configuration Versioning Schemas
+# ============================================================================
+
+class ScorecardSectionSnapshotResponse(BaseModel):
+    """Response schema for a section snapshot within a config version."""
+    model_config = ConfigDict(from_attributes=True)
+
+    snapshot_id: int
+    code: str
+    name: str
+    description: Optional[str] = None
+    sort_order: int
+    is_active: bool
+
+
+class ScorecardCriterionSnapshotResponse(BaseModel):
+    """Response schema for a criterion snapshot within a config version."""
+    model_config = ConfigDict(from_attributes=True)
+
+    snapshot_id: int
+    section_code: str
+    code: str
+    name: str
+    description_prompt: Optional[str] = None
+    comments_prompt: Optional[str] = None
+    include_in_summary: bool
+    allow_zero: bool
+    weight: float
+    sort_order: int
+    is_active: bool
+
+
+class ScorecardConfigVersionResponse(BaseModel):
+    """Response schema for scorecard configuration version (summary)."""
+    model_config = ConfigDict(from_attributes=True)
+
+    version_id: int
+    version_number: int
+    version_name: Optional[str] = None
+    description: Optional[str] = None
+    published_by_name: Optional[str] = None
+    published_at: datetime
+    is_active: bool
+    sections_count: int
+    criteria_count: int
+    scorecards_count: int
+    created_at: datetime
+    has_unpublished_changes: bool = False  # True if config changed since this version was published
+
+
+class ScorecardConfigVersionDetailResponse(ScorecardConfigVersionResponse):
+    """Detailed response schema including all snapshots."""
+    section_snapshots: List[ScorecardSectionSnapshotResponse] = []
+    criterion_snapshots: List[ScorecardCriterionSnapshotResponse] = []
+
+
+class PublishScorecardVersionRequest(BaseModel):
+    """Request schema for publishing a new scorecard configuration version."""
+    version_name: Optional[str] = Field(None, max_length=200, description="Optional display name for this version")
+    description: Optional[str] = Field(None, description="Changelog or notes for this version")

@@ -432,7 +432,7 @@ export default function Layout({ children }: LayoutProps) {
                                             }`
                                         }
                                     >
-                                        Configuration History
+                                        Component Version History
                                     </NavLink>
                                 </li>
                                 <li>

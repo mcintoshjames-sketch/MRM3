@@ -199,3 +199,9 @@ class Model(Base):
     risk_assessments: Mapped[List["ModelRiskAssessment"]] = relationship(
         "ModelRiskAssessment", back_populates="model", cascade="all, delete-orphan"
     )
+
+    # Model limitations
+    limitations: Mapped[List["ModelLimitation"]] = relationship(
+        "ModelLimitation", back_populates="model", cascade="all, delete-orphan",
+        order_by="desc(ModelLimitation.created_at)"
+    )

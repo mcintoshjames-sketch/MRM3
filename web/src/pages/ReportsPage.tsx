@@ -44,6 +44,14 @@ const availableReports: Report[] = [
         icon: '📝',
         category: 'Operations'
     },
+    {
+        id: 'critical-limitations',
+        name: 'Critical Limitations Report',
+        description: 'Overview of all critical model limitations across the inventory. Includes limitation categories, impact assessments, and user awareness documentation. Filter by region.',
+        path: '/reports/critical-limitations',
+        icon: '⚠️',
+        category: 'Risk'
+    },
 ];
 
 const ReportsPage: React.FC = () => {

@@ -1,0 +1,38 @@
+{
+  "row_axis_label": "Inherent Risk Tier",
+  "column_axis_label": "Scorecard Outcome",
+  "matrix": {
+    "High": {
+      "Red": "High",
+      "Yellow-": "High",
+      "Yellow": "High",
+      "Yellow+": "Medium",
+      "Green-": "Medium",
+      "Green": "Low"
+    },
+    "Medium": {
+      "Red": "High",
+      "Yellow-": "High",
+      "Yellow": "Medium",
+      "Yellow+": "Medium",
+      "Green-": "Low",
+      "Green": "Low"
+    },
+    "Low": {
+      "Red": "High",
+      "Yellow-": "Medium",
+      "Yellow": "Medium",
+      "Yellow+": "Low",
+      "Green-": "Low",
+      "Green": "Low"
+    },
+    "Very Low": {
+      "Red": "Medium",
+      "Yellow-": "Medium",
+      "Yellow": "Low",
+      "Yellow+": "Low",
+      "Green-": "Low",
+      "Green": "Low"
+    }
+  }
+}

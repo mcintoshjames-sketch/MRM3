@@ -2065,7 +2065,7 @@ class TestComponent9bFields:
         request_id, val_plan_id = self._create_validation_request_with_plan(
             client, admin_headers, model_id,
             taxonomy_values["initial"].value_id,
-            taxonomy_values["priority_high"].value_id
+            taxonomy_values["priority_standard"].value_id
         )
 
         # Get plan to find component 9b
@@ -2115,7 +2115,7 @@ class TestComponent9bFields:
         request_id, val_plan_id = self._create_validation_request_with_plan(
             client, admin_headers, model_id,
             taxonomy_values["initial"].value_id,
-            taxonomy_values["priority_high"].value_id
+            taxonomy_values["priority_standard"].value_id
         )
 
         # Get plan to find component 9b
@@ -2168,7 +2168,7 @@ class TestComponent9bFields:
         request_id, val_plan_id = self._create_validation_request_with_plan(
             client, admin_headers, model_id,
             taxonomy_values["initial"].value_id,
-            taxonomy_values["priority_high"].value_id
+            taxonomy_values["priority_standard"].value_id
         )
 
         # Get component 9b and mark it as Planned (without a version)
@@ -2239,7 +2239,7 @@ class TestComponent9bFields:
         request_id, val_plan_id = self._create_validation_request_with_plan(
             client, admin_headers, model_id,
             taxonomy_values["initial"].value_id,
-            taxonomy_values["priority_high"].value_id
+            taxonomy_values["priority_standard"].value_id
         )
 
         # Get component 9b
@@ -2281,7 +2281,7 @@ class TestComponent9bFields:
         request_id, val_plan_id = self._create_validation_request_with_plan(
             client, admin_headers, model_id,
             taxonomy_values["initial"].value_id,
-            taxonomy_values["priority_high"].value_id
+            taxonomy_values["priority_standard"].value_id
         )
 
         # Get component 9b
@@ -2340,7 +2340,7 @@ class TestComponent9bFields:
         request_id, val_plan_id = self._create_validation_request_with_plan(
             client, admin_headers, model_id,
             taxonomy_values["initial"].value_id,
-            taxonomy_values["priority_high"].value_id
+            taxonomy_values["priority_standard"].value_id
         )
 
         # Get component 9b and configure it properly

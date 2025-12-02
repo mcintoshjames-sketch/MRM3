@@ -32,6 +32,7 @@ import ConditionalApprovalRulesPage from './pages/ConditionalApprovalRulesPage';
 // FryConfigPage moved to TaxonomyPage as "FRY 14 Config" tab
 import OverdueRevalidationReportPage from './pages/OverdueRevalidationReportPage';
 import NameChangesReportPage from './pages/NameChangesReportPage';
+import CriticalLimitationsReportPage from './pages/CriticalLimitationsReportPage';
 import DecommissioningRequestPage from './pages/DecommissioningRequestPage';
 import PendingDecommissioningPage from './pages/PendingDecommissioningPage';
 import MonitoringPlansPage from './pages/MonitoringPlansPage';
@@ -95,6 +96,7 @@ function App() {
             <Route path="/reports/deviation-trends" element={user ? <DeviationTrendsReportPage /> : <Navigate to="/login" />} />
             <Route path="/reports/overdue-revalidation" element={user ? <OverdueRevalidationReportPage /> : <Navigate to="/login" />} />
             <Route path="/reports/name-changes" element={user ? <NameChangesReportPage /> : <Navigate to="/login" />} />
+            <Route path="/reports/critical-limitations" element={user ? <CriticalLimitationsReportPage /> : <Navigate to="/login" />} />
             <Route path="/analytics" element={user ? <AnalyticsPage /> : <Navigate to="/login" />} />
             <Route path="/" element={<Navigate to={getDefaultRoute()} />} />
         </Routes>

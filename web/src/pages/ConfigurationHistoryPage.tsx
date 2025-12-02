@@ -123,9 +123,9 @@ const ConfigurationHistoryPage: React.FC = () => {
                 {/* Header */}
                 <div className="flex justify-between items-center">
                     <div>
-                        <h1 className="text-3xl font-bold text-gray-900">Configuration Version History</h1>
+                        <h1 className="text-3xl font-bold text-gray-900">Component Definition Version History</h1>
                         <p className="text-gray-600 mt-2">
-                            View all published configuration versions and their component definition snapshots
+                            View all published versions of validation component definitions and their configuration snapshots
                         </p>
                     </div>
                 </div>
@@ -140,7 +140,7 @@ const ConfigurationHistoryPage: React.FC = () => {
                 {/* Loading State */}
                 {loading ? (
                     <div className="text-center py-12">
-                        <div className="text-gray-500">Loading configuration history...</div>
+                        <div className="text-gray-500">Loading component definition history...</div>
                     </div>
                 ) : (
                     <>
@@ -153,12 +153,12 @@ const ConfigurationHistoryPage: React.FC = () => {
                                     </svg>
                                 </div>
                                 <div className="ml-3">
-                                    <h3 className="text-sm font-medium text-blue-800">About Configuration Versioning</h3>
+                                    <h3 className="text-sm font-medium text-blue-800">About Component Definition Versioning</h3>
                                     <div className="mt-2 text-sm text-blue-700">
                                         <p>
-                                            Configuration versions represent point-in-time snapshots of all validation component definitions.
+                                            Component definition versions represent point-in-time snapshots of all validation component requirements.
                                             When a validation plan is locked (moved to Review or Pending Approval), it captures the active
-                                            configuration at that moment, ensuring historical compliance and preventing retroactive changes.
+                                            component definitions at that moment, ensuring historical compliance and preventing retroactive changes.
                                         </p>
                                     </div>
                                 </div>
@@ -168,7 +168,7 @@ const ConfigurationHistoryPage: React.FC = () => {
                         {/* Configurations List */}
                         {configurations.length === 0 ? (
                             <div className="bg-white rounded-lg shadow p-8 text-center text-gray-500">
-                                No configuration versions found.
+                                No component definition versions found.
                             </div>
                         ) : (
                             <div className="space-y-4">

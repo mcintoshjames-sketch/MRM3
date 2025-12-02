@@ -5,12 +5,13 @@ from typing import Dict, List
 from app.core.database import SessionLocal
 from app.core.time import utc_now
 from app.core.security import get_password_hash
-from app.models import User, UserRole, Vendor, EntraUser, Taxonomy, TaxonomyValue, ValidationWorkflowSLA, ValidationPolicy, Region, ValidationComponentDefinition, ComponentDefinitionConfiguration, ComponentDefinitionConfigItem, ModelTypeCategory, ModelType, ValidationRequest, ValidationOutcome, ValidationRequestModelVersion, ApproverRole, ConditionalApprovalRule, RuleRequiredApprover, MapApplication
+from app.models import User, UserRole, Vendor, EntraUser, Taxonomy, TaxonomyValue, ValidationWorkflowSLA, ValidationPolicy, Region, ValidationComponentDefinition, ComponentDefinitionConfiguration, ComponentDefinitionConfigItem, ModelTypeCategory, ModelType, ValidationRequest, ValidationOutcome, ValidationRequestModelVersion, ApproverRole, ConditionalApprovalRule, RuleRequiredApprover, MapApplication, ValidationAssignment, ValidationStatusHistory
 from app.models.recommendation import RecommendationPriorityConfig, RecommendationTimeframeConfig
 from app.models.kpm import KpmCategory, Kpm
 from app.models.model import Model
 from app.models.risk_assessment import QualitativeRiskFactor, QualitativeFactorGuidance
 from app.models.scorecard import ScorecardSection, ScorecardCriterion
+from app.models.residual_risk_map import ResidualRiskMapConfig
 
 
 REGULATORY_CATEGORY_VALUES = [
@@ -263,8 +264,12 @@ def _upsert_taxonomy_with_values(
     description: str,
     values: List[Dict[str, str]],
     is_system: bool = True,
+    taxonomy_type: str = "standard",
 ):
-    """Create or update a taxonomy and its managed values."""
+    """Create or update a taxonomy and its managed values.
+
+    For bucket-type taxonomies, values should include 'min_days' and 'max_days' keys.
+    """
     taxonomy = db.query(Taxonomy).filter(Taxonomy.name == name).first()
     created = False
     if not taxonomy:
@@ -272,6 +277,7 @@ def _upsert_taxonomy_with_values(
             name=name,
             description=description,
             is_system=is_system,
+            taxonomy_type=taxonomy_type,
             created_at=utc_now(),
         )
         db.add(taxonomy)
@@ -280,6 +286,7 @@ def _upsert_taxonomy_with_values(
     else:
         taxonomy.description = description
         taxonomy.is_system = is_system
+        taxonomy.taxonomy_type = taxonomy_type
 
     existing_values = {
         value.code: value
@@ -294,6 +301,10 @@ def _upsert_taxonomy_with_values(
             record.description = entry.get("description")
             record.sort_order = sort_order
             record.is_active = True
+            # Update bucket fields if present
+            if taxonomy_type == "bucket":
+                record.min_days = entry.get("min_days")
+                record.max_days = entry.get("max_days")
         else:
             db.add(
                 TaxonomyValue(
@@ -303,6 +314,10 @@ def _upsert_taxonomy_with_values(
                     description=entry.get("description"),
                     sort_order=sort_order,
                     is_active=True,
+                    min_days=entry.get(
+                        "min_days") if taxonomy_type == "bucket" else None,
+                    max_days=entry.get(
+                        "max_days") if taxonomy_type == "bucket" else None,
                     created_at=utc_now(),
                 )
             )
@@ -329,6 +344,90 @@ def seed_taxonomy_reference_data(db):
         name="Qualitative Outcome",
         description="Assessment outcomes for qualitative KPMs (Red/Yellow/Green rating scale).",
         values=QUALITATIVE_OUTCOME_VALUES,
+    )
+    # Bucket-based taxonomy for classifying models by time elapsed since revalidation due date
+    _upsert_taxonomy_with_values(
+        db,
+        name="Past Due Level",
+        description="Classifies models based on time elapsed since revalidation due date.",
+        taxonomy_type="bucket",
+        values=[
+            {
+                "code": "CURRENT",
+                "label": "Current",
+                "description": "Model is not past due (on or before due date)",
+                "min_days": None,
+                "max_days": 0,
+            },
+            {
+                "code": "MINIMAL",
+                "label": "Minimal",
+                "description": "Model is 1-365 days past due",
+                "min_days": 1,
+                "max_days": 365,
+            },
+            {
+                "code": "MODERATE",
+                "label": "Moderate",
+                "description": "Model is 366-730 days (1-2 years) past due",
+                "min_days": 366,
+                "max_days": 730,
+            },
+            {
+                "code": "SIGNIFICANT",
+                "label": "Significant",
+                "description": "Model is 731-1095 days (2-3 years) past due",
+                "min_days": 731,
+                "max_days": 1095,
+            },
+            {
+                "code": "CRITICAL",
+                "label": "Critical",
+                "description": "Model is 1096-1825 days (3-5 years) past due",
+                "min_days": 1096,
+                "max_days": 1825,
+            },
+            {
+                "code": "OBSOLETE",
+                "label": "Obsolete",
+                "description": "Model is more than 1825 days (5+ years) past due",
+                "min_days": 1826,
+                "max_days": None,
+            },
+        ],
+    )
+    # Limitation Category taxonomy for classifying model limitations
+    _upsert_taxonomy_with_values(
+        db,
+        name="Limitation Category",
+        description="Classification of model limitation types discovered during validation.",
+        values=[
+            {
+                "code": "DATA",
+                "label": "Data",
+                "description": "Limitations related to data quality, availability, or representativeness",
+            },
+            {
+                "code": "IMPLEMENTATION",
+                "label": "Implementation",
+                "description": "Limitations in model implementation or technical constraints",
+            },
+            {
+                "code": "METHODOLOGY",
+                "label": "Methodology",
+                "description": "Limitations in modeling approach or theoretical foundation",
+            },
+            {
+                "code": "MODEL_OUTPUT",
+                "label": "Model Output",
+                "description": "Limitations in model outputs or their interpretation",
+            },
+            {
+                "code": "OTHER",
+                "label": "Other",
+                "description": "Other limitations not covered by above categories",
+            },
+        ],
     )
 
 
@@ -568,9 +667,11 @@ def seed_priority_configs(db):
                 # Update existing config if enforce_timeframes not set correctly
                 if existing_config.enforce_timeframes != config_data["enforce_timeframes"]:
                     existing_config.enforce_timeframes = config_data["enforce_timeframes"]
-                    print(f"✓ Updated enforce_timeframes for {priority_value.label}")
+                    print(
+                        f"✓ Updated enforce_timeframes for {priority_value.label}")
                 else:
-                    print(f"✓ Priority config already exists for {priority_value.label}")
+                    print(
+                        f"✓ Priority config already exists for {priority_value.label}")
 
     db.commit()
 
@@ -604,7 +705,8 @@ def seed_timeframe_configs(db):
     # Get taxonomy values
     priorities = {v.code: v.value_id for v in db.query(TaxonomyValue).filter(
         TaxonomyValue.taxonomy_id == rec_priority_taxonomy.taxonomy_id,
-        TaxonomyValue.code.in_(["HIGH", "MEDIUM", "LOW"])  # Exclude CONSIDERATION
+        TaxonomyValue.code.in_(["HIGH", "MEDIUM", "LOW"]
+                               )  # Exclude CONSIDERATION
     ).all()}
 
     risk_tiers = {v.code: v.value_id for v in db.query(TaxonomyValue).filter(
@@ -682,7 +784,8 @@ def seed_timeframe_configs(db):
         freq_id = frequencies.get(freq_code)
 
         if not priority_id or not risk_tier_id or not freq_id:
-            print(f"⚠ Skipping {priority_code}/{risk_code}/{freq_code} - missing taxonomy values")
+            print(
+                f"⚠ Skipping {priority_code}/{risk_code}/{freq_code} - missing taxonomy values")
             continue
 
         # Check if config already exists
@@ -708,7 +811,8 @@ def seed_timeframe_configs(db):
             skipped_count += 1
 
     db.commit()
-    print(f"✓ Created {created_count} timeframe configs, skipped {skipped_count} existing")
+    print(
+        f"✓ Created {created_count} timeframe configs, skipped {skipped_count} existing")
 
 
 def seed_database():
@@ -1120,28 +1224,16 @@ def seed_database():
                 "is_system": True,
                 "values": [
                     {
-                        "code": "CRITICAL",
-                        "label": "Critical",
-                        "description": "Highest priority - requires immediate attention and resources",
+                        "code": "URGENT",
+                        "label": "Urgent",
+                        "description": "Time-sensitive validation requiring prioritized resources",
                         "sort_order": 1
                     },
                     {
-                        "code": "HIGH",
-                        "label": "High",
-                        "description": "High priority - should be addressed promptly",
-                        "sort_order": 2
-                    },
-                    {
-                        "code": "MEDIUM",
-                        "label": "Medium",
+                        "code": "STANDARD",
+                        "label": "Standard",
                         "description": "Normal priority - standard processing timeline",
-                        "sort_order": 3
-                    },
-                    {
-                        "code": "LOW",
-                        "label": "Low",
-                        "description": "Low priority - can be scheduled as resources permit",
-                        "sort_order": 4
+                        "sort_order": 2
                     },
                 ]
             },
@@ -1844,13 +1936,16 @@ def seed_database():
                             updated_at=utc_now()
                         )
                         db.add(config)
-                        print(f"✓ Created priority config for {priority_value.label}")
+                        print(
+                            f"✓ Created priority config for {priority_value.label}")
                     else:
-                        print(f"✓ Priority config already exists for {priority_value.label}")
+                        print(
+                            f"✓ Priority config already exists for {priority_value.label}")
 
             db.commit()
         else:
-            print("⚠ Recommendation Priority taxonomy not found - skipping priority config seeding")
+            print(
+                "⚠ Recommendation Priority taxonomy not found - skipping priority config seeding")
 
         # Seed timeframe configurations
         seed_timeframe_configs(db)
@@ -1876,8 +1971,8 @@ def seed_database():
         ).first()
 
         # New taxonomy values for ValidationRequest
-        medium_priority = db.query(TaxonomyValue).filter(
-            TaxonomyValue.code == "MEDIUM").first()
+        standard_priority = db.query(TaxonomyValue).filter(
+            TaxonomyValue.code == "STANDARD").first()
         approved_status = db.query(TaxonomyValue).filter(
             TaxonomyValue.code == "APPROVED").first()
         fit_for_purpose = db.query(TaxonomyValue).filter(
@@ -1887,7 +1982,7 @@ def seed_database():
         usage_freq_monthly = db.query(TaxonomyValue).filter(
             TaxonomyValue.code == "MONTHLY").first()
 
-        if tier_2 and tier_3 and initial_val_type and comprehensive_val_type and pass_outcome and admin and validator and medium_priority and approved_status and fit_for_purpose and usage_freq_monthly:
+        if tier_2 and tier_3 and initial_val_type and comprehensive_val_type and pass_outcome and admin and validator and standard_priority and approved_status and fit_for_purpose and usage_freq_monthly:
             # Calculate strategic dates for Tier 2 (18 month frequency, 90 day lead time)
             # Total overdue threshold: 18 months + 3 months grace + 90 days = ~21.5 months
             today = date.today()
@@ -1914,7 +2009,7 @@ def seed_database():
                 req = ValidationRequest(
                     requestor_id=admin.user_id,
                     validation_type_id=comprehensive_val_type.value_id,
-                    priority_id=medium_priority.value_id,
+                    priority_id=standard_priority.value_id,
                     target_completion_date=val_date,
                     current_status_id=approved_status.value_id,
                     created_at=val_date - timedelta(days=30),
@@ -1963,7 +2058,7 @@ def seed_database():
                 req = ValidationRequest(
                     requestor_id=admin.user_id,
                     validation_type_id=comprehensive_val_type.value_id,
-                    priority_id=medium_priority.value_id,
+                    priority_id=standard_priority.value_id,
                     target_completion_date=val_date,
                     current_status_id=approved_status.value_id,
                     created_at=val_date - timedelta(days=30),
@@ -2012,7 +2107,7 @@ def seed_database():
                 req = ValidationRequest(
                     requestor_id=admin.user_id,
                     validation_type_id=comprehensive_val_type.value_id,
-                    priority_id=medium_priority.value_id,
+                    priority_id=standard_priority.value_id,
                     target_completion_date=val_date,
                     current_status_id=approved_status.value_id,
                     created_at=val_date - timedelta(days=30),
@@ -2078,7 +2173,7 @@ def seed_database():
                 req = ValidationRequest(
                     requestor_id=admin.user_id,
                     validation_type_id=comprehensive_val_type.value_id,
-                    priority_id=medium_priority.value_id,
+                    priority_id=standard_priority.value_id,
                     target_completion_date=val_date,
                     current_status_id=approved_status.value_id,
                     created_at=val_date - timedelta(days=30),
@@ -2105,6 +2200,242 @@ def seed_database():
                 print(
                     "✓ Created 'Demo: Compliant Model' (6 months - well within compliance)")
 
+            # ================================================================
+            # NEW: Models that appear in the Overdue Revalidation Report
+            # These require CURRENT in-progress validations with past due dates
+            # ================================================================
+
+            # Get Tier 1 for higher risk overdue examples
+            tier_1 = db.query(TaxonomyValue).filter(
+                TaxonomyValue.code == "TIER_1"
+            ).first()
+
+            # Get status values for in-progress workflows
+            intake_status = db.query(TaxonomyValue).join(Taxonomy).filter(
+                TaxonomyValue.code == "INTAKE",
+                Taxonomy.name == "Validation Request Status"
+            ).first()
+            planning_status = db.query(TaxonomyValue).join(Taxonomy).filter(
+                TaxonomyValue.code == "PLANNING",
+                Taxonomy.name == "Validation Request Status"
+            ).first()
+            in_progress_status = db.query(TaxonomyValue).join(Taxonomy).filter(
+                TaxonomyValue.code == "IN_PROGRESS",
+                Taxonomy.name == "Validation Request Status"
+            ).first()
+
+            if tier_1 and intake_status and planning_status and in_progress_status:
+                # Tier 1 policy: 12 month frequency, 1 month grace, 120 day lead time
+                # Timeline for overdue:
+                #   - submission_due = prior_completion + 12 months
+                #   - grace_period_end = submission_due + 1 month
+                #   - model_validation_due = grace_period_end + 120 days
+
+                # ============================================================
+                # Model F: PRE_SUBMISSION Overdue (Awaiting Documentation) - MODERATE
+                # - Prior validation completed 27 months ago
+                # - submission_due_date = 15 months ago (27 - 12 = 15) = ~450 days
+                # - grace_period_end = 14 months ago (15 - 1 = 14) = ~420 days
+                # - Days overdue: ~420 days = MODERATE (366-730 days)
+                # - Status: PLANNING (waiting for model owner to submit docs)
+                # ============================================================
+                model_f_exists = db.query(Model).filter(
+                    Model.model_name == "Demo: Awaiting Submission"
+                ).first()
+                if not model_f_exists:
+                    model_f = Model(
+                        model_name="Demo: Awaiting Submission",
+                        description="Tier 1 model - revalidation significantly overdue. Model owner has not submitted documentation for over a year.",
+                        development_type="In-House",
+                        status="Active",
+                        owner_id=admin.user_id,
+                        developer_id=2,  # John Smith
+                        risk_tier_id=tier_1.value_id,
+                        usage_frequency_id=usage_freq_monthly.value_id,
+                        created_at=utc_now()
+                    )
+                    db.add(model_f)
+                    db.flush()
+
+                    # Step 1: Create the PRIOR approved comprehensive validation (27 months ago)
+                    prior_val_date = today - timedelta(days=27 * 30)
+                    prior_req_f = ValidationRequest(
+                        requestor_id=admin.user_id,
+                        validation_type_id=comprehensive_val_type.value_id,
+                        priority_id=standard_priority.value_id,
+                        target_completion_date=prior_val_date,
+                        current_status_id=approved_status.value_id,
+                        created_at=prior_val_date - timedelta(days=60),
+                        updated_at=prior_val_date,
+                        completion_date=datetime.combine(prior_val_date, datetime.min.time())
+                    )
+                    db.add(prior_req_f)
+                    db.flush()
+
+                    db.add(ValidationRequestModelVersion(
+                        request_id=prior_req_f.request_id, model_id=model_f.model_id
+                    ))
+
+                    prior_outcome_f = ValidationOutcome(
+                        request_id=prior_req_f.request_id,
+                        overall_rating_id=fit_for_purpose.value_id,
+                        executive_summary="Annual comprehensive validation completed. Model performing within expectations.",
+                        recommended_review_frequency=12,
+                        effective_date=prior_val_date,
+                        created_at=prior_val_date
+                    )
+                    db.add(prior_outcome_f)
+                    db.flush()
+
+                    # Step 2: Create CURRENT revalidation request (in PLANNING, waiting for submission)
+                    # submission_due_date = prior_val_date + 12 months = 15 months ago (~450 days)
+                    submission_due_f = prior_val_date + timedelta(days=12 * 30)
+                    current_req_f = ValidationRequest(
+                        requestor_id=admin.user_id,
+                        validation_type_id=comprehensive_val_type.value_id,
+                        priority_id=standard_priority.value_id,
+                        target_completion_date=today + timedelta(days=60),  # optimistic target
+                        current_status_id=planning_status.value_id,
+                        prior_validation_request_id=prior_req_f.request_id,
+                        submission_due_date=submission_due_f,
+                        submission_received_date=None,  # NOT YET SUBMITTED - this is why it's overdue
+                        created_at=submission_due_f - timedelta(days=30),  # Created before due date
+                        updated_at=utc_now()
+                    )
+                    db.add(current_req_f)
+                    db.flush()
+
+                    db.add(ValidationRequestModelVersion(
+                        request_id=current_req_f.request_id, model_id=model_f.model_id
+                    ))
+
+                    # Add a validator assignment (waiting for submission before work can begin)
+                    db.add(ValidationAssignment(
+                        request_id=current_req_f.request_id,
+                        validator_id=validator.user_id,
+                        is_primary=True,
+                        assignment_date=submission_due_f - timedelta(days=30),
+                        independence_attestation=True
+                    ))
+
+                    print("✓ Created 'Demo: Awaiting Submission' (PRE_SUBMISSION overdue - MODERATE - ~420 days overdue)")
+
+                # ============================================================
+                # Model G: VALIDATION_IN_PROGRESS Overdue (Validation Behind Schedule)
+                # - Prior validation completed 18 months ago
+                # - submission_due_date = 6 months ago (18 - 12 = 6)
+                # - submission_received_date = 5.5 months ago (submitted during grace period)
+                # - grace_period_end = 5 months ago (6 - 1 = 5)
+                # - model_validation_due = 5 months - 120 days = ~1 month ago
+                # - Status: IN_PROGRESS (validation team is behind)
+                # ============================================================
+                model_g_exists = db.query(Model).filter(
+                    Model.model_name == "Demo: Validation Behind Schedule"
+                ).first()
+                if not model_g_exists:
+                    model_g = Model(
+                        model_name="Demo: Validation Behind Schedule",
+                        description="Tier 1 model - documentation submitted but validation work is behind schedule. Model is overdue for completion.",
+                        development_type="In-House",
+                        status="Active",
+                        owner_id=5,  # Model Owner User
+                        developer_id=admin.user_id,
+                        risk_tier_id=tier_1.value_id,
+                        usage_frequency_id=usage_freq_monthly.value_id,
+                        created_at=utc_now()
+                    )
+                    db.add(model_g)
+                    db.flush()
+
+                    # Step 1: Create the PRIOR approved comprehensive validation (18 months ago)
+                    prior_val_date_g = today - timedelta(days=18 * 30)
+                    prior_req_g = ValidationRequest(
+                        requestor_id=admin.user_id,
+                        validation_type_id=comprehensive_val_type.value_id,
+                        priority_id=standard_priority.value_id,
+                        target_completion_date=prior_val_date_g,
+                        current_status_id=approved_status.value_id,
+                        created_at=prior_val_date_g - timedelta(days=60),
+                        updated_at=prior_val_date_g,
+                        completion_date=datetime.combine(prior_val_date_g, datetime.min.time())
+                    )
+                    db.add(prior_req_g)
+                    db.flush()
+
+                    db.add(ValidationRequestModelVersion(
+                        request_id=prior_req_g.request_id, model_id=model_g.model_id
+                    ))
+
+                    prior_outcome_g = ValidationOutcome(
+                        request_id=prior_req_g.request_id,
+                        overall_rating_id=fit_for_purpose.value_id,
+                        executive_summary="Annual comprehensive validation completed successfully.",
+                        recommended_review_frequency=12,
+                        effective_date=prior_val_date_g,
+                        created_at=prior_val_date_g
+                    )
+                    db.add(prior_outcome_g)
+                    db.flush()
+
+                    # Step 2: Create CURRENT revalidation request (IN_PROGRESS, behind schedule)
+                    # submission_due_date = prior_val_date_g + 12 months = 6 months ago
+                    submission_due_g = prior_val_date_g + timedelta(days=12 * 30)
+                    # Model owner submitted during grace period (about 2 weeks after due date)
+                    submission_received_g = submission_due_g + timedelta(days=14)
+
+                    current_req_g = ValidationRequest(
+                        requestor_id=admin.user_id,
+                        validation_type_id=comprehensive_val_type.value_id,
+                        priority_id=standard_priority.value_id,
+                        target_completion_date=today + timedelta(days=30),  # revised target
+                        current_status_id=in_progress_status.value_id,
+                        prior_validation_request_id=prior_req_g.request_id,
+                        submission_due_date=submission_due_g,
+                        submission_received_date=submission_received_g,  # SUBMITTED but late
+                        created_at=submission_due_g - timedelta(days=30),
+                        updated_at=utc_now()
+                    )
+                    db.add(current_req_g)
+                    db.flush()
+
+                    db.add(ValidationRequestModelVersion(
+                        request_id=current_req_g.request_id, model_id=model_g.model_id
+                    ))
+
+                    # Add validator assignments (validation work ongoing but behind)
+                    db.add(ValidationAssignment(
+                        request_id=current_req_g.request_id,
+                        validator_id=validator.user_id,
+                        is_primary=True,
+                        assignment_date=submission_received_g + timedelta(days=7),
+                        independence_attestation=True,
+                        estimated_hours=80.0,
+                        actual_hours=40.0  # Only halfway done
+                    ))
+
+                    # Add status history to show the progression
+                    db.add(ValidationStatusHistory(
+                        request_id=current_req_g.request_id,
+                        old_status_id=intake_status.value_id,
+                        new_status_id=planning_status.value_id,
+                        changed_by_id=admin.user_id,
+                        change_reason="Validator assigned, entering planning phase",
+                        changed_at=submission_received_g + timedelta(days=7)
+                    ))
+                    db.add(ValidationStatusHistory(
+                        request_id=current_req_g.request_id,
+                        old_status_id=planning_status.value_id,
+                        new_status_id=in_progress_status.value_id,
+                        changed_by_id=validator.user_id,
+                        change_reason="Validation work commenced",
+                        changed_at=submission_received_g + timedelta(days=14)
+                    ))
+
+                    print("✓ Created 'Demo: Validation Behind Schedule' (VALIDATION_IN_PROGRESS overdue - work behind schedule)")
+
+            else:
+                print("⚠ Missing Tier 1 or status taxonomy values - skipping overdue report demo data")
+
             db.commit()
             print("✓ Demo data creation completed\n")
         else:
@@ -2128,6 +2459,9 @@ def seed_database():
 
         # Seed Validation Scorecard Configuration
         seed_scorecard_config(db)
+
+        # Seed Residual Risk Map Configuration
+        seed_residual_risk_map(db)
 
         print("Seeding completed successfully!")
 
@@ -3005,7 +3339,8 @@ def seed_scorecard_config(db):
     # Check if already seeded
     existing_sections = db.query(ScorecardSection).count()
     if existing_sections > 0:
-        print(f"✓ Scorecard configuration already seeded ({existing_sections} sections)")
+        print(
+            f"✓ Scorecard configuration already seeded ({existing_sections} sections)")
         return
 
     # Load configuration from SCORE_CRITERIA.json
@@ -3039,7 +3374,8 @@ def seed_scorecard_config(db):
         section_code = criterion_data.get("section")
         section = section_map.get(section_code)
         if not section:
-            print(f"⚠ Unknown section '{section_code}' for criterion {criterion_data['code']}")
+            print(
+                f"⚠ Unknown section '{section_code}' for criterion {criterion_data['code']}")
             continue
 
         criterion = ScorecardCriterion(
@@ -3055,10 +3391,71 @@ def seed_scorecard_config(db):
             is_active=True
         )
         db.add(criterion)
-        print(f"✓ Created scorecard criterion: {criterion.code} - {criterion.name}")
+        print(
+            f"✓ Created scorecard criterion: {criterion.code} - {criterion.name}")
 
     db.commit()
     print("✓ Scorecard configuration seeded successfully")
+
+
+def seed_residual_risk_map(db):
+    """Seed the default residual risk map configuration from RESIDUAL_RISK_MAP.json."""
+    import json
+    from pathlib import Path
+
+    print("Seeding residual risk map configuration...")
+
+    # Check if already seeded
+    existing_config = db.query(ResidualRiskMapConfig).count()
+    if existing_config > 0:
+        print(
+            f"✓ Residual risk map configuration already seeded ({existing_config} versions)")
+        return
+
+    # Load configuration from RESIDUAL_RISK_MAP.json
+    # In Docker, it's mounted at /app/RESIDUAL_RISK_MAP.json
+    # Locally (for tests), it's at the repo root
+    config_path = Path("/app/RESIDUAL_RISK_MAP.json")
+    if not config_path.exists():
+        # Fallback for local development/testing
+        repo_root = Path(__file__).parent.parent.parent
+        config_path = repo_root / "RESIDUAL_RISK_MAP.json"
+
+    if not config_path.exists():
+        print(f"⚠ RESIDUAL_RISK_MAP.json not found at {config_path}")
+        return
+
+    with open(config_path, "r") as f:
+        raw_config = json.load(f)
+
+    # Build the full matrix config structure with metadata
+    matrix_config = {
+        "row_axis_label": raw_config.get("row_axis_label", "Inherent Risk Tier"),
+        "column_axis_label": raw_config.get("column_axis_label", "Scorecard Outcome"),
+        "row_values": list(raw_config.get("matrix", {}).keys()),
+        "column_values": ["Red", "Yellow-", "Yellow", "Yellow+", "Green-", "Green"],
+        "result_values": ["High", "Medium", "Low"],
+        "matrix": raw_config.get("matrix", {})
+    }
+
+    # Create the initial configuration
+    config = ResidualRiskMapConfig(
+        version_number=1,
+        version_name="Initial Configuration",
+        description="Maps Inherent Risk Tier and Scorecard Outcome to Residual Risk.",
+        matrix_config=matrix_config,
+        is_active=True,
+        created_by_user_id=None,  # System-generated
+    )
+    db.add(config)
+    db.commit()
+
+    print("✓ Residual risk map configuration seeded successfully")
+    print(
+        f"  - Row axis: {matrix_config['row_axis_label']} ({len(matrix_config['row_values'])} values)")
+    print(
+        f"  - Column axis: {matrix_config['column_axis_label']} ({len(matrix_config['column_values'])} values)")
+    print(f"  - Result values: {', '.join(matrix_config['result_values'])}")
 
 
 if __name__ == "__main__":

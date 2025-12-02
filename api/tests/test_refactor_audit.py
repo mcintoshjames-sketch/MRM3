@@ -14,8 +14,8 @@ def workflow_taxonomies(db_session):
     db_session.add(priority_tax)
     db_session.flush()
 
-    high = TaxonomyValue(taxonomy_id=priority_tax.taxonomy_id,
-                         code="HIGH", label="High", sort_order=2)
+    standard = TaxonomyValue(taxonomy_id=priority_tax.taxonomy_id,
+                         code="STANDARD", label="Standard", sort_order=2)
 
     # Validation Request Status
     status_tax = Taxonomy(name="Validation Request Status", is_system=True)
@@ -46,11 +46,11 @@ def workflow_taxonomies(db_session):
                           code="TIER_2", label="Tier 2", sort_order=2)
 
     db_session.add_all(
-        [high, intake, approved, initial_val, comprehensive_val, tier2])
+        [standard, intake, approved, initial_val, comprehensive_val, tier2])
     db_session.commit()
 
     return {
-        "priority": {"high": high},
+        "priority": {"standard": standard},
         "status": {"intake": intake, "approved": approved},
         "type": {"initial": initial_val, "comprehensive": comprehensive_val},
         "tier": {"tier2": tier2}
@@ -88,7 +88,7 @@ def test_submission_due_date_calculation_comprehensive(client, admin_headers, wo
     prior_req = ValidationRequest(
         requestor_id=test_user.user_id,
         validation_type_id=workflow_taxonomies["type"]["initial"].value_id,
-        priority_id=workflow_taxonomies["priority"]["high"].value_id,
+        priority_id=workflow_taxonomies["priority"]["standard"].value_id,
         target_completion_date=prior_date,
         current_status_id=workflow_taxonomies["status"]["approved"].value_id,
         updated_at=prior_date,
@@ -111,7 +111,7 @@ def test_submission_due_date_calculation_comprehensive(client, admin_headers, wo
         json={
             "model_ids": [model.model_id],
             "validation_type_id": workflow_taxonomies["type"]["comprehensive"].value_id,
-            "priority_id": workflow_taxonomies["priority"]["high"].value_id,
+            "priority_id": workflow_taxonomies["priority"]["standard"].value_id,
             "target_completion_date": date.today().isoformat(),
             "prior_validation_request_id": prior_req.request_id
         }

@@ -1,6 +1,7 @@
 """Taxonomy schemas."""
-from pydantic import BaseModel
+from pydantic import BaseModel, model_validator
 from datetime import datetime
+from typing import Optional
 
 
 class TaxonomyValueBase(BaseModel):
@@ -10,6 +11,8 @@ class TaxonomyValueBase(BaseModel):
     description: str | None = None
     sort_order: int = 0
     is_active: bool = True
+    min_days: int | None = None
+    max_days: int | None = None
 
 
 class TaxonomyValueCreate(TaxonomyValueBase):
@@ -24,6 +27,8 @@ class TaxonomyValueUpdate(BaseModel):
     description: str | None = None
     sort_order: int | None = None
     is_active: bool | None = None
+    min_days: int | None = None
+    max_days: int | None = None
 
 
 class TaxonomyValueResponse(TaxonomyValueBase):
@@ -40,6 +45,7 @@ class TaxonomyBase(BaseModel):
     """Base schema for taxonomy."""
     name: str
     description: str | None = None
+    taxonomy_type: str = "standard"
 
 
 class TaxonomyCreate(TaxonomyBase):
@@ -51,6 +57,7 @@ class TaxonomyUpdate(BaseModel):
     """Schema for updating a taxonomy."""
     name: str | None = None
     description: str | None = None
+    taxonomy_type: str | None = None
 
 
 class TaxonomyResponse(TaxonomyBase):

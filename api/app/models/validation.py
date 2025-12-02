@@ -539,6 +539,70 @@ class ValidationRequest(Base):
             return None
         return (self.validation_team_sla_due_date - date.today()).days
 
+    @property
+    def scorecard_overall_rating(self) -> Optional[str]:
+        """Get the overall scorecard rating from the computed result."""
+        if self.scorecard_result:
+            return self.scorecard_result.overall_rating
+        return None
+
+    @property
+    def residual_risk(self) -> Optional[str]:
+        """
+        Compute the residual risk based on validated_risk_tier and scorecard_overall_rating.
+
+        Uses the active ResidualRiskMapConfig to look up the mapping.
+        Returns None if either input is missing or no mapping exists.
+        """
+        # Need both inputs to compute residual risk
+        if not self.validated_risk_tier or not self.scorecard_overall_rating:
+            return None
+
+        # Get the risk tier label and normalize it to match residual risk map keys
+        # Taxonomy labels: "High Inherent Risk", "Medium Inherent Risk", etc.
+        # Map keys: "High", "Medium", "Low", "Very Low"
+        risk_tier_label = self.validated_risk_tier.label
+        tier_mapping = {
+            "High Inherent Risk": "High",
+            "Medium Inherent Risk": "Medium",
+            "Low Inherent Risk": "Low",
+            "Very Low Inherent Risk": "Very Low",
+            # Also support direct labels in case taxonomy is updated
+            "High": "High",
+            "Medium": "Medium",
+            "Low": "Low",
+            "Very Low": "Very Low",
+        }
+        normalized_tier = tier_mapping.get(risk_tier_label)
+        if not normalized_tier:
+            return None
+
+        # Get the scorecard outcome (e.g., "Green", "Yellow", "Red")
+        scorecard_outcome = self.scorecard_overall_rating
+
+        # Look up residual risk from the active configuration
+        from sqlalchemy.orm import Session
+        session = Session.object_session(self)
+        if not session:
+            return None
+
+        from app.models.residual_risk_map import ResidualRiskMapConfig
+        config = session.query(ResidualRiskMapConfig).filter(
+            ResidualRiskMapConfig.is_active == True
+        ).first()
+
+        if not config or not config.matrix_config:
+            return None
+
+        matrix = config.matrix_config.get("matrix", {})
+
+        # Look up the residual risk: matrix[risk_tier][scorecard_outcome]
+        tier_row = matrix.get(normalized_tier)
+        if not tier_row:
+            return None
+
+        return tier_row.get(scorecard_outcome)
+
 
 class ValidationStatusHistory(Base):
     """Audit trail for validation status changes."""

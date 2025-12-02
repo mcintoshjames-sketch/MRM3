@@ -29,12 +29,85 @@ from app.models.user import User
 from app.models.model import Model
 from app.models.model_region import ModelRegion
 from app.models.region import Region
-from app.models.taxonomy import TaxonomyValue
+from app.models.taxonomy import Taxonomy, TaxonomyValue
 from app.models.validation import (
     ValidationRequest, ValidationRequestModelVersion,
     ValidationAssignment, ValidationWorkflowSLA
 )
 from app.api.validation_workflow import get_commentary_status_for_request
+
+
+def get_past_due_level(days_overdue: int, db: Session) -> Optional[Dict[str, Any]]:
+    """
+    Get the Past Due Level bucket for a given number of days overdue.
+
+    Args:
+        days_overdue: Number of days past the due date
+        db: Database session
+
+    Returns:
+        Dictionary with value_id, code, label, description if found, None otherwise
+    """
+    # Find the "Past Due Level" taxonomy
+    taxonomy = db.query(Taxonomy).filter(
+        Taxonomy.name == "Past Due Level",
+        Taxonomy.taxonomy_type == "bucket"
+    ).first()
+
+    if not taxonomy:
+        return None
+
+    # Get all bucket values ordered by min_days
+    values = db.query(TaxonomyValue).filter(
+        TaxonomyValue.taxonomy_id == taxonomy.taxonomy_id,
+        TaxonomyValue.is_active == True
+    ).order_by(TaxonomyValue.sort_order).all()
+
+    # Find the matching bucket
+    for value in values:
+        min_days = value.min_days
+        max_days = value.max_days
+
+        # Check if days_overdue falls within this bucket
+        # min_days=None means unbounded lower (matches anything <= max_days)
+        # max_days=None means unbounded upper (matches anything >= min_days)
+        if min_days is None and max_days is None:
+            # Single unbounded bucket - matches everything
+            return {
+                "value_id": value.value_id,
+                "code": value.code,
+                "label": value.label,
+                "description": value.description
+            }
+        elif min_days is None:
+            # Lower unbounded: matches if days_overdue <= max_days
+            if days_overdue <= max_days:
+                return {
+                    "value_id": value.value_id,
+                    "code": value.code,
+                    "label": value.label,
+                    "description": value.description
+                }
+        elif max_days is None:
+            # Upper unbounded: matches if days_overdue >= min_days
+            if days_overdue >= min_days:
+                return {
+                    "value_id": value.value_id,
+                    "code": value.code,
+                    "label": value.label,
+                    "description": value.description
+                }
+        else:
+            # Bounded: matches if min_days <= days_overdue <= max_days
+            if min_days <= days_overdue <= max_days:
+                return {
+                    "value_id": value.value_id,
+                    "code": value.code,
+                    "label": value.label,
+                    "description": value.description
+                }
+
+    return None
 
 router = APIRouter(prefix="/overdue-revalidation-report", tags=["Reports"])
 
@@ -111,6 +184,22 @@ class OverdueRevalidationRecord(BaseModel):
         None, description="Estimated completion based on target + lead time"
     )
 
+    # Residual Risk (computed from inherent risk tier + scorecard outcome)
+    scorecard_overall_rating: Optional[str] = Field(
+        None, description="Overall scorecard rating from the validation"
+    )
+    residual_risk: Optional[str] = Field(
+        None, description="Computed residual risk (High, Medium, Low)"
+    )
+
+    # Past Due Level (bucket classification based on days overdue)
+    past_due_level: Optional[str] = Field(
+        None, description="Past due level label (e.g., 'Minimal', 'Critical')"
+    )
+    past_due_level_code: Optional[str] = Field(
+        None, description="Past due level code (e.g., 'MINIMAL', 'CRITICAL')"
+    )
+
     class Config:
         from_attributes = True
 
@@ -143,6 +232,9 @@ class EnhancedSummary(BaseModel):
 
     # Region breakdown
     by_region: Dict[str, int] = Field(default_factory=dict)
+
+    # Past Due Level breakdown
+    by_past_due_level: Dict[str, int] = Field(default_factory=dict)
 
     # Risk-weighted metric (higher risk tiers weighted more)
     risk_weighted_overdue_score: float = Field(
@@ -227,6 +319,7 @@ def get_overdue_revalidation_report(
     comment_status: Optional[str] = Query(None, description="Filter: CURRENT, STALE, or MISSING"),
     owner_id: Optional[int] = Query(None, description="Filter by model owner ID"),
     days_overdue_min: Optional[int] = Query(None, description="Minimum days overdue"),
+    past_due_level: Optional[str] = Query(None, description="Filter by past due level code (e.g., CRITICAL, OBSOLETE)"),
     needs_update_only: bool = Query(False, description="Show only items needing commentary update"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
@@ -336,6 +429,14 @@ def get_overdue_revalidation_report(
             # Get model regions
             model_regions = get_model_regions(model, db)
 
+            # Get past due level bucket
+            past_due_level_info = get_past_due_level(days_overdue, db)
+
+            # Apply past_due_level filter
+            if past_due_level:
+                if not past_due_level_info or past_due_level_info["code"] != past_due_level:
+                    continue
+
             record = OverdueRevalidationRecord(
                 overdue_type="PRE_SUBMISSION",
                 request_id=req.request_id,
@@ -365,7 +466,11 @@ def get_overdue_revalidation_report(
                 target_date_from_comment=commentary["target_date_from_comment"],
                 stale_reason=commentary["stale_reason"],
                 needs_comment_update=commentary["needs_comment_update"],
-                computed_completion_date=computed_completion
+                computed_completion_date=computed_completion,
+                scorecard_overall_rating=req.scorecard_overall_rating,
+                residual_risk=req.residual_risk,
+                past_due_level=past_due_level_info["label"] if past_due_level_info else None,
+                past_due_level_code=past_due_level_info["code"] if past_due_level_info else None
             )
             results.append(record)
 
@@ -440,6 +545,14 @@ def get_overdue_revalidation_report(
             # Get model regions
             model_regions = get_model_regions(model, db)
 
+            # Get past due level bucket
+            past_due_level_info = get_past_due_level(days_overdue, db)
+
+            # Apply past_due_level filter
+            if past_due_level:
+                if not past_due_level_info or past_due_level_info["code"] != past_due_level:
+                    continue
+
             record = OverdueRevalidationRecord(
                 overdue_type="VALIDATION_IN_PROGRESS",
                 request_id=req.request_id,
@@ -469,7 +582,11 @@ def get_overdue_revalidation_report(
                 target_date_from_comment=commentary["target_date_from_comment"],
                 stale_reason=commentary["stale_reason"],
                 needs_comment_update=commentary["needs_comment_update"],
-                computed_completion_date=req.target_completion_date
+                computed_completion_date=req.target_completion_date,
+                scorecard_overall_rating=req.scorecard_overall_rating,
+                residual_risk=req.residual_risk,
+                past_due_level=past_due_level_info["label"] if past_due_level_info else None,
+                past_due_level_code=past_due_level_info["code"] if past_due_level_info else None
             )
             results.append(record)
 
@@ -495,6 +612,12 @@ def get_overdue_revalidation_report(
                 by_region[region.region_name] = by_region.get(region.region_name, 0) + 1
         else:
             by_region["No Region Assigned"] = by_region.get("No Region Assigned", 0) + 1
+
+    # Past Due Level breakdown
+    by_past_due_level_summary: Dict[str, int] = {}
+    for r in results:
+        level = r.past_due_level or "Unclassified"
+        by_past_due_level_summary[level] = by_past_due_level_summary.get(level, 0) + 1
 
     # Calculate risk-weighted score
     # Higher risk tiers get higher weights (Tier 1 = 3x, Tier 2 = 2x, Tier 3 = 1x)
@@ -528,6 +651,7 @@ def get_overdue_revalidation_report(
         # Breakdowns
         by_risk_tier=by_risk_tier,
         by_region=by_region,
+        by_past_due_level=by_past_due_level_summary,
 
         # Risk-weighted metric
         risk_weighted_overdue_score=round(risk_weighted_score, 1)
@@ -575,6 +699,7 @@ def get_overdue_revalidation_report(
             "comment_status": comment_status,
             "owner_id": owner_id,
             "days_overdue_min": days_overdue_min,
+            "past_due_level": past_due_level,
             "needs_update_only": needs_update_only
         },
         summary=summary,
