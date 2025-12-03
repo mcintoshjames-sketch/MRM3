@@ -1,0 +1,24 @@
+Attestation: In compliance with our Model Risk and Validation Policy, this is the Model Risk Attestation for the QX 2025 Model Inventory. My team’s models are indicated in the excel file attached and summarized in the table below.
+
+-
+I attest to the best of my knowledge that the models that I am responsible for are in compliance with the Model Risk and Validation Policy (the Policy). https://cibc.sharepoint.com/sites/corp/en/policies/desc/Pages/model-risk-and-validation.aspx
+
+I also confirm that:
+
+I have made Model Validation aware of all the models/procedures that my team owns, develops and/or uses that are subject to validation.
+
+I have made Model Validation aware that there are no material changes to those models since last time they were validated, and therefore no material model change should be implemented before Model Validation approval.
+
+I am responsible to identify, understand and document the purpose of the models and ensure that the modeling choices are documented (Section 6.1 Rationale for Modeling and Model Development).
+
+I have made Model Validation aware of the models with deteriorating performance or issues that triggered the monitoring thresholds, and hence the applicable remediation plan to mitigate the potential model risk. (Section 6.4 Ongoing monitoring and review)
+
+I will bring to the attention of Model Validation and other stakeholders, any model risk issues that have significant impact on P&L, economic capital, regulatory capital or models to pose material level of model risk (Section 6.4.3 Escalation process)
+
+I comply with the related Roles and Responsibilities for my team within the Policy. (Section 8.0 Roles and responsibilities)
+
+I have made Model Validation aware of any additional comments and/or any exceptions to the Policy.
+
+I will notify model users of critical model limitations to support appropriate and informed model usage.
+
+I confirm any restrictions on model use have been implemented.
