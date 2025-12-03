@@ -91,6 +91,25 @@ from app.models.scorecard import (
 )
 from app.models.residual_risk_map import ResidualRiskMapConfig
 from app.models.limitation import ModelLimitation
+from app.models.attestation import (
+    AttestationCycleStatus,
+    AttestationFrequency,
+    AttestationDecision,
+    AttestationRecordStatus,
+    AttestationSchedulingRuleType,
+    AttestationChangeType,
+    AttestationChangeStatus,
+    AttestationEvidenceType,
+    AttestationQuestionFrequency,
+    AttestationCycle,
+    AttestationRecord,
+    AttestationResponse,
+    AttestationEvidence,
+    AttestationSchedulingRule,
+    AttestationChangeProposal,
+    CoverageTarget,
+    AttestationQuestionConfig,
+)
 
 __all__ = [
     "User", "UserRole", "user_regions",
@@ -198,4 +217,22 @@ __all__ = [
     "ResidualRiskMapConfig",
     # Model Limitations
     "ModelLimitation",
+    # Attestations
+    "AttestationCycleStatus",
+    "AttestationFrequency",
+    "AttestationDecision",
+    "AttestationRecordStatus",
+    "AttestationSchedulingRuleType",
+    "AttestationChangeType",
+    "AttestationChangeStatus",
+    "AttestationEvidenceType",
+    "AttestationQuestionFrequency",
+    "AttestationCycle",
+    "AttestationRecord",
+    "AttestationResponse",
+    "AttestationEvidence",
+    "AttestationSchedulingRule",
+    "AttestationChangeProposal",
+    "CoverageTarget",
+    "AttestationQuestionConfig",
 ]

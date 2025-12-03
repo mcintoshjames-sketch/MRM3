@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import api from '../api/client';
 import Layout from '../components/Layout';
+import { useAuth } from '../contexts/AuthContext';
 
 interface User {
     user_id: number;
@@ -9,6 +10,7 @@ interface User {
     full_name: string;
     role: string;
     created_at: string;
+    high_fluctuation_flag: boolean;
 }
 
 interface Vendor {
@@ -55,10 +57,30 @@ interface ValidationAssignment {
 export default function UserDetailsPage() {
     const { id } = useParams<{ id: string }>();
     const navigate = useNavigate();
+    const { user: currentUser } = useAuth();
     const [user, setUser] = useState<User | null>(null);
     const [models, setModels] = useState<Model[]>([]);
     const [validationAssignments, setValidationAssignments] = useState<ValidationAssignment[]>([]);
     const [loading, setLoading] = useState(true);
+    const [togglingFlag, setTogglingFlag] = useState(false);
+
+    const isAdmin = currentUser?.role === 'Admin';
+
+    const handleToggleHighFluctuationFlag = async () => {
+        if (!user || !isAdmin) return;
+
+        setTogglingFlag(true);
+        try {
+            await api.patch(`/auth/users/${id}`, {
+                high_fluctuation_flag: !user.high_fluctuation_flag
+            });
+            setUser({ ...user, high_fluctuation_flag: !user.high_fluctuation_flag });
+        } catch (error) {
+            console.error('Failed to toggle high fluctuation flag:', error);
+        } finally {
+            setTogglingFlag(false);
+        }
+    };
 
     useEffect(() => {
         fetchData();
@@ -192,6 +214,34 @@ export default function UserDetailsPage() {
                     <div>
                         <h4 className="text-sm font-medium text-gray-500 mb-1">Created</h4>
                         <p className="text-sm">{new Date(user.created_at).toLocaleString()}</p>
+                    </div>
+                    <div>
+                        <h4 className="text-sm font-medium text-gray-500 mb-1">High Fluctuation Flag</h4>
+                        <div className="flex items-center gap-3">
+                            <span className={`px-2 py-1 text-sm rounded ${
+                                user.high_fluctuation_flag
+                                    ? 'bg-yellow-100 text-yellow-800'
+                                    : 'bg-gray-100 text-gray-600'
+                            }`}>
+                                {user.high_fluctuation_flag ? 'Enabled' : 'Disabled'}
+                            </span>
+                            {isAdmin && (
+                                <button
+                                    onClick={handleToggleHighFluctuationFlag}
+                                    disabled={togglingFlag}
+                                    className={`text-sm px-3 py-1 rounded border ${
+                                        user.high_fluctuation_flag
+                                            ? 'border-gray-300 text-gray-600 hover:bg-gray-100'
+                                            : 'border-yellow-500 text-yellow-600 hover:bg-yellow-50'
+                                    } disabled:opacity-50`}
+                                >
+                                    {togglingFlag ? 'Updating...' : (user.high_fluctuation_flag ? 'Disable' : 'Enable')}
+                                </button>
+                            )}
+                        </div>
+                        <p className="text-xs text-gray-400 mt-1">
+                            When enabled, model owners require quarterly attestations
+                        </p>
                     </div>
                     {user.role === 'Validator' ? (
                         <>

@@ -20,6 +20,10 @@ class ModelDelegate(Base):
     )
     can_submit_changes: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     can_manage_regional: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    can_attest: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False,
+        comment="Can submit attestations on behalf of model owner"
+    )
     delegated_by_id: Mapped[int] = mapped_column(
         Integer, ForeignKey("users.user_id", ondelete="RESTRICT"), nullable=False
     )

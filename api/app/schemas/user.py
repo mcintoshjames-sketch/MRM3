@@ -21,12 +21,14 @@ class UserUpdate(BaseModel):
     role: str | None = None
     password: str | None = None
     region_ids: Optional[List[int]] = None  # For Regional Approvers
+    high_fluctuation_flag: bool | None = None  # For quarterly attestation triggering
 
 
 class UserResponse(UserBase):
     user_id: int
     role: str
     regions: List[Region] = []  # Authorized regions for Regional Approvers
+    high_fluctuation_flag: bool = False  # For quarterly attestation triggering
 
     class Config:
         from_attributes = True

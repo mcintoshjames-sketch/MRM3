@@ -40,6 +40,10 @@ import MonitoringPlanDetailPage from './pages/MonitoringPlanDetailPage';
 import MyMonitoringPage from './pages/MyMonitoringPage';
 import RecommendationsPage from './pages/RecommendationsPage';
 import RecommendationDetailPage from './pages/RecommendationDetailPage';
+import AttestationCyclesPage from './pages/AttestationCyclesPage';
+import MyAttestationsPage from './pages/MyAttestationsPage';
+import AttestationDetailPage from './pages/AttestationDetailPage';
+import AttestationReviewQueuePage from './pages/AttestationReviewQueuePage';
 
 function App() {
     const { user, loading } = useAuth();
@@ -98,6 +102,10 @@ function App() {
             <Route path="/reports/name-changes" element={user ? <NameChangesReportPage /> : <Navigate to="/login" />} />
             <Route path="/reports/critical-limitations" element={user ? <CriticalLimitationsReportPage /> : <Navigate to="/login" />} />
             <Route path="/analytics" element={user ? <AnalyticsPage /> : <Navigate to="/login" />} />
+            <Route path="/attestation-cycles" element={user?.role === 'Admin' ? <AttestationCyclesPage /> : <Navigate to="/models" />} />
+            <Route path="/attestation-review" element={user?.role === 'Admin' || user?.role === 'Validator' ? <AttestationReviewQueuePage /> : <Navigate to="/models" />} />
+            <Route path="/my-attestations" element={user ? <MyAttestationsPage /> : <Navigate to="/login" />} />
+            <Route path="/attestations/:id" element={user ? <AttestationDetailPage /> : <Navigate to="/login" />} />
             <Route path="/" element={<Navigate to={getDefaultRoute()} />} />
         </Routes>
     );

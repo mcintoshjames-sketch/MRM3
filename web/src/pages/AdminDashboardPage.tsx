@@ -135,6 +135,17 @@ interface PendingAdditionalApproval {
     created_at: string;
 }
 
+interface PendingAttestationChangeProposal {
+    proposal_id: number;
+    attestation_id: number;
+    change_type: 'UPDATE_EXISTING' | 'NEW_MODEL' | 'DECOMMISSION';
+    model_id: number | null;
+    proposed_data: Record<string, unknown> | null;
+    status: string;
+    created_at: string;
+    model: { model_id: number; model_name: string } | null;
+}
+
 interface OverdueMonitoringCycle {
     cycle_id: number;
     plan_id: number;
@@ -170,6 +181,13 @@ interface OverdueRecommendation {
     days_overdue: number;
 }
 
+interface CycleReminder {
+    should_show_reminder: boolean;
+    suggested_cycle_name: string | null;
+    last_cycle_end_date: string | null;
+    message: string | null;
+}
+
 export default function AdminDashboardPage() {
     const { user } = useAuth();
     const [slaViolations, setSlaViolations] = useState<SLAViolation[]>([]);
@@ -181,10 +199,12 @@ export default function AdminDashboardPage() {
     const [pendingModelSubmissions, setPendingModelSubmissions] = useState<PendingModelSubmission[]>([]);
     const [pendingModelEdits, setPendingModelEdits] = useState<PendingModelEdit[]>([]);
     const [pendingAdditionalApprovals, setPendingAdditionalApprovals] = useState<PendingAdditionalApproval[]>([]);
+    const [pendingAttestationChanges, setPendingAttestationChanges] = useState<PendingAttestationChangeProposal[]>([]);
     const [myOverdueItems, setMyOverdueItems] = useState<MyOverdueItem[]>([]);
     const [overdueMonitoringCycles, setOverdueMonitoringCycles] = useState<OverdueMonitoringCycle[]>([]);
     const [recommendationsSummary, setRecommendationsSummary] = useState<RecommendationsSummary | null>(null);
     const [overdueRecommendations, setOverdueRecommendations] = useState<OverdueRecommendation[]>([]);
+    const [cycleReminder, setCycleReminder] = useState<CycleReminder | null>(null);
     const [loading, setLoading] = useState(true);
 
     // Commentary modal state
@@ -212,7 +232,9 @@ export default function AdminDashboardPage() {
                 myOverdueRes,
                 monitoringOverviewRes,
                 recommendationsOpenRes,
-                recommendationsOverdueRes
+                recommendationsOverdueRes,
+                attestationChangesRes,
+                cycleReminderRes
             ] = await Promise.all([
                 api.get('/validation-workflow/dashboard/sla-violations'),
                 api.get('/validation-workflow/dashboard/out-of-order'),
@@ -226,7 +248,9 @@ export default function AdminDashboardPage() {
                 overdueCommentaryApi.getMyOverdueItems(),
                 api.get('/monitoring/admin-overview'),
                 api.get('/recommendations/dashboard/open'),
-                api.get('/recommendations/dashboard/overdue')
+                api.get('/recommendations/dashboard/overdue'),
+                api.get('/attestations/changes?status=PENDING').catch(() => ({ data: [] })),
+                api.get('/attestations/cycles/reminder').catch(() => ({ data: { should_show_reminder: false } }))
             ]);
             setSlaViolations(violationsRes.data);
             setOutOfOrder(outOfOrderRes.data);
@@ -242,6 +266,7 @@ export default function AdminDashboardPage() {
             setPendingModelSubmissions(pendingModelsRes.data);
             setPendingModelEdits(pendingEditsRes.data);
             setPendingAdditionalApprovals(conditionalApprovalsRes.data);
+            setPendingAttestationChanges(attestationChangesRes.data);
             setMyOverdueItems(myOverdueRes);
             // Filter monitoring cycles for overdue ones only
             const overdueCycles = monitoringOverviewRes.data.cycles.filter(
@@ -251,6 +276,8 @@ export default function AdminDashboardPage() {
             // Set recommendations data
             setRecommendationsSummary(recommendationsOpenRes.data);
             setOverdueRecommendations(recommendationsOverdueRes.data.recommendations || []);
+            // Set cycle reminder
+            setCycleReminder(cycleReminderRes.data);
         } catch (error) {
             console.error('Failed to fetch dashboard data:', error);
         } finally {
@@ -358,6 +385,41 @@ export default function AdminDashboardPage() {
                 <h2 className="text-2xl font-bold">Admin Dashboard</h2>
                 <p className="text-gray-600 mt-1">Welcome back, {user?.full_name}</p>
             </div>
+
+            {/* Attestation Cycle Reminder Banner */}
+            {cycleReminder?.should_show_reminder && (
+                <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                    <div className="flex items-start gap-3">
+                        <div className="flex-shrink-0">
+                            <svg className="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                            </svg>
+                        </div>
+                        <div className="flex-1">
+                            <h3 className="text-sm font-semibold text-blue-800">Attestation Cycle Reminder</h3>
+                            <p className="text-sm text-blue-700 mt-1">
+                                {cycleReminder.message || `It's time to open a new attestation cycle for ${cycleReminder.suggested_cycle_name}.`}
+                            </p>
+                            {cycleReminder.last_cycle_end_date && (
+                                <p className="text-xs text-blue-600 mt-1">
+                                    Last cycle ended: {cycleReminder.last_cycle_end_date.split('T')[0]}
+                                </p>
+                            )}
+                            <div className="mt-3">
+                                <Link
+                                    to="/attestations/cycles"
+                                    className="inline-flex items-center px-3 py-1.5 text-sm font-medium text-white bg-blue-600 rounded hover:bg-blue-700"
+                                >
+                                    Open Attestation Cycles
+                                    <svg className="ml-1.5 w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                                    </svg>
+                                </Link>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {/* New Model Records Awaiting Approval Widget */}
             {pendingModelSubmissions.length > 0 && (
@@ -529,6 +591,78 @@ export default function AdminDashboardPage() {
                         <div className="mt-3 pt-2 border-t text-center">
                             <span className="text-xs text-gray-500">
                                 Showing 5 of {pendingModelEdits.length} pending model edits
+                            </span>
+                        </div>
+                    )}
+                </div>
+            )}
+
+            {/* Pending Attestation Change Proposals Widget */}
+            {pendingAttestationChanges.length > 0 && (
+                <div className="bg-white p-4 rounded-lg shadow mb-6">
+                    <div className="flex items-center gap-2 mb-3 pb-2 border-b">
+                        <svg className="w-4 h-4 text-indigo-500" fill="currentColor" viewBox="0 0 20 20">
+                            <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-11a1 1 0 10-2 0v2H7a1 1 0 100 2h2v2a1 1 0 102 0v-2h2a1 1 0 100-2h-2V7z" clipRule="evenodd" />
+                        </svg>
+                        <h3 className="text-sm font-semibold text-gray-700">Attestation Change Proposals</h3>
+                        <span className="text-xs text-gray-500 ml-auto">{pendingAttestationChanges.length} pending review</span>
+                    </div>
+                    <div className="space-y-2 max-h-64 overflow-y-auto">
+                        {pendingAttestationChanges.slice(0, 5).map((proposal) => (
+                            <div
+                                key={proposal.proposal_id}
+                                className="border-l-3 pl-3 py-2 hover:bg-gray-50 rounded-r"
+                                style={{
+                                    borderLeftWidth: '3px',
+                                    borderLeftColor: proposal.change_type === 'NEW_MODEL' ? '#10b981' :
+                                                    proposal.change_type === 'DECOMMISSION' ? '#ef4444' : '#6366f1'
+                                }}
+                            >
+                                <div className="flex items-start justify-between gap-2">
+                                    <div className="flex-1 min-w-0">
+                                        <div className="flex items-center gap-2 mb-1">
+                                            <span className={`px-1.5 py-0.5 text-xs font-medium rounded ${
+                                                proposal.change_type === 'UPDATE_EXISTING' ? 'bg-blue-100 text-blue-700' :
+                                                proposal.change_type === 'NEW_MODEL' ? 'bg-green-100 text-green-700' :
+                                                'bg-red-100 text-red-700'
+                                            }`}>
+                                                {proposal.change_type.replace('_', ' ')}
+                                            </span>
+                                            <span className="text-xs text-gray-400">
+                                                {formatTimeAgo(proposal.created_at)}
+                                            </span>
+                                        </div>
+                                        {proposal.model ? (
+                                            <p className="text-sm font-medium text-gray-800 truncate">
+                                                {proposal.model.model_name}
+                                            </p>
+                                        ) : proposal.change_type === 'NEW_MODEL' && proposal.proposed_data ? (
+                                            <p className="text-sm font-medium text-gray-800 truncate">
+                                                New: {(proposal.proposed_data as { model_name?: string }).model_name || 'Unknown'}
+                                            </p>
+                                        ) : null}
+                                        {proposal.proposed_data && Object.keys(proposal.proposed_data).length > 0 && (
+                                            <p className="text-xs text-gray-500 mt-0.5 truncate">
+                                                Changes: {Object.keys(proposal.proposed_data).join(', ')}
+                                            </p>
+                                        )}
+                                    </div>
+                                    <div className="flex-shrink-0">
+                                        <Link
+                                            to={`/attestations/${proposal.attestation_id}`}
+                                            className="inline-flex items-center px-3 py-1.5 text-xs font-medium text-white bg-indigo-600 hover:bg-indigo-700 rounded transition-colors"
+                                        >
+                                            Review
+                                        </Link>
+                                    </div>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                    {pendingAttestationChanges.length > 5 && (
+                        <div className="mt-3 pt-2 border-t text-center">
+                            <span className="text-xs text-gray-500">
+                                Showing 5 of {pendingAttestationChanges.length} pending attestation changes
                             </span>
                         </div>
                     )}

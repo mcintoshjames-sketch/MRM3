@@ -14,7 +14,8 @@ export default function Layout({ children }: LayoutProps) {
         submissions: 0,
         deployments: 0,
         decommissioning: 0,
-        monitoring: 0
+        monitoring: 0,
+        attestations: 0
     });
 
     useEffect(() => {
@@ -64,11 +65,21 @@ export default function Layout({ children }: LayoutProps) {
                     // Silently fail
                 }
 
+                // Fetch attestations count
+                let pendingAttestations = 0;
+                try {
+                    const attestationsRes = await api.get('/attestations/my-upcoming');
+                    pendingAttestations = attestationsRes.data.pending_count || 0;
+                } catch {
+                    // Silently fail - attestations may not be set up yet
+                }
+
                 setPendingCounts({
                     submissions: urgentSubmissions,
                     deployments: pendingDeployments,
                     decommissioning: pendingDecommissioning,
-                    monitoring: pendingMonitoring
+                    monitoring: pendingMonitoring,
+                    attestations: pendingAttestations
                 });
             } catch (error) {
                 // Silently fail - badges will just show 0
@@ -233,6 +244,30 @@ export default function Layout({ children }: LayoutProps) {
                                                 isActive ? 'bg-white text-blue-600' : 'bg-purple-500 text-white'
                                             }`}>
                                                 {pendingCounts.decommissioning}
+                                            </span>
+                                        )}
+                                    </div>
+                                )}
+                            </NavLink>
+                        </li>
+                        <li>
+                            <NavLink
+                                to="/my-attestations"
+                                className={({ isActive }) =>
+                                    `block px-4 py-2 rounded transition-colors ${isActive
+                                        ? 'bg-blue-600 text-white'
+                                        : 'text-gray-700 hover:bg-gray-100'
+                                    }`
+                                }
+                            >
+                                {({ isActive }) => (
+                                    <div className="flex items-center justify-between">
+                                        <span>My Attestations</span>
+                                        {pendingCounts.attestations > 0 && (
+                                            <span className={`ml-2 px-2 py-0.5 text-xs font-bold rounded-full ${
+                                                isActive ? 'bg-white text-blue-600' : 'bg-orange-500 text-white'
+                                            }`}>
+                                                {pendingCounts.attestations}
                                             </span>
                                         )}
                                     </div>
@@ -459,6 +494,32 @@ export default function Layout({ children }: LayoutProps) {
                                         }
                                     >
                                         Additional Approvals
+                                    </NavLink>
+                                </li>
+                                <li>
+                                    <NavLink
+                                        to="/attestation-cycles"
+                                        className={({ isActive }) =>
+                                            `block px-4 py-2 rounded transition-colors ${isActive
+                                                ? 'bg-blue-600 text-white'
+                                                : 'text-gray-700 hover:bg-gray-100'
+                                            }`
+                                        }
+                                    >
+                                        Attestation Cycles
+                                    </NavLink>
+                                </li>
+                                <li>
+                                    <NavLink
+                                        to="/attestation-review"
+                                        className={({ isActive }) =>
+                                            `block px-4 py-2 rounded transition-colors ${isActive
+                                                ? 'bg-blue-600 text-white'
+                                                : 'text-gray-700 hover:bg-gray-100'
+                                            }`
+                                        }
+                                    >
+                                        Attestation Review Queue
                                     </NavLink>
                                 </li>
                                 <li>

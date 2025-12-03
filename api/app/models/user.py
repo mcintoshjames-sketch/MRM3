@@ -1,6 +1,6 @@
 """User model."""
 import enum
-from sqlalchemy import String, Integer, Table, Column, ForeignKey
+from sqlalchemy import String, Integer, Table, Column, ForeignKey, Boolean
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from typing import List
 from app.models.base import Base
@@ -35,6 +35,11 @@ class User(Base):
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
     role: Mapped[UserRole] = mapped_column(
         String(50), nullable=False, default=UserRole.USER)
+    # Attestation: high fluctuation flag for quarterly attestation requirement
+    high_fluctuation_flag: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False,
+        comment="Manual toggle by Admin; triggers quarterly attestations"
+    )
 
     # Regions relationship (for Regional Approvers)
     regions: Mapped[List["Region"]] = relationship(

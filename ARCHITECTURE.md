@@ -584,6 +584,78 @@ Model Risk Management inventory system with a FastAPI backend, React/TypeScript 
 - **Audit Logging**: All factor changes, guidance updates, and assessment modifications are logged.
 - **Testing**: 54 tests in `tests/test_risk_assessment_audit.py` covering factor CRUD, guidance management, weight validation, assessment workflow, scoring logic, and override handling.
 
+## Model Risk Attestations
+- **Purpose**: Annual/quarterly compliance attestation process where model owners affirm adherence to Model Risk and Validation Policy.
+- **Data Model**:
+  - **AttestationCycle**: Represents an attestation period. Fields: cycle_id, cycle_name, period_start_date, period_end_date, submission_due_date, status (PENDING/OPEN/CLOSED), opened_at/by, closed_at/by, notes.
+  - **AttestationRecord**: Individual attestation for a model owner within a cycle. Fields: attestation_id, cycle_id, model_id, attesting_user_id, due_date, status (PENDING/SUBMITTED/ACCEPTED/REJECTED), attested_at, decision, decision_comment, reviewed_by_user_id, reviewed_at, review_comment.
+  - **AttestationResponse**: Answers to attestation questions. Fields: response_id, attestation_id, question_id (taxonomy value reference), answer (boolean), comment.
+  - **AttestationEvidence**: Supporting documentation. Fields: evidence_id, attestation_id, evidence_type, url, description, added_by_user_id.
+  - **AttestationQuestionConfig**: Extended configuration for taxonomy-based questions. Fields: config_id, question_value_id, frequency_scope (ANNUAL/QUARTERLY/BOTH), requires_comment_if_no.
+  - **AttestationSchedulingRule**: Rules determining attestation frequency. Fields: rule_id, rule_name, rule_type (GLOBAL_DEFAULT/OWNER_THRESHOLD/MODEL_SPECIFIC/REGION_SPECIFIC), frequency (ANNUAL/QUARTERLY), priority, is_active, owner_model_count_min, owner_high_fluctuation_flag, model_id, region_id, effective_date.
+  - **CoverageTarget**: Per-risk-tier attestation coverage requirements. Fields: target_id, risk_tier_id, target_percentage, is_blocking (prevents cycle closure if not met), effective_date.
+  - **AttestationChangeProposal**: Track proposed changes from attestations requiring admin review. Fields: proposal_id, attestation_id, change_type (UPDATE_EXISTING/NEW_MODEL/DECOMMISSION), model_id (for UPDATE/DECOMMISSION), proposed_data (JSON for NEW_MODEL or UPDATE), pending_edit_id (link to ModelPendingEdit for UPDATE_EXISTING), status (PENDING/ACCEPTED/REJECTED), admin_comment, decided_by_user_id, decided_at.
+  - **User.high_fluctuation_flag**: Boolean flag triggering quarterly attestations.
+  - **ModelDelegate.can_attest**: Boolean allowing delegates to submit attestations.
+- **Attestation Questions** (10 policy-based questions seeded):
+  1. Policy Compliance - Attest models comply with Model Risk and Validation Policy
+  2. Model Awareness - Made Model Validation aware of all models subject to validation
+  3. No Material Changes - No material changes since last validation
+  4. Purpose Documentation - Documented purpose and modeling choices
+  5. Performance Issues - Made aware of models with deteriorating performance
+  6. Escalation Commitment - Will bring model risk issues to attention of stakeholders
+  7. Roles and Responsibilities - Comply with Policy roles and responsibilities
+  8. Policy Exceptions - Made aware of any exceptions to Policy
+  9. Limitations Notification - Will notify users of critical model limitations
+  10. Use Restrictions Implemented - Restrictions on model use have been implemented
+- **Question Configuration**:
+  - All questions apply to BOTH annual and quarterly frequencies
+  - Questions with `requires_comment_if_no=true` mandate explanation when answered "No"
+- **Scheduling Rules** (priority-based evaluation):
+  - **Global Default** (priority 1): Annual attestation for all model owners
+  - **Owner Threshold** (priority 100): Quarterly attestation for owners with 30+ models OR high_fluctuation_flag set
+  - Higher priority rules override lower priority
+- **Coverage Targets** (seeded defaults):
+  - Tier 1 (High Risk): 100%, blocking
+  - Tier 2 (Medium Risk): 100%, blocking
+  - Tier 3 (Low Risk): 95%, non-blocking
+  - Tier 4 (Very Low Risk): 90%, non-blocking
+- **Workflow**:
+  1. Admin creates attestation cycle with period dates and due date
+  2. Admin opens cycle → attestation records auto-generated for model owners
+  3. Model owners answer all questions and submit
+  4. Admin/Validator reviews submitted attestations (accept/reject)
+  5. Rejected attestations returned to owner with comments
+  6. Admin closes cycle when coverage targets met (blocking targets enforced)
+- **API Endpoints** (prefix: `/attestations`):
+  - Cycles: `GET /cycles`, `POST /cycles`, `GET /cycles/{id}`, `PATCH /cycles/{id}`, `POST /cycles/{id}/open`, `POST /cycles/{id}/close`
+  - Records: `GET /records`, `GET /records/{id}`, `POST /records/{id}/submit`, `POST /records/{id}/accept`, `POST /records/{id}/reject`
+  - Questions: `GET /questions` (with optional frequency filter)
+  - Evidence: `POST /records/{id}/evidence`, `DELETE /evidence/{id}`
+  - Change Proposals: `POST /records/{id}/changes` (propose), `GET /changes` (Admin list), `GET /changes/{id}`, `POST /changes/{id}/accept`, `POST /changes/{id}/reject`
+  - Rules: `GET /rules`, `POST /rules`, `PATCH /rules/{id}`, `DELETE /rules/{id}`
+  - Targets: `GET /targets`, `PATCH /targets/{tier_id}`
+  - User Dashboard: `GET /my-attestations`, `GET /my-upcoming`
+  - Reports: `GET /reports/coverage`, `GET /reports/timeliness`
+  - Stats: `GET /dashboard/stats`
+- **Inventory Change Integration**:
+  - During attestation, model owners can propose inventory changes via the AttestationDetailPage
+  - **UPDATE_EXISTING**: Creates linked ModelPendingEdit; when accepted, pending edit is applied to model
+  - **NEW_MODEL**: Captures proposed model data in JSON; when accepted, creates new model in inventory
+  - **DECOMMISSION**: Links to existing model; when accepted, triggers decommissioning workflow
+  - Admin reviews proposals in AttestationDetailPage with accept/reject buttons
+  - Rejection requires admin comment explaining the decision
+  - All proposals tracked in attestation record response for audit trail
+- **Frontend**:
+  - **AttestationCyclesPage** (Admin only): Manage cycles, view scheduling rules, configure coverage targets
+  - **MyAttestationsPage**: Model owner view of pending/submitted/accepted/rejected attestations with urgency badges
+  - **AttestationDetailPage**: Question-by-question submission form, evidence management, inventory change proposal modal (UPDATE_EXISTING/NEW_MODEL/DECOMMISSION), review panel for Admin/Validator with proposal accept/reject controls
+  - **AttestationReviewQueuePage** (Admin/Validator): Queue of submitted attestations awaiting review
+- **Navigation**: "My Attestations" link for all users with pending count badge, "Attestation Cycles" in Admin section
+- **Admin Dashboard Integration**: "Pending Attestation Changes" widget displays proposals awaiting admin review with links to attestation detail pages
+- **UI Enhancements**: When submitting with "No" answers but no change proposals, prompt modal guides users to add inventory change proposals
+- **Testing**: 24 tests in `tests/test_attestations.py` covering cycles, questions, evidence, submission, review, scheduling rules, dashboard stats, and change proposals.
+
 ## Security, Error Handling, Logging
 - JWT auth with token expiry; passwords hashed with bcrypt.
 - 401 handling: frontend interceptor removes token and redirects to `/login`.

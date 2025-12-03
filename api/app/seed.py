@@ -7,6 +7,7 @@ from app.core.time import utc_now
 from app.core.security import get_password_hash
 from app.models import User, UserRole, Vendor, EntraUser, Taxonomy, TaxonomyValue, ValidationWorkflowSLA, ValidationPolicy, Region, ValidationComponentDefinition, ComponentDefinitionConfiguration, ComponentDefinitionConfigItem, ModelTypeCategory, ModelType, ValidationRequest, ValidationOutcome, ValidationRequestModelVersion, ApproverRole, ConditionalApprovalRule, RuleRequiredApprover, MapApplication, ValidationAssignment, ValidationStatusHistory
 from app.models.recommendation import RecommendationPriorityConfig, RecommendationTimeframeConfig
+from app.models.attestation import AttestationSchedulingRule, AttestationSchedulingRuleType, AttestationFrequency, CoverageTarget, AttestationQuestionConfig
 from app.models.kpm import KpmCategory, Kpm
 from app.models.model import Model
 from app.models.risk_assessment import QualitativeRiskFactor, QualitativeFactorGuidance
@@ -2473,6 +2474,10 @@ def seed_database():
         # Seed Residual Risk Map Configuration
         seed_residual_risk_map(db)
 
+        # Seed Attestation Questions and Default Rules
+        seed_attestation_questions(db)
+        seed_attestation_defaults(db)
+
         print("Seeding completed successfully!")
 
     except Exception as e:
@@ -3466,6 +3471,315 @@ def seed_residual_risk_map(db):
     print(
         f"  - Column axis: {matrix_config['column_axis_label']} ({len(matrix_config['column_values'])} values)")
     print(f"  - Result values: {', '.join(matrix_config['result_values'])}")
+
+
+# Attestation Questions - Based on Model Risk and Validation Policy
+ATTESTATION_QUESTIONS = [
+    {
+        "code": "ATT_Q1_COMPLIANCE",
+        "label": "Policy Compliance",
+        "description": "I attest to the best of my knowledge that the models that I am responsible for are in compliance with the Model Risk and Validation Policy.",
+        "sort_order": 1
+    },
+    {
+        "code": "ATT_Q2_AWARENESS",
+        "label": "Model Awareness",
+        "description": "I have made Model Validation aware of all the models/procedures that my team owns, develops and/or uses that are subject to validation.",
+        "sort_order": 2
+    },
+    {
+        "code": "ATT_Q3_NO_MATERIAL_CHANGES",
+        "label": "No Material Changes",
+        "description": "I have made Model Validation aware that there are no material changes to those models since last time they were validated, and therefore no material model change should be implemented before Model Validation approval.",
+        "sort_order": 3
+    },
+    {
+        "code": "ATT_Q4_PURPOSE_DOCUMENTATION",
+        "label": "Purpose Documentation",
+        "description": "I am responsible to identify, understand and document the purpose of the models and ensure that the modeling choices are documented (Section 6.1 Rationale for Modeling and Model Development).",
+        "sort_order": 4
+    },
+    {
+        "code": "ATT_Q5_PERFORMANCE_ISSUES",
+        "label": "Performance Issues Awareness",
+        "description": "I have made Model Validation aware of the models with deteriorating performance or issues that triggered the monitoring thresholds, and hence the applicable remediation plan to mitigate the potential model risk. (Section 6.4 Ongoing monitoring and review)",
+        "sort_order": 5
+    },
+    {
+        "code": "ATT_Q6_ESCALATION",
+        "label": "Escalation Commitment",
+        "description": "I will bring to the attention of Model Validation and other stakeholders, any model risk issues that have significant impact on P&L, economic capital, regulatory capital or models to pose material level of model risk (Section 6.4.3 Escalation process)",
+        "sort_order": 6
+    },
+    {
+        "code": "ATT_Q7_ROLES_RESPONSIBILITIES",
+        "label": "Roles and Responsibilities",
+        "description": "I comply with the related Roles and Responsibilities for my team within the Policy. (Section 8.0 Roles and responsibilities)",
+        "sort_order": 7
+    },
+    {
+        "code": "ATT_Q8_EXCEPTIONS",
+        "label": "Policy Exceptions",
+        "description": "I have made Model Validation aware of any additional comments and/or any exceptions to the Policy.",
+        "sort_order": 8
+    },
+    {
+        "code": "ATT_Q9_LIMITATIONS_NOTIFICATION",
+        "label": "Limitations Notification",
+        "description": "I will notify model users of critical model limitations to support appropriate and informed model usage.",
+        "sort_order": 9
+    },
+    {
+        "code": "ATT_Q10_USE_RESTRICTIONS",
+        "label": "Use Restrictions Implemented",
+        "description": "I confirm any restrictions on model use have been implemented.",
+        "sort_order": 10
+    },
+]
+
+
+def seed_attestation_questions(db):
+    """Seed the Attestation Question taxonomy and default configurations."""
+    print("Seeding attestation questions...")
+
+    # Create or update the Attestation Question taxonomy
+    _upsert_taxonomy_with_values(
+        db,
+        name="Attestation Question",
+        description="Standard questions for quarterly/annual model risk attestation process. Model owners confirm compliance with policy requirements.",
+        values=ATTESTATION_QUESTIONS,
+        is_system=True,
+    )
+
+    db.commit()
+
+    # Get the taxonomy for creating question configs
+    att_question_taxonomy = db.query(Taxonomy).filter(
+        Taxonomy.name == "Attestation Question"
+    ).first()
+
+    if att_question_taxonomy:
+        # Create extended question configurations
+        question_configs = {
+            "ATT_Q1_COMPLIANCE": {
+                "frequency_scope": "BOTH",  # Required for all frequencies
+                "requires_comment_if_no": True,
+            },
+            "ATT_Q2_AWARENESS": {
+                "frequency_scope": "BOTH",
+                "requires_comment_if_no": True,
+            },
+            "ATT_Q3_NO_MATERIAL_CHANGES": {
+                "frequency_scope": "BOTH",  # Applies to both Annual and Quarterly
+                "requires_comment_if_no": True,
+            },
+            "ATT_Q4_PURPOSE_DOCUMENTATION": {
+                "frequency_scope": "BOTH",
+                "requires_comment_if_no": False,
+            },
+            "ATT_Q5_PERFORMANCE_ISSUES": {
+                "frequency_scope": "BOTH",
+                "requires_comment_if_no": True,
+            },
+            "ATT_Q6_ESCALATION": {
+                "frequency_scope": "BOTH",
+                "requires_comment_if_no": False,
+            },
+            "ATT_Q7_ROLES_RESPONSIBILITIES": {
+                "frequency_scope": "BOTH",
+                "requires_comment_if_no": False,
+            },
+            "ATT_Q8_EXCEPTIONS": {
+                "frequency_scope": "BOTH",
+                "requires_comment_if_no": True,
+            },
+            "ATT_Q9_LIMITATIONS_NOTIFICATION": {
+                "frequency_scope": "BOTH",
+                "requires_comment_if_no": False,
+            },
+            "ATT_Q10_USE_RESTRICTIONS": {
+                "frequency_scope": "BOTH",
+                "requires_comment_if_no": True,
+            },
+        }
+
+        for code, config_data in question_configs.items():
+            # Find the taxonomy value
+            question_value = db.query(TaxonomyValue).filter(
+                TaxonomyValue.taxonomy_id == att_question_taxonomy.taxonomy_id,
+                TaxonomyValue.code == code
+            ).first()
+
+            if question_value:
+                # Check if config already exists
+                existing_config = db.query(AttestationQuestionConfig).filter(
+                    AttestationQuestionConfig.question_value_id == question_value.value_id
+                ).first()
+
+                if not existing_config:
+                    config = AttestationQuestionConfig(
+                        question_value_id=question_value.value_id,
+                        frequency_scope=config_data["frequency_scope"],
+                        requires_comment_if_no=config_data["requires_comment_if_no"],
+                    )
+                    db.add(config)
+                    print(f"✓ Created attestation question config: {code}")
+                else:
+                    print(f"✓ Attestation question config already exists: {code}")
+
+        db.commit()
+
+    print("✓ Attestation questions seeded")
+
+
+def seed_attestation_defaults(db):
+    """Seed default attestation scheduling rules and coverage targets."""
+    print("Seeding attestation defaults...")
+
+    # Get admin user for created_by
+    admin = db.query(User).filter(User.email == "admin@example.com").first()
+    if not admin:
+        print("⚠ Admin user not found - skipping attestation rules seeding")
+        return
+
+    today = date.today()
+
+    # Default global scheduling rule (Annual attestation)
+    existing_global_rule = db.query(AttestationSchedulingRule).filter(
+        AttestationSchedulingRule.rule_type == AttestationSchedulingRuleType.GLOBAL_DEFAULT.value
+    ).first()
+
+    if not existing_global_rule:
+        global_rule = AttestationSchedulingRule(
+            rule_name="Default Annual Attestation",
+            rule_type=AttestationSchedulingRuleType.GLOBAL_DEFAULT.value,
+            frequency=AttestationFrequency.ANNUAL.value,
+            priority=1,  # Lowest priority - always applies as fallback
+            is_active=True,
+            effective_date=today,
+            created_by_user_id=admin.user_id
+        )
+        db.add(global_rule)
+        print("✓ Created global default attestation rule (Annual)")
+    else:
+        print("✓ Global default attestation rule already exists")
+
+    # Owner threshold rule (>=30 models or high_fluctuation_flag triggers quarterly)
+    existing_threshold_rule = db.query(AttestationSchedulingRule).filter(
+        AttestationSchedulingRule.rule_type == AttestationSchedulingRuleType.OWNER_THRESHOLD.value
+    ).first()
+
+    if not existing_threshold_rule:
+        threshold_rule = AttestationSchedulingRule(
+            rule_name="High Volume/Fluctuation Quarterly",
+            rule_type=AttestationSchedulingRuleType.OWNER_THRESHOLD.value,
+            frequency=AttestationFrequency.QUARTERLY.value,
+            owner_model_count_min=30,  # Correct attribute name
+            owner_high_fluctuation_flag=True,  # Also triggers for high fluctuation users
+            priority=100,  # Higher priority than global default
+            is_active=True,
+            effective_date=today,
+            created_by_user_id=admin.user_id
+        )
+        db.add(threshold_rule)
+        print("✓ Created owner threshold attestation rule (Quarterly for 30+ models)")
+    else:
+        print("✓ Owner threshold attestation rule already exists")
+
+    # MODEL_OVERRIDE example - First model gets quarterly attestation
+    first_model = db.query(Model).first()
+    if first_model:
+        existing_model_override = db.query(AttestationSchedulingRule).filter(
+            AttestationSchedulingRule.rule_type == AttestationSchedulingRuleType.MODEL_OVERRIDE.value,
+            AttestationSchedulingRule.model_id == first_model.model_id
+        ).first()
+
+        if not existing_model_override:
+            model_override_rule = AttestationSchedulingRule(
+                rule_name=f"Quarterly Override - {first_model.model_name}",
+                rule_type=AttestationSchedulingRuleType.MODEL_OVERRIDE.value,
+                frequency=AttestationFrequency.QUARTERLY.value,
+                model_id=first_model.model_id,
+                priority=200,  # Higher than global/threshold
+                is_active=True,
+                effective_date=today,
+                created_by_user_id=admin.user_id
+            )
+            db.add(model_override_rule)
+            print(f"✓ Created MODEL_OVERRIDE rule for {first_model.model_name}")
+        else:
+            print("✓ MODEL_OVERRIDE rule already exists")
+    else:
+        print("⚠ No models found - skipping MODEL_OVERRIDE rule seeding")
+
+    # REGIONAL_OVERRIDE example - APAC region gets quarterly attestation
+    apac_region = db.query(Region).filter(Region.code == "APAC").first()
+    if apac_region:
+        existing_regional_override = db.query(AttestationSchedulingRule).filter(
+            AttestationSchedulingRule.rule_type == AttestationSchedulingRuleType.REGIONAL_OVERRIDE.value,
+            AttestationSchedulingRule.region_id == apac_region.region_id
+        ).first()
+
+        if not existing_regional_override:
+            regional_override_rule = AttestationSchedulingRule(
+                rule_name=f"Quarterly Override - {apac_region.name} Models",
+                rule_type=AttestationSchedulingRuleType.REGIONAL_OVERRIDE.value,
+                frequency=AttestationFrequency.QUARTERLY.value,
+                region_id=apac_region.region_id,
+                priority=150,  # Between threshold and model override
+                is_active=True,
+                effective_date=today,
+                created_by_user_id=admin.user_id
+            )
+            db.add(regional_override_rule)
+            print(f"✓ Created REGIONAL_OVERRIDE rule for {apac_region.name}")
+        else:
+            print("✓ REGIONAL_OVERRIDE rule already exists")
+    else:
+        print("⚠ APAC region not found - skipping REGIONAL_OVERRIDE rule seeding")
+
+    db.commit()
+
+    # Default coverage targets by risk tier
+    risk_tier_taxonomy = db.query(Taxonomy).filter(
+        Taxonomy.name == "Model Risk Tier"
+    ).first()
+
+    if risk_tier_taxonomy:
+        tier_targets = {
+            "TIER_1": {"target_percentage": 100, "is_blocking": True},
+            "TIER_2": {"target_percentage": 100, "is_blocking": True},
+            "TIER_3": {"target_percentage": 95, "is_blocking": False},
+            "TIER_4": {"target_percentage": 90, "is_blocking": False},
+        }
+
+        for tier_code, target_config in tier_targets.items():
+            tier_value = db.query(TaxonomyValue).filter(
+                TaxonomyValue.taxonomy_id == risk_tier_taxonomy.taxonomy_id,
+                TaxonomyValue.code == tier_code
+            ).first()
+
+            if tier_value:
+                existing_target = db.query(CoverageTarget).filter(
+                    CoverageTarget.risk_tier_id == tier_value.value_id
+                ).first()
+
+                if not existing_target:
+                    target = CoverageTarget(
+                        risk_tier_id=tier_value.value_id,
+                        target_percentage=target_config["target_percentage"],
+                        is_blocking=target_config["is_blocking"],
+                        effective_date=today,
+                        created_by_user_id=admin.user_id
+                    )
+                    db.add(target)
+                    print(f"✓ Created coverage target for {tier_code}: {target_config['target_percentage']}%")
+                else:
+                    print(f"✓ Coverage target already exists for {tier_code}")
+
+        db.commit()
+
+    print("✓ Attestation defaults seeded")
 
 
 if __name__ == "__main__":
