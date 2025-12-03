@@ -233,7 +233,12 @@ export default function AdminDashboardPage() {
             setPendingAssignments(pendingRes.data);
             setOverdueSubmissions(overdueSubmissionsRes.data);
             setOverdueValidations(overdueValidationsRes.data);
-            setUpcomingRevalidations(upcomingRevalidationsRes.data);
+            // Filter to only show truly upcoming submissions (not past due)
+            setUpcomingRevalidations(
+                upcomingRevalidationsRes.data.filter(
+                    (r: UpcomingRevalidation) => r.days_until_submission_due > 0
+                )
+            );
             setPendingModelSubmissions(pendingModelsRes.data);
             setPendingModelEdits(pendingEditsRes.data);
             setPendingAdditionalApprovals(conditionalApprovalsRes.data);
@@ -304,6 +309,41 @@ export default function AdminDashboardPage() {
         return `${Math.floor(diffDays / 30)} months ago`;
     };
 
+    // Generic CSV export helper
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const exportToCSV = (data: any[], filename: string, columns: { key: string; label: string }[]) => {
+        if (data.length === 0) return;
+
+        const headers = columns.map(col => col.label);
+        const rows = data.map(item => {
+            return columns.map(col => {
+                const keys = col.key.split('.');
+                let value: unknown = item;
+                for (const k of keys) {
+                    value = (value as Record<string, unknown>)?.[k];
+                }
+                const strValue = value != null ? String(value) : '';
+                // Escape quotes and wrap in quotes if contains comma, quote, or newline
+                const escaped = strValue.replace(/"/g, '""');
+                return escaped.includes(',') || escaped.includes('"') || escaped.includes('\n')
+                    ? `"${escaped}"`
+                    : escaped;
+            }).join(',');
+        });
+
+        const csv = [headers.join(','), ...rows].join('\n');
+        const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+        const url = window.URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        const date = new Date().toISOString().split('T')[0];
+        link.setAttribute('download', `${filename}_${date}.csv`);
+        document.body.appendChild(link);
+        link.click();
+        link.parentNode?.removeChild(link);
+        window.URL.revokeObjectURL(url);
+    };
+
     if (loading) {
         return (
             <Layout>
@@ -328,6 +368,23 @@ export default function AdminDashboardPage() {
                         </svg>
                         <h3 className="text-sm font-semibold text-gray-700">New Model Records Awaiting Approval</h3>
                         <span className="text-xs text-gray-500 ml-auto">{pendingModelSubmissions.length} pending</span>
+                        <button
+                            onClick={() => exportToCSV(pendingModelSubmissions, 'pending_model_submissions', [
+                                { key: 'model_id', label: 'Model ID' },
+                                { key: 'model_name', label: 'Model Name' },
+                                { key: 'development_type', label: 'Development Type' },
+                                { key: 'owner.full_name', label: 'Owner' },
+                                { key: 'submitted_by_user.full_name', label: 'Submitted By' },
+                                { key: 'submitted_at', label: 'Submitted At' },
+                                { key: 'row_approval_status', label: 'Status' },
+                            ])}
+                            className="text-xs text-gray-500 hover:text-gray-700"
+                            title="Export to CSV"
+                        >
+                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                            </svg>
+                        </button>
                     </div>
                     <div className="space-y-2 max-h-64 overflow-y-auto">
                         {pendingModelSubmissions.slice(0, 5).map((submission) => (
@@ -405,6 +462,22 @@ export default function AdminDashboardPage() {
                         </svg>
                         <h3 className="text-sm font-semibold text-gray-700">Model Changes Awaiting Approval</h3>
                         <span className="text-xs text-gray-500 ml-auto">{pendingModelEdits.length} pending</span>
+                        <button
+                            onClick={() => exportToCSV(pendingModelEdits, 'pending_model_edits', [
+                                { key: 'pending_edit_id', label: 'Edit ID' },
+                                { key: 'model_id', label: 'Model ID' },
+                                { key: 'model_name', label: 'Model Name' },
+                                { key: 'requested_by.full_name', label: 'Requested By' },
+                                { key: 'requested_at', label: 'Requested At' },
+                                { key: 'status', label: 'Status' },
+                            ])}
+                            className="text-xs text-gray-500 hover:text-gray-700"
+                            title="Export to CSV"
+                        >
+                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                            </svg>
+                        </button>
                     </div>
                     <div className="space-y-2 max-h-64 overflow-y-auto">
                         {pendingModelEdits.slice(0, 5).map((edit) => (
@@ -471,6 +544,22 @@ export default function AdminDashboardPage() {
                         </svg>
                         <h3 className="text-sm font-semibold text-gray-700">Pending Additional Approvals</h3>
                         <span className="text-xs text-gray-500 ml-auto">{pendingAdditionalApprovals.length} awaiting</span>
+                        <button
+                            onClick={() => exportToCSV(pendingAdditionalApprovals, 'pending_additional_approvals', [
+                                { key: 'request_id', label: 'Request ID' },
+                                { key: 'model_id', label: 'Model ID' },
+                                { key: 'model_name', label: 'Model Name' },
+                                { key: 'validation_type', label: 'Validation Type' },
+                                { key: 'days_pending', label: 'Days Pending' },
+                                { key: 'created_at', label: 'Created At' },
+                            ])}
+                            className="text-xs text-gray-500 hover:text-gray-700"
+                            title="Export to CSV"
+                        >
+                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                            </svg>
+                        </button>
                     </div>
                     <div className="space-y-2 max-h-64 overflow-y-auto">
                         {pendingAdditionalApprovals.slice(0, 5).map((item) => (
@@ -601,6 +690,23 @@ export default function AdminDashboardPage() {
                         <span className="bg-orange-100 text-orange-700 text-xs font-medium px-2 py-0.5 rounded ml-auto">
                             {myOverdueItems.filter(i => i.needs_comment_update).length} need commentary
                         </span>
+                        <button
+                            onClick={() => exportToCSV(myOverdueItems, 'my_overdue_items', [
+                                { key: 'request_id', label: 'Request ID' },
+                                { key: 'model_name', label: 'Model Name' },
+                                { key: 'overdue_type', label: 'Overdue Type' },
+                                { key: 'days_overdue', label: 'Days Overdue' },
+                                { key: 'current_status', label: 'Status' },
+                                { key: 'comment_status', label: 'Comment Status' },
+                                { key: 'target_date', label: 'Target Date' },
+                            ])}
+                            className="text-xs text-gray-500 hover:text-gray-700"
+                            title="Export to CSV"
+                        >
+                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                            </svg>
+                        </button>
                     </div>
                     <p className="text-sm text-gray-600 mb-3">Items where you are responsible for providing delay explanations</p>
                     <div className="overflow-x-auto">
@@ -702,6 +808,25 @@ export default function AdminDashboardPage() {
                         </svg>
                         <h3 className="text-sm font-semibold text-gray-700">Pending Validator Assignments</h3>
                         <span className="text-xs text-gray-500 ml-auto">{pendingAssignments.length} awaiting</span>
+                        <button
+                            onClick={() => exportToCSV(pendingAssignments, 'pending_validator_assignments', [
+                                { key: 'request_id', label: 'Request ID' },
+                                { key: 'model_id', label: 'Model ID' },
+                                { key: 'model_name', label: 'Model Name' },
+                                { key: 'requestor_name', label: 'Requestor' },
+                                { key: 'validation_type', label: 'Validation Type' },
+                                { key: 'priority', label: 'Priority' },
+                                { key: 'region', label: 'Region' },
+                                { key: 'request_date', label: 'Request Date' },
+                                { key: 'days_pending', label: 'Days Pending' },
+                            ])}
+                            className="text-xs text-gray-500 hover:text-gray-700"
+                            title="Export to CSV"
+                        >
+                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                            </svg>
+                        </button>
                     </div>
                     <div className="space-y-2 max-h-64 overflow-y-auto">
                         {pendingAssignments.slice(0, 5).map((item, index) => (
@@ -780,6 +905,25 @@ export default function AdminDashboardPage() {
                         </svg>
                         <h3 className="text-sm font-semibold text-gray-700">Validation Team Lead Time Violations</h3>
                         <span className="text-xs text-gray-500 ml-auto">{slaViolations.length} active</span>
+                        <button
+                            onClick={() => exportToCSV(slaViolations, 'sla_violations', [
+                                { key: 'request_id', label: 'Request ID' },
+                                { key: 'model_name', label: 'Model Name' },
+                                { key: 'violation_type', label: 'Violation Type' },
+                                { key: 'sla_days', label: 'SLA Days' },
+                                { key: 'actual_days', label: 'Actual Days' },
+                                { key: 'days_overdue', label: 'Days Overdue' },
+                                { key: 'current_status', label: 'Status' },
+                                { key: 'priority', label: 'Priority' },
+                                { key: 'severity', label: 'Severity' },
+                            ])}
+                            className="text-xs text-gray-500 hover:text-gray-700"
+                            title="Export to CSV"
+                        >
+                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                            </svg>
+                        </button>
                     </div>
                     <div className="space-y-2 max-h-64 overflow-y-auto">
                         {slaViolations.slice(0, 5).map((violation, index) => (
@@ -841,6 +985,25 @@ export default function AdminDashboardPage() {
                         </svg>
                         <h3 className="text-sm font-semibold text-gray-700">Out-of-Order Validation Alerts</h3>
                         <span className="text-xs text-gray-500 ml-auto">{outOfOrder.length} active</span>
+                        <button
+                            onClick={() => exportToCSV(outOfOrder, 'out_of_order_validations', [
+                                { key: 'request_id', label: 'Request ID' },
+                                { key: 'model_name', label: 'Model Name' },
+                                { key: 'version_number', label: 'Version' },
+                                { key: 'validation_type', label: 'Validation Type' },
+                                { key: 'target_completion_date', label: 'Target Completion' },
+                                { key: 'production_date', label: 'Production Date' },
+                                { key: 'days_gap', label: 'Days Gap' },
+                                { key: 'current_status', label: 'Status' },
+                                { key: 'priority', label: 'Priority' },
+                            ])}
+                            className="text-xs text-gray-500 hover:text-gray-700"
+                            title="Export to CSV"
+                        >
+                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                            </svg>
+                        </button>
                     </div>
                     <div className="space-y-2 max-h-64 overflow-y-auto">
                         {outOfOrder.slice(0, 5).map((item, index) => (
@@ -915,6 +1078,26 @@ export default function AdminDashboardPage() {
                                 <h3 className="text-lg font-bold text-orange-900">
                                     Pending and Overdue Revalidation Submissions ({overdueSubmissions.length})
                                 </h3>
+                                <button
+                                    onClick={() => exportToCSV(overdueSubmissions, 'overdue_submissions', [
+                                        { key: 'request_id', label: 'Request ID' },
+                                        { key: 'model_id', label: 'Model ID' },
+                                        { key: 'model_name', label: 'Model Name' },
+                                        { key: 'model_owner', label: 'Owner' },
+                                        { key: 'submission_due_date', label: 'Submission Due' },
+                                        { key: 'grace_period_end', label: 'Grace Period End' },
+                                        { key: 'days_overdue', label: 'Days Overdue' },
+                                        { key: 'urgency', label: 'Urgency' },
+                                        { key: 'submission_status', label: 'Status' },
+                                        { key: 'comment_status', label: 'Commentary Status' },
+                                    ])}
+                                    className="ml-auto text-orange-600 hover:text-orange-800"
+                                    title="Export to CSV"
+                                >
+                                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                    </svg>
+                                </button>
                             </div>
                             <p className="text-sm text-orange-700 ml-7">Models past submission due date (includes those in grace period and fully overdue)</p>
                         </div>
@@ -1005,92 +1188,6 @@ export default function AdminDashboardPage() {
                     </div>
                 )}
 
-                {/* Overdue Validations */}
-                {overdueValidations.length > 0 && (
-                    <div className="bg-white rounded-lg shadow-md overflow-hidden">
-                        <div className="p-4 border-b bg-red-50">
-                            <div className="flex items-center">
-                                <svg className="h-5 w-5 text-red-600 mr-2" fill="currentColor" viewBox="0 0 20 20">
-                                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
-                                </svg>
-                                <h3 className="text-lg font-bold text-red-900">
-                                    Overdue Validations ({overdueValidations.length})
-                                </h3>
-                            </div>
-                            <p className="text-sm text-red-700 ml-7">Models past their final validation due date</p>
-                        </div>
-                        <table className="min-w-full divide-y divide-gray-200">
-                            <thead className="bg-gray-50">
-                                <tr>
-                                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Model</th>
-                                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Owner</th>
-                                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Validation Due</th>
-                                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Days Overdue</th>
-                                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
-                                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Commentary</th>
-                                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Target Date</th>
-                                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
-                                </tr>
-                            </thead>
-                            <tbody className="bg-white divide-y divide-gray-200">
-                                {overdueValidations.map((validation) => (
-                                    <tr key={validation.request_id} className={`hover:bg-red-50 ${validation.needs_comment_update ? 'bg-red-50' : ''}`}>
-                                        <td className="px-4 py-3 whitespace-nowrap">
-                                            <Link
-                                                to={`/models/${validation.model_id}`}
-                                                className="text-blue-600 hover:text-blue-800 font-medium"
-                                            >
-                                                {validation.model_name}
-                                            </Link>
-                                        </td>
-                                        <td className="px-4 py-3 whitespace-nowrap text-sm">{validation.model_owner}</td>
-                                        <td className="px-4 py-3 whitespace-nowrap text-sm">{validation.model_validation_due_date}</td>
-                                        <td className="px-4 py-3 whitespace-nowrap">
-                                            <span className="px-2 py-1 text-xs font-semibold rounded bg-red-100 text-red-800">
-                                                {validation.days_overdue} days
-                                            </span>
-                                        </td>
-                                        <td className="px-4 py-3 whitespace-nowrap text-sm">{validation.current_status}</td>
-                                        <td className="px-4 py-3 whitespace-nowrap">
-                                            <div className="flex flex-col gap-1">
-                                                <span className={`px-2 py-1 text-xs font-semibold rounded inline-block w-fit ${getCommentStatusBadge(validation.comment_status)}`}>
-                                                    {getCommentStatusLabel(validation.comment_status)}
-                                                </span>
-                                                {validation.latest_comment && (
-                                                    <span className="text-xs text-gray-500 truncate max-w-32" title={validation.latest_comment}>
-                                                        "{validation.latest_comment.substring(0, 30)}..."
-                                                    </span>
-                                                )}
-                                            </div>
-                                        </td>
-                                        <td className="px-4 py-3 whitespace-nowrap text-sm">
-                                            {validation.target_completion_date || <span className="text-gray-400">-</span>}
-                                        </td>
-                                        <td className="px-4 py-3 whitespace-nowrap">
-                                            <div className="flex gap-2">
-                                                <Link
-                                                    to={`/validation-workflow/${validation.request_id}`}
-                                                    className="text-blue-600 hover:text-blue-800 text-sm"
-                                                >
-                                                    View
-                                                </Link>
-                                                {validation.needs_comment_update && (
-                                                    <button
-                                                        onClick={() => openCommentaryModal(validation.request_id, 'VALIDATION_IN_PROGRESS', validation.model_name)}
-                                                        className="text-red-600 hover:text-red-800 text-sm font-medium"
-                                                    >
-                                                        Add Commentary
-                                                    </button>
-                                                )}
-                                            </div>
-                                        </td>
-                                    </tr>
-                                ))}
-                            </tbody>
-                        </table>
-                    </div>
-                )}
-
                 {/* Overdue Monitoring Cycles */}
                 {overdueMonitoringCycles.length > 0 && (
                     <div className="bg-white rounded-lg shadow-md overflow-hidden">
@@ -1102,6 +1199,25 @@ export default function AdminDashboardPage() {
                                 <h3 className="text-lg font-bold text-red-900">
                                     Overdue Monitoring Cycles ({overdueMonitoringCycles.length})
                                 </h3>
+                                <button
+                                    onClick={() => exportToCSV(overdueMonitoringCycles, 'overdue_monitoring_cycles', [
+                                        { key: 'cycle_id', label: 'Cycle ID' },
+                                        { key: 'plan_id', label: 'Plan ID' },
+                                        { key: 'plan_name', label: 'Plan Name' },
+                                        { key: 'period_label', label: 'Period' },
+                                        { key: 'due_date', label: 'Due Date' },
+                                        { key: 'days_overdue', label: 'Days Overdue' },
+                                        { key: 'status', label: 'Status' },
+                                        { key: 'team_name', label: 'Team' },
+                                        { key: 'data_provider_name', label: 'Data Provider' },
+                                    ])}
+                                    className="ml-auto text-red-600 hover:text-red-800"
+                                    title="Export to CSV"
+                                >
+                                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                    </svg>
+                                </button>
                             </div>
                             <p className="text-sm text-red-700 ml-7">Monitoring cycles past their report due date</p>
                         </div>
@@ -1203,6 +1319,25 @@ export default function AdminDashboardPage() {
                                 <h3 className="text-lg font-bold text-orange-900">
                                     Overdue Recommendations ({overdueRecommendations.length})
                                 </h3>
+                                <button
+                                    onClick={() => exportToCSV(overdueRecommendations, 'overdue_recommendations', [
+                                        { key: 'recommendation_id', label: 'ID' },
+                                        { key: 'recommendation_code', label: 'Code' },
+                                        { key: 'title', label: 'Title' },
+                                        { key: 'model.model_name', label: 'Model' },
+                                        { key: 'priority.label', label: 'Priority' },
+                                        { key: 'current_status.label', label: 'Status' },
+                                        { key: 'assigned_to.full_name', label: 'Assigned To' },
+                                        { key: 'current_target_date', label: 'Target Date' },
+                                        { key: 'days_overdue', label: 'Days Overdue' },
+                                    ])}
+                                    className="ml-auto text-orange-600 hover:text-orange-800"
+                                    title="Export to CSV"
+                                >
+                                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                    </svg>
+                                </button>
                             </div>
                             <p className="text-sm text-orange-700 ml-7">Recommendations past their target remediation date</p>
                         </div>
@@ -1291,6 +1426,111 @@ export default function AdminDashboardPage() {
                     </div>
                 )}
 
+                {/* Overdue Validations */}
+                {overdueValidations.length > 0 && (
+                    <div className="bg-white rounded-lg shadow-md overflow-hidden">
+                        <div className="p-4 border-b bg-red-50">
+                            <div className="flex items-center">
+                                <svg className="h-5 w-5 text-red-600 mr-2" fill="currentColor" viewBox="0 0 20 20">
+                                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+                                </svg>
+                                <h3 className="text-lg font-bold text-red-900">
+                                    Overdue Validations ({overdueValidations.length})
+                                </h3>
+                                <button
+                                    onClick={() => exportToCSV(overdueValidations, 'overdue_validations', [
+                                        { key: 'request_id', label: 'Request ID' },
+                                        { key: 'model_id', label: 'Model ID' },
+                                        { key: 'model_name', label: 'Model Name' },
+                                        { key: 'model_owner', label: 'Owner' },
+                                        { key: 'model_validation_due_date', label: 'Validation Due' },
+                                        { key: 'days_overdue', label: 'Days Overdue' },
+                                        { key: 'current_status', label: 'Status' },
+                                        { key: 'comment_status', label: 'Commentary Status' },
+                                        { key: 'target_completion_date', label: 'Target Date' },
+                                    ])}
+                                    className="ml-auto text-red-600 hover:text-red-800"
+                                    title="Export to CSV"
+                                >
+                                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                    </svg>
+                                </button>
+                            </div>
+                            <p className="text-sm text-red-700 ml-7">Models past their final validation due date</p>
+                        </div>
+                        <table className="min-w-full divide-y divide-gray-200">
+                            <thead className="bg-gray-50">
+                                <tr>
+                                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Model</th>
+                                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Owner</th>
+                                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Validation Due</th>
+                                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Days Overdue</th>
+                                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+                                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Commentary</th>
+                                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Target Date</th>
+                                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody className="bg-white divide-y divide-gray-200">
+                                {overdueValidations.map((validation) => (
+                                    <tr key={validation.request_id} className={`hover:bg-red-50 ${validation.needs_comment_update ? 'bg-red-50' : ''}`}>
+                                        <td className="px-4 py-3 whitespace-nowrap">
+                                            <Link
+                                                to={`/models/${validation.model_id}`}
+                                                className="text-blue-600 hover:text-blue-800 font-medium"
+                                            >
+                                                {validation.model_name}
+                                            </Link>
+                                        </td>
+                                        <td className="px-4 py-3 whitespace-nowrap text-sm">{validation.model_owner}</td>
+                                        <td className="px-4 py-3 whitespace-nowrap text-sm">{validation.model_validation_due_date}</td>
+                                        <td className="px-4 py-3 whitespace-nowrap">
+                                            <span className="px-2 py-1 text-xs font-semibold rounded bg-red-100 text-red-800">
+                                                {validation.days_overdue} days
+                                            </span>
+                                        </td>
+                                        <td className="px-4 py-3 whitespace-nowrap text-sm">{validation.current_status}</td>
+                                        <td className="px-4 py-3 whitespace-nowrap">
+                                            <div className="flex flex-col gap-1">
+                                                <span className={`px-2 py-1 text-xs font-semibold rounded inline-block w-fit ${getCommentStatusBadge(validation.comment_status)}`}>
+                                                    {getCommentStatusLabel(validation.comment_status)}
+                                                </span>
+                                                {validation.latest_comment && (
+                                                    <span className="text-xs text-gray-500 truncate max-w-32" title={validation.latest_comment}>
+                                                        "{validation.latest_comment.substring(0, 30)}..."
+                                                    </span>
+                                                )}
+                                            </div>
+                                        </td>
+                                        <td className="px-4 py-3 whitespace-nowrap text-sm">
+                                            {validation.target_completion_date || <span className="text-gray-400">-</span>}
+                                        </td>
+                                        <td className="px-4 py-3 whitespace-nowrap">
+                                            <div className="flex gap-2">
+                                                <Link
+                                                    to={`/validation-workflow/${validation.request_id}`}
+                                                    className="text-blue-600 hover:text-blue-800 text-sm"
+                                                >
+                                                    View
+                                                </Link>
+                                                {validation.needs_comment_update && (
+                                                    <button
+                                                        onClick={() => openCommentaryModal(validation.request_id, 'VALIDATION_IN_PROGRESS', validation.model_name)}
+                                                        className="text-red-600 hover:text-red-800 text-sm font-medium"
+                                                    >
+                                                        Add Commentary
+                                                    </button>
+                                                )}
+                                            </div>
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                )}
+
                 {/* Upcoming Submissions */}
                 {upcomingRevalidations.length > 0 && (
                     <div className="bg-white rounded-lg shadow-md overflow-hidden">
@@ -1302,6 +1542,25 @@ export default function AdminDashboardPage() {
                                 <h3 className="text-lg font-bold text-blue-900">
                                     Upcoming Submissions ({upcomingRevalidations.length})
                                 </h3>
+                                <button
+                                    onClick={() => exportToCSV(upcomingRevalidations, 'upcoming_submissions', [
+                                        { key: 'model_id', label: 'Model ID' },
+                                        { key: 'model_name', label: 'Model Name' },
+                                        { key: 'model_owner', label: 'Owner' },
+                                        { key: 'risk_tier', label: 'Risk Tier' },
+                                        { key: 'status', label: 'Status' },
+                                        { key: 'last_validation_date', label: 'Last Validation' },
+                                        { key: 'next_submission_due', label: 'Submission Due' },
+                                        { key: 'next_validation_due', label: 'Validation Due' },
+                                        { key: 'days_until_submission_due', label: 'Days Until Due' },
+                                    ])}
+                                    className="ml-auto text-blue-600 hover:text-blue-800"
+                                    title="Export to CSV"
+                                >
+                                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                    </svg>
+                                </button>
                             </div>
                             <p className="text-sm text-blue-700 ml-7">Models with submissions due in the next 90 days</p>
                         </div>

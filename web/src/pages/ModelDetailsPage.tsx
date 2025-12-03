@@ -208,6 +208,19 @@ interface PendingEdit {
     review_comment: string | null;
 }
 
+interface FinalRiskRanking {
+    original_scorecard: string;
+    days_overdue: number;
+    past_due_level: string;
+    past_due_level_code: string;
+    downgrade_notches: number;
+    adjusted_scorecard: string;
+    inherent_risk_tier: string;
+    inherent_risk_tier_label: string | null;
+    final_rating: string | null;
+    residual_risk_without_penalty: string | null;
+}
+
 interface RecommendationListItem {
     recommendation_id: number;
     recommendation_code: string;
@@ -267,6 +280,7 @@ export default function ModelDetailsPage() {
     const [submittingPendingEdit, setSubmittingPendingEdit] = useState(false);
     const [recommendations, setRecommendations] = useState<RecommendationListItem[]>([]);
     const [recommendationsLoading, setRecommendationsLoading] = useState(false);
+    const [finalRiskRanking, setFinalRiskRanking] = useState<FinalRiskRanking | null>(null);
     const [formData, setFormData] = useState({
         model_name: '',
         description: '',
@@ -427,6 +441,18 @@ export default function ModelDetailsPage() {
                 setRevalidationStatus(null);
                 setDecommissioningRequests([]);
                 setNameHistory([]);
+            }
+
+            // Fetch final risk ranking (optional - may not exist for models without approved validations)
+            try {
+                const finalRankingRes = await api.get(`/models/${id}/final-risk-ranking`);
+                setFinalRiskRanking(finalRankingRes.data);
+            } catch (rankingError: any) {
+                // 404 is expected when model has no approved validation with scorecard
+                if (rankingError.response?.status !== 404) {
+                    console.error('Failed to fetch final risk ranking:', rankingError);
+                }
+                setFinalRiskRanking(null);
             }
         } catch (error) {
             console.error('Failed to fetch model:', error);
@@ -2269,7 +2295,16 @@ export default function ModelDetailsPage() {
                             .sort((a, b) => new Date(b.completion_date || b.created_at).getTime() - new Date(a.completion_date || a.created_at).getTime());
                         const latestApproved = approvedValidations[0];
 
-                        if (!latestApproved && !model.risk_tier) return null;
+                        if (!latestApproved && !model.risk_tier && !finalRiskRanking) return null;
+
+                        const hasPenalty = finalRiskRanking && finalRiskRanking.downgrade_notches > 0;
+
+                        // Helper to get scorecard badge class
+                        const getScorecardBadgeClass = (rating: string) => {
+                            if (rating.includes('Green')) return 'bg-green-100 text-green-800';
+                            if (rating.includes('Yellow')) return 'bg-yellow-100 text-yellow-800';
+                            return 'bg-red-100 text-red-800';
+                        };
 
                         return (
                             <div className="mt-6 bg-gradient-to-r from-gray-50 to-slate-50 p-5 rounded-lg border border-gray-200">
@@ -2278,7 +2313,14 @@ export default function ModelDetailsPage() {
                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
                                     </svg>
                                     Risk Assessment Summary
+                                    {hasPenalty && (
+                                        <span className="ml-2 px-2 py-0.5 text-xs rounded bg-amber-100 text-amber-800">
+                                            Overdue Penalty Applied
+                                        </span>
+                                    )}
                                 </h4>
+
+                                {/* Row 1: Inherent Risk + Original Scorecard + Base Residual Risk */}
                                 <div className="grid grid-cols-3 gap-4">
                                     <div className="bg-white p-4 rounded border border-gray-200">
                                         <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Inherent Risk Tier</p>
@@ -2291,24 +2333,30 @@ export default function ModelDetailsPage() {
                                         )}
                                     </div>
                                     <div className="bg-white p-4 rounded border border-gray-200">
-                                        <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Scorecard Outcome</p>
+                                        <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">
+                                            {hasPenalty ? 'Original Scorecard' : 'Scorecard Outcome'}
+                                        </p>
                                         {latestApproved?.scorecard_overall_rating ? (
-                                            <span className={`px-2 py-1 text-sm rounded font-medium ${
-                                                latestApproved.scorecard_overall_rating.includes('Green')
-                                                    ? 'bg-green-100 text-green-800'
-                                                    : latestApproved.scorecard_overall_rating.includes('Yellow')
-                                                    ? 'bg-yellow-100 text-yellow-800'
-                                                    : 'bg-red-100 text-red-800'
-                                            }`}>
+                                            <span className={`px-2 py-1 text-sm rounded font-medium ${getScorecardBadgeClass(latestApproved.scorecard_overall_rating)}`}>
                                                 {latestApproved.scorecard_overall_rating}
+                                            </span>
+                                        ) : finalRiskRanking?.original_scorecard ? (
+                                            <span className={`px-2 py-1 text-sm rounded font-medium ${getScorecardBadgeClass(finalRiskRanking.original_scorecard)}`}>
+                                                {finalRiskRanking.original_scorecard}
                                             </span>
                                         ) : (
                                             <span className="text-gray-400">No scorecard</span>
                                         )}
                                     </div>
                                     <div className="bg-white p-4 rounded border border-gray-200">
-                                        <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Residual Risk</p>
-                                        {latestApproved?.residual_risk ? (
+                                        <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">
+                                            {hasPenalty ? 'Base Residual Risk' : 'Residual Risk'}
+                                        </p>
+                                        {hasPenalty && finalRiskRanking?.residual_risk_without_penalty ? (
+                                            <span className={getResidualRiskBadgeClass(finalRiskRanking.residual_risk_without_penalty)}>
+                                                {finalRiskRanking.residual_risk_without_penalty}
+                                            </span>
+                                        ) : latestApproved?.residual_risk ? (
                                             <span className={getResidualRiskBadgeClass(latestApproved.residual_risk)}>
                                                 {latestApproved.residual_risk}
                                             </span>
@@ -2317,6 +2365,45 @@ export default function ModelDetailsPage() {
                                         )}
                                     </div>
                                 </div>
+
+                                {/* Row 2: Penalty Details (only shown when there's a penalty) */}
+                                {hasPenalty && finalRiskRanking && (
+                                    <div className="mt-4 grid grid-cols-3 gap-4">
+                                        <div className="bg-amber-50 p-4 rounded border border-amber-200">
+                                            <p className="text-xs text-amber-700 uppercase tracking-wide mb-1">Overdue Status</p>
+                                            <div className="flex flex-col gap-1">
+                                                <span className="px-2 py-1 text-sm rounded bg-amber-100 text-amber-800 font-medium inline-block w-fit">
+                                                    {finalRiskRanking.past_due_level}
+                                                </span>
+                                                <span className="text-xs text-amber-600">
+                                                    {finalRiskRanking.days_overdue} days overdue
+                                                </span>
+                                            </div>
+                                        </div>
+                                        <div className="bg-amber-50 p-4 rounded border border-amber-200">
+                                            <p className="text-xs text-amber-700 uppercase tracking-wide mb-1">Adjusted Scorecard</p>
+                                            <div className="flex flex-col gap-1">
+                                                <span className={`px-2 py-1 text-sm rounded font-medium inline-block w-fit ${getScorecardBadgeClass(finalRiskRanking.adjusted_scorecard)}`}>
+                                                    {finalRiskRanking.adjusted_scorecard}
+                                                </span>
+                                                <span className="text-xs text-amber-600">
+                                                    -{finalRiskRanking.downgrade_notches} notch{finalRiskRanking.downgrade_notches !== 1 ? 'es' : ''} penalty
+                                                </span>
+                                            </div>
+                                        </div>
+                                        <div className="bg-gradient-to-r from-amber-50 to-red-50 p-4 rounded border border-amber-300">
+                                            <p className="text-xs text-amber-800 uppercase tracking-wide mb-1 font-semibold">Final Risk Rating</p>
+                                            {finalRiskRanking.final_rating ? (
+                                                <span className={`px-2 py-1 text-sm rounded font-bold ${getResidualRiskBadgeClass(finalRiskRanking.final_rating)}`}>
+                                                    {finalRiskRanking.final_rating}
+                                                </span>
+                                            ) : (
+                                                <span className="text-gray-400">Not computed</span>
+                                            )}
+                                        </div>
+                                    </div>
+                                )}
+
                                 {latestApproved && (
                                     <p className="text-xs text-gray-500 mt-3">
                                         Based on validation approved {latestApproved.completion_date?.split('T')[0] || latestApproved.created_at.split('T')[0]}

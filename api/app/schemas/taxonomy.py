@@ -13,6 +13,7 @@ class TaxonomyValueBase(BaseModel):
     is_active: bool = True
     min_days: int | None = None
     max_days: int | None = None
+    downgrade_notches: int | None = None  # Scorecard penalty for Final Risk Ranking
 
 
 class TaxonomyValueCreate(TaxonomyValueBase):
@@ -29,6 +30,7 @@ class TaxonomyValueUpdate(BaseModel):
     is_active: bool | None = None
     min_days: int | None = None
     max_days: int | None = None
+    downgrade_notches: int | None = None  # Scorecard penalty for Final Risk Ranking
 
 
 class TaxonomyValueResponse(TaxonomyValueBase):

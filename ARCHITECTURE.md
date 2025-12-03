@@ -99,7 +99,7 @@ Model Risk Management inventory system with a FastAPI backend, React/TypeScript 
 - ValidationRequest lifecycle with status history, assignments (validators), plan (components and deviations), approvals (traditional + conditional), outcomes/review outcomes, deployment tasks, and policies/SLA settings per risk tier. **Prior Validation Linking**: `prior_validation_request_id` (most recent APPROVED validation) and `prior_full_validation_request_id` (most recent APPROVED INITIAL/COMPREHENSIVE validation) are auto-populated when creating new validation requests.
 - **ValidationPolicy**: Per-risk-tier configuration for validation scheduling with `frequency_months` (re-validation frequency), `grace_period_months` (additional time after submission due before overdue), and `model_change_lead_time_days` (days to complete validation after grace period). All fields are admin-configurable via `/validation-workflow/policies/` endpoints.
 - **Conditional Model Use Approvals**: ApproverRole (committees/roles), ConditionalApprovalRule (configurable rules based on validation type, risk tier, governance region, deployed regions), RuleRequiredApprover (many-to-many link). ValidationApproval extended with approver_role_id, approval_evidence, voiding fields. Model extended with use_approval_date timestamp.
-- Taxonomy/TaxonomyValue for configurable lists (risk tier, validation types, statuses, priorities, **Model Hierarchy Type, Model Dependency Type, Application Relationship Type**, etc.). **Bucket Taxonomies**: `taxonomy_type='bucket'` enables range-based values with `min_days`/`max_days` columns for contiguous day ranges (e.g., Past Due Level taxonomy classifies overdue models into Current/Minimal/Moderate/Significant/Critical/Obsolete buckets). Bucket taxonomies enforce contiguity validation (no gaps/overlaps), require admin role for modifications, and are used in Overdue Revalidation Report for severity classification.
+- Taxonomy/TaxonomyValue for configurable lists (risk tier, validation types, statuses, priorities, **Model Hierarchy Type, Model Dependency Type, Application Relationship Type**, etc.). **Bucket Taxonomies**: `taxonomy_type='bucket'` enables range-based values with `min_days`/`max_days` columns for contiguous day ranges (e.g., Past Due Level taxonomy classifies overdue models into Current/Minimal/Moderate/Significant/Critical/Obsolete buckets). Bucket taxonomies also support `downgrade_notches` column for configuring scorecard penalty in Final Risk Ranking calculation. Bucket taxonomies enforce contiguity validation (no gaps/overlaps), require admin role for modifications, and are used in Overdue Revalidation Report for severity classification and Final Risk Ranking for overdue penalty computation.
 - MapApplication (mock MAP inventory) and ModelApplication (model-application links with relationship type, effective/end dates for soft delete).
 - **Model Decommissioning**: DecommissioningRequest (model retirement workflow with status PENDING → VALIDATOR_APPROVED → APPROVED/REJECTED/WITHDRAWN), DecommissioningStatusHistory (audit trail), DecommissioningApproval (GLOBAL and REGIONAL approvals). Tracks reason (from Model Decommission Reason taxonomy), replacement model (required for REPLACEMENT/CONSOLIDATION reasons), last production date, gap analysis with justification, archive location. **Stage 1 Dual Approval**: When requestor is NOT the model owner, both Validator AND Owner approval are required before Stage 2 (tracked via `owner_approval_required`, `owner_reviewed_by_id`, `owner_reviewed_at`, `owner_comment`). Either can approve first; status stays PENDING until both complete. **Update Support**: PATCH endpoint allows creator or Admin to update requests while in PENDING status (with audit logging for all field changes).
 - Region and VersionDeploymentTask for regional deployment approvals.
@@ -510,6 +510,45 @@ Model Risk Management inventory system with a FastAPI backend, React/TypeScript 
   - **ModelDetailsPage "Risk Assessment Summary"**: Shows Inherent Risk Tier, Scorecard Outcome, and computed Residual Risk (from latest approved validation)
   - **OverdueRevalidationReportPage**: Residual Risk column with color-coded badges, included in CSV export
 - **API Client**: `web/src/api/residualRiskMap.ts` with helper functions for color styling
+
+## Final Model Risk Ranking (Overdue Penalty)
+- **Purpose**: Compute a penalty-adjusted risk rating that accounts for overdue validation status by downgrading the scorecard outcome before residual risk calculation.
+- **Data Model**:
+  - **downgrade_notches**: Column added to `TaxonomyValue` for bucket taxonomies (specifically "Past Due Level"). Stores number of notches (0-5) to downgrade scorecard when model is in that past-due bucket.
+- **Computation Flow**:
+  1. Get model's most recent validation with scorecard result
+  2. Calculate days overdue based on validation policy and completion date
+  3. Determine past-due bucket (CURRENT, MINIMAL, MODERATE, SIGNIFICANT, CRITICAL, OBSOLETE)
+  4. Apply downgrade notches to original scorecard (e.g., Green- → Yellow+ with 1 notch)
+  5. Feed adjusted scorecard + inherent risk tier into Residual Risk Map
+  6. Return final rating with full penalty details
+- **Scorecard Scale** (ordered from best to worst):
+  - Green (6) → Green- (5) → Yellow+ (4) → Yellow (3) → Yellow- (2) → Red (1)
+  - Downgrade capped at Red (cannot go below)
+- **Default Downgrade Notches** (seeded):
+  - CURRENT (≤0 days): 0 notches
+  - MINIMAL (1-365 days): 1 notch
+  - MODERATE (366-730 days): 2 notches
+  - SIGNIFICANT (731-1095 days): 3 notches
+  - CRITICAL (1096-1825 days): 3 notches
+  - OBSOLETE (≥1826 days): 3 notches
+- **API Endpoint**:
+  - `GET /models/{model_id}/final-risk-ranking` - Returns computed final rating with:
+    - original_scorecard, days_overdue, past_due_level, downgrade_notches
+    - adjusted_scorecard, inherent_risk_tier, final_rating
+    - residual_risk_without_penalty (for comparison)
+- **Frontend**:
+  - TaxonomyPage: "Downgrade" column for bucket taxonomies showing downgrade_notches value
+  - ModelDetailsPage: Enhanced "Risk Assessment Summary" with:
+    - Row 1: Inherent Risk Tier, Original Scorecard, Base Residual Risk
+    - Row 2 (when penalty applied): Overdue Status, Adjusted Scorecard, Final Risk Rating
+    - "Overdue Penalty Applied" badge in section header
+- **Computation Module**: `api/app/core/final_rating.py` with functions:
+  - `downgrade_scorecard()` - Apply N-notch penalty
+  - `get_past_due_level_with_notches()` - Get bucket with downgrade config
+  - `lookup_residual_risk()` - Matrix lookup
+  - `calculate_model_days_overdue()` - Days overdue calculation
+  - `compute_final_model_risk_ranking()` - Main orchestration function
 
 ## Model Risk Assessment System
 - **Purpose**: Derive model inherent risk tier from qualitative and quantitative factors using a standardized matrix approach with optional overrides at three levels.

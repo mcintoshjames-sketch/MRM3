@@ -774,6 +774,64 @@ cd web && pnpm test:coverage
 - [x] Config criteria have required fields
 - [x] Config sections have required fields
 
+#### Final Model Risk Ranking (`test_final_rating.py`) - 📋 Tests Pending
+
+The Final Model Risk Ranking feature computes a penalty-adjusted risk rating based on a model's overdue validation status. The scorecard outcome is downgraded by configurable notches based on the Past Due Level bucket, then the adjusted scorecard is fed into the Residual Risk Map to determine the final rating.
+
+##### Days Overdue Calculation (7 tests pending)
+- [📋] Model with APPROVED validation returns days since completion
+- [📋] Model with no validations returns days since implementation
+- [📋] Model with no implementation date returns None
+- [📋] Model with pending validation excluded from calculation
+- [📋] Most recent APPROVED validation used when multiple exist
+- [📋] Completion date used over request date for approved validations
+- [📋] Negative days handled (recently validated = 0 days overdue)
+
+##### Past Due Bucket Lookup (6 tests pending)
+- [📋] Days within first bucket returns CURRENT
+- [📋] Days in middle bucket returns correct bucket
+- [📋] Days at boundary returns lower bucket (inclusive min)
+- [📋] Very high days returns OBSOLETE bucket
+- [📋] Bucket lookup respects min_days/max_days ranges
+- [📋] Returns None when no matching bucket found
+
+##### Scorecard Downgrade (8 tests pending)
+- [📋] Green (6) downgraded by 1 notch → Green- (5)
+- [📋] Green (6) downgraded by 3 notches → Yellow (3)
+- [📋] Yellow (3) downgraded by 5 notches → Red (1) [capped]
+- [📋] Red (1) with any downgrade stays Red (1)
+- [📋] N/A (0) stays N/A regardless of downgrade
+- [📋] Downgrade of 0 returns original score
+- [📋] Scorecard scale: Green(6) → Green-(5) → Yellow+(4) → Yellow(3) → Yellow-(2) → Red(1)
+- [📋] Score to rating conversion after downgrade
+
+##### Final Risk Ranking Computation (10 tests pending)
+- [📋] Model without scorecard returns 404
+- [📋] Model without risk tier returns 404
+- [📋] CURRENT bucket (0 notches) returns original rating
+- [📋] MINIMAL bucket (1 notch) applies single downgrade
+- [📋] SIGNIFICANT bucket (3 notches) applies multi-downgrade
+- [📋] OBSOLETE bucket (5 notches) caps at Red
+- [📋] Response includes original_scorecard, adjusted_scorecard
+- [📋] Response includes inherent_risk_tier, final_rating
+- [📋] Response includes penalty_applied (true/false)
+- [📋] Response includes downgrade_notches count
+
+##### API Endpoint (5 tests pending)
+- [📋] GET /models/{id}/final-risk-ranking returns computed rating
+- [📋] GET returns 404 for non-existent model
+- [📋] GET returns 404 when model has no scorecard data
+- [📋] GET returns 404 when no residual risk map configured
+- [📋] Endpoint requires authentication
+
+##### Integration (4 tests pending)
+- [📋] Full flow: Overdue model → bucket lookup → downgrade → final rating
+- [📋] Audit log created for final rating computation
+- [📋] Frontend displays penalty information when penalty_applied=true
+- [📋] Frontend hides penalty section when penalty_applied=false
+
+**Note**: The Final Model Risk Ranking feature requires validation scorecard data to be present. In seed data without completed validations/scorecards, the endpoint correctly returns 404.
+
 #### Model Limitations (`test_limitations.py`) - 27 tests
 
 ##### List Limitations (6 tests)
@@ -1131,6 +1189,7 @@ describe('NewPage', () => {
 | **Model Risk Assessment** | ✅ test_risk_assessment_audit.py (54 tests) | ✅ ModelDetailsPage Risk Assessment tab + TaxonomyPage Risk Factors tab | 2025-11-30 |
 | **Validation Scorecard** | ✅ test_scorecard.py (56 tests) | ✅ ValidationScorecardTab.tsx (auto-save, section summaries, progress indicator) | 2025-12-01 |
 | **Model Limitations** | ✅ test_limitations.py (30 tests) | ✅ ModelLimitationsTab.tsx (CRUD modals, retirement) + CriticalLimitationsReportPage.tsx + ValidationRequestDetailPage limitations tab | 2025-12-02 |
+| **Final Model Risk Ranking** | 📋 test_final_rating.py (40 tests pending) | ✅ ModelDetailsPage Risk Assessment Summary (Final Risk Ranking display with penalty info) | 2025-12-02 |
 
 **Features Added:**
 - Development type (In-House / Third-Party)
@@ -1166,6 +1225,7 @@ describe('NewPage', () => {
 - **Model Risk Assessment** (qualitative/quantitative risk scoring with inherent risk matrix; admin-configurable weighted factors with rating guidance; three-level overrides with justification; per-region assessments; automatic tier sync to model; TaxonomyPage Risk Factors tab for admin configuration; ModelDetailsPage Risk Assessment tab for assessment entry)
 - **Validation Scorecard** (standardized rating framework for validators; 3 sections with 14 criteria loaded from SCORE_CRITERIA.json; rating scale Green(6) to Red(1) with N/A(0); weighted section summaries with half-up rounding; overall assessment computation; auto-save on rating change; linked to ValidationRequest enabling scorecard completion before outcome determination; ValidationScorecardTab.tsx with summary card, progress indicator, collapsible sections)
 - **Model Limitations** (track inherent constraints/weaknesses discovered during validation; Critical vs Non-Critical significance; category taxonomy: Data, Implementation, Methodology, Model Output, Other; conclusion workflow: Mitigate or Accept; user_awareness_description required for Critical; optional links to validation requests, model versions, and recommendations; retirement workflow with commentary; Critical Limitations Report with region filtering and CSV export; ModelLimitationsTab.tsx with CRUD modals + CriticalLimitationsReportPage.tsx)
+- **Final Model Risk Ranking** (penalty-adjusted risk rating based on overdue validation status; scorecard outcome downgraded by configurable notches from Past Due Level bucket taxonomy; adjusted scorecard fed into Residual Risk Map; downgrade_notches field on bucket taxonomy values [0=CURRENT to 5=OBSOLETE]; computation module in api/app/core/final_rating.py; API endpoint GET /models/{id}/final-risk-ranking; ModelDetailsPage Risk Assessment Summary enhanced with penalty display showing original vs adjusted scorecard and final rating)
 
 **Total: 778+ tests (650+ backend + 128 frontend)**
 - Backend: 650+ passing (some pre-existing failures in recommendations/regional scope tests)

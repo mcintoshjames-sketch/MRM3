@@ -55,6 +55,7 @@ interface TaxonomyValue {
     is_active: boolean;
     min_days: number | null;
     max_days: number | null;
+    downgrade_notches: number | null;  // Scorecard penalty for Final Risk Ranking
     created_at: string;
 }
 
@@ -356,7 +357,8 @@ export default function TaxonomyPage() {
         sort_order: 0,
         is_active: true,
         min_days: null as number | null,
-        max_days: null as number | null
+        max_days: null as number | null,
+        downgrade_notches: null as number | null
     });
 
     // Change type taxonomy state
@@ -1016,7 +1018,8 @@ export default function TaxonomyPage() {
             sort_order: 0,
             is_active: true,
             min_days: null,
-            max_days: null
+            max_days: null,
+            downgrade_notches: null
         });
         setEditingValue(null);
         setShowValueForm(false);
@@ -1059,7 +1062,8 @@ export default function TaxonomyPage() {
             sort_order: value.sort_order,
             is_active: value.is_active,
             min_days: value.min_days,
-            max_days: value.max_days
+            max_days: value.max_days,
+            downgrade_notches: value.downgrade_notches
         });
         setShowValueForm(true);
     };
@@ -2072,6 +2076,36 @@ export default function TaxonomyPage() {
                                                                 />
                                                             </div>
                                                         </div>
+                                                        {/* Downgrade notches for Final Risk Ranking */}
+                                                        <div className="mt-4 pt-3 border-t border-blue-200">
+                                                            <div className="flex items-center gap-2 mb-2">
+                                                                <span className="text-sm font-medium text-blue-800">Scorecard Downgrade</span>
+                                                                <span className="text-xs text-blue-600">(for Final Risk Ranking)</span>
+                                                            </div>
+                                                            <p className="text-xs text-blue-600 mb-3">
+                                                                Number of notches to downgrade the scorecard outcome when a model falls in this past-due bucket.
+                                                                Green → Green- → Yellow+ → Yellow → Yellow- → Red (capped at Red).
+                                                            </p>
+                                                            <div className="w-1/3">
+                                                                <label htmlFor="val_downgrade_notches" className="block text-sm font-medium mb-1">
+                                                                    Downgrade Notches (0-5)
+                                                                </label>
+                                                                <input
+                                                                    id="val_downgrade_notches"
+                                                                    type="number"
+                                                                    min="0"
+                                                                    max="5"
+                                                                    className={`input-field ${!isAdmin ? 'bg-gray-100 cursor-not-allowed' : ''}`}
+                                                                    value={valueFormData.downgrade_notches ?? ''}
+                                                                    onChange={(e) => setValueFormData({
+                                                                        ...valueFormData,
+                                                                        downgrade_notches: e.target.value === '' ? null : Math.min(5, Math.max(0, parseInt(e.target.value)))
+                                                                    })}
+                                                                    disabled={!isAdmin}
+                                                                    placeholder="0"
+                                                                />
+                                                            </div>
+                                                        </div>
                                                     </div>
                                                 )}
                                                 <div className="mb-3">
@@ -2129,9 +2163,14 @@ export default function TaxonomyPage() {
                                                                 Label
                                                             </th>
                                                             {selectedTaxonomy.taxonomy_type === 'bucket' && (
-                                                                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase w-36">
-                                                                    Range (Days)
-                                                                </th>
+                                                                <>
+                                                                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase w-36">
+                                                                        Range (Days)
+                                                                    </th>
+                                                                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase w-24">
+                                                                        Downgrade
+                                                                    </th>
+                                                                </>
                                                             )}
                                                             <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
                                                                 Description
@@ -2159,16 +2198,27 @@ export default function TaxonomyPage() {
                                                                         </div>
                                                                     </td>
                                                                     {selectedTaxonomy.taxonomy_type === 'bucket' && (
-                                                                        <td className="px-4 py-3 text-sm text-gray-600 font-mono">
-                                                                            {value.min_days === null && value.max_days === null
-                                                                                ? 'All'
-                                                                                : value.min_days === null
-                                                                                    ? `≤ ${value.max_days}`
-                                                                                    : value.max_days === null
-                                                                                        ? `≥ ${value.min_days}`
-                                                                                        : `${value.min_days} – ${value.max_days}`
-                                                                            }
-                                                                        </td>
+                                                                        <>
+                                                                            <td className="px-4 py-3 text-sm text-gray-600 font-mono">
+                                                                                {value.min_days === null && value.max_days === null
+                                                                                    ? 'All'
+                                                                                    : value.min_days === null
+                                                                                        ? `≤ ${value.max_days}`
+                                                                                        : value.max_days === null
+                                                                                            ? `≥ ${value.min_days}`
+                                                                                            : `${value.min_days} – ${value.max_days}`
+                                                                                }
+                                                                            </td>
+                                                                            <td className="px-4 py-3 text-sm text-center">
+                                                                                {value.downgrade_notches !== null && value.downgrade_notches > 0 ? (
+                                                                                    <span className="px-2 py-1 rounded text-xs font-medium bg-amber-100 text-amber-800">
+                                                                                        -{value.downgrade_notches}
+                                                                                    </span>
+                                                                                ) : (
+                                                                                    <span className="text-gray-400">0</span>
+                                                                                )}
+                                                                            </td>
+                                                                        </>
                                                                     )}
                                                                     <td className="px-4 py-3 text-sm text-gray-600">
                                                                         {value.description || '-'}

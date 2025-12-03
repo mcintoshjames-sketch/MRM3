@@ -5,6 +5,7 @@ import json
 from datetime import datetime, date, timedelta
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status, Query
+from pydantic import BaseModel
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session, joinedload
 from app.core.database import get_db
@@ -2330,3 +2331,58 @@ def reject_pending_edit(
         "status": "rejected",
         "model_id": model_id
     }
+
+
+# =============================================================================
+# Final Model Risk Ranking
+# =============================================================================
+
+class FinalRiskRankingResponse(BaseModel):
+    """Response schema for Final Model Risk Ranking computation."""
+    original_scorecard: str
+    days_overdue: int
+    past_due_level: str
+    past_due_level_code: str
+    downgrade_notches: int
+    adjusted_scorecard: str
+    inherent_risk_tier: str
+    inherent_risk_tier_label: Optional[str] = None
+    final_rating: Optional[str] = None
+    residual_risk_without_penalty: Optional[str] = None
+
+
+@router.get("/{model_id}/final-risk-ranking", response_model=FinalRiskRankingResponse)
+def get_final_risk_ranking(
+    model_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Get the Final Model Risk Ranking for a model.
+
+    The Final Risk Ranking reflects both the model's inherent risk characteristics
+    AND its validation compliance status. It is computed by:
+
+    1. Taking the model's most recent validation scorecard outcome
+    2. Applying a past-due downgrade penalty based on days overdue
+    3. Using the adjusted scorecard + inherent risk tier in the Residual Risk Map
+
+    The downgrade notches are configured in the Past Due Level taxonomy:
+    - Current (not overdue): 0 notches
+    - Minimal (< 1 year): 1 notch
+    - Moderate (1-2 years): 2 notches
+    - Significant/Critical/Obsolete (> 2 years): 3 notches
+
+    Returns computation details including both the penalized and unpenalized ratings.
+    """
+    from app.core.final_rating import compute_final_model_risk_ranking
+
+    result = compute_final_model_risk_ranking(db, model_id)
+
+    if not result:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Unable to compute final risk ranking. Model may be missing validation data or risk tier assignment."
+        )
+
+    return FinalRiskRankingResponse(**result)

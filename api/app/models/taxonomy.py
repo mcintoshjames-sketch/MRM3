@@ -55,6 +55,12 @@ class TaxonomyValue(Base):
         Integer, nullable=True,
         comment="Maximum days (inclusive) for bucket. NULL means unbounded (positive infinity)."
     )
+    # Downgrade notches for Final Model Risk Ranking calculation
+    # Used by bucket taxonomies (e.g., Past Due Level) to specify scorecard penalty
+    downgrade_notches: Mapped[Optional[int]] = mapped_column(
+        Integer, nullable=True,
+        comment="Number of scorecard notches to downgrade for this past-due bucket (0-5)"
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
 
     # Relationship back to taxonomy

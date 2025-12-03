@@ -305,6 +305,7 @@ def _upsert_taxonomy_with_values(
             if taxonomy_type == "bucket":
                 record.min_days = entry.get("min_days")
                 record.max_days = entry.get("max_days")
+                record.downgrade_notches = entry.get("downgrade_notches")
         else:
             db.add(
                 TaxonomyValue(
@@ -318,6 +319,8 @@ def _upsert_taxonomy_with_values(
                         "min_days") if taxonomy_type == "bucket" else None,
                     max_days=entry.get(
                         "max_days") if taxonomy_type == "bucket" else None,
+                    downgrade_notches=entry.get(
+                        "downgrade_notches") if taxonomy_type == "bucket" else None,
                     created_at=utc_now(),
                 )
             )
@@ -346,10 +349,11 @@ def seed_taxonomy_reference_data(db):
         values=QUALITATIVE_OUTCOME_VALUES,
     )
     # Bucket-based taxonomy for classifying models by time elapsed since revalidation due date
+    # downgrade_notches specifies how many scorecard notches to downgrade for Final Risk Ranking
     _upsert_taxonomy_with_values(
         db,
         name="Past Due Level",
-        description="Classifies models based on time elapsed since revalidation due date.",
+        description="Classifies models based on time elapsed since revalidation due date. Downgrade notches affect Final Model Risk Ranking.",
         taxonomy_type="bucket",
         values=[
             {
@@ -358,6 +362,7 @@ def seed_taxonomy_reference_data(db):
                 "description": "Model is not past due (on or before due date)",
                 "min_days": None,
                 "max_days": 0,
+                "downgrade_notches": 0,  # No penalty for compliant models
             },
             {
                 "code": "MINIMAL",
@@ -365,6 +370,7 @@ def seed_taxonomy_reference_data(db):
                 "description": "Model is 1-365 days past due",
                 "min_days": 1,
                 "max_days": 365,
+                "downgrade_notches": 1,  # 1 notch penalty for < 1 year overdue
             },
             {
                 "code": "MODERATE",
@@ -372,6 +378,7 @@ def seed_taxonomy_reference_data(db):
                 "description": "Model is 366-730 days (1-2 years) past due",
                 "min_days": 366,
                 "max_days": 730,
+                "downgrade_notches": 2,  # 2 notch penalty for 1-2 years overdue
             },
             {
                 "code": "SIGNIFICANT",
@@ -379,6 +386,7 @@ def seed_taxonomy_reference_data(db):
                 "description": "Model is 731-1095 days (2-3 years) past due",
                 "min_days": 731,
                 "max_days": 1095,
+                "downgrade_notches": 3,  # 3 notch penalty for 2-3 years overdue
             },
             {
                 "code": "CRITICAL",
@@ -386,6 +394,7 @@ def seed_taxonomy_reference_data(db):
                 "description": "Model is 1096-1825 days (3-5 years) past due",
                 "min_days": 1096,
                 "max_days": 1825,
+                "downgrade_notches": 3,  # 3 notch penalty (max) for 3-5 years overdue
             },
             {
                 "code": "OBSOLETE",
@@ -393,6 +402,7 @@ def seed_taxonomy_reference_data(db):
                 "description": "Model is more than 1825 days (5+ years) past due",
                 "min_days": 1826,
                 "max_days": None,
+                "downgrade_notches": 3,  # 3 notch penalty (max) for 5+ years overdue
             },
         ],
     )

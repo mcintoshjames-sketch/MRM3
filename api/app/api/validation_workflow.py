@@ -1152,7 +1152,8 @@ def get_models_needing_revalidation(
         if include_overdue and "Overdue" in revalidation_status["status"]:
             results.append(revalidation_status)
         elif revalidation_status["days_until_submission_due"] is not None:
-            if revalidation_status["days_until_submission_due"] <= days_ahead:
+            # Only include truly upcoming items (positive days) within the look-ahead window
+            if 0 < revalidation_status["days_until_submission_due"] <= days_ahead:
                 results.append(revalidation_status)
 
     # Sort by submission due date (None values go to end)
