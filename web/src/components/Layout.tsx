@@ -250,30 +250,32 @@ export default function Layout({ children }: LayoutProps) {
                                 )}
                             </NavLink>
                         </li>
-                        <li>
-                            <NavLink
-                                to="/my-attestations"
-                                className={({ isActive }) =>
-                                    `block px-4 py-2 rounded transition-colors ${isActive
-                                        ? 'bg-blue-600 text-white'
-                                        : 'text-gray-700 hover:bg-gray-100'
-                                    }`
-                                }
-                            >
-                                {({ isActive }) => (
-                                    <div className="flex items-center justify-between">
-                                        <span>My Attestations</span>
-                                        {pendingCounts.attestations > 0 && (
-                                            <span className={`ml-2 px-2 py-0.5 text-xs font-bold rounded-full ${
-                                                isActive ? 'bg-white text-blue-600' : 'bg-orange-500 text-white'
-                                            }`}>
-                                                {pendingCounts.attestations}
-                                            </span>
-                                        )}
-                                    </div>
-                                )}
-                            </NavLink>
-                        </li>
+                        {user?.role !== 'Admin' && (
+                            <li>
+                                <NavLink
+                                    to="/my-attestations"
+                                    className={({ isActive }) =>
+                                        `block px-4 py-2 rounded transition-colors ${isActive
+                                            ? 'bg-blue-600 text-white'
+                                            : 'text-gray-700 hover:bg-gray-100'
+                                        }`
+                                    }
+                                >
+                                    {({ isActive }) => (
+                                        <div className="flex items-center justify-between">
+                                            <span>My Attestations</span>
+                                            {pendingCounts.attestations > 0 && (
+                                                <span className={`ml-2 px-2 py-0.5 text-xs font-bold rounded-full ${
+                                                    isActive ? 'bg-white text-blue-600' : 'bg-orange-500 text-white'
+                                                }`}>
+                                                    {pendingCounts.attestations}
+                                                </span>
+                                            )}
+                                        </div>
+                                    )}
+                                </NavLink>
+                            </li>
+                        )}
                         {/* Monitoring Section */}
                         <li className="pt-4 pb-1">
                             <span className="px-4 text-xs font-semibold text-gray-400 uppercase tracking-wider">
@@ -498,7 +500,7 @@ export default function Layout({ children }: LayoutProps) {
                                 </li>
                                 <li>
                                     <NavLink
-                                        to="/attestation-cycles"
+                                        to="/attestations"
                                         className={({ isActive }) =>
                                             `block px-4 py-2 rounded transition-colors ${isActive
                                                 ? 'bg-blue-600 text-white'
@@ -506,20 +508,7 @@ export default function Layout({ children }: LayoutProps) {
                                             }`
                                         }
                                     >
-                                        Attestation Cycles
-                                    </NavLink>
-                                </li>
-                                <li>
-                                    <NavLink
-                                        to="/attestation-review"
-                                        className={({ isActive }) =>
-                                            `block px-4 py-2 rounded transition-colors ${isActive
-                                                ? 'bg-blue-600 text-white'
-                                                : 'text-gray-700 hover:bg-gray-100'
-                                            }`
-                                        }
-                                    >
-                                        Attestation Review Queue
+                                        Attestations
                                     </NavLink>
                                 </li>
                                 <li>

@@ -253,6 +253,58 @@ def create_cycle(
     return _build_cycle_response(cycle, db)
 
 
+@router.get("/cycles/reminder", response_model=CycleReminderResponse)
+def get_cycle_reminder(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin)
+):
+    """Check if a cycle reminder should be shown. Admin only."""
+    today = date.today()
+
+    # Check if we're in the first 2 weeks of a quarter
+    quarter_starts = [
+        date(today.year, 1, 1),
+        date(today.year, 4, 1),
+        date(today.year, 7, 1),
+        date(today.year, 10, 1)
+    ]
+
+    current_quarter_start = None
+    for qs in quarter_starts:
+        if qs <= today < qs + timedelta(days=14):
+            current_quarter_start = qs
+            break
+
+    if not current_quarter_start:
+        return CycleReminderResponse(should_show_reminder=False)
+
+    # Check if there's an OPEN cycle for this quarter
+    quarter_end = current_quarter_start + timedelta(days=90)  # Approximate
+    open_cycle = db.query(AttestationCycle).filter(
+        AttestationCycle.status == AttestationCycleStatus.OPEN.value,
+        AttestationCycle.period_start_date >= current_quarter_start,
+        AttestationCycle.period_start_date < quarter_end
+    ).first()
+
+    if open_cycle:
+        return CycleReminderResponse(should_show_reminder=False)
+
+    # Get last closed cycle
+    last_cycle = db.query(AttestationCycle).filter(
+        AttestationCycle.status == AttestationCycleStatus.CLOSED.value
+    ).order_by(AttestationCycle.period_end_date.desc()).first()
+
+    quarter_names = {1: "Q1", 4: "Q2", 7: "Q3", 10: "Q4"}
+    suggested_name = f"{quarter_names[current_quarter_start.month]} {current_quarter_start.year} Attestation Cycle"
+
+    return CycleReminderResponse(
+        should_show_reminder=True,
+        suggested_cycle_name=suggested_name,
+        last_cycle_end_date=last_cycle.period_end_date if last_cycle else None,
+        message=f"It's time to open a new attestation cycle for {suggested_name}."
+    )
+
+
 @router.get("/cycles/{cycle_id}", response_model=AttestationCycleResponse)
 def get_cycle(
     cycle_id: int,
@@ -1288,7 +1340,7 @@ def _build_rule_response(rule: AttestationSchedulingRule, db: Session) -> Attest
     if rule.region_id:
         region = db.query(Region).filter(Region.region_id == rule.region_id).first()
         if region:
-            region_ref = {"region_id": region.region_id, "region_name": region.region_name, "region_code": region.region_code}
+            region_ref = {"region_id": region.region_id, "region_name": region.name, "region_code": region.code}
 
     created_by = db.query(User).filter(User.user_id == rule.created_by_user_id).first()
     updated_by = None
@@ -1659,58 +1711,6 @@ def get_dashboard_stats(
         overdue_count=overdue_count,
         pending_changes=pending_changes,
         active_cycles=active_cycles
-    )
-
-
-@router.get("/cycles/reminder", response_model=CycleReminderResponse)
-def get_cycle_reminder(
-    db: Session = Depends(get_db),
-    current_user: User = Depends(require_admin)
-):
-    """Check if a cycle reminder should be shown. Admin only."""
-    today = date.today()
-
-    # Check if we're in the first 2 weeks of a quarter
-    quarter_starts = [
-        date(today.year, 1, 1),
-        date(today.year, 4, 1),
-        date(today.year, 7, 1),
-        date(today.year, 10, 1)
-    ]
-
-    current_quarter_start = None
-    for qs in quarter_starts:
-        if qs <= today < qs + timedelta(days=14):
-            current_quarter_start = qs
-            break
-
-    if not current_quarter_start:
-        return CycleReminderResponse(should_show_reminder=False)
-
-    # Check if there's an OPEN cycle for this quarter
-    quarter_end = current_quarter_start + timedelta(days=90)  # Approximate
-    open_cycle = db.query(AttestationCycle).filter(
-        AttestationCycle.status == AttestationCycleStatus.OPEN.value,
-        AttestationCycle.period_start_date >= current_quarter_start,
-        AttestationCycle.period_start_date < quarter_end
-    ).first()
-
-    if open_cycle:
-        return CycleReminderResponse(should_show_reminder=False)
-
-    # Get last closed cycle
-    last_cycle = db.query(AttestationCycle).filter(
-        AttestationCycle.status == AttestationCycleStatus.CLOSED.value
-    ).order_by(AttestationCycle.period_end_date.desc()).first()
-
-    quarter_names = {1: "Q1", 4: "Q2", 7: "Q3", 10: "Q4"}
-    suggested_name = f"{quarter_names[current_quarter_start.month]} {current_quarter_start.year} Attestation Cycle"
-
-    return CycleReminderResponse(
-        should_show_reminder=True,
-        suggested_cycle_name=suggested_name,
-        last_cycle_end_date=last_cycle.period_end_date if last_cycle else None,
-        message=f"It's time to open a new attestation cycle for {suggested_name}."
     )
 
 

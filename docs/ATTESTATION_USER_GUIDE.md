@@ -16,7 +16,8 @@ This guide explains how to use the attestation features from each user role's pe
 4. [For Reviewers](#for-reviewers)
 5. [Coverage Targets & Compliance](#coverage-targets--compliance)
 6. [Scheduling Rules](#scheduling-rules)
-7. [Frequently Asked Questions](#frequently-asked-questions)
+7. [High Fluctuation Owners](#high-fluctuation-owners)
+8. [Frequently Asked Questions](#frequently-asked-questions)
 
 ---
 
@@ -93,7 +94,7 @@ If an administrator rejects your attestation:
 
 ### Managing Attestation Cycles
 
-Navigate to **"Attestation Cycles"** in the Admin section.
+Navigate to **"Attestations"** in the Admin section. This page has five tabs: **Cycles**, **Scheduling Rules**, **Coverage Targets**, **Review Queue**, and **High Fluctuation Owners**.
 
 #### Creating a New Cycle
 
@@ -158,11 +159,11 @@ When model owners propose inventory changes during attestation:
 
 ## For Reviewers
 
-Reviewers (Validators and Administrators) can review submitted attestations.
+Reviewers (Administrators) can review submitted attestations.
 
 ### Reviewing Attestations
 
-1. Navigate to **"Attestation Review Queue"**
+1. Navigate to **"Attestations"** > **Review Queue** tab
 2. Click on a submitted attestation
 3. Review:
    - Model owner's responses to each question
@@ -201,7 +202,7 @@ Coverage targets ensure adequate attestation completion across the model invento
 
 ### Managing Coverage Targets
 
-1. Go to **Attestation Cycles** > **Coverage Targets** tab
+1. Go to **Attestations** > **Coverage Targets** tab
 2. View current targets by risk tier
 3. Click **Edit** to modify a target:
    - Adjust the target percentage
@@ -240,7 +241,7 @@ When multiple rules could apply, the highest priority rule wins:
 
 ### Managing Rules
 
-1. Go to **Attestation Cycles** > **Scheduling Rules** tab
+1. Go to **Attestations** > **Scheduling Rules** tab
 2. View existing rules with their type, frequency, and criteria
 3. **Create Rule**:
    - Select rule type
@@ -252,9 +253,65 @@ When multiple rules could apply, the highest priority rule wins:
 ### High Fluctuation Flag
 
 Model owners can be flagged for "High Fluctuation" if their model portfolio changes frequently. This flag:
-- Is set by administrators on the User Details page
+- Is set by administrators via the High Fluctuation Owners tab
 - Can be used as criteria in Owner Threshold rules
 - Typically triggers quarterly attestation requirements
+
+---
+
+## High Fluctuation Owners
+
+### What is High Fluctuation?
+
+Model owners flagged as "High Fluctuation" have portfolios that change frequently (models added, removed, or transferred between owners). These owners are typically required to attest **quarterly** instead of annually to ensure accurate model inventory records.
+
+### When to Flag an Owner
+
+Consider flagging an owner as high fluctuation when:
+- They frequently acquire or transfer models (more than 5 changes per year)
+- Their business unit undergoes frequent reorganization
+- They manage models in rapidly evolving product areas
+- Historical attestation data shows frequent inventory discrepancies
+
+### Managing High Fluctuation Owners
+
+1. Go to **Attestations** > **High Fluctuation Owners** tab
+2. View the current list of flagged owners with their details
+
+#### Adding an Owner
+
+1. Use the search box to find the user by name or email
+2. Click **"Add"** next to the user in the search results
+3. The user is immediately added to the high fluctuation list
+
+#### Removing an Owner
+
+1. Find the owner in the current list
+2. Click **"Remove"** in the Actions column
+3. The flag is immediately removed
+
+### How It Works with Scheduling Rules
+
+The high fluctuation flag works in conjunction with **Owner Threshold** scheduling rules:
+
+1. Create a rule with type "Owner Threshold"
+2. Check "High Fluctuation Flag Required"
+3. Set frequency to "Quarterly"
+4. When a cycle opens, owners with the flag will be scheduled for quarterly attestation
+
+**Example Configuration:**
+- Rule: "High Fluctuation Quarterly"
+- Type: Owner Threshold
+- Criteria: High Fluctuation Flag = Yes
+- Frequency: Quarterly
+- Priority: 30
+
+### Best Practices
+
+- Review the high fluctuation list quarterly
+- Remove the flag when an owner's portfolio stabilizes
+- Document the reason for flagging in the user's notes
+- Coordinate with business units on portfolio changes
 
 ---
 

@@ -65,14 +65,11 @@ interface RegionOption {
 }
 
 interface DashboardStats {
-    current_cycle: AttestationCycle | null;
-    pending_attestations: number;
-    overdue_attestations: number;
-    accepted_attestations: number;
-    rejected_attestations: number;
-    total_attestations: number;
-    completion_rate: number;
-    coverage_by_tier: Record<string, { total: number; completed: number; rate: number }>;
+    pending_count: number;
+    submitted_count: number;
+    overdue_count: number;
+    pending_changes: number;
+    active_cycles: number;
 }
 
 interface CoverageByTier {
@@ -94,7 +91,33 @@ interface CoverageReport {
     blocking_gaps: string[];
 }
 
-type TabType = 'cycles' | 'rules' | 'targets';
+interface AttestationRecord {
+    attestation_id: number;
+    cycle_id: number;
+    cycle_name: string;
+    model_id: number;
+    model_name: string;
+    risk_tier_code: string | null;
+    owner_name: string;
+    attesting_user_name: string;
+    due_date: string;
+    status: string;
+    decision: string | null;
+    attested_at: string | null;
+    is_overdue: boolean;
+    days_overdue: number;
+}
+
+interface UserWithFlag {
+    user_id: number;
+    email: string;
+    full_name: string;
+    role: string;
+    high_fluctuation_flag: boolean;
+}
+
+type TabType = 'cycles' | 'rules' | 'targets' | 'review' | 'owners';
+type FilterCycle = 'all' | number;
 
 export default function AttestationCyclesPage() {
     const { user } = useAuth();
@@ -144,6 +167,18 @@ export default function AttestationCyclesPage() {
     const [coverageReport, setCoverageReport] = useState<CoverageReport | null>(null);
     const [loadingCoverage, setLoadingCoverage] = useState(false);
 
+    // Review queue state
+    const [reviewRecords, setReviewRecords] = useState<AttestationRecord[]>([]);
+    const [loadingReview, setLoadingReview] = useState(false);
+    const [filterCycle, setFilterCycle] = useState<FilterCycle>('all');
+    const [openCycles, setOpenCycles] = useState<{ cycle_id: number; cycle_name: string }[]>([]);
+
+    // High fluctuation owners state
+    const [highFluctuationOwners, setHighFluctuationOwners] = useState<UserWithFlag[]>([]);
+    const [allUsers, setAllUsers] = useState<UserWithFlag[]>([]);
+    const [loadingOwners, setLoadingOwners] = useState(false);
+    const [ownerSearchQuery, setOwnerSearchQuery] = useState('');
+
     // Error/success messages
     const [error, setError] = useState<string | null>(null);
     const [success, setSuccess] = useState<string | null>(null);
@@ -159,6 +194,11 @@ export default function AttestationCyclesPage() {
             fetchRegions();
         } else if (activeTab === 'targets') {
             fetchTargets();
+        } else if (activeTab === 'review') {
+            fetchReviewQueue();
+            fetchStats();
+        } else if (activeTab === 'owners') {
+            fetchHighFluctuationOwners();
         }
     }, [activeTab]);
 
@@ -246,6 +286,87 @@ export default function AttestationCyclesPage() {
         } finally {
             setLoadingTargets(false);
         }
+    };
+
+    const fetchReviewQueue = async () => {
+        setLoadingReview(true);
+        try {
+            const [recordsRes, cyclesRes] = await Promise.all([
+                api.get('/attestations/records?status=SUBMITTED'),
+                api.get('/attestations/cycles?status=OPEN')
+            ]);
+            setReviewRecords(recordsRes.data);
+            setOpenCycles(cyclesRes.data.map((c: any) => ({ cycle_id: c.cycle_id, cycle_name: c.cycle_name })));
+        } catch (err: any) {
+            setError(err.response?.data?.detail || 'Failed to load review queue');
+        } finally {
+            setLoadingReview(false);
+        }
+    };
+
+    const fetchHighFluctuationOwners = async () => {
+        setLoadingOwners(true);
+        try {
+            const res = await api.get('/auth/users');
+            const users = res.data as UserWithFlag[];
+            setAllUsers(users);
+            setHighFluctuationOwners(users.filter(u => u.high_fluctuation_flag));
+        } catch (err: any) {
+            setError(err.response?.data?.detail || 'Failed to load users');
+        } finally {
+            setLoadingOwners(false);
+        }
+    };
+
+    const handleToggleHighFluctuation = async (userId: number, currentFlag: boolean) => {
+        setError(null);
+        try {
+            await api.patch(`/auth/users/${userId}`, { high_fluctuation_flag: !currentFlag });
+            setSuccess(currentFlag ? 'User removed from high fluctuation list' : 'User added to high fluctuation list');
+            fetchHighFluctuationOwners();
+        } catch (err: any) {
+            setError(err.response?.data?.detail || 'Failed to update user');
+        }
+    };
+
+    const filteredUsersForAdd = allUsers.filter(u =>
+        !u.high_fluctuation_flag &&
+        (ownerSearchQuery === '' ||
+            u.full_name.toLowerCase().includes(ownerSearchQuery.toLowerCase()) ||
+            u.email.toLowerCase().includes(ownerSearchQuery.toLowerCase()))
+    );
+
+    const filteredReviewRecords = reviewRecords.filter(r => {
+        if (filterCycle === 'all') return true;
+        return r.cycle_id === filterCycle;
+    });
+
+    const getDecisionBadge = (decision: string | null) => {
+        switch (decision) {
+            case 'I_ATTEST':
+                return <span className="px-2 py-1 text-xs font-medium rounded-full bg-green-100 text-green-800">I Attest</span>;
+            case 'I_ATTEST_WITH_UPDATES':
+                return <span className="px-2 py-1 text-xs font-medium rounded-full bg-yellow-100 text-yellow-800">With Updates</span>;
+            case 'OTHER':
+                return <span className="px-2 py-1 text-xs font-medium rounded-full bg-gray-100 text-gray-800">Other</span>;
+            default:
+                return <span className="px-2 py-1 text-xs font-medium rounded-full bg-gray-100 text-gray-500">-</span>;
+        }
+    };
+
+    const getRiskTierBadge = (tier: string | null) => {
+        if (!tier) return null;
+        const colors: Record<string, string> = {
+            'TIER_1': 'bg-red-100 text-red-800',
+            'TIER_2': 'bg-orange-100 text-orange-800',
+            'TIER_3': 'bg-yellow-100 text-yellow-800',
+            'TIER_4': 'bg-green-100 text-green-800'
+        };
+        return (
+            <span className={`px-2 py-1 text-xs font-medium rounded-full ${colors[tier] || 'bg-gray-100 text-gray-800'}`}>
+                {tier.replace('_', ' ')}
+            </span>
+        );
     };
 
     const handleCreateCycle = async (e: React.FormEvent) => {
@@ -454,24 +575,26 @@ export default function AttestationCyclesPage() {
 
             {/* Dashboard Stats */}
             {activeTab === 'cycles' && stats && (
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+                <div className="grid grid-cols-1 md:grid-cols-5 gap-4 mb-6">
                     <div className="bg-white p-4 rounded-lg shadow">
-                        <div className="text-sm text-gray-500">Current Cycle</div>
-                        <div className="text-lg font-semibold">
-                            {stats.current_cycle?.cycle_name || 'None'}
-                        </div>
+                        <div className="text-sm text-gray-500">Active Cycles</div>
+                        <div className="text-2xl font-bold text-blue-600">{stats.active_cycles}</div>
                     </div>
                     <div className="bg-white p-4 rounded-lg shadow">
                         <div className="text-sm text-gray-500">Pending</div>
-                        <div className="text-2xl font-bold text-yellow-600">{stats.pending_attestations}</div>
+                        <div className="text-2xl font-bold text-yellow-600">{stats.pending_count}</div>
+                    </div>
+                    <div className="bg-white p-4 rounded-lg shadow">
+                        <div className="text-sm text-gray-500">Submitted</div>
+                        <div className="text-2xl font-bold text-blue-600">{stats.submitted_count}</div>
                     </div>
                     <div className="bg-white p-4 rounded-lg shadow">
                         <div className="text-sm text-gray-500">Overdue</div>
-                        <div className="text-2xl font-bold text-red-600">{stats.overdue_attestations}</div>
+                        <div className="text-2xl font-bold text-red-600">{stats.overdue_count}</div>
                     </div>
                     <div className="bg-white p-4 rounded-lg shadow">
-                        <div className="text-sm text-gray-500">Completion Rate</div>
-                        <div className="text-2xl font-bold text-green-600">{stats.completion_rate.toFixed(1)}%</div>
+                        <div className="text-sm text-gray-500">Pending Changes</div>
+                        <div className="text-2xl font-bold text-purple-600">{stats.pending_changes}</div>
                     </div>
                 </div>
             )}
@@ -508,6 +631,36 @@ export default function AttestationCyclesPage() {
                         }`}
                     >
                         Coverage Targets
+                    </button>
+                    <button
+                        onClick={() => setActiveTab('review')}
+                        className={`py-2 px-1 border-b-2 font-medium text-sm ${
+                            activeTab === 'review'
+                                ? 'border-blue-500 text-blue-600'
+                                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                        }`}
+                    >
+                        Review Queue
+                        {stats && stats.submitted_count > 0 && (
+                            <span className="ml-2 px-2 py-0.5 text-xs font-bold rounded-full bg-blue-500 text-white">
+                                {stats.submitted_count}
+                            </span>
+                        )}
+                    </button>
+                    <button
+                        onClick={() => setActiveTab('owners')}
+                        className={`py-2 px-1 border-b-2 font-medium text-sm ${
+                            activeTab === 'owners'
+                                ? 'border-blue-500 text-blue-600'
+                                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                        }`}
+                    >
+                        High Fluctuation Owners
+                        {highFluctuationOwners.length > 0 && (
+                            <span className="ml-2 px-2 py-0.5 text-xs font-bold rounded-full bg-orange-500 text-white">
+                                {highFluctuationOwners.length}
+                            </span>
+                        )}
                     </button>
                 </nav>
             </div>
@@ -1152,6 +1305,288 @@ export default function AttestationCyclesPage() {
                                 </tbody>
                             </table>
                         )}
+                    </div>
+                </div>
+            )}
+
+            {/* Review Queue Tab */}
+            {activeTab === 'review' && (
+                <div>
+                    <div className="flex justify-between items-center mb-4">
+                        <div>
+                            <h2 className="text-lg font-semibold">Review Queue</h2>
+                            <p className="text-sm text-gray-500">Review and approve submitted attestations</p>
+                        </div>
+                    </div>
+
+                    {/* Stats Cards */}
+                    {stats && (
+                        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+                            <div className="bg-white p-4 rounded-lg shadow">
+                                <div className="text-sm text-gray-500">Awaiting Review</div>
+                                <div className="text-2xl font-bold text-blue-600">{stats.submitted_count}</div>
+                            </div>
+                            <div className="bg-white p-4 rounded-lg shadow">
+                                <div className="text-sm text-gray-500">Pending Submission</div>
+                                <div className="text-2xl font-bold text-yellow-600">{stats.pending_count}</div>
+                            </div>
+                            <div className="bg-white p-4 rounded-lg shadow">
+                                <div className="text-sm text-gray-500">Overdue</div>
+                                <div className="text-2xl font-bold text-red-600">{stats.overdue_count}</div>
+                            </div>
+                            <div className="bg-white p-4 rounded-lg shadow">
+                                <div className="text-sm text-gray-500">Active Cycles</div>
+                                <div className="text-2xl font-bold text-green-600">{stats.active_cycles}</div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Filter */}
+                    <div className="bg-white rounded-lg shadow p-4 mb-6">
+                        <div className="flex items-center gap-4">
+                            <label className="text-sm font-medium text-gray-700">Filter by Cycle:</label>
+                            <select
+                                value={filterCycle}
+                                onChange={(e) => setFilterCycle(e.target.value === 'all' ? 'all' : parseInt(e.target.value))}
+                                className="input-field w-auto"
+                            >
+                                <option value="all">All Open Cycles</option>
+                                {openCycles.map(c => (
+                                    <option key={c.cycle_id} value={c.cycle_id}>{c.cycle_name}</option>
+                                ))}
+                            </select>
+                            <button
+                                onClick={fetchReviewQueue}
+                                className="btn-secondary ml-auto"
+                            >
+                                Refresh
+                            </button>
+                        </div>
+                    </div>
+
+                    {/* Review Queue Table */}
+                    <div className="bg-white rounded-lg shadow overflow-hidden">
+                        {loadingReview ? (
+                            <div className="p-8 text-center text-gray-500">Loading...</div>
+                        ) : filteredReviewRecords.length === 0 ? (
+                            <div className="p-8 text-center text-gray-500">
+                                No attestations awaiting review.
+                            </div>
+                        ) : (
+                            <table className="min-w-full divide-y divide-gray-200">
+                                <thead className="bg-gray-50">
+                                    <tr>
+                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Model</th>
+                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Risk Tier</th>
+                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Attesting User</th>
+                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Cycle</th>
+                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Submitted</th>
+                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Decision</th>
+                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="bg-white divide-y divide-gray-200">
+                                    {filteredReviewRecords.map((record) => (
+                                        <tr key={record.attestation_id} className="hover:bg-gray-50">
+                                            <td className="px-6 py-4 whitespace-nowrap">
+                                                <Link
+                                                    to={`/models/${record.model_id}`}
+                                                    className="text-blue-600 hover:text-blue-800 font-medium"
+                                                >
+                                                    {record.model_name}
+                                                </Link>
+                                            </td>
+                                            <td className="px-6 py-4 whitespace-nowrap">
+                                                {getRiskTierBadge(record.risk_tier_code)}
+                                            </td>
+                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                                {record.attesting_user_name}
+                                            </td>
+                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                                {record.cycle_name}
+                                            </td>
+                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                                {formatDate(record.attested_at)}
+                                            </td>
+                                            <td className="px-6 py-4 whitespace-nowrap">
+                                                {getDecisionBadge(record.decision)}
+                                            </td>
+                                            <td className="px-6 py-4 whitespace-nowrap">
+                                                <Link
+                                                    to={`/attestations/${record.attestation_id}`}
+                                                    className="btn-primary text-sm py-1 px-3"
+                                                >
+                                                    Review
+                                                </Link>
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        )}
+                    </div>
+
+                    {/* Help Text */}
+                    <div className="mt-6 bg-blue-50 border border-blue-200 rounded-lg p-4">
+                        <h3 className="text-sm font-medium text-blue-800 mb-2">Review Guidelines</h3>
+                        <ul className="text-sm text-blue-700 space-y-1">
+                            <li>• Review all question responses and comments before accepting</li>
+                            <li>• Pay special attention to "No" answers - ensure explanations are adequate</li>
+                            <li>• Decisions with "I Attest with Updates" require review of proposed changes</li>
+                            <li>• Provide clear feedback when rejecting an attestation</li>
+                        </ul>
+                    </div>
+                </div>
+            )}
+
+            {/* High Fluctuation Owners Tab */}
+            {activeTab === 'owners' && (
+                <div>
+                    <div className="flex justify-between items-center mb-4">
+                        <div>
+                            <h2 className="text-lg font-semibold">High Fluctuation Owners</h2>
+                            <p className="text-sm text-gray-500">Manage model owners flagged for quarterly attestation</p>
+                        </div>
+                    </div>
+
+                    {/* Explanation Box */}
+                    <div className="mb-6 bg-orange-50 border border-orange-200 rounded-lg p-4">
+                        <h3 className="text-sm font-semibold text-orange-800 mb-2">What is High Fluctuation?</h3>
+                        <p className="text-sm text-orange-700 mb-3">
+                            Model owners flagged as "High Fluctuation" have portfolios that change frequently (models added, removed, or transferred).
+                            These owners are typically required to attest <strong>quarterly</strong> instead of annually to ensure
+                            accurate model inventory records.
+                        </p>
+                        <ul className="text-sm text-orange-700 space-y-1">
+                            <li>• This flag is used by scheduling rules to determine attestation frequency</li>
+                            <li>• Owners can be added or removed from this list at any time</li>
+                            <li>• Changes take effect on the next attestation cycle</li>
+                        </ul>
+                    </div>
+
+                    {/* Current High Fluctuation Owners */}
+                    <div className="bg-white rounded-lg shadow mb-6">
+                        <div className="px-6 py-4 border-b border-gray-200">
+                            <h3 className="text-md font-semibold text-gray-900">
+                                Current High Fluctuation Owners ({highFluctuationOwners.length})
+                            </h3>
+                        </div>
+                        {loadingOwners ? (
+                            <div className="p-8 text-center text-gray-500">Loading...</div>
+                        ) : highFluctuationOwners.length === 0 ? (
+                            <div className="p-8 text-center text-gray-500">
+                                No owners are currently flagged as high fluctuation.
+                            </div>
+                        ) : (
+                            <table className="min-w-full divide-y divide-gray-200">
+                                <thead className="bg-gray-50">
+                                    <tr>
+                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Name</th>
+                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Email</th>
+                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Role</th>
+                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="bg-white divide-y divide-gray-200">
+                                    {highFluctuationOwners.map((owner) => (
+                                        <tr key={owner.user_id} className="hover:bg-gray-50">
+                                            <td className="px-6 py-4 whitespace-nowrap">
+                                                <Link
+                                                    to={`/users/${owner.user_id}`}
+                                                    className="text-blue-600 hover:text-blue-800 font-medium"
+                                                >
+                                                    {owner.full_name}
+                                                </Link>
+                                            </td>
+                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                                {owner.email}
+                                            </td>
+                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                                {owner.role}
+                                            </td>
+                                            <td className="px-6 py-4 whitespace-nowrap">
+                                                <button
+                                                    onClick={() => handleToggleHighFluctuation(owner.user_id, true)}
+                                                    className="text-red-600 hover:text-red-800 text-sm font-medium"
+                                                >
+                                                    Remove
+                                                </button>
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        )}
+                    </div>
+
+                    {/* Add New High Fluctuation Owner */}
+                    <div className="bg-white rounded-lg shadow">
+                        <div className="px-6 py-4 border-b border-gray-200">
+                            <h3 className="text-md font-semibold text-gray-900">Add Owner to High Fluctuation List</h3>
+                        </div>
+                        <div className="p-4">
+                            <div className="mb-4">
+                                <input
+                                    type="text"
+                                    placeholder="Search by name or email..."
+                                    value={ownerSearchQuery}
+                                    onChange={(e) => setOwnerSearchQuery(e.target.value)}
+                                    className="input-field w-full md:w-1/2"
+                                />
+                            </div>
+                            {ownerSearchQuery && (
+                                <div className="max-h-64 overflow-y-auto border rounded-lg">
+                                    {filteredUsersForAdd.length === 0 ? (
+                                        <div className="p-4 text-center text-gray-500 text-sm">
+                                            No users found matching "{ownerSearchQuery}"
+                                        </div>
+                                    ) : (
+                                        <table className="min-w-full divide-y divide-gray-200">
+                                            <thead className="bg-gray-50 sticky top-0">
+                                                <tr>
+                                                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Name</th>
+                                                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Email</th>
+                                                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Action</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody className="bg-white divide-y divide-gray-200">
+                                                {filteredUsersForAdd.slice(0, 10).map((u) => (
+                                                    <tr key={u.user_id} className="hover:bg-gray-50">
+                                                        <td className="px-4 py-2 whitespace-nowrap text-sm font-medium">
+                                                            {u.full_name}
+                                                        </td>
+                                                        <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-500">
+                                                            {u.email}
+                                                        </td>
+                                                        <td className="px-4 py-2 whitespace-nowrap">
+                                                            <button
+                                                                onClick={() => {
+                                                                    handleToggleHighFluctuation(u.user_id, false);
+                                                                    setOwnerSearchQuery('');
+                                                                }}
+                                                                className="text-green-600 hover:text-green-800 text-sm font-medium"
+                                                            >
+                                                                Add
+                                                            </button>
+                                                        </td>
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                        </table>
+                                    )}
+                                    {filteredUsersForAdd.length > 10 && (
+                                        <div className="p-2 text-center text-xs text-gray-400 border-t">
+                                            Showing first 10 results. Refine your search to see more.
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+                            {!ownerSearchQuery && (
+                                <p className="text-sm text-gray-400">
+                                    Start typing to search for users to add to the high fluctuation list.
+                                </p>
+                            )}
+                        </div>
                     </div>
                 </div>
             )}
