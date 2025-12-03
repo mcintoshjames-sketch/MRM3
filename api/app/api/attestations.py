@@ -45,6 +45,7 @@ from app.schemas.attestation import (
     MyAttestationResponse,
     # Question schemas
     AttestationQuestionResponse,
+    AttestationQuestionUpdate,
     # Evidence schemas
     AttestationEvidenceCreate,
     AttestationEvidenceResponse,
@@ -384,8 +385,8 @@ def open_cycle(
 
     # Generate attestation records for all active, approved models
     models = db.query(Model).filter(
-        Model.row_approval_status == None,  # Approved
-        Model.status_id != None  # Has a status
+        Model.row_approval_status == None,  # Approved (NULL = approved in workflow)
+        Model.status == "Active"  # Only active models (not In Development or Retired)
     ).all()
 
     records_created = 0
@@ -1213,6 +1214,129 @@ def list_questions(
     return get_attestation_questions(db, frequency.value if frequency else None)
 
 
+@router.get("/questions/all", response_model=List[AttestationQuestionResponse])
+def list_all_questions(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin)
+):
+    """List all attestation questions including inactive ones. Admin only."""
+    # Find the "Attestation Question" taxonomy
+    taxonomy = db.query(Taxonomy).filter(
+        Taxonomy.name == "Attestation Question"
+    ).first()
+
+    if not taxonomy:
+        return []
+
+    # Get ALL values with their configs (including inactive)
+    results = db.query(TaxonomyValue, AttestationQuestionConfig).outerjoin(
+        AttestationQuestionConfig,
+        AttestationQuestionConfig.question_value_id == TaxonomyValue.value_id
+    ).filter(
+        TaxonomyValue.taxonomy_id == taxonomy.taxonomy_id
+    ).order_by(TaxonomyValue.sort_order).all()
+
+    questions = []
+    for value, config in results:
+        questions.append(AttestationQuestionResponse(
+            value_id=value.value_id,
+            code=value.code,
+            label=value.label,
+            description=value.description,
+            sort_order=value.sort_order,
+            is_active=value.is_active,
+            frequency_scope=config.frequency_scope if config else "BOTH",
+            requires_comment_if_no=config.requires_comment_if_no if config else False
+        ))
+
+    return questions
+
+
+@router.patch("/questions/{value_id}", response_model=AttestationQuestionResponse)
+def update_question(
+    value_id: int,
+    question_in: AttestationQuestionUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin)
+):
+    """Update an attestation question. Admin only."""
+    # Find the "Attestation Question" taxonomy
+    taxonomy = db.query(Taxonomy).filter(
+        Taxonomy.name == "Attestation Question"
+    ).first()
+
+    if not taxonomy:
+        raise HTTPException(status_code=404, detail="Attestation Question taxonomy not found")
+
+    # Find the value
+    value = db.query(TaxonomyValue).filter(
+        TaxonomyValue.value_id == value_id,
+        TaxonomyValue.taxonomy_id == taxonomy.taxonomy_id
+    ).first()
+
+    if not value:
+        raise HTTPException(status_code=404, detail="Question not found")
+
+    update_data = question_in.model_dump(exclude_unset=True)
+    old_values = {}
+
+    # Update taxonomy value fields
+    taxonomy_fields = ['label', 'description', 'sort_order', 'is_active']
+    for field in taxonomy_fields:
+        if field in update_data:
+            old_values[field] = getattr(value, field)
+            setattr(value, field, update_data[field])
+
+    # Update or create config
+    config = db.query(AttestationQuestionConfig).filter(
+        AttestationQuestionConfig.question_value_id == value_id
+    ).first()
+
+    config_fields = ['frequency_scope', 'requires_comment_if_no']
+    config_updates = {k: v for k, v in update_data.items() if k in config_fields}
+
+    if config_updates:
+        if config:
+            # Update existing config
+            for field, new_value in config_updates.items():
+                old_values[field] = getattr(config, field)
+                setattr(config, field, new_value)
+        else:
+            # Create new config with defaults
+            config = AttestationQuestionConfig(
+                question_value_id=value_id,
+                frequency_scope=config_updates.get('frequency_scope', 'BOTH'),
+                requires_comment_if_no=config_updates.get('requires_comment_if_no', False)
+            )
+            db.add(config)
+
+    # Create audit log
+    create_audit_log(
+        db=db,
+        entity_type="AttestationQuestion",
+        entity_id=value_id,
+        action="UPDATE",
+        user_id=current_user.user_id,
+        changes={"old": old_values, "new": update_data}
+    )
+
+    db.commit()
+    db.refresh(value)
+    if config:
+        db.refresh(config)
+
+    return AttestationQuestionResponse(
+        value_id=value.value_id,
+        code=value.code,
+        label=value.label,
+        description=value.description,
+        sort_order=value.sort_order,
+        is_active=value.is_active,
+        frequency_scope=config.frequency_scope if config else "BOTH",
+        requires_comment_if_no=config.requires_comment_if_no if config else False
+    )
+
+
 # ============================================================================
 # SCHEDULING RULES ENDPOINTS
 # ============================================================================
@@ -1237,6 +1361,26 @@ def create_rule(
     current_user: User = Depends(require_admin)
 ):
     """Create a scheduling rule. Admin only."""
+    # Validate OWNER_THRESHOLD rules have at least one criterion
+    if rule_in.rule_type == AttestationSchedulingRuleType.OWNER_THRESHOLD:
+        if rule_in.owner_model_count_min is None and not rule_in.owner_high_fluctuation_flag:
+            raise HTTPException(
+                status_code=400,
+                detail="OWNER_THRESHOLD rules must have at least one criterion (owner_model_count_min or owner_high_fluctuation_flag)"
+            )
+
+    # Validate only one active GLOBAL_DEFAULT rule exists
+    if rule_in.rule_type == AttestationSchedulingRuleType.GLOBAL_DEFAULT:
+        existing = db.query(AttestationSchedulingRule).filter(
+            AttestationSchedulingRule.rule_type == AttestationSchedulingRuleType.GLOBAL_DEFAULT,
+            AttestationSchedulingRule.is_active == True
+        ).first()
+        if existing:
+            raise HTTPException(
+                status_code=400,
+                detail=f"An active GLOBAL_DEFAULT rule already exists: '{existing.rule_name}'. Deactivate it first or edit the existing rule."
+            )
+
     rule = AttestationSchedulingRule(
         **rule_in.model_dump(),
         created_by_user_id=current_user.user_id
@@ -1275,6 +1419,17 @@ def update_rule(
         raise HTTPException(status_code=404, detail="Rule not found")
 
     update_data = rule_in.model_dump(exclude_unset=True)
+
+    # Validate OWNER_THRESHOLD rules won't become criterion-less after update
+    if rule.rule_type == AttestationSchedulingRuleType.OWNER_THRESHOLD:
+        new_count = update_data.get('owner_model_count_min', rule.owner_model_count_min)
+        new_flag = update_data.get('owner_high_fluctuation_flag', rule.owner_high_fluctuation_flag)
+        if new_count is None and not new_flag:
+            raise HTTPException(
+                status_code=400,
+                detail="OWNER_THRESHOLD rules must have at least one criterion (owner_model_count_min or owner_high_fluctuation_flag)"
+            )
+
     for field, value in update_data.items():
         setattr(rule, field, value)
 

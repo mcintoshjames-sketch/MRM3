@@ -615,6 +615,10 @@ Model Risk Management inventory system with a FastAPI backend, React/TypeScript 
   - **Global Default** (priority 1): Annual attestation for all model owners
   - **Owner Threshold** (priority 100): Quarterly attestation for owners with 30+ models OR high_fluctuation_flag set
   - Higher priority rules override lower priority
+  - **Date Windows**: Rules have effective_date (immutable) and optional end_date (when rule expires)
+  - **Validation**: OWNER_THRESHOLD must have at least one criterion; only one active GLOBAL_DEFAULT allowed
+  - **Immutable Fields**: rule_type, effective_date, model_id, region_id cannot be changed after creation
+  - **Deactivation**: Rules are soft-deleted (marked inactive) rather than hard deleted for audit purposes
 - **Coverage Targets** (seeded defaults):
   - Tier 1 (High Risk): 100%, blocking
   - Tier 2 (Medium Risk): 100%, blocking
@@ -647,7 +651,9 @@ Model Risk Management inventory system with a FastAPI backend, React/TypeScript 
   - Rejection requires admin comment explaining the decision
   - All proposals tracked in attestation record response for audit trail
 - **Frontend**:
-  - **AttestationCyclesPage** (Admin only): Manage cycles, view scheduling rules, configure coverage targets
+  - **AttestationCyclesPage** (Admin only): Manage cycles, scheduling rules (with date windows), coverage targets, review queue, high fluctuation owners, all records, and questions (7 tabs)
+    - **All Records tab**: Comprehensive view of all attestation records grouped by model owner with collapsible detail sections, cycle filter, expand/collapse all controls, and summary statistics (Total Records, Owners, Pending, Submitted, Accepted, Overdue)
+    - **Questions tab**: Edit attestation survey questions including text, description, frequency scope (Annual/Quarterly/Both), sort order, active status, and comment requirements
   - **MyAttestationsPage**: Model owner view of pending/submitted/accepted/rejected attestations with urgency badges
   - **AttestationDetailPage**: Question-by-question submission form, evidence management, inventory change proposal modal (UPDATE_EXISTING/NEW_MODEL/DECOMMISSION), review panel for Admin/Validator with proposal accept/reject controls
   - **AttestationReviewQueuePage** (Admin/Validator): Queue of submitted attestations awaiting review

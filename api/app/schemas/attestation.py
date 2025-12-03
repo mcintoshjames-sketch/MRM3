@@ -146,6 +146,18 @@ class AttestationQuestionConfigUpdate(BaseModel):
     requires_comment_if_no: Optional[bool] = None
 
 
+class AttestationQuestionUpdate(BaseModel):
+    """Update schema for attestation question (combines taxonomy value + config)."""
+    # Taxonomy value fields
+    label: Optional[str] = None
+    description: Optional[str] = None
+    sort_order: Optional[int] = None
+    is_active: Optional[bool] = None
+    # Config fields
+    frequency_scope: Optional[AttestationQuestionFrequencyEnum] = None
+    requires_comment_if_no: Optional[bool] = None
+
+
 class AttestationQuestionResponse(BaseModel):
     """Response schema for attestation question (combines taxonomy value + config)."""
     value_id: int

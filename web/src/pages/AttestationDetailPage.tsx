@@ -46,13 +46,18 @@ interface ChangeProposal {
     model: { model_id: number; model_name: string } | null;
 }
 
+interface ModelRef {
+    model_id: number;
+    model_name: string;
+    risk_tier_code: string | null;
+    risk_tier_label: string | null;
+    owner_name: string | null;
+}
+
 interface AttestationRecord {
     attestation_id: number;
     cycle_id: number;
-    cycle_name: string;
-    model_id: number;
-    model_name: string;
-    model_risk_tier: string;
+    model: ModelRef;
     attesting_user: { user_id: number; email: string; full_name: string };
     due_date: string;
     status: 'PENDING' | 'SUBMITTED' | 'ACCEPTED' | 'REJECTED';
@@ -271,7 +276,7 @@ export default function AttestationDetailPage() {
 
     const openChangeModal = (type: 'UPDATE_EXISTING' | 'NEW_MODEL' | 'DECOMMISSION') => {
         setChangeType(type);
-        setSelectedModelId(type === 'UPDATE_EXISTING' || type === 'DECOMMISSION' ? attestation?.model_id || null : null);
+        setSelectedModelId(type === 'UPDATE_EXISTING' || type === 'DECOMMISSION' ? attestation?.model.model_id || null : null);
         setProposedData({});
         setShowChangeModal(true);
         if (type === 'UPDATE_EXISTING' || type === 'DECOMMISSION') {
@@ -408,11 +413,11 @@ export default function AttestationDetailPage() {
                                 &larr; Back
                             </Link>
                             <h1 className="text-2xl font-bold text-gray-900">
-                                Attestation for {attestation.model_name}
+                                Attestation for {attestation.model.model_name}
                             </h1>
                         </div>
                         <p className="text-gray-600 mt-1">
-                            {attestation.cycle_name} | Due: {formatDate(attestation.due_date)}
+                            Due: {formatDate(attestation.due_date)}
                         </p>
                     </div>
                     <div>{getStatusBadge(attestation.status)}</div>
@@ -450,21 +455,21 @@ export default function AttestationDetailPage() {
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                     <div>
                         <div className="text-sm text-gray-500">Model</div>
-                        <Link to={`/models/${attestation.model_id}`} className="text-blue-600 hover:text-blue-800 font-medium">
-                            {attestation.model_name}
+                        <Link to={`/models/${attestation.model.model_id}`} className="text-blue-600 hover:text-blue-800 font-medium">
+                            {attestation.model.model_name}
                         </Link>
                     </div>
                     <div>
                         <div className="text-sm text-gray-500">Risk Tier</div>
-                        <div className="font-medium">{attestation.model_risk_tier}</div>
+                        <div className="font-medium">{attestation.model.risk_tier_label || attestation.model.risk_tier_code || '-'}</div>
                     </div>
                     <div>
                         <div className="text-sm text-gray-500">Attesting User</div>
                         <div className="font-medium">{attestation.attesting_user.full_name}</div>
                     </div>
                     <div>
-                        <div className="text-sm text-gray-500">Cycle</div>
-                        <div className="font-medium">{attestation.cycle_name}</div>
+                        <div className="text-sm text-gray-500">Owner</div>
+                        <div className="font-medium">{attestation.model.owner_name || '-'}</div>
                     </div>
                 </div>
             </div>

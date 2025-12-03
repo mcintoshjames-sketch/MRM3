@@ -1768,92 +1768,28 @@ export default function TaxonomyPage() {
                 <h2 className="text-2xl font-bold">Taxonomy Management</h2>
             </div>
 
-            {/* Tab Toggle */}
+            {/* Tab Selector - Dropdown */}
             <div className="mb-6">
-                <div className="border-b border-gray-200">
-                    <nav className="-mb-px flex space-x-8">
-                        <button
-                            onClick={() => handleTabChange('general')}
-                            className={`${activeTab === 'general'
-                                ? 'border-blue-500 text-blue-600'
-                                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                                } whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm`}
-                        >
-                            General Taxonomies
-                        </button>
-                        <button
-                            onClick={() => handleTabChange('change-type')}
-                            className={`${activeTab === 'change-type'
-                                ? 'border-blue-500 text-blue-600'
-                                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                                } whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm`}
-                        >
-                            Change Type Taxonomy
-                        </button>
-                        <button
-                            onClick={() => handleTabChange('model-type')}
-                            className={`${activeTab === 'model-type'
-                                ? 'border-blue-500 text-blue-600'
-                                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                                } whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm`}
-                        >
-                            Model Type Taxonomy
-                        </button>
-                        <button
-                            onClick={() => handleTabChange('kpm')}
-                            className={`${activeTab === 'kpm'
-                                ? 'border-blue-500 text-blue-600'
-                                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                                } whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm`}
-                        >
-                            KPM Library
-                        </button>
-                        <button
-                            onClick={() => handleTabChange('fry')}
-                            className={`${activeTab === 'fry'
-                                ? 'border-blue-500 text-blue-600'
-                                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                                } whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm`}
-                        >
-                            FRY 14 Config
-                        </button>
-                        <button
-                            onClick={() => handleTabChange('recommendation-priority')}
-                            className={`${activeTab === 'recommendation-priority'
-                                ? 'border-blue-500 text-blue-600'
-                                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                                } whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm`}
-                        >
-                            Recommendation Priority
-                        </button>
-                        <button
-                            onClick={() => handleTabChange('risk-factors')}
-                            className={`${activeTab === 'risk-factors'
-                                ? 'border-blue-500 text-blue-600'
-                                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                                } whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm`}
-                        >
-                            Risk Factors
-                        </button>
-                        <button
-                            onClick={() => handleTabChange('scorecard')}
-                            className={`${activeTab === 'scorecard'
-                                ? 'border-blue-500 text-blue-600'
-                                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                                } whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm`}
-                        >
-                            Scorecard Config
-                        </button>
-                        <button
-                            onClick={() => handleTabChange('residual-risk-map')}
-                            className={`${activeTab === 'residual-risk-map'
-                                ? 'border-blue-500 text-blue-600'
-                                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                                } whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm`}
-                        >
-                            Residual Risk Map
-                        </button>
-                    </nav>
+                <div className="flex items-center gap-4">
+                    <label htmlFor="taxonomy-tab-select" className="text-sm font-medium text-gray-700">
+                        Configuration Section:
+                    </label>
+                    <select
+                        id="taxonomy-tab-select"
+                        value={activeTab}
+                        onChange={(e) => handleTabChange(e.target.value as TabType)}
+                        className="block w-72 px-3 py-2 bg-white border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-sm"
+                    >
+                        <option value="general">General Taxonomies</option>
+                        <option value="change-type">Change Type Taxonomy</option>
+                        <option value="model-type">Model Type Taxonomy</option>
+                        <option value="kpm">KPM Library</option>
+                        <option value="fry">FRY 14 Config</option>
+                        <option value="recommendation-priority">Recommendation Priority</option>
+                        <option value="risk-factors">Risk Factors</option>
+                        <option value="scorecard">Scorecard Config</option>
+                        <option value="residual-risk-map">Residual Risk Map</option>
+                    </select>
                 </div>
             </div>
 

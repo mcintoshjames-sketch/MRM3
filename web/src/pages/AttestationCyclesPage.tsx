@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import api from '../api/client';
@@ -21,8 +21,8 @@ interface AttestationCycle {
     submitted_count: number;
     accepted_count: number;
     rejected_count: number;
-    total_count: number;
-    completion_percentage: number;
+    total_records: number;
+    coverage_pct: number;
 }
 
 interface CoverageTarget {
@@ -50,6 +50,7 @@ interface SchedulingRule {
     model_id: number | null;
     region_id: number | null;
     effective_date: string;
+    end_date: string | null;
     model?: { model_id: number; model_name: string } | null;
     region?: { region_id: number; region_name: string } | null;
 }
@@ -116,8 +117,31 @@ interface UserWithFlag {
     high_fluctuation_flag: boolean;
 }
 
-type TabType = 'cycles' | 'rules' | 'targets' | 'review' | 'owners';
+interface AttestationQuestion {
+    value_id: number;
+    code: string;
+    label: string;
+    description: string | null;
+    sort_order: number;
+    is_active: boolean;
+    frequency_scope: 'ANNUAL' | 'QUARTERLY' | 'BOTH';
+    requires_comment_if_no: boolean;
+}
+
+type TabType = 'cycles' | 'rules' | 'targets' | 'review' | 'owners' | 'all-records' | 'questions';
 type FilterCycle = 'all' | number;
+
+interface GroupedByOwner {
+    owner_id: number;
+    owner_name: string;
+    records: AttestationRecord[];
+    total: number;
+    pending: number;
+    submitted: number;
+    accepted: number;
+    rejected: number;
+    overdue: number;
+}
 
 export default function AttestationCyclesPage() {
     const { user } = useAuth();
@@ -150,10 +174,13 @@ export default function AttestationCyclesPage() {
         owner_high_fluctuation_flag: null as boolean | null,
         model_id: null as number | null,
         region_id: null as number | null,
-        effective_date: new Date().toISOString().split('T')[0]
+        effective_date: new Date().toISOString().split('T')[0],
+        end_date: null as string | null
     });
     const [models, setModels] = useState<ModelOption[]>([]);
     const [regions, setRegions] = useState<RegionOption[]>([]);
+    const [modelSearchQuery, setModelSearchQuery] = useState('');
+    const [showModelDropdown, setShowModelDropdown] = useState(false);
 
     // Targets state
     const [targets, setTargets] = useState<CoverageTarget[]>([]);
@@ -179,6 +206,25 @@ export default function AttestationCyclesPage() {
     const [loadingOwners, setLoadingOwners] = useState(false);
     const [ownerSearchQuery, setOwnerSearchQuery] = useState('');
 
+    // All Records tab state
+    const [allRecords, setAllRecords] = useState<AttestationRecord[]>([]);
+    const [loadingAllRecords, setLoadingAllRecords] = useState(false);
+    const [allRecordsCycleFilter, setAllRecordsCycleFilter] = useState<number | null>(null);
+    const [expandedOwners, setExpandedOwners] = useState<Set<number>>(new Set());
+
+    // Questions tab state
+    const [questions, setQuestions] = useState<AttestationQuestion[]>([]);
+    const [loadingQuestions, setLoadingQuestions] = useState(false);
+    const [editingQuestion, setEditingQuestion] = useState<AttestationQuestion | null>(null);
+    const [questionFormData, setQuestionFormData] = useState({
+        label: '',
+        description: '',
+        sort_order: 0,
+        is_active: true,
+        frequency_scope: 'BOTH' as 'ANNUAL' | 'QUARTERLY' | 'BOTH',
+        requires_comment_if_no: false
+    });
+
     // Error/success messages
     const [error, setError] = useState<string | null>(null);
     const [success, setSuccess] = useState<string | null>(null);
@@ -199,6 +245,11 @@ export default function AttestationCyclesPage() {
             fetchStats();
         } else if (activeTab === 'owners') {
             fetchHighFluctuationOwners();
+        } else if (activeTab === 'all-records') {
+            fetchCycles(); // Need cycles for dropdown
+            fetchAllRecords();
+        } else if (activeTab === 'questions') {
+            fetchQuestions();
         }
     }, [activeTab]);
 
@@ -316,6 +367,141 @@ export default function AttestationCyclesPage() {
         } finally {
             setLoadingOwners(false);
         }
+    };
+
+    const fetchAllRecords = async (cycleId?: number | null) => {
+        setLoadingAllRecords(true);
+        try {
+            const params = new URLSearchParams();
+            const targetCycleId = cycleId !== undefined ? cycleId : allRecordsCycleFilter;
+            if (targetCycleId) {
+                params.append('cycle_id', targetCycleId.toString());
+            }
+            const res = await api.get(`/attestations/records?${params.toString()}`);
+            setAllRecords(res.data);
+        } catch (err: any) {
+            setError(err.response?.data?.detail || 'Failed to load attestation records');
+        } finally {
+            setLoadingAllRecords(false);
+        }
+    };
+
+    const fetchQuestions = async () => {
+        setLoadingQuestions(true);
+        try {
+            const res = await api.get('/attestations/questions/all');
+            setQuestions(res.data);
+        } catch (err: any) {
+            setError(err.response?.data?.detail || 'Failed to load questions');
+        } finally {
+            setLoadingQuestions(false);
+        }
+    };
+
+    const handleEditQuestion = (question: AttestationQuestion) => {
+        setEditingQuestion(question);
+        setQuestionFormData({
+            label: question.label,
+            description: question.description || '',
+            sort_order: question.sort_order,
+            is_active: question.is_active,
+            frequency_scope: question.frequency_scope,
+            requires_comment_if_no: question.requires_comment_if_no
+        });
+    };
+
+    const handleSaveQuestion = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!editingQuestion) return;
+
+        try {
+            await api.patch(`/attestations/questions/${editingQuestion.value_id}`, questionFormData);
+            setSuccess('Question updated successfully');
+            setEditingQuestion(null);
+            fetchQuestions();
+        } catch (err: any) {
+            setError(err.response?.data?.detail || 'Failed to update question');
+        }
+    };
+
+    const resetQuestionForm = () => {
+        setEditingQuestion(null);
+        setQuestionFormData({
+            label: '',
+            description: '',
+            sort_order: 0,
+            is_active: true,
+            frequency_scope: 'BOTH',
+            requires_comment_if_no: false
+        });
+    };
+
+    // Re-fetch records when cycle filter changes
+    useEffect(() => {
+        if (activeTab === 'all-records') {
+            fetchAllRecords(allRecordsCycleFilter);
+        }
+    }, [allRecordsCycleFilter]);
+
+    // Group records by owner
+    const groupedByOwner: GroupedByOwner[] = useMemo(() => {
+        const groups: Record<string, GroupedByOwner> = {};
+
+        allRecords.forEach(record => {
+            const key = record.owner_name;
+            if (!groups[key]) {
+                groups[key] = {
+                    owner_id: 0, // We don't have owner_id in AttestationRecord, use name as key
+                    owner_name: record.owner_name,
+                    records: [],
+                    total: 0,
+                    pending: 0,
+                    submitted: 0,
+                    accepted: 0,
+                    rejected: 0,
+                    overdue: 0
+                };
+            }
+            groups[key].records.push(record);
+            groups[key].total++;
+            if (record.status === 'PENDING') groups[key].pending++;
+            if (record.status === 'SUBMITTED') groups[key].submitted++;
+            if (record.status === 'ACCEPTED') groups[key].accepted++;
+            if (record.status === 'REJECTED') groups[key].rejected++;
+            if (record.is_overdue) groups[key].overdue++;
+        });
+
+        return Object.values(groups).sort((a, b) => a.owner_name.localeCompare(b.owner_name));
+    }, [allRecords]);
+
+    const toggleOwnerExpanded = (ownerName: string) => {
+        setExpandedOwners(prev => {
+            const next = new Set(prev);
+            // Use hash of owner name as numeric key
+            const key = ownerName.split('').reduce((a, b) => a + b.charCodeAt(0), 0);
+            if (next.has(key)) {
+                next.delete(key);
+            } else {
+                next.add(key);
+            }
+            return next;
+        });
+    };
+
+    const isOwnerExpanded = (ownerName: string): boolean => {
+        const key = ownerName.split('').reduce((a, b) => a + b.charCodeAt(0), 0);
+        return expandedOwners.has(key);
+    };
+
+    const expandAllOwners = () => {
+        const allKeys = new Set(groupedByOwner.map(g =>
+            g.owner_name.split('').reduce((a, b) => a + b.charCodeAt(0), 0)
+        ));
+        setExpandedOwners(allKeys);
+    };
+
+    const collapseAllOwners = () => {
+        setExpandedOwners(new Set());
     };
 
     const handleToggleHighFluctuation = async (userId: number, currentFlag: boolean) => {
@@ -439,10 +625,13 @@ export default function AttestationCyclesPage() {
             owner_high_fluctuation_flag: null,
             model_id: null,
             region_id: null,
-            effective_date: new Date().toISOString().split('T')[0]
+            effective_date: new Date().toISOString().split('T')[0],
+            end_date: null
         });
         setEditingRule(null);
         setShowRuleForm(false);
+        setModelSearchQuery('');
+        setShowModelDropdown(false);
     };
 
     const handleOpenRuleForm = (rule?: SchedulingRule) => {
@@ -458,7 +647,8 @@ export default function AttestationCyclesPage() {
                 owner_high_fluctuation_flag: rule.owner_high_fluctuation_flag,
                 model_id: rule.model_id,
                 region_id: rule.region_id,
-                effective_date: rule.effective_date.split('T')[0]
+                effective_date: rule.effective_date.split('T')[0],
+                end_date: rule.end_date ? rule.end_date.split('T')[0] : null
             });
         } else {
             resetRuleForm();
@@ -470,6 +660,14 @@ export default function AttestationCyclesPage() {
         e.preventDefault();
         setError(null);
 
+        // Client-side validation for OWNER_THRESHOLD rules
+        if (ruleFormData.rule_type === 'OWNER_THRESHOLD') {
+            if (ruleFormData.owner_model_count_min === null && !ruleFormData.owner_high_fluctuation_flag) {
+                setError('Owner Threshold rules must have at least one criterion (minimum models or high fluctuation flag)');
+                return;
+            }
+        }
+
         // Build the payload based on rule type
         const payload: any = {
             rule_name: ruleFormData.rule_name,
@@ -477,7 +675,8 @@ export default function AttestationCyclesPage() {
             frequency: ruleFormData.frequency,
             priority: ruleFormData.priority,
             is_active: ruleFormData.is_active,
-            effective_date: ruleFormData.effective_date
+            effective_date: ruleFormData.effective_date,
+            end_date: ruleFormData.end_date
         };
 
         // Add conditional fields based on rule type
@@ -498,7 +697,8 @@ export default function AttestationCyclesPage() {
                     priority: ruleFormData.priority,
                     is_active: ruleFormData.is_active,
                     owner_model_count_min: ruleFormData.owner_model_count_min,
-                    owner_high_fluctuation_flag: ruleFormData.owner_high_fluctuation_flag
+                    owner_high_fluctuation_flag: ruleFormData.owner_high_fluctuation_flag,
+                    end_date: ruleFormData.end_date
                 });
                 setSuccess('Rule updated successfully');
             } else {
@@ -512,17 +712,17 @@ export default function AttestationCyclesPage() {
         }
     };
 
-    const handleDeleteRule = async (ruleId: number, ruleName: string) => {
-        if (!window.confirm(`Are you sure you want to delete the rule "${ruleName}"?`)) {
+    const handleDeactivateRule = async (ruleId: number, ruleName: string) => {
+        if (!window.confirm(`Are you sure you want to deactivate the rule "${ruleName}"? The rule will be marked inactive but retained for audit purposes.`)) {
             return;
         }
         setError(null);
         try {
             await api.delete(`/attestations/rules/${ruleId}`);
-            setSuccess('Rule deleted successfully');
+            setSuccess('Rule deactivated successfully');
             fetchRules();
         } catch (err: any) {
-            setError(err.response?.data?.detail || 'Failed to delete rule');
+            setError(err.response?.data?.detail || 'Failed to deactivate rule');
         }
     };
 
@@ -662,6 +862,26 @@ export default function AttestationCyclesPage() {
                             </span>
                         )}
                     </button>
+                    <button
+                        onClick={() => setActiveTab('all-records')}
+                        className={`py-2 px-1 border-b-2 font-medium text-sm ${
+                            activeTab === 'all-records'
+                                ? 'border-blue-500 text-blue-600'
+                                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                        }`}
+                    >
+                        All Records
+                    </button>
+                    <button
+                        onClick={() => setActiveTab('questions')}
+                        className={`py-2 px-1 border-b-2 font-medium text-sm ${
+                            activeTab === 'questions'
+                                ? 'border-blue-500 text-blue-600'
+                                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                        }`}
+                    >
+                        Questions
+                    </button>
                 </nav>
             </div>
 
@@ -770,13 +990,8 @@ export default function AttestationCyclesPage() {
                                 <tbody className="bg-white divide-y divide-gray-200">
                                     {cycles.map((cycle) => (
                                         <tr key={cycle.cycle_id} className="hover:bg-gray-50">
-                                            <td className="px-6 py-4 whitespace-nowrap">
-                                                <Link
-                                                    to={`/attestations/cycles/${cycle.cycle_id}`}
-                                                    className="text-blue-600 hover:text-blue-800 font-medium"
-                                                >
-                                                    {cycle.cycle_name}
-                                                </Link>
+                                            <td className="px-6 py-4 whitespace-nowrap font-medium text-gray-900">
+                                                {cycle.cycle_name}
                                             </td>
                                             <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                                                 {formatDate(cycle.period_start_date)} to {formatDate(cycle.period_end_date)}
@@ -792,15 +1007,15 @@ export default function AttestationCyclesPage() {
                                                     <div className="w-24 bg-gray-200 rounded-full h-2 mr-2">
                                                         <div
                                                             className="bg-green-500 h-2 rounded-full"
-                                                            style={{ width: `${cycle.completion_percentage}%` }}
+                                                            style={{ width: `${cycle.coverage_pct}%` }}
                                                         />
                                                     </div>
                                                     <span className="text-sm text-gray-600">
-                                                        {cycle.completion_percentage.toFixed(0)}%
+                                                        {cycle.coverage_pct.toFixed(0)}%
                                                     </span>
                                                 </div>
                                                 <div className="text-xs text-gray-400 mt-1">
-                                                    {cycle.accepted_count}/{cycle.total_count} completed
+                                                    {cycle.accepted_count}/{cycle.total_records} completed
                                                 </div>
                                             </td>
                                             <td className="px-6 py-4 whitespace-nowrap">
@@ -829,13 +1044,13 @@ export default function AttestationCyclesPage() {
                     </div>
 
                     {/* Coverage vs. Targets Widget */}
-                    {coverageReport && (
+                    {coverageReport?.cycle_summary && (
                         <div className="mt-6 bg-white rounded-lg shadow p-6">
                             <h3 className="text-lg font-semibold mb-4">Coverage vs. Targets</h3>
                             <div className="mb-4 text-sm text-gray-600">
                                 Open Cycle: <span className="font-medium">{coverageReport.cycle_summary.cycle_name}</span>
                                 {' | '}
-                                Overall Coverage: <span className="font-medium">{coverageReport.overall_coverage_pct.toFixed(1)}%</span>
+                                Overall Coverage: <span className="font-medium">{coverageReport.overall_coverage_pct?.toFixed(1) ?? '0.0'}%</span>
                             </div>
 
                             {loadingCoverage ? (
@@ -1009,6 +1224,17 @@ export default function AttestationCyclesPage() {
                                             disabled={!!editingRule}
                                         />
                                     </div>
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700">End Date (Optional)</label>
+                                        <input
+                                            type="date"
+                                            value={ruleFormData.end_date ?? ''}
+                                            onChange={(e) => setRuleFormData({ ...ruleFormData, end_date: e.target.value || null })}
+                                            className="mt-1 input-field"
+                                            min={ruleFormData.effective_date}
+                                        />
+                                        <p className="text-xs text-gray-400 mt-1">Leave empty for no expiration</p>
+                                    </div>
                                     <div className="flex items-center pt-6">
                                         <label className="flex items-center cursor-pointer">
                                             <input
@@ -1021,6 +1247,14 @@ export default function AttestationCyclesPage() {
                                         </label>
                                     </div>
                                 </div>
+
+                                {/* Help text for immutable fields when editing */}
+                                {editingRule && (
+                                    <div className="bg-gray-50 p-3 rounded text-sm text-gray-600">
+                                        <strong>Note:</strong> Rule type, effective date, and target (model/region) cannot be changed after creation.
+                                        To modify these, deactivate this rule and create a new one.
+                                    </div>
+                                )}
 
                                 {/* Conditional fields based on rule type */}
                                 {ruleFormData.rule_type === 'OWNER_THRESHOLD' && (
@@ -1056,21 +1290,56 @@ export default function AttestationCyclesPage() {
                                 {ruleFormData.rule_type === 'MODEL_OVERRIDE' && !editingRule && (
                                     <div className="border-t pt-4">
                                         <h4 className="text-sm font-medium text-gray-700 mb-3">Model Override Settings</h4>
-                                        <div>
-                                            <label className="block text-sm font-medium text-gray-700">Select Model *</label>
-                                            <select
-                                                required
-                                                value={ruleFormData.model_id ?? ''}
-                                                onChange={(e) => setRuleFormData({ ...ruleFormData, model_id: e.target.value ? parseInt(e.target.value) : null })}
+                                        <div className="relative">
+                                            <label className="block text-sm font-medium text-gray-700">Search and Select Model *</label>
+                                            <input
+                                                type="text"
+                                                placeholder="Type to search models..."
+                                                value={modelSearchQuery}
+                                                onChange={(e) => {
+                                                    setModelSearchQuery(e.target.value);
+                                                    setShowModelDropdown(true);
+                                                }}
+                                                onFocus={() => setShowModelDropdown(true)}
                                                 className="mt-1 input-field"
-                                            >
-                                                <option value="">-- Select a Model --</option>
-                                                {models.map((model) => (
-                                                    <option key={model.model_id} value={model.model_id}>
-                                                        {model.model_name}
-                                                    </option>
-                                                ))}
-                                            </select>
+                                            />
+                                            {showModelDropdown && modelSearchQuery.length > 0 && (
+                                                <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg max-h-60 overflow-y-auto">
+                                                    {models
+                                                        .filter((model) =>
+                                                            model.model_name.toLowerCase().includes(modelSearchQuery.toLowerCase())
+                                                        )
+                                                        .slice(0, 50)
+                                                        .map((model) => (
+                                                            <div
+                                                                key={model.model_id}
+                                                                className="px-4 py-2 hover:bg-gray-100 cursor-pointer text-sm"
+                                                                onClick={() => {
+                                                                    setRuleFormData({ ...ruleFormData, model_id: model.model_id });
+                                                                    setModelSearchQuery(model.model_name);
+                                                                    setShowModelDropdown(false);
+                                                                }}
+                                                            >
+                                                                {model.model_name}
+                                                            </div>
+                                                        ))}
+                                                    {models.filter((model) =>
+                                                        model.model_name.toLowerCase().includes(modelSearchQuery.toLowerCase())
+                                                    ).length === 0 && (
+                                                        <div className="px-4 py-2 text-sm text-gray-500">No models found</div>
+                                                    )}
+                                                </div>
+                                            )}
+                                            {ruleFormData.model_id && (
+                                                <p className="mt-1 text-sm text-green-600">
+                                                    ✓ Selected: {models.find(m => m.model_id === ruleFormData.model_id)?.model_name}
+                                                </p>
+                                            )}
+                                            {!ruleFormData.model_id && modelSearchQuery.length > 0 && !showModelDropdown && (
+                                                <p className="mt-1 text-sm text-amber-600">
+                                                    Please select a model from the dropdown
+                                                </p>
+                                            )}
                                         </div>
                                     </div>
                                 )}
@@ -1123,6 +1392,7 @@ export default function AttestationCyclesPage() {
                                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Frequency</th>
                                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Priority</th>
                                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Criteria</th>
+                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Date Window</th>
                                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
                                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
                                     </tr>
@@ -1167,6 +1437,10 @@ export default function AttestationCyclesPage() {
                                                     <span className="text-gray-400">All owners</span>
                                                 )}
                                             </td>
+                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                                {formatDate(rule.effective_date)}
+                                                {rule.end_date ? ` to ${formatDate(rule.end_date)}` : ' (no expiry)'}
+                                            </td>
                                             <td className="px-6 py-4 whitespace-nowrap">
                                                 <span className={`px-2 py-1 text-xs font-medium rounded-full ${
                                                     rule.is_active
@@ -1184,10 +1458,11 @@ export default function AttestationCyclesPage() {
                                                     Edit
                                                 </button>
                                                 <button
-                                                    onClick={() => handleDeleteRule(rule.rule_id, rule.rule_name)}
+                                                    onClick={() => handleDeactivateRule(rule.rule_id, rule.rule_name)}
                                                     className="text-red-600 hover:text-red-800 text-sm font-medium"
+                                                    title="Deactivates the rule (does not permanently delete)"
                                                 >
-                                                    Delete
+                                                    Deactivate
                                                 </button>
                                             </td>
                                         </tr>
@@ -1587,6 +1862,421 @@ export default function AttestationCyclesPage() {
                                 </p>
                             )}
                         </div>
+                    </div>
+                </div>
+            )}
+
+            {/* All Records Tab */}
+            {activeTab === 'all-records' && (
+                <div>
+                    <div className="flex justify-between items-center mb-4">
+                        <div>
+                            <h2 className="text-lg font-semibold">All Attestation Records</h2>
+                            <p className="text-sm text-gray-500">View all attestation records grouped by model owner</p>
+                        </div>
+                    </div>
+
+                    {/* Filter and Controls */}
+                    <div className="bg-white rounded-lg shadow p-4 mb-6">
+                        <div className="flex flex-wrap items-center gap-4">
+                            <div className="flex items-center gap-2">
+                                <label className="text-sm font-medium text-gray-700">Filter by Cycle:</label>
+                                <select
+                                    value={allRecordsCycleFilter ?? ''}
+                                    onChange={(e) => setAllRecordsCycleFilter(e.target.value ? parseInt(e.target.value) : null)}
+                                    className="input-field w-auto"
+                                >
+                                    <option value="">All Cycles</option>
+                                    {cycles.map(c => (
+                                        <option key={c.cycle_id} value={c.cycle_id}>{c.cycle_name}</option>
+                                    ))}
+                                </select>
+                            </div>
+                            <div className="flex items-center gap-2 ml-auto">
+                                <button
+                                    onClick={expandAllOwners}
+                                    className="btn-secondary text-sm"
+                                >
+                                    Expand All
+                                </button>
+                                <button
+                                    onClick={collapseAllOwners}
+                                    className="btn-secondary text-sm"
+                                >
+                                    Collapse All
+                                </button>
+                                <button
+                                    onClick={() => fetchAllRecords()}
+                                    className="btn-secondary text-sm"
+                                >
+                                    Refresh
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Summary Stats */}
+                    <div className="grid grid-cols-2 md:grid-cols-6 gap-4 mb-6">
+                        <div className="bg-white p-4 rounded-lg shadow">
+                            <div className="text-sm text-gray-500">Total Records</div>
+                            <div className="text-2xl font-bold text-gray-900">{allRecords.length}</div>
+                        </div>
+                        <div className="bg-white p-4 rounded-lg shadow">
+                            <div className="text-sm text-gray-500">Owners</div>
+                            <div className="text-2xl font-bold text-blue-600">{groupedByOwner.length}</div>
+                        </div>
+                        <div className="bg-white p-4 rounded-lg shadow">
+                            <div className="text-sm text-gray-500">Pending</div>
+                            <div className="text-2xl font-bold text-yellow-600">
+                                {allRecords.filter(r => r.status === 'PENDING').length}
+                            </div>
+                        </div>
+                        <div className="bg-white p-4 rounded-lg shadow">
+                            <div className="text-sm text-gray-500">Submitted</div>
+                            <div className="text-2xl font-bold text-blue-600">
+                                {allRecords.filter(r => r.status === 'SUBMITTED').length}
+                            </div>
+                        </div>
+                        <div className="bg-white p-4 rounded-lg shadow">
+                            <div className="text-sm text-gray-500">Accepted</div>
+                            <div className="text-2xl font-bold text-green-600">
+                                {allRecords.filter(r => r.status === 'ACCEPTED').length}
+                            </div>
+                        </div>
+                        <div className="bg-white p-4 rounded-lg shadow">
+                            <div className="text-sm text-gray-500">Overdue</div>
+                            <div className="text-2xl font-bold text-red-600">
+                                {allRecords.filter(r => r.is_overdue).length}
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Grouped by Owner */}
+                    {loadingAllRecords ? (
+                        <div className="bg-white rounded-lg shadow p-8 text-center text-gray-500">Loading...</div>
+                    ) : groupedByOwner.length === 0 ? (
+                        <div className="bg-white rounded-lg shadow p-8 text-center text-gray-500">
+                            No attestation records found. {allRecordsCycleFilter ? 'Try selecting a different cycle.' : 'Open a cycle to generate attestation records.'}
+                        </div>
+                    ) : (
+                        <div className="space-y-4">
+                            {groupedByOwner.map((group) => (
+                                <div key={group.owner_name} className="bg-white rounded-lg shadow overflow-hidden">
+                                    {/* Owner Header - Collapsible */}
+                                    <button
+                                        onClick={() => toggleOwnerExpanded(group.owner_name)}
+                                        className="w-full px-6 py-4 flex items-center justify-between bg-gray-50 hover:bg-gray-100 transition-colors"
+                                    >
+                                        <div className="flex items-center gap-4">
+                                            <span className="text-lg font-medium text-gray-900">
+                                                {isOwnerExpanded(group.owner_name) ? '▼' : '▶'}
+                                            </span>
+                                            <span className="text-lg font-semibold text-gray-900">{group.owner_name}</span>
+                                            <span className="text-sm text-gray-500">({group.total} models)</span>
+                                        </div>
+                                        <div className="flex items-center gap-3">
+                                            {group.pending > 0 && (
+                                                <span className="px-2 py-1 text-xs font-medium rounded-full bg-yellow-100 text-yellow-800">
+                                                    {group.pending} Pending
+                                                </span>
+                                            )}
+                                            {group.submitted > 0 && (
+                                                <span className="px-2 py-1 text-xs font-medium rounded-full bg-blue-100 text-blue-800">
+                                                    {group.submitted} Submitted
+                                                </span>
+                                            )}
+                                            {group.accepted > 0 && (
+                                                <span className="px-2 py-1 text-xs font-medium rounded-full bg-green-100 text-green-800">
+                                                    {group.accepted} Accepted
+                                                </span>
+                                            )}
+                                            {group.rejected > 0 && (
+                                                <span className="px-2 py-1 text-xs font-medium rounded-full bg-red-100 text-red-800">
+                                                    {group.rejected} Rejected
+                                                </span>
+                                            )}
+                                            {group.overdue > 0 && (
+                                                <span className="px-2 py-1 text-xs font-medium rounded-full bg-red-500 text-white">
+                                                    {group.overdue} Overdue
+                                                </span>
+                                            )}
+                                        </div>
+                                    </button>
+
+                                    {/* Owner's Records Table - Expandable */}
+                                    {isOwnerExpanded(group.owner_name) && (
+                                        <table className="min-w-full divide-y divide-gray-200">
+                                            <thead className="bg-gray-50">
+                                                <tr>
+                                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Model</th>
+                                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Risk Tier</th>
+                                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Cycle</th>
+                                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Due Date</th>
+                                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+                                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Decision</th>
+                                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Attested At</th>
+                                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody className="bg-white divide-y divide-gray-200">
+                                                {group.records.map((record) => (
+                                                    <tr key={record.attestation_id} className={`hover:bg-gray-50 ${record.is_overdue ? 'bg-red-50' : ''}`}>
+                                                        <td className="px-6 py-4 whitespace-nowrap">
+                                                            <Link
+                                                                to={`/models/${record.model_id}`}
+                                                                className="text-blue-600 hover:text-blue-800 font-medium"
+                                                            >
+                                                                {record.model_name}
+                                                            </Link>
+                                                        </td>
+                                                        <td className="px-6 py-4 whitespace-nowrap">
+                                                            {getRiskTierBadge(record.risk_tier_code)}
+                                                        </td>
+                                                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                                            {record.cycle_name}
+                                                        </td>
+                                                        <td className="px-6 py-4 whitespace-nowrap text-sm">
+                                                            <span className={record.is_overdue ? 'text-red-600 font-medium' : 'text-gray-500'}>
+                                                                {formatDate(record.due_date)}
+                                                            </span>
+                                                            {record.is_overdue && (
+                                                                <span className="ml-2 text-red-600 text-xs">
+                                                                    ({record.days_overdue}d overdue)
+                                                                </span>
+                                                            )}
+                                                        </td>
+                                                        <td className="px-6 py-4 whitespace-nowrap">
+                                                            <span className={`px-2 py-1 text-xs font-medium rounded-full ${
+                                                                record.status === 'ACCEPTED' ? 'bg-green-100 text-green-800' :
+                                                                record.status === 'SUBMITTED' ? 'bg-blue-100 text-blue-800' :
+                                                                record.status === 'REJECTED' ? 'bg-red-100 text-red-800' :
+                                                                'bg-yellow-100 text-yellow-800'
+                                                            }`}>
+                                                                {record.status}
+                                                            </span>
+                                                        </td>
+                                                        <td className="px-6 py-4 whitespace-nowrap">
+                                                            {getDecisionBadge(record.decision)}
+                                                        </td>
+                                                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                                            {formatDate(record.attested_at)}
+                                                        </td>
+                                                        <td className="px-6 py-4 whitespace-nowrap">
+                                                            <Link
+                                                                to={`/attestations/${record.attestation_id}`}
+                                                                className="text-blue-600 hover:text-blue-800 text-sm font-medium"
+                                                            >
+                                                                View
+                                                            </Link>
+                                                        </td>
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                        </table>
+                                    )}
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                </div>
+            )}
+
+            {/* Questions Tab */}
+            {activeTab === 'questions' && (
+                <div>
+                    <div className="flex justify-between items-center mb-4">
+                        <h2 className="text-lg font-semibold">Attestation Questions</h2>
+                        <p className="text-sm text-gray-500">
+                            Edit the questions shown in the attestation survey
+                        </p>
+                    </div>
+
+                    {/* Edit Question Form */}
+                    {editingQuestion && (
+                        <div className="bg-white p-6 rounded-lg shadow mb-6">
+                            <h3 className="text-lg font-semibold mb-4">Edit Question: {editingQuestion.code}</h3>
+                            <form onSubmit={handleSaveQuestion} className="space-y-4">
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700">
+                                        Question Text (Label)
+                                    </label>
+                                    <textarea
+                                        value={questionFormData.label}
+                                        onChange={(e) => setQuestionFormData({ ...questionFormData, label: e.target.value })}
+                                        rows={3}
+                                        className="mt-1 block w-full border rounded-md px-3 py-2"
+                                        required
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700">
+                                        Description (Optional)
+                                    </label>
+                                    <textarea
+                                        value={questionFormData.description}
+                                        onChange={(e) => setQuestionFormData({ ...questionFormData, description: e.target.value })}
+                                        rows={2}
+                                        className="mt-1 block w-full border rounded-md px-3 py-2"
+                                    />
+                                </div>
+                                <div className="grid grid-cols-3 gap-4">
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700">
+                                            Frequency Scope
+                                        </label>
+                                        <select
+                                            value={questionFormData.frequency_scope}
+                                            onChange={(e) => setQuestionFormData({ ...questionFormData, frequency_scope: e.target.value as 'ANNUAL' | 'QUARTERLY' | 'BOTH' })}
+                                            className="mt-1 block w-full border rounded-md px-3 py-2"
+                                        >
+                                            <option value="BOTH">Both (Annual & Quarterly)</option>
+                                            <option value="ANNUAL">Annual Only</option>
+                                            <option value="QUARTERLY">Quarterly Only</option>
+                                        </select>
+                                        <p className="text-xs text-gray-500 mt-1">When this question appears</p>
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700">
+                                            Sort Order
+                                        </label>
+                                        <input
+                                            type="number"
+                                            value={questionFormData.sort_order}
+                                            onChange={(e) => setQuestionFormData({ ...questionFormData, sort_order: parseInt(e.target.value) || 0 })}
+                                            className="mt-1 block w-full border rounded-md px-3 py-2"
+                                        />
+                                    </div>
+                                    <div className="space-y-2">
+                                        <div className="flex items-center">
+                                            <input
+                                                type="checkbox"
+                                                id="is_active"
+                                                checked={questionFormData.is_active}
+                                                onChange={(e) => setQuestionFormData({ ...questionFormData, is_active: e.target.checked })}
+                                                className="mr-2"
+                                            />
+                                            <label htmlFor="is_active" className="text-sm text-gray-700">Active</label>
+                                        </div>
+                                        <div className="flex items-center">
+                                            <input
+                                                type="checkbox"
+                                                id="requires_comment"
+                                                checked={questionFormData.requires_comment_if_no}
+                                                onChange={(e) => setQuestionFormData({ ...questionFormData, requires_comment_if_no: e.target.checked })}
+                                                className="mr-2"
+                                            />
+                                            <label htmlFor="requires_comment" className="text-sm text-gray-700">Require comment if "No"</label>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div className="flex gap-2">
+                                    <button type="submit" className="btn-primary">Save Changes</button>
+                                    <button type="button" onClick={resetQuestionForm} className="btn-secondary">
+                                        Cancel
+                                    </button>
+                                </div>
+                            </form>
+                        </div>
+                    )}
+
+                    {/* Questions Table */}
+                    {loadingQuestions ? (
+                        <div className="text-center py-4">Loading questions...</div>
+                    ) : (
+                        <div className="bg-white rounded-lg shadow overflow-hidden">
+                            <table className="min-w-full divide-y divide-gray-200">
+                                <thead className="bg-gray-50">
+                                    <tr>
+                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                            Order
+                                        </th>
+                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                            Code
+                                        </th>
+                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider" style={{ maxWidth: '400px' }}>
+                                            Question Text
+                                        </th>
+                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                            Frequency
+                                        </th>
+                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                            Comment Required
+                                        </th>
+                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                            Status
+                                        </th>
+                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                            Actions
+                                        </th>
+                                    </tr>
+                                </thead>
+                                <tbody className="bg-white divide-y divide-gray-200">
+                                    {questions.length === 0 ? (
+                                        <tr>
+                                            <td colSpan={7} className="px-6 py-4 text-center text-gray-500">
+                                                No attestation questions found.
+                                            </td>
+                                        </tr>
+                                    ) : (
+                                        questions.map((q) => (
+                                            <tr key={q.value_id} className={!q.is_active ? 'bg-gray-50' : ''}>
+                                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                                    {q.sort_order}
+                                                </td>
+                                                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                                                    {q.code}
+                                                </td>
+                                                <td className="px-6 py-4 text-sm text-gray-900" style={{ maxWidth: '400px' }}>
+                                                    <div className="truncate" title={q.label}>
+                                                        {q.label}
+                                                    </div>
+                                                    {q.description && (
+                                                        <div className="text-xs text-gray-500 truncate" title={q.description}>
+                                                            {q.description}
+                                                        </div>
+                                                    )}
+                                                </td>
+                                                <td className="px-6 py-4 whitespace-nowrap">
+                                                    <span className={`px-2 py-1 text-xs font-medium rounded ${
+                                                        q.frequency_scope === 'BOTH' ? 'bg-purple-100 text-purple-800' :
+                                                        q.frequency_scope === 'ANNUAL' ? 'bg-blue-100 text-blue-800' :
+                                                        'bg-green-100 text-green-800'
+                                                    }`}>
+                                                        {q.frequency_scope}
+                                                    </span>
+                                                </td>
+                                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                                    {q.requires_comment_if_no ? (
+                                                        <span className="text-orange-600 font-medium">Yes</span>
+                                                    ) : (
+                                                        <span className="text-gray-400">No</span>
+                                                    )}
+                                                </td>
+                                                <td className="px-6 py-4 whitespace-nowrap">
+                                                    <span className={`px-2 py-1 text-xs font-medium rounded ${
+                                                        q.is_active ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-600'
+                                                    }`}>
+                                                        {q.is_active ? 'Active' : 'Inactive'}
+                                                    </span>
+                                                </td>
+                                                <td className="px-6 py-4 whitespace-nowrap text-sm">
+                                                    <button
+                                                        onClick={() => handleEditQuestion(q)}
+                                                        className="text-blue-600 hover:text-blue-800 font-medium"
+                                                    >
+                                                        Edit
+                                                    </button>
+                                                </td>
+                                            </tr>
+                                        ))
+                                    )}
+                                </tbody>
+                            </table>
+                        </div>
+                    )}
+
+                    <div className="mt-4 text-sm text-gray-500">
+                        <p><strong>Note:</strong> Question codes cannot be changed. To add a new question, use the Taxonomy page to add a value to the "Attestation Question" taxonomy.</p>
                     </div>
                 </div>
             )}

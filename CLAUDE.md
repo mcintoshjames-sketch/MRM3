@@ -178,6 +178,65 @@ cd api && python -m pytest && cd ../web && pnpm test:run
   - Detail pages should show related records in tables with View/navigation links
   - API should provide endpoints like `/vendors/{id}/models` to fetch related data
   - This pattern improves UX by enabling seamless navigation between related entities
+- **Searchable Dropdown Pattern**:
+  - **IMPORTANT**: All dropdowns that select Models or Users MUST be searchable, not plain `<select>` elements
+  - These lists can grow very large and become unusable without search
+  - Implementation pattern:
+    ```typescript
+    // State variables
+    const [searchQuery, setSearchQuery] = useState('');
+    const [showDropdown, setShowDropdown] = useState(false);
+
+    // In JSX - use text input with filtered dropdown
+    <div className="relative">
+        <input
+            type="text"
+            placeholder="Type to search..."
+            value={searchQuery}
+            onChange={(e) => {
+                setSearchQuery(e.target.value);
+                setShowDropdown(true);
+            }}
+            onFocus={() => setShowDropdown(true)}
+            className="mt-1 input-field"
+        />
+        {showDropdown && searchQuery.length > 0 && (
+            <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg max-h-60 overflow-y-auto">
+                {items
+                    .filter((item) => item.name.toLowerCase().includes(searchQuery.toLowerCase()))
+                    .slice(0, 50)  // Limit results for performance
+                    .map((item) => (
+                        <div
+                            key={item.id}
+                            className="px-4 py-2 hover:bg-gray-100 cursor-pointer text-sm"
+                            onClick={() => {
+                                setSelectedId(item.id);
+                                setSearchQuery(item.name);
+                                setShowDropdown(false);
+                            }}
+                        >
+                            {item.name}
+                        </div>
+                    ))}
+                {filteredItems.length === 0 && (
+                    <div className="px-4 py-2 text-sm text-gray-500">No results found</div>
+                )}
+            </div>
+        )}
+        {selectedId && (
+            <p className="mt-1 text-sm text-green-600">✓ Selected: {selectedName}</p>
+        )}
+    </div>
+    ```
+  - Features to include:
+    - Search input with placeholder text
+    - Dropdown appears on focus and when typing
+    - Filter results case-insensitively
+    - Limit results (e.g., 50) for performance
+    - Show "No results found" message when empty
+    - Display confirmation of selection with green checkmark
+    - Clear search state in form reset functions
+  - Reference implementation: `AttestationCyclesPage.tsx` Model Override Settings section
 
 ### Reports System
 

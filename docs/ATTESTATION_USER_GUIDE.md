@@ -17,7 +17,9 @@ This guide explains how to use the attestation features from each user role's pe
 5. [Coverage Targets & Compliance](#coverage-targets--compliance)
 6. [Scheduling Rules](#scheduling-rules)
 7. [High Fluctuation Owners](#high-fluctuation-owners)
-8. [Frequently Asked Questions](#frequently-asked-questions)
+8. [All Records View](#all-records-view)
+9. [Questions Configuration](#questions-configuration)
+10. [Frequently Asked Questions](#frequently-asked-questions)
 
 ---
 
@@ -94,7 +96,7 @@ If an administrator rejects your attestation:
 
 ### Managing Attestation Cycles
 
-Navigate to **"Attestations"** in the Admin section. This page has five tabs: **Cycles**, **Scheduling Rules**, **Coverage Targets**, **Review Queue**, and **High Fluctuation Owners**.
+Navigate to **"Attestations"** in the Admin section. This page has seven tabs: **Cycles**, **Scheduling Rules**, **Coverage Targets**, **Review Queue**, **High Fluctuation Owners**, **All Records**, and **Questions**.
 
 #### Creating a New Cycle
 
@@ -113,9 +115,25 @@ The cycle starts in "Pending" status and doesn't affect model owners until opene
 1. Find the cycle in the list
 2. Click **"Open Cycle"**
 3. This action:
-   - Generates attestation records for all eligible models
-   - Notifies model owners (if notifications are enabled)
-   - Starts the attestation period
+   - **Evaluates scheduling rules** to determine which models are due for attestation
+   - **Generates attestation records** for each due model, assigned to the model's owner
+   - **Sets status to OPEN** and records when/who opened the cycle
+   - **Notifies model owners** via the sidebar badge count in "My Attestations"
+
+**How Models Are Selected:**
+
+When a cycle opens, the system evaluates each active model against the configured scheduling rules:
+
+1. For each model, the system finds the highest-priority applicable rule
+2. Rules are evaluated in priority order: Model Override > Regional Override > Owner Threshold > Global Default
+3. The rule determines the attestation frequency (Annual or Quarterly)
+4. If the model is due based on its frequency and last attestation date, an attestation record is created
+5. The attestation is assigned to the model's owner with the cycle's submission due date
+
+**Example:**
+- If Global Default is Annual, most models attest once per year
+- If an Owner Threshold rule requires Quarterly for high fluctuation owners, those owners' models appear in every cycle
+- If a Model Override sets Quarterly for a specific critical model, that model appears in every cycle regardless of owner
 
 #### Monitoring Progress
 
@@ -242,13 +260,37 @@ When multiple rules could apply, the highest priority rule wins:
 ### Managing Rules
 
 1. Go to **Attestations** > **Scheduling Rules** tab
-2. View existing rules with their type, frequency, and criteria
+2. View existing rules with their type, frequency, criteria, and date window
 3. **Create Rule**:
    - Select rule type
    - Set frequency (Annual or Quarterly)
    - Configure type-specific criteria
    - Set priority
-4. **Edit** or **Delete** existing rules as needed
+   - Set effective date (when rule starts applying)
+   - Optionally set end date (when rule expires)
+4. **Edit** existing rules to modify frequency, priority, criteria, or end date
+5. **Deactivate** rules that are no longer needed (retained for audit purposes)
+
+### Rule Date Windows
+
+Each rule has an effective date and optional end date:
+- **Effective Date**: When the rule starts applying (required, immutable after creation)
+- **End Date**: When the rule expires (optional, can be modified)
+- Rules without an end date remain active indefinitely
+
+### Immutable Fields
+
+After creation, certain rule fields cannot be changed:
+- **Rule Type**: Cannot change from Global Default to Model Override, etc.
+- **Effective Date**: Establishes when the rule started
+- **Target**: Model or Region assignments cannot be modified
+
+To change these fields, deactivate the existing rule and create a new one.
+
+### Validation Requirements
+
+- **Owner Threshold rules** must have at least one criterion (minimum model count or high fluctuation flag)
+- **Global Default rules**: Only one active Global Default rule can exist at a time
 
 ### High Fluctuation Flag
 
@@ -312,6 +354,114 @@ The high fluctuation flag works in conjunction with **Owner Threshold** scheduli
 - Remove the flag when an owner's portfolio stabilizes
 - Document the reason for flagging in the user's notes
 - Coordinate with business units on portfolio changes
+
+---
+
+## All Records View
+
+The **All Records** tab provides administrators with a comprehensive view of all attestation records across the inventory, grouped by model owner.
+
+### Overview
+
+This view enables administrators to:
+- Monitor attestation progress for all model owners
+- Identify owners with pending or overdue attestations
+- Track completion status across the entire model inventory
+- Filter by specific attestation cycle
+
+### Using the All Records Tab
+
+1. Go to **Attestations** > **All Records** tab
+2. Use the **Cycle Filter** dropdown to view records from a specific cycle or all cycles
+3. Click on an **owner's row** to expand/collapse their model details
+4. Use **Expand All** / **Collapse All** buttons for bulk control
+
+### Summary Statistics
+
+The top of the page displays:
+- **Total Records**: Number of attestation records
+- **Owners**: Count of unique model owners
+- **Pending**: Attestations not yet submitted
+- **Submitted**: Attestations awaiting review
+- **Accepted**: Approved attestations
+- **Overdue**: Past-due attestations
+
+### Owner Groups
+
+Each owner section shows:
+- **Header**: Owner name, model count, and status badges
+- **Status Badges**: Quick view of Pending, Submitted, Accepted, Rejected, and Overdue counts
+- **Expandable Table**: Detailed view of each model's attestation
+
+### Model Details (Expanded View)
+
+When expanded, each model shows:
+| Column | Description |
+|--------|-------------|
+| Model | Model name (clickable link to model details) |
+| Risk Tier | Model's risk classification |
+| Cycle | Attestation cycle name |
+| Due Date | Submission deadline (highlighted red if overdue) |
+| Status | Current attestation status |
+| Decision | Owner's attestation decision |
+| Attested At | Date/time of submission |
+| Actions | Link to view full attestation |
+
+### Visual Indicators
+
+- **Red background**: Overdue attestation records
+- **Days overdue**: Shown next to due date for overdue items
+- **Color-coded badges**: Status and decision badges use consistent colors
+
+---
+
+## Questions Configuration
+
+The **Questions** tab allows administrators to manage the attestation survey questions that model owners answer during the attestation process.
+
+### Accessing Questions Configuration
+
+1. Go to **Attestations** > **Questions** tab
+2. View all attestation questions with their configuration settings
+
+### Question Properties
+
+Each question has the following configurable properties:
+
+| Property | Description |
+|----------|-------------|
+| **Question Text** | The text shown to model owners during attestation |
+| **Description** | Optional helper text explaining the question |
+| **Sort Order** | Determines the display order in the attestation form |
+| **Frequency Scope** | When the question appears (Annual, Quarterly, or Both) |
+| **Require Comment if No** | If enabled, model owners must provide a comment when answering "No" |
+| **Active** | Whether the question appears in attestations |
+
+### Editing a Question
+
+1. Click **Edit** next to the question you want to modify
+2. Update the desired fields:
+   - Modify the question text or description
+   - Change the frequency scope to control when it appears
+   - Adjust sort order to reorder questions
+   - Toggle "Require comment if No" for mandatory explanations
+   - Set Active/Inactive to show or hide the question
+3. Click **Save Changes** to apply updates
+
+### Frequency Scope Options
+
+| Option | Description |
+|--------|-------------|
+| **Both** | Question appears in all attestation cycles (default) |
+| **Annual** | Question only appears in annual attestation cycles |
+| **Quarterly** | Question only appears in quarterly attestation cycles |
+
+### Important Notes
+
+- **Question codes cannot be changed** after creation to maintain data integrity
+- To add a new question, use the Taxonomy page to add a value to the "Attestation Question" taxonomy
+- Changes take effect immediately for new attestations (existing in-progress attestations are not affected)
+- Deactivating a question hides it from future attestations but preserves historical responses
 
 ---
 
