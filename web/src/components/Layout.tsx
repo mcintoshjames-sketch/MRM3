@@ -7,6 +7,26 @@ interface LayoutProps {
     children: React.ReactNode;
 }
 
+interface CollapsedSections {
+    myTasks: boolean;
+    monitoring: boolean;
+    reportsAudit: boolean;
+    configuration: boolean;
+}
+
+// Icons as simple SVG components
+const ChevronDown = ({ className = "w-4 h-4" }: { className?: string }) => (
+    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+    </svg>
+);
+
+const ChevronRight = ({ className = "w-4 h-4" }: { className?: string }) => (
+    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+    </svg>
+);
+
 export default function Layout({ children }: LayoutProps) {
     const { user, logout } = useAuth();
     const navigate = useNavigate();
@@ -17,6 +37,28 @@ export default function Layout({ children }: LayoutProps) {
         monitoring: 0,
         attestations: 0
     });
+
+    // Load collapsed state from localStorage
+    const [collapsed, setCollapsed] = useState<CollapsedSections>(() => {
+        const saved = localStorage.getItem('nav-collapsed');
+        if (saved) {
+            try {
+                return JSON.parse(saved);
+            } catch {
+                return { myTasks: false, monitoring: false, reportsAudit: false, configuration: true };
+            }
+        }
+        return { myTasks: false, monitoring: false, reportsAudit: false, configuration: true };
+    });
+
+    // Persist collapsed state
+    useEffect(() => {
+        localStorage.setItem('nav-collapsed', JSON.stringify(collapsed));
+    }, [collapsed]);
+
+    const toggleSection = (section: keyof CollapsedSections) => {
+        setCollapsed(prev => ({ ...prev, [section]: !prev[section] }));
+    };
 
     useEffect(() => {
         const fetchPendingCounts = async () => {
@@ -36,7 +78,6 @@ export default function Layout({ children }: LayoutProps) {
                 // Fetch pending decommissioning requests
                 let pendingDecommissioning = 0;
                 if (user?.role === 'Admin' || user?.role === 'Validator') {
-                    // Admins/Validators see pending validator reviews
                     try {
                         const decomRes = await api.get('/decommissioning/pending-validator-review');
                         pendingDecommissioning = decomRes.data.length;
@@ -44,7 +85,6 @@ export default function Layout({ children }: LayoutProps) {
                         // User may not have permission
                     }
                 } else {
-                    // Model owners see pending owner reviews for their models
                     try {
                         const ownerReviewRes = await api.get('/decommissioning/my-pending-owner-reviews');
                         pendingDecommissioning = ownerReviewRes.data.length;
@@ -57,7 +97,6 @@ export default function Layout({ children }: LayoutProps) {
                 let pendingMonitoring = 0;
                 try {
                     const monitoringRes = await api.get('/monitoring/my-tasks');
-                    // Count tasks that need action (overdue or have action needed)
                     pendingMonitoring = monitoringRes.data.filter((t: any) =>
                         t.is_overdue || t.action_needed.includes('Submit') || t.action_needed.includes('Review') || t.action_needed.includes('Approve')
                     ).length;
@@ -82,14 +121,12 @@ export default function Layout({ children }: LayoutProps) {
                     attestations: pendingAttestations
                 });
             } catch (error) {
-                // Silently fail - badges will just show 0
                 console.error('Failed to fetch pending counts:', error);
             }
         };
 
         if (user) {
             fetchPendingCounts();
-            // Refresh counts every 5 minutes
             const interval = setInterval(fetchPendingCounts, 5 * 60 * 1000);
             return () => clearInterval(interval);
         }
@@ -100,6 +137,89 @@ export default function Layout({ children }: LayoutProps) {
         navigate('/login');
     };
 
+    // Calculate total tasks badge
+    const totalTasksBadge = pendingCounts.submissions + pendingCounts.deployments +
+        pendingCounts.decommissioning + (user?.role !== 'Admin' ? pendingCounts.attestations : 0);
+
+    // Reusable nav link component
+    const NavItem = ({ to, children, badge, badgeColor = 'red' }: {
+        to: string;
+        children: React.ReactNode;
+        badge?: number;
+        badgeColor?: 'red' | 'purple' | 'green' | 'orange';
+    }) => {
+        const colorClasses = {
+            red: 'bg-red-500',
+            purple: 'bg-purple-500',
+            green: 'bg-green-500',
+            orange: 'bg-orange-500'
+        };
+
+        return (
+            <li>
+                <NavLink
+                    to={to}
+                    className={({ isActive }) =>
+                        `block px-4 py-2 rounded transition-colors ${isActive
+                            ? 'bg-blue-600 text-white'
+                            : 'text-gray-700 hover:bg-gray-100'
+                        }`
+                    }
+                >
+                    {({ isActive }) => (
+                        <div className="flex items-center justify-between">
+                            <span>{children}</span>
+                            {badge !== undefined && badge > 0 && (
+                                <span className={`ml-2 px-2 py-0.5 text-xs font-bold rounded-full ${
+                                    isActive ? 'bg-white text-blue-600' : `${colorClasses[badgeColor]} text-white`
+                                }`}>
+                                    {badge}
+                                </span>
+                            )}
+                        </div>
+                    )}
+                </NavLink>
+            </li>
+        );
+    };
+
+    // Section header component
+    const SectionHeader = ({
+        title,
+        isCollapsed,
+        onToggle,
+        badge
+    }: {
+        title: string;
+        isCollapsed: boolean;
+        onToggle: () => void;
+        badge?: number;
+    }) => (
+        <li className="pt-4 pb-1">
+            <button
+                onClick={onToggle}
+                className="w-full flex items-center justify-between px-4 text-xs font-semibold text-gray-400 uppercase tracking-wider hover:text-gray-600 transition-colors"
+            >
+                <div className="flex items-center gap-2">
+                    {isCollapsed ? <ChevronRight className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                    <span>{title}</span>
+                </div>
+                {badge !== undefined && badge > 0 && isCollapsed && (
+                    <span className="px-2 py-0.5 text-xs font-bold rounded-full bg-red-500 text-white">
+                        {badge}
+                    </span>
+                )}
+            </button>
+        </li>
+    );
+
+    // Subsection divider for configuration
+    const SubsectionLabel = ({ label }: { label: string }) => (
+        <li className="px-4 pt-3 pb-1">
+            <span className="text-xs text-gray-400">{label}</span>
+        </li>
+    );
+
     return (
         <div className="min-h-screen bg-gray-100 flex">
             {/* Side Panel */}
@@ -107,414 +227,156 @@ export default function Layout({ children }: LayoutProps) {
                 <div className="p-4 border-b">
                     <h1 className="text-xl font-bold text-blue-600">MRM System v3</h1>
                 </div>
-                <nav className="flex-1 p-4">
-                    <ul className="space-y-2">
+                <nav className="flex-1 p-4 overflow-y-auto">
+                    <ul className="space-y-1">
+                        {/* ══════════════════════════════════════════════════════════
+                            MAIN SECTION - Always visible
+                        ══════════════════════════════════════════════════════════ */}
+
+                        {/* Dashboard - role-specific */}
                         {(user?.role === 'Admin' || user?.role === 'Validator') && (
-                            <li>
-                                <NavLink
-                                    to={user?.role === 'Admin' ? '/dashboard' : '/validator-dashboard'}
-                                    className={({ isActive }) =>
-                                        `block px-4 py-2 rounded transition-colors ${isActive
-                                            ? 'bg-blue-600 text-white'
-                                            : 'text-gray-700 hover:bg-gray-100'
-                                        }`
-                                    }
-                                >
-                                    Dashboard
-                                </NavLink>
-                            </li>
+                            <NavItem to={user?.role === 'Admin' ? '/dashboard' : '/validator-dashboard'}>
+                                Dashboard
+                            </NavItem>
                         )}
                         {(user?.role !== 'Admin' && user?.role !== 'Validator') && (
-                            <li>
-                                <NavLink
-                                    to="/my-dashboard"
-                                    className={({ isActive }) =>
-                                        `block px-4 py-2 rounded transition-colors ${isActive
-                                            ? 'bg-blue-600 text-white'
-                                            : 'text-gray-700 hover:bg-gray-100'
-                                        }`
-                                    }
-                                >
-                                    My Dashboard
-                                </NavLink>
-                            </li>
+                            <NavItem to="/my-dashboard">My Dashboard</NavItem>
                         )}
-                        <li>
-                            <NavLink
-                                to="/models"
-                                className={({ isActive }) =>
-                                    `block px-4 py-2 rounded transition-colors ${isActive
-                                        ? 'bg-blue-600 text-white'
-                                        : 'text-gray-700 hover:bg-gray-100'
-                                    }`
-                                }
-                            >
-                                Models
-                            </NavLink>
-                        </li>
-                        <li>
-                            <NavLink
-                                to="/validation-workflow"
-                                className={({ isActive }) =>
-                                    `block px-4 py-2 rounded transition-colors ${isActive
-                                        ? 'bg-blue-600 text-white'
-                                        : 'text-gray-700 hover:bg-gray-100'
-                                    }`
-                                }
-                            >
-                                Validations
-                            </NavLink>
-                        </li>
-                        <li>
-                            <NavLink
-                                to="/recommendations"
-                                className={({ isActive }) =>
-                                    `block px-4 py-2 rounded transition-colors ${isActive
-                                        ? 'bg-blue-600 text-white'
-                                        : 'text-gray-700 hover:bg-gray-100'
-                                    }`
-                                }
-                            >
-                                Recommendations
-                            </NavLink>
-                        </li>
-                        <li>
-                            <NavLink
-                                to="/my-pending-submissions"
-                                className={({ isActive }) =>
-                                    `block px-4 py-2 rounded transition-colors ${isActive
-                                        ? 'bg-blue-600 text-white'
-                                        : 'text-gray-700 hover:bg-gray-100'
-                                    }`
-                                }
-                            >
-                                {({ isActive }) => (
-                                    <div className="flex items-center justify-between">
-                                        <span>Pending Submissions</span>
-                                        {pendingCounts.submissions > 0 && (
-                                            <span className={`ml-2 px-2 py-0.5 text-xs font-bold rounded-full ${
-                                                isActive ? 'bg-white text-blue-600' : 'bg-red-500 text-white'
-                                            }`}>
-                                                {pendingCounts.submissions}
-                                            </span>
-                                        )}
-                                    </div>
-                                )}
-                            </NavLink>
-                        </li>
-                        <li>
-                            <NavLink
-                                to="/my-deployment-tasks"
-                                className={({ isActive }) =>
-                                    `block px-4 py-2 rounded transition-colors ${isActive
-                                        ? 'bg-blue-600 text-white'
-                                        : 'text-gray-700 hover:bg-gray-100'
-                                    }`
-                                }
-                            >
-                                {({ isActive }) => (
-                                    <div className="flex items-center justify-between">
-                                        <span>Pending Deployments</span>
-                                        {pendingCounts.deployments > 0 && (
-                                            <span className={`ml-2 px-2 py-0.5 text-xs font-bold rounded-full ${
-                                                isActive ? 'bg-white text-blue-600' : 'bg-red-500 text-white'
-                                            }`}>
-                                                {pendingCounts.deployments}
-                                            </span>
-                                        )}
-                                    </div>
-                                )}
-                            </NavLink>
-                        </li>
-                        <li>
-                            <NavLink
-                                to="/pending-decommissioning"
-                                className={({ isActive }) =>
-                                    `block px-4 py-2 rounded transition-colors ${isActive
-                                        ? 'bg-blue-600 text-white'
-                                        : 'text-gray-700 hover:bg-gray-100'
-                                    }`
-                                }
-                            >
-                                {({ isActive }) => (
-                                    <div className="flex items-center justify-between">
-                                        <span>Pending Decommissioning</span>
-                                        {pendingCounts.decommissioning > 0 && (
-                                            <span className={`ml-2 px-2 py-0.5 text-xs font-bold rounded-full ${
-                                                isActive ? 'bg-white text-blue-600' : 'bg-purple-500 text-white'
-                                            }`}>
-                                                {pendingCounts.decommissioning}
-                                            </span>
-                                        )}
-                                    </div>
-                                )}
-                            </NavLink>
-                        </li>
-                        {user?.role !== 'Admin' && (
-                            <li>
-                                <NavLink
-                                    to="/my-attestations"
-                                    className={({ isActive }) =>
-                                        `block px-4 py-2 rounded transition-colors ${isActive
-                                            ? 'bg-blue-600 text-white'
-                                            : 'text-gray-700 hover:bg-gray-100'
-                                        }`
-                                    }
-                                >
-                                    {({ isActive }) => (
-                                        <div className="flex items-center justify-between">
-                                            <span>My Attestations</span>
-                                            {pendingCounts.attestations > 0 && (
-                                                <span className={`ml-2 px-2 py-0.5 text-xs font-bold rounded-full ${
-                                                    isActive ? 'bg-white text-blue-600' : 'bg-orange-500 text-white'
-                                                }`}>
-                                                    {pendingCounts.attestations}
-                                                </span>
-                                            )}
-                                        </div>
-                                    )}
-                                </NavLink>
-                            </li>
-                        )}
-                        {/* Monitoring Section */}
-                        <li className="pt-4 pb-1">
-                            <span className="px-4 text-xs font-semibold text-gray-400 uppercase tracking-wider">
-                                Monitoring
-                            </span>
-                        </li>
-                        {/* Non-admin users see My Monitoring Tasks */}
-                        {user?.role !== 'Admin' && (
-                            <li>
-                                <NavLink
-                                    to="/my-monitoring"
-                                    className={({ isActive }) =>
-                                        `block px-4 py-2 rounded transition-colors ${isActive
-                                            ? 'bg-blue-600 text-white'
-                                            : 'text-gray-700 hover:bg-gray-100'
-                                        }`
-                                    }
-                                >
-                                    {({ isActive }) => (
-                                        <div className="flex items-center justify-between">
-                                            <span>My Monitoring Tasks</span>
-                                            {pendingCounts.monitoring > 0 && (
-                                                <span className={`ml-2 px-2 py-0.5 text-xs font-bold rounded-full ${
-                                                    isActive ? 'bg-white text-blue-600' : 'bg-green-500 text-white'
-                                                }`}>
-                                                    {pendingCounts.monitoring}
-                                                </span>
-                                            )}
-                                        </div>
-                                    )}
-                                </NavLink>
-                            </li>
-                        )}
-                        {/* Admin users see Performance Monitoring (which includes Overview tab) */}
+
+                        {/* Core entity views */}
+                        <NavItem to="/models">Models</NavItem>
+                        <NavItem to="/validation-workflow">Validations</NavItem>
+                        <NavItem to="/recommendations">Recommendations</NavItem>
                         {user?.role === 'Admin' && (
-                            <li>
-                                <NavLink
-                                    to="/monitoring-plans"
-                                    className={({ isActive }) =>
-                                        `block px-4 py-2 rounded transition-colors ${isActive
-                                            ? 'bg-blue-600 text-white'
-                                            : 'text-gray-700 hover:bg-gray-100'
-                                        }`
-                                    }
-                                >
-                                    Performance Monitoring
-                                </NavLink>
-                            </li>
+                            <NavItem to="/attestations">Attestation Management</NavItem>
                         )}
-                        {(user?.role === 'Admin' || user?.role === 'Validator') && (
+
+                        {/* ══════════════════════════════════════════════════════════
+                            MY TASKS SECTION - Personal action items with badges
+                        ══════════════════════════════════════════════════════════ */}
+                        <SectionHeader
+                            title="My Tasks"
+                            isCollapsed={collapsed.myTasks}
+                            onToggle={() => toggleSection('myTasks')}
+                            badge={totalTasksBadge}
+                        />
+
+                        {!collapsed.myTasks && (
                             <>
-                                <li>
-                                    <NavLink
-                                        to="/reference-data"
-                                        className={({ isActive }) =>
-                                            `block px-4 py-2 rounded transition-colors ${isActive
-                                                ? 'bg-blue-600 text-white'
-                                                : 'text-gray-700 hover:bg-gray-100'
-                                            }`
-                                        }
-                                    >
-                                        Reference Data
-                                    </NavLink>
-                                </li>
-                                <li>
-                                    <NavLink
-                                        to="/taxonomy"
-                                        className={({ isActive }) =>
-                                            `block px-4 py-2 rounded transition-colors ${isActive
-                                                ? 'bg-blue-600 text-white'
-                                                : 'text-gray-700 hover:bg-gray-100'
-                                            }`
-                                        }
-                                    >
-                                        Taxonomy
-                                    </NavLink>
-                                </li>
+                                <NavItem to="/my-pending-submissions" badge={pendingCounts.submissions} badgeColor="red">
+                                    Pending Submissions
+                                </NavItem>
+                                <NavItem to="/my-deployment-tasks" badge={pendingCounts.deployments} badgeColor="red">
+                                    Pending Deployments
+                                </NavItem>
+                                <NavItem to="/pending-decommissioning" badge={pendingCounts.decommissioning} badgeColor="purple">
+                                    Pending Decommissioning
+                                </NavItem>
+                                {user?.role !== 'Admin' && (
+                                    <NavItem to="/my-attestations" badge={pendingCounts.attestations} badgeColor="orange">
+                                        My Attestations
+                                    </NavItem>
+                                )}
                             </>
                         )}
-                        <li>
-                            <NavLink
-                                to="/reports"
-                                className={({ isActive }) =>
-                                    `block px-4 py-2 rounded transition-colors ${isActive
-                                        ? 'bg-blue-600 text-white'
-                                        : 'text-gray-700 hover:bg-gray-100'
-                                    }`
-                                }
-                            >
-                                Reports
-                            </NavLink>
-                        </li>
-                        {(user?.role === 'Admin' || user?.role === 'Validator') && (
-                            <li>
-                                <NavLink
-                                    to="/audit"
-                                    className={({ isActive }) =>
-                                        `block px-4 py-2 rounded transition-colors ${isActive
-                                            ? 'bg-blue-600 text-white'
-                                            : 'text-gray-700 hover:bg-gray-100'
-                                        }`
-                                    }
-                                >
-                                    Audit Logs
-                                </NavLink>
-                            </li>
+
+                        {/* ══════════════════════════════════════════════════════════
+                            MONITORING SECTION
+                        ══════════════════════════════════════════════════════════ */}
+                        <SectionHeader
+                            title="Monitoring"
+                            isCollapsed={collapsed.monitoring}
+                            onToggle={() => toggleSection('monitoring')}
+                            badge={user?.role !== 'Admin' ? pendingCounts.monitoring : undefined}
+                        />
+
+                        {!collapsed.monitoring && (
+                            <>
+                                {user?.role === 'Admin' && (
+                                    <NavItem to="/monitoring-plans">Performance Monitoring</NavItem>
+                                )}
+                                {user?.role !== 'Admin' && (
+                                    <NavItem to="/my-monitoring" badge={pendingCounts.monitoring} badgeColor="green">
+                                        My Monitoring Tasks
+                                    </NavItem>
+                                )}
+                            </>
                         )}
+
+                        {/* ══════════════════════════════════════════════════════════
+                            REPORTS & AUDIT SECTION
+                        ══════════════════════════════════════════════════════════ */}
+                        <SectionHeader
+                            title="Reports & Audit"
+                            isCollapsed={collapsed.reportsAudit}
+                            onToggle={() => toggleSection('reportsAudit')}
+                        />
+
+                        {!collapsed.reportsAudit && (
+                            <>
+                                <NavItem to="/reports">Reports</NavItem>
+                                {user?.role === 'Admin' && (
+                                    <NavItem to="/analytics">Advanced Analytics</NavItem>
+                                )}
+                                {(user?.role === 'Admin' || user?.role === 'Validator') && (
+                                    <NavItem to="/audit">Audit Logs</NavItem>
+                                )}
+                            </>
+                        )}
+
+                        {/* ══════════════════════════════════════════════════════════
+                            CONFIGURATION SECTION - Admin only
+                        ══════════════════════════════════════════════════════════ */}
                         {user?.role === 'Admin' && (
                             <>
-                                <li>
-                                    <NavLink
-                                        to="/workflow-config"
-                                        className={({ isActive }) =>
-                                            `block px-4 py-2 rounded transition-colors ${isActive
-                                                ? 'bg-blue-600 text-white'
-                                                : 'text-gray-700 hover:bg-gray-100'
-                                            }`
-                                        }
-                                    >
-                                        Workflow Config
-                                    </NavLink>
-                                </li>
-                                <li>
-                                    <NavLink
-                                        to="/batch-delegates"
-                                        className={({ isActive }) =>
-                                            `block px-4 py-2 rounded transition-colors ${isActive
-                                                ? 'bg-blue-600 text-white'
-                                                : 'text-gray-700 hover:bg-gray-100'
-                                            }`
-                                        }
-                                    >
-                                        Batch Delegates
-                                    </NavLink>
-                                </li>
-                                <li>
-                                    <NavLink
-                                        to="/regions"
-                                        className={({ isActive }) =>
-                                            `block px-4 py-2 rounded transition-colors ${isActive
-                                                ? 'bg-blue-600 text-white'
-                                                : 'text-gray-700 hover:bg-gray-100'
-                                            }`
-                                        }
-                                    >
-                                        Regions
-                                    </NavLink>
-                                </li>
-                                <li>
-                                    <NavLink
-                                        to="/validation-policies"
-                                        className={({ isActive }) =>
-                                            `block px-4 py-2 rounded transition-colors ${isActive
-                                                ? 'bg-blue-600 text-white'
-                                                : 'text-gray-700 hover:bg-gray-100'
-                                            }`
-                                        }
-                                    >
-                                        Validation Policies
-                                    </NavLink>
-                                </li>
-                                <li>
-                                    <NavLink
-                                        to="/component-definitions"
-                                        className={({ isActive }) =>
-                                            `block px-4 py-2 rounded transition-colors ${isActive
-                                                ? 'bg-blue-600 text-white'
-                                                : 'text-gray-700 hover:bg-gray-100'
-                                            }`
-                                        }
-                                    >
-                                        Component Definitions
-                                    </NavLink>
-                                </li>
-                                <li>
-                                    <NavLink
-                                        to="/configuration-history"
-                                        className={({ isActive }) =>
-                                            `block px-4 py-2 rounded transition-colors ${isActive
-                                                ? 'bg-blue-600 text-white'
-                                                : 'text-gray-700 hover:bg-gray-100'
-                                            }`
-                                        }
-                                    >
-                                        Component Version History
-                                    </NavLink>
-                                </li>
-                                <li>
-                                    <NavLink
-                                        to="/approver-roles"
-                                        className={({ isActive }) =>
-                                            `block px-4 py-2 rounded transition-colors ${isActive
-                                                ? 'bg-blue-600 text-white'
-                                                : 'text-gray-700 hover:bg-gray-100'
-                                            }`
-                                        }
-                                    >
-                                        Approver Roles
-                                    </NavLink>
-                                </li>
-                                <li>
-                                    <NavLink
-                                        to="/additional-approval-rules"
-                                        className={({ isActive }) =>
-                                            `block px-4 py-2 rounded transition-colors ${isActive
-                                                ? 'bg-blue-600 text-white'
-                                                : 'text-gray-700 hover:bg-gray-100'
-                                            }`
-                                        }
-                                    >
-                                        Additional Approvals
-                                    </NavLink>
-                                </li>
-                                <li>
-                                    <NavLink
-                                        to="/attestations"
-                                        className={({ isActive }) =>
-                                            `block px-4 py-2 rounded transition-colors ${isActive
-                                                ? 'bg-blue-600 text-white'
-                                                : 'text-gray-700 hover:bg-gray-100'
-                                            }`
-                                        }
-                                    >
-                                        Attestations
-                                    </NavLink>
-                                </li>
-                                <li>
-                                    <NavLink
-                                        to="/analytics"
-                                        className={({ isActive }) =>
-                                            `block px-4 py-2 rounded transition-colors ${isActive
-                                                ? 'bg-blue-600 text-white'
-                                                : 'text-gray-700 hover:bg-gray-100'
-                                            }`
-                                        }
-                                    >
-                                        Advanced Analytics
-                                    </NavLink>
-                                </li>
+                                <SectionHeader
+                                    title="Configuration"
+                                    isCollapsed={collapsed.configuration}
+                                    onToggle={() => toggleSection('configuration')}
+                                />
+
+                                {!collapsed.configuration && (
+                                    <>
+                                        {/* Reference Data subsection */}
+                                        <SubsectionLabel label="Reference Data" />
+                                        <NavItem to="/reference-data">Reference Data</NavItem>
+                                        <NavItem to="/taxonomy">Taxonomy</NavItem>
+
+                                        {/* Workflow & Policies subsection */}
+                                        <SubsectionLabel label="Workflow & Policies" />
+                                        <NavItem to="/workflow-config">Workflow Config</NavItem>
+                                        <NavItem to="/validation-policies">Validation Policies</NavItem>
+                                        <NavItem to="/approver-roles">Approver Roles</NavItem>
+                                        <NavItem to="/additional-approval-rules">Additional Approvals</NavItem>
+
+                                        {/* Governance subsection */}
+                                        <SubsectionLabel label="Governance" />
+                                        <NavItem to="/regions">Regions</NavItem>
+                                        <NavItem to="/batch-delegates">Batch Delegates</NavItem>
+
+                                        {/* Components subsection */}
+                                        <SubsectionLabel label="Components" />
+                                        <NavItem to="/component-definitions">Component Definitions</NavItem>
+                                        <NavItem to="/configuration-history">Version History</NavItem>
+                                    </>
+                                )}
+                            </>
+                        )}
+
+                        {/* Validator-specific: Reference Data & Taxonomy access */}
+                        {user?.role === 'Validator' && (
+                            <>
+                                <SectionHeader
+                                    title="Reference"
+                                    isCollapsed={collapsed.configuration}
+                                    onToggle={() => toggleSection('configuration')}
+                                />
+                                {!collapsed.configuration && (
+                                    <>
+                                        <NavItem to="/reference-data">Reference Data</NavItem>
+                                        <NavItem to="/taxonomy">Taxonomy</NavItem>
+                                    </>
+                                )}
                             </>
                         )}
                     </ul>

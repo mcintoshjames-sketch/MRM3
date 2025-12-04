@@ -282,6 +282,8 @@ export default function ModelDetailsPage() {
     const [recommendations, setRecommendations] = useState<RecommendationListItem[]>([]);
     const [recommendationsLoading, setRecommendationsLoading] = useState(false);
     const [finalRiskRanking, setFinalRiskRanking] = useState<FinalRiskRanking | null>(null);
+    // Store original form values to compute diff when saving
+    const [originalFormData, setOriginalFormData] = useState<typeof formData | null>(null);
     const [formData, setFormData] = useState({
         model_name: '',
         description: '',
@@ -411,7 +413,7 @@ export default function ModelDetailsPage() {
             );
             setTaxonomies(taxDetails.map((r) => r.data));
 
-            setFormData({
+            const initialFormData = {
                 model_name: modelData.model_name,
                 description: modelData.description || '',
                 development_type: modelData.development_type,
@@ -427,7 +429,9 @@ export default function ModelDetailsPage() {
                 user_ids: modelData.users.map((u: User) => u.user_id),
                 regulatory_category_ids: modelData.regulatory_categories.map((c: TaxonomyValue) => c.value_id),
                 is_model: modelData.is_model ?? true
-            });
+            };
+            setFormData(initialFormData);
+            setOriginalFormData(initialFormData);
 
             // Fetch validation requests and versions separately - this is optional and shouldn't break the page
             try {
@@ -502,18 +506,81 @@ export default function ModelDetailsPage() {
         setEditError(null);
         setPendingEditSuccess(null);
         try {
-            // Exclude 'status' string field - use status_id instead
-            const { status, ...formDataWithoutStatus } = formData;
-            const payload = {
-                ...formDataWithoutStatus,
-                developer_id: formData.developer_id || null,
-                vendor_id: formData.vendor_id || null,
-                risk_tier_id: formData.risk_tier_id || null,
-                model_type_id: formData.model_type_id || null,
-                wholly_owned_region_id: formData.wholly_owned_region_id || null,
-                user_ids: formData.user_ids.length > 0 ? formData.user_ids : [],
-                regulatory_category_ids: formData.regulatory_category_ids.length > 0 ? formData.regulatory_category_ids : []
+            // Compute only the fields that actually changed (for proper pending edit tracking)
+            const payload: Record<string, unknown> = {};
+
+            // Helper to check if arrays are equal
+            const arraysEqual = (a: number[], b: number[]) => {
+                if (a.length !== b.length) return false;
+                const sortedA = [...a].sort();
+                const sortedB = [...b].sort();
+                return sortedA.every((val, idx) => val === sortedB[idx]);
             };
+
+            if (originalFormData) {
+                // Only include fields that have actually changed
+                if (formData.model_name !== originalFormData.model_name) {
+                    payload.model_name = formData.model_name;
+                }
+                if (formData.description !== originalFormData.description) {
+                    payload.description = formData.description;
+                }
+                if (formData.development_type !== originalFormData.development_type) {
+                    payload.development_type = formData.development_type;
+                }
+                if (formData.owner_id !== originalFormData.owner_id) {
+                    payload.owner_id = formData.owner_id;
+                }
+                if (formData.developer_id !== originalFormData.developer_id) {
+                    payload.developer_id = formData.developer_id || null;
+                }
+                if (formData.vendor_id !== originalFormData.vendor_id) {
+                    payload.vendor_id = formData.vendor_id || null;
+                }
+                if (formData.risk_tier_id !== originalFormData.risk_tier_id) {
+                    payload.risk_tier_id = formData.risk_tier_id || null;
+                }
+                if (formData.model_type_id !== originalFormData.model_type_id) {
+                    payload.model_type_id = formData.model_type_id || null;
+                }
+                if (formData.usage_frequency_id !== originalFormData.usage_frequency_id) {
+                    payload.usage_frequency_id = formData.usage_frequency_id;
+                }
+                if (formData.status_id !== originalFormData.status_id) {
+                    payload.status_id = formData.status_id;
+                }
+                if (formData.wholly_owned_region_id !== originalFormData.wholly_owned_region_id) {
+                    payload.wholly_owned_region_id = formData.wholly_owned_region_id || null;
+                }
+                if (!arraysEqual(formData.user_ids, originalFormData.user_ids)) {
+                    payload.user_ids = formData.user_ids.length > 0 ? formData.user_ids : [];
+                }
+                if (!arraysEqual(formData.regulatory_category_ids, originalFormData.regulatory_category_ids)) {
+                    payload.regulatory_category_ids = formData.regulatory_category_ids.length > 0 ? formData.regulatory_category_ids : [];
+                }
+                if (formData.is_model !== originalFormData.is_model) {
+                    payload.is_model = formData.is_model;
+                }
+            } else {
+                // Fallback: send all fields if original data not available (shouldn't happen)
+                const { status, ...formDataWithoutStatus } = formData;
+                Object.assign(payload, formDataWithoutStatus, {
+                    developer_id: formData.developer_id || null,
+                    vendor_id: formData.vendor_id || null,
+                    risk_tier_id: formData.risk_tier_id || null,
+                    model_type_id: formData.model_type_id || null,
+                    wholly_owned_region_id: formData.wholly_owned_region_id || null,
+                    user_ids: formData.user_ids.length > 0 ? formData.user_ids : [],
+                    regulatory_category_ids: formData.regulatory_category_ids.length > 0 ? formData.regulatory_category_ids : []
+                });
+            }
+
+            // Check if there are any changes
+            if (Object.keys(payload).length === 0) {
+                setEditError('No changes to save.');
+                return;
+            }
+
             const response = await api.patch(`/models/${id}`, payload);
             setEditing(false);
             setEditError(null);
