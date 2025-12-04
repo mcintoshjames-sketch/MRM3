@@ -9,6 +9,7 @@ export default function BulkAttestationPage() {
     const navigate = useNavigate();
     const [showConfirmModal, setShowConfirmModal] = useState(false);
     const [showDiscardModal, setShowDiscardModal] = useState(false);
+    const [hasAttemptedSubmit, setHasAttemptedSubmit] = useState(false);
 
     const {
         // State
@@ -481,8 +482,8 @@ export default function BulkAttestationPage() {
                         </div>
                     )}
 
-                    {/* Validation Errors */}
-                    {validationErrors.length > 0 && (
+                    {/* Validation Errors - only show after user attempts to submit */}
+                    {hasAttemptedSubmit && validationErrors.length > 0 && (
                         <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg">
                             <div className="font-medium text-red-800 mb-2">Please fix the following issues:</div>
                             <ul className="text-sm text-red-700 list-disc list-inside">
@@ -514,8 +515,13 @@ export default function BulkAttestationPage() {
                         </button>
                         <button
                             type="button"
-                            onClick={() => setShowConfirmModal(true)}
-                            disabled={!canSubmit}
+                            onClick={() => {
+                                setHasAttemptedSubmit(true);
+                                if (canSubmit) {
+                                    setShowConfirmModal(true);
+                                }
+                            }}
+                            disabled={isSubmitting}
                             className="btn-primary"
                         >
                             Submit {selectedCount} Attestation{selectedCount !== 1 ? 's' : ''}

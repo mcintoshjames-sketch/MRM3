@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import api from '../api/client';
 import Layout from '../components/Layout';
@@ -145,7 +145,19 @@ interface GroupedByOwner {
 
 export default function AttestationCyclesPage() {
     const { user } = useAuth();
-    const [activeTab, setActiveTab] = useState<TabType>('cycles');
+    const [searchParams, setSearchParams] = useSearchParams();
+
+    // Get initial tab from URL param or default to 'cycles'
+    const tabParam = searchParams.get('tab');
+    const validTabs: TabType[] = ['cycles', 'rules', 'targets', 'review', 'owners', 'all-records', 'questions'];
+    const initialTab: TabType = tabParam && validTabs.includes(tabParam as TabType) ? (tabParam as TabType) : 'cycles';
+    const [activeTab, setActiveTab] = useState<TabType>(initialTab);
+
+    // Update URL when tab changes
+    const handleTabChange = (tab: TabType) => {
+        setActiveTab(tab);
+        setSearchParams(tab === 'cycles' ? {} : { tab });
+    };
 
     // Cycles state
     const [cycles, setCycles] = useState<AttestationCycle[]>([]);
@@ -803,7 +815,7 @@ export default function AttestationCyclesPage() {
             <div className="border-b border-gray-200 mb-6">
                 <nav className="-mb-px flex space-x-8">
                     <button
-                        onClick={() => setActiveTab('cycles')}
+                        onClick={() => handleTabChange('cycles')}
                         className={`py-2 px-1 border-b-2 font-medium text-sm ${
                             activeTab === 'cycles'
                                 ? 'border-blue-500 text-blue-600'
@@ -813,7 +825,7 @@ export default function AttestationCyclesPage() {
                         Cycles
                     </button>
                     <button
-                        onClick={() => setActiveTab('rules')}
+                        onClick={() => handleTabChange('rules')}
                         className={`py-2 px-1 border-b-2 font-medium text-sm ${
                             activeTab === 'rules'
                                 ? 'border-blue-500 text-blue-600'
@@ -823,7 +835,7 @@ export default function AttestationCyclesPage() {
                         Scheduling Rules
                     </button>
                     <button
-                        onClick={() => setActiveTab('targets')}
+                        onClick={() => handleTabChange('targets')}
                         className={`py-2 px-1 border-b-2 font-medium text-sm ${
                             activeTab === 'targets'
                                 ? 'border-blue-500 text-blue-600'
@@ -833,7 +845,7 @@ export default function AttestationCyclesPage() {
                         Coverage Targets
                     </button>
                     <button
-                        onClick={() => setActiveTab('review')}
+                        onClick={() => handleTabChange('review')}
                         className={`py-2 px-1 border-b-2 font-medium text-sm ${
                             activeTab === 'review'
                                 ? 'border-blue-500 text-blue-600'
@@ -848,7 +860,7 @@ export default function AttestationCyclesPage() {
                         )}
                     </button>
                     <button
-                        onClick={() => setActiveTab('owners')}
+                        onClick={() => handleTabChange('owners')}
                         className={`py-2 px-1 border-b-2 font-medium text-sm ${
                             activeTab === 'owners'
                                 ? 'border-blue-500 text-blue-600'
@@ -863,7 +875,7 @@ export default function AttestationCyclesPage() {
                         )}
                     </button>
                     <button
-                        onClick={() => setActiveTab('all-records')}
+                        onClick={() => handleTabChange('all-records')}
                         className={`py-2 px-1 border-b-2 font-medium text-sm ${
                             activeTab === 'all-records'
                                 ? 'border-blue-500 text-blue-600'
@@ -873,7 +885,7 @@ export default function AttestationCyclesPage() {
                         All Records
                     </button>
                     <button
-                        onClick={() => setActiveTab('questions')}
+                        onClick={() => handleTabChange('questions')}
                         className={`py-2 px-1 border-b-2 font-medium text-sm ${
                             activeTab === 'questions'
                                 ? 'border-blue-500 text-blue-600'

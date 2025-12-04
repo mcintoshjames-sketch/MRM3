@@ -99,6 +99,7 @@ class ModelRef(BaseModel):
     model_name: str
     risk_tier_code: Optional[str] = None
     risk_tier_label: Optional[str] = None
+    owner_id: Optional[int] = None
     owner_name: Optional[str] = None
 
     class Config:
@@ -686,9 +687,9 @@ class BulkAttestationStateResponse(BaseModel):
 
 
 class BulkAttestationResponseItem(BaseModel):
-    """Individual response item for bulk attestation."""
+    """Individual response item for bulk attestation (draft allows null answers)."""
     question_id: int
-    answer: bool
+    answer: Optional[bool] = None  # Allow null for drafts; submit endpoint validates all are answered
     comment: Optional[str] = None
 
 

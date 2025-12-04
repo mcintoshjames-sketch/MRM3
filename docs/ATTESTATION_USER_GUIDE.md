@@ -75,6 +75,8 @@ Rules that determine how frequently different model owners must attest. Some own
    - **Decommission Model**: Request removal of a model no longer in use
 5. **Submit your attestation** when complete
 
+**Note:** Clean attestations (all "Yes" answers with no comments or changes) are automatically accepted, so you'll see "Accepted" status immediately. Attestations with "No" answers or change proposals go to the review queue.
+
 ### Understanding Urgency Indicators
 
 | Indicator | Meaning |
@@ -89,6 +91,22 @@ If an administrator rejects your attestation:
 1. You'll see the rejection reason in the attestation details
 2. The attestation returns to "Pending" status
 3. Address the feedback and resubmit
+
+### Dashboard Attestation Alert
+
+Your **My Dashboard** page displays a prominent alert when you have pending attestations:
+
+- **Yellow alert**: You have pending attestations due within the deadline
+  - Shows count of pending attestations
+  - Shows days until due date
+  - Links directly to "My Attestations" page
+
+- **Red alert**: You have overdue attestations that need immediate attention
+  - Shows count of overdue attestations
+  - Shows any additional pending attestations
+  - Links directly to "My Attestations" page
+
+The alert appears automatically whenever you have attestations requiring action, ensuring you never miss a deadline.
 
 ### Bulk Attestation
 
@@ -128,6 +146,7 @@ Bulk attestation is ideal when:
    - Click "Submit Bulk Attestation"
    - All selected models are submitted with your responses
    - Excluded models remain pending for individual attestation
+   - Clean attestations (all "Yes", no comments) are automatically accepted
 
 #### Excluding Models from Bulk Attestation
 
@@ -222,6 +241,15 @@ The Admin Dashboard displays a **Cycle Reminder Banner** when:
 - No attestation cycle is currently open
 - It's time to create and open a new cycle
 
+### Attestation Review Queue Alert
+
+The Admin Dashboard displays a prominent **Review Queue Alert** when:
+- There are attestations with SUBMITTED status awaiting review
+- The alert shows the count of pending reviews
+- Click **"View Review Queue"** to navigate directly to the Review Queue tab
+
+This ensures administrators are promptly notified when model owners submit attestations that need approval.
+
 ### Reviewing Attestation Change Proposals
 
 When model owners propose inventory changes during attestation:
@@ -241,7 +269,22 @@ When model owners propose inventory changes during attestation:
 
 Reviewers (Administrators) can review submitted attestations.
 
+### Auto-Accepted Attestations
+
+The system automatically accepts "clean" attestations to reduce reviewer workload. An attestation is auto-accepted when:
+- **All questions are answered "Yes"** (no issues identified)
+- **No optional comments are provided** (nothing requiring review)
+- **No change proposals are submitted** (no updates, new models, or decommissions)
+
+Auto-accepted attestations:
+- Move directly to ACCEPTED status without manual review
+- Are recorded in the audit log with action "AUTO_ACCEPT"
+- Still appear in historical reports and the All Records view
+- Free up reviewer time to focus on attestations that need attention
+
 ### Reviewing Attestations
+
+For attestations that require manual review:
 
 1. Navigate to **"Attestations"** > **Review Queue** tab
 2. Click on a submitted attestation
@@ -546,6 +589,12 @@ A: Relevant documentation such as model validation reports, performance monitori
 **Q: What happens if I miss the deadline?**
 A: Your attestation will show as "Overdue" and may be escalated to management. Complete it as soon as possible.
 
+**Q: How do I know if I have pending attestations?**
+A: Check your "My Dashboard" page - a prominent alert appears at the top when you have pending or overdue attestations, showing the count and days until due. You can also check the "My Attestations" page directly.
+
+**Q: Why was my attestation automatically accepted?**
+A: Clean attestations (all "Yes" answers with no comments or change proposals) are auto-accepted to streamline the process. This means no issues were identified and no review is needed.
+
 ### For Administrators
 
 **Q: Can I extend the deadline for a cycle?**
@@ -559,6 +608,12 @@ A: Model owners can propose decommissioning during attestation. Review and accep
 
 **Q: Can I manually mark an attestation as complete?**
 A: Administrators can accept attestations on behalf of owners if necessary, but this should be documented with a clear reason.
+
+**Q: How do I know when attestations need my review?**
+A: The Admin Dashboard shows a prominent blue alert when there are attestations awaiting review, with a count and quick link to the Review Queue. You can also check the Review Queue tab in the Attestations page directly.
+
+**Q: Why don't I see some submitted attestations in the review queue?**
+A: Clean attestations (all "Yes" answers with no comments or change proposals) are automatically accepted and bypass the review queue. Only attestations requiring attention appear for manual review.
 
 ### Technical Questions
 

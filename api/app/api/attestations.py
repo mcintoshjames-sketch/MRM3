@@ -110,6 +110,32 @@ def create_audit_log(db: Session, entity_type: str, entity_id: int, action: str,
     db.add(audit_log)
 
 
+def is_clean_attestation(responses: list, decision_comment: Optional[str]) -> bool:
+    """
+    Check if an attestation is "clean" and should be auto-accepted.
+
+    A clean attestation has:
+    - All answers are "Yes" (True)
+    - No comments on any response
+    - No decision comment
+    """
+    # Check all answers are Yes
+    all_yes = all(r.answer is True for r in responses)
+    if not all_yes:
+        return False
+
+    # Check no response comments
+    has_response_comments = any(r.comment and r.comment.strip() for r in responses)
+    if has_response_comments:
+        return False
+
+    # Check no decision comment
+    if decision_comment and decision_comment.strip():
+        return False
+
+    return True
+
+
 def require_admin(current_user: User = Depends(get_current_user)):
     """Dependency to require admin role."""
     if current_user.role != UserRole.ADMIN:
@@ -897,10 +923,18 @@ def submit_attestation(
                 detail=f"Comment required when answering 'No' to question: {question.code}"
             )
 
+    # Check if this is a clean attestation (auto-accept)
+    auto_accept = is_clean_attestation(submission.responses, submission.decision_comment)
+
     # Update record
     record.decision = submission.decision
     record.decision_comment = submission.decision_comment
-    record.status = AttestationRecordStatus.SUBMITTED.value
+    if auto_accept:
+        record.status = AttestationRecordStatus.ACCEPTED.value
+        record.reviewed_at = utc_now()
+        record.reviewed_by_user_id = current_user.user_id  # Self-accepted
+    else:
+        record.status = AttestationRecordStatus.SUBMITTED.value
     record.attested_at = utc_now()
     record.attesting_user_id = current_user.user_id
     # Clear excluded flag since record is now submitted
@@ -931,11 +965,12 @@ def submit_attestation(
         db=db,
         entity_type="AttestationRecord",
         entity_id=attestation_id,
-        action="SUBMIT",
+        action="AUTO_ACCEPT" if auto_accept else "SUBMIT",
         user_id=current_user.user_id,
         changes={
             "decision": submission.decision,
-            "response_count": len(submission.responses)
+            "response_count": len(submission.responses),
+            "auto_accepted": auto_accept
         }
     )
 
@@ -1209,6 +1244,7 @@ def _build_record_response(record: AttestationRecord, db: Session) -> Attestatio
         "model_name": model.model_name,
         "risk_tier_code": risk_tier_code,
         "risk_tier_label": risk_tier_label,
+        "owner_id": model.owner_id,
         "owner_name": owner.full_name if owner else None
     }
 
@@ -2882,6 +2918,14 @@ def submit_bulk_attestation(
             detail="All questions must be answered"
         )
 
+    # Validate all answers are boolean (not null)
+    for response in submit_in.responses:
+        if response.answer is None:
+            raise HTTPException(
+                status_code=400,
+                detail="All questions must have a Yes or No answer"
+            )
+
     # Validate comments for "No" answers
     question_map = {q.value_id: q for q in questions}
     for response in submit_in.responses:
@@ -2916,6 +2960,9 @@ def submit_bulk_attestation(
         db.add(bulk_submission)
         db.flush()
 
+    # Check if this is a clean attestation (auto-accept)
+    auto_accept = is_clean_attestation(submit_in.responses, submit_in.decision_comment)
+
     # Update bulk submission
     bulk_submission.status = AttestationBulkSubmissionStatus.SUBMITTED.value
     bulk_submission.selected_model_ids = submit_in.selected_model_ids
@@ -2936,7 +2983,12 @@ def submit_bulk_attestation(
         # Update record
         record.decision = decision
         record.decision_comment = submit_in.decision_comment
-        record.status = AttestationRecordStatus.SUBMITTED.value
+        if auto_accept:
+            record.status = AttestationRecordStatus.ACCEPTED.value
+            record.reviewed_at = utc_now()
+            record.reviewed_by_user_id = current_user.user_id  # Self-accepted
+        else:
+            record.status = AttestationRecordStatus.SUBMITTED.value
         record.attested_at = utc_now()
         record.attesting_user_id = current_user.user_id
         record.bulk_submission_id = bulk_submission.bulk_submission_id
@@ -2967,16 +3019,26 @@ def submit_bulk_attestation(
         db=db,
         entity_type="AttestationBulkSubmission",
         entity_id=bulk_submission.bulk_submission_id,
-        action="SUBMIT",
+        action="AUTO_ACCEPT" if auto_accept else "SUBMIT",
         user_id=current_user.user_id,
         changes={
             "submitted_count": len(submit_in.selected_model_ids),
             "excluded_count": excluded_count,
-            "decision": decision
+            "decision": decision,
+            "auto_accepted": auto_accept
         }
     )
 
     db.commit()
+
+    # Build response message
+    count = len(submit_in.selected_model_ids)
+    if auto_accept:
+        msg = f"Successfully submitted and auto-accepted {count} attestation{'s' if count != 1 else ''}."
+    else:
+        msg = f"Successfully submitted {count} attestation{'s' if count != 1 else ''}."
+    if excluded_count > 0:
+        msg += f" {excluded_count} model{'s' if excluded_count != 1 else ''} require{'s' if excluded_count == 1 else ''} individual attestation."
 
     return BulkAttestationSubmitResponse(
         success=True,
@@ -2984,7 +3046,7 @@ def submit_bulk_attestation(
         submitted_count=len(submit_in.selected_model_ids),
         excluded_count=excluded_count,
         attestation_ids=attestation_ids,
-        message=f"Successfully submitted {len(submit_in.selected_model_ids)} attestations. {excluded_count} models require individual attestation."
+        message=msg
     )
 
 

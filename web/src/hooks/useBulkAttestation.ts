@@ -2,6 +2,29 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import api from '../api/client';
 
 // ============================================================================
+// Helper: Extract error message from API response
+// ============================================================================
+
+function extractErrorMessage(err: any, fallback: string): string {
+    const detail = err?.response?.data?.detail;
+    if (!detail) return fallback;
+
+    // If detail is a string, return it directly
+    if (typeof detail === 'string') return detail;
+
+    // If detail is an array (Pydantic validation errors), extract messages
+    if (Array.isArray(detail)) {
+        const messages = detail.map((e: any) => e.msg || e.message || JSON.stringify(e));
+        return messages.join('; ');
+    }
+
+    // If detail is an object with a message property
+    if (typeof detail === 'object' && detail.msg) return detail.msg;
+
+    return fallback;
+}
+
+// ============================================================================
 // Types
 // ============================================================================
 
@@ -261,7 +284,7 @@ export function useBulkAttestation(cycleId: number): BulkAttestationState & Bulk
 
             setIsDirty(false);
         } catch (err: any) {
-            setError(err.response?.data?.detail || 'Failed to load bulk attestation data');
+            setError(extractErrorMessage(err, 'Failed to load bulk attestation data'));
         } finally {
             setIsLoading(false);
         }
@@ -380,7 +403,7 @@ export function useBulkAttestation(cycleId: number): BulkAttestationState & Bulk
             setDraftExists(true);
             setIsDirty(false);
         } catch (err: any) {
-            setError(err.response?.data?.detail || 'Failed to save draft');
+            setError(extractErrorMessage(err, 'Failed to save draft'));
         } finally {
             setIsSaving(false);
         }
@@ -410,7 +433,7 @@ export function useBulkAttestation(cycleId: number): BulkAttestationState & Bulk
             setIsDirty(false);
             setSuccessMessage('Draft discarded');
         } catch (err: any) {
-            setError(err.response?.data?.detail || 'Failed to discard draft');
+            setError(extractErrorMessage(err, 'Failed to discard draft'));
         }
     }, [cycleId, pendingModelIds, questions]);
 
@@ -448,7 +471,7 @@ export function useBulkAttestation(cycleId: number): BulkAttestationState & Bulk
 
             return true;
         } catch (err: any) {
-            setError(err.response?.data?.detail || 'Failed to submit attestations');
+            setError(extractErrorMessage(err, 'Failed to submit attestations'));
             return false;
         } finally {
             setIsSubmitting(false);

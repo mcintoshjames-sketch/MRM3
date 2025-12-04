@@ -51,6 +51,7 @@ interface ModelRef {
     model_name: string;
     risk_tier_code: string | null;
     risk_tier_label: string | null;
+    owner_id: number | null;
     owner_name: string | null;
 }
 
@@ -381,7 +382,9 @@ export default function AttestationDetailPage() {
 
     const canEdit = attestation?.status === 'PENDING' || attestation?.status === 'REJECTED';
     const canReview = (user?.role === 'Admin' || user?.role === 'Validator') && attestation?.status === 'SUBMITTED';
-    const isOwner = attestation?.attesting_user.user_id === user?.user_id;
+    // User is owner if they are the attesting user OR the model owner
+    const isOwner = attestation?.attesting_user.user_id === user?.user_id ||
+                    attestation?.model.owner_id === user?.user_id;
 
     if (loading) {
         return (

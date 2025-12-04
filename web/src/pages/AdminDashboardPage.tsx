@@ -205,6 +205,7 @@ export default function AdminDashboardPage() {
     const [recommendationsSummary, setRecommendationsSummary] = useState<RecommendationsSummary | null>(null);
     const [overdueRecommendations, setOverdueRecommendations] = useState<OverdueRecommendation[]>([]);
     const [cycleReminder, setCycleReminder] = useState<CycleReminder | null>(null);
+    const [attestationReviewCount, setAttestationReviewCount] = useState<number>(0);
     const [loading, setLoading] = useState(true);
 
     // Commentary modal state
@@ -234,7 +235,8 @@ export default function AdminDashboardPage() {
                 recommendationsOpenRes,
                 recommendationsOverdueRes,
                 attestationChangesRes,
-                cycleReminderRes
+                cycleReminderRes,
+                attestationStatsRes
             ] = await Promise.all([
                 api.get('/validation-workflow/dashboard/sla-violations'),
                 api.get('/validation-workflow/dashboard/out-of-order'),
@@ -250,7 +252,8 @@ export default function AdminDashboardPage() {
                 api.get('/recommendations/dashboard/open'),
                 api.get('/recommendations/dashboard/overdue'),
                 api.get('/attestations/changes?status=PENDING').catch(() => ({ data: [] })),
-                api.get('/attestations/cycles/reminder').catch(() => ({ data: { should_show_reminder: false } }))
+                api.get('/attestations/cycles/reminder').catch(() => ({ data: { should_show_reminder: false } })),
+                api.get('/attestations/dashboard/stats').catch(() => ({ data: { submitted_count: 0 } }))
             ]);
             setSlaViolations(violationsRes.data);
             setOutOfOrder(outOfOrderRes.data);
@@ -278,6 +281,7 @@ export default function AdminDashboardPage() {
             setOverdueRecommendations(recommendationsOverdueRes.data.recommendations || []);
             // Set cycle reminder
             setCycleReminder(cycleReminderRes.data);
+            setAttestationReviewCount(attestationStatsRes.data.submitted_count || 0);
         } catch (error) {
             console.error('Failed to fetch dashboard data:', error);
         } finally {
@@ -666,6 +670,34 @@ export default function AdminDashboardPage() {
                             </span>
                         </div>
                     )}
+                </div>
+            )}
+
+            {/* Attestation Review Queue Alert */}
+            {attestationReviewCount > 0 && (
+                <div className="bg-blue-50 border-l-4 border-blue-500 p-4 rounded-lg shadow mb-6">
+                    <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-3">
+                            <svg className="w-6 h-6 text-blue-500" fill="currentColor" viewBox="0 0 20 20">
+                                <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
+                            </svg>
+                            <div>
+                                <h3 className="text-sm font-semibold text-blue-800">Attestations Awaiting Review</h3>
+                                <p className="text-sm text-blue-700">
+                                    You have <span className="font-bold">{attestationReviewCount}</span> attestation{attestationReviewCount !== 1 ? 's' : ''} in the review queue awaiting approval.
+                                </p>
+                            </div>
+                        </div>
+                        <Link
+                            to="/attestations?tab=review"
+                            className="inline-flex items-center px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-md transition-colors"
+                        >
+                            View Review Queue
+                            <svg className="ml-2 w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                            </svg>
+                        </Link>
+                    </div>
                 </div>
             )}
 

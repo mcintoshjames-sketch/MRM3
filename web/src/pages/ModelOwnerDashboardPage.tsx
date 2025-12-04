@@ -66,6 +66,18 @@ interface PendingDecommissioningReview {
     created_by_name: string | null;
 }
 
+interface AttestationWidgetData {
+    pending_count: number;
+    overdue_count: number;
+    days_until_due: number | null;
+    current_cycle: {
+        cycle_id: number;
+        cycle_name: string;
+        submission_due_date: string;
+        status: string;
+    } | null;
+}
+
 export default function ModelOwnerDashboardPage() {
     const { user } = useAuth();
     const [newsFeed, setNewsFeed] = useState<NewsFeedItem[]>([]);
@@ -73,6 +85,7 @@ export default function ModelOwnerDashboardPage() {
     const [recentApprovals, setRecentApprovals] = useState<RecentApproval[]>([]);
     const [overdueItems, setOverdueItems] = useState<OverdueItem[]>([]);
     const [pendingDecomReviews, setPendingDecomReviews] = useState<PendingDecommissioningReview[]>([]);
+    const [attestationData, setAttestationData] = useState<AttestationWidgetData | null>(null);
     const [loading, setLoading] = useState(true);
 
     // Commentary modal state
@@ -85,18 +98,20 @@ export default function ModelOwnerDashboardPage() {
 
     const fetchDashboardData = async () => {
         try {
-            const [feedRes, submissionsRes, approvalsRes, overdueRes, decomReviewsRes] = await Promise.all([
+            const [feedRes, submissionsRes, approvalsRes, overdueRes, decomReviewsRes, attestationsRes] = await Promise.all([
                 api.get('/dashboard/news-feed'),
                 api.get('/models/my-submissions'),
                 api.get('/validation-workflow/dashboard/recent-approvals?days_back=30'),
                 api.get('/validation-workflow/my-overdue-items'),
-                api.get('/decommissioning/my-pending-owner-reviews')
+                api.get('/decommissioning/my-pending-owner-reviews'),
+                api.get('/attestations/my-upcoming').catch(() => ({ data: null }))
             ]);
             setNewsFeed(feedRes.data);
             setMySubmissions(submissionsRes.data);
             setRecentApprovals(approvalsRes.data);
             setOverdueItems(overdueRes.data);
             setPendingDecomReviews(decomReviewsRes.data);
+            setAttestationData(attestationsRes.data);
         } catch (error) {
             console.error('Failed to fetch dashboard data:', error);
         } finally {
@@ -229,6 +244,60 @@ export default function ModelOwnerDashboardPage() {
                     </div>
                 </div>
             </div>
+
+            {/* Pending Attestations Alert */}
+            {attestationData && attestationData.pending_count > 0 && (
+                <div className={`border-l-4 p-4 rounded-lg shadow mb-6 ${
+                    attestationData.overdue_count > 0
+                        ? 'bg-red-50 border-red-500'
+                        : 'bg-yellow-50 border-yellow-500'
+                }`}>
+                    <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-3">
+                            <svg className={`w-6 h-6 ${attestationData.overdue_count > 0 ? 'text-red-500' : 'text-yellow-500'}`} fill="currentColor" viewBox="0 0 20 20">
+                                <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
+                            </svg>
+                            <div>
+                                <h3 className={`text-sm font-semibold ${attestationData.overdue_count > 0 ? 'text-red-800' : 'text-yellow-800'}`}>
+                                    {attestationData.overdue_count > 0 ? 'Attestations Overdue' : 'Attestations Pending'}
+                                </h3>
+                                <p className={`text-sm ${attestationData.overdue_count > 0 ? 'text-red-700' : 'text-yellow-700'}`}>
+                                    {attestationData.overdue_count > 0 ? (
+                                        <>
+                                            You have <span className="font-bold">{attestationData.overdue_count}</span> overdue attestation{attestationData.overdue_count !== 1 ? 's' : ''}
+                                            {attestationData.pending_count > attestationData.overdue_count && (
+                                                <> and <span className="font-bold">{attestationData.pending_count - attestationData.overdue_count}</span> pending</>
+                                            )}
+                                            .
+                                        </>
+                                    ) : (
+                                        <>
+                                            You have <span className="font-bold">{attestationData.pending_count}</span> attestation{attestationData.pending_count !== 1 ? 's' : ''} to complete
+                                            {attestationData.days_until_due !== null && attestationData.days_until_due >= 0 && (
+                                                <> (due in <span className="font-bold">{attestationData.days_until_due}</span> day{attestationData.days_until_due !== 1 ? 's' : ''})</>
+                                            )}
+                                            .
+                                        </>
+                                    )}
+                                </p>
+                            </div>
+                        </div>
+                        <Link
+                            to="/my-attestations"
+                            className={`inline-flex items-center px-4 py-2 text-sm font-medium text-white rounded-md transition-colors ${
+                                attestationData.overdue_count > 0
+                                    ? 'bg-red-600 hover:bg-red-700'
+                                    : 'bg-yellow-600 hover:bg-yellow-700'
+                            }`}
+                        >
+                            Complete Attestations
+                            <svg className="ml-2 w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                            </svg>
+                        </Link>
+                    </div>
+                </div>
+            )}
 
             {/* My Overdue Items - Alert Section */}
             {overdueItems.length > 0 && (
