@@ -282,30 +282,34 @@ export default function Layout({ children }: LayoutProps) {
                                 Monitoring
                             </span>
                         </li>
-                        <li>
-                            <NavLink
-                                to="/my-monitoring"
-                                className={({ isActive }) =>
-                                    `block px-4 py-2 rounded transition-colors ${isActive
-                                        ? 'bg-blue-600 text-white'
-                                        : 'text-gray-700 hover:bg-gray-100'
-                                    }`
-                                }
-                            >
-                                {({ isActive }) => (
-                                    <div className="flex items-center justify-between">
-                                        <span>My Monitoring Tasks</span>
-                                        {pendingCounts.monitoring > 0 && (
-                                            <span className={`ml-2 px-2 py-0.5 text-xs font-bold rounded-full ${
-                                                isActive ? 'bg-white text-blue-600' : 'bg-green-500 text-white'
-                                            }`}>
-                                                {pendingCounts.monitoring}
-                                            </span>
-                                        )}
-                                    </div>
-                                )}
-                            </NavLink>
-                        </li>
+                        {/* Non-admin users see My Monitoring Tasks */}
+                        {user?.role !== 'Admin' && (
+                            <li>
+                                <NavLink
+                                    to="/my-monitoring"
+                                    className={({ isActive }) =>
+                                        `block px-4 py-2 rounded transition-colors ${isActive
+                                            ? 'bg-blue-600 text-white'
+                                            : 'text-gray-700 hover:bg-gray-100'
+                                        }`
+                                    }
+                                >
+                                    {({ isActive }) => (
+                                        <div className="flex items-center justify-between">
+                                            <span>My Monitoring Tasks</span>
+                                            {pendingCounts.monitoring > 0 && (
+                                                <span className={`ml-2 px-2 py-0.5 text-xs font-bold rounded-full ${
+                                                    isActive ? 'bg-white text-blue-600' : 'bg-green-500 text-white'
+                                                }`}>
+                                                    {pendingCounts.monitoring}
+                                                </span>
+                                            )}
+                                        </div>
+                                    )}
+                                </NavLink>
+                            </li>
+                        )}
+                        {/* Admin users see Performance Monitoring (which includes Overview tab) */}
                         {user?.role === 'Admin' && (
                             <li>
                                 <NavLink
@@ -317,7 +321,7 @@ export default function Layout({ children }: LayoutProps) {
                                         }`
                                     }
                                 >
-                                    Monitoring Plans
+                                    Performance Monitoring
                                 </NavLink>
                             </li>
                         )}
@@ -325,7 +329,7 @@ export default function Layout({ children }: LayoutProps) {
                             <>
                                 <li>
                                     <NavLink
-                                        to="/vendors"
+                                        to="/reference-data"
                                         className={({ isActive }) =>
                                             `block px-4 py-2 rounded transition-colors ${isActive
                                                 ? 'bg-blue-600 text-white'
@@ -333,20 +337,7 @@ export default function Layout({ children }: LayoutProps) {
                                             }`
                                         }
                                     >
-                                        Vendors
-                                    </NavLink>
-                                </li>
-                                <li>
-                                    <NavLink
-                                        to="/users"
-                                        className={({ isActive }) =>
-                                            `block px-4 py-2 rounded transition-colors ${isActive
-                                                ? 'bg-blue-600 text-white'
-                                                : 'text-gray-700 hover:bg-gray-100'
-                                            }`
-                                        }
-                                    >
-                                        Users
+                                        Reference Data
                                     </NavLink>
                                 </li>
                                 <li>

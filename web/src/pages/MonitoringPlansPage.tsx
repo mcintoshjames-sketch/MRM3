@@ -4,6 +4,7 @@ import { useAuth } from '../contexts/AuthContext';
 import api from '../api/client';
 import Layout from '../components/Layout';
 import MultiSelectDropdown from '../components/MultiSelectDropdown';
+import AdminMonitoringOverview from '../components/AdminMonitoringOverview';
 
 // Interfaces
 interface User {
@@ -125,11 +126,11 @@ interface KpmCategory {
     kpms: Kpm[];
 }
 
-type TabType = 'teams' | 'plans';
+type TabType = 'overview' | 'plans' | 'teams';
 
 export default function MonitoringPlansPage() {
     const { user } = useAuth();
-    const [activeTab, setActiveTab] = useState<TabType>('plans');
+    const [activeTab, setActiveTab] = useState<TabType>('overview');
 
     // Teams state
     const [teams, setTeams] = useState<MonitoringTeam[]>([]);
@@ -423,6 +424,16 @@ export default function MonitoringPlansPage() {
             <div className="mb-6">
                 <nav className="flex space-x-4 border-b border-gray-200">
                     <button
+                        onClick={() => setActiveTab('overview')}
+                        className={`pb-3 px-1 border-b-2 font-medium text-sm ${
+                            activeTab === 'overview'
+                                ? 'border-blue-500 text-blue-600'
+                                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                        }`}
+                    >
+                        Overview
+                    </button>
+                    <button
                         onClick={() => setActiveTab('plans')}
                         className={`pb-3 px-1 border-b-2 font-medium text-sm ${
                             activeTab === 'plans'
@@ -444,6 +455,11 @@ export default function MonitoringPlansPage() {
                     </button>
                 </nav>
             </div>
+
+            {/* Overview Tab */}
+            {activeTab === 'overview' && (
+                <AdminMonitoringOverview />
+            )}
 
             {/* Teams Tab */}
             {activeTab === 'teams' && (

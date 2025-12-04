@@ -4,9 +4,7 @@ import LoginPage from './pages/LoginPage';
 import ModelsPage from './pages/ModelsPage';
 import ModelDetailsPage from './pages/ModelDetailsPage';
 import ModelChangeRecordPage from './pages/ModelChangeRecordPage';
-import VendorsPage from './pages/VendorsPage';
 import VendorDetailsPage from './pages/VendorDetailsPage';
-import UsersPage from './pages/UsersPage';
 import UserDetailsPage from './pages/UserDetailsPage';
 import TaxonomyPage from './pages/TaxonomyPage';
 import AuditPage from './pages/AuditPage';
@@ -44,6 +42,7 @@ import AttestationCyclesPage from './pages/AttestationCyclesPage';
 import MyAttestationsPage from './pages/MyAttestationsPage';
 import AttestationDetailPage from './pages/AttestationDetailPage';
 import BulkAttestationPage from './pages/BulkAttestationPage';
+import ReferenceDataPage from './pages/ReferenceDataPage';
 
 function App() {
     const { user, loading } = useAuth();
@@ -76,11 +75,12 @@ function App() {
             <Route path="/recommendations/:id" element={user ? <RecommendationDetailPage /> : <Navigate to="/login" />} />
             <Route path="/my-pending-submissions" element={user ? <MyPendingSubmissionsPage /> : <Navigate to="/login" />} />
             <Route path="/my-deployment-tasks" element={user ? <MyDeploymentTasksPage /> : <Navigate to="/login" />} />
-            <Route path="/my-monitoring" element={user ? <MyMonitoringPage /> : <Navigate to="/login" />} />
+            <Route path="/my-monitoring" element={user?.role === 'Admin' ? <Navigate to="/monitoring-plans" /> : (user ? <MyMonitoringPage /> : <Navigate to="/login" />)} />
             <Route path="/pending-decommissioning" element={user ? <PendingDecommissioningPage /> : <Navigate to="/login" />} />
-            <Route path="/vendors" element={user?.role === 'Admin' || user?.role === 'Validator' ? <VendorsPage /> : <Navigate to="/models" />} />
+            <Route path="/reference-data" element={user?.role === 'Admin' || user?.role === 'Validator' ? <ReferenceDataPage /> : <Navigate to="/models" />} />
+            <Route path="/vendors" element={<Navigate to="/reference-data" />} />
             <Route path="/vendors/:id" element={user?.role === 'Admin' || user?.role === 'Validator' ? <VendorDetailsPage /> : <Navigate to="/models" />} />
-            <Route path="/users" element={user?.role === 'Admin' || user?.role === 'Validator' ? <UsersPage /> : <Navigate to="/models" />} />
+            <Route path="/users" element={<Navigate to="/reference-data" />} />
             <Route path="/users/:id" element={user?.role === 'Admin' || user?.role === 'Validator' ? <UserDetailsPage /> : <Navigate to="/models" />} />
             <Route path="/taxonomy" element={user?.role === 'Admin' || user?.role === 'Validator' ? <TaxonomyPage /> : <Navigate to="/models" />} />
             <Route path="/audit" element={user?.role === 'Admin' || user?.role === 'Validator' ? <AuditPage /> : <Navigate to="/models" />} />

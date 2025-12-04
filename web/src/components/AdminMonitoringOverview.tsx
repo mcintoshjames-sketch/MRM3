@@ -188,14 +188,6 @@ export default function AdminMonitoringOverview() {
 
     return (
         <div>
-            {/* Page Header */}
-            <div className="mb-6">
-                <h1 className="text-3xl font-bold text-gray-900">Monitoring Program Overview</h1>
-                <p className="mt-2 text-gray-600">
-                    Governance oversight of all monitoring activities across the organization
-                </p>
-            </div>
-
             {/* Summary Cards - matches Admin Dashboard style */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
                 <div className="bg-white p-4 rounded-lg shadow-md">

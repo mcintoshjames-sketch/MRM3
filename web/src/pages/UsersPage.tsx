@@ -28,7 +28,8 @@ interface EntraUser {
     account_enabled: boolean;
 }
 
-export default function UsersPage() {
+// Exported content component for use in tabbed pages
+export function UsersContent() {
     const { user: currentUser } = useAuth();
     const [users, setUsers] = useState<User[]>([]);
     const [regions, setRegions] = useState<Region[]>([]);
@@ -189,17 +190,13 @@ export default function UsersPage() {
     };
 
     if (loading) {
-        return (
-            <Layout>
-                <div className="flex items-center justify-center h-full">Loading...</div>
-            </Layout>
-        );
+        return <div className="flex items-center justify-center h-64">Loading...</div>;
     }
 
     return (
-        <Layout>
-            <div className="flex justify-between items-center mb-6">
-                <h2 className="text-2xl font-bold">Users</h2>
+        <div>
+            <div className="flex justify-between items-center mb-4">
+                <h3 className="text-lg font-semibold">Users</h3>
                 <div className="flex gap-2">
                     {currentUser?.role === 'Admin' && (
                         <button
@@ -656,6 +653,19 @@ export default function UsersPage() {
                     </div>
                 </div>
             )}
+        </div>
+    );
+}
+
+// Default export for standalone page (used by /users/:id routes)
+export default function UsersPage() {
+    return (
+        <Layout>
+            <div className="mb-6">
+                <h2 className="text-2xl font-bold">Users</h2>
+                <p className="text-gray-600 text-sm mt-1">Manage application users and permissions</p>
+            </div>
+            <UsersContent />
         </Layout>
     );
 }
