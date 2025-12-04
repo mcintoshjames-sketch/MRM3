@@ -83,6 +83,12 @@ class AttestationQuestionFrequency(str, enum.Enum):
     BOTH = "BOTH"
 
 
+class AttestationBulkSubmissionStatus(str, enum.Enum):
+    """Status of bulk attestation submission."""
+    DRAFT = "DRAFT"
+    SUBMITTED = "SUBMITTED"
+
+
 # ============================================================================
 # AttestationCycle - represents a scheduled attestation period
 # ============================================================================
@@ -140,6 +146,9 @@ class AttestationCycle(Base):
     records: Mapped[List["AttestationRecord"]] = relationship(
         "AttestationRecord", back_populates="cycle", cascade="all, delete-orphan"
     )
+    bulk_submissions: Mapped[List["AttestationBulkSubmission"]] = relationship(
+        "AttestationBulkSubmission", back_populates="cycle", cascade="all, delete-orphan"
+    )
 
 
 # ============================================================================
@@ -187,6 +196,18 @@ class AttestationRecord(Base):
     reviewed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     review_comment: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
+    # Bulk attestation support
+    bulk_submission_id: Mapped[Optional[int]] = mapped_column(
+        Integer,
+        ForeignKey("attestation_bulk_submissions.bulk_submission_id", ondelete="SET NULL"),
+        nullable=True,
+        index=True
+    )
+    is_excluded: Mapped[bool] = mapped_column(
+        Boolean, default=False, nullable=False,
+        comment="True if model was excluded from bulk attestation"
+    )
+
     # Timestamps
     created_at: Mapped[datetime] = mapped_column(
         DateTime, default=utc_now, nullable=False
@@ -212,6 +233,9 @@ class AttestationRecord(Base):
     )
     reviewed_by: Mapped[Optional["User"]] = relationship(
         "User", foreign_keys=[reviewed_by_user_id]
+    )
+    bulk_submission: Mapped[Optional["AttestationBulkSubmission"]] = relationship(
+        "AttestationBulkSubmission", back_populates="attestation_records"
     )
     responses: Mapped[List["AttestationResponse"]] = relationship(
         "AttestationResponse", back_populates="attestation", cascade="all, delete-orphan"
@@ -528,3 +552,63 @@ class AttestationQuestionConfig(Base):
 
     # Relationships
     question_value: Mapped["TaxonomyValue"] = relationship("TaxonomyValue")
+
+
+# ============================================================================
+# AttestationBulkSubmission - Bulk attestation sessions and drafts
+# ============================================================================
+
+class AttestationBulkSubmission(Base):
+    """
+    Tracks bulk attestation submission sessions and draft state.
+    One bulk submission per user per cycle.
+    """
+    __tablename__ = "attestation_bulk_submissions"
+
+    bulk_submission_id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    cycle_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("attestation_cycles.cycle_id", ondelete="CASCADE"),
+        nullable=False, index=True
+    )
+    user_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("users.user_id", ondelete="CASCADE"),
+        nullable=False, index=True
+    )
+
+    # Draft state: DRAFT or SUBMITTED
+    status: Mapped[str] = mapped_column(
+        String(20), nullable=False, default=AttestationBulkSubmissionStatus.DRAFT.value
+    )
+
+    # Snapshot of selections (for draft persistence) - stored as JSONB
+    selected_model_ids: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)
+    excluded_model_ids: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)
+    draft_responses: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)
+    draft_comment: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    # Submission tracking
+    submitted_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    attestation_count: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+
+    # Audit timestamps
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, default=utc_now, nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=utc_now, onupdate=utc_now, nullable=False
+    )
+
+    # Unique constraint: one bulk submission per user per cycle
+    __table_args__ = (
+        UniqueConstraint('cycle_id', 'user_id', name='uq_bulk_submission_cycle_user'),
+        Index('ix_bulk_submissions_status', 'status'),
+    )
+
+    # Relationships
+    cycle: Mapped["AttestationCycle"] = relationship(
+        "AttestationCycle", back_populates="bulk_submissions"
+    )
+    user: Mapped["User"] = relationship("User")
+    attestation_records: Mapped[List["AttestationRecord"]] = relationship(
+        "AttestationRecord", back_populates="bulk_submission"
+    )

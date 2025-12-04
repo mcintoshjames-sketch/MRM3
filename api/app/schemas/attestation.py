@@ -381,12 +381,17 @@ class MyAttestationResponse(BaseModel):
     cycle_name: str
     model_id: int
     model_name: str
+    model_risk_tier: Optional[str] = None  # Tier label for display
     risk_tier_code: Optional[str] = None
     due_date: date
     status: AttestationRecordStatusEnum
+    attested_at: Optional[datetime] = None
+    decision: Optional[AttestationDecisionEnum] = None
+    rejection_reason: Optional[str] = None  # review_comment if REJECTED
     days_until_due: int  # Negative if overdue
     is_overdue: bool
     can_submit: bool  # Whether current user can submit
+    is_excluded: bool = False  # True if excluded from bulk attestation
 
     class Config:
         from_attributes = True
@@ -590,12 +595,140 @@ class CycleReminderResponse(BaseModel):
 # OWNER DASHBOARD SCHEMAS
 # ============================================================================
 
+class CurrentCycleInfo(BaseModel):
+    """Current cycle info for owner dashboard widget."""
+    cycle_id: int
+    cycle_name: str
+    submission_due_date: date
+    status: str
+
+
 class OwnerAttestationWidgetResponse(BaseModel):
     """Response for owner attestation deadline widget."""
+    current_cycle: Optional[CurrentCycleInfo] = None
+    attestations: List[MyAttestationResponse]  # All pending attestations for current cycle
+    pending_count: int
+    overdue_count: int
+    days_until_due: Optional[int] = None
+    # Legacy fields for backward compatibility
     upcoming_attestations: List[MyAttestationResponse]  # Next 14 days
     past_due_attestations: List[MyAttestationResponse]  # Past due
     total_upcoming: int
     total_past_due: int
+
+
+# ============================================================================
+# BULK ATTESTATION SCHEMAS
+# ============================================================================
+
+class BulkAttestationStatusEnum(str, Enum):
+    """Bulk attestation submission status."""
+    DRAFT = "DRAFT"
+    SUBMITTED = "SUBMITTED"
+
+
+class BulkAttestationCycleInfo(BaseModel):
+    """Cycle info for bulk attestation view."""
+    cycle_id: int
+    cycle_name: str
+    submission_due_date: date
+    status: AttestationCycleStatusEnum
+    days_until_due: int
+
+    class Config:
+        from_attributes = True
+
+
+class BulkAttestationModel(BaseModel):
+    """Model info for bulk attestation selection."""
+    attestation_id: int
+    model_id: int
+    model_name: str
+    risk_tier_code: Optional[str] = None
+    risk_tier_label: Optional[str] = None
+    model_status: Optional[str] = None  # Active, Under Review, etc.
+    last_attested_date: Optional[date] = None
+    attestation_status: AttestationRecordStatusEnum
+    is_excluded: bool = False
+
+    class Config:
+        from_attributes = True
+
+
+class BulkAttestationDraftInfo(BaseModel):
+    """Draft info for bulk attestation."""
+    exists: bool
+    bulk_submission_id: Optional[int] = None
+    selected_model_ids: List[int] = []
+    excluded_model_ids: List[int] = []
+    responses: List[dict] = []  # [{question_id, answer, comment}, ...]
+    comment: Optional[str] = None
+    last_saved: Optional[datetime] = None
+
+
+class BulkAttestationSummary(BaseModel):
+    """Summary counts for bulk attestation."""
+    total_models: int
+    pending_count: int
+    excluded_count: int
+    submitted_count: int
+    accepted_count: int
+    rejected_count: int
+
+
+class BulkAttestationStateResponse(BaseModel):
+    """Response for GET /attestations/bulk/{cycle_id}."""
+    cycle: BulkAttestationCycleInfo
+    models: List[BulkAttestationModel]
+    draft: BulkAttestationDraftInfo
+    questions: List[AttestationQuestionResponse]
+    summary: BulkAttestationSummary
+
+
+class BulkAttestationResponseItem(BaseModel):
+    """Individual response item for bulk attestation."""
+    question_id: int
+    answer: bool
+    comment: Optional[str] = None
+
+
+class BulkAttestationDraftRequest(BaseModel):
+    """Request for POST /attestations/bulk/{cycle_id}/draft."""
+    selected_model_ids: List[int] = []
+    excluded_model_ids: List[int] = []
+    responses: List[BulkAttestationResponseItem] = []
+    comment: Optional[str] = None
+
+
+class BulkAttestationDraftResponse(BaseModel):
+    """Response for POST /attestations/bulk/{cycle_id}/draft."""
+    success: bool
+    bulk_submission_id: int
+    last_saved: datetime
+    message: str
+
+
+class BulkAttestationSubmitRequest(BaseModel):
+    """Request for POST /attestations/bulk/{cycle_id}/submit."""
+    selected_model_ids: List[int]
+    responses: List[BulkAttestationResponseItem]
+    decision_comment: Optional[str] = None
+
+
+class BulkAttestationSubmitResponse(BaseModel):
+    """Response for POST /attestations/bulk/{cycle_id}/submit."""
+    success: bool
+    bulk_submission_id: int
+    submitted_count: int
+    excluded_count: int
+    attestation_ids: List[int]
+    message: str
+
+
+class BulkAttestationDiscardResponse(BaseModel):
+    """Response for DELETE /attestations/bulk/{cycle_id}/draft."""
+    success: bool
+    message: str
 
 
 # ============================================================================

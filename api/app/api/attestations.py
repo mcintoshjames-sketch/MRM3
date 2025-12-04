@@ -30,6 +30,8 @@ from app.models.attestation import (
     CoverageTarget,
     AttestationQuestionConfig,
     AttestationDecision,
+    AttestationBulkSubmission,
+    AttestationBulkSubmissionStatus,
 )
 from app.schemas.attestation import (
     # Cycle schemas
@@ -70,10 +72,23 @@ from app.schemas.attestation import (
     AttestationDashboardStats,
     CycleReminderResponse,
     OwnerAttestationWidgetResponse,
+    CurrentCycleInfo,
     # Enums
     AttestationCycleStatusEnum,
     AttestationRecordStatusEnum,
     AttestationFrequencyEnum,
+    AttestationDecisionEnum,
+    # Bulk attestation schemas
+    BulkAttestationStateResponse,
+    BulkAttestationCycleInfo,
+    BulkAttestationModel,
+    BulkAttestationDraftInfo,
+    BulkAttestationSummary,
+    BulkAttestationDraftRequest,
+    BulkAttestationDraftResponse,
+    BulkAttestationSubmitRequest,
+    BulkAttestationSubmitResponse,
+    BulkAttestationDiscardResponse,
 )
 
 router = APIRouter()
@@ -455,6 +470,26 @@ def close_cycle(
                 detail=f"Cannot close cycle: {'; '.join(blocking_gaps)}"
             )
 
+    # Clean up any draft bulk submissions for this cycle
+    draft_submissions = db.query(AttestationBulkSubmission).filter(
+        AttestationBulkSubmission.cycle_id == cycle_id,
+        AttestationBulkSubmission.status == AttestationBulkSubmissionStatus.DRAFT.value
+    ).all()
+
+    draft_count = len(draft_submissions)
+    for draft in draft_submissions:
+        db.delete(draft)
+
+    # Reset is_excluded flags on PENDING records (they were never submitted)
+    pending_records = db.query(AttestationRecord).filter(
+        AttestationRecord.cycle_id == cycle_id,
+        AttestationRecord.status == AttestationRecordStatus.PENDING.value
+    ).all()
+
+    for record in pending_records:
+        if record.is_excluded:
+            record.is_excluded = False
+
     # Update cycle status
     cycle.status = AttestationCycleStatus.CLOSED.value
     cycle.closed_at = utc_now()
@@ -466,7 +501,7 @@ def close_cycle(
         entity_id=cycle.cycle_id,
         action="CLOSE",
         user_id=current_user.user_id,
-        changes={"forced": force}
+        changes={"forced": force, "drafts_cleaned_up": draft_count}
     )
 
     db.commit()
@@ -530,18 +565,17 @@ def get_my_attestations(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Get current user's pending attestations."""
+    """Get current user's attestations for OPEN cycles (all statuses)."""
     today = date.today()
 
-    # Get attestations where user is owner or delegate with can_attest
-    # and cycle is OPEN and status is PENDING
+    # Get all attestations for OPEN cycles where user is owner or delegate
+    # Now includes all statuses to show pending, submitted, accepted, rejected
     query = db.query(AttestationRecord).join(
         AttestationCycle, AttestationCycle.cycle_id == AttestationRecord.cycle_id
     ).join(
         Model, Model.model_id == AttestationRecord.model_id
     ).filter(
-        AttestationCycle.status == AttestationCycleStatus.OPEN.value,
-        AttestationRecord.status == AttestationRecordStatus.PENDING.value
+        AttestationCycle.status == AttestationCycleStatus.OPEN.value
     )
 
     records = query.all()
@@ -556,16 +590,37 @@ def get_my_attestations(
             continue
 
         days_until_due = (record.due_date - today).days
-        is_overdue = days_until_due < 0
+        is_overdue = days_until_due < 0 and record.status == AttestationRecordStatus.PENDING.value
 
-        # Get risk tier code
+        # Get risk tier info
         risk_tier_code = None
+        risk_tier_label = None
         if model.risk_tier_id:
             tier = db.query(TaxonomyValue).filter(
                 TaxonomyValue.value_id == model.risk_tier_id
             ).first()
             if tier:
                 risk_tier_code = tier.code
+                risk_tier_label = tier.label
+
+        # Determine if user can submit (only PENDING or REJECTED)
+        can_submit = record.status in [
+            AttestationRecordStatus.PENDING.value,
+            AttestationRecordStatus.REJECTED.value
+        ]
+
+        # Get rejection reason if rejected
+        rejection_reason = None
+        if record.status == AttestationRecordStatus.REJECTED.value:
+            rejection_reason = record.review_comment
+
+        # Get decision enum if submitted
+        decision = None
+        if record.decision:
+            try:
+                decision = AttestationDecisionEnum(record.decision)
+            except ValueError:
+                pass
 
         result.append(MyAttestationResponse(
             attestation_id=record.attestation_id,
@@ -573,16 +628,31 @@ def get_my_attestations(
             cycle_name=cycle.cycle_name,
             model_id=model.model_id,
             model_name=model.model_name,
+            model_risk_tier=risk_tier_label or risk_tier_code,
             risk_tier_code=risk_tier_code,
             due_date=record.due_date,
             status=AttestationRecordStatusEnum(record.status),
+            attested_at=record.attested_at,
+            decision=decision,
+            rejection_reason=rejection_reason,
             days_until_due=days_until_due,
             is_overdue=is_overdue,
-            can_submit=True
+            can_submit=can_submit,
+            is_excluded=record.is_excluded
         ))
 
-    # Sort by due date (overdue first, then by due date)
-    result.sort(key=lambda x: (not x.is_overdue, x.due_date))
+    # Sort: pending (overdue first, then by due date), then submitted/accepted/rejected
+    def sort_key(x):
+        if x.status == AttestationRecordStatusEnum.PENDING:
+            return (0, not x.is_overdue, x.due_date)
+        elif x.status == AttestationRecordStatusEnum.REJECTED:
+            return (1, False, x.due_date)  # Rejected need attention
+        elif x.status == AttestationRecordStatusEnum.SUBMITTED:
+            return (2, False, x.due_date)
+        else:
+            return (3, False, x.due_date)  # Accepted last
+
+    result.sort(key=sort_key)
 
     return result
 
@@ -608,7 +678,39 @@ def get_my_upcoming_attestations(
         elif att.due_date <= cutoff_date:
             upcoming.append(att)
 
+    # Find current cycle info from user's pending attestations
+    current_cycle_info = None
+    pending_attestations = [a for a in all_attestations if a.status == "PENDING"]
+    overdue_attestations = [a for a in pending_attestations if a.is_overdue]
+
+    if pending_attestations:
+        # Get cycle info from the first pending attestation
+        first_att = pending_attestations[0]
+        cycle = db.query(AttestationCycle).filter(
+            AttestationCycle.cycle_id == first_att.cycle_id
+        ).first()
+        if cycle:
+            current_cycle_info = CurrentCycleInfo(
+                cycle_id=cycle.cycle_id,
+                cycle_name=cycle.cycle_name,
+                submission_due_date=cycle.submission_due_date,
+                status=cycle.status.value if hasattr(cycle.status, 'value') else str(cycle.status)
+            )
+
+    # Calculate days until due (use first pending attestation's due date)
+    days_until_due = None
+    if pending_attestations:
+        first_due = min(a.due_date for a in pending_attestations)
+        days_until_due = (first_due - today).days
+
     return OwnerAttestationWidgetResponse(
+        # New fields expected by frontend
+        current_cycle=current_cycle_info,
+        attestations=pending_attestations,
+        pending_count=len(pending_attestations),
+        overdue_count=len(overdue_attestations),
+        days_until_due=days_until_due,
+        # Legacy fields
         upcoming_attestations=upcoming,
         past_due_attestations=past_due,
         total_upcoming=len(upcoming),
@@ -801,6 +903,8 @@ def submit_attestation(
     record.status = AttestationRecordStatus.SUBMITTED.value
     record.attested_at = utc_now()
     record.attesting_user_id = current_user.user_id
+    # Clear excluded flag since record is now submitted
+    record.is_excluded = False
 
     # Save responses
     for response_data in submission.responses:
@@ -834,6 +938,37 @@ def submit_attestation(
             "response_count": len(submission.responses)
         }
     )
+
+    # Clean up bulk submission draft if this was an excluded model
+    bulk_submission = db.query(AttestationBulkSubmission).filter(
+        AttestationBulkSubmission.cycle_id == record.cycle_id,
+        AttestationBulkSubmission.user_id == current_user.user_id,
+        AttestationBulkSubmission.status == AttestationBulkSubmissionStatus.DRAFT.value
+    ).first()
+
+    if bulk_submission and bulk_submission.excluded_model_ids:
+        # Remove this model from excluded list
+        if model.model_id in bulk_submission.excluded_model_ids:
+            bulk_submission.excluded_model_ids = [
+                m_id for m_id in bulk_submission.excluded_model_ids
+                if m_id != model.model_id
+            ]
+            bulk_submission.updated_at = utc_now()
+
+        # Check if user has any remaining PENDING records
+        remaining_pending = db.query(AttestationRecord).join(
+            Model, Model.model_id == AttestationRecord.model_id
+        ).filter(
+            AttestationRecord.cycle_id == record.cycle_id,
+            AttestationRecord.status == AttestationRecordStatus.PENDING.value
+        ).all()
+
+        # Filter to records this user can attest
+        user_pending = [r for r in remaining_pending if can_attest_for_model(db, current_user, r.model)]
+
+        # If no remaining pending records, delete the draft
+        if not user_pending:
+            db.delete(bulk_submission)
 
     db.commit()
     db.refresh(record)
@@ -2402,4 +2537,504 @@ def _build_proposal_response(proposal: AttestationChangeProposal, db: Session) -
         decided_at=proposal.decided_at,
         created_at=proposal.created_at,
         model=model_ref
+    )
+
+
+# ============================================================================
+# BULK ATTESTATION ENDPOINTS
+# ============================================================================
+
+def _get_user_attestable_records(
+    db: Session,
+    user: User,
+    cycle_id: int
+) -> List[AttestationRecord]:
+    """Get all attestation records the user can attest for in a cycle."""
+    # Get all records for the cycle
+    records = db.query(AttestationRecord).join(
+        Model, Model.model_id == AttestationRecord.model_id
+    ).filter(
+        AttestationRecord.cycle_id == cycle_id
+    ).all()
+
+    # Filter to records user can attest for
+    attestable = []
+    for record in records:
+        if can_attest_for_model(db, user, record.model):
+            attestable.append(record)
+
+    return attestable
+
+
+@router.get("/bulk/{cycle_id}", response_model=BulkAttestationStateResponse)
+def get_bulk_attestation_state(
+    cycle_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Get bulk attestation state for current user.
+
+    Returns models available for bulk attestation, draft state if any,
+    attestation questions, and summary statistics.
+
+    This endpoint can be called at any time to view the user's attestation
+    state, including after all records have been submitted.
+    """
+    # Get cycle
+    cycle = db.query(AttestationCycle).filter(
+        AttestationCycle.cycle_id == cycle_id
+    ).first()
+
+    if not cycle:
+        raise HTTPException(status_code=404, detail="Cycle not found")
+
+    # Allow viewing state for OPEN, CLOSED, and UNDER_REVIEW cycles
+    # Only PENDING (not yet opened) cycles should be blocked
+    if cycle.status == AttestationCycleStatus.PENDING.value:
+        raise HTTPException(
+            status_code=400,
+            detail="Cycle is still pending - not yet open for attestations"
+        )
+
+    # Get attestable records for this user
+    records = _get_user_attestable_records(db, current_user, cycle_id)
+
+    if not records:
+        raise HTTPException(
+            status_code=404,
+            detail="No attestation records found for you in this cycle"
+        )
+
+    today = date.today()
+    days_until_due = (cycle.submission_due_date - today).days
+
+    # Build cycle info
+    cycle_info = BulkAttestationCycleInfo(
+        cycle_id=cycle.cycle_id,
+        cycle_name=cycle.cycle_name,
+        submission_due_date=cycle.submission_due_date,
+        status=AttestationCycleStatusEnum(cycle.status),
+        days_until_due=days_until_due
+    )
+
+    # Build models list
+    models_list = []
+    pending_count = 0
+    excluded_count = 0
+    submitted_count = 0
+    accepted_count = 0
+    rejected_count = 0
+
+    for record in records:
+        model = record.model
+
+        # Get risk tier info
+        risk_tier_code = None
+        risk_tier_label = None
+        if model.risk_tier_id:
+            tier = db.query(TaxonomyValue).filter(
+                TaxonomyValue.value_id == model.risk_tier_id
+            ).first()
+            if tier:
+                risk_tier_code = tier.code
+                risk_tier_label = tier.label
+
+        # Get last attested date
+        last_attestation = db.query(AttestationRecord).filter(
+            AttestationRecord.model_id == model.model_id,
+            AttestationRecord.status == AttestationRecordStatus.ACCEPTED.value
+        ).order_by(AttestationRecord.attested_at.desc()).first()
+        last_attested_date = last_attestation.attested_at.date() if last_attestation and last_attestation.attested_at else None
+
+        models_list.append(BulkAttestationModel(
+            attestation_id=record.attestation_id,
+            model_id=model.model_id,
+            model_name=model.model_name,
+            risk_tier_code=risk_tier_code,
+            risk_tier_label=risk_tier_label,
+            model_status=model.status,
+            last_attested_date=last_attested_date,
+            attestation_status=AttestationRecordStatusEnum(record.status),
+            is_excluded=record.is_excluded
+        ))
+
+        # Count by status
+        if record.status == AttestationRecordStatus.PENDING.value:
+            if record.is_excluded:
+                excluded_count += 1
+            else:
+                pending_count += 1
+        elif record.status == AttestationRecordStatus.SUBMITTED.value:
+            submitted_count += 1
+        elif record.status == AttestationRecordStatus.ACCEPTED.value:
+            accepted_count += 1
+        elif record.status == AttestationRecordStatus.REJECTED.value:
+            rejected_count += 1
+
+    # Get draft if exists
+    bulk_submission = db.query(AttestationBulkSubmission).filter(
+        AttestationBulkSubmission.cycle_id == cycle_id,
+        AttestationBulkSubmission.user_id == current_user.user_id
+    ).first()
+
+    draft_info = BulkAttestationDraftInfo(
+        exists=bulk_submission is not None and bulk_submission.status == AttestationBulkSubmissionStatus.DRAFT.value,
+        bulk_submission_id=bulk_submission.bulk_submission_id if bulk_submission else None,
+        selected_model_ids=bulk_submission.selected_model_ids or [] if bulk_submission else [],
+        excluded_model_ids=bulk_submission.excluded_model_ids or [] if bulk_submission else [],
+        responses=bulk_submission.draft_responses or [] if bulk_submission else [],
+        comment=bulk_submission.draft_comment if bulk_submission else None,
+        last_saved=bulk_submission.updated_at if bulk_submission else None
+    )
+
+    # Get questions
+    questions = get_attestation_questions(db)
+
+    # Build summary
+    summary = BulkAttestationSummary(
+        total_models=len(records),
+        pending_count=pending_count,
+        excluded_count=excluded_count,
+        submitted_count=submitted_count,
+        accepted_count=accepted_count,
+        rejected_count=rejected_count
+    )
+
+    return BulkAttestationStateResponse(
+        cycle=cycle_info,
+        models=models_list,
+        draft=draft_info,
+        questions=questions,
+        summary=summary
+    )
+
+
+@router.post("/bulk/{cycle_id}/draft", response_model=BulkAttestationDraftResponse)
+def save_bulk_attestation_draft(
+    cycle_id: int,
+    draft_in: BulkAttestationDraftRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Save bulk attestation draft.
+
+    Saves current progress (selected models, answers, comments) for later completion.
+    Creates a new draft or updates existing one.
+    """
+    # Verify cycle is open
+    cycle = db.query(AttestationCycle).filter(
+        AttestationCycle.cycle_id == cycle_id
+    ).first()
+
+    if not cycle:
+        raise HTTPException(status_code=404, detail="Cycle not found")
+
+    if cycle.status != AttestationCycleStatus.OPEN.value:
+        raise HTTPException(
+            status_code=400,
+            detail="Cycle is not open for attestations"
+        )
+
+    # Get attestable records for this user and build validation set
+    records = _get_user_attestable_records(db, current_user, cycle_id)
+    records_by_model = {r.model_id: r for r in records}
+
+    # Get model IDs that are in PENDING status (can be selected/excluded)
+    pending_model_ids = {
+        model_id for model_id, record in records_by_model.items()
+        if record.status == AttestationRecordStatus.PENDING.value
+    }
+
+    # Validate selected_model_ids - must be pending records for this user
+    invalid_selected = set(draft_in.selected_model_ids) - pending_model_ids
+    if invalid_selected:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid selected model IDs (not available for attestation): {sorted(invalid_selected)}"
+        )
+
+    # Validate excluded_model_ids - must be pending records for this user
+    invalid_excluded = set(draft_in.excluded_model_ids) - pending_model_ids
+    if invalid_excluded:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid excluded model IDs (not available for attestation): {sorted(invalid_excluded)}"
+        )
+
+    # Ensure no overlap between selected and excluded
+    overlap = set(draft_in.selected_model_ids) & set(draft_in.excluded_model_ids)
+    if overlap:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Model IDs cannot be both selected and excluded: {sorted(overlap)}"
+        )
+
+    # Get or create bulk submission record
+    bulk_submission = db.query(AttestationBulkSubmission).filter(
+        AttestationBulkSubmission.cycle_id == cycle_id,
+        AttestationBulkSubmission.user_id == current_user.user_id
+    ).first()
+
+    if bulk_submission:
+        # Check if already submitted
+        if bulk_submission.status == AttestationBulkSubmissionStatus.SUBMITTED.value:
+            raise HTTPException(
+                status_code=400,
+                detail="Bulk attestation already submitted for this cycle"
+            )
+        # Update existing draft
+        bulk_submission.selected_model_ids = draft_in.selected_model_ids
+        bulk_submission.excluded_model_ids = draft_in.excluded_model_ids
+        bulk_submission.draft_responses = [r.model_dump() for r in draft_in.responses]
+        bulk_submission.draft_comment = draft_in.comment
+        bulk_submission.updated_at = utc_now()
+    else:
+        # Create new draft
+        bulk_submission = AttestationBulkSubmission(
+            cycle_id=cycle_id,
+            user_id=current_user.user_id,
+            status=AttestationBulkSubmissionStatus.DRAFT.value,
+            selected_model_ids=draft_in.selected_model_ids,
+            excluded_model_ids=draft_in.excluded_model_ids,
+            draft_responses=[r.model_dump() for r in draft_in.responses],
+            draft_comment=draft_in.comment
+        )
+        db.add(bulk_submission)
+
+    # Update excluded flags on attestation records (only for PENDING records)
+    for model_id, record in records_by_model.items():
+        if record.status == AttestationRecordStatus.PENDING.value:
+            record.is_excluded = model_id in draft_in.excluded_model_ids
+
+    db.commit()
+    db.refresh(bulk_submission)
+
+    return BulkAttestationDraftResponse(
+        success=True,
+        bulk_submission_id=bulk_submission.bulk_submission_id,
+        last_saved=bulk_submission.updated_at,
+        message="Draft saved successfully"
+    )
+
+
+@router.post("/bulk/{cycle_id}/submit", response_model=BulkAttestationSubmitResponse)
+def submit_bulk_attestation(
+    cycle_id: int,
+    submit_in: BulkAttestationSubmitRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Submit bulk attestation.
+
+    Creates AttestationRecord submissions for all selected models with the same
+    responses. Models not in selected_model_ids are marked as excluded.
+    """
+    # Verify cycle is open
+    cycle = db.query(AttestationCycle).filter(
+        AttestationCycle.cycle_id == cycle_id
+    ).first()
+
+    if not cycle:
+        raise HTTPException(status_code=404, detail="Cycle not found")
+
+    if cycle.status != AttestationCycleStatus.OPEN.value:
+        raise HTTPException(
+            status_code=400,
+            detail="Cycle is not open for attestations"
+        )
+
+    # Validate at least one model selected
+    if not submit_in.selected_model_ids:
+        raise HTTPException(
+            status_code=400,
+            detail="At least one model must be selected for bulk attestation"
+        )
+
+    # Get attestable records for this user
+    records = _get_user_attestable_records(db, current_user, cycle_id)
+    records_by_model = {r.model_id: r for r in records}
+
+    # Validate all selected models belong to user's attestable records
+    for model_id in submit_in.selected_model_ids:
+        if model_id not in records_by_model:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Model {model_id} is not available for attestation in this cycle"
+            )
+        record = records_by_model[model_id]
+        if record.status != AttestationRecordStatus.PENDING.value:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Model {record.model.model_name} is not in PENDING status"
+            )
+
+    # Validate questions
+    questions = get_attestation_questions(db)
+    question_ids = {q.value_id for q in questions}
+    submitted_question_ids = {r.question_id for r in submit_in.responses}
+
+    if submitted_question_ids != question_ids:
+        raise HTTPException(
+            status_code=400,
+            detail="All questions must be answered"
+        )
+
+    # Validate comments for "No" answers
+    question_map = {q.value_id: q for q in questions}
+    for response in submit_in.responses:
+        question = question_map.get(response.question_id)
+        if question and not response.answer and question.requires_comment_if_no and not response.comment:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Comment required when answering 'No' to question: {question.code}"
+            )
+
+    # Determine decision based on answers
+    all_yes = all(r.answer for r in submit_in.responses)
+    decision = AttestationDecision.I_ATTEST.value if all_yes else AttestationDecision.I_ATTEST_WITH_UPDATES.value
+
+    # Get or create bulk submission record
+    bulk_submission = db.query(AttestationBulkSubmission).filter(
+        AttestationBulkSubmission.cycle_id == cycle_id,
+        AttestationBulkSubmission.user_id == current_user.user_id
+    ).first()
+
+    if bulk_submission:
+        if bulk_submission.status == AttestationBulkSubmissionStatus.SUBMITTED.value:
+            raise HTTPException(
+                status_code=400,
+                detail="Bulk attestation already submitted for this cycle"
+            )
+    else:
+        bulk_submission = AttestationBulkSubmission(
+            cycle_id=cycle_id,
+            user_id=current_user.user_id
+        )
+        db.add(bulk_submission)
+        db.flush()
+
+    # Update bulk submission
+    bulk_submission.status = AttestationBulkSubmissionStatus.SUBMITTED.value
+    bulk_submission.selected_model_ids = submit_in.selected_model_ids
+    bulk_submission.excluded_model_ids = [
+        m_id for m_id in records_by_model.keys()
+        if m_id not in submit_in.selected_model_ids
+    ]
+    bulk_submission.draft_responses = [r.model_dump() for r in submit_in.responses]
+    bulk_submission.draft_comment = submit_in.decision_comment
+    bulk_submission.submitted_at = utc_now()
+    bulk_submission.attestation_count = len(submit_in.selected_model_ids)
+
+    # Submit each selected record
+    attestation_ids = []
+    for model_id in submit_in.selected_model_ids:
+        record = records_by_model[model_id]
+
+        # Update record
+        record.decision = decision
+        record.decision_comment = submit_in.decision_comment
+        record.status = AttestationRecordStatus.SUBMITTED.value
+        record.attested_at = utc_now()
+        record.attesting_user_id = current_user.user_id
+        record.bulk_submission_id = bulk_submission.bulk_submission_id
+        record.is_excluded = False
+
+        # Clone responses for this record
+        for response_data in submit_in.responses:
+            response = AttestationResponseModel(
+                attestation_id=record.attestation_id,
+                question_id=response_data.question_id,
+                answer=response_data.answer,
+                comment=response_data.comment
+            )
+            db.add(response)
+
+        attestation_ids.append(record.attestation_id)
+
+    # Mark excluded records
+    excluded_count = 0
+    for model_id, record in records_by_model.items():
+        if model_id not in submit_in.selected_model_ids:
+            if record.status == AttestationRecordStatus.PENDING.value:
+                record.is_excluded = True
+                excluded_count += 1
+
+    # Create audit log
+    create_audit_log(
+        db=db,
+        entity_type="AttestationBulkSubmission",
+        entity_id=bulk_submission.bulk_submission_id,
+        action="SUBMIT",
+        user_id=current_user.user_id,
+        changes={
+            "submitted_count": len(submit_in.selected_model_ids),
+            "excluded_count": excluded_count,
+            "decision": decision
+        }
+    )
+
+    db.commit()
+
+    return BulkAttestationSubmitResponse(
+        success=True,
+        bulk_submission_id=bulk_submission.bulk_submission_id,
+        submitted_count=len(submit_in.selected_model_ids),
+        excluded_count=excluded_count,
+        attestation_ids=attestation_ids,
+        message=f"Successfully submitted {len(submit_in.selected_model_ids)} attestations. {excluded_count} models require individual attestation."
+    )
+
+
+@router.delete("/bulk/{cycle_id}/draft", response_model=BulkAttestationDiscardResponse)
+def discard_bulk_attestation_draft(
+    cycle_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Discard bulk attestation draft.
+
+    Deletes the draft and resets any excluded flags on attestation records.
+    """
+    # Get bulk submission
+    bulk_submission = db.query(AttestationBulkSubmission).filter(
+        AttestationBulkSubmission.cycle_id == cycle_id,
+        AttestationBulkSubmission.user_id == current_user.user_id
+    ).first()
+
+    if not bulk_submission:
+        raise HTTPException(status_code=404, detail="No draft found for this cycle")
+
+    if bulk_submission.status == AttestationBulkSubmissionStatus.SUBMITTED.value:
+        raise HTTPException(
+            status_code=400,
+            detail="Cannot discard a submitted bulk attestation"
+        )
+
+    # Reset excluded flags on records
+    records = _get_user_attestable_records(db, current_user, cycle_id)
+    for record in records:
+        if record.status == AttestationRecordStatus.PENDING.value:
+            record.is_excluded = False
+
+    # Delete the bulk submission
+    db.delete(bulk_submission)
+
+    create_audit_log(
+        db=db,
+        entity_type="AttestationBulkSubmission",
+        entity_id=bulk_submission.bulk_submission_id,
+        action="DISCARD_DRAFT",
+        user_id=current_user.user_id,
+        changes={}
+    )
+
+    db.commit()
+
+    return BulkAttestationDiscardResponse(
+        success=True,
+        message="Draft discarded successfully"
     )

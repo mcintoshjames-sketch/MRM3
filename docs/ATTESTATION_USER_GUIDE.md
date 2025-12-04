@@ -90,6 +90,68 @@ If an administrator rejects your attestation:
 2. The attestation returns to "Pending" status
 3. Address the feedback and resubmit
 
+### Bulk Attestation
+
+If you own multiple models, you can use **Bulk Attestation** to submit attestations for all your models at once with the same responses, saving significant time.
+
+#### When to Use Bulk Attestation
+
+Bulk attestation is ideal when:
+- You own many models requiring attestation
+- The same answers apply to all (or most) of your models
+- You want to complete attestations efficiently
+
+#### Using Bulk Attestation
+
+1. Navigate to **"My Attestations"**
+2. Click **"Bulk Attest"** button (appears when you have 2+ pending models)
+3. The Bulk Attestation page shows:
+   - **All your pending models** listed with checkboxes
+   - **Attestation questions** to answer once for all selected models
+   - **Summary counts** showing pending, excluded, and submitted models
+
+4. **Select models** to include:
+   - By default, all pending models are selected
+   - Uncheck any models you want to exclude from bulk attestation
+   - Excluded models will need to be attested individually
+
+5. **Answer the attestation questions**:
+   - Your answers will apply to ALL selected models
+   - If you answer "No", provide an explanation as required
+
+6. **Save as Draft** (optional):
+   - Click "Save Draft" to save your progress
+   - Your selections and answers are preserved
+   - Return later to complete and submit
+
+7. **Submit** when ready:
+   - Click "Submit Bulk Attestation"
+   - All selected models are submitted with your responses
+   - Excluded models remain pending for individual attestation
+
+#### Excluding Models from Bulk Attestation
+
+If a model needs different answers than the rest:
+1. **Uncheck the model** in the bulk attestation form
+2. The model is marked as "Excluded"
+3. After submitting bulk attestation, **attest the excluded model individually**
+4. Individual attestation allows model-specific responses
+
+#### Draft Mode
+
+Bulk attestation supports auto-save drafts:
+- Your selections and answers are saved automatically
+- If you leave the page, your progress is preserved
+- Return to "My Attestations" > "Bulk Attest" to resume
+- Drafts are cleared when you submit or the cycle closes
+
+#### Important Notes
+
+- Bulk attestation **does not support change proposals** (new model, update, decommission)
+- If you need to propose changes for a model, exclude it and attest individually
+- All selected models receive the same decision (I Attest / I Attest with Updates)
+- Evidence links are not supported in bulk mode
+
 ---
 
 ## For Administrators

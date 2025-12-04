@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import api from '../api/client';
 import Layout from '../components/Layout';
 
@@ -10,13 +10,17 @@ interface MyAttestation {
     cycle_name: string;
     model_id: number;
     model_name: string;
-    model_risk_tier: string;
+    model_risk_tier: string | null;
+    risk_tier_code: string | null;
     due_date: string;
     status: 'PENDING' | 'SUBMITTED' | 'ACCEPTED' | 'REJECTED';
     attested_at: string | null;
     decision: string | null;
     rejection_reason: string | null;
     days_until_due: number;
+    is_overdue: boolean;
+    can_submit: boolean;
+    is_excluded: boolean;
 }
 
 interface UpcomingWidget {
@@ -32,9 +36,10 @@ interface UpcomingWidget {
     days_until_due: number | null;
 }
 
-type FilterStatus = 'all' | 'PENDING' | 'SUBMITTED' | 'ACCEPTED' | 'REJECTED';
+type FilterStatus = 'all' | 'PENDING' | 'SUBMITTED' | 'ACCEPTED' | 'REJECTED' | 'INDIVIDUAL';
 
 export default function MyAttestationsPage() {
+    const navigate = useNavigate();
     const [attestations, setAttestations] = useState<MyAttestation[]>([]);
     const [loading, setLoading] = useState(true);
     const [upcomingData, setUpcomingData] = useState<UpcomingWidget | null>(null);
@@ -61,12 +66,24 @@ export default function MyAttestationsPage() {
         }
     };
 
+    // Filter logic based on selected filter
     const filteredAttestations = attestations.filter(att => {
         if (filterStatus === 'all') return true;
+        if (filterStatus === 'INDIVIDUAL') {
+            // Show excluded pending or rejected models that need individual attention
+            return (att.status === 'PENDING' && att.is_excluded) || att.status === 'REJECTED';
+        }
         return att.status === filterStatus;
     });
 
-    const getStatusBadge = (status: string) => {
+    const getStatusBadge = (status: string, isExcluded: boolean = false) => {
+        if (status === 'PENDING' && isExcluded) {
+            return (
+                <span className="px-2 py-1 text-xs font-medium rounded-full bg-orange-100 text-orange-800">
+                    Individual Required
+                </span>
+            );
+        }
         switch (status) {
             case 'SUBMITTED':
                 return <span className="px-2 py-1 text-xs font-medium rounded-full bg-blue-100 text-blue-800">Submitted</span>;
@@ -95,10 +112,15 @@ export default function MyAttestationsPage() {
         return dateStr.split('T')[0];
     };
 
+    // Count categories
     const pendingCount = attestations.filter(a => a.status === 'PENDING').length;
+    const pendingBulkCount = attestations.filter(a => a.status === 'PENDING' && !a.is_excluded).length;
+    const pendingIndividualCount = attestations.filter(a => a.status === 'PENDING' && a.is_excluded).length;
     const overdueCount = attestations.filter(a => a.status === 'PENDING' && a.days_until_due < 0).length;
     const submittedCount = attestations.filter(a => a.status === 'SUBMITTED').length;
     const acceptedCount = attestations.filter(a => a.status === 'ACCEPTED').length;
+    const rejectedCount = attestations.filter(a => a.status === 'REJECTED').length;
+    const individualRequiredCount = pendingIndividualCount + rejectedCount;
 
     return (
         <Layout>
@@ -115,7 +137,7 @@ export default function MyAttestationsPage() {
                 </div>
             )}
 
-            {/* Summary Cards */}
+            {/* Current Cycle Header */}
             {upcomingData && upcomingData.current_cycle && (
                 <div className="bg-gradient-to-r from-blue-500 to-blue-600 rounded-lg shadow-lg p-6 mb-6 text-white">
                     <div className="flex justify-between items-start">
@@ -132,13 +154,22 @@ export default function MyAttestationsPage() {
                                     </span>
                                 )}
                             </div>
+                            {/* Bulk Attestation CTA - show when 2+ non-excluded pending models */}
+                            {pendingBulkCount >= 2 && (
+                                <button
+                                    onClick={() => navigate(`/attestations/bulk/${upcomingData.current_cycle!.cycle_id}`)}
+                                    className="mt-4 bg-white text-blue-600 hover:bg-blue-50 font-semibold py-2 px-4 rounded-lg shadow-sm transition-colors"
+                                >
+                                    Bulk Attest ({pendingBulkCount} models)
+                                </button>
+                            )}
                         </div>
                         <div className="text-right">
-                            <div className="text-4xl font-bold">{upcomingData.pending_count}</div>
+                            <div className="text-4xl font-bold">{pendingCount}</div>
                             <div className="text-sm opacity-80">Pending</div>
-                            {upcomingData.overdue_count > 0 && (
+                            {overdueCount > 0 && (
                                 <div className="mt-2 px-3 py-1 bg-red-500 rounded-full text-sm font-medium">
-                                    {upcomingData.overdue_count} Overdue
+                                    {overdueCount} Overdue
                                 </div>
                             )}
                         </div>
@@ -146,8 +177,37 @@ export default function MyAttestationsPage() {
                 </div>
             )}
 
+            {/* Individual Attestation Required Alert */}
+            {individualRequiredCount > 0 && (
+                <div className="bg-orange-50 border border-orange-200 rounded-lg p-4 mb-6">
+                    <div className="flex items-start gap-3">
+                        <div className="text-orange-500 text-xl">⚠️</div>
+                        <div className="flex-1">
+                            <h3 className="text-sm font-semibold text-orange-800">
+                                {individualRequiredCount} Model{individualRequiredCount > 1 ? 's' : ''} Require Individual Attention
+                            </h3>
+                            <p className="text-sm text-orange-700 mt-1">
+                                {pendingIndividualCount > 0 && (
+                                    <span>{pendingIndividualCount} excluded from bulk attestation</span>
+                                )}
+                                {pendingIndividualCount > 0 && rejectedCount > 0 && <span>, </span>}
+                                {rejectedCount > 0 && (
+                                    <span>{rejectedCount} rejected and need resubmission</span>
+                                )}
+                            </p>
+                            <button
+                                onClick={() => setFilterStatus('INDIVIDUAL')}
+                                className="mt-2 text-sm font-medium text-orange-700 hover:text-orange-900 underline"
+                            >
+                                Show individual attestations →
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
             {/* Stats Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+            <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
                 <div
                     className={`bg-white p-4 rounded-lg shadow cursor-pointer transition-shadow hover:shadow-md ${
                         filterStatus === 'PENDING' ? 'ring-2 ring-yellow-500' : ''
@@ -159,11 +219,20 @@ export default function MyAttestationsPage() {
                 </div>
                 <div
                     className={`bg-white p-4 rounded-lg shadow cursor-pointer transition-shadow hover:shadow-md ${
+                        filterStatus === 'INDIVIDUAL' ? 'ring-2 ring-orange-500' : ''
+                    }`}
+                    onClick={() => setFilterStatus(filterStatus === 'INDIVIDUAL' ? 'all' : 'INDIVIDUAL')}
+                >
+                    <div className="text-sm text-gray-500">Individual Required</div>
+                    <div className="text-2xl font-bold text-orange-600">{individualRequiredCount}</div>
+                </div>
+                <div
+                    className={`bg-white p-4 rounded-lg shadow cursor-pointer transition-shadow hover:shadow-md ${
                         filterStatus === 'SUBMITTED' ? 'ring-2 ring-blue-500' : ''
                     }`}
                     onClick={() => setFilterStatus(filterStatus === 'SUBMITTED' ? 'all' : 'SUBMITTED')}
                 >
-                    <div className="text-sm text-gray-500">Submitted (Pending Review)</div>
+                    <div className="text-sm text-gray-500">Submitted</div>
                     <div className="text-2xl font-bold text-blue-600">{submittedCount}</div>
                 </div>
                 <div
@@ -190,7 +259,7 @@ export default function MyAttestationsPage() {
             {filterStatus !== 'all' && (
                 <div className="mb-4 flex items-center">
                     <span className="text-sm text-gray-600">
-                        Showing: <strong>{filterStatus}</strong> attestations
+                        Showing: <strong>{filterStatus === 'INDIVIDUAL' ? 'Individual Required' : filterStatus}</strong> attestations
                     </span>
                     <button
                         onClick={() => setFilterStatus('all')}
@@ -209,6 +278,8 @@ export default function MyAttestationsPage() {
                     <div className="p-8 text-center text-gray-500">
                         {filterStatus === 'all'
                             ? 'No attestations found. They will appear here when an attestation cycle is opened.'
+                            : filterStatus === 'INDIVIDUAL'
+                            ? 'No individual attestations required at this time.'
                             : `No ${filterStatus.toLowerCase()} attestations found.`}
                     </div>
                 ) : (
@@ -225,7 +296,12 @@ export default function MyAttestationsPage() {
                         </thead>
                         <tbody className="bg-white divide-y divide-gray-200">
                             {filteredAttestations.map((att) => (
-                                <tr key={att.attestation_id} className="hover:bg-gray-50">
+                                <tr
+                                    key={att.attestation_id}
+                                    className={`hover:bg-gray-50 ${
+                                        att.status === 'PENDING' && att.is_excluded ? 'bg-orange-50' : ''
+                                    }`}
+                                >
                                     <td className="px-6 py-4 whitespace-nowrap">
                                         <Link
                                             to={`/models/${att.model_id}`}
@@ -235,7 +311,7 @@ export default function MyAttestationsPage() {
                                         </Link>
                                     </td>
                                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                                        {att.model_risk_tier}
+                                        {att.model_risk_tier || att.risk_tier_code || '-'}
                                     </td>
                                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                                         {att.cycle_name}
@@ -247,7 +323,7 @@ export default function MyAttestationsPage() {
                                         {getUrgencyBadge(att.days_until_due, att.status)}
                                     </td>
                                     <td className="px-6 py-4 whitespace-nowrap">
-                                        {getStatusBadge(att.status)}
+                                        {getStatusBadge(att.status, att.is_excluded)}
                                         {att.status === 'REJECTED' && att.rejection_reason && (
                                             <div className="text-xs text-red-600 mt-1 max-w-xs truncate" title={att.rejection_reason}>
                                                 {att.rejection_reason}
@@ -293,6 +369,8 @@ export default function MyAttestationsPage() {
                 <ul className="text-sm text-blue-700 space-y-1">
                     <li>• Attestations confirm your models comply with the Model Risk and Validation Policy</li>
                     <li>• Each attestation requires you to answer a series of compliance questions</li>
+                    <li>• <strong>Bulk attestation</strong> lets you attest multiple similar models at once</li>
+                    <li>• <strong>Individual attestation</strong> is required for models excluded from bulk or that need specific attention</li>
                     <li>• Submitted attestations are reviewed by the Model Validation team</li>
                     <li>• If rejected, you will need to address the concerns and resubmit</li>
                 </ul>

@@ -2,6 +2,7 @@
 import pytest
 from datetime import date, timedelta
 from app.models.taxonomy import Taxonomy, TaxonomyValue
+from app.models.model import Model
 from app.models.attestation import (
     AttestationCycle,
     AttestationCycleStatus,
@@ -756,3 +757,364 @@ class TestChangeProposals:
         )
         assert response.status_code == 400
         assert "accepted" in response.json()["detail"].lower()
+
+
+class TestBulkAttestation:
+    """Tests for bulk attestation workflow."""
+
+    @pytest.fixture
+    def open_cycle_with_records(self, db_session, admin_user, test_user, sample_model, scheduling_rule):
+        """Create an open cycle with attestation records for test_user."""
+        from app.models.attestation import AttestationBulkSubmission, AttestationBulkSubmissionStatus
+
+        # Clear any row_approval_status so the model is active
+        sample_model.row_approval_status = None
+        db_session.commit()
+
+        cycle = AttestationCycle(
+            cycle_name="Bulk Test Cycle",
+            period_start_date=date.today() - timedelta(days=30),
+            period_end_date=date.today() + timedelta(days=60),
+            submission_due_date=date.today() + timedelta(days=30),
+            status=AttestationCycleStatus.OPEN.value,
+            notes="Test cycle for bulk attestation"
+        )
+        db_session.add(cycle)
+        db_session.flush()
+
+        # Create attestation record for sample_model (owned by test_user)
+        record = AttestationRecord(
+            cycle_id=cycle.cycle_id,
+            model_id=sample_model.model_id,
+            attesting_user_id=test_user.user_id,
+            due_date=cycle.submission_due_date,
+            status=AttestationRecordStatus.PENDING.value
+        )
+        db_session.add(record)
+        db_session.commit()
+
+        return {
+            "cycle": cycle,
+            "record": record,
+            "model": sample_model
+        }
+
+    def test_draft_validation_rejects_invalid_model_ids(
+        self, client, auth_headers, open_cycle_with_records, db_session
+    ):
+        """Draft save rejects model IDs not available for attestation."""
+        cycle = open_cycle_with_records["cycle"]
+
+        # Try to save draft with invalid model ID
+        response = client.post(
+            f"/attestations/bulk/{cycle.cycle_id}/draft",
+            json={
+                "selected_model_ids": [99999],  # Invalid model ID
+                "excluded_model_ids": [],
+                "responses": [],
+                "comment": "Test draft"
+            },
+            headers=auth_headers
+        )
+        assert response.status_code == 400
+        assert "Invalid selected model IDs" in response.json()["detail"]
+
+    def test_draft_validation_rejects_invalid_excluded_ids(
+        self, client, auth_headers, open_cycle_with_records, db_session
+    ):
+        """Draft save rejects excluded model IDs not available for attestation."""
+        cycle = open_cycle_with_records["cycle"]
+
+        # Try to save draft with invalid excluded model ID
+        response = client.post(
+            f"/attestations/bulk/{cycle.cycle_id}/draft",
+            json={
+                "selected_model_ids": [],
+                "excluded_model_ids": [99999],  # Invalid model ID
+                "responses": [],
+                "comment": "Test draft"
+            },
+            headers=auth_headers
+        )
+        assert response.status_code == 400
+        assert "Invalid excluded model IDs" in response.json()["detail"]
+
+    def test_draft_validation_rejects_overlap(
+        self, client, auth_headers, open_cycle_with_records, db_session
+    ):
+        """Draft save rejects model IDs that are both selected and excluded."""
+        cycle = open_cycle_with_records["cycle"]
+        model = open_cycle_with_records["model"]
+
+        # Try to save draft with same ID in both lists
+        response = client.post(
+            f"/attestations/bulk/{cycle.cycle_id}/draft",
+            json={
+                "selected_model_ids": [model.model_id],
+                "excluded_model_ids": [model.model_id],  # Same ID - overlap!
+                "responses": [],
+                "comment": "Test draft"
+            },
+            headers=auth_headers
+        )
+        assert response.status_code == 400
+        assert "cannot be both selected and excluded" in response.json()["detail"]
+
+    def test_draft_saves_valid_selections(
+        self, client, auth_headers, open_cycle_with_records, db_session
+    ):
+        """Draft save succeeds with valid model IDs."""
+        from app.models.attestation import AttestationBulkSubmission
+
+        cycle = open_cycle_with_records["cycle"]
+        model = open_cycle_with_records["model"]
+
+        # Save valid draft
+        response = client.post(
+            f"/attestations/bulk/{cycle.cycle_id}/draft",
+            json={
+                "selected_model_ids": [model.model_id],
+                "excluded_model_ids": [],
+                "responses": [],
+                "comment": "Test draft"
+            },
+            headers=auth_headers
+        )
+        assert response.status_code == 200
+        assert response.json()["success"] is True
+        assert "bulk_submission_id" in response.json()
+
+        # Verify draft was created
+        draft = db_session.query(AttestationBulkSubmission).filter(
+            AttestationBulkSubmission.cycle_id == cycle.cycle_id
+        ).first()
+        assert draft is not None
+        assert draft.selected_model_ids == [model.model_id]
+
+    def test_get_state_allowed_for_closed_cycle(
+        self, client, auth_headers, open_cycle_with_records, db_session
+    ):
+        """GET bulk state is allowed for closed cycles (to view submission results)."""
+        cycle = open_cycle_with_records["cycle"]
+        record = open_cycle_with_records["record"]
+
+        # Submit the record first
+        record.status = AttestationRecordStatus.SUBMITTED.value
+        db_session.commit()
+
+        # Close the cycle
+        cycle.status = AttestationCycleStatus.CLOSED.value
+        db_session.commit()
+
+        # GET should still work
+        response = client.get(
+            f"/attestations/bulk/{cycle.cycle_id}",
+            headers=auth_headers
+        )
+        assert response.status_code == 200
+        assert response.json()["summary"]["submitted_count"] == 1
+
+    def test_get_state_blocked_for_pending_cycle(
+        self, client, auth_headers, db_session, test_user, sample_model, scheduling_rule
+    ):
+        """GET bulk state is blocked for PENDING (not yet opened) cycles."""
+        sample_model.row_approval_status = None
+        db_session.commit()
+
+        cycle = AttestationCycle(
+            cycle_name="Pending Cycle",
+            period_start_date=date.today() - timedelta(days=30),
+            period_end_date=date.today() + timedelta(days=60),
+            submission_due_date=date.today() + timedelta(days=30),
+            status=AttestationCycleStatus.PENDING.value,  # Not yet opened
+            notes="Test"
+        )
+        db_session.add(cycle)
+        db_session.commit()
+
+        response = client.get(
+            f"/attestations/bulk/{cycle.cycle_id}",
+            headers=auth_headers
+        )
+        assert response.status_code == 400
+        assert "pending" in response.json()["detail"].lower()
+
+    def test_cycle_close_cleans_up_draft_bulk_submissions(
+        self, client, admin_headers, auth_headers, open_cycle_with_records, db_session
+    ):
+        """Closing a cycle deletes draft bulk submissions."""
+        from app.models.attestation import AttestationBulkSubmission, AttestationBulkSubmissionStatus
+
+        cycle = open_cycle_with_records["cycle"]
+        model = open_cycle_with_records["model"]
+
+        # Create a draft
+        response = client.post(
+            f"/attestations/bulk/{cycle.cycle_id}/draft",
+            json={
+                "selected_model_ids": [model.model_id],
+                "excluded_model_ids": [],
+                "responses": [],
+                "comment": "Test draft"
+            },
+            headers=auth_headers
+        )
+        assert response.status_code == 200
+
+        # Verify draft exists
+        draft = db_session.query(AttestationBulkSubmission).filter(
+            AttestationBulkSubmission.cycle_id == cycle.cycle_id
+        ).first()
+        assert draft is not None
+        assert draft.status == AttestationBulkSubmissionStatus.DRAFT.value
+
+        # Close the cycle (force=True to bypass coverage checks)
+        response = client.post(
+            f"/attestations/cycles/{cycle.cycle_id}/close?force=true",
+            headers=admin_headers
+        )
+        assert response.status_code == 200
+
+        # Verify draft was deleted
+        db_session.expire_all()
+        draft = db_session.query(AttestationBulkSubmission).filter(
+            AttestationBulkSubmission.cycle_id == cycle.cycle_id
+        ).first()
+        assert draft is None
+
+    def test_cycle_close_resets_excluded_flags(
+        self, client, admin_headers, auth_headers, open_cycle_with_records, db_session
+    ):
+        """Closing a cycle resets is_excluded flags on PENDING records."""
+        cycle = open_cycle_with_records["cycle"]
+        record = open_cycle_with_records["record"]
+        model = open_cycle_with_records["model"]
+
+        # Save draft with model excluded
+        response = client.post(
+            f"/attestations/bulk/{cycle.cycle_id}/draft",
+            json={
+                "selected_model_ids": [],
+                "excluded_model_ids": [model.model_id],
+                "responses": [],
+                "comment": "Test"
+            },
+            headers=auth_headers
+        )
+        assert response.status_code == 200
+
+        # Verify excluded flag was set
+        db_session.refresh(record)
+        assert record.is_excluded is True
+
+        # Close the cycle
+        response = client.post(
+            f"/attestations/cycles/{cycle.cycle_id}/close?force=true",
+            headers=admin_headers
+        )
+        assert response.status_code == 200
+
+        # Verify excluded flag was reset
+        db_session.expire_all()
+        db_session.refresh(record)
+        assert record.is_excluded is False
+
+    def test_individual_submit_clears_excluded_flag(
+        self, client, auth_headers, open_cycle_with_records, attestation_taxonomy, db_session
+    ):
+        """Individual submission clears is_excluded flag."""
+        cycle = open_cycle_with_records["cycle"]
+        record = open_cycle_with_records["record"]
+        model = open_cycle_with_records["model"]
+        q1 = attestation_taxonomy["q1"]
+        q2 = attestation_taxonomy["q2"]
+
+        # Mark record as excluded
+        record.is_excluded = True
+        db_session.commit()
+
+        # Submit individually
+        response = client.post(
+            f"/attestations/records/{record.attestation_id}/submit",
+            json={
+                "decision": "I_ATTEST",
+                "responses": [
+                    {"question_id": q1.value_id, "answer": True},
+                    {"question_id": q2.value_id, "answer": True}
+                ],
+                "evidence": []
+            },
+            headers=auth_headers
+        )
+        assert response.status_code == 200
+
+        # Verify excluded flag was cleared
+        db_session.refresh(record)
+        assert record.is_excluded is False
+
+    def test_individual_submit_removes_from_draft_excluded_list(
+        self, client, auth_headers, open_cycle_with_records, attestation_taxonomy, db_session, test_user, usage_frequency
+    ):
+        """Individual submission removes model from draft's excluded_model_ids."""
+        from app.models.attestation import AttestationBulkSubmission, AttestationBulkSubmissionStatus
+
+        cycle = open_cycle_with_records["cycle"]
+        record = open_cycle_with_records["record"]
+        model = open_cycle_with_records["model"]
+        q1 = attestation_taxonomy["q1"]
+        q2 = attestation_taxonomy["q2"]
+
+        # Create a second model for the same owner
+        model2 = Model(
+            model_name="Second Test Model",
+            description="Another test model",
+            development_type="In-House",
+            status="In Development",
+            owner_id=test_user.user_id,
+            row_approval_status=None,
+            usage_frequency_id=usage_frequency["daily"].value_id
+        )
+        db_session.add(model2)
+        db_session.flush()
+
+        # Create second attestation record
+        record2 = AttestationRecord(
+            cycle_id=cycle.cycle_id,
+            model_id=model2.model_id,
+            attesting_user_id=test_user.user_id,
+            due_date=cycle.submission_due_date,
+            status=AttestationRecordStatus.PENDING.value
+        )
+        db_session.add(record2)
+        db_session.commit()
+
+        # Create draft with first model excluded
+        draft = AttestationBulkSubmission(
+            cycle_id=cycle.cycle_id,
+            user_id=test_user.user_id,
+            status=AttestationBulkSubmissionStatus.DRAFT.value,
+            selected_model_ids=[model2.model_id],
+            excluded_model_ids=[model.model_id]
+        )
+        db_session.add(draft)
+        record.is_excluded = True
+        db_session.commit()
+
+        # Submit the excluded model individually
+        response = client.post(
+            f"/attestations/records/{record.attestation_id}/submit",
+            json={
+                "decision": "I_ATTEST",
+                "responses": [
+                    {"question_id": q1.value_id, "answer": True},
+                    {"question_id": q2.value_id, "answer": True}
+                ],
+                "evidence": []
+            },
+            headers=auth_headers
+        )
+        assert response.status_code == 200
+
+        # Verify model was removed from excluded list
+        db_session.refresh(draft)
+        assert model.model_id not in draft.excluded_model_ids

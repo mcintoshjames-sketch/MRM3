@@ -43,6 +43,7 @@ import RecommendationDetailPage from './pages/RecommendationDetailPage';
 import AttestationCyclesPage from './pages/AttestationCyclesPage';
 import MyAttestationsPage from './pages/MyAttestationsPage';
 import AttestationDetailPage from './pages/AttestationDetailPage';
+import BulkAttestationPage from './pages/BulkAttestationPage';
 
 function App() {
     const { user, loading } = useAuth();
@@ -104,6 +105,7 @@ function App() {
             <Route path="/attestations" element={user?.role === 'Admin' ? <AttestationCyclesPage /> : <Navigate to="/models" />} />
             <Route path="/my-attestations" element={user ? <MyAttestationsPage /> : <Navigate to="/login" />} />
             <Route path="/attestations/:id" element={user ? <AttestationDetailPage /> : <Navigate to="/login" />} />
+            <Route path="/attestations/bulk/:cycleId" element={user ? <BulkAttestationPage /> : <Navigate to="/login" />} />
             <Route path="/" element={<Navigate to={getDefaultRoute()} />} />
         </Routes>
     );
