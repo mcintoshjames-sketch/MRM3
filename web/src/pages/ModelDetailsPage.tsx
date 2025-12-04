@@ -20,6 +20,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { ModelVersion } from '../api/versions';
 import { overdueCommentaryApi, CurrentOverdueCommentaryResponse } from '../api/overdueCommentary';
 import { getResidualRiskBadgeClass } from '../api/residualRiskMap';
+import { linkChangeToAttestationIfPresent } from '../api/attestation';
 
 interface User {
     user_id: number;
@@ -303,6 +304,15 @@ export default function ModelDetailsPage() {
         fetchData();
     }, [id]);
 
+    // Handle ?edit=true query param to auto-open edit mode
+    useEffect(() => {
+        if (searchParams.get('edit') === 'true' && model) {
+            setEditing(true);
+            // Clear the query param so it doesn't persist on refresh
+            setSearchParams({}, { replace: true });
+        }
+    }, [searchParams, setSearchParams, model]);
+
     // Poll activities when Activity tab is active
     useEffect(() => {
         if (activeTab === 'activity') {
@@ -514,6 +524,18 @@ export default function ModelDetailsPage() {
                 // Refresh pending edits list
                 const pendingResponse = await api.get(`/models/${id}/pending-edits`);
                 setPendingEdits(pendingResponse.data);
+
+                // Link to attestation if navigated from attestation page
+                const pendingEditId = response.data?.pending_edit_id;
+                await linkChangeToAttestationIfPresent('MODEL_EDIT', {
+                    model_id: Number(id),
+                    pending_edit_id: pendingEditId,
+                });
+            } else {
+                // Direct edit (admin) - still link to attestation if present
+                await linkChangeToAttestationIfPresent('MODEL_EDIT', {
+                    model_id: Number(id),
+                });
             }
 
             fetchData();

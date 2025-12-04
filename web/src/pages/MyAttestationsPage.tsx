@@ -270,6 +270,19 @@ export default function MyAttestationsPage() {
                 </div>
             )}
 
+            {/* Register New Model Button */}
+            <div className="mb-4 flex justify-end">
+                <button
+                    onClick={() => navigate('/models?create=true')}
+                    className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
+                >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                    </svg>
+                    Register New Model
+                </button>
+            </div>
+
             {/* Attestations Table */}
             <div className="bg-white rounded-lg shadow overflow-hidden">
                 {loading ? (

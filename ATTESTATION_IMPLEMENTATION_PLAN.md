@@ -27,7 +27,10 @@ This plan describes a greenfield MVP for **Model Risk Attestations** that enable
 
 | Existing System | How It's Reused |
 |-----------------|-----------------|
-| **ModelPendingEdit** | UPDATE_EXISTING changes link to existing suspense queue via `pending_edit_id` |
+| **Model Edit Form** | Users navigate to existing `/models/{id}` for model edits (no custom modal) |
+| **Model Create Form** | Users navigate to existing `/models/new` for new models (no custom modal) |
+| **Decommissioning Page** | Users navigate to existing decommission workflow (no custom modal) |
+| **ModelPendingEdit** | Existing suspense queue used for all edits; `AttestationChangeLink` tracks association |
 | **ModelDelegate** | Extended with new `can_attest` permission for attestation-specific delegation |
 | **AuditLog** | All actions logged via existing `create_audit_log()` pattern |
 | **Risk Tiers** | CoverageTarget links to existing TIER_1-4 taxonomy (for coverage targets only, NOT frequency) |
@@ -136,7 +139,7 @@ One record per model per cycle, representing the owner/delegate's attestation.
 - Many-to-one with `User` (attesting_user)
 - One-to-many with `AttestationResponse` (answers to questions)
 - One-to-many with `AttestationEvidence` (URL attachments - optional)
-- One-to-many with `AttestationChangeProposal` (linked inventory updates)
+- One-to-many with `AttestationChangeLink` (lightweight links to inventory changes)
 
 ---
 
@@ -204,28 +207,30 @@ Defines when attestations are required for which models/owners. **Risk tier does
 
 ---
 
-#### **AttestationChangeProposal** (links attestation to suspense queue)
+#### **AttestationChangeLink** (lightweight tracking table)
 
-Links attestation-driven inventory changes to existing ModelPendingEdit.
+Links attestations to inventory changes made through existing workflows. This is a **tracking-only** table - no duplicate data storage.
 
 | Column | Type | Description |
 |--------|------|-------------|
-| `proposal_id` | INT PK | Primary key |
+| `link_id` | INT PK | Primary key |
 | `attestation_id` | INT FK | Parent attestation |
-| `pending_edit_id` | INT FK NULL | Link to ModelPendingEdit (for existing model changes) |
-| `change_type` | ENUM | UPDATE_EXISTING, NEW_MODEL, DECOMMISSION |
-| `model_id` | INT FK NULL | Model being changed (NULL if NEW_MODEL) |
-| `proposed_data` | JSON | Full proposed changes (for new models or decommissions) |
-| `status` | ENUM | PENDING, ACCEPTED, REJECTED |
-| `admin_comment` | TEXT NULL | Admin decision rationale |
-| `decided_by_user_id` | INT FK NULL | Admin who decided |
-| `decided_at` | DATETIME NULL | Decision timestamp |
-| `created_at` | DATETIME | Timestamp |
+| `change_type` | ENUM | MODEL_EDIT, NEW_MODEL, DECOMMISSION |
+| `pending_edit_id` | INT FK NULL | Link to ModelPendingEdit (for edits) |
+| `model_id` | INT FK NULL | Link to Model (for new models created) |
+| `decommissioning_request_id` | INT FK NULL | Link to DecommissioningRequest |
+| `created_at` | DATETIME | When link was created |
 
-**Integration with Existing Suspense Queue:**
-- For **UPDATE_EXISTING**: Creates a `ModelPendingEdit` record using existing pattern; `pending_edit_id` links to it
-- For **NEW_MODEL**: `proposed_data` contains full model creation payload; Admin approval creates the model
-- For **DECOMMISSION**: `proposed_data` contains decommission rationale; Admin approval triggers decommissioning workflow
+**Design Philosophy - Reuse Existing Forms:**
+- **MODEL_EDIT**: User navigates to `/models/{id}` (Edit Model page) → creates `ModelPendingEdit` → link recorded
+- **NEW_MODEL**: User navigates to `/models/new` (Create Model page) → creates `ModelPendingEdit` → link recorded
+- **DECOMMISSION**: User navigates to `/models/{id}/decommission` → creates `DecommissioningRequest` → link recorded
+
+**No Custom Modals:** Instead of rebuilding forms, the attestation UI provides navigation buttons that open existing pages. This ensures:
+- Consistent UX across the application
+- No duplicate form validation logic
+- Existing suspense queue workflows are reused
+- Changes are tracked for attestation reporting without data duplication
 
 ---
 
@@ -294,9 +299,11 @@ AttestationCycle (1) ──────< (M) AttestationRecord
                                     │
                                     ├──< (M) AttestationEvidence (optional)
                                     │
-                                    └──< (M) AttestationChangeProposal
+                                    └──< (M) AttestationChangeLink (lightweight tracking)
                                               │
-                                              └──> (1) ModelPendingEdit (EXISTING)
+                                              ├──> (0..1) ModelPendingEdit (EXISTING)
+                                              ├──> (0..1) Model (EXISTING, for new models)
+                                              └──> (0..1) DecommissioningRequest (EXISTING)
 
 AttestationSchedulingRule ──> Region (EXISTING, optional)
                           ──> Model (EXISTING, optional)
@@ -524,10 +531,24 @@ def is_model_due_in_cycle(model: Model, frequency: Frequency, cycle: Attestation
    └─────────────────────────────────────────────────────────────┘
 
 4. If decision = "I Attest with Updates":
-   └── User is prompted to propose inventory changes
-       ├── Update Existing Model → Creates ModelPendingEdit (existing pattern)
-       ├── Register New Model → Creates AttestationChangeProposal (NEW_MODEL)
-       └── Decommission Model → Creates AttestationChangeProposal (DECOMMISSION)
+   └── UI displays navigation buttons to existing forms (NO custom modals):
+       ┌─────────────────────────────────────────────────────────────┐
+       │ INVENTORY CHANGES NEEDED                                    │
+       │                                                             │
+       │ Use the buttons below to make changes. Changes will be     │
+       │ linked to this attestation for tracking purposes.          │
+       │                                                             │
+       │ [📝 Edit This Model]     → Opens /models/{id} in new tab   │
+       │ [➕ Register New Model]  → Opens /models/new in new tab    │
+       │ [🗑️ Initiate Decommission] → Opens /models/{id}/decommission│
+       │                                                             │
+       │ After making changes, return here to complete attestation. │
+       └─────────────────────────────────────────────────────────────┘
+
+       When user clicks a button:
+       - Store attestation_id in sessionStorage (for link tracking)
+       - Open target page (existing Edit/Create/Decommission forms)
+       - Existing forms detect attestation context and create AttestationChangeLink
 
 5. User submits attestation:
    └── Validation:
@@ -537,86 +558,78 @@ def is_model_due_in_cycle(model: Model, frequency: Frequency, cycle: Attestation
        - Evidence URLs validated for format only (optional)
    └── Creates AttestationResponse for each question
    └── Creates/Updates AttestationRecord with status=SUBMITTED
-   └── Creates AttestationChangeProposals linked to attestation
+   └── Any changes made via existing forms are already linked via AttestationChangeLink
    └── Audit log: entity_type="AttestationRecord", action="SUBMIT"
 ```
 
-### 3.2 Inventory Change Suspense Queue (Reuses Existing Pattern)
+### 3.2 Inventory Change Link Tracking (Lightweight)
 
-**For UPDATE_EXISTING (modifying existing model):**
+**Design:** Users navigate to existing forms; the system tracks links for reporting.
+
+**Frontend Implementation:**
+
+```typescript
+// When user clicks "Edit This Model" from attestation form
+const handleEditModel = () => {
+    // Store attestation context for link tracking
+    sessionStorage.setItem('attestation_context', JSON.stringify({
+        attestation_id: attestationId,
+        model_id: modelId,
+        change_type: 'MODEL_EDIT'
+    }));
+    // Open existing Edit Model page
+    window.open(`/models/${modelId}`, '_blank');
+};
+
+// In ModelEditPage.tsx - detect attestation context and create link
+useEffect(() => {
+    const context = sessionStorage.getItem('attestation_context');
+    if (context) {
+        const { attestation_id } = JSON.parse(context);
+        // After successful edit submission, call API to create link
+        // sessionStorage.removeItem('attestation_context');
+    }
+}, []);
+```
+
+**Backend Link Creation (called after change is submitted):**
 
 ```python
-# When owner proposes change during attestation
-def propose_model_update(attestation_id: int, model_id: int, changes: dict, db: Session):
+# POST /attestations/records/{id}/link-change
+def link_change_to_attestation(
+    attestation_id: int,
+    change_type: str,  # MODEL_EDIT, NEW_MODEL, DECOMMISSION
+    pending_edit_id: int = None,
+    model_id: int = None,
+    decommissioning_request_id: int = None,
+    db: Session
+):
     """
-    Uses EXISTING ModelPendingEdit pattern for model updates.
-    Links to attestation via AttestationChangeProposal.
+    Creates lightweight link between attestation and an inventory change.
+    No data duplication - just foreign key references.
     """
-    model = db.query(Model).get(model_id)
-
-    # Capture original values (existing pattern from models.py:765-844)
-    original_values = {}
-    for field in changes.keys():
-        original_values[field] = getattr(model, field, None)
-
-    # Create pending edit using EXISTING pattern
-    pending_edit = ModelPendingEdit(
-        model_id=model_id,
-        requested_by_id=current_user.user_id,
-        proposed_changes=changes,
-        original_values=original_values,
-        status="pending"
-    )
-    db.add(pending_edit)
-    db.flush()  # Get pending_edit_id
-
-    # Link to attestation
-    proposal = AttestationChangeProposal(
+    link = AttestationChangeLink(
         attestation_id=attestation_id,
-        pending_edit_id=pending_edit.pending_edit_id,
-        change_type='UPDATE_EXISTING',
+        change_type=change_type,
+        pending_edit_id=pending_edit_id,
         model_id=model_id,
-        proposed_data=changes,
-        status='PENDING'
+        decommissioning_request_id=decommissioning_request_id
     )
-    db.add(proposal)
+    db.add(link)
+    db.commit()
 
-    # Audit log using EXISTING pattern
+    # Audit log
     create_audit_log(
         db=db,
-        entity_type="AttestationChangeProposal",
-        entity_id=proposal.proposal_id,
+        entity_type="AttestationChangeLink",
+        entity_id=link.link_id,
         action="CREATE",
         user_id=current_user.user_id,
-        changes={
-            "attestation_id": attestation_id,
-            "change_type": "UPDATE_EXISTING",
-            "model_id": model_id,
-            "proposed_changes": changes
-        }
+        changes={"attestation_id": attestation_id, "change_type": change_type}
     )
 ```
 
-**For NEW_MODEL or DECOMMISSION:**
-
-```python
-def propose_new_model(attestation_id: int, model_data: dict, db: Session):
-    """
-    Proposes a new model registration through attestation.
-    Does NOT create model immediately - goes to suspense queue.
-    """
-    proposal = AttestationChangeProposal(
-        attestation_id=attestation_id,
-        pending_edit_id=None,  # No existing model
-        change_type='NEW_MODEL',
-        model_id=None,
-        proposed_data=model_data,  # Full model creation payload
-        status='PENDING'
-    )
-    db.add(proposal)
-
-    create_audit_log(db, "AttestationChangeProposal", proposal.proposal_id, "CREATE", ...)
-```
+**Key Benefit:** All approval workflows remain in their existing pages (ModelPendingEdit approval, Decommissioning approval). The attestation system just tracks which changes were made in the context of which attestation.
 
 ### 3.3 Admin Review and Approval Flow
 
@@ -628,66 +641,46 @@ def propose_new_model(attestation_id: int, model_data: dict, db: Session):
 1. Admin navigates to "Attestation Admin" dashboard
    └── Widgets:
        - Pending Attestations (status=SUBMITTED, awaiting review)
-       - Pending Change Proposals (suspense queue)
        - Cycle Progress (coverage by tier)
        - ⚠️ CYCLE REMINDER (conspicuous if new cycle is due)
+       - Linked Changes Summary (read-only, links to existing approval pages)
 
 2. For each SUBMITTED attestation:
    └── Admin reviews:
        - Question responses (Yes/No with comments)
        - Evidence URLs (clickable links) - optional
-       - Any linked change proposals
+       - Linked changes (read-only list with navigation links)
    └── Admin action:
-       ○ Accept → status=ACCEPTED, no inventory changes
-       ○ Accept with Changes → Review change proposals first
+       ○ Accept → status=ACCEPTED
        ○ Reject → status=REJECTED, requires comment
 
-3. For each change proposal:
+3. Linked Changes Display (NO duplicate approval workflow):
    ┌─────────────────────────────────────────────────────────────┐
-   │ CHANGE PROPOSAL REVIEW                                      │
+   │ LINKED INVENTORY CHANGES                                    │
    ├─────────────────────────────────────────────────────────────┤
-   │ Type: UPDATE_EXISTING                                       │
-   │ Model: ALM QRM v2 (ID: 1)                                   │
-   │ Proposed By: John Smith                                     │
-   │ Attestation: Q4 2025 Cycle                                  │
+   │ This attestation has linked changes. Review/approve them   │
+   │ in their respective workflows:                              │
    │                                                             │
-   │ PROPOSED CHANGES:                                           │
-   │ ┌──────────────┬──────────────┬──────────────┐              │
-   │ │ Field        │ Current      │ Proposed     │              │
-   │ ├──────────────┼──────────────┼──────────────┤              │
-   │ │ description  │ "Old desc"   │ "New desc"   │              │
-   │ │ status       │ "Active"     │ "Active"     │              │
-   │ └──────────────┴──────────────┴──────────────┘              │
+   │ • Model Edit: ALM QRM v2                                    │
+   │   Status: Pending Approval                                  │
+   │   [View in Model Pending Edits →]                          │
    │                                                             │
-   │ Admin Decision:                                             │
-   │   ○ Accept (apply changes)                                  │
-   │   ○ Reject (no changes applied)                             │
-   │   Comment: [___________________________________]            │
+   │ • Decommission Request: Legacy Model X                      │
+   │   Status: Under Review                                      │
+   │   [View in Decommissioning Workflow →]                     │
    └─────────────────────────────────────────────────────────────┘
 
-4. When Admin accepts UPDATE_EXISTING:
-   └── Calls EXISTING approve_pending_edit() function
-   └── Updates AttestationChangeProposal.status = 'ACCEPTED'
-   └── Audit log captures both actions
+   **Key Design:** Attestation admin sees linked changes but does NOT
+   approve them here. Links navigate to existing approval workflows.
 
-5. When Admin accepts NEW_MODEL:
-   └── Creates new Model from proposed_data
-   └── Sets row_approval_status = NULL (approved)
-   └── Updates AttestationChangeProposal.status = 'ACCEPTED'
-   └── Audit log: Model CREATE + AttestationChangeProposal ACCEPT
-
-6. When Admin accepts DECOMMISSION:
-   └── Triggers existing decommissioning workflow
-   └── Updates AttestationChangeProposal.status = 'ACCEPTED'
-
-7. Closing a Cycle:
+4. Closing a Cycle:
    └── Admin clicks "Close Cycle"
    └── System checks coverage targets:
        - If any is_blocking=true target not met → BLOCK with error
        - If only is_blocking=false targets not met → WARN but allow
    └── If allowed: status=CLOSED, audit log created
 
-8. All actions logged via EXISTING create_audit_log() pattern
+5. All actions logged via EXISTING create_audit_log() pattern
 ```
 
 ### 3.4 Audit Trail Structure
@@ -699,12 +692,12 @@ All attestation actions use the **existing AuditLog** entity:
 | Submit attestation | AttestationRecord | SUBMIT | `{decision, question_responses...}` |
 | Admin accept attestation | AttestationRecord | ACCEPT | `{reviewed_by, comment}` |
 | Admin reject attestation | AttestationRecord | REJECT | `{reviewed_by, comment, reason}` |
-| Propose model update | AttestationChangeProposal | CREATE | `{change_type, proposed_changes}` |
-| Admin accept change | AttestationChangeProposal | ACCEPT | `{decided_by, applied_changes}` |
-| Admin reject change | AttestationChangeProposal | REJECT | `{decided_by, reason}` |
+| Link change to attestation | AttestationChangeLink | CREATE | `{attestation_id, change_type, linked_entity_id}` |
 | Open cycle | AttestationCycle | OPEN | `{opened_by, models_in_scope}` |
 | Close cycle | AttestationCycle | CLOSE | `{closed_by, coverage_stats}` |
 | Close blocked | AttestationCycle | CLOSE_BLOCKED | `{blocking_targets, coverage_gaps}` |
+
+**Note:** Change approval actions (accept/reject model edits, decommissions) are logged through their existing workflows, not duplicated here.
 
 ---
 
@@ -1101,22 +1094,21 @@ All attestation actions logged via **existing AuditLog** - see Section 3.4.
 - [ ] **AC7:** All actions are logged in existing AuditLog
 - [ ] **AC8:** Delegates with can_attest=true can submit attestations
 
-### Phase 2: Inventory Change Integration (3-4 weeks)
+### Phase 2: Inventory Change Link Tracking (2-3 weeks)
 
 **Deliverables:**
-1. `AttestationChangeProposal` entity and API
-2. Integration with existing `ModelPendingEdit` for UPDATE_EXISTING
-3. NEW_MODEL proposal workflow
-4. DECOMMISSION proposal workflow
-5. Admin change review UI (extends existing pending edits widget)
+1. `AttestationChangeLink` entity and API (lightweight tracking table)
+2. Navigation buttons in attestation form to existing Edit/Create/Decommission pages
+3. SessionStorage-based context passing for link tracking
+4. Linked changes display component (read-only with navigation)
 
 **Acceptance Criteria:**
-- [ ] **AC9:** "I Attest with Updates" prompts for inventory changes
-- [ ] **AC10:** Model updates create `ModelPendingEdit` via existing pattern
-- [ ] **AC11:** New model proposals enter suspense queue, not created immediately
-- [ ] **AC12:** Decommission proposals enter suspense queue
-- [ ] **AC13:** Admin can accept/reject change proposals with full audit trail
-- [ ] **AC14:** Accepted changes apply to inventory atomically
+- [ ] **AC9:** "I Attest with Updates" shows navigation buttons to existing forms
+- [ ] **AC10:** Clicking "Edit Model" opens `/models/{id}` and tracks attestation context
+- [ ] **AC11:** Clicking "Register New Model" opens `/models/new` and tracks context
+- [ ] **AC12:** Clicking "Initiate Decommission" opens existing decommission page
+- [ ] **AC13:** Changes made in existing forms are linked back to attestation
+- [ ] **AC14:** Admin can view linked changes with navigation to approval workflows
 
 ### Phase 3: Scheduling Rules Engine (2-3 weeks)
 
@@ -1179,11 +1171,11 @@ All attestation actions logged via **existing AuditLog** - see Section 3.4.
 | Phase | Duration | Key Outcome |
 |-------|----------|-------------|
 | Phase 1 | 4-5 weeks | End-to-end attestation submission with configurable questions |
-| Phase 2 | 3-4 weeks | Full suspense queue integration for inventory updates |
+| Phase 2 | 2-3 weeks | Lightweight change link tracking (reuses existing forms) |
 | Phase 3 | 2-3 weeks | Configurable scheduling rules engine (threshold=30) |
 | Phase 4 | 2-3 weeks | Coverage targets with blocking + dashboard notifications |
 | Phase 5 | 2-3 weeks | Governance reports + historical seed data |
-| **Total** | **13-18 weeks** | Full MVP |
+| **Total** | **12-17 weeks** | Full MVP |
 
 ---
 
@@ -1255,15 +1247,14 @@ All attestation actions logged via **existing AuditLog** - see Section 3.4.
 | POST | `/attestations/records/{id}/evidence` | Add evidence URL (optional) | Owner, Delegate |
 | DELETE | `/attestations/evidence/{id}` | Remove evidence | Owner, Delegate, Admin |
 
-### Change Proposals
+### Change Links (Lightweight Tracking)
 
 | Method | Path | Description | Auth |
 |--------|------|-------------|------|
-| POST | `/attestations/records/{id}/changes` | Propose change | Owner, Delegate |
-| GET | `/attestations/changes` | List pending changes | Admin |
-| GET | `/attestations/changes/{id}` | Get change details | Admin |
-| POST | `/attestations/changes/{id}/accept` | Accept change | Admin |
-| POST | `/attestations/changes/{id}/reject` | Reject change | Admin |
+| POST | `/attestations/records/{id}/link-change` | Link change to attestation | Owner, Delegate |
+| GET | `/attestations/records/{id}/linked-changes` | Get linked changes for attestation | Owner, Delegate, Admin |
+
+**Note:** No accept/reject endpoints here - changes are approved through their existing workflows (ModelPendingEdit, DecommissioningRequest).
 
 ### Scheduling Rules
 
@@ -1325,9 +1316,9 @@ All attestation actions logged via **existing AuditLog** - see Section 3.4.
    - Create attestation_evidence table
    - FK to attestation_records
 
-8. b8_create_attestation_change_proposals.py
-   - Create attestation_change_proposals table
-   - FKs to attestation_records, model_pending_edits, models
+8. b8_create_attestation_change_links.py
+   - Create attestation_change_links table (lightweight tracking)
+   - FKs to attestation_records, model_pending_edits, models, decommissioning_requests
 
 9. b9_add_can_attest_to_model_delegates.py
    - Add can_attest column to model_delegates table
@@ -1407,14 +1398,14 @@ web/src/pages/AttestationTimelinessReportPage.tsx  # Timeliness report
 web/src/pages/AttestationExceptionsReportPage.tsx  # Exceptions report
 web/src/pages/AttestationComplianceReportPage.tsx  # Compliance summary
 web/src/components/AttestationForm.tsx         # Reusable attestation form (dynamic questions)
-web/src/components/AttestationChangeModal.tsx  # Inventory change proposal modal
 web/src/components/AttestationDeadlineWidget.tsx   # Owner dashboard widget (14 days + past-due)
 web/src/components/CycleReminderBanner.tsx     # Admin cycle reminder banner
+web/src/components/LinkedChangesDisplay.tsx    # Read-only display of linked changes with nav links
 ```
 
 ---
 
-*Document Version: 1.1*
+*Document Version: 1.2*
 *Created: 2025-12-02*
-*Updated: 2025-12-02 (incorporated product owner clarifications)*
+*Updated: 2025-12-03 (simplified inventory change integration - reuse existing forms instead of custom modals)*
 *Author: Claude Code (Implementation Planning)*

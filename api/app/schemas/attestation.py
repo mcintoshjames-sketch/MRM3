@@ -50,17 +50,10 @@ class AttestationSchedulingRuleTypeEnum(str, Enum):
 
 
 class AttestationChangeTypeEnum(str, Enum):
-    """Types of inventory changes proposed during attestation."""
-    UPDATE_EXISTING = "UPDATE_EXISTING"
+    """Types of inventory changes linked during attestation."""
+    MODEL_EDIT = "MODEL_EDIT"
     NEW_MODEL = "NEW_MODEL"
     DECOMMISSION = "DECOMMISSION"
-
-
-class AttestationChangeStatusEnum(str, Enum):
-    """Status of change proposals."""
-    PENDING = "PENDING"
-    ACCEPTED = "ACCEPTED"
-    REJECTED = "REJECTED"
 
 
 class AttestationEvidenceTypeEnum(str, Enum):
@@ -343,7 +336,7 @@ class AttestationRecordResponse(BaseModel):
     review_comment: Optional[str] = None
     responses: List[AttestationResponseResponse] = []
     evidence: List[AttestationEvidenceResponse] = []
-    change_proposals: List["AttestationChangeProposalResponse"] = []
+    change_links: List["AttestationChangeLinkResponse"] = []
     created_at: datetime
     updated_at: datetime
     # Computed
@@ -448,37 +441,28 @@ class AttestationSchedulingRuleResponse(AttestationSchedulingRuleBase):
 
 
 # ============================================================================
-# ATTESTATION CHANGE PROPOSAL SCHEMAS
+# ATTESTATION CHANGE LINK SCHEMAS
 # ============================================================================
 
-class AttestationChangeProposalBase(BaseModel):
-    """Base schema for attestation change proposal."""
+class AttestationChangeLinkBase(BaseModel):
+    """Base schema for attestation change link."""
     change_type: AttestationChangeTypeEnum
     model_id: Optional[int] = None
-    proposed_data: Optional[dict] = None
+    pending_edit_id: Optional[int] = None
+    decommissioning_request_id: Optional[int] = None
 
 
-class AttestationChangeProposalCreate(AttestationChangeProposalBase):
-    """Create schema for attestation change proposal."""
+class AttestationChangeLinkCreate(AttestationChangeLinkBase):
+    """Create schema for attestation change link."""
     pass
 
 
-class AttestationChangeProposalDecision(BaseModel):
-    """Request schema for admin decision on change proposal."""
-    admin_comment: Optional[str] = None
-
-
-class AttestationChangeProposalResponse(AttestationChangeProposalBase):
-    """Response schema for attestation change proposal."""
-    proposal_id: int
+class AttestationChangeLinkResponse(AttestationChangeLinkBase):
+    """Response schema for attestation change link."""
+    link_id: int
     attestation_id: int
-    pending_edit_id: Optional[int] = None
-    status: AttestationChangeStatusEnum
-    admin_comment: Optional[str] = None
-    decided_by: Optional[UserRef] = None
-    decided_at: Optional[datetime] = None
     created_at: datetime
-    # Model info if UPDATE_EXISTING or DECOMMISSION
+    # Model info if MODEL_EDIT or DECOMMISSION
     model: Optional[ModelRef] = None
 
     class Config:

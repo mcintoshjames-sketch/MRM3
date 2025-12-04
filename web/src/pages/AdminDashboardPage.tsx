@@ -135,17 +135,6 @@ interface PendingAdditionalApproval {
     created_at: string;
 }
 
-interface PendingAttestationChangeProposal {
-    proposal_id: number;
-    attestation_id: number;
-    change_type: 'UPDATE_EXISTING' | 'NEW_MODEL' | 'DECOMMISSION';
-    model_id: number | null;
-    proposed_data: Record<string, unknown> | null;
-    status: string;
-    created_at: string;
-    model: { model_id: number; model_name: string } | null;
-}
-
 interface OverdueMonitoringCycle {
     cycle_id: number;
     plan_id: number;
@@ -199,7 +188,6 @@ export default function AdminDashboardPage() {
     const [pendingModelSubmissions, setPendingModelSubmissions] = useState<PendingModelSubmission[]>([]);
     const [pendingModelEdits, setPendingModelEdits] = useState<PendingModelEdit[]>([]);
     const [pendingAdditionalApprovals, setPendingAdditionalApprovals] = useState<PendingAdditionalApproval[]>([]);
-    const [pendingAttestationChanges, setPendingAttestationChanges] = useState<PendingAttestationChangeProposal[]>([]);
     const [myOverdueItems, setMyOverdueItems] = useState<MyOverdueItem[]>([]);
     const [overdueMonitoringCycles, setOverdueMonitoringCycles] = useState<OverdueMonitoringCycle[]>([]);
     const [recommendationsSummary, setRecommendationsSummary] = useState<RecommendationsSummary | null>(null);
@@ -234,7 +222,6 @@ export default function AdminDashboardPage() {
                 monitoringOverviewRes,
                 recommendationsOpenRes,
                 recommendationsOverdueRes,
-                attestationChangesRes,
                 cycleReminderRes,
                 attestationStatsRes
             ] = await Promise.all([
@@ -251,7 +238,6 @@ export default function AdminDashboardPage() {
                 api.get('/monitoring/admin-overview'),
                 api.get('/recommendations/dashboard/open'),
                 api.get('/recommendations/dashboard/overdue'),
-                api.get('/attestations/changes?status=PENDING').catch(() => ({ data: [] })),
                 api.get('/attestations/cycles/reminder').catch(() => ({ data: { should_show_reminder: false } })),
                 api.get('/attestations/dashboard/stats').catch(() => ({ data: { submitted_count: 0 } }))
             ]);
@@ -269,7 +255,6 @@ export default function AdminDashboardPage() {
             setPendingModelSubmissions(pendingModelsRes.data);
             setPendingModelEdits(pendingEditsRes.data);
             setPendingAdditionalApprovals(conditionalApprovalsRes.data);
-            setPendingAttestationChanges(attestationChangesRes.data);
             setMyOverdueItems(myOverdueRes);
             // Filter monitoring cycles for overdue ones only
             const overdueCycles = monitoringOverviewRes.data.cycles.filter(
@@ -595,78 +580,6 @@ export default function AdminDashboardPage() {
                         <div className="mt-3 pt-2 border-t text-center">
                             <span className="text-xs text-gray-500">
                                 Showing 5 of {pendingModelEdits.length} pending model edits
-                            </span>
-                        </div>
-                    )}
-                </div>
-            )}
-
-            {/* Pending Attestation Change Proposals Widget */}
-            {pendingAttestationChanges.length > 0 && (
-                <div className="bg-white p-4 rounded-lg shadow mb-6">
-                    <div className="flex items-center gap-2 mb-3 pb-2 border-b">
-                        <svg className="w-4 h-4 text-indigo-500" fill="currentColor" viewBox="0 0 20 20">
-                            <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-11a1 1 0 10-2 0v2H7a1 1 0 100 2h2v2a1 1 0 102 0v-2h2a1 1 0 100-2h-2V7z" clipRule="evenodd" />
-                        </svg>
-                        <h3 className="text-sm font-semibold text-gray-700">Attestation Change Proposals</h3>
-                        <span className="text-xs text-gray-500 ml-auto">{pendingAttestationChanges.length} pending review</span>
-                    </div>
-                    <div className="space-y-2 max-h-64 overflow-y-auto">
-                        {pendingAttestationChanges.slice(0, 5).map((proposal) => (
-                            <div
-                                key={proposal.proposal_id}
-                                className="border-l-3 pl-3 py-2 hover:bg-gray-50 rounded-r"
-                                style={{
-                                    borderLeftWidth: '3px',
-                                    borderLeftColor: proposal.change_type === 'NEW_MODEL' ? '#10b981' :
-                                                    proposal.change_type === 'DECOMMISSION' ? '#ef4444' : '#6366f1'
-                                }}
-                            >
-                                <div className="flex items-start justify-between gap-2">
-                                    <div className="flex-1 min-w-0">
-                                        <div className="flex items-center gap-2 mb-1">
-                                            <span className={`px-1.5 py-0.5 text-xs font-medium rounded ${
-                                                proposal.change_type === 'UPDATE_EXISTING' ? 'bg-blue-100 text-blue-700' :
-                                                proposal.change_type === 'NEW_MODEL' ? 'bg-green-100 text-green-700' :
-                                                'bg-red-100 text-red-700'
-                                            }`}>
-                                                {proposal.change_type.replace('_', ' ')}
-                                            </span>
-                                            <span className="text-xs text-gray-400">
-                                                {formatTimeAgo(proposal.created_at)}
-                                            </span>
-                                        </div>
-                                        {proposal.model ? (
-                                            <p className="text-sm font-medium text-gray-800 truncate">
-                                                {proposal.model.model_name}
-                                            </p>
-                                        ) : proposal.change_type === 'NEW_MODEL' && proposal.proposed_data ? (
-                                            <p className="text-sm font-medium text-gray-800 truncate">
-                                                New: {(proposal.proposed_data as { model_name?: string }).model_name || 'Unknown'}
-                                            </p>
-                                        ) : null}
-                                        {proposal.proposed_data && Object.keys(proposal.proposed_data).length > 0 && (
-                                            <p className="text-xs text-gray-500 mt-0.5 truncate">
-                                                Changes: {Object.keys(proposal.proposed_data).join(', ')}
-                                            </p>
-                                        )}
-                                    </div>
-                                    <div className="flex-shrink-0">
-                                        <Link
-                                            to={`/attestations/${proposal.attestation_id}`}
-                                            className="inline-flex items-center px-3 py-1.5 text-xs font-medium text-white bg-indigo-600 hover:bg-indigo-700 rounded transition-colors"
-                                        >
-                                            Review
-                                        </Link>
-                                    </div>
-                                </div>
-                            </div>
-                        ))}
-                    </div>
-                    {pendingAttestationChanges.length > 5 && (
-                        <div className="mt-3 pt-2 border-t text-center">
-                            <span className="text-xs text-gray-500">
-                                Showing 5 of {pendingAttestationChanges.length} pending attestation changes
                             </span>
                         </div>
                     )}

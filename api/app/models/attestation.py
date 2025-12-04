@@ -54,17 +54,10 @@ class AttestationSchedulingRuleType(str, enum.Enum):
 
 
 class AttestationChangeType(str, enum.Enum):
-    """Types of inventory changes proposed during attestation."""
-    UPDATE_EXISTING = "UPDATE_EXISTING"
+    """Types of inventory changes linked to attestation."""
+    MODEL_EDIT = "MODEL_EDIT"
     NEW_MODEL = "NEW_MODEL"
     DECOMMISSION = "DECOMMISSION"
-
-
-class AttestationChangeStatus(str, enum.Enum):
-    """Status of change proposals."""
-    PENDING = "PENDING"
-    ACCEPTED = "ACCEPTED"
-    REJECTED = "REJECTED"
 
 
 class AttestationEvidenceType(str, enum.Enum):
@@ -243,8 +236,8 @@ class AttestationRecord(Base):
     evidence: Mapped[List["AttestationEvidence"]] = relationship(
         "AttestationEvidence", back_populates="attestation", cascade="all, delete-orphan"
     )
-    change_proposals: Mapped[List["AttestationChangeProposal"]] = relationship(
-        "AttestationChangeProposal", back_populates="attestation", cascade="all, delete-orphan"
+    change_links: Mapped[List["AttestationChangeLink"]] = relationship(
+        "AttestationChangeLink", back_populates="attestation", cascade="all, delete-orphan"
     )
 
 
@@ -415,26 +408,23 @@ class AttestationSchedulingRule(Base):
 
 
 # ============================================================================
-# AttestationChangeProposal - links attestation to suspense queue
+# AttestationChangeLink - lightweight tracking table for inventory changes
 # ============================================================================
 
-class AttestationChangeProposal(Base):
+class AttestationChangeLink(Base):
     """
-    Links attestation-driven inventory changes to existing ModelPendingEdit
-    or stores new model/decommission proposals.
-    """
-    __tablename__ = "attestation_change_proposals"
+    Lightweight link between attestations and inventory changes made through
+    existing workflows (Model Edit, Model Create, Decommissioning).
 
-    proposal_id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    Design Philosophy: No duplicate data storage - just foreign key references.
+    All approval workflows remain in their existing pages.
+    """
+    __tablename__ = "attestation_change_links"
+
+    link_id: Mapped[int] = mapped_column(Integer, primary_key=True)
     attestation_id: Mapped[int] = mapped_column(
         Integer, ForeignKey("attestation_records.attestation_id", ondelete="CASCADE"),
         nullable=False, index=True
-    )
-
-    # Link to existing suspense queue (for UPDATE_EXISTING)
-    pending_edit_id: Mapped[Optional[int]] = mapped_column(
-        Integer, ForeignKey("model_pending_edits.pending_edit_id", ondelete="SET NULL"),
-        nullable=True
     )
 
     # Change type
@@ -442,25 +432,22 @@ class AttestationChangeProposal(Base):
         String(20), nullable=False
     )
 
-    # Model being changed (NULL if NEW_MODEL)
+    # Link to ModelPendingEdit (for MODEL_EDIT and NEW_MODEL)
+    pending_edit_id: Mapped[Optional[int]] = mapped_column(
+        Integer, ForeignKey("model_pending_edits.pending_edit_id", ondelete="SET NULL"),
+        nullable=True
+    )
+
+    # Link to Model (for tracking which model was created/edited)
     model_id: Mapped[Optional[int]] = mapped_column(
         Integer, ForeignKey("models.model_id", ondelete="SET NULL"), nullable=True
     )
 
-    # Full proposed data (for new models or decommissions)
-    proposed_data: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
-
-    # Status
-    status: Mapped[str] = mapped_column(
-        String(20), nullable=False, default=AttestationChangeStatus.PENDING.value
+    # Link to DecommissioningRequest (for DECOMMISSION)
+    decommissioning_request_id: Mapped[Optional[int]] = mapped_column(
+        Integer, ForeignKey("decommissioning_requests.request_id", ondelete="SET NULL"),
+        nullable=True
     )
-
-    # Admin decision
-    admin_comment: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    decided_by_user_id: Mapped[Optional[int]] = mapped_column(
-        Integer, ForeignKey("users.user_id", ondelete="SET NULL"), nullable=True
-    )
-    decided_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
 
     # Timestamp
     created_at: Mapped[datetime] = mapped_column(
@@ -469,11 +456,11 @@ class AttestationChangeProposal(Base):
 
     # Relationships
     attestation: Mapped["AttestationRecord"] = relationship(
-        "AttestationRecord", back_populates="change_proposals"
+        "AttestationRecord", back_populates="change_links"
     )
     pending_edit: Mapped[Optional["ModelPendingEdit"]] = relationship("ModelPendingEdit")
     model: Mapped[Optional["Model"]] = relationship("Model")
-    decided_by: Mapped[Optional["User"]] = relationship("User")
+    decommissioning_request: Mapped[Optional["DecommissioningRequest"]] = relationship("DecommissioningRequest")
 
 
 # ============================================================================

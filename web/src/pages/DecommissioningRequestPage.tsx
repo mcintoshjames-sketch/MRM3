@@ -3,6 +3,7 @@ import { useParams, useNavigate, Link } from 'react-router-dom';
 import Layout from '../components/Layout';
 import api from '../api/client';
 import { useAuth } from '../contexts/AuthContext';
+import { linkChangeToAttestationIfPresent } from '../api/attestation';
 
 interface Model {
   model_id: number;
@@ -331,6 +332,14 @@ const DecommissioningRequestPage = () => {
       const response = await api.post('/decommissioning/', payload);
       setExistingRequest(response.data);
       setFormMode('view');
+
+      // Link to attestation if navigated from attestation page
+      if (response.data.request_id) {
+        await linkChangeToAttestationIfPresent('DECOMMISSION', {
+          model_id: modelId,
+          decommissioning_request_id: response.data.request_id,
+        });
+      }
     } catch (err: any) {
       alert(err.response?.data?.detail || 'Failed to create request');
     } finally {

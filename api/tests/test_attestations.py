@@ -343,7 +343,8 @@ class TestAttestationSubmission:
             headers=auth_headers
         )
         assert response.status_code == 200
-        assert response.json()["status"] == "SUBMITTED"
+        # Clean attestations (all yes, no comments) are auto-accepted
+        assert response.json()["status"] == "ACCEPTED"
 
     def test_submit_requires_comment_for_no_answer(self, client, auth_headers, attestation_cycle, attestation_taxonomy, sample_model, test_user, scheduling_rule, db_session):
         """Questions with requires_comment_if_no need comments when answered No."""
@@ -537,11 +538,11 @@ class TestDashboardEndpoints:
         assert "active_cycles" in stats
 
 
-class TestChangeProposals:
-    """Tests for attestation change proposal workflow."""
+class TestLinkedChanges:
+    """Tests for attestation linked changes (lightweight tracking)."""
 
-    def test_create_update_proposal(self, client, admin_headers, attestation_cycle, sample_model, db_session):
-        """Can create an UPDATE_EXISTING change proposal."""
+    def test_create_model_edit_link(self, client, admin_headers, attestation_cycle, sample_model, db_session):
+        """Can create a MODEL_EDIT change link."""
         attestation_cycle.status = AttestationCycleStatus.OPEN.value
         db_session.commit()
 
@@ -557,22 +558,20 @@ class TestChangeProposals:
         db_session.commit()
 
         response = client.post(
-            f"/attestations/records/{record.attestation_id}/changes",
+            f"/attestations/records/{record.attestation_id}/link-change",
             json={
-                "change_type": "UPDATE_EXISTING",
-                "model_id": sample_model.model_id,
-                "proposed_data": {"description": "Updated description from attestation"}
+                "change_type": "MODEL_EDIT",
+                "model_id": sample_model.model_id
             },
             headers=admin_headers
         )
         assert response.status_code == 200
         data = response.json()
-        assert data["change_type"] == "UPDATE_EXISTING"
-        assert data["status"] == "PENDING"
+        assert data["change_type"] == "MODEL_EDIT"
         assert data["model"]["model_id"] == sample_model.model_id
 
-    def test_create_new_model_proposal(self, client, admin_headers, attestation_cycle, sample_model, db_session):
-        """Can create a NEW_MODEL change proposal."""
+    def test_create_new_model_link(self, client, admin_headers, attestation_cycle, sample_model, db_session):
+        """Can create a NEW_MODEL change link."""
         attestation_cycle.status = AttestationCycleStatus.OPEN.value
         db_session.commit()
 
@@ -587,22 +586,52 @@ class TestChangeProposals:
         db_session.commit()
 
         response = client.post(
-            f"/attestations/records/{record.attestation_id}/changes",
+            f"/attestations/records/{record.attestation_id}/link-change",
             json={
                 "change_type": "NEW_MODEL",
-                "proposed_data": {"model_name": "New Model from Attestation", "description": "Test model"}
+                "model_id": sample_model.model_id  # Link to newly created model
             },
             headers=admin_headers
         )
         assert response.status_code == 200
         data = response.json()
         assert data["change_type"] == "NEW_MODEL"
-        assert data["proposed_data"]["model_name"] == "New Model from Attestation"
 
-    def test_create_decommission_proposal(self, client, admin_headers, attestation_cycle, sample_model, db_session):
-        """Can create a DECOMMISSION change proposal."""
+    def test_create_decommission_link(self, client, admin_headers, attestation_cycle, sample_model, test_user, db_session):
+        """Can create a DECOMMISSION change link."""
+        from app.models.decommissioning import DecommissioningRequest
+        from datetime import date
+
         attestation_cycle.status = AttestationCycleStatus.OPEN.value
         db_session.commit()
+
+        # Create decommission reason taxonomy
+        reason_taxonomy = Taxonomy(
+            name="Model Decommission Reason",
+            description="Reasons for decommissioning"
+        )
+        db_session.add(reason_taxonomy)
+        db_session.flush()
+
+        reason_value = TaxonomyValue(
+            taxonomy_id=reason_taxonomy.taxonomy_id,
+            code="OBSOLETE",
+            label="Model Obsolete",
+            sort_order=1
+        )
+        db_session.add(reason_value)
+        db_session.flush()
+
+        # Create a decommissioning request
+        decom_request = DecommissioningRequest(
+            model_id=sample_model.model_id,
+            reason_id=reason_value.value_id,
+            last_production_date=date.today(),
+            archive_location="/archive/test",
+            created_by_id=test_user.user_id
+        )
+        db_session.add(decom_request)
+        db_session.flush()
 
         record = AttestationRecord(
             cycle_id=attestation_cycle.cycle_id,
@@ -615,53 +644,22 @@ class TestChangeProposals:
         db_session.commit()
 
         response = client.post(
-            f"/attestations/records/{record.attestation_id}/changes",
+            f"/attestations/records/{record.attestation_id}/link-change",
             json={
                 "change_type": "DECOMMISSION",
                 "model_id": sample_model.model_id,
-                "proposed_data": {"reason": "No longer in use"}
+                "decommissioning_request_id": decom_request.request_id
             },
             headers=admin_headers
         )
         assert response.status_code == 200
         data = response.json()
         assert data["change_type"] == "DECOMMISSION"
+        assert data["decommissioning_request_id"] == decom_request.request_id
 
-    def test_list_change_proposals(self, client, admin_headers, attestation_cycle, sample_model, db_session):
-        """Admin can list change proposals."""
-        from app.models.attestation import AttestationChangeProposal, AttestationChangeStatus
-
-        attestation_cycle.status = AttestationCycleStatus.OPEN.value
-        db_session.commit()
-
-        record = AttestationRecord(
-            cycle_id=attestation_cycle.cycle_id,
-            model_id=sample_model.model_id,
-            attesting_user_id=sample_model.owner_id,
-            due_date=attestation_cycle.submission_due_date,
-            status=AttestationRecordStatus.PENDING.value
-        )
-        db_session.add(record)
-        db_session.flush()
-
-        proposal = AttestationChangeProposal(
-            attestation_id=record.attestation_id,
-            change_type="UPDATE_EXISTING",
-            model_id=sample_model.model_id,
-            proposed_data={"description": "Test"},
-            status=AttestationChangeStatus.PENDING.value
-        )
-        db_session.add(proposal)
-        db_session.commit()
-
-        response = client.get("/attestations/changes", headers=admin_headers)
-        assert response.status_code == 200
-        proposals = response.json()
-        assert len(proposals) >= 1
-
-    def test_accept_proposal(self, client, admin_headers, attestation_cycle, sample_model, db_session):
-        """Admin can accept a change proposal."""
-        from app.models.attestation import AttestationChangeProposal, AttestationChangeStatus
+    def test_get_linked_changes(self, client, admin_headers, attestation_cycle, sample_model, db_session):
+        """Can get linked changes for an attestation record."""
+        from app.models.attestation import AttestationChangeLink
 
         attestation_cycle.status = AttestationCycleStatus.OPEN.value
         db_session.commit()
@@ -676,63 +674,25 @@ class TestChangeProposals:
         db_session.add(record)
         db_session.flush()
 
-        proposal = AttestationChangeProposal(
+        link = AttestationChangeLink(
             attestation_id=record.attestation_id,
-            change_type="UPDATE_EXISTING",
-            model_id=sample_model.model_id,
-            proposed_data={"description": "Accepted change"},
-            status=AttestationChangeStatus.PENDING.value
+            change_type="MODEL_EDIT",
+            model_id=sample_model.model_id
         )
-        db_session.add(proposal)
+        db_session.add(link)
         db_session.commit()
 
-        response = client.post(
-            f"/attestations/changes/{proposal.proposal_id}/accept",
-            json={"admin_comment": "Approved"},
+        response = client.get(
+            f"/attestations/records/{record.attestation_id}/linked-changes",
             headers=admin_headers
         )
         assert response.status_code == 200
-        data = response.json()
-        assert data["status"] == "ACCEPTED"
+        links = response.json()
+        assert len(links) >= 1
+        assert links[0]["change_type"] == "MODEL_EDIT"
 
-    def test_reject_proposal_requires_comment(self, client, admin_headers, attestation_cycle, sample_model, db_session):
-        """Rejecting a proposal requires a comment."""
-        from app.models.attestation import AttestationChangeProposal, AttestationChangeStatus
-
-        attestation_cycle.status = AttestationCycleStatus.OPEN.value
-        db_session.commit()
-
-        record = AttestationRecord(
-            cycle_id=attestation_cycle.cycle_id,
-            model_id=sample_model.model_id,
-            attesting_user_id=sample_model.owner_id,
-            due_date=attestation_cycle.submission_due_date,
-            status=AttestationRecordStatus.PENDING.value
-        )
-        db_session.add(record)
-        db_session.flush()
-
-        proposal = AttestationChangeProposal(
-            attestation_id=record.attestation_id,
-            change_type="UPDATE_EXISTING",
-            model_id=sample_model.model_id,
-            proposed_data={"description": "Test"},
-            status=AttestationChangeStatus.PENDING.value
-        )
-        db_session.add(proposal)
-        db_session.commit()
-
-        # Try without comment - should fail
-        response = client.post(
-            f"/attestations/changes/{proposal.proposal_id}/reject",
-            json={},
-            headers=admin_headers
-        )
-        assert response.status_code == 400
-        assert "comment required" in response.json()["detail"].lower()
-
-    def test_cannot_propose_changes_to_accepted_attestation(self, client, admin_headers, attestation_cycle, sample_model, db_session):
-        """Cannot add change proposals to accepted attestations."""
+    def test_cannot_link_changes_to_accepted_attestation(self, client, admin_headers, attestation_cycle, sample_model, db_session):
+        """Cannot add change links to accepted attestations."""
         attestation_cycle.status = AttestationCycleStatus.OPEN.value
         db_session.commit()
 
@@ -747,16 +707,65 @@ class TestChangeProposals:
         db_session.commit()
 
         response = client.post(
-            f"/attestations/records/{record.attestation_id}/changes",
+            f"/attestations/records/{record.attestation_id}/link-change",
             json={
-                "change_type": "UPDATE_EXISTING",
-                "model_id": sample_model.model_id,
-                "proposed_data": {"description": "Should fail"}
+                "change_type": "MODEL_EDIT",
+                "model_id": sample_model.model_id
             },
             headers=admin_headers
         )
         assert response.status_code == 400
         assert "accepted" in response.json()["detail"].lower()
+
+    def test_linked_changes_prevent_auto_accept(self, client, auth_headers, attestation_cycle, attestation_taxonomy, sample_model, test_user, scheduling_rule, db_session):
+        """Attestations with linked changes should NOT be auto-accepted even if all answers are Yes."""
+        from app.models.attestation import AttestationChangeLink
+
+        attestation_cycle.status = AttestationCycleStatus.OPEN.value
+        db_session.commit()
+
+        # Create attestation record
+        record = AttestationRecord(
+            cycle_id=attestation_cycle.cycle_id,
+            model_id=sample_model.model_id,
+            attesting_user_id=test_user.user_id,
+            due_date=attestation_cycle.submission_due_date,
+            status=AttestationRecordStatus.PENDING.value
+        )
+        db_session.add(record)
+        db_session.flush()
+
+        # Create a linked change (MODEL_EDIT)
+        link = AttestationChangeLink(
+            attestation_id=record.attestation_id,
+            change_type="MODEL_EDIT",
+            model_id=sample_model.model_id
+        )
+        db_session.add(link)
+        db_session.commit()
+        db_session.refresh(record)
+
+        # Submit with all "Yes" answers and no comments (would normally auto-accept)
+        q1 = attestation_taxonomy["q1"]
+        q2 = attestation_taxonomy["q2"]
+        response = client.post(
+            f"/attestations/records/{record.attestation_id}/submit",
+            json={
+                "decision": "I_ATTEST",
+                "decision_comment": None,
+                "responses": [
+                    {"question_id": q1.value_id, "answer": True, "comment": None},
+                    {"question_id": q2.value_id, "answer": True, "comment": None}
+                ],
+                "evidence": []
+            },
+            headers=auth_headers
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        # Should be SUBMITTED, not ACCEPTED, because there are linked changes
+        assert data["status"] == "SUBMITTED", "Attestation with linked changes should not be auto-accepted"
 
 
 class TestBulkAttestation:

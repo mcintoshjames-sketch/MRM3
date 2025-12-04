@@ -128,7 +128,26 @@ interface AttestationQuestion {
     requires_comment_if_no: boolean;
 }
 
-type TabType = 'cycles' | 'rules' | 'targets' | 'review' | 'owners' | 'all-records' | 'questions';
+interface AttestationChangeLink {
+    link_id: number;
+    attestation_id: number;
+    change_type: 'MODEL_EDIT' | 'NEW_MODEL' | 'DECOMMISSION';
+    model_id: number | null;
+    pending_edit_id: number | null;
+    decommissioning_request_id: number | null;
+    created_at: string;
+    attestation: {
+        attestation_id: number;
+        model: { model_id: number; model_name: string };
+        owner: { user_id: number; full_name: string };
+        cycle: { cycle_id: number; cycle_name: string };
+    };
+    model?: { model_id: number; model_name: string };
+    pending_edit?: { pending_edit_id: number; status: string };
+    decommissioning_request?: { request_id: number; status: string };
+}
+
+type TabType = 'cycles' | 'rules' | 'targets' | 'review' | 'owners' | 'all-records' | 'questions' | 'linked-changes';
 type FilterCycle = 'all' | number;
 
 interface GroupedByOwner {
@@ -149,7 +168,7 @@ export default function AttestationCyclesPage() {
 
     // Get initial tab from URL param or default to 'cycles'
     const tabParam = searchParams.get('tab');
-    const validTabs: TabType[] = ['cycles', 'rules', 'targets', 'review', 'owners', 'all-records', 'questions'];
+    const validTabs: TabType[] = ['cycles', 'rules', 'targets', 'review', 'owners', 'all-records', 'questions', 'linked-changes'];
     const initialTab: TabType = tabParam && validTabs.includes(tabParam as TabType) ? (tabParam as TabType) : 'cycles';
     const [activeTab, setActiveTab] = useState<TabType>(initialTab);
 
@@ -237,6 +256,11 @@ export default function AttestationCyclesPage() {
         requires_comment_if_no: false
     });
 
+    // Linked Changes tab state
+    const [linkedChanges, setLinkedChanges] = useState<AttestationChangeLink[]>([]);
+    const [loadingLinkedChanges, setLoadingLinkedChanges] = useState(false);
+    const [linkedChangesCycleFilter, setLinkedChangesCycleFilter] = useState<number | null>(null);
+
     // Error/success messages
     const [error, setError] = useState<string | null>(null);
     const [success, setSuccess] = useState<string | null>(null);
@@ -262,6 +286,9 @@ export default function AttestationCyclesPage() {
             fetchAllRecords();
         } else if (activeTab === 'questions') {
             fetchQuestions();
+        } else if (activeTab === 'linked-changes') {
+            fetchCycles(); // Need cycles for dropdown
+            fetchLinkedChanges();
         }
     }, [activeTab]);
 
@@ -409,6 +436,26 @@ export default function AttestationCyclesPage() {
             setLoadingQuestions(false);
         }
     };
+
+    const fetchLinkedChanges = async () => {
+        setLoadingLinkedChanges(true);
+        try {
+            const params = linkedChangesCycleFilter ? { cycle_id: linkedChangesCycleFilter } : {};
+            const res = await api.get('/attestations/admin/linked-changes', { params });
+            setLinkedChanges(res.data);
+        } catch (err: any) {
+            setError(err.response?.data?.detail || 'Failed to load linked changes');
+        } finally {
+            setLoadingLinkedChanges(false);
+        }
+    };
+
+    // Refetch linked changes when filter changes
+    useEffect(() => {
+        if (activeTab === 'linked-changes') {
+            fetchLinkedChanges();
+        }
+    }, [linkedChangesCycleFilter]);
 
     const handleEditQuestion = (question: AttestationQuestion) => {
         setEditingQuestion(question);
@@ -893,6 +940,21 @@ export default function AttestationCyclesPage() {
                         }`}
                     >
                         Questions
+                    </button>
+                    <button
+                        onClick={() => handleTabChange('linked-changes')}
+                        className={`py-2 px-1 border-b-2 font-medium text-sm ${
+                            activeTab === 'linked-changes'
+                                ? 'border-blue-500 text-blue-600'
+                                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                        }`}
+                    >
+                        Linked Changes
+                        {linkedChanges.length > 0 && (
+                            <span className="ml-2 px-2 py-0.5 text-xs font-bold rounded-full bg-purple-500 text-white">
+                                {linkedChanges.length}
+                            </span>
+                        )}
                     </button>
                 </nav>
             </div>
@@ -2290,6 +2352,198 @@ export default function AttestationCyclesPage() {
                     <div className="mt-4 text-sm text-gray-500">
                         <p><strong>Note:</strong> Question codes cannot be changed. To add a new question, use the Taxonomy page to add a value to the "Attestation Question" taxonomy.</p>
                     </div>
+                </div>
+            )}
+
+            {/* Linked Changes Tab */}
+            {activeTab === 'linked-changes' && (
+                <div>
+                    <div className="flex justify-between items-center mb-4">
+                        <div>
+                            <h2 className="text-lg font-semibold">Linked Inventory Changes</h2>
+                            <p className="text-sm text-gray-500">View all inventory changes linked to attestation records</p>
+                        </div>
+                    </div>
+
+                    {/* Filter */}
+                    <div className="bg-white rounded-lg shadow p-4 mb-6">
+                        <div className="flex flex-wrap items-center gap-4">
+                            <div className="flex items-center gap-2">
+                                <label className="text-sm font-medium text-gray-700">Filter by Cycle:</label>
+                                <select
+                                    value={linkedChangesCycleFilter ?? ''}
+                                    onChange={(e) => setLinkedChangesCycleFilter(e.target.value ? parseInt(e.target.value) : null)}
+                                    className="input-field w-auto"
+                                >
+                                    <option value="">All Cycles</option>
+                                    {cycles.map(c => (
+                                        <option key={c.cycle_id} value={c.cycle_id}>{c.cycle_name}</option>
+                                    ))}
+                                </select>
+                            </div>
+                            <button
+                                onClick={() => fetchLinkedChanges()}
+                                className="btn-secondary text-sm ml-auto"
+                            >
+                                Refresh
+                            </button>
+                        </div>
+                    </div>
+
+                    {/* Summary Stats */}
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+                        <div className="bg-white p-4 rounded-lg shadow">
+                            <div className="text-sm text-gray-500">Total Links</div>
+                            <div className="text-2xl font-bold text-gray-900">{linkedChanges.length}</div>
+                        </div>
+                        <div className="bg-white p-4 rounded-lg shadow">
+                            <div className="text-sm text-gray-500">Model Edits</div>
+                            <div className="text-2xl font-bold text-blue-600">
+                                {linkedChanges.filter(l => l.change_type === 'MODEL_EDIT').length}
+                            </div>
+                        </div>
+                        <div className="bg-white p-4 rounded-lg shadow">
+                            <div className="text-sm text-gray-500">New Models</div>
+                            <div className="text-2xl font-bold text-green-600">
+                                {linkedChanges.filter(l => l.change_type === 'NEW_MODEL').length}
+                            </div>
+                        </div>
+                        <div className="bg-white p-4 rounded-lg shadow">
+                            <div className="text-sm text-gray-500">Decommissions</div>
+                            <div className="text-2xl font-bold text-red-600">
+                                {linkedChanges.filter(l => l.change_type === 'DECOMMISSION').length}
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Linked Changes Table */}
+                    {loadingLinkedChanges ? (
+                        <div className="bg-white rounded-lg shadow p-8 text-center text-gray-500">Loading...</div>
+                    ) : linkedChanges.length === 0 ? (
+                        <div className="bg-white rounded-lg shadow p-8 text-center text-gray-500">
+                            No linked changes found. {linkedChangesCycleFilter ? 'Try selecting a different cycle.' : 'Linked changes will appear here when model owners make inventory changes during attestation.'}
+                        </div>
+                    ) : (
+                        <div className="bg-white rounded-lg shadow overflow-hidden">
+                            <table className="min-w-full divide-y divide-gray-200">
+                                <thead className="bg-gray-50">
+                                    <tr>
+                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Change Type</th>
+                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Attestation Model</th>
+                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Owner</th>
+                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Cycle</th>
+                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Target/Details</th>
+                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Created</th>
+                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="bg-white divide-y divide-gray-200">
+                                    {linkedChanges.map((link) => (
+                                        <tr key={link.link_id}>
+                                            <td className="px-6 py-4 whitespace-nowrap">
+                                                <span className={`px-2 py-1 text-xs font-medium rounded ${
+                                                    link.change_type === 'MODEL_EDIT' ? 'bg-blue-100 text-blue-800' :
+                                                    link.change_type === 'NEW_MODEL' ? 'bg-green-100 text-green-800' :
+                                                    'bg-red-100 text-red-800'
+                                                }`}>
+                                                    {link.change_type === 'MODEL_EDIT' ? 'Model Edit' :
+                                                     link.change_type === 'NEW_MODEL' ? 'New Model' :
+                                                     'Decommission'}
+                                                </span>
+                                            </td>
+                                            <td className="px-6 py-4 whitespace-nowrap text-sm">
+                                                {link.attestation?.model && (
+                                                    <Link
+                                                        to={`/attestations/${link.attestation_id}`}
+                                                        className="text-blue-600 hover:text-blue-800 hover:underline"
+                                                    >
+                                                        {link.attestation.model.model_name}
+                                                    </Link>
+                                                )}
+                                            </td>
+                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                                {link.attestation?.owner?.full_name || '-'}
+                                            </td>
+                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                                {link.attestation?.cycle?.cycle_name || '-'}
+                                            </td>
+                                            <td className="px-6 py-4 whitespace-nowrap text-sm">
+                                                {link.change_type === 'NEW_MODEL' && link.model && (
+                                                    <Link
+                                                        to={`/models/${link.model.model_id}`}
+                                                        className="text-blue-600 hover:text-blue-800 hover:underline"
+                                                    >
+                                                        {link.model.model_name}
+                                                    </Link>
+                                                )}
+                                                {link.change_type === 'MODEL_EDIT' && link.pending_edit_id && (
+                                                    <span className="text-gray-600">
+                                                        Edit #{link.pending_edit_id}
+                                                        {link.model && (
+                                                            <>
+                                                                {' for '}
+                                                                <Link
+                                                                    to={`/models/${link.model.model_id}`}
+                                                                    className="text-blue-600 hover:text-blue-800 hover:underline"
+                                                                >
+                                                                    {link.model.model_name}
+                                                                </Link>
+                                                            </>
+                                                        )}
+                                                    </span>
+                                                )}
+                                                {link.change_type === 'DECOMMISSION' && link.decommissioning_request_id && (
+                                                    <Link
+                                                        to={`/models/${link.model_id}/decommission`}
+                                                        className="text-blue-600 hover:text-blue-800 hover:underline"
+                                                    >
+                                                        Request #{link.decommissioning_request_id}
+                                                    </Link>
+                                                )}
+                                            </td>
+                                            <td className="px-6 py-4 whitespace-nowrap">
+                                                {link.pending_edit?.status && (
+                                                    <span className={`px-2 py-1 text-xs font-medium rounded ${
+                                                        link.pending_edit.status === 'APPROVED' ? 'bg-green-100 text-green-800' :
+                                                        link.pending_edit.status === 'REJECTED' ? 'bg-red-100 text-red-800' :
+                                                        'bg-yellow-100 text-yellow-800'
+                                                    }`}>
+                                                        {link.pending_edit.status}
+                                                    </span>
+                                                )}
+                                                {link.decommissioning_request?.status && (
+                                                    <span className={`px-2 py-1 text-xs font-medium rounded ${
+                                                        link.decommissioning_request.status === 'COMPLETED' ? 'bg-green-100 text-green-800' :
+                                                        link.decommissioning_request.status === 'REJECTED' ? 'bg-red-100 text-red-800' :
+                                                        'bg-yellow-100 text-yellow-800'
+                                                    }`}>
+                                                        {link.decommissioning_request.status}
+                                                    </span>
+                                                )}
+                                                {link.change_type === 'NEW_MODEL' && !link.pending_edit && !link.decommissioning_request && (
+                                                    <span className="px-2 py-1 text-xs font-medium rounded bg-green-100 text-green-800">
+                                                        Created
+                                                    </span>
+                                                )}
+                                            </td>
+                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                                {link.created_at ? link.created_at.split('T')[0] : '-'}
+                                            </td>
+                                            <td className="px-6 py-4 whitespace-nowrap text-sm">
+                                                <Link
+                                                    to={`/attestations/${link.attestation_id}`}
+                                                    className="text-blue-600 hover:text-blue-800 font-medium"
+                                                >
+                                                    View Attestation
+                                                </Link>
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    )}
                 </div>
             )}
         </Layout>

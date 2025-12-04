@@ -98,7 +98,6 @@ from app.models.attestation import (
     AttestationRecordStatus,
     AttestationSchedulingRuleType,
     AttestationChangeType,
-    AttestationChangeStatus,
     AttestationEvidenceType,
     AttestationQuestionFrequency,
     AttestationCycle,
@@ -106,7 +105,7 @@ from app.models.attestation import (
     AttestationResponse,
     AttestationEvidence,
     AttestationSchedulingRule,
-    AttestationChangeProposal,
+    AttestationChangeLink,
     CoverageTarget,
     AttestationQuestionConfig,
 )
@@ -224,7 +223,6 @@ __all__ = [
     "AttestationRecordStatus",
     "AttestationSchedulingRuleType",
     "AttestationChangeType",
-    "AttestationChangeStatus",
     "AttestationEvidenceType",
     "AttestationQuestionFrequency",
     "AttestationCycle",
@@ -232,7 +230,7 @@ __all__ = [
     "AttestationResponse",
     "AttestationEvidence",
     "AttestationSchedulingRule",
-    "AttestationChangeProposal",
+    "AttestationChangeLink",
     "CoverageTarget",
     "AttestationQuestionConfig",
 ]

@@ -5,7 +5,7 @@ import pytest
 class TestModelDevelopmentType:
     """Test model development type validation."""
 
-    def test_create_inhouse_model(self, client, auth_headers, test_user):
+    def test_create_inhouse_model(self, client, auth_headers, test_user, usage_frequency):
         response = client.post(
             "/models/",
             headers=auth_headers,
@@ -13,6 +13,7 @@ class TestModelDevelopmentType:
                 "model_name": "In-House Model",
                 "development_type": "In-House",
                 "owner_id": test_user.user_id,
+                "usage_frequency_id": usage_frequency["daily"].value_id,
                 "user_ids": [test_user.user_id]
             }
         )
@@ -21,7 +22,7 @@ class TestModelDevelopmentType:
         assert data["development_type"] == "In-House"
         assert data["vendor_id"] is None
 
-    def test_create_third_party_model_with_vendor(self, client, auth_headers, test_user, sample_vendor):
+    def test_create_third_party_model_with_vendor(self, client, auth_headers, test_user, sample_vendor, usage_frequency):
         response = client.post(
             "/models/",
             headers=auth_headers,
@@ -30,6 +31,7 @@ class TestModelDevelopmentType:
                 "development_type": "Third-Party",
                 "owner_id": test_user.user_id,
                 "vendor_id": sample_vendor.vendor_id,
+                "usage_frequency_id": usage_frequency["daily"].value_id,
                 "user_ids": [test_user.user_id]
             }
         )
@@ -39,7 +41,7 @@ class TestModelDevelopmentType:
         assert data["vendor_id"] == sample_vendor.vendor_id
         assert data["vendor"]["name"] == "Test Vendor"
 
-    def test_create_third_party_without_vendor_fails(self, client, auth_headers, test_user):
+    def test_create_third_party_without_vendor_fails(self, client, auth_headers, test_user, usage_frequency):
         response = client.post(
             "/models/",
             headers=auth_headers,
@@ -47,6 +49,7 @@ class TestModelDevelopmentType:
                 "model_name": "Invalid Third-Party",
                 "development_type": "Third-Party",
                 "owner_id": test_user.user_id,
+                "usage_frequency_id": usage_frequency["daily"].value_id,
                 "user_ids": [test_user.user_id]
             }
         )
@@ -91,7 +94,7 @@ class TestModelOwnerDeveloper:
         assert data["owner"]["full_name"] == "Test User"
         assert data["owner"]["email"] == "test@example.com"
 
-    def test_create_model_with_developer(self, client, auth_headers, test_user, second_user):
+    def test_create_model_with_developer(self, client, auth_headers, test_user, second_user, usage_frequency):
         response = client.post(
             "/models/",
             headers=auth_headers,
@@ -99,6 +102,7 @@ class TestModelOwnerDeveloper:
                 "model_name": "Model with Developer",
                 "owner_id": test_user.user_id,
                 "developer_id": second_user.user_id,
+                "usage_frequency_id": usage_frequency["daily"].value_id,
                 "user_ids": [test_user.user_id]
             }
         )
@@ -107,7 +111,7 @@ class TestModelOwnerDeveloper:
         assert data["developer_id"] == second_user.user_id
         assert data["developer"]["full_name"] == "Developer User"
 
-    def test_create_model_invalid_owner_fails(self, client, auth_headers, test_user):
+    def test_create_model_invalid_owner_fails(self, client, auth_headers, test_user, usage_frequency):
         response = client.post(
             "/models/",
             headers=auth_headers,
@@ -115,6 +119,7 @@ class TestModelOwnerDeveloper:
                 "model_name": "Invalid Owner",
                 "development_type": "In-House",
                 "owner_id": 9999,
+                "usage_frequency_id": usage_frequency["daily"].value_id,
                 "user_ids": [test_user.user_id, 9999]  # Include self AND invalid owner
             }
         )
@@ -122,7 +127,7 @@ class TestModelOwnerDeveloper:
         assert response.status_code == 404
         assert "Owner user not found" in response.json()["detail"]
 
-    def test_create_model_invalid_developer_fails(self, client, auth_headers, test_user):
+    def test_create_model_invalid_developer_fails(self, client, auth_headers, test_user, usage_frequency):
         response = client.post(
             "/models/",
             headers=auth_headers,
@@ -131,6 +136,7 @@ class TestModelOwnerDeveloper:
                 "development_type": "In-House",
                 "owner_id": test_user.user_id,
                 "developer_id": 9999,
+                "usage_frequency_id": usage_frequency["daily"].value_id,
                 "user_ids": [test_user.user_id]  # Must include self as model user
             }
         )
@@ -168,13 +174,14 @@ class TestModelOwnerDeveloper:
 class TestModelUsers:
     """Test model users many-to-many relationship."""
 
-    def test_create_model_with_users(self, client, auth_headers, test_user, second_user):
+    def test_create_model_with_users(self, client, auth_headers, test_user, second_user, usage_frequency):
         response = client.post(
             "/models/",
             headers=auth_headers,
             json={
                 "model_name": "Model with Users",
                 "owner_id": test_user.user_id,
+                "usage_frequency_id": usage_frequency["daily"].value_id,
                 "user_ids": [test_user.user_id, second_user.user_id]
             }
         )
@@ -185,13 +192,14 @@ class TestModelUsers:
         assert "Test User" in user_names
         assert "Developer User" in user_names
 
-    def test_create_model_with_invalid_user_fails(self, client, auth_headers, test_user):
+    def test_create_model_with_invalid_user_fails(self, client, auth_headers, test_user, usage_frequency):
         response = client.post(
             "/models/",
             headers=auth_headers,
             json={
                 "model_name": "Invalid Users",
                 "owner_id": test_user.user_id,
+                "usage_frequency_id": usage_frequency["daily"].value_id,
                 "user_ids": [test_user.user_id, 9999]
             }
         )
@@ -233,7 +241,7 @@ class TestModelUsers:
 class TestModelVendorValidation:
     """Test vendor validation in models."""
 
-    def test_create_model_with_invalid_vendor_fails(self, client, auth_headers, test_user):
+    def test_create_model_with_invalid_vendor_fails(self, client, auth_headers, test_user, usage_frequency):
         response = client.post(
             "/models/",
             headers=auth_headers,
@@ -242,6 +250,7 @@ class TestModelVendorValidation:
                 "development_type": "Third-Party",
                 "owner_id": test_user.user_id,
                 "vendor_id": 9999,
+                "usage_frequency_id": usage_frequency["daily"].value_id,
                 "user_ids": [test_user.user_id]
             }
         )

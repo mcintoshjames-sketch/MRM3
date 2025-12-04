@@ -24,9 +24,8 @@ from app.models.attestation import (
     AttestationSchedulingRule,
     AttestationSchedulingRuleType,
     AttestationFrequency,
-    AttestationChangeProposal,
+    AttestationChangeLink,
     AttestationChangeType,
-    AttestationChangeStatus,
     CoverageTarget,
     AttestationQuestionConfig,
     AttestationDecision,
@@ -55,10 +54,9 @@ from app.schemas.attestation import (
     AttestationSchedulingRuleCreate,
     AttestationSchedulingRuleUpdate,
     AttestationSchedulingRuleResponse,
-    # Change proposal schemas
-    AttestationChangeProposalCreate,
-    AttestationChangeProposalDecision,
-    AttestationChangeProposalResponse,
+    # Change link schemas
+    AttestationChangeLinkCreate,
+    AttestationChangeLinkResponse,
     # Coverage target schemas
     CoverageTargetCreate,
     CoverageTargetUpdate,
@@ -834,7 +832,7 @@ def get_record(
     record = db.query(AttestationRecord).options(
         joinedload(AttestationRecord.responses),
         joinedload(AttestationRecord.evidence),
-        joinedload(AttestationRecord.change_proposals)
+        joinedload(AttestationRecord.change_links)
     ).filter(
         AttestationRecord.attestation_id == attestation_id
     ).first()
@@ -925,6 +923,14 @@ def submit_attestation(
 
     # Check if this is a clean attestation (auto-accept)
     auto_accept = is_clean_attestation(submission.responses, submission.decision_comment)
+
+    # If there are linked changes, always require admin review (no auto-accept)
+    if auto_accept:
+        linked_changes_count = db.query(AttestationChangeLink).filter(
+            AttestationChangeLink.attestation_id == attestation_id
+        ).count()
+        if linked_changes_count > 0:
+            auto_accept = False
 
     # Update record
     record.decision = submission.decision
@@ -1311,41 +1317,27 @@ def _build_record_response(record: AttestationRecord, db: Session) -> Attestatio
             "added_at": ev.added_at
         })
 
-    # Build change proposals
-    change_proposals = []
-    for proposal in record.change_proposals:
-        proposal_model_ref = None
-        if proposal.model_id:
-            target_model = db.query(Model).filter(Model.model_id == proposal.model_id).first()
+    # Build change links
+    change_links = []
+    for link in record.change_links:
+        link_model_ref = None
+        if link.model_id:
+            target_model = db.query(Model).filter(Model.model_id == link.model_id).first()
             if target_model:
-                proposal_model_ref = {
+                link_model_ref = {
                     "model_id": target_model.model_id,
                     "model_name": target_model.model_name
                 }
 
-        decided_by_ref = None
-        if proposal.decided_by_user_id:
-            decided_by = db.query(User).filter(User.user_id == proposal.decided_by_user_id).first()
-            if decided_by:
-                decided_by_ref = {
-                    "user_id": decided_by.user_id,
-                    "email": decided_by.email,
-                    "full_name": decided_by.full_name
-                }
-
-        change_proposals.append({
-            "proposal_id": proposal.proposal_id,
-            "attestation_id": proposal.attestation_id,
-            "pending_edit_id": proposal.pending_edit_id,
-            "change_type": proposal.change_type,
-            "model_id": proposal.model_id,
-            "proposed_data": proposal.proposed_data,
-            "status": proposal.status,
-            "admin_comment": proposal.admin_comment,
-            "decided_by": decided_by_ref,
-            "decided_at": proposal.decided_at,
-            "created_at": proposal.created_at,
-            "model": proposal_model_ref
+        change_links.append({
+            "link_id": link.link_id,
+            "attestation_id": link.attestation_id,
+            "pending_edit_id": link.pending_edit_id,
+            "change_type": link.change_type,
+            "model_id": link.model_id,
+            "decommissioning_request_id": link.decommissioning_request_id,
+            "created_at": link.created_at,
+            "model": link_model_ref
         })
 
     return AttestationRecordResponse(
@@ -1363,7 +1355,7 @@ def _build_record_response(record: AttestationRecord, db: Session) -> Attestatio
         review_comment=record.review_comment,
         responses=responses,
         evidence=evidence,
-        change_proposals=change_proposals,
+        change_links=change_links,
         created_at=record.created_at,
         updated_at=record.updated_at,
         days_overdue=days_overdue,
@@ -2026,16 +2018,14 @@ def get_dashboard_stats(
         AttestationRecord.due_date < today
     ).count()
 
-    # Pending changes
-    pending_changes = db.query(AttestationChangeProposal).filter(
-        AttestationChangeProposal.status == AttestationChangeStatus.PENDING.value
-    ).count()
+    # Linked changes (for informational purposes - no approval workflow)
+    linked_changes = db.query(AttestationChangeLink).count()
 
     return AttestationDashboardStats(
         pending_count=pending_count,
         submitted_count=submitted_count,
         overdue_count=overdue_count,
-        pending_changes=pending_changes,
+        pending_changes=linked_changes,  # Now just a count of all linked changes
         active_cycles=active_cycles
     )
 
@@ -2188,23 +2178,29 @@ def _check_blocking_targets(db: Session, cycle_id: int) -> List[str]:
 
 
 # ============================================================================
-# CHANGE PROPOSAL ENDPOINTS
+# ATTESTATION CHANGE LINK ENDPOINTS
 # ============================================================================
 
-@router.post("/records/{attestation_id}/changes", response_model=AttestationChangeProposalResponse)
-def create_change_proposal(
+@router.post("/records/{attestation_id}/link-change", response_model=AttestationChangeLinkResponse)
+def link_change_to_attestation(
     attestation_id: int,
-    proposal_in: AttestationChangeProposalCreate,
+    link_in: AttestationChangeLinkCreate,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
     """
-    Propose an inventory change during attestation.
+    Link an inventory change to an attestation (lightweight tracking).
+
+    This endpoint creates a tracking link between an attestation and a change
+    made through existing workflows. It does NOT duplicate data or create
+    approval workflows - those remain in their existing pages.
 
     Change types:
-    - UPDATE_EXISTING: Modify an existing model (creates ModelPendingEdit)
-    - NEW_MODEL: Register a new model (stored in proposed_data)
-    - DECOMMISSION: Propose model decommissioning (stored in proposed_data)
+    - MODEL_EDIT: Link to an existing ModelPendingEdit (user edited model via /models/{id})
+    - NEW_MODEL: Link to a newly created model (user created via /models/new)
+    - DECOMMISSION: Link to a DecommissioningRequest (user initiated via decommission page)
+
+    The actual changes and their approvals are handled by existing workflows.
     """
     # Get attestation record
     record = db.query(AttestationRecord).filter(
@@ -2220,360 +2216,269 @@ def create_change_proposal(
         if not can_attest_for_model(db, current_user, model):
             raise HTTPException(
                 status_code=403,
-                detail="You do not have permission to propose changes for this attestation"
+                detail="You do not have permission to link changes for this attestation"
             )
 
-    # Check attestation status - can only add changes before acceptance
+    # Check attestation status - can only add links before acceptance
     if record.status == AttestationRecordStatus.ACCEPTED.value:
         raise HTTPException(
             status_code=400,
-            detail="Cannot add change proposals to an accepted attestation"
+            detail="Cannot add change links to an accepted attestation"
         )
 
-    # Validate change type and required fields
-    pending_edit_id = None
-
-    if proposal_in.change_type == AttestationChangeType.UPDATE_EXISTING.value:
-        # Must have model_id and proposed_data
-        if not proposal_in.model_id:
-            raise HTTPException(status_code=400, detail="model_id required for UPDATE_EXISTING")
-        if not proposal_in.proposed_data:
-            raise HTTPException(status_code=400, detail="proposed_data required for UPDATE_EXISTING")
-
+    # Validate based on change type - REQUIRE appropriate target IDs
+    if link_in.change_type == AttestationChangeType.MODEL_EDIT.value:
+        # Must have model_id (the model being edited)
+        if not link_in.model_id:
+            raise HTTPException(
+                status_code=400,
+                detail="MODEL_EDIT links require model_id"
+            )
         # Verify model exists
-        target_model = db.query(Model).filter(Model.model_id == proposal_in.model_id).first()
-        if not target_model:
-            raise HTTPException(status_code=404, detail="Target model not found")
+        linked_model = db.query(Model).filter(Model.model_id == link_in.model_id).first()
+        if not linked_model:
+            raise HTTPException(status_code=404, detail="Model not found")
+        # Verify pending_edit_id if provided
+        if link_in.pending_edit_id:
+            pending_edit = db.query(ModelPendingEdit).filter(
+                ModelPendingEdit.pending_edit_id == link_in.pending_edit_id
+            ).first()
+            if not pending_edit:
+                raise HTTPException(status_code=404, detail="Pending edit not found")
+            # Verify pending edit belongs to the same model
+            if pending_edit.model_id != link_in.model_id:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Pending edit does not belong to the specified model"
+                )
 
-        # Create ModelPendingEdit for the change
-        original_values = {}
-        for field in proposal_in.proposed_data.keys():
-            original_values[field] = getattr(target_model, field, None)
+    elif link_in.change_type == AttestationChangeType.NEW_MODEL.value:
+        # Must have model_id (the newly created model)
+        if not link_in.model_id:
+            raise HTTPException(
+                status_code=400,
+                detail="NEW_MODEL links require model_id"
+            )
+        new_model = db.query(Model).filter(Model.model_id == link_in.model_id).first()
+        if not new_model:
+            raise HTTPException(status_code=404, detail="Model not found")
 
-        pending_edit = ModelPendingEdit(
-            model_id=proposal_in.model_id,
-            requested_by_id=current_user.user_id,
-            proposed_changes=proposal_in.proposed_data,
-            original_values=original_values,
-            status="pending"
-        )
-        db.add(pending_edit)
-        db.flush()
-        pending_edit_id = pending_edit.pending_edit_id
+    elif link_in.change_type == AttestationChangeType.DECOMMISSION.value:
+        # Must have decommissioning_request_id
+        if not link_in.decommissioning_request_id:
+            raise HTTPException(
+                status_code=400,
+                detail="DECOMMISSION links require decommissioning_request_id"
+            )
+        from app.models.decommissioning import DecommissioningRequest
+        decom_request = db.query(DecommissioningRequest).filter(
+            DecommissioningRequest.request_id == link_in.decommissioning_request_id
+        ).first()
+        if not decom_request:
+            raise HTTPException(status_code=404, detail="Decommissioning request not found")
+        # Also set model_id from the decommissioning request for display
+        if not link_in.model_id:
+            link_in.model_id = decom_request.model_id
 
-    elif proposal_in.change_type == AttestationChangeType.NEW_MODEL.value:
-        # Must have proposed_data with model details
-        if not proposal_in.proposed_data:
-            raise HTTPException(status_code=400, detail="proposed_data required for NEW_MODEL")
-        if 'model_name' not in proposal_in.proposed_data:
-            raise HTTPException(status_code=400, detail="model_name required in proposed_data for NEW_MODEL")
-
-    elif proposal_in.change_type == AttestationChangeType.DECOMMISSION.value:
-        # Must have model_id
-        if not proposal_in.model_id:
-            raise HTTPException(status_code=400, detail="model_id required for DECOMMISSION")
-
-        # Verify model exists
-        target_model = db.query(Model).filter(Model.model_id == proposal_in.model_id).first()
-        if not target_model:
-            raise HTTPException(status_code=404, detail="Target model not found")
-
-    # Create change proposal
-    proposal = AttestationChangeProposal(
-        attestation_id=attestation_id,
-        pending_edit_id=pending_edit_id,
-        change_type=proposal_in.change_type,
-        model_id=proposal_in.model_id,
-        proposed_data=proposal_in.proposed_data,
-        status=AttestationChangeStatus.PENDING.value
+    # Check for duplicate links (same change_type + target for this attestation)
+    existing_link = db.query(AttestationChangeLink).filter(
+        AttestationChangeLink.attestation_id == attestation_id,
+        AttestationChangeLink.change_type == link_in.change_type
     )
-    db.add(proposal)
+    if link_in.pending_edit_id:
+        existing_link = existing_link.filter(
+            AttestationChangeLink.pending_edit_id == link_in.pending_edit_id
+        )
+    if link_in.decommissioning_request_id:
+        existing_link = existing_link.filter(
+            AttestationChangeLink.decommissioning_request_id == link_in.decommissioning_request_id
+        )
+    if link_in.model_id and link_in.change_type == AttestationChangeType.NEW_MODEL.value:
+        existing_link = existing_link.filter(
+            AttestationChangeLink.model_id == link_in.model_id
+        )
+    if existing_link.first():
+        raise HTTPException(
+            status_code=400,
+            detail="A link of this type already exists for this attestation"
+        )
+
+    # Create change link
+    link = AttestationChangeLink(
+        attestation_id=attestation_id,
+        change_type=link_in.change_type,
+        pending_edit_id=link_in.pending_edit_id,
+        model_id=link_in.model_id,
+        decommissioning_request_id=link_in.decommissioning_request_id
+    )
+    db.add(link)
+    db.flush()  # Get link_id before creating audit log
 
     create_audit_log(
         db=db,
-        entity_type="AttestationChangeProposal",
-        entity_id=attestation_id,
+        entity_type="AttestationChangeLink",
+        entity_id=link.link_id,  # Use the correct link_id, not attestation_id
         action="CREATE",
         user_id=current_user.user_id,
         changes={
-            "change_type": proposal_in.change_type,
-            "model_id": proposal_in.model_id,
-            "proposed_data": proposal_in.proposed_data
+            "attestation_id": attestation_id,
+            "change_type": link_in.change_type,
+            "pending_edit_id": link_in.pending_edit_id,
+            "model_id": link_in.model_id,
+            "decommissioning_request_id": link_in.decommissioning_request_id
         }
     )
 
     db.commit()
-    db.refresh(proposal)
+    db.refresh(link)
 
-    return _build_proposal_response(proposal, db)
-
-
-@router.get("/changes", response_model=List[AttestationChangeProposalResponse])
-def list_change_proposals(
-    status: Optional[str] = None,
-    cycle_id: Optional[int] = None,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(require_admin)
-):
-    """List all change proposals. Admin only."""
-    query = db.query(AttestationChangeProposal).join(
-        AttestationRecord, AttestationRecord.attestation_id == AttestationChangeProposal.attestation_id
-    )
-
-    if status:
-        query = query.filter(AttestationChangeProposal.status == status)
-
-    if cycle_id:
-        query = query.filter(AttestationRecord.cycle_id == cycle_id)
-
-    proposals = query.order_by(AttestationChangeProposal.created_at.desc()).all()
-
-    return [_build_proposal_response(p, db) for p in proposals]
+    return _build_link_response(link, db)
 
 
-@router.get("/changes/{proposal_id}", response_model=AttestationChangeProposalResponse)
-def get_change_proposal(
-    proposal_id: int,
+@router.get("/records/{attestation_id}/linked-changes", response_model=List[AttestationChangeLinkResponse])
+def get_linked_changes(
+    attestation_id: int,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Get change proposal details."""
-    proposal = db.query(AttestationChangeProposal).filter(
-        AttestationChangeProposal.proposal_id == proposal_id
+    """
+    Get all change links for an attestation (read-only).
+
+    Returns linked changes with navigation info to their respective approval pages.
+    """
+    # Get attestation record
+    record = db.query(AttestationRecord).filter(
+        AttestationRecord.attestation_id == attestation_id
     ).first()
 
-    if not proposal:
-        raise HTTPException(status_code=404, detail="Change proposal not found")
+    if not record:
+        raise HTTPException(status_code=404, detail="Attestation record not found")
 
     # Check permission - admin/validator can see all, others only their own
     if current_user.role not in [UserRole.ADMIN, UserRole.VALIDATOR]:
-        record = proposal.attestation
         model = record.model
         if not can_attest_for_model(db, current_user, model):
             raise HTTPException(
                 status_code=403,
-                detail="You do not have permission to view this change proposal"
+                detail="You do not have permission to view linked changes for this attestation"
             )
 
-    return _build_proposal_response(proposal, db)
+    links = db.query(AttestationChangeLink).filter(
+        AttestationChangeLink.attestation_id == attestation_id
+    ).order_by(AttestationChangeLink.created_at.desc()).all()
+
+    return [_build_link_response(link, db) for link in links]
 
 
-@router.post("/changes/{proposal_id}/accept", response_model=AttestationChangeProposalResponse)
-def accept_change_proposal(
-    proposal_id: int,
-    decision: AttestationChangeProposalDecision,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(require_admin)
-):
-    """
-    Accept a change proposal. Admin only.
-
-    For UPDATE_EXISTING: Applies the pending edit to the model.
-    For NEW_MODEL: Creates the new model.
-    For DECOMMISSION: Initiates decommissioning workflow.
-    """
-    proposal = db.query(AttestationChangeProposal).filter(
-        AttestationChangeProposal.proposal_id == proposal_id
-    ).first()
-
-    if not proposal:
-        raise HTTPException(status_code=404, detail="Change proposal not found")
-
-    if proposal.status != AttestationChangeStatus.PENDING.value:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Cannot accept proposal with status {proposal.status}"
-        )
-
-    # Process based on change type
-    if proposal.change_type == AttestationChangeType.UPDATE_EXISTING.value:
-        # Apply the pending edit
-        if proposal.pending_edit_id:
-            pending_edit = db.query(ModelPendingEdit).filter(
-                ModelPendingEdit.pending_edit_id == proposal.pending_edit_id
-            ).first()
-
-            if pending_edit and pending_edit.status == "pending":
-                # Apply changes to model
-                target_model = db.query(Model).filter(
-                    Model.model_id == pending_edit.model_id
-                ).first()
-
-                if target_model:
-                    for field, value in pending_edit.proposed_changes.items():
-                        if hasattr(target_model, field):
-                            setattr(target_model, field, value)
-
-                    pending_edit.status = "approved"
-                    pending_edit.reviewed_by_id = current_user.user_id
-                    pending_edit.reviewed_at = utc_now()
-                    pending_edit.review_comment = decision.admin_comment
-
-                    create_audit_log(
-                        db=db,
-                        entity_type="Model",
-                        entity_id=target_model.model_id,
-                        action="UPDATE",
-                        user_id=current_user.user_id,
-                        changes=pending_edit.proposed_changes
-                    )
-
-    elif proposal.change_type == AttestationChangeType.NEW_MODEL.value:
-        # Create new model from proposed_data
-        if proposal.proposed_data:
-            new_model_data = proposal.proposed_data.copy()
-
-            # Set required defaults if not provided
-            if 'owner_id' not in new_model_data:
-                new_model_data['owner_id'] = proposal.attestation.attesting_user_id
-            if 'development_type' not in new_model_data:
-                new_model_data['development_type'] = 'In-House'
-
-            # Create the model
-            new_model = Model(**new_model_data)
-            new_model.row_approval_status = None  # Approved by Admin accepting this proposal
-            db.add(new_model)
-            db.flush()
-
-            create_audit_log(
-                db=db,
-                entity_type="Model",
-                entity_id=new_model.model_id,
-                action="CREATE",
-                user_id=current_user.user_id,
-                changes={"source": "attestation_change_proposal", "proposal_id": proposal_id}
-            )
-
-    elif proposal.change_type == AttestationChangeType.DECOMMISSION.value:
-        # Mark model for decommissioning (simplified - would normally trigger full workflow)
-        if proposal.model_id:
-            target_model = db.query(Model).filter(
-                Model.model_id == proposal.model_id
-            ).first()
-
-            if target_model:
-                # Update status to indicate pending decommission
-                target_model.status = "Pending Decommission"
-
-                create_audit_log(
-                    db=db,
-                    entity_type="Model",
-                    entity_id=target_model.model_id,
-                    action="DECOMMISSION_REQUESTED",
-                    user_id=current_user.user_id,
-                    changes={"source": "attestation_change_proposal", "proposal_id": proposal_id}
-                )
-
-    # Update proposal status
-    proposal.status = AttestationChangeStatus.ACCEPTED.value
-    proposal.admin_comment = decision.admin_comment
-    proposal.decided_by_user_id = current_user.user_id
-    proposal.decided_at = utc_now()
-
-    create_audit_log(
-        db=db,
-        entity_type="AttestationChangeProposal",
-        entity_id=proposal_id,
-        action="ACCEPT",
-        user_id=current_user.user_id,
-        changes={"admin_comment": decision.admin_comment}
-    )
-
-    db.commit()
-    db.refresh(proposal)
-
-    return _build_proposal_response(proposal, db)
-
-
-@router.post("/changes/{proposal_id}/reject", response_model=AttestationChangeProposalResponse)
-def reject_change_proposal(
-    proposal_id: int,
-    decision: AttestationChangeProposalDecision,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(require_admin)
-):
-    """Reject a change proposal. Admin only. Comment required."""
-    if not decision.admin_comment:
-        raise HTTPException(status_code=400, detail="Comment required when rejecting a change proposal")
-
-    proposal = db.query(AttestationChangeProposal).filter(
-        AttestationChangeProposal.proposal_id == proposal_id
-    ).first()
-
-    if not proposal:
-        raise HTTPException(status_code=404, detail="Change proposal not found")
-
-    if proposal.status != AttestationChangeStatus.PENDING.value:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Cannot reject proposal with status {proposal.status}"
-        )
-
-    # If there's a linked pending edit, reject it too
-    if proposal.pending_edit_id:
-        pending_edit = db.query(ModelPendingEdit).filter(
-            ModelPendingEdit.pending_edit_id == proposal.pending_edit_id
-        ).first()
-
-        if pending_edit and pending_edit.status == "pending":
-            pending_edit.status = "rejected"
-            pending_edit.reviewed_by_id = current_user.user_id
-            pending_edit.reviewed_at = utc_now()
-            pending_edit.review_comment = decision.admin_comment
-
-    # Update proposal status
-    proposal.status = AttestationChangeStatus.REJECTED.value
-    proposal.admin_comment = decision.admin_comment
-    proposal.decided_by_user_id = current_user.user_id
-    proposal.decided_at = utc_now()
-
-    create_audit_log(
-        db=db,
-        entity_type="AttestationChangeProposal",
-        entity_id=proposal_id,
-        action="REJECT",
-        user_id=current_user.user_id,
-        changes={"admin_comment": decision.admin_comment}
-    )
-
-    db.commit()
-    db.refresh(proposal)
-
-    return _build_proposal_response(proposal, db)
-
-
-def _build_proposal_response(proposal: AttestationChangeProposal, db: Session) -> AttestationChangeProposalResponse:
-    """Build full change proposal response."""
+def _build_link_response(link: AttestationChangeLink, db: Session) -> AttestationChangeLinkResponse:
+    """Build change link response with model reference."""
     model_ref = None
-    if proposal.model_id:
-        target_model = db.query(Model).filter(Model.model_id == proposal.model_id).first()
+    if link.model_id:
+        target_model = db.query(Model).filter(Model.model_id == link.model_id).first()
         if target_model:
             model_ref = {"model_id": target_model.model_id, "model_name": target_model.model_name}
 
-    decided_by_ref = None
-    if proposal.decided_by_user_id:
-        decided_by = db.query(User).filter(User.user_id == proposal.decided_by_user_id).first()
-        if decided_by:
-            decided_by_ref = {
-                "user_id": decided_by.user_id,
-                "email": decided_by.email,
-                "full_name": decided_by.full_name
-            }
-
-    return AttestationChangeProposalResponse(
-        proposal_id=proposal.proposal_id,
-        attestation_id=proposal.attestation_id,
-        pending_edit_id=proposal.pending_edit_id,
-        change_type=proposal.change_type,
-        model_id=proposal.model_id,
-        proposed_data=proposal.proposed_data,
-        status=proposal.status,
-        admin_comment=proposal.admin_comment,
-        decided_by=decided_by_ref,
-        decided_at=proposal.decided_at,
-        created_at=proposal.created_at,
+    return AttestationChangeLinkResponse(
+        link_id=link.link_id,
+        attestation_id=link.attestation_id,
+        change_type=link.change_type,
+        pending_edit_id=link.pending_edit_id,
+        model_id=link.model_id,
+        decommissioning_request_id=link.decommissioning_request_id,
+        created_at=link.created_at,
         model=model_ref
     )
+
+
+@router.get("/admin/linked-changes")
+def get_all_linked_changes(
+    cycle_id: Optional[int] = Query(None, description="Filter by cycle ID"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Admin endpoint to get all linked changes across all attestations.
+
+    Returns linked changes with attestation and model context.
+    Admin/Validator only.
+    """
+    if current_user.role not in [UserRole.ADMIN, UserRole.VALIDATOR]:
+        raise HTTPException(status_code=403, detail="Admin or Validator access required")
+
+    # Query all linked changes with joins
+    query = db.query(AttestationChangeLink).join(
+        AttestationRecord,
+        AttestationRecord.attestation_id == AttestationChangeLink.attestation_id
+    ).join(
+        AttestationCycle,
+        AttestationCycle.cycle_id == AttestationRecord.cycle_id
+    ).join(
+        Model,
+        Model.model_id == AttestationRecord.model_id
+    )
+
+    if cycle_id:
+        query = query.filter(AttestationRecord.cycle_id == cycle_id)
+
+    links = query.order_by(AttestationChangeLink.created_at.desc()).all()
+
+    # Build response with context
+    results = []
+    for link in links:
+        record = db.query(AttestationRecord).filter(
+            AttestationRecord.attestation_id == link.attestation_id
+        ).first()
+        model = db.query(Model).filter(Model.model_id == record.model_id).first()
+        owner = db.query(User).filter(User.user_id == model.owner_id).first() if model else None
+        cycle = db.query(AttestationCycle).filter(
+            AttestationCycle.cycle_id == record.cycle_id
+        ).first()
+
+        # Get target model reference
+        target_model_ref = None
+        if link.model_id:
+            target_model = db.query(Model).filter(Model.model_id == link.model_id).first()
+            if target_model:
+                target_model_ref = {"model_id": target_model.model_id, "model_name": target_model.model_name}
+
+        # Get pending edit info
+        pending_edit_ref = None
+        if link.pending_edit_id:
+            pending_edit = db.query(ModelPendingEdit).filter(
+                ModelPendingEdit.pending_edit_id == link.pending_edit_id
+            ).first()
+            if pending_edit:
+                pending_edit_ref = {"pending_edit_id": pending_edit.pending_edit_id, "status": pending_edit.status}
+
+        # Get decommissioning request info
+        decom_ref = None
+        if link.decommissioning_request_id:
+            decom = db.query(DecommissioningRequest).filter(
+                DecommissioningRequest.request_id == link.decommissioning_request_id
+            ).first()
+            if decom:
+                decom_ref = {"request_id": decom.request_id, "status": decom.status}
+
+        results.append({
+            "link_id": link.link_id,
+            "attestation_id": link.attestation_id,
+            "change_type": link.change_type,
+            "model_id": link.model_id,
+            "pending_edit_id": link.pending_edit_id,
+            "decommissioning_request_id": link.decommissioning_request_id,
+            "created_at": link.created_at.isoformat() if link.created_at else None,
+            "attestation": {
+                "attestation_id": record.attestation_id,
+                "model": {"model_id": model.model_id, "model_name": model.model_name} if model else None,
+                "owner": {"user_id": owner.user_id, "full_name": owner.full_name} if owner else None,
+                "cycle": {"cycle_id": cycle.cycle_id, "cycle_name": cycle.cycle_name} if cycle else None,
+            },
+            "model": target_model_ref,
+            "pending_edit": pending_edit_ref,
+            "decommissioning_request": decom_ref,
+        })
+
+    return results
 
 
 # ============================================================================
@@ -2962,6 +2867,18 @@ def submit_bulk_attestation(
 
     # Check if this is a clean attestation (auto-accept)
     auto_accept = is_clean_attestation(submit_in.responses, submit_in.decision_comment)
+
+    # If any of the selected records have linked changes, disable auto-accept for all
+    if auto_accept:
+        attestation_ids_to_check = [
+            records_by_model[model_id].attestation_id
+            for model_id in submit_in.selected_model_ids
+        ]
+        linked_changes_count = db.query(AttestationChangeLink).filter(
+            AttestationChangeLink.attestation_id.in_(attestation_ids_to_check)
+        ).count()
+        if linked_changes_count > 0:
+            auto_accept = False
 
     # Update bulk submission
     bulk_submission.status = AttestationBulkSubmissionStatus.SUBMITTED.value

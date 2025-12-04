@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import api from '../api/client';
 import { useAuth } from '../contexts/AuthContext';
 import Layout from '../components/Layout';
@@ -7,6 +7,7 @@ import { useTableSort } from '../hooks/useTableSort';
 import MultiSelectDropdown from '../components/MultiSelectDropdown';
 import { Region } from '../api/regions';
 import { exportViewsApi, ExportView } from '../api/exportViews';
+import { linkChangeToAttestationIfPresent } from '../api/attestation';
 
 interface User {
     user_id: number;
@@ -78,6 +79,7 @@ interface Model {
 
 export default function ModelsPage() {
     const navigate = useNavigate();
+    const [searchParams, setSearchParams] = useSearchParams();
     const { user } = useAuth();
     const [models, setModels] = useState<Model[]>([]);
     const [users, setUsers] = useState<User[]>([]);
@@ -86,6 +88,15 @@ export default function ModelsPage() {
     const [modelTypes, setModelTypes] = useState<ModelTypeCategory[]>([]);
     const [loading, setLoading] = useState(true);
     const [showForm, setShowForm] = useState(false);
+
+    // Handle ?create=true query param to auto-open create form
+    useEffect(() => {
+        if (searchParams.get('create') === 'true') {
+            setShowForm(true);
+            // Clear the query param so it doesn't persist on refresh
+            setSearchParams({}, { replace: true });
+        }
+    }, [searchParams, setSearchParams]);
     const [formData, setFormData] = useState({
         model_name: '',
         description: '',
@@ -378,7 +389,10 @@ export default function ModelsPage() {
                 setValidationPriorities(valPriority.values || []);
             }
             if (usageFreq) {
+                console.log('DEBUG: Loaded usage frequencies:', usageFreq.values);
                 setUsageFrequencies(usageFreq.values || []);
+            } else {
+                console.warn('DEBUG: Could not find Model Usage Frequency taxonomy');
             }
         } catch (error) {
             console.error('Failed to fetch data:', error);
@@ -425,7 +439,16 @@ export default function ModelsPage() {
                 validation_request_target_date: formData.validation_request_target_date || null,
                 validation_request_trigger_reason: formData.validation_request_trigger_reason || null
             };
+            console.log('DEBUG: Creating model with payload:', JSON.stringify(payload, null, 2));
+            console.log('DEBUG: usage_frequency_id value:', formData.usage_frequency_id, 'type:', typeof formData.usage_frequency_id);
             const response = await api.post('/models/', payload);
+
+            // Link to attestation if navigated from attestation page
+            if (response.data.model_id) {
+                await linkChangeToAttestationIfPresent('NEW_MODEL', {
+                    model_id: response.data.model_id,
+                });
+            }
 
             // Check for warnings in the response
             if (response.data.warnings && response.data.warnings.length > 0) {

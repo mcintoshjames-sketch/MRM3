@@ -28,7 +28,7 @@ class TestListModels:
 class TestCreateModel:
     """Test POST /models/ endpoint."""
 
-    def test_create_model_success(self, client, auth_headers, test_user):
+    def test_create_model_success(self, client, auth_headers, test_user, usage_frequency):
         """Test creating a new model."""
         response = client.post(
             "/models/",
@@ -39,6 +39,7 @@ class TestCreateModel:
                 "development_type": "In-House",
                 "status": "In Development",
                 "owner_id": test_user.user_id,
+                "usage_frequency_id": usage_frequency["daily"].value_id,
                 "user_ids": [test_user.user_id]  # Must include self as model user
             }
         )
@@ -51,7 +52,7 @@ class TestCreateModel:
         assert "created_at" in data
         assert "updated_at" in data
 
-    def test_create_model_minimal(self, client, auth_headers, test_user):
+    def test_create_model_minimal(self, client, auth_headers, test_user, usage_frequency):
         """Test creating model with minimal fields."""
         response = client.post(
             "/models/",
@@ -60,6 +61,7 @@ class TestCreateModel:
                 "model_name": "Minimal Model",
                 "development_type": "In-House",
                 "owner_id": test_user.user_id,
+                "usage_frequency_id": usage_frequency["daily"].value_id,
                 "user_ids": [test_user.user_id]  # Must include self as model user
             }
         )

@@ -32,16 +32,13 @@ interface AttestationEvidence {
     added_at: string;
 }
 
-interface ChangeProposal {
-    proposal_id: number;
+interface LinkedChange {
+    link_id: number;
     attestation_id: number;
-    change_type: 'UPDATE_EXISTING' | 'NEW_MODEL' | 'DECOMMISSION';
+    change_type: 'MODEL_EDIT' | 'NEW_MODEL' | 'DECOMMISSION';
+    pending_edit_id: number | null;
     model_id: number | null;
-    proposed_data: Record<string, unknown> | null;
-    status: 'PENDING' | 'ACCEPTED' | 'REJECTED';
-    admin_comment: string | null;
-    decided_by: { user_id: number; full_name: string } | null;
-    decided_at: string | null;
+    decommissioning_request_id: number | null;
     created_at: string;
     model: { model_id: number; model_name: string } | null;
 }
@@ -70,12 +67,7 @@ interface AttestationRecord {
     review_comment: string | null;
     responses: AttestationResponse[];
     evidence: AttestationEvidence[];
-    change_proposals: ChangeProposal[];
-}
-
-interface SimpleModel {
-    model_id: number;
-    model_name: string;
+    change_links: LinkedChange[];
 }
 
 interface FormAnswer {
@@ -102,15 +94,7 @@ export default function AttestationDetailPage() {
     const [reviewComment, setReviewComment] = useState('');
     const [isReviewing, setIsReviewing] = useState(false);
 
-    // Change proposal state
-    const [showChangeModal, setShowChangeModal] = useState(false);
-    const [changeType, setChangeType] = useState<'UPDATE_EXISTING' | 'NEW_MODEL' | 'DECOMMISSION'>('UPDATE_EXISTING');
-    const [selectedModelId, setSelectedModelId] = useState<number | null>(null);
-    const [proposedData, setProposedData] = useState<Record<string, string>>({});
-    const [availableModels, setAvailableModels] = useState<SimpleModel[]>([]);
-    const [submittingChange, setSubmittingChange] = useState(false);
-
-    // Prompt modal for I_ATTEST_WITH_UPDATES without change proposals
+    // Prompt modal for I_ATTEST_WITH_UPDATES without linked changes
     const [showUpdatePrompt, setShowUpdatePrompt] = useState(false);
 
     useEffect(() => {
@@ -190,12 +174,12 @@ export default function AttestationDetailPage() {
             return;
         }
 
-        // Check if any answers are "No" and no change proposals exist
+        // Check if any answers are "No" and no linked changes exist
         const hasNoAnswers = questions.some(q => answers[q.value_id]?.answer === false);
-        const hasChangeProposals = attestation?.change_proposals && attestation.change_proposals.length > 0;
+        const hasLinkedChanges = attestation?.change_links && attestation.change_links.length > 0;
 
-        // Prompt user to add change proposals if they have "No" answers but haven't added any
-        if (hasNoAnswers && !hasChangeProposals && !bypassPrompt) {
+        // Prompt user to add linked changes if they have "No" answers but haven't added any
+        if (hasNoAnswers && !hasLinkedChanges && !bypassPrompt) {
             setShowUpdatePrompt(true);
             return;
         }
@@ -266,94 +250,23 @@ export default function AttestationDetailPage() {
         }
     };
 
-    const fetchModels = async () => {
-        try {
-            const res = await api.get('/models/?limit=500');
-            setAvailableModels(res.data.items || res.data);
-        } catch (err) {
-            console.error('Failed to fetch models', err);
-        }
+    // Navigation handlers for inventory changes
+    const handleEditModel = () => {
+        // Store attestation context in sessionStorage for link tracking
+        sessionStorage.setItem('attestation_context', JSON.stringify({
+            attestation_id: attestation?.attestation_id,
+            model_id: attestation?.model.model_id
+        }));
+        window.location.href = `/models/${attestation?.model.model_id}?edit=true`;
     };
 
-    const openChangeModal = (type: 'UPDATE_EXISTING' | 'NEW_MODEL' | 'DECOMMISSION') => {
-        setChangeType(type);
-        setSelectedModelId(type === 'UPDATE_EXISTING' || type === 'DECOMMISSION' ? attestation?.model.model_id || null : null);
-        setProposedData({});
-        setShowChangeModal(true);
-        if (type === 'UPDATE_EXISTING' || type === 'DECOMMISSION') {
-            fetchModels();
-        }
-    };
-
-    const handleSubmitChange = async () => {
-        setSubmittingChange(true);
-        setError(null);
-
-        try {
-            const payload: {
-                change_type: string;
-                model_id?: number | null;
-                proposed_data?: Record<string, unknown>;
-            } = {
-                change_type: changeType
-            };
-
-            if (changeType === 'UPDATE_EXISTING') {
-                if (!selectedModelId) {
-                    setError('Please select a model to update');
-                    setSubmittingChange(false);
-                    return;
-                }
-                payload.model_id = selectedModelId;
-                payload.proposed_data = proposedData;
-            } else if (changeType === 'NEW_MODEL') {
-                if (!proposedData.model_name) {
-                    setError('Model name is required for new models');
-                    setSubmittingChange(false);
-                    return;
-                }
-                payload.proposed_data = proposedData;
-            } else if (changeType === 'DECOMMISSION') {
-                if (!selectedModelId) {
-                    setError('Please select a model to decommission');
-                    setSubmittingChange(false);
-                    return;
-                }
-                payload.model_id = selectedModelId;
-                payload.proposed_data = { reason: proposedData.reason || '' };
-            }
-
-            await api.post(`/attestations/records/${id}/changes`, payload);
-            setSuccess('Change proposal submitted successfully');
-            setShowChangeModal(false);
-            fetchData();
-        } catch (err: any) {
-            setError(err.response?.data?.detail || 'Failed to submit change proposal');
-        } finally {
-            setSubmittingChange(false);
-        }
-    };
-
-    const handleAcceptProposal = async (proposalId: number) => {
-        try {
-            await api.post(`/attestations/changes/${proposalId}/accept`, {});
-            setSuccess('Change proposal accepted');
-            fetchData();
-        } catch (err: any) {
-            setError(err.response?.data?.detail || 'Failed to accept proposal');
-        }
-    };
-
-    const handleRejectProposal = async (proposalId: number) => {
-        const comment = prompt('Please provide a reason for rejecting this proposal:');
-        if (!comment) return;
-        try {
-            await api.post(`/attestations/changes/${proposalId}/reject`, { admin_comment: comment });
-            setSuccess('Change proposal rejected');
-            fetchData();
-        } catch (err: any) {
-            setError(err.response?.data?.detail || 'Failed to reject proposal');
-        }
+    const handleDecommission = () => {
+        // Store attestation context in sessionStorage for link tracking
+        sessionStorage.setItem('attestation_context', JSON.stringify({
+            attestation_id: attestation?.attestation_id,
+            model_id: attestation?.model.model_id
+        }));
+        window.location.href = `/models/${attestation?.model.model_id}/decommission`;
     };
 
     const getStatusBadge = (status: string) => {
@@ -592,105 +505,96 @@ export default function AttestationDetailPage() {
                 </div>
             )}
 
-            {/* Inventory Change Proposals */}
+            {/* Linked Inventory Changes */}
             <div id="change-proposals-section" className="bg-white rounded-lg shadow p-6 mb-6">
                 <div className="flex items-center justify-between mb-4">
-                    <h2 className="text-lg font-semibold">Inventory Change Proposals</h2>
-                    {canEdit && (
-                        <div className="flex gap-2">
-                            <button
-                                onClick={() => openChangeModal('UPDATE_EXISTING')}
-                                className="text-sm px-3 py-1 bg-blue-50 text-blue-600 rounded hover:bg-blue-100"
-                            >
-                                Update Model
-                            </button>
-                            <button
-                                onClick={() => openChangeModal('NEW_MODEL')}
-                                className="text-sm px-3 py-1 bg-green-50 text-green-600 rounded hover:bg-green-100"
-                            >
-                                Register New Model
-                            </button>
-                            <button
-                                onClick={() => openChangeModal('DECOMMISSION')}
-                                className="text-sm px-3 py-1 bg-red-50 text-red-600 rounded hover:bg-red-100"
-                            >
-                                Decommission Model
-                            </button>
-                        </div>
-                    )}
+                    <div>
+                        <h2 className="text-lg font-semibold">Linked Inventory Changes</h2>
+                        <p className="text-sm text-gray-600 mt-1">
+                            Use the buttons below to make inventory changes. Changes will be tracked and linked to this attestation.
+                        </p>
+                    </div>
                 </div>
 
-                {(!attestation.change_proposals || attestation.change_proposals.length === 0) ? (
+                {/* Action buttons - navigate to existing forms */}
+                {canEdit && (
+                    <div className="flex gap-3 mb-6 p-4 bg-gray-50 rounded-lg">
+                        <button
+                            onClick={handleEditModel}
+                            className="flex items-center gap-2 px-4 py-2 bg-blue-50 text-blue-700 rounded-lg hover:bg-blue-100 border border-blue-200"
+                        >
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                            </svg>
+                            Edit Model
+                        </button>
+                        <button
+                            onClick={handleDecommission}
+                            className="flex items-center gap-2 px-4 py-2 bg-red-50 text-red-700 rounded-lg hover:bg-red-100 border border-red-200"
+                        >
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                            </svg>
+                            Decommission Model
+                        </button>
+                    </div>
+                )}
+
+                {/* Display linked changes */}
+                {(!attestation.change_links || attestation.change_links.length === 0) ? (
                     <p className="text-sm text-gray-500 italic">
-                        No inventory changes proposed during this attestation.
+                        No inventory changes linked to this attestation yet.
                     </p>
                 ) : (
                     <div className="space-y-3">
-                        {attestation.change_proposals.map((proposal) => (
-                            <div key={proposal.proposal_id} className="border border-gray-200 rounded-lg p-4">
+                        <p className="text-sm text-gray-600 mb-2">
+                            The following changes have been linked to this attestation:
+                        </p>
+                        {attestation.change_links.map((link) => (
+                            <div key={link.link_id} className="border border-gray-200 rounded-lg p-4">
                                 <div className="flex items-start justify-between">
                                     <div>
                                         <div className="flex items-center gap-2">
                                             <span className={`px-2 py-0.5 text-xs font-medium rounded ${
-                                                proposal.change_type === 'UPDATE_EXISTING' ? 'bg-blue-100 text-blue-700' :
-                                                proposal.change_type === 'NEW_MODEL' ? 'bg-green-100 text-green-700' :
+                                                link.change_type === 'MODEL_EDIT' ? 'bg-blue-100 text-blue-700' :
+                                                link.change_type === 'NEW_MODEL' ? 'bg-green-100 text-green-700' :
                                                 'bg-red-100 text-red-700'
                                             }`}>
-                                                {proposal.change_type.replace('_', ' ')}
+                                                {link.change_type === 'MODEL_EDIT' ? 'Model Edit' :
+                                                 link.change_type === 'NEW_MODEL' ? 'New Model' :
+                                                 'Decommission'}
                                             </span>
-                                            <span className={`px-2 py-0.5 text-xs font-medium rounded ${
-                                                proposal.status === 'PENDING' ? 'bg-yellow-100 text-yellow-700' :
-                                                proposal.status === 'ACCEPTED' ? 'bg-green-100 text-green-700' :
-                                                'bg-red-100 text-red-700'
-                                            }`}>
-                                                {proposal.status}
+                                            <span className="text-xs text-gray-500">
+                                                {link.created_at.split('T')[0]}
                                             </span>
                                         </div>
-                                        {proposal.model && (
-                                            <p className="text-sm font-medium mt-1">
-                                                Model: {proposal.model.model_name}
+                                        {link.model && (
+                                            <Link
+                                                to={`/models/${link.model.model_id}`}
+                                                className="text-sm font-medium mt-1 text-blue-600 hover:text-blue-800 hover:underline block"
+                                            >
+                                                {link.model.model_name}
+                                            </Link>
+                                        )}
+                                        {link.pending_edit_id && (
+                                            <p className="text-xs text-gray-500 mt-1">
+                                                Pending Edit ID: {link.pending_edit_id}
                                             </p>
                                         )}
-                                        {proposal.change_type === 'NEW_MODEL' && proposal.proposed_data && (
-                                            <p className="text-sm font-medium mt-1">
-                                                New Model: {(proposal.proposed_data as { model_name?: string }).model_name || 'Unknown'}
-                                            </p>
-                                        )}
-                                        {proposal.proposed_data && Object.keys(proposal.proposed_data).length > 0 && (
-                                            <div className="mt-2 text-xs">
-                                                <p className="text-gray-500 font-medium mb-1">Proposed Changes:</p>
-                                                <ul className="space-y-0.5 ml-2">
-                                                    {Object.entries(proposal.proposed_data).map(([key, value]) => (
-                                                        <li key={key} className="text-gray-600">
-                                                            <span className="font-medium text-gray-700">{key.replace(/_/g, ' ')}:</span>{' '}
-                                                            {typeof value === 'string' ? value : JSON.stringify(value)}
-                                                        </li>
-                                                    ))}
-                                                </ul>
-                                            </div>
-                                        )}
-                                        {proposal.admin_comment && (
-                                            <p className="text-sm text-gray-600 mt-2 italic">
-                                                Admin: {proposal.admin_comment}
+                                        {link.decommissioning_request_id && (
+                                            <p className="text-xs text-gray-500 mt-1">
+                                                Decommissioning Request ID: {link.decommissioning_request_id}
                                             </p>
                                         )}
                                     </div>
-                                    {/* Admin controls */}
-                                    {(user?.role === 'Admin' || user?.role === 'Validator') && proposal.status === 'PENDING' && (
-                                        <div className="flex gap-2">
-                                            <button
-                                                onClick={() => handleAcceptProposal(proposal.proposal_id)}
-                                                className="text-xs px-2 py-1 bg-green-50 text-green-600 rounded hover:bg-green-100"
-                                            >
-                                                Accept
-                                            </button>
-                                            <button
-                                                onClick={() => handleRejectProposal(proposal.proposal_id)}
-                                                className="text-xs px-2 py-1 bg-red-50 text-red-600 rounded hover:bg-red-100"
-                                            >
-                                                Reject
-                                            </button>
-                                        </div>
+                                    {/* View link for the referenced entity */}
+                                    {link.model && (
+                                        <Link
+                                            to={`/models/${link.model.model_id}`}
+                                            className="text-xs px-2 py-1 bg-gray-50 text-gray-600 rounded hover:bg-gray-100"
+                                        >
+                                            View Model →
+                                        </Link>
                                     )}
                                 </div>
                             </div>
@@ -699,133 +603,7 @@ export default function AttestationDetailPage() {
                 )}
             </div>
 
-            {/* Change Proposal Modal */}
-            {showChangeModal && (
-                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-                    <div className="bg-white rounded-lg shadow-xl w-full max-w-lg p-6">
-                        <h3 className="text-lg font-semibold mb-4">
-                            {changeType === 'UPDATE_EXISTING' ? 'Propose Model Update' :
-                             changeType === 'NEW_MODEL' ? 'Register New Model' :
-                             'Propose Model Decommissioning'}
-                        </h3>
-
-                        {(changeType === 'UPDATE_EXISTING' || changeType === 'DECOMMISSION') && (
-                            <div className="mb-4">
-                                <label className="block text-sm font-medium text-gray-700 mb-1">
-                                    Select Model
-                                </label>
-                                <select
-                                    value={selectedModelId || ''}
-                                    onChange={(e) => setSelectedModelId(Number(e.target.value) || null)}
-                                    className="input-field"
-                                >
-                                    <option value="">Select a model...</option>
-                                    {availableModels.map(m => (
-                                        <option key={m.model_id} value={m.model_id}>
-                                            {m.model_name}
-                                        </option>
-                                    ))}
-                                </select>
-                            </div>
-                        )}
-
-                        {changeType === 'UPDATE_EXISTING' && (
-                            <div className="space-y-3">
-                                <p className="text-sm text-gray-600">
-                                    Specify the fields you want to change:
-                                </p>
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                                        New Description (optional)
-                                    </label>
-                                    <textarea
-                                        value={proposedData.description || ''}
-                                        onChange={(e) => setProposedData(prev => ({ ...prev, description: e.target.value }))}
-                                        className="input-field"
-                                        rows={2}
-                                        placeholder="Updated description..."
-                                    />
-                                </div>
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                                        New Status (optional)
-                                    </label>
-                                    <input
-                                        type="text"
-                                        value={proposedData.status || ''}
-                                        onChange={(e) => setProposedData(prev => ({ ...prev, status: e.target.value }))}
-                                        className="input-field"
-                                        placeholder="e.g., Active, Under Review"
-                                    />
-                                </div>
-                            </div>
-                        )}
-
-                        {changeType === 'NEW_MODEL' && (
-                            <div className="space-y-3">
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                                        Model Name *
-                                    </label>
-                                    <input
-                                        type="text"
-                                        value={proposedData.model_name || ''}
-                                        onChange={(e) => setProposedData(prev => ({ ...prev, model_name: e.target.value }))}
-                                        className="input-field"
-                                        placeholder="Enter model name..."
-                                    />
-                                </div>
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                                        Description
-                                    </label>
-                                    <textarea
-                                        value={proposedData.description || ''}
-                                        onChange={(e) => setProposedData(prev => ({ ...prev, description: e.target.value }))}
-                                        className="input-field"
-                                        rows={3}
-                                        placeholder="Enter model description..."
-                                    />
-                                </div>
-                            </div>
-                        )}
-
-                        {changeType === 'DECOMMISSION' && (
-                            <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-1">
-                                    Reason for Decommissioning
-                                </label>
-                                <textarea
-                                    value={proposedData.reason || ''}
-                                    onChange={(e) => setProposedData(prev => ({ ...prev, reason: e.target.value }))}
-                                    className="input-field"
-                                    rows={3}
-                                    placeholder="Please explain why this model should be decommissioned..."
-                                />
-                            </div>
-                        )}
-
-                        <div className="flex justify-end gap-3 mt-6">
-                            <button
-                                onClick={() => setShowChangeModal(false)}
-                                className="btn-secondary"
-                                disabled={submittingChange}
-                            >
-                                Cancel
-                            </button>
-                            <button
-                                onClick={handleSubmitChange}
-                                className="btn-primary"
-                                disabled={submittingChange}
-                            >
-                                {submittingChange ? 'Submitting...' : 'Submit Proposal'}
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            )}
-
-            {/* Update Prompt Modal - shown when user has "No" answers but no change proposals */}
+            {/* Update Prompt Modal - shown when user has "No" answers but no linked changes */}
             {showUpdatePrompt && (
                 <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
                     <div className="bg-white rounded-lg shadow-xl w-full max-w-lg p-6">
@@ -843,7 +621,7 @@ export default function AttestationDetailPage() {
                         </p>
 
                         <p className="text-gray-600 mb-6">
-                            Would you like to propose inventory changes (update existing models, register new models, or request decommissioning) before submitting your attestation?
+                            Would you like to make inventory changes (edit this model or request decommissioning) before submitting your attestation?
                         </p>
 
                         <div className="flex justify-end gap-3">
@@ -856,7 +634,7 @@ export default function AttestationDetailPage() {
                             <button
                                 onClick={() => {
                                     setShowUpdatePrompt(false);
-                                    // Scroll to change proposals section
+                                    // Scroll to linked changes section
                                     const section = document.getElementById('change-proposals-section');
                                     if (section) {
                                         section.scrollIntoView({ behavior: 'smooth' });
@@ -864,7 +642,7 @@ export default function AttestationDetailPage() {
                                 }}
                                 className="btn-primary"
                             >
-                                Add Change Proposals
+                                Make Inventory Changes
                             </button>
                         </div>
                     </div>

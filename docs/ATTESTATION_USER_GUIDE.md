@@ -57,6 +57,7 @@ Rules that determine how frequently different model owners must attest. Some own
    - Model name and risk tier
    - Current status (Pending, Submitted, Accepted, Rejected)
    - Due date with urgency indicator
+4. Above the model list, you'll find the **"Register New Model"** button to add new models to the inventory
 
 ### Completing an Attestation
 
@@ -69,13 +70,14 @@ Rules that determine how frequently different model owners must attest. Some own
    - Click "Add Evidence"
    - Enter a URL to supporting documentation
    - Provide a brief description
-4. **Propose inventory changes** if needed:
-   - **Update Model**: Suggest changes to an existing model's information
-   - **Register New Model**: Report a new model that should be added to inventory
-   - **Decommission Model**: Request removal of a model no longer in use
+4. **Make inventory changes** if needed using the navigation buttons:
+   - **Edit Model**: Opens the model edit form to update model information
+   - **Decommission Model**: Opens the decommissioning request form
+   - Changes made through these forms are automatically linked to your attestation
+   - **Note**: To register a new model, use the "Register New Model" button on the My Attestations page
 5. **Submit your attestation** when complete
 
-**Note:** Clean attestations (all "Yes" answers with no comments or changes) are automatically accepted, so you'll see "Accepted" status immediately. Attestations with "No" answers or change proposals go to the review queue.
+**Note:** Clean attestations (all "Yes" answers with no comments or linked changes) are automatically accepted, so you'll see "Accepted" status immediately. Attestations with "No" answers go to the review queue.
 
 ### Understanding Urgency Indicators
 
@@ -166,8 +168,8 @@ Bulk attestation supports auto-save drafts:
 
 #### Important Notes
 
-- Bulk attestation **does not support change proposals** (new model, update, decommission)
-- If you need to propose changes for a model, exclude it and attest individually
+- Bulk attestation **does not support inventory changes** (new model, edit, decommission)
+- If you need to make inventory changes for a model, exclude it and attest individually
 - All selected models receive the same decision (I Attest / I Attest with Updates)
 - Evidence links are not supported in bulk mode
 
@@ -250,18 +252,13 @@ The Admin Dashboard displays a prominent **Review Queue Alert** when:
 
 This ensures administrators are promptly notified when model owners submit attestations that need approval.
 
-### Reviewing Attestation Change Proposals
+### Viewing Linked Inventory Changes
 
-When model owners propose inventory changes during attestation:
+When model owners make inventory changes during attestation (edit models, register new models, or request decommissioning), these changes are automatically linked to their attestation for tracking purposes.
 
-1. Navigate to **Admin Dashboard**
-2. Find the **"Pending Attestation Changes"** widget
-3. Click a proposal to view details
-4. Review the proposed change:
-   - **Update Existing**: Changes to model metadata
-   - **New Model**: Request to add a model to inventory
-   - **Decommission**: Request to remove a model
-5. **Accept** to approve the change, or **Reject** with an explanation
+- **Linked changes are displayed** in the attestation detail view under "Linked Inventory Changes"
+- **Approval happens in existing workflows** - model edits go through the Model Pending Edits approval queue, decommissioning requests go through the Decommissioning approval workflow
+- **No duplicate approval** is needed in the attestation system
 
 ---
 
@@ -274,7 +271,7 @@ Reviewers (Administrators) can review submitted attestations.
 The system automatically accepts "clean" attestations to reduce reviewer workload. An attestation is auto-accepted when:
 - **All questions are answered "Yes"** (no issues identified)
 - **No optional comments are provided** (nothing requiring review)
-- **No change proposals are submitted** (no updates, new models, or decommissions)
+- **No linked inventory changes** (no edits, new models, or decommissions linked)
 
 Auto-accepted attestations:
 - Move directly to ACCEPTED status without manual review
@@ -292,7 +289,7 @@ For attestations that require manual review:
    - Model owner's responses to each question
    - Any comments or explanations provided
    - Supporting evidence attached
-   - Proposed inventory changes
+   - Linked inventory changes (view-only, approved through their own workflows)
 4. Make a decision:
    - **Accept**: Approve the attestation as complete
    - **Reject**: Return to owner with feedback (comment required)
@@ -300,7 +297,7 @@ For attestations that require manual review:
 ### Review Best Practices
 
 - Verify "No" answers have adequate explanations
-- Check that proposed changes are actionable
+- Check linked changes are being processed through their respective approval workflows
 - Ensure supporting evidence is relevant
 - Provide clear, constructive feedback when rejecting
 
@@ -593,7 +590,7 @@ A: Your attestation will show as "Overdue" and may be escalated to management. C
 A: Check your "My Dashboard" page - a prominent alert appears at the top when you have pending or overdue attestations, showing the count and days until due. You can also check the "My Attestations" page directly.
 
 **Q: Why was my attestation automatically accepted?**
-A: Clean attestations (all "Yes" answers with no comments or change proposals) are auto-accepted to streamline the process. This means no issues were identified and no review is needed.
+A: Clean attestations (all "Yes" answers with no comments or linked changes) are auto-accepted to streamline the process. This means no issues were identified and no review is needed.
 
 ### For Administrators
 
@@ -613,7 +610,7 @@ A: Administrators can accept attestations on behalf of owners if necessary, but 
 A: The Admin Dashboard shows a prominent blue alert when there are attestations awaiting review, with a count and quick link to the Review Queue. You can also check the Review Queue tab in the Attestations page directly.
 
 **Q: Why don't I see some submitted attestations in the review queue?**
-A: Clean attestations (all "Yes" answers with no comments or change proposals) are automatically accepted and bypass the review queue. Only attestations requiring attention appear for manual review.
+A: Clean attestations (all "Yes" answers with no comments or linked changes) are automatically accepted and bypass the review queue. Only attestations requiring attention appear for manual review.
 
 ### Technical Questions
 
@@ -624,7 +621,7 @@ A: Each model has an assigned owner in the model inventory. When a cycle opens, 
 A: Scheduling rules set by administrators. Check with your MRM team if you're unsure of your attestation schedule.
 
 **Q: Are attestation records kept for audit purposes?**
-A: Yes, all attestation history is retained including responses, evidence, change proposals, and reviewer decisions.
+A: Yes, all attestation history is retained including responses, evidence, linked inventory changes, and reviewer decisions.
 
 ---
 
