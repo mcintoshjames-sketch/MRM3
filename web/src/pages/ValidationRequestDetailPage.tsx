@@ -124,6 +124,8 @@ interface ValidationRequestDetail {
     status_history: ValidationStatusHistory[];
     approvals: ValidationApproval[];
     outcome: ValidationOutcome | null;
+    // Risk-tier-based lead time (replaces fixed complete_work_days for work stages)
+    applicable_lead_time_days: number;
 }
 
 interface PriorValidationSummary {
@@ -143,7 +145,7 @@ interface WorkflowSLA {
     workflow_type: string;
     assignment_days: number;
     begin_work_days: number;
-    complete_work_days: number;
+    // NOTE: complete_work_days removed - now uses applicable_lead_time_days from each request
     approval_days: number;
     created_at: string;
     updated_at: string;
@@ -895,10 +897,15 @@ export default function ValidationRequestDetailPage() {
     const getStageSLA = (stageName: string): number | null => {
         if (!workflowSLA) return null;
 
+        // For 'In Progress', use risk-tier-based lead time from the request
+        // This varies by model risk tier (configured in Validation Policies per risk tier)
+        if (stageName === 'In Progress' && request) {
+            return request.applicable_lead_time_days ?? 90; // Default fallback
+        }
+
         const stageMap: { [key: string]: keyof WorkflowSLA } = {
             'Intake': 'assignment_days',
             'Planning': 'assignment_days',
-            'In Progress': 'complete_work_days',
             'Review': 'begin_work_days',
             'Pending Approval': 'approval_days'
         };

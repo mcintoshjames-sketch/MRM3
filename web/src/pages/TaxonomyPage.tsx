@@ -115,6 +115,28 @@ interface ModelTypeCategory {
 }
 
 // ============================================================================
+// TYPES - Methodology Library
+// ============================================================================
+
+interface Methodology {
+    methodology_id: number;
+    category_id: number;
+    name: string;
+    description: string | null;
+    variants: string | null;
+    sort_order: number;
+    is_active: boolean;
+}
+
+interface MethodologyCategory {
+    category_id: number;
+    code: string;
+    name: string;
+    sort_order: number;
+    methodologies: Methodology[];
+}
+
+// ============================================================================
 // TYPES - KPM (Key Performance Metrics) Taxonomy
 // ============================================================================
 
@@ -228,7 +250,7 @@ export default function TaxonomyPage() {
 
     // Tab management - initialize from URL param or default to 'general'
     const tabParam = searchParams.get('tab');
-    const validTabs = ['general', 'change-type', 'model-type', 'kpm', 'fry', 'recommendation-priority', 'risk-factors', 'scorecard', 'residual-risk-map'] as const;
+    const validTabs = ['general', 'change-type', 'model-type', 'methodology-library', 'kpm', 'fry', 'recommendation-priority', 'risk-factors', 'scorecard', 'residual-risk-map'] as const;
     type TabType = typeof validTabs[number];
     const initialTab: TabType = validTabs.includes(tabParam as TabType) ? (tabParam as TabType) : 'general';
     const [activeTab, setActiveTab] = useState<TabType>(initialTab);
@@ -400,6 +422,28 @@ export default function TaxonomyPage() {
         is_active: true
     });
 
+    // Methodology library state
+    const [methodologyCategories, setMethodologyCategories] = useState<MethodologyCategory[]>([]);
+    const [selectedMethodologyCategory, setSelectedMethodologyCategory] = useState<MethodologyCategory | null>(null);
+    const [expandedMethodologyCategories, setExpandedMethodologyCategories] = useState<Set<number>>(new Set());
+    const [showMethodologyCategoryForm, setShowMethodologyCategoryForm] = useState(false);
+    const [showMethodologyForm, setShowMethodologyForm] = useState(false);
+    const [editingMethodology, setEditingMethodology] = useState<Methodology | null>(null);
+    const [editingMethodologyCategory, setEditingMethodologyCategory] = useState<MethodologyCategory | null>(null);
+    const [methodologyCategoryFormData, setMethodologyCategoryFormData] = useState({
+        code: '',
+        name: '',
+        sort_order: 0
+    });
+    const [methodologyFormData, setMethodologyFormData] = useState({
+        category_id: 0,
+        name: '',
+        description: '',
+        variants: '',
+        sort_order: 0,
+        is_active: true
+    });
+
     // KPM taxonomy state
     const [kpmCategories, setKpmCategories] = useState<KpmCategory[]>([]);
     const [selectedKpmCategory, setSelectedKpmCategory] = useState<KpmCategory | null>(null);
@@ -439,6 +483,8 @@ export default function TaxonomyPage() {
             fetchChangeCategories();
         } else if (activeTab === 'model-type') {
             fetchModelCategories();
+        } else if (activeTab === 'methodology-library') {
+            fetchMethodologyCategories();
         } else if (activeTab === 'kpm') {
             fetchKpmCategories();
         } else if (activeTab === 'fry') {
@@ -1364,6 +1410,135 @@ export default function TaxonomyPage() {
     };
 
     // ============================================================================
+    // METHODOLOGY LIBRARY FUNCTIONS
+    // ============================================================================
+
+    const fetchMethodologyCategories = async () => {
+        try {
+            const response = await api.get('/methodology-library/categories');
+            setMethodologyCategories(response.data);
+            if (response.data.length > 0 && !selectedMethodologyCategory) {
+                setSelectedMethodologyCategory(response.data[0]);
+            }
+        } catch (error) {
+            console.error('Failed to fetch methodology categories:', error);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const toggleMethodologyCategory = (categoryId: number) => {
+        setExpandedMethodologyCategories(prev => {
+            const newSet = new Set(prev);
+            if (newSet.has(categoryId)) {
+                newSet.delete(categoryId);
+            } else {
+                newSet.add(categoryId);
+            }
+            return newSet;
+        });
+    };
+
+    const resetMethodologyCategoryForm = () => {
+        setMethodologyCategoryFormData({ code: '', name: '', sort_order: 0 });
+        setEditingMethodologyCategory(null);
+        setShowMethodologyCategoryForm(false);
+    };
+
+    const resetMethodologyForm = () => {
+        setMethodologyFormData({
+            category_id: 0,
+            name: '',
+            description: '',
+            variants: '',
+            sort_order: 0,
+            is_active: true
+        });
+        setEditingMethodology(null);
+        setShowMethodologyForm(false);
+    };
+
+    const handleMethodologyCategorySubmit = async (e: React.FormEvent) => {
+        e.preventDefault();
+        try {
+            if (editingMethodologyCategory) {
+                await api.patch(`/methodology-library/categories/${editingMethodologyCategory.category_id}`, methodologyCategoryFormData);
+            } else {
+                await api.post('/methodology-library/categories', methodologyCategoryFormData);
+            }
+            resetMethodologyCategoryForm();
+            fetchMethodologyCategories();
+        } catch (error: any) {
+            alert(error.response?.data?.detail || 'Failed to save category');
+            console.error('Failed to save category:', error);
+        }
+    };
+
+    const handleEditMethodologyCategory = (category: MethodologyCategory) => {
+        setEditingMethodologyCategory(category);
+        setMethodologyCategoryFormData({
+            code: category.code,
+            name: category.name,
+            sort_order: category.sort_order
+        });
+        setShowMethodologyCategoryForm(true);
+    };
+
+    const handleMethodologySubmit = async (e: React.FormEvent) => {
+        e.preventDefault();
+        try {
+            if (editingMethodology) {
+                await api.patch(`/methodology-library/methodologies/${editingMethodology.methodology_id}`, methodologyFormData);
+            } else {
+                await api.post('/methodology-library/methodologies', methodologyFormData);
+            }
+            resetMethodologyForm();
+            fetchMethodologyCategories();
+        } catch (error: any) {
+            alert(error.response?.data?.detail || 'Failed to save methodology');
+            console.error('Failed to save methodology:', error);
+        }
+    };
+
+    const handleEditMethodology = (methodology: Methodology, categoryId: number) => {
+        setEditingMethodology(methodology);
+        setMethodologyFormData({
+            category_id: categoryId,
+            name: methodology.name,
+            description: methodology.description || '',
+            variants: methodology.variants || '',
+            sort_order: methodology.sort_order,
+            is_active: methodology.is_active
+        });
+        setShowMethodologyForm(true);
+    };
+
+    const handleAddMethodologyToCategory = (categoryId: number) => {
+        setMethodologyFormData({
+            category_id: categoryId,
+            name: '',
+            description: '',
+            variants: '',
+            sort_order: 0,
+            is_active: true
+        });
+        setEditingMethodology(null);
+        setShowMethodologyForm(true);
+    };
+
+    const handleToggleMethodologyActive = async (methodology: Methodology) => {
+        try {
+            await api.patch(`/methodology-library/methodologies/${methodology.methodology_id}`, {
+                is_active: !methodology.is_active
+            });
+            fetchMethodologyCategories();
+        } catch (error: any) {
+            alert(error.response?.data?.detail || 'Failed to update methodology status');
+            console.error('Failed to toggle methodology status:', error);
+        }
+    };
+
+    // ============================================================================
     // KPM TAXONOMY FUNCTIONS
     // ============================================================================
 
@@ -1783,6 +1958,7 @@ export default function TaxonomyPage() {
                         <option value="general">General Taxonomies</option>
                         <option value="change-type">Change Type Taxonomy</option>
                         <option value="model-type">Model Type Taxonomy</option>
+                        <option value="methodology-library">Methodology Library</option>
                         <option value="kpm">KPM Library</option>
                         <option value="fry">FRY 14 Config</option>
                         <option value="recommendation-priority">Recommendation Priority</option>
@@ -2822,6 +2998,307 @@ export default function TaxonomyPage() {
                             )}
                         </div>
                     </div>
+                </>
+            )}
+
+            {/* METHODOLOGY LIBRARY TAB */}
+            {activeTab === 'methodology-library' && (
+                <>
+                    <div className="mb-4 flex justify-between items-start">
+                        <p className="text-gray-600 text-sm">
+                            Reference library of modeling methodologies organized by category.
+                            Click a category to expand/collapse its methodologies.
+                        </p>
+                        {user?.role === 'Admin' && (
+                            <button onClick={() => setShowMethodologyCategoryForm(true)} className="btn-primary">
+                                + New Category
+                            </button>
+                        )}
+                    </div>
+
+                    {/* Category Form */}
+                    {showMethodologyCategoryForm && user?.role === 'Admin' && (
+                        <div className="bg-white p-6 rounded-lg shadow-md mb-6">
+                            <h3 className="text-lg font-bold mb-4">
+                                {editingMethodologyCategory ? 'Edit Category' : 'Create New Category'}
+                            </h3>
+                            <form onSubmit={handleMethodologyCategorySubmit}>
+                                <div className="grid grid-cols-3 gap-4">
+                                    <div className="mb-4">
+                                        <label htmlFor="meth_cat_code" className="block text-sm font-medium mb-2">
+                                            Code
+                                        </label>
+                                        <input
+                                            id="meth_cat_code"
+                                            type="text"
+                                            className="input-field"
+                                            value={methodologyCategoryFormData.code}
+                                            onChange={(e) => setMethodologyCategoryFormData({ ...methodologyCategoryFormData, code: e.target.value })}
+                                            required
+                                        />
+                                    </div>
+                                    <div className="mb-4">
+                                        <label htmlFor="meth_cat_name" className="block text-sm font-medium mb-2">
+                                            Name
+                                        </label>
+                                        <input
+                                            id="meth_cat_name"
+                                            type="text"
+                                            className="input-field"
+                                            value={methodologyCategoryFormData.name}
+                                            onChange={(e) => setMethodologyCategoryFormData({ ...methodologyCategoryFormData, name: e.target.value })}
+                                            required
+                                        />
+                                    </div>
+                                    <div className="mb-4">
+                                        <label htmlFor="meth_cat_sort" className="block text-sm font-medium mb-2">
+                                            Sort Order
+                                        </label>
+                                        <input
+                                            id="meth_cat_sort"
+                                            type="number"
+                                            className="input-field"
+                                            value={methodologyCategoryFormData.sort_order}
+                                            onChange={(e) => setMethodologyCategoryFormData({ ...methodologyCategoryFormData, sort_order: parseInt(e.target.value) })}
+                                            required
+                                        />
+                                    </div>
+                                </div>
+                                <div className="flex gap-2">
+                                    <button type="submit" className="btn-primary">
+                                        {editingMethodologyCategory ? 'Save' : 'Create'}
+                                    </button>
+                                    <button type="button" onClick={resetMethodologyCategoryForm} className="btn-secondary">
+                                        Cancel
+                                    </button>
+                                </div>
+                            </form>
+                        </div>
+                    )}
+
+                    {/* Methodology Form */}
+                    {showMethodologyForm && user?.role === 'Admin' && (
+                        <div className="bg-white p-6 rounded-lg shadow-md mb-6">
+                            <h3 className="text-lg font-bold mb-4">
+                                {editingMethodology ? 'Edit Methodology' : 'Add New Methodology'}
+                            </h3>
+                            <form onSubmit={handleMethodologySubmit}>
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div className="mb-4">
+                                        <label htmlFor="meth_cat_select" className="block text-sm font-medium mb-2">
+                                            Category
+                                        </label>
+                                        <select
+                                            id="meth_cat_select"
+                                            className="input-field"
+                                            value={methodologyFormData.category_id}
+                                            onChange={(e) => setMethodologyFormData({ ...methodologyFormData, category_id: parseInt(e.target.value) })}
+                                            required
+                                        >
+                                            <option value={0}>Select a category...</option>
+                                            {methodologyCategories.map(cat => (
+                                                <option key={cat.category_id} value={cat.category_id}>
+                                                    {cat.name}
+                                                </option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                    <div className="mb-4">
+                                        <label htmlFor="meth_name" className="block text-sm font-medium mb-2">
+                                            Name
+                                        </label>
+                                        <input
+                                            id="meth_name"
+                                            type="text"
+                                            className="input-field"
+                                            value={methodologyFormData.name}
+                                            onChange={(e) => setMethodologyFormData({ ...methodologyFormData, name: e.target.value })}
+                                            required
+                                        />
+                                    </div>
+                                </div>
+                                <div className="mb-4">
+                                    <label htmlFor="meth_desc" className="block text-sm font-medium mb-2">
+                                        Description
+                                    </label>
+                                    <textarea
+                                        id="meth_desc"
+                                        className="input-field"
+                                        rows={2}
+                                        value={methodologyFormData.description}
+                                        onChange={(e) => setMethodologyFormData({ ...methodologyFormData, description: e.target.value })}
+                                    />
+                                </div>
+                                <div className="mb-4">
+                                    <label htmlFor="meth_variants" className="block text-sm font-medium mb-2">
+                                        Variants
+                                    </label>
+                                    <textarea
+                                        id="meth_variants"
+                                        className="input-field"
+                                        rows={2}
+                                        value={methodologyFormData.variants}
+                                        onChange={(e) => setMethodologyFormData({ ...methodologyFormData, variants: e.target.value })}
+                                        placeholder="e.g., Linear, Non-linear, Mixed"
+                                    />
+                                </div>
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div className="mb-4">
+                                        <label htmlFor="meth_sort" className="block text-sm font-medium mb-2">
+                                            Sort Order
+                                        </label>
+                                        <input
+                                            id="meth_sort"
+                                            type="number"
+                                            className="input-field"
+                                            value={methodologyFormData.sort_order}
+                                            onChange={(e) => setMethodologyFormData({ ...methodologyFormData, sort_order: parseInt(e.target.value) })}
+                                            required
+                                        />
+                                    </div>
+                                    <div className="mb-4 flex items-center pt-6">
+                                        <input
+                                            id="meth_active"
+                                            type="checkbox"
+                                            className="h-4 w-4 text-blue-600 rounded border-gray-300"
+                                            checked={methodologyFormData.is_active}
+                                            onChange={(e) => setMethodologyFormData({ ...methodologyFormData, is_active: e.target.checked })}
+                                        />
+                                        <label htmlFor="meth_active" className="ml-2 text-sm font-medium">
+                                            Active
+                                        </label>
+                                    </div>
+                                </div>
+                                <div className="flex gap-2">
+                                    <button type="submit" className="btn-primary">
+                                        {editingMethodology ? 'Save' : 'Create'}
+                                    </button>
+                                    <button type="button" onClick={resetMethodologyForm} className="btn-secondary">
+                                        Cancel
+                                    </button>
+                                </div>
+                            </form>
+                        </div>
+                    )}
+
+                    {loading ? (
+                        <div className="text-center py-8 text-gray-500">Loading...</div>
+                    ) : methodologyCategories.length === 0 ? (
+                        <div className="bg-white rounded-lg shadow-md p-8 text-center text-gray-500">
+                            No methodology categories found.
+                        </div>
+                    ) : (
+                        <div className="space-y-2">
+                            {methodologyCategories
+                                .sort((a, b) => a.sort_order - b.sort_order)
+                                .map((category) => (
+                                    <div key={category.category_id} className="bg-white rounded-lg shadow-md overflow-hidden">
+                                        <div
+                                            className="flex items-center justify-between px-4 py-3 cursor-pointer hover:bg-gray-50"
+                                            onClick={() => toggleMethodologyCategory(category.category_id)}
+                                        >
+                                            <div className="flex items-center gap-3">
+                                                <span className="text-gray-400">
+                                                    {expandedMethodologyCategories.has(category.category_id) ? '▼' : '▶'}
+                                                </span>
+                                                <span className="font-medium">{category.name}</span>
+                                                <span className="text-xs text-gray-400 bg-gray-100 px-2 py-0.5 rounded">
+                                                    {category.code}
+                                                </span>
+                                                <span className="text-sm text-gray-500">
+                                                    ({category.methodologies?.length || 0} methodologies)
+                                                </span>
+                                            </div>
+                                            {user?.role === 'Admin' && (
+                                                <button
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        handleEditMethodologyCategory(category);
+                                                    }}
+                                                    className="text-blue-600 hover:text-blue-800 text-sm"
+                                                >
+                                                    Edit
+                                                </button>
+                                            )}
+                                        </div>
+
+                                        {expandedMethodologyCategories.has(category.category_id) && (
+                                            <div className="border-t bg-gray-50">
+                                                {user?.role === 'Admin' && (
+                                                    <div className="px-4 py-2 bg-gray-100 border-b">
+                                                        <button
+                                                            onClick={() => handleAddMethodologyToCategory(category.category_id)}
+                                                            className="text-sm text-blue-600 hover:text-blue-800"
+                                                        >
+                                                            + Add Methodology
+                                                        </button>
+                                                    </div>
+                                                )}
+                                                {category.methodologies && category.methodologies.length > 0 ? (
+                                                    <table className="w-full">
+                                                        <thead className="bg-gray-100">
+                                                            <tr>
+                                                                <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Name</th>
+                                                                <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Description</th>
+                                                                <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Variants</th>
+                                                                <th className="px-4 py-2 text-center text-xs font-medium text-gray-500 uppercase w-20">Status</th>
+                                                                {user?.role === 'Admin' && (
+                                                                    <th className="px-4 py-2 text-center text-xs font-medium text-gray-500 uppercase w-28">Actions</th>
+                                                                )}
+                                                            </tr>
+                                                        </thead>
+                                                        <tbody className="divide-y divide-gray-200">
+                                                            {category.methodologies
+                                                                .sort((a, b) => a.sort_order - b.sort_order)
+                                                                .map((methodology) => (
+                                                                    <tr key={methodology.methodology_id} className={methodology.is_active ? '' : 'bg-gray-100 text-gray-400'}>
+                                                                        <td className="px-4 py-3 text-sm font-medium">
+                                                                            {methodology.name}
+                                                                        </td>
+                                                                        <td className="px-4 py-3 text-sm text-gray-600">
+                                                                            {methodology.description || '-'}
+                                                                        </td>
+                                                                        <td className="px-4 py-3 text-sm text-gray-600">
+                                                                            {methodology.variants || '-'}
+                                                                        </td>
+                                                                        <td className="px-4 py-3 text-center">
+                                                                            <span className={`px-2 py-1 text-xs rounded-full ${methodology.is_active ? 'bg-green-100 text-green-800' : 'bg-gray-200 text-gray-600'}`}>
+                                                                                {methodology.is_active ? 'Active' : 'Inactive'}
+                                                                            </span>
+                                                                        </td>
+                                                                        {user?.role === 'Admin' && (
+                                                                            <td className="px-4 py-3 text-center">
+                                                                                <div className="flex justify-center gap-2">
+                                                                                    <button
+                                                                                        onClick={() => handleEditMethodology(methodology, category.category_id)}
+                                                                                        className="text-blue-600 hover:text-blue-800 text-sm"
+                                                                                    >
+                                                                                        Edit
+                                                                                    </button>
+                                                                                    <button
+                                                                                        onClick={() => handleToggleMethodologyActive(methodology)}
+                                                                                        className={`text-sm ${methodology.is_active ? 'text-orange-600 hover:text-orange-800' : 'text-green-600 hover:text-green-800'}`}
+                                                                                    >
+                                                                                        {methodology.is_active ? 'Deactivate' : 'Activate'}
+                                                                                    </button>
+                                                                                </div>
+                                                                            </td>
+                                                                        )}
+                                                                    </tr>
+                                                                ))}
+                                                        </tbody>
+                                                    </table>
+                                                ) : (
+                                                    <div className="px-4 py-3 text-sm text-gray-500 italic">
+                                                        No methodologies in this category.
+                                                    </div>
+                                                )}
+                                            </div>
+                                        )}
+                                    </div>
+                                ))}
+                        </div>
+                    )}
                 </>
             )}
 

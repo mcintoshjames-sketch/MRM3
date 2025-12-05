@@ -71,6 +71,7 @@ def list_models(
         joinedload(Model.risk_tier),
         joinedload(Model.validation_type),
         joinedload(Model.model_type),
+        joinedload(Model.methodology),
         joinedload(Model.regulatory_categories),
         joinedload(Model.model_regions).joinedload(ModelRegion.region),
         joinedload(Model.submitted_by_user),
@@ -621,6 +622,7 @@ def get_model(
         joinedload(Model.risk_tier),
         joinedload(Model.validation_type),
         joinedload(Model.model_type),
+        joinedload(Model.methodology),
         joinedload(Model.wholly_owned_region),
         joinedload(Model.regulatory_categories)
     ).filter(Model.model_id == model_id).first()

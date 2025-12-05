@@ -433,6 +433,12 @@ class ValidationRequestResponse(BaseModel):
     days_until_model_validation_due: Optional[int] = None
     days_until_team_sla_due: Optional[int] = None
 
+    # Risk-tier-based SLA (replaces fixed complete_work_days)
+    applicable_lead_time_days: int = Field(
+        90,
+        description="Risk-tier-specific completion lead time in days from ValidationPolicy"
+    )
+
     class Config:
         from_attributes = True
 
@@ -467,6 +473,12 @@ class ValidationRequestListResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
     completion_date: Optional[datetime] = Field(None, description="Date when validation was completed (latest approval date)")
+
+    # Risk-tier-based SLA (replaces fixed complete_work_days)
+    applicable_lead_time_days: int = Field(
+        90,
+        description="Risk-tier-specific completion lead time in days from ValidationPolicy"
+    )
 
     class Config:
         from_attributes = True

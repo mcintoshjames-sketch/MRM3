@@ -287,11 +287,14 @@ def create_model_version(
             db.commit()
             db.refresh(sla_config)
 
-        # Calculate total SLA time
+        # Calculate total SLA time using risk-tier-based lead time
+        # lead_time_required was calculated above if target_production_date exists
+        # Use default of 90 if not set (no production date provided)
+        work_lead_time = lead_time_required if target_production_date else 90
         total_sla_days = (
             sla_config.assignment_days +
             sla_config.begin_work_days +
-            sla_config.complete_work_days +
+            work_lead_time +  # Risk-tier-based lead time (replaces fixed complete_work_days)
             sla_config.approval_days
         )
 

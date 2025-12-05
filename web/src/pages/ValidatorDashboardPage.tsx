@@ -18,6 +18,8 @@ interface ValidationRequest {
     primary_validator: string | null;
     created_at: string;
     updated_at: string;
+    // Risk-tier-based lead time (replaces fixed complete_work_days for work stages)
+    applicable_lead_time_days: number;
 }
 
 interface WorkflowSLA {
@@ -25,7 +27,7 @@ interface WorkflowSLA {
     workflow_type: string;
     assignment_days: number;
     begin_work_days: number;
-    complete_work_days: number;
+    // NOTE: complete_work_days removed - now uses applicable_lead_time_days from each request
     approval_days: number;
     created_at: string;
     updated_at: string;
@@ -327,16 +329,17 @@ export default function ValidatorDashboardPage() {
         let slaDays = 0;
 
         // Map status to SLA days
+        // For work stages (In Progress, Review), use risk-tier-based lead time from the request
+        // For other stages, use the global workflow SLA values
         switch (req.current_status) {
             case 'Intake':
             case 'Planning':
                 slaDays = workflowSLA.assignment_days;
                 break;
             case 'In Progress':
-                slaDays = workflowSLA.complete_work_days;
-                break;
             case 'Review':
-                slaDays = workflowSLA.complete_work_days; // Review uses complete_work_days
+                // Use risk-tier-based lead time from the request (varies by model risk tier)
+                slaDays = req.applicable_lead_time_days ?? 90; // Default fallback
                 break;
             case 'Pending Approval':
                 slaDays = workflowSLA.approval_days;

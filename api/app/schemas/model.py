@@ -8,6 +8,7 @@ from app.schemas.taxonomy import TaxonomyValueResponse
 from app.schemas.region import Region
 from app.schemas.model_submission_comment import ModelSubmissionCommentResponse
 from app.schemas.model_type_taxonomy import ModelTypeResponse
+from app.schemas.methodology import MethodologyResponse
 
 if TYPE_CHECKING:
     pass
@@ -28,6 +29,7 @@ class ModelCreate(ModelBase):
     risk_tier_id: Optional[int] = None
     validation_type_id: Optional[int] = None
     model_type_id: Optional[int] = None
+    methodology_id: Optional[int] = None
     ownership_type_id: Optional[int] = None
     status_id: Optional[int] = None
     wholly_owned_region_id: Optional[int] = None
@@ -62,6 +64,7 @@ class ModelUpdate(BaseModel):
     risk_tier_id: Optional[int] = None
     validation_type_id: Optional[int] = None
     model_type_id: Optional[int] = None
+    methodology_id: Optional[int] = None
     ownership_type_id: Optional[int] = None
     usage_frequency_id: Optional[int] = None
     status_id: Optional[int] = None
@@ -81,6 +84,7 @@ class ModelResponse(ModelBase):
     risk_tier_id: Optional[int] = None
     validation_type_id: Optional[int] = None
     model_type_id: Optional[int] = None
+    methodology_id: Optional[int] = None
     ownership_type_id: Optional[int] = None
     status_id: Optional[int] = None
     wholly_owned_region_id: Optional[int] = None
@@ -116,6 +120,7 @@ class ModelDetailResponse(ModelResponse):
     risk_tier: Optional[TaxonomyValueResponse] = None
     validation_type: Optional[TaxonomyValueResponse] = None
     model_type: Optional[ModelTypeResponse] = None
+    methodology: Optional[MethodologyResponse] = None
     ownership_type: Optional[TaxonomyValueResponse] = None
     status_value: Optional[TaxonomyValueResponse] = None
     wholly_owned_region: Optional[Region] = None
@@ -159,6 +164,7 @@ class ModelCreateResponse(BaseModel):
     risk_tier_id: Optional[int] = None
     validation_type_id: Optional[int] = None
     model_type_id: Optional[int] = None
+    methodology_id: Optional[int] = None
     ownership_type_id: Optional[int] = None
     status_id: Optional[int] = None
     wholly_owned_region_id: Optional[int] = None
@@ -178,6 +184,7 @@ class ModelCreateResponse(BaseModel):
     risk_tier: Optional[TaxonomyValueResponse] = None
     validation_type: Optional[TaxonomyValueResponse] = None
     model_type: Optional[ModelTypeResponse] = None
+    methodology: Optional[MethodologyResponse] = None
     ownership_type: Optional[TaxonomyValueResponse] = None
     status_value: Optional[TaxonomyValueResponse] = None
     wholly_owned_region: Optional[Any] = None

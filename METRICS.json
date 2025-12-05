@@ -1,0 +1,154 @@
+{
+    "model_risk_metrics": [
+        {
+            "id": "4.1",
+            "metric_name": "Total Number of Active Models",
+            "description": "Total count of all models currently in use; tracks model inventory size and program scope.",
+            "calculation_example": "Count of models with status = \"Active\""
+        },
+        {
+            "id": "4.2",
+            "metric_name": "% of Models by Inherent Risk Tier",
+            "description": "Proportion of models by risk category (High, Medium, Low, Very Low); supports risk aggregation.",
+            "calculation_example": "(# High-risk models) / (Total models) × 100%"
+        },
+        {
+            "id": "4.3",
+            "metric_name": "% of Models by Business Line/Region",
+            "description": "Proportion of models allocated to each business line or geographic region; supports risk localization.",
+            "calculation_example": "(# models in Business Line A) / (Total models) × 100%"
+        },
+        {
+            "id": "4.4",
+            "metric_name": "% of Vendor/Third-Party Models",
+            "description": "Proportion of models sourced from external vendors; monitors third-party risk exposure.",
+            "calculation_example": "(# vendor models) / (Total models) × 100%"
+        },
+        {
+            "id": "4.5",
+            "metric_name": "% of AI/ML Models",
+            "description": "Proportion of models utilizing AI/ML techniques; supports monitoring of emerging risks.",
+            "calculation_example": "(# AI/ML models) / (Total models) × 100%"
+        },
+        {
+            "id": "4.6",
+            "metric_name": "% of Models Validated Within Required Cycle",
+            "description": "Percentage of models validated within their mandated review frequency; tracks compliance.",
+            "calculation_example": "(# models validated on time) / (Total models) × 100%"
+        },
+        {
+            "id": "4.7",
+            "metric_name": "% of Models Overdue for Validation",
+            "description": "Percentage of models past their required validation or review date; monitors validation risk.",
+            "calculation_example": "(# models overdue for validation) / (Total models) × 100%"
+        },
+        {
+            "id": "4.8",
+            "metric_name": "Average Time to Complete Model Validation",
+            "description": "Mean time from model submission to validation approval; tracks process efficiency.",
+            "calculation_example": "Avg. (Validation approval date – Submission date)"
+        },
+        {
+            "id": "4.9",
+            "metric_name": "Number of Models with Interim Approval",
+            "description": "Count of models in interim approval status; flags models in use before full validation.",
+            "calculation_example": "Count of models with status = \"Interim Approval\""
+        },
+        {
+            "id": "4.10",
+            "metric_name": "% of Models with Timely Performance Monitoring Submission",
+            "description": "Percentage of models with on-schedule performance monitoring; tracks monitoring compliance.",
+            "calculation_example": "(# timely submissions) / (Total required submissions) × 100%"
+        },
+        {
+            "id": "4.11",
+            "metric_name": "% of Models Breaching Performance Thresholds",
+            "description": "Percentage of models with red/yellow KPM breaches; highlights performance risk.",
+            "calculation_example": "(# models with KPM breach) / (Total models) × 100%"
+        },
+        {
+            "id": "4.12",
+            "metric_name": "% of Models with Open Performance Issues",
+            "description": "Proportion of models with unresolved performance-related issues; monitors ongoing risk.",
+            "calculation_example": "(# models with open issues) / (Total models) × 100%"
+        },
+        {
+            "id": "4.13",
+            "metric_name": "Average Time to Remediate Performance Breaches",
+            "description": "Mean days to resolve KPM breaches; tracks responsiveness.",
+            "calculation_example": "Avg. (Date breach closed – Date breach opened)"
+        },
+        {
+            "id": "4.14",
+            "metric_name": "% of Models with Critical Limitations",
+            "description": "Proportion of models with at least one critical limitation; aggregates model design and data risk.",
+            "calculation_example": "(# models with ≥1 critical limitation) / (Total models) × 100%"
+        },
+        {
+            "id": "4.15",
+            "metric_name": "% of Models with Usage Restrictions/Conditions",
+            "description": "Percentage of models subject to usage constraints; monitors governance controls.",
+            "calculation_example": "(# models with restrictions) / (Total models) × 100%"
+        },
+        {
+            "id": "4.18",
+            "metric_name": "Total Number of Open Recommendations",
+            "description": "Count of all open validation recommendations; aggregates remediation workload.",
+            "calculation_example": "Count of recommendations with status = \"Open\""
+        },
+        {
+            "id": "4.19",
+            "metric_name": "% of Recommendations Past Due",
+            "description": "Proportion of open recommendations past their due date; highlights overdue remediation.",
+            "calculation_example": "(# past due recommendations) / (Total open recommendations) × 100%"
+        },
+        {
+            "id": "4.20",
+            "metric_name": "Average Time to Close Recommendations",
+            "description": "Mean days to close recommendations; tracks remediation efficiency.",
+            "calculation_example": "Avg. (Date closed – Date issued)"
+        },
+        {
+            "id": "4.21",
+            "metric_name": "% of Models with Open High-Priority Recommendations",
+            "description": "Proportion of models with unresolved high-priority issues; risk aggregation.",
+            "calculation_example": "(# models with open high-priority recs) / (Total models) × 100%"
+        },
+        {
+            "id": "4.22",
+            "metric_name": "% of Required Attestations Received On Time",
+            "description": "Percentage of required attestations received by deadline; tracks governance adherence.",
+            "calculation_example": "(# on-time attestations) / (Total required) × 100%"
+        },
+        {
+            "id": "4.23",
+            "metric_name": "Number of Models Flagged for Decommissioning",
+            "description": "Count of models identified for decommission in the period; tracks model lifecycle.",
+            "calculation_example": "Count of models with status = \"Decommission Pending\""
+        },
+        {
+            "id": "4.24",
+            "metric_name": "Number of Models Decommissioned in Last 12 Months",
+            "description": "Total models formally decommissioned in past year; tracks inventory turnover.",
+            "calculation_example": "Count with decommission date in last 12 months"
+        },
+        {
+            "id": "4.26",
+            "metric_name": "% of Models with Residual Risk Downgraded Due to Overdue Validation or Poor Performance",
+            "description": "Aggregates models downgraded for governance breaches.",
+            "calculation_example": "(# models downgraded) / (Total models) × 100%"
+        },
+        {
+            "id": "4.27",
+            "metric_name": "KRI: % of Models with High Residual Risk",
+            "description": "Key risk indicator: proportion of models flagged as high residual risk.",
+            "calculation_example": "(# models with high residual risk) / (Total models) × 100%"
+        },
+        {
+            "id": "4.28",
+            "metric_name": "KRI: % of Models Past Due for Validation",
+            "description": "Key risk indicator: proportion of models past their validation cycle.",
+            "calculation_example": "(# models past due) / (Total models) × 100%"
+        }
+    ]
+}

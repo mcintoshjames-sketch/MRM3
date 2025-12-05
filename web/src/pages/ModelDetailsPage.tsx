@@ -52,6 +52,24 @@ interface ModelTypeCategory {
     model_types: ModelType[];
 }
 
+interface Methodology {
+    methodology_id: number;
+    category_id: number;
+    name: string;
+    description: string | null;
+    variants: string | null;
+    sort_order: number;
+    is_active: boolean;
+}
+
+interface MethodologyCategory {
+    category_id: number;
+    code: string;
+    name: string;
+    sort_order: number;
+    methodologies: Methodology[];
+}
+
 interface TaxonomyValue {
     value_id: number;
     taxonomy_id: number;
@@ -98,6 +116,7 @@ interface Model {
     risk_tier_id: number | null;
     validation_type_id: number | null;
     model_type_id: number | null;
+    methodology_id: number | null;
     usage_frequency_id: number | null;
     wholly_owned_region_id: number | null;
     status: string;
@@ -114,6 +133,7 @@ interface Model {
     risk_tier: TaxonomyValue | null;
     validation_type: TaxonomyValue | null;
     model_type: ModelType | null;
+    methodology: Methodology | null;
     usage_frequency: TaxonomyValue | null;
     status_value: TaxonomyValue | null;
     wholly_owned_region: Region | null;
@@ -244,6 +264,7 @@ export default function ModelDetailsPage() {
     const [regions, setRegions] = useState<Region[]>([]);
     const [taxonomies, setTaxonomies] = useState<Taxonomy[]>([]);
     const [modelTypes, setModelTypes] = useState<ModelTypeCategory[]>([]);
+    const [methodologyCategories, setMethodologyCategories] = useState<MethodologyCategory[]>([]);
     const [validationRequests, setValidationRequests] = useState<ValidationRequest[]>([]);
     const [versions, setVersions] = useState<ModelVersion[]>([]);
     const [revalidationStatus, setRevalidationStatus] = useState<RevalidationStatus | null>(null);
@@ -293,6 +314,7 @@ export default function ModelDetailsPage() {
         vendor_id: null as number | null,
         risk_tier_id: null as number | null,
         model_type_id: null as number | null,
+        methodology_id: null as number | null,
         usage_frequency_id: null as number | null,
         wholly_owned_region_id: null as number | null,
         status: 'In Development',
@@ -392,13 +414,14 @@ export default function ModelDetailsPage() {
     const fetchData = async () => {
         try {
             // Fetch critical model data first - these are required
-            const [modelRes, usersRes, vendorsRes, regionsRes, taxonomiesRes, modelTypesRes] = await Promise.all([
+            const [modelRes, usersRes, vendorsRes, regionsRes, taxonomiesRes, modelTypesRes, methodologyCategoriesRes] = await Promise.all([
                 api.get(`/models/${id}`),
                 api.get('/auth/users'),
                 api.get('/vendors/'),
                 api.get('/regions/'),
                 api.get('/taxonomies/'),
-                api.get('/model-types/categories')
+                api.get('/model-types/categories'),
+                api.get('/methodology-library/categories')
             ]);
             const modelData = modelRes.data;
             setModel(modelData);
@@ -406,6 +429,7 @@ export default function ModelDetailsPage() {
             setVendors(vendorsRes.data);
             setRegions(regionsRes.data);
             setModelTypes(modelTypesRes.data);
+            setMethodologyCategories(methodologyCategoriesRes.data);
 
             // Fetch full taxonomy details for dropdowns
             const taxDetails = await Promise.all(
@@ -422,6 +446,7 @@ export default function ModelDetailsPage() {
                 vendor_id: modelData.vendor_id,
                 risk_tier_id: modelData.risk_tier_id,
                 model_type_id: modelData.model_type_id,
+                methodology_id: modelData.methodology_id,
                 usage_frequency_id: modelData.usage_frequency_id,
                 wholly_owned_region_id: modelData.wholly_owned_region_id,
                 status: modelData.status,
@@ -543,6 +568,9 @@ export default function ModelDetailsPage() {
                 if (formData.model_type_id !== originalFormData.model_type_id) {
                     payload.model_type_id = formData.model_type_id || null;
                 }
+                if (formData.methodology_id !== originalFormData.methodology_id) {
+                    payload.methodology_id = formData.methodology_id || null;
+                }
                 if (formData.usage_frequency_id !== originalFormData.usage_frequency_id) {
                     payload.usage_frequency_id = formData.usage_frequency_id;
                 }
@@ -569,6 +597,7 @@ export default function ModelDetailsPage() {
                     vendor_id: formData.vendor_id || null,
                     risk_tier_id: formData.risk_tier_id || null,
                     model_type_id: formData.model_type_id || null,
+                    methodology_id: formData.methodology_id || null,
                     wholly_owned_region_id: formData.wholly_owned_region_id || null,
                     user_ids: formData.user_ids.length > 0 ? formData.user_ids : [],
                     regulatory_category_ids: formData.regulatory_category_ids.length > 0 ? formData.regulatory_category_ids : []
@@ -2049,6 +2078,32 @@ export default function ModelDetailsPage() {
                             </div>
 
                             <div className="mb-4">
+                                <label htmlFor="methodology_id" className="block text-sm font-medium mb-2">
+                                    Methodology
+                                </label>
+                                <select
+                                    id="methodology_id"
+                                    className="input-field"
+                                    value={formData.methodology_id || ''}
+                                    onChange={(e) => setFormData({
+                                        ...formData,
+                                        methodology_id: e.target.value ? parseInt(e.target.value) : null
+                                    })}
+                                >
+                                    <option value="">Select Methodology</option>
+                                    {methodologyCategories.map(category => (
+                                        <optgroup key={category.category_id} label={category.name}>
+                                            {category.methodologies.map(methodology => (
+                                                <option key={methodology.methodology_id} value={methodology.methodology_id}>
+                                                    {methodology.name}
+                                                </option>
+                                            ))}
+                                        </optgroup>
+                                    ))}
+                                </select>
+                            </div>
+
+                            <div className="mb-4">
                                 <label htmlFor="wholly_owned_region_id" className="block text-sm font-medium mb-2">
                                     Wholly-Owned By Region
                                 </label>
@@ -2266,6 +2321,19 @@ export default function ModelDetailsPage() {
                                     {(() => {
                                         const category = modelTypes.find(c => c.category_id === model.model_type?.category_id);
                                         return category ? `${category.name} - ${model.model_type.name}` : model.model_type.name;
+                                    })()}
+                                </span>
+                            ) : (
+                                <p className="text-lg">-</p>
+                            )}
+                        </div>
+                        <div>
+                            <h4 className="text-sm font-medium text-gray-500 mb-1">Methodology</h4>
+                            {model.methodology ? (
+                                <span className="px-2 py-1 text-sm rounded bg-cyan-100 text-cyan-800">
+                                    {(() => {
+                                        const category = methodologyCategories.find(c => c.category_id === model.methodology?.category_id);
+                                        return category ? `${category.name} - ${model.methodology.name}` : model.methodology.name;
                                     })()}
                                 </span>
                             ) : (

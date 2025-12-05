@@ -32,13 +32,12 @@ def version_warning_setup(db_session, taxonomy_values):
     )
     db_session.add(policy)
 
-    # Create SLA
+    # Create SLA (note: complete_work_days and model_change_lead_time_days removed
+    # - lead time now comes from ValidationPolicy per risk tier)
     sla = ValidationWorkflowSLA(
         workflow_type="Validation",
-        model_change_lead_time_days=90,
         assignment_days=5,
         begin_work_days=5,
-        complete_work_days=30,
         approval_days=5
     )
     db_session.add(sla)
@@ -50,7 +49,7 @@ def version_warning_setup(db_session, taxonomy_values):
     }
 
 
-def test_create_version_lead_time_warning(client, db_session, test_user, auth_headers, version_warning_setup):
+def test_create_version_lead_time_warning(client, db_session, test_user, auth_headers, version_warning_setup, usage_frequency):
     """Test that creating a version with insufficient lead time returns a warning."""
     # Create model
     model = Model(
@@ -58,7 +57,8 @@ def test_create_version_lead_time_warning(client, db_session, test_user, auth_he
         development_type="In-House",
         status="In Development",
         owner_id=test_user.user_id,
-        risk_tier_id=version_warning_setup["tier1_id"]
+        risk_tier_id=version_warning_setup["tier1_id"],
+        usage_frequency_id=usage_frequency["monthly"].value_id
     )
     db_session.add(model)
     db_session.commit()
@@ -87,7 +87,7 @@ def test_create_version_lead_time_warning(client, db_session, test_user, auth_he
     assert "30 days remain" in data["validation_warning"]
 
 
-def test_create_version_sufficient_lead_time(client, db_session, test_user, auth_headers, version_warning_setup):
+def test_create_version_sufficient_lead_time(client, db_session, test_user, auth_headers, version_warning_setup, usage_frequency):
     """Test that creating a version with sufficient lead time returns no warning."""
     # Create model
     model = Model(
@@ -95,7 +95,8 @@ def test_create_version_sufficient_lead_time(client, db_session, test_user, auth
         development_type="In-House",
         status="In Development",
         owner_id=test_user.user_id,
-        risk_tier_id=version_warning_setup["tier1_id"]
+        risk_tier_id=version_warning_setup["tier1_id"],
+        usage_frequency_id=usage_frequency["monthly"].value_id
     )
     db_session.add(model)
     db_session.commit()

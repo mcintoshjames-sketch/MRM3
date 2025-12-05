@@ -289,3 +289,49 @@ def taxonomy_values(db_session):
         "status_pending_approval": status_pending_approval,
         "status_approved": status_approved
     }
+
+
+@pytest.fixture
+def methodology_category(db_session):
+    """Create a test methodology category with methodologies for testing."""
+    from app.models.methodology import MethodologyCategory, Methodology
+
+    category = MethodologyCategory(
+        code="TEST_CAT",
+        name="Test Category",
+        sort_order=1
+    )
+    db_session.add(category)
+    db_session.flush()
+
+    methodology1 = Methodology(
+        category_id=category.category_id,
+        name="Test Methodology 1",
+        description="First test methodology",
+        variants="Variant A, Variant B",
+        sort_order=1,
+        is_active=True
+    )
+    methodology2 = Methodology(
+        category_id=category.category_id,
+        name="Test Methodology 2",
+        description="Second test methodology",
+        sort_order=2,
+        is_active=True
+    )
+    methodology3 = Methodology(
+        category_id=category.category_id,
+        name="Inactive Methodology",
+        description="This methodology is inactive",
+        sort_order=3,
+        is_active=False
+    )
+    db_session.add_all([methodology1, methodology2, methodology3])
+    db_session.commit()
+
+    return {
+        "category": category,
+        "methodology1": methodology1,
+        "methodology2": methodology2,
+        "inactive_methodology": methodology3
+    }

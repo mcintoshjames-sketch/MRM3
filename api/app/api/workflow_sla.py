@@ -87,13 +87,8 @@ def update_validation_sla(
         }
         sla.begin_work_days = sla_data.begin_work_days
 
-    if sla_data.complete_work_days != sla.complete_work_days:
-        # CRITICAL: Complete work SLA changes affect when violations are triggered
-        changes["complete_work_days"] = {
-            "old": sla.complete_work_days,
-            "new": sla_data.complete_work_days
-        }
-        sla.complete_work_days = sla_data.complete_work_days
+    # NOTE: complete_work_days was removed - work completion lead time is now
+    # calculated per-request based on the model's risk tier policy
 
     if sla_data.approval_days != sla.approval_days:
         # CRITICAL: Approval SLA changes affect when violations are triggered

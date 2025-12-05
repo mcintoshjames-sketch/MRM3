@@ -9,6 +9,7 @@ from app.models import User, UserRole, Vendor, EntraUser, Taxonomy, TaxonomyValu
 from app.models.recommendation import RecommendationPriorityConfig, RecommendationTimeframeConfig
 from app.models.attestation import AttestationSchedulingRule, AttestationSchedulingRuleType, AttestationFrequency, CoverageTarget, AttestationQuestionConfig
 from app.models.kpm import KpmCategory, Kpm
+from app.models.methodology import MethodologyCategory, Methodology
 from app.models.model import Model
 from app.models.risk_assessment import QualitativeRiskFactor, QualitativeFactorGuidance
 from app.models.scorecard import ScorecardSection, ScorecardCriterion
@@ -1814,7 +1815,8 @@ def seed_database():
                 workflow_type="Validation",
                 assignment_days=10,
                 begin_work_days=5,
-                complete_work_days=80,
+                # NOTE: complete_work_days AND model_change_lead_time_days were removed
+                # - now uses per-model risk-tier-based lead time from ValidationPolicy
                 approval_days=10,
                 created_at=utc_now(),
                 updated_at=utc_now()
@@ -2477,6 +2479,9 @@ def seed_database():
         # Seed Attestation Questions and Default Rules
         seed_attestation_questions(db)
         seed_attestation_defaults(db)
+
+        # Seed Methodology Library
+        seed_methodology_library(db)
 
         print("Seeding completed successfully!")
 
@@ -3780,6 +3785,279 @@ def seed_attestation_defaults(db):
         db.commit()
 
     print("✓ Attestation defaults seeded")
+
+
+def seed_methodology_library(db):
+    """Seed the methodology library with categorized modeling methodologies."""
+    print("Seeding Methodology Library...")
+
+    # Define categories with their codes
+    categories_data = [
+        {"code": "CR_WHOLESALE", "name": "Credit Risk (Wholesale)", "sort_order": 1},
+        {"code": "CR_PORTFOLIO", "name": "Credit Risk (Portfolio)", "sort_order": 2},
+        {"code": "CR_ACCOUNTING", "name": "Credit Risk (Accounting)", "sort_order": 3},
+        {"code": "MR_RATES", "name": "Market Risk (Rates)", "sort_order": 4},
+        {"code": "MR_VOLATILITY", "name": "Market Risk (Volatility)", "sort_order": 5},
+        {"code": "MR_VAR", "name": "Market Risk (VaR)", "sort_order": 6},
+        {"code": "NUM_INTEGRATION", "name": "Numerical Methods (Integration)", "sort_order": 7},
+        {"code": "NUM_PRICING", "name": "Numerical Methods (Pricing)", "sort_order": 8},
+        {"code": "NUM_ROOTS", "name": "Numerical Methods (Roots)", "sort_order": 9},
+        {"code": "NUM_PDE", "name": "Numerical Methods (PDE)", "sort_order": 10},
+        {"code": "OPTIMIZATION", "name": "Optimization", "sort_order": 11},
+        {"code": "ALM_BEHAVIORAL", "name": "ALM (Behavioral)", "sort_order": 12},
+        {"code": "ALM_PREPAYMENT", "name": "ALM (Prepayment)", "sort_order": 13},
+        {"code": "ALM_LIQUIDITY", "name": "ALM (Liquidity)", "sort_order": 14},
+        {"code": "OP_RISK", "name": "Operational Risk", "sort_order": 15},
+        {"code": "FRAUD", "name": "Fraud Detection", "sort_order": 16},
+        {"code": "AIML_TABULAR", "name": "AI/ML (Tabular)", "sort_order": 17},
+        {"code": "AIML_TIMESERIES", "name": "AI/ML (Time Series)", "sort_order": 18},
+        {"code": "AIML_NLP", "name": "AI/ML (NLP)", "sort_order": 19},
+        {"code": "AIML_RL", "name": "AI/ML (RL)", "sort_order": 20},
+    ]
+
+    # Create a mapping of category name to code for lookups
+    category_name_to_code = {cat["name"]: cat["code"] for cat in categories_data}
+
+    # Define all methodologies
+    methodologies_data = [
+        # Credit Risk (Wholesale)
+        {"category": "Credit Risk (Wholesale)", "name": "Merton Model",
+         "description": "Structural model treating equity as a call option on firm assets.",
+         "variants": "KMV (EDF/Distance-to-Default), Black-Cox (First Passage Time)."},
+        {"category": "Credit Risk (Wholesale)", "name": "Reduced-Form Model",
+         "description": "Models default as an exogenous intensity process (hazard rate).",
+         "variants": "Jarrow-Turnbull, Duffie-Singleton."},
+
+        # Credit Risk (Portfolio)
+        {"category": "Credit Risk (Portfolio)", "name": "CreditRisk+",
+         "description": "Actuarial model for portfolio loss distribution using Poisson approximation.",
+         "variants": "Standard CreditRisk+, Correlated Risk Factors"},
+
+        # Credit Risk (Accounting)
+        {"category": "Credit Risk (Accounting)", "name": "Discounted Cash Flow (CECL)",
+         "description": "Projects loan-level cash flows adjusted for probability of default.",
+         "variants": "DCF with Probability-Weighted Cash Flows."},
+        {"category": "Credit Risk (Accounting)", "name": "WARM Method",
+         "description": "Weighted Average Remaining Maturity loss rate method.",
+         "variants": "WARM (Remaining Life)."},
+
+        # Market Risk (Rates)
+        {"category": "Market Risk (Rates)", "name": "Hull-White Model",
+         "description": "1-Factor mean-reverting short rate model fitting the current yield curve.",
+         "variants": "One-Factor, Two-Factor (stochastic mean)."},
+        {"category": "Market Risk (Rates)", "name": "Vasicek Model",
+         "description": "Mean-reverting Ornstein-Uhlenbeck process for short rates.",
+         "variants": "Standard Vasicek, Exponential Vasicek."},
+        {"category": "Market Risk (Rates)", "name": "CIR Model",
+         "description": "Square-root diffusion process preventing negative interest rates.",
+         "variants": "Standard CIR, Extended CIR."},
+        {"category": "Market Risk (Rates)", "name": "LIBOR Market Model",
+         "description": "Models evolution of discrete forward rates (e.g., LMM/BGM).",
+         "variants": "LMM, Brace-Gatarek-Musiela (BGM)."},
+        {"category": "Market Risk (Rates)", "name": "HJM Framework",
+         "description": "Models instantaneous forward rate curve evolution to prevent arbitrage.",
+         "variants": "Heath-Jarrow-Morton (Gaussian/Non-Gaussian)."},
+
+        # Market Risk (Volatility)
+        {"category": "Market Risk (Volatility)", "name": "GARCH",
+         "description": "Autoregressive conditional heteroskedasticity for volatility clustering.",
+         "variants": "GARCH(1,1), EGARCH, GJR-GARCH, IGARCH."},
+        {"category": "Market Risk (Volatility)", "name": "EWMA",
+         "description": "Exponentially Weighted Moving Average for variance (RiskMetrics).",
+         "variants": "Standard EWMA."},
+        {"category": "Market Risk (Volatility)", "name": "Stochastic Volatility",
+         "description": "Models volatility as a separate stochastic process.",
+         "variants": "Heston Model, SABR Model."},
+
+        # Market Risk (VaR)
+        {"category": "Market Risk (VaR)", "name": "Historical Simulation",
+         "description": "Revaluation using historical return vectors applied to current portfolio.",
+         "variants": "Standard HS, Filtered HS (volatility-weighted)."},
+        {"category": "Market Risk (VaR)", "name": "Monte Carlo VaR",
+         "description": "Simulation of risk factors via stochastic processes.",
+         "variants": "Full Revaluation MC, Delta-Gamma Approximation."},
+        {"category": "Market Risk (VaR)", "name": "Cornish-Fisher",
+         "description": "Analytical VaR adjustment for skewness and kurtosis.",
+         "variants": "Modified VaR (mVaR)."},
+
+        # Numerical Methods (Integration)
+        {"category": "Numerical Methods (Integration)", "name": "Monte Carlo",
+         "description": "Pricing via stochastic path simulation and averaging.",
+         "variants": "Standard MC, Antithetic Variates, Control Variates."},
+        {"category": "Numerical Methods (Integration)", "name": "Quasi-Monte Carlo",
+         "description": "Uses low-discrepancy sequences for faster convergence.",
+         "variants": "Sobol, Halton, Faure Sequences."},
+
+        # Numerical Methods (Pricing)
+        {"category": "Numerical Methods (Pricing)", "name": "Carr-Madan Method",
+         "description": "FFT-based option pricing using characteristic functions.",
+         "variants": "Damped FFT, Fourier-Cosine (COS) Method"},
+
+        # Numerical Methods (Roots)
+        {"category": "Numerical Methods (Roots)", "name": "Newton-Raphson",
+         "description": "Gradient-based root finding for implied volatility/yield.",
+         "variants": "Standard Newton, Secant Method."},
+        {"category": "Numerical Methods (Roots)", "name": "Brent's Method",
+         "description": "Hybrid root-finding algorithm (Bisection + Secant + IQI).",
+         "variants": "Brent-Dekker Algorithm."},
+
+        # Numerical Methods (PDE)
+        {"category": "Numerical Methods (PDE)", "name": "Binomial Tree",
+         "description": "Lattice model for pricing American options.",
+         "variants": "Cox-Ross-Rubinstein (CRR), Jarrow-Rudd."},
+        {"category": "Numerical Methods (PDE)", "name": "Finite Difference",
+         "description": "Grid-based PDE solver for option pricing.",
+         "variants": "Explicit, Implicit, Crank-Nicolson."},
+
+        # Optimization
+        {"category": "Optimization", "name": "Simplex Method",
+         "description": "Algorithm for linear programming or function minimization.",
+         "variants": "Nelder-Mead (Downhill Simplex), Dual Simplex."},
+        {"category": "Optimization", "name": "Levenberg-Marquardt",
+         "description": "Damped least-squares algorithm for model calibration.",
+         "variants": "L-M Algorithm."},
+
+        # ALM (Behavioral)
+        {"category": "ALM (Behavioral)", "name": "Replicating Portfolio",
+         "description": "Models NMDs as a portfolio of fixed-maturity bonds.",
+         "variants": "Rolling Average, Tranche Approach."},
+        {"category": "ALM (Behavioral)", "name": "Deposit Beta",
+         "description": "Regressions estimating pass-through of market rates to deposit rates.",
+         "variants": "Linear Beta, Asymmetric/Dynamic Beta."},
+        {"category": "ALM (Behavioral)", "name": "Deposit Decay",
+         "description": "Survival modeling of account attrition for NMDs.",
+         "variants": "Log-Linear Decay, Proportional Hazards."},
+
+        # ALM (Prepayment)
+        {"category": "ALM (Prepayment)", "name": "S-Curve Model",
+         "description": "Relates prepayment speed (CPR) to rate incentive.",
+         "variants": "Arctan S-Curve, Tuning Logic."},
+        {"category": "ALM (Prepayment)", "name": "Burnout Model",
+         "description": "Adjusts prepayment speeds for path dependency (refinance fatigue).",
+         "variants": "Factor-based Burnout."},
+
+        # ALM (Liquidity)
+        {"category": "ALM (Liquidity)", "name": "LCR Model",
+         "description": "30-day idiosyncratic stress cash flow model for Basel III.",
+         "variants": "Standard LCR, Internal Stress LCR."},
+
+        # Operational Risk
+        {"category": "Operational Risk", "name": "Loss Distribution Approach",
+         "description": "Convolution of frequency and severity distributions for capital.",
+         "variants": "LDA (Poisson/Lognormal), Copula-LDA."},
+        {"category": "Operational Risk", "name": "Extreme Value Theory",
+         "description": "Models tail behavior of operational losses.",
+         "variants": "Peaks Over Threshold (GPD), Block Maxima (GEV)."},
+
+        # Fraud Detection
+        {"category": "Fraud Detection", "name": "Benford's Law",
+         "description": "Statistical test for leading digit distribution to detect anomalies.",
+         "variants": "First Digit Test, Second Digit Test."},
+        {"category": "Fraud Detection", "name": "Isolation Forest",
+         "description": "Tree-based outlier detection via path length.",
+         "variants": "iForest, Extended iForest."},
+        {"category": "Fraud Detection", "name": "Graph Neural Networks",
+         "description": "Deep learning on transaction graphs for AML.",
+         "variants": "GraphSAGE, GCN (Graph Convolutional Network)."},
+
+        # AI/ML (Tabular)
+        {"category": "AI/ML (Tabular)", "name": "Random Forest",
+         "description": "Bagging ensemble of decision trees.",
+         "variants": "Standard RF, Balanced RF."},
+        {"category": "AI/ML (Tabular)", "name": "XGBoost",
+         "description": "Gradient boosting with regularization and missing value handling.",
+         "variants": "Tree Booster, Dart Booster."},
+        {"category": "AI/ML (Tabular)", "name": "LightGBM",
+         "description": "Efficient boosting with GOSS and EFB.",
+         "variants": "GOSS, Dropouts (Dart)."},
+        {"category": "AI/ML (Tabular)", "name": "CatBoost",
+         "description": "Boosting with ordered target encoding for categorical features.",
+         "variants": "Symmetric Trees, Ordered Boosting."},
+
+        # AI/ML (Time Series)
+        {"category": "AI/ML (Time Series)", "name": "LSTM",
+         "description": "RNN with memory cells for time series forecasting.",
+         "variants": "Bi-LSTM, Stacked LSTM."},
+
+        # AI/ML (NLP)
+        {"category": "AI/ML (NLP)", "name": "FinBERT",
+         "description": "Transformer pre-trained on financial text for sentiment.",
+         "variants": "Sentiment Analysis, NER."},
+
+        # AI/ML (RL)
+        {"category": "AI/ML (RL)", "name": "Deep Q-Network",
+         "description": "Q-Learning with neural function approximation for trading.",
+         "variants": "Double DQN, Dueling DQN."},
+        {"category": "AI/ML (RL)", "name": "PPO",
+         "description": "Policy gradient with clipped updates for continuous control.",
+         "variants": "Actor-Critic PPO."},
+    ]
+
+    # Create or update categories
+    category_map = {}  # code -> MethodologyCategory object
+    for cat_data in categories_data:
+        existing = db.query(MethodologyCategory).filter(
+            MethodologyCategory.code == cat_data["code"]
+        ).first()
+
+        if not existing:
+            category = MethodologyCategory(
+                code=cat_data["code"],
+                name=cat_data["name"],
+                sort_order=cat_data["sort_order"]
+            )
+            db.add(category)
+            db.flush()
+            category_map[cat_data["code"]] = category
+            print(f"✓ Created methodology category: {cat_data['name']}")
+        else:
+            # Update if needed
+            existing.name = cat_data["name"]
+            existing.sort_order = cat_data["sort_order"]
+            category_map[cat_data["code"]] = existing
+
+    db.commit()
+
+    # Create or update methodologies
+    method_count = 0
+    for sort_order, method_data in enumerate(methodologies_data, start=1):
+        category_name = method_data["category"]
+        category_code = category_name_to_code.get(category_name)
+
+        if not category_code:
+            print(f"⚠ Unknown category: {category_name}")
+            continue
+
+        category = category_map.get(category_code)
+        if not category:
+            print(f"⚠ Category not found: {category_code}")
+            continue
+
+        # Check if methodology already exists
+        existing = db.query(Methodology).filter(
+            Methodology.category_id == category.category_id,
+            Methodology.name == method_data["name"]
+        ).first()
+
+        if not existing:
+            methodology = Methodology(
+                category_id=category.category_id,
+                name=method_data["name"],
+                description=method_data.get("description"),
+                variants=method_data.get("variants"),
+                sort_order=sort_order,
+                is_active=True
+            )
+            db.add(methodology)
+            method_count += 1
+        else:
+            # Update existing
+            existing.description = method_data.get("description")
+            existing.variants = method_data.get("variants")
+            existing.sort_order = sort_order
+
+    db.commit()
+    print(f"✓ Methodology Library seeded: {len(categories_data)} categories, {method_count} new methodologies")
 
 
 if __name__ == "__main__":

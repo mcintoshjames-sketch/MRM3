@@ -245,6 +245,9 @@ cd web && pnpm test:coverage
 - [x] Sort by urgency and due dates
 - [x] Support for models without validation policies
 - [x] Handle models with no validation history
+- [ ] **TODO:** Multi-model validation request uses MAX lead time across all models (applicable_lead_time_days)
+- [ ] **TODO:** SLA violations dashboard uses per-request applicable_lead_time_days
+- [ ] **TODO:** Model revalidation status uses active_request.applicable_lead_time_days when request exists
 
 #### Overdue Revalidation Commentary (`test_overdue_commentary.py`)
 - [x] Get overdue commentary for validation request
@@ -266,7 +269,7 @@ cd web && pnpm test:coverage
 - [x] Cannot submit PRE_SUBMISSION after submission received
 - [x] Cannot submit VALIDATION_IN_PROGRESS before submission received
 - [x] Computed completion date based on validation stage
-- [x] PRE_SUBMISSION completion = target_date + lead_time
+- [x] PRE_SUBMISSION completion = target_date + applicable_lead_time_days (per-request MAX across models)
 - [x] POST_SUBMISSION completion = validation target_completion_date
 - [x] Comment staleness threshold configurable (45 days)
 - [x] User lookup returns proper names in commentary

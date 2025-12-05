@@ -65,6 +65,8 @@ class Model(Base):
         Integer, ForeignKey("taxonomy_values.value_id"), nullable=True)
     model_type_id: Mapped[Optional[int]] = mapped_column(
         Integer, ForeignKey("model_types.type_id"), nullable=True)
+    methodology_id: Mapped[Optional[int]] = mapped_column(
+        Integer, ForeignKey("methodologies.methodology_id", ondelete="SET NULL"), nullable=True)
     ownership_type_id: Mapped[Optional[int]] = mapped_column(
         Integer, ForeignKey("taxonomy_values.value_id"), nullable=True)
     usage_frequency_id: Mapped[int] = mapped_column(
@@ -114,6 +116,8 @@ class Model(Base):
         "TaxonomyValue", foreign_keys=[validation_type_id])
     model_type: Mapped[Optional["ModelType"]] = relationship(
         "ModelType", foreign_keys=[model_type_id])
+    methodology: Mapped[Optional["Methodology"]] = relationship(
+        "Methodology", foreign_keys=[methodology_id])
     ownership_type: Mapped[Optional["TaxonomyValue"]] = relationship(
         "TaxonomyValue", foreign_keys=[ownership_type_id])
     usage_frequency: Mapped["TaxonomyValue"] = relationship(

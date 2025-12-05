@@ -32,7 +32,7 @@ from app.models.region import Region
 from app.models.taxonomy import Taxonomy, TaxonomyValue
 from app.models.validation import (
     ValidationRequest, ValidationRequestModelVersion,
-    ValidationAssignment, ValidationWorkflowSLA
+    ValidationAssignment
 )
 from app.api.validation_workflow import get_commentary_status_for_request
 
@@ -347,9 +347,8 @@ def get_overdue_revalidation_report(
     today = date.today()
     results = []
 
-    # Get SLA config for lead time calculation
-    sla_config = db.query(ValidationWorkflowSLA).first()
-    lead_time_days = sla_config.model_change_lead_time_days if sla_config else 90
+    # NOTE: Lead time is now computed per-request based on models' risk tier policies
+    # (req.applicable_lead_time_days), not from a global SLA config
 
     # =====================================================
     # Part 1: Get PRE_SUBMISSION overdue items
@@ -421,10 +420,10 @@ def get_overdue_revalidation_report(
             if needs_update_only and not commentary["needs_comment_update"]:
                 continue
 
-            # Compute completion date
+            # Compute completion date using per-request lead time (from models' risk tier policies)
             computed_completion = None
             if commentary["target_date_from_comment"]:
-                computed_completion = commentary["target_date_from_comment"] + timedelta(days=lead_time_days)
+                computed_completion = commentary["target_date_from_comment"] + timedelta(days=req.applicable_lead_time_days)
 
             # Get model regions
             model_regions = get_model_regions(model, db)

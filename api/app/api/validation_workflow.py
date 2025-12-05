@@ -320,7 +320,7 @@ def check_target_completion_date_warnings(
     2. Implementation date conflicts
     3. Revalidation overdue scenarios
     """
-    from app.models import Model, ValidationPolicy, ValidationWorkflowSLA, ModelVersion
+    from app.models import Model, ValidationPolicy, ModelVersion
     from app.models.validation import validation_request_models
     from datetime import timedelta
 
@@ -328,9 +328,7 @@ def check_target_completion_date_warnings(
     target_date = request_data.target_completion_date
     model_versions_dict = request_data.model_versions or {}
 
-    # Get SLA configuration for lead time
-    sla = db.query(ValidationWorkflowSLA).first()
-    default_lead_time = sla.model_change_lead_time_days if sla else 90
+    # NOTE: Lead time is now per-model from ValidationPolicy.model_change_lead_time_days
 
     # Load models with their versions
     models = db.query(Model).filter(
@@ -1061,8 +1059,6 @@ def calculate_model_revalidation_status(model: Model, db: Session) -> Dict:
     submission_due = last_completed + \
         relativedelta(months=policy.frequency_months)
     grace_period_end = submission_due + relativedelta(months=policy.grace_period_months)
-    validation_due = grace_period_end + \
-        timedelta(days=policy.model_change_lead_time_days)
 
     # Check if active revalidation request exists
     active_request = db.query(ValidationRequest).join(
@@ -1075,6 +1071,16 @@ def calculate_model_revalidation_status(model: Model, db: Session) -> Dict:
         ValidationRequest.current_status.has(
             TaxonomyValue.code.notin_(["APPROVED", "CANCELLED"]))
     ).first()
+
+    # Calculate validation_due:
+    # - If active_request exists (potentially multi-model), use request's applicable_lead_time_days
+    #   which is MAX across all models' policies (most conservative)
+    # - If no active_request, use this model's policy (for calculating when request should be created)
+    if active_request:
+        lead_time_days = active_request.applicable_lead_time_days
+    else:
+        lead_time_days = policy.model_change_lead_time_days
+    validation_due = grace_period_end + timedelta(days=lead_time_days)
 
     today = date.today()
 
@@ -1447,7 +1453,10 @@ def list_validation_requests(
         joinedload(ValidationRequest.assignments).joinedload(
             ValidationAssignment.validator),
         # Eager-load for days_in_status calculation
-        joinedload(ValidationRequest.status_history)
+        joinedload(ValidationRequest.status_history),
+        # Eager-load model_versions_assoc for applicable_lead_time_days calculation
+        joinedload(ValidationRequest.model_versions_assoc).joinedload(
+            ValidationRequestModelVersion.model)
     )
 
     # Apply Row-Level Security BEFORE other filters
@@ -1515,7 +1524,9 @@ def list_validation_requests(
             primary_validator=primary_validator,
             regions=req.regions if req.regions else [],
             created_at=req.created_at,
-            updated_at=req.updated_at
+            updated_at=req.updated_at,
+            completion_date=req.completion_date,
+            applicable_lead_time_days=req.applicable_lead_time_days
         ))
 
     return result
@@ -3445,13 +3456,9 @@ def get_sla_violations(
     """
     check_admin(current_user)
 
-    from app.models.validation import ValidationPolicy
-
-    # Pre-load all validation policies (once, not in loop)
-    policies = db.query(ValidationPolicy).all()
-    policy_lookup = {p.risk_tier_id: p for p in policies}
-
     # Get all active (non-terminal) validation requests with submission received
+    # NOTE: Lead time is now computed per-request via applicable_lead_time_days
+    # which returns MAX across all models' risk tier policies
     requests = db.query(ValidationRequest).options(
         joinedload(ValidationRequest.models).joinedload(Model.risk_tier),
         joinedload(ValidationRequest.current_status),
@@ -3470,18 +3477,9 @@ def get_sla_violations(
         if not req.models:
             continue
 
-        # Use first model's risk tier to determine policy
-        model = req.models[0]
-        if not model.risk_tier:
-            continue
-
-        # Lookup validation policy from pre-loaded dict
-        policy = policy_lookup.get(model.risk_tier.value_id)
-
-        if not policy:
-            continue
-
-        lead_time_days = policy.model_change_lead_time_days
+        # Use applicable_lead_time_days which computes MAX across all models' policies
+        # This is the most conservative (longest) lead time for multi-model requests
+        lead_time_days = req.applicable_lead_time_days
 
         # Calculate days since submission
         days_since_submission = (
@@ -3489,7 +3487,9 @@ def get_sla_violations(
 
         # Check if lead time has been exceeded
         if days_since_submission > lead_time_days:
-            model_name = model.model_name
+            # For multi-model requests, show all model names
+            model_names = [m.model_name for m in req.models]
+            model_name = ", ".join(model_names) if len(model_names) > 1 else model_names[0]
             days_overdue = days_since_submission - lead_time_days
 
             # Calculate severity based on how overdue

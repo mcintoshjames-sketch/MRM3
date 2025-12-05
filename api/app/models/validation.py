@@ -95,14 +95,11 @@ class ValidationWorkflowSLA(Base):
         Integer, nullable=False, default=10)
     begin_work_days: Mapped[int] = mapped_column(
         Integer, nullable=False, default=5)
-    complete_work_days: Mapped[int] = mapped_column(
-        Integer, nullable=False, default=80)
+    # NOTE: complete_work_days AND model_change_lead_time_days were removed.
+    # Work completion lead time is now calculated per-request based on the model's
+    # risk tier policy (ValidationPolicy.model_change_lead_time_days)
     approval_days: Mapped[int] = mapped_column(
         Integer, nullable=False, default=10)
-    model_change_lead_time_days: Mapped[int] = mapped_column(
-        Integer, nullable=False, default=90,
-        comment="Lead time in days before model change implementation date to trigger interim validation"
-    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime, nullable=False, default=utc_now
     )
@@ -366,6 +363,45 @@ class ValidationRequest(Base):
         return session.query(ValidationPolicy).filter(
             ValidationPolicy.risk_tier_id == model.risk_tier_id
         ).first()
+
+    @property
+    def applicable_lead_time_days(self) -> int:
+        """
+        Get the maximum completion lead time across all models in this request.
+
+        For multi-model validation requests, uses the MAXIMUM lead time from all
+        associated models' risk tier policies (most conservative approach for
+        compliance). This ensures adequate time for the highest-risk model.
+
+        This is the risk-tier-specific lead time that replaces the fixed global
+        'complete_work_days' in ValidationWorkflowSLA. Higher risk tiers have
+        longer lead times to allow for more thorough validation work.
+
+        Returns:
+            Maximum lead time in days from all models' validation policies.
+            Defaults to 90 days if no policies are found.
+        """
+        if not self.model_versions_assoc or len(self.model_versions_assoc) == 0:
+            return 90  # Default fallback
+
+        from sqlalchemy.orm import Session
+        session = Session.object_session(self)
+        if not session:
+            return 90  # Default fallback
+
+        # Collect lead times from all models' policies
+        lead_times = []
+        for assoc in self.model_versions_assoc:
+            model = assoc.model
+            if model and model.risk_tier_id:
+                policy = session.query(ValidationPolicy).filter(
+                    ValidationPolicy.risk_tier_id == model.risk_tier_id
+                ).first()
+                if policy:
+                    lead_times.append(policy.model_change_lead_time_days)
+
+        # Return maximum (most conservative) or default
+        return max(lead_times) if lead_times else 90
 
     @property
     def submission_grace_period_end(self) -> Optional[date]:

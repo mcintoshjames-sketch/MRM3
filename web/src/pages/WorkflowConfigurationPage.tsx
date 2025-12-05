@@ -8,7 +8,6 @@ interface WorkflowSLA {
     workflow_type: string;
     assignment_days: number;
     begin_work_days: number;
-    complete_work_days: number;
     approval_days: number;
     created_at: string;
     updated_at: string;
@@ -25,7 +24,6 @@ export default function WorkflowConfigurationPage() {
     const [formData, setFormData] = useState({
         assignment_days: 10,
         begin_work_days: 5,
-        complete_work_days: 80,
         approval_days: 10
     });
 
@@ -42,7 +40,6 @@ export default function WorkflowConfigurationPage() {
             setFormData({
                 assignment_days: response.data.assignment_days,
                 begin_work_days: response.data.begin_work_days,
-                complete_work_days: response.data.complete_work_days,
                 approval_days: response.data.approval_days
             });
         } catch (err: any) {
@@ -163,29 +160,29 @@ export default function WorkflowConfigurationPage() {
                                 </div>
                             </div>
 
-                            {/* Complete Work SLA */}
-                            <div className="border-b pb-4">
-                                <label htmlFor="complete_work_days" className="block text-sm font-medium mb-2">
-                                    Complete Work Period
-                                </label>
+                            {/* Work Completion Lead Time - Info Only */}
+                            <div className="border-b pb-4 bg-gray-50 -mx-6 px-6 py-4">
                                 <div className="flex items-start gap-4">
                                     <div className="flex-shrink-0">
-                                        <input
-                                            id="complete_work_days"
-                                            type="number"
-                                            min="1"
-                                            max="365"
-                                            className="input-field w-24"
-                                            value={formData.complete_work_days}
-                                            onChange={(e) => setFormData({ ...formData, complete_work_days: parseInt(e.target.value) })}
-                                            required
-                                        />
-                                        <span className="ml-2 text-sm text-gray-600">days</span>
+                                        <span className="inline-flex items-center justify-center w-10 h-10 rounded-full bg-blue-100 text-blue-600">
+                                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                            </svg>
+                                        </span>
                                     </div>
                                     <div className="flex-1">
+                                        <h4 className="text-sm font-medium text-gray-900 mb-1">
+                                            Work Completion Lead Time
+                                        </h4>
                                         <p className="text-sm text-gray-600">
-                                            Time allowed for validators to complete the validation work after assignment or claim
-                                            (from assignment date to Pending Approval status)
+                                            The work completion period is determined by each model's <strong>inherent risk tier</strong> and
+                                            is configured in the <strong>Validation Policies</strong> section. Higher risk models have longer
+                                            lead times to ensure thorough validation. This allows different completion expectations based on
+                                            model complexity and risk exposure.
+                                        </p>
+                                        <p className="text-sm text-gray-500 mt-2">
+                                            Navigate to <span className="font-medium">Admin → Validation Policies</span> to configure
+                                            risk-tier-specific lead times.
                                         </p>
                                     </div>
                                 </div>

@@ -9,7 +9,7 @@ from app.core.database import get_db
 from app.core.deps import get_current_user
 from app.models import (
     User, Model, ValidationRequest, ValidationRequestModelVersion,
-    ValidationAssignment, ValidationWorkflowSLA, OverdueRevalidationComment
+    ValidationAssignment, OverdueRevalidationComment
 )
 from app.models.audit_log import AuditLog
 from app.schemas.overdue_commentary import (
@@ -192,9 +192,8 @@ def get_overdue_commentary(
 
     model = validation_request.model_versions_assoc[0].model
 
-    # Get SLA configuration for lead time
-    sla = db.query(ValidationWorkflowSLA).first()
-    lead_time_days = sla.model_change_lead_time_days if sla else 90
+    # Get lead time from request's applicable_lead_time_days (computed from models' policies)
+    lead_time_days = validation_request.applicable_lead_time_days
 
     # Determine overdue type based on submission status
     if validation_request.submission_received_date:
@@ -483,9 +482,8 @@ def get_model_overdue_commentary(
             detail=f"No validation request found for model {model_id}"
         )
 
-    # Get SLA configuration for lead time
-    sla = db.query(ValidationWorkflowSLA).first()
-    lead_time_days = sla.model_change_lead_time_days if sla else 90
+    # Get lead time from request's applicable_lead_time_days (computed from models' policies)
+    lead_time_days = latest_request.applicable_lead_time_days
 
     # Determine overdue type based on submission status
     if latest_request.submission_received_date:

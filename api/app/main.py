@@ -1,7 +1,7 @@
 """FastAPI application entry point."""
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.api import auth, models, vendors, taxonomies, audit_logs, validation_workflow, validation_policies, workflow_sla, regions, model_regions, model_versions, model_delegates, model_change_taxonomy, model_types, dashboard, export_views, version_deployment_tasks, regional_compliance_report, analytics, saved_queries, model_hierarchy, model_dependencies, approver_roles, conditional_approval_rules, fry, map_applications, model_applications, overdue_commentary, overdue_revalidation_report, decommissioning, kpm, monitoring, recommendations, risk_assessment, qualitative_factors, scorecard, uat_tools, residual_risk_map, limitations, attestations
+from app.api import auth, models, vendors, taxonomies, audit_logs, validation_workflow, validation_policies, workflow_sla, regions, model_regions, model_versions, model_delegates, model_change_taxonomy, model_types, methodology, dashboard, export_views, version_deployment_tasks, regional_compliance_report, analytics, saved_queries, model_hierarchy, model_dependencies, approver_roles, conditional_approval_rules, fry, map_applications, model_applications, overdue_commentary, overdue_revalidation_report, decommissioning, kpm, monitoring, recommendations, risk_assessment, qualitative_factors, scorecard, uat_tools, residual_risk_map, limitations, attestations
 
 app = FastAPI(title="MRM System v3", version="3.0.0")
 
@@ -26,6 +26,7 @@ app.include_router(model_delegates.router, tags=["model-delegates"])
 app.include_router(model_change_taxonomy.router,
                    tags=["model-change-taxonomy"])
 app.include_router(model_types.router, tags=["model-types"])
+app.include_router(methodology.router, tags=["methodology-library"])
 app.include_router(taxonomies.router, prefix="/taxonomies",
                    tags=["taxonomies"])
 app.include_router(audit_logs.router, prefix="/audit-logs",
