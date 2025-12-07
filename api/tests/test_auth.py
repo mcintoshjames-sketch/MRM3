@@ -71,7 +71,7 @@ class TestGetMe:
 class TestRegister:
     """Test /auth/register endpoint."""
 
-    def test_register_new_user(self, client):
+    def test_register_new_user(self, client, lob_hierarchy):
         """Test registering a new user."""
         response = client.post(
             "/auth/register",
@@ -79,7 +79,8 @@ class TestRegister:
                 "email": "newuser@example.com",
                 "full_name": "New User",
                 "password": "newpass123",
-                "role": "User"
+                "role": "User",
+                "lob_id": lob_hierarchy["retail"].lob_id
             }
         )
         assert response.status_code == 201
@@ -89,7 +90,7 @@ class TestRegister:
         assert data["role"] == "User"
         assert "user_id" in data
 
-    def test_register_duplicate_email(self, client, test_user):
+    def test_register_duplicate_email(self, client, test_user, lob_hierarchy):
         """Test registering with existing email fails."""
         response = client.post(
             "/auth/register",
@@ -97,13 +98,14 @@ class TestRegister:
                 "email": "test@example.com",
                 "full_name": "Another User",
                 "password": "somepass123",
-                "role": "User"
+                "role": "User",
+                "lob_id": lob_hierarchy["retail"].lob_id
             }
         )
         assert response.status_code == 400
         assert "already registered" in response.json()["detail"]
 
-    def test_register_admin_role(self, client):
+    def test_register_admin_role(self, client, lob_hierarchy):
         """Test registering user with admin role."""
         response = client.post(
             "/auth/register",
@@ -111,13 +113,14 @@ class TestRegister:
                 "email": "newadmin@example.com",
                 "full_name": "New Admin",
                 "password": "adminpass123",
-                "role": "Admin"
+                "role": "Admin",
+                "lob_id": lob_hierarchy["corporate"].lob_id
             }
         )
         assert response.status_code == 201
         assert response.json()["role"] == "Admin"
 
-    def test_register_invalid_email(self, client):
+    def test_register_invalid_email(self, client, lob_hierarchy):
         """Test registering with invalid email format."""
         response = client.post(
             "/auth/register",
@@ -125,7 +128,8 @@ class TestRegister:
                 "email": "invalid-email",
                 "full_name": "User",
                 "password": "pass123",
-                "role": "User"
+                "role": "User",
+                "lob_id": lob_hierarchy["retail"].lob_id
             }
         )
         assert response.status_code == 422

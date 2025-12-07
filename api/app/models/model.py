@@ -175,6 +175,18 @@ class Model(Base):
             return None
         return self.methodology.category.is_aiml
 
+    @property
+    def business_line_name(self) -> Optional[str]:
+        """Compute business line name from owner's LOB rolled up to LOB4 level.
+
+        Returns:
+            The owner's LOB name rolled up to LOB4 level, or the actual LOB
+            name if the owner's LOB is at or above LOB4 level.
+            None if the owner has no LOB assigned.
+        """
+        from app.core.lob_utils import get_user_lob_rollup_name
+        return get_user_lob_rollup_name(self.owner)
+
     # Model versions
     versions: Mapped[List["ModelVersion"]] = relationship(
         "ModelVersion", back_populates="model", cascade="all, delete-orphan", order_by="desc(ModelVersion.created_at)"

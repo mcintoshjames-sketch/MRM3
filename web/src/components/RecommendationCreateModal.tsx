@@ -33,8 +33,8 @@ interface ValidationRequest {
 
 interface MonitoringCycle {
     cycle_id: number;
-    period_start: string;
-    period_end: string;
+    period_start_date: string;
+    period_end_date: string;
     plan_name?: string;
     status?: string;
 }
@@ -112,9 +112,9 @@ export default function RecommendationCreateModal({
                         for (const cycle of cyclesResponse.data) {
                             cycles.push({
                                 cycle_id: cycle.cycle_id,
-                                period_start: cycle.period_start,
-                                period_end: cycle.period_end,
-                                plan_name: plan.plan_name,
+                                period_start_date: cycle.period_start_date,
+                                period_end_date: cycle.period_end_date,
+                                plan_name: plan.name,
                                 status: cycle.status
                             });
                         }
@@ -340,7 +340,7 @@ export default function RecommendationCreateModal({
                                         <option value="">No specific monitoring cycle...</option>
                                         {monitoringCycles.map(mc => (
                                             <option key={mc.cycle_id} value={mc.cycle_id}>
-                                                {mc.plan_name ? `${mc.plan_name}: ` : ''}{mc.period_start} to {mc.period_end} ({mc.status})
+                                                {mc.plan_name ? `${mc.plan_name}: ` : ''}{mc.period_start_date} to {mc.period_end_date} ({mc.status})
                                             </option>
                                         ))}
                                     </select>

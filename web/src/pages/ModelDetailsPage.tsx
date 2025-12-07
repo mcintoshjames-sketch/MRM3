@@ -131,6 +131,7 @@ interface Model {
     submitted_at: string | null;
     is_model: boolean;
     is_aiml: boolean | null;
+    business_line_name: string | null;
     owner: User;
     developer: User | null;
     shared_owner: User | null;
@@ -2507,6 +2508,16 @@ export default function ModelDetailsPage() {
                                 </span>
                             ) : (
                                 <p className="text-lg">Global</p>
+                            )}
+                        </div>
+                        <div>
+                            <h4 className="text-sm font-medium text-gray-500 mb-1">Business Line</h4>
+                            {model.business_line_name ? (
+                                <span className="px-2 py-1 text-sm rounded bg-amber-100 text-amber-800">
+                                    {model.business_line_name}
+                                </span>
+                            ) : (
+                                <p className="text-lg text-gray-400">-</p>
                             )}
                         </div>
                         {/* Model Roles Section */}

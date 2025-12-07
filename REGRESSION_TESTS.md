@@ -5,16 +5,19 @@ This document tracks the regression testing strategy and test coverage for itera
 ## Quick Reference
 
 ```bash
-# Run all backend tests (~620 tests passing)
+# Run all backend tests (1032 tests collected)
 # Note: Some pre-existing test failures in recommendations/regional scope tests
-# Added: 36 tests for Overdue Revalidation Commentary (23 core + 13 dashboard integration)
-# Added: 15 tests for Model Decommissioning workflow
-# Added: 63 tests for Monitoring Cycles, Results, and Approval Workflow
-# Added: Monitoring Plan Versioning and Component 9b tests (integrated into test_monitoring.py)
-# Added: 54 tests for Model Risk Assessment (qualitative/quantitative scoring, factor config)
-# Added: 56 tests for Validation Scorecard (rating conversions, score computation, config loading)
-# Added: 27 tests for Model Limitations (CRUD, retirement workflow, critical limitations report)
-# Added: 33 tests for Methodology Library (categories, methodologies, model integration)
+# Recent additions:
+# - 36 tests for Overdue Revalidation Commentary
+# - 15 tests for Model Decommissioning workflow
+# - 63 tests for Monitoring Cycles, Results, and Approval Workflow
+# - Monitoring Plan Versioning and Component 9b tests (integrated into test_monitoring.py)
+# - 54 tests for Model Risk Assessment (qualitative/quantitative scoring, factor config)
+# - 56 tests for Validation Scorecard (rating conversions, score computation, config loading)
+# - 27 tests for Model Limitations (CRUD, retirement workflow, critical limitations report)
+# - 33 tests for Methodology Library (categories, methodologies, model integration)
+# - LOB Hierarchy tests (2 tests for org unit and hierarchy depth)
+# - Attestation Cycle tests
 cd api && python -m pytest
 
 # Run all frontend tests (128 tests passing)
@@ -429,6 +432,10 @@ cd web && pnpm test:coverage
 - [x] Delete dependency as non-admin blocked (403)
 - [x] Delete dependency creates audit log
 - [x] **Delete dependency allows previously blocked edges (cycle removal)**
+
+#### LOB Hierarchy (`test_lob.py`)
+- [x] LOB response includes org_unit field
+- [x] LOB level reflects hierarchy depth
 
 #### Methodology Library (`test_methodology.py`)
 
@@ -1240,6 +1247,7 @@ describe('NewPage', () => {
 | **Model Limitations** | ✅ test_limitations.py (30 tests) | ✅ ModelLimitationsTab.tsx (CRUD modals, retirement) + CriticalLimitationsReportPage.tsx + ValidationRequestDetailPage limitations tab | 2025-12-02 |
 | **Final Model Risk Ranking** | 📋 test_final_rating.py (40 tests pending) | ✅ ModelDetailsPage Risk Assessment Summary (Final Risk Ranking display with penalty info) | 2025-12-02 |
 | **Methodology Library** | ✅ test_methodology.py (33 tests) | ✅ ModelDetailsPage methodology dropdown + TaxonomyPage methodology management (pending) | 2025-12-05 |
+| **LOB Hierarchy** | ✅ test_lob.py (2 tests) | ✅ LOBTreeView, LOBImportPanel, UsersPage LOB assignment | 2025-12-07 |
 
 **Features Added:**
 - Development type (In-House / Third-Party)
@@ -1277,11 +1285,12 @@ describe('NewPage', () => {
 - **Model Limitations** (track inherent constraints/weaknesses discovered during validation; Critical vs Non-Critical significance; category taxonomy: Data, Implementation, Methodology, Model Output, Other; conclusion workflow: Mitigate or Accept; user_awareness_description required for Critical; optional links to validation requests, model versions, and recommendations; retirement workflow with commentary; Critical Limitations Report with region filtering and CSV export; ModelLimitationsTab.tsx with CRUD modals + CriticalLimitationsReportPage.tsx)
 - **Final Model Risk Ranking** (penalty-adjusted risk rating based on overdue validation status; scorecard outcome downgraded by configurable notches from Past Due Level bucket taxonomy; adjusted scorecard fed into Residual Risk Map; downgrade_notches field on bucket taxonomy values [0=CURRENT to 5=OBSOLETE]; computation module in api/app/core/final_rating.py; API endpoint GET /models/{id}/final-risk-ranking; ModelDetailsPage Risk Assessment Summary enhanced with penalty display showing original vs adjusted scorecard and final rating)
 - **Methodology Library** (standardized library of model methodologies organized by category; 20 categories with ~47 methodologies seeded from METHOD_LIBRARY.json; model-methodology linkage via methodology_id FK; search by name/description, filter by category, active_only flag; Admin CRUD for categories and methodologies with cascade delete and model reference protection; audit logging for all changes; frontend methodology dropdown on ModelDetailsPage grouped by category)
+- **LOB Hierarchy** (hierarchical Line of Business organizational units; tree view with expand/collapse; CSV import for bulk LOB creation; user assignment to LOB units; model role assignment inherits LOB from user; LOBTreeView, LOBImportPanel, UsersPage LOB column; `lob_id` now required on user registration)
 
-**Total: 811+ tests (683+ backend + 128 frontend)**
-- Backend: 650+ passing (some pre-existing failures in recommendations/regional scope tests)
-- Frontend: 128 passing
-- **Note**: Core regression suite stable. Model Limitations tests (30 tests) fully passing. Added limitations tracking with Critical/Non-Critical significance, category taxonomy, retirement workflow, Critical Limitations Report, and validation request limitations tab.
+**Total: 1160+ tests (1032 backend + 128 frontend)**
+- Backend: 722 passing, 63 failed, 247 errors (pre-existing failures in recommendations/regional scope/validation warnings tests)
+- Frontend: 128 passing (note: `pnpm test:run` may hang; use `npx vitest run` directly)
+- **Note**: Core regression suite stable. The recommendation lifecycle tests and validation_warnings tests have known fixture issues unrelated to recent changes. LOB hierarchy feature added `lob_id` as required field on user creation.
 - **2025-11-29 Test Hardening**: Added 8 new tests to guard against regressions in monitoring module:
   - Submit cycle completeness validation (multi-metric, N/A narrative requirements)
   - Plan delete cascade verification

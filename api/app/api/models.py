@@ -66,9 +66,11 @@ def list_models(
     - exclude_sub_models: If True, exclude models that are sub-models (children) in hierarchy
     """
     from app.core.rls import apply_model_rls
+    from app.models.lob import LOBUnit
 
     query = db.query(Model).options(
-        joinedload(Model.owner),
+        # Owner with LOB chain for business_line_name computation
+        joinedload(Model.owner).joinedload(User.lob).joinedload(LOBUnit.parent).joinedload(LOBUnit.parent).joinedload(LOBUnit.parent),
         joinedload(Model.developer),
         joinedload(Model.shared_owner),
         joinedload(Model.shared_developer),
@@ -450,8 +452,10 @@ def create_model(
 
     # Reload with relationships
     from app.models import ModelSubmissionComment
+    from app.models.lob import LOBUnit
     model = db.query(Model).options(
-        joinedload(Model.owner),
+        # Owner with LOB chain for business_line_name computation
+        joinedload(Model.owner).joinedload(User.lob).joinedload(LOBUnit.parent).joinedload(LOBUnit.parent).joinedload(LOBUnit.parent),
         joinedload(Model.developer),
         joinedload(Model.vendor),
         joinedload(Model.users),
@@ -467,7 +471,10 @@ def create_model(
         joinedload(Model.wholly_owned_region),
         joinedload(Model.model_regions).joinedload(ModelRegion.region),
         joinedload(Model.submission_comments).joinedload(
-            ModelSubmissionComment.user)
+            ModelSubmissionComment.user),
+        joinedload(Model.shared_owner),
+        joinedload(Model.shared_developer),
+        joinedload(Model.monitoring_manager)
     ).filter(Model.model_id == model.model_id).first()
 
     # Return model with warnings if any
@@ -659,6 +666,7 @@ def get_model(
     - User: Can only access models where they are owner, developer, or delegate
     """
     from app.core.rls import can_access_model
+    from app.models.lob import LOBUnit
 
     # Check RLS access
     if not can_access_model(model_id, current_user, db):
@@ -668,7 +676,8 @@ def get_model(
         )
 
     model = db.query(Model).options(
-        joinedload(Model.owner),
+        # Owner with LOB chain for business_line_name computation
+        joinedload(Model.owner).joinedload(User.lob).joinedload(LOBUnit.parent).joinedload(LOBUnit.parent).joinedload(LOBUnit.parent),
         joinedload(Model.developer),
         joinedload(Model.shared_owner),
         joinedload(Model.shared_developer),

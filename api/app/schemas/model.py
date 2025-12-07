@@ -128,6 +128,8 @@ class ModelResponse(ModelBase):
     row_approval_status: Optional[str] = None
     submitted_by_user_id: Optional[int] = None
     submitted_at: Optional[datetime] = None
+    # Computed field: Owner's LOB rolled up to LOB4 level
+    business_line_name: Optional[str] = None
 
     class Config:
         from_attributes = True
@@ -215,6 +217,8 @@ class ModelCreateResponse(BaseModel):
     row_approval_status: Optional[str] = None
     submitted_by_user_id: Optional[int] = None
     submitted_at: Optional[datetime] = None
+    # Computed field: Owner's LOB rolled up to LOB4 level
+    business_line_name: Optional[str] = None
     # Relationships
     owner: UserResponse
     usage_frequency: TaxonomyValueResponse  # Required field
