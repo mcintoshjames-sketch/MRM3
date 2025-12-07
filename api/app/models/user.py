@@ -2,8 +2,11 @@
 import enum
 from sqlalchemy import String, Integer, Table, Column, ForeignKey, Boolean
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-from typing import List
+from typing import List, Optional, TYPE_CHECKING
 from app.models.base import Base
+
+if TYPE_CHECKING:
+    from app.models.lob import LOBUnit
 
 
 # Association table for user-region many-to-many relationship
@@ -39,6 +42,22 @@ class User(Base):
     high_fluctuation_flag: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False,
         comment="Manual toggle by Admin; triggers quarterly attestations"
+    )
+
+    # LOB (Line of Business) assignment - required for all users
+    lob_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("lob_units.lob_id", ondelete="RESTRICT"),
+        nullable=False,
+        index=True,
+        comment="User's assigned LOB unit (required)"
+    )
+
+    # LOB relationship
+    lob: Mapped["LOBUnit"] = relationship(
+        "LOBUnit",
+        back_populates="users",
+        foreign_keys=[lob_id]
     )
 
     # Regions relationship (for Regional Approvers)

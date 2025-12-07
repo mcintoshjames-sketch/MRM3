@@ -24,8 +24,10 @@ from app.models.monitoring import MonitoringCycle, MonitoringCycleApproval, Moni
 from app.models.methodology import Methodology
 from app.schemas.model import (
     ModelCreate, ModelUpdate, ModelDetailResponse, ValidationGroupingSuggestion, ModelCreateResponse,
-    ModelNameHistoryItem, ModelNameHistoryResponse, NameChangeStatistics
+    ModelNameHistoryItem, ModelNameHistoryResponse, NameChangeStatistics,
+    ModelRolesWithLOB, UserWithLOBRollup
 )
+from app.core.lob_utils import get_user_lob_rollup_name
 from app.schemas.submission_action import SubmissionAction, SubmissionFeedback, SubmissionCommentCreate
 from app.schemas.activity_timeline import ActivityTimelineItem, ActivityTimelineResponse
 from app.models.model_name_history import ModelNameHistory
@@ -68,6 +70,9 @@ def list_models(
     query = db.query(Model).options(
         joinedload(Model.owner),
         joinedload(Model.developer),
+        joinedload(Model.shared_owner),
+        joinedload(Model.shared_developer),
+        joinedload(Model.monitoring_manager),
         joinedload(Model.vendor),
         joinedload(Model.users),
         joinedload(Model.risk_tier),
@@ -161,6 +166,46 @@ def create_model(
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Developer user not found"
+            )
+
+    # Validate shared_owner exists and is different from owner if provided
+    if model_data.shared_owner_id:
+        if model_data.shared_owner_id == model_data.owner_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Shared owner must be different from the primary owner"
+            )
+        shared_owner = db.query(User).filter(
+            User.user_id == model_data.shared_owner_id).first()
+        if not shared_owner:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Shared owner user not found"
+            )
+
+    # Validate shared_developer exists and is different from developer if provided
+    if model_data.shared_developer_id:
+        if model_data.developer_id and model_data.shared_developer_id == model_data.developer_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Shared developer must be different from the primary developer"
+            )
+        shared_developer = db.query(User).filter(
+            User.user_id == model_data.shared_developer_id).first()
+        if not shared_developer:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Shared developer user not found"
+            )
+
+    # Validate monitoring_manager exists if provided
+    if model_data.monitoring_manager_id:
+        monitoring_manager = db.query(User).filter(
+            User.user_id == model_data.monitoring_manager_id).first()
+        if not monitoring_manager:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Monitoring manager user not found"
             )
 
     # Extract user_ids, regulatory_category_ids, region_ids, initial_version_number, initial_implementation_date, and validation request fields before creating model
@@ -625,6 +670,9 @@ def get_model(
     model = db.query(Model).options(
         joinedload(Model.owner),
         joinedload(Model.developer),
+        joinedload(Model.shared_owner),
+        joinedload(Model.shared_developer),
+        joinedload(Model.monitoring_manager),
         joinedload(Model.vendor),
         joinedload(Model.users),
         joinedload(Model.risk_tier),
@@ -641,6 +689,64 @@ def get_model(
             detail="Model not found"
         )
     return model
+
+
+@router.get("/{model_id}/roles-with-lob", response_model=ModelRolesWithLOB)
+def get_model_roles_with_lob(
+    model_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Get all model roles with LOB names rolled up to LOB4 level.
+
+    Returns the owner, shared_owner, developer, shared_developer, and monitoring_manager
+    with their user info and LOB name rolled up to LOB4 (or actual level if LOB3 or higher).
+    """
+    from app.core.rls import can_access_model
+    from app.models.lob import LOBUnit
+
+    # Check RLS access
+    if not can_access_model(model_id, current_user, db):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Model not found"
+        )
+
+    # Query model with all user relationships and their LOB data
+    model = db.query(Model).options(
+        joinedload(Model.owner).joinedload(User.lob).joinedload(LOBUnit.parent).joinedload(LOBUnit.parent).joinedload(LOBUnit.parent),
+        joinedload(Model.shared_owner).joinedload(User.lob).joinedload(LOBUnit.parent).joinedload(LOBUnit.parent).joinedload(LOBUnit.parent),
+        joinedload(Model.developer).joinedload(User.lob).joinedload(LOBUnit.parent).joinedload(LOBUnit.parent).joinedload(LOBUnit.parent),
+        joinedload(Model.shared_developer).joinedload(User.lob).joinedload(LOBUnit.parent).joinedload(LOBUnit.parent).joinedload(LOBUnit.parent),
+        joinedload(Model.monitoring_manager).joinedload(User.lob).joinedload(LOBUnit.parent).joinedload(LOBUnit.parent).joinedload(LOBUnit.parent),
+    ).filter(Model.model_id == model_id).first()
+
+    if not model:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Model not found"
+        )
+
+    def build_user_with_lob(user: User) -> UserWithLOBRollup:
+        """Build UserWithLOBRollup from user with LOB data."""
+        return UserWithLOBRollup(
+            user_id=user.user_id,
+            email=user.email,
+            full_name=user.full_name,
+            role=user.role,
+            lob_id=user.lob_id,
+            lob_name=user.lob.name if user.lob else None,
+            lob_rollup_name=get_user_lob_rollup_name(user)
+        )
+
+    return ModelRolesWithLOB(
+        owner=build_user_with_lob(model.owner),
+        shared_owner=build_user_with_lob(model.shared_owner) if model.shared_owner else None,
+        developer=build_user_with_lob(model.developer) if model.developer else None,
+        shared_developer=build_user_with_lob(model.shared_developer) if model.shared_developer else None,
+        monitoring_manager=build_user_with_lob(model.monitoring_manager) if model.monitoring_manager else None
+    )
 
 
 @router.get("/{model_id}/revalidation-status")
@@ -911,6 +1017,48 @@ def update_model(
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Developer user not found"
+            )
+
+    # Validate shared_owner exists and is different from owner if provided
+    if 'shared_owner_id' in update_data and update_data['shared_owner_id'] is not None:
+        owner_id = update_data.get('owner_id', model.owner_id)
+        if update_data['shared_owner_id'] == owner_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Shared owner must be different from the primary owner"
+            )
+        shared_owner = db.query(User).filter(
+            User.user_id == update_data['shared_owner_id']).first()
+        if not shared_owner:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Shared owner user not found"
+            )
+
+    # Validate shared_developer exists and is different from developer if provided
+    if 'shared_developer_id' in update_data and update_data['shared_developer_id'] is not None:
+        developer_id = update_data.get('developer_id', model.developer_id)
+        if developer_id and update_data['shared_developer_id'] == developer_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Shared developer must be different from the primary developer"
+            )
+        shared_developer = db.query(User).filter(
+            User.user_id == update_data['shared_developer_id']).first()
+        if not shared_developer:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Shared developer user not found"
+            )
+
+    # Validate monitoring_manager exists if provided
+    if 'monitoring_manager_id' in update_data and update_data['monitoring_manager_id'] is not None:
+        monitoring_manager = db.query(User).filter(
+            User.user_id == update_data['monitoring_manager_id']).first()
+        if not monitoring_manager:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Monitoring manager user not found"
             )
 
     # Handle user_ids separately

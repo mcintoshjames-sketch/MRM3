@@ -25,3 +25,4 @@ class EntraUserProvisionRequest(BaseModel):
     entra_id: str
     role: str = "User"
     region_ids: list[int] = []
+    lob_id: int  # Required: User's LOB assignment

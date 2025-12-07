@@ -55,6 +55,15 @@ class Model(Base):
         Integer, ForeignKey("users.user_id"), nullable=False)
     developer_id: Mapped[Optional[int]] = mapped_column(
         Integer, ForeignKey("users.user_id"), nullable=True)
+    shared_owner_id: Mapped[Optional[int]] = mapped_column(
+        Integer, ForeignKey("users.user_id", ondelete="SET NULL"), nullable=True,
+        comment="Optional co-owner for shared ownership scenarios")
+    shared_developer_id: Mapped[Optional[int]] = mapped_column(
+        Integer, ForeignKey("users.user_id", ondelete="SET NULL"), nullable=True,
+        comment="Optional co-developer for shared development scenarios")
+    monitoring_manager_id: Mapped[Optional[int]] = mapped_column(
+        Integer, ForeignKey("users.user_id", ondelete="SET NULL"), nullable=True,
+        comment="User responsible for ongoing model monitoring")
     vendor_id: Mapped[Optional[int]] = mapped_column(
         Integer, ForeignKey("vendors.vendor_id"), nullable=True)
     status: Mapped[ModelStatus] = mapped_column(
@@ -105,6 +114,12 @@ class Model(Base):
     owner: Mapped["User"] = relationship("User", foreign_keys=[owner_id])
     developer: Mapped[Optional["User"]] = relationship(
         "User", foreign_keys=[developer_id])
+    shared_owner: Mapped[Optional["User"]] = relationship(
+        "User", foreign_keys=[shared_owner_id])
+    shared_developer: Mapped[Optional["User"]] = relationship(
+        "User", foreign_keys=[shared_developer_id])
+    monitoring_manager: Mapped[Optional["User"]] = relationship(
+        "User", foreign_keys=[monitoring_manager_id])
     submitted_by_user: Mapped[Optional["User"]] = relationship(
         "User", foreign_keys=[submitted_by_user_id])
     vendor: Mapped[Optional["Vendor"]] = relationship("Vendor")

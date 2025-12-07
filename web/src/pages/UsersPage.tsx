@@ -5,6 +5,15 @@ import api from '../api/client';
 import Layout from '../components/Layout';
 import { useTableSort } from '../hooks/useTableSort';
 import type { Region } from '../api/regions';
+import { lobApi, LOBUnit } from '../api/lob';
+
+interface LOBBrief {
+    lob_id: number;
+    code: string;
+    name: string;
+    level: number;
+    full_path: string;
+}
 
 interface User {
     user_id: number;
@@ -12,6 +21,8 @@ interface User {
     full_name: string;
     role: string;
     regions: Region[];
+    lob_id: number | null;
+    lob: LOBBrief | null;
 }
 
 interface EntraUser {
@@ -33,6 +44,7 @@ export function UsersContent() {
     const { user: currentUser } = useAuth();
     const [users, setUsers] = useState<User[]>([]);
     const [regions, setRegions] = useState<Region[]>([]);
+    const [lobUnits, setLobUnits] = useState<LOBUnit[]>([]);
     const [loading, setLoading] = useState(true);
     const [showForm, setShowForm] = useState(false);
     const [editingUser, setEditingUser] = useState<User | null>(null);
@@ -41,8 +53,13 @@ export function UsersContent() {
         full_name: '',
         password: '',
         role: 'User',
-        region_ids: [] as number[]
+        region_ids: [] as number[],
+        lob_id: null as number | null
     });
+
+    // LOB search state for searchable dropdown
+    const [lobSearch, setLobSearch] = useState('');
+    const [showLobDropdown, setShowLobDropdown] = useState(false);
 
     // Entra directory state
     const [showEntraModal, setShowEntraModal] = useState(false);
@@ -52,6 +69,9 @@ export function UsersContent() {
     const [selectedEntraUser, setSelectedEntraUser] = useState<EntraUser | null>(null);
     const [provisionRole, setProvisionRole] = useState('User');
     const [provisionRegionIds, setProvisionRegionIds] = useState<number[]>([]);
+    const [provisionLobId, setProvisionLobId] = useState<number | null>(null);
+    const [provisionLobSearch, setProvisionLobSearch] = useState('');
+    const [showProvisionLobDropdown, setShowProvisionLobDropdown] = useState(false);
 
     // Table sorting
     const { sortedData, requestSort, getSortIcon } = useTableSort<User>(users, 'full_name');
@@ -59,7 +79,17 @@ export function UsersContent() {
     useEffect(() => {
         fetchUsers();
         fetchRegions();
+        fetchLobUnits();
     }, []);
+
+    const fetchLobUnits = async () => {
+        try {
+            const data = await lobApi.getLOBUnits(true);
+            setLobUnits(data);
+        } catch (error) {
+            console.error('Failed to fetch LOB units:', error);
+        }
+    };
 
     const fetchUsers = async () => {
         try {
@@ -82,13 +112,22 @@ export function UsersContent() {
     };
 
     const resetForm = () => {
-        setFormData({ email: '', full_name: '', password: '', role: 'User', region_ids: [] });
+        setFormData({ email: '', full_name: '', password: '', role: 'User', region_ids: [], lob_id: null });
+        setLobSearch('');
+        setShowLobDropdown(false);
         setEditingUser(null);
         setShowForm(false);
     };
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
+
+        // Validate LOB selection for new users (required)
+        if (!editingUser && !formData.lob_id) {
+            alert('Line of Business (LOB) is required for all users');
+            return;
+        }
+
         try {
             if (editingUser) {
                 const updatePayload: Record<string, any> = {};
@@ -100,6 +139,11 @@ export function UsersContent() {
                 // Always include region_ids for Regional Approvers (or to clear regions when changing role)
                 if (formData.role === 'Regional Approver' || editingUser.role === 'Regional Approver') {
                     updatePayload.region_ids = formData.region_ids;
+                }
+
+                // Include lob_id if changed
+                if (formData.lob_id !== editingUser.lob_id) {
+                    updatePayload.lob_id = formData.lob_id;
                 }
 
                 await api.patch(`/auth/users/${editingUser.user_id}`, updatePayload);
@@ -120,8 +164,20 @@ export function UsersContent() {
             full_name: user.full_name,
             password: '',
             role: user.role,
-            region_ids: user.regions?.map(r => r.region_id) || []
+            region_ids: user.regions?.map(r => r.region_id) || [],
+            lob_id: user.lob_id
         });
+        // Set LOB search to current LOB with org_unit if exists
+        if (user.lob) {
+            const lobUnit = lobUnits.find(l => l.lob_id === user.lob_id);
+            if (lobUnit) {
+                setLobSearch(`[${lobUnit.org_unit}] ${lobUnit.full_path}`);
+            } else {
+                setLobSearch(user.lob.full_path);
+            }
+        } else {
+            setLobSearch('');
+        }
         setShowForm(true);
     };
 
@@ -155,10 +211,17 @@ export function UsersContent() {
     const provisionEntraUser = async () => {
         if (!selectedEntraUser) return;
 
+        // Validate LOB selection (required)
+        if (!provisionLobId) {
+            alert('Line of Business (LOB) is required for all users');
+            return;
+        }
+
         try {
             const payload: any = {
                 entra_id: selectedEntraUser.entra_id,
-                role: provisionRole
+                role: provisionRole,
+                lob_id: provisionLobId
             };
 
             // Include region_ids for Regional Approvers
@@ -173,6 +236,9 @@ export function UsersContent() {
             setEntraUsers([]);
             setProvisionRole('User');
             setProvisionRegionIds([]);
+            setProvisionLobId(null);
+            setProvisionLobSearch('');
+            setShowProvisionLobDropdown(false);
             fetchUsers();
         } catch (error: any) {
             console.error('Failed to provision user:', error);
@@ -187,6 +253,9 @@ export function UsersContent() {
         setEntraUsers([]);
         setProvisionRole('User');
         setProvisionRegionIds([]);
+        setProvisionLobId(null);
+        setProvisionLobSearch('');
+        setShowProvisionLobDropdown(false);
     };
 
     if (loading) {
@@ -277,6 +346,64 @@ export function UsersContent() {
                             </div>
                         </div>
 
+                        {/* LOB (Line of Business) Selection */}
+                        <div className="mb-4">
+                            <label className="block text-sm font-medium mb-2">
+                                Line of Business (LOB) *
+                            </label>
+                            <div className="relative">
+                                <input
+                                    type="text"
+                                    placeholder="Type to search LOB units..."
+                                    value={lobSearch}
+                                    onChange={(e) => {
+                                        setLobSearch(e.target.value);
+                                        setShowLobDropdown(true);
+                                    }}
+                                    onFocus={() => setShowLobDropdown(true)}
+                                    className="input-field"
+                                />
+                                {showLobDropdown && lobSearch.length > 0 && (
+                                    <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg max-h-60 overflow-y-auto">
+                                        {lobUnits
+                                            .filter((lob) =>
+                                                lob.full_path.toLowerCase().includes(lobSearch.toLowerCase()) ||
+                                                lob.code.toLowerCase().includes(lobSearch.toLowerCase()) ||
+                                                lob.name.toLowerCase().includes(lobSearch.toLowerCase()) ||
+                                                lob.org_unit.toLowerCase().includes(lobSearch.toLowerCase())
+                                            )
+                                            .slice(0, 50)
+                                            .map((lob) => (
+                                                <div
+                                                    key={lob.lob_id}
+                                                    className="px-4 py-2 hover:bg-gray-100 cursor-pointer text-sm"
+                                                    onClick={() => {
+                                                        setFormData({ ...formData, lob_id: lob.lob_id });
+                                                        setLobSearch(`[${lob.org_unit}] ${lob.full_path}`);
+                                                        setShowLobDropdown(false);
+                                                    }}
+                                                >
+                                                    <div className="font-medium">[{lob.org_unit}] {lob.full_path}</div>
+                                                    <div className="text-xs text-gray-500">Code: {lob.code}</div>
+                                                </div>
+                                            ))}
+                                        {lobUnits.filter(lob =>
+                                            lob.full_path.toLowerCase().includes(lobSearch.toLowerCase()) ||
+                                            lob.code.toLowerCase().includes(lobSearch.toLowerCase()) ||
+                                            lob.org_unit.toLowerCase().includes(lobSearch.toLowerCase())
+                                        ).length === 0 && (
+                                            <div className="px-4 py-2 text-sm text-gray-500">No results found</div>
+                                        )}
+                                    </div>
+                                )}
+                                {formData.lob_id && (
+                                    <p className="mt-1 text-sm text-green-600">
+                                        ✓ Selected: [{lobUnits.find(l => l.lob_id === formData.lob_id)?.org_unit}] {lobUnits.find(l => l.lob_id === formData.lob_id)?.full_path || 'Unknown'}
+                                    </p>
+                                )}
+                            </div>
+                        </div>
+
                         {/* Region Selection for Regional Approvers */}
                         {formData.role === 'Regional Approver' && (
                             <div className="mb-4 p-4 border border-gray-200 rounded-lg">
@@ -360,6 +487,15 @@ export function UsersContent() {
                                     {getSortIcon('role')}
                                 </div>
                             </th>
+                            <th
+                                className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100"
+                                onClick={() => requestSort('lob.full_path')}
+                            >
+                                <div className="flex items-center gap-2">
+                                    LOB
+                                    {getSortIcon('lob.full_path')}
+                                </div>
+                            </th>
                             <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
                                 Regions
                             </th>
@@ -371,7 +507,7 @@ export function UsersContent() {
                     <tbody className="bg-white divide-y divide-gray-200">
                         {sortedData.length === 0 ? (
                             <tr>
-                                <td colSpan={6} className="px-6 py-4 text-center text-gray-500">
+                                <td colSpan={7} className="px-6 py-4 text-center text-gray-500">
                                     No users yet. Click "Add User" to create one.
                                 </td>
                             </tr>
@@ -409,6 +545,15 @@ export function UsersContent() {
                                         }`}>
                                             {user.role}
                                         </span>
+                                    </td>
+                                    <td className="px-6 py-4 text-sm">
+                                        {user.lob ? (
+                                            <span className="text-gray-700" title={user.lob.full_path}>
+                                                {user.lob.name}
+                                            </span>
+                                        ) : (
+                                            <span className="text-gray-400">—</span>
+                                        )}
                                     </td>
                                     <td className="px-6 py-4 text-sm">
                                         {user.regions && user.regions.length > 0 ? (
@@ -600,6 +745,67 @@ export function UsersContent() {
                                             </select>
                                         </div>
 
+                                        {/* LOB Selection (Required) */}
+                                        <div className="mb-3">
+                                            <label className="block text-sm font-medium mb-1">
+                                                Line of Business (LOB) *
+                                            </label>
+                                            <div className="relative">
+                                                <input
+                                                    type="text"
+                                                    placeholder="Type to search LOB units..."
+                                                    value={provisionLobSearch}
+                                                    onChange={(e) => {
+                                                        setProvisionLobSearch(e.target.value);
+                                                        setShowProvisionLobDropdown(true);
+                                                    }}
+                                                    onFocus={() => setShowProvisionLobDropdown(true)}
+                                                    className="input-field"
+                                                />
+                                                {showProvisionLobDropdown && provisionLobSearch.length > 0 && (
+                                                    <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg max-h-40 overflow-y-auto">
+                                                        {lobUnits
+                                                            .filter((lob) =>
+                                                                lob.full_path.toLowerCase().includes(provisionLobSearch.toLowerCase()) ||
+                                                                lob.code.toLowerCase().includes(provisionLobSearch.toLowerCase()) ||
+                                                                lob.name.toLowerCase().includes(provisionLobSearch.toLowerCase()) ||
+                                                                lob.org_unit.toLowerCase().includes(provisionLobSearch.toLowerCase())
+                                                            )
+                                                            .slice(0, 30)
+                                                            .map((lob) => (
+                                                                <div
+                                                                    key={lob.lob_id}
+                                                                    className="px-4 py-2 hover:bg-gray-100 cursor-pointer text-sm"
+                                                                    onClick={() => {
+                                                                        setProvisionLobId(lob.lob_id);
+                                                                        setProvisionLobSearch(`[${lob.org_unit}] ${lob.full_path}`);
+                                                                        setShowProvisionLobDropdown(false);
+                                                                    }}
+                                                                >
+                                                                    <div className="font-medium">[{lob.org_unit}] {lob.full_path}</div>
+                                                                    <div className="text-xs text-gray-500">Code: {lob.code}</div>
+                                                                </div>
+                                                            ))}
+                                                        {lobUnits.filter(lob =>
+                                                            lob.full_path.toLowerCase().includes(provisionLobSearch.toLowerCase()) ||
+                                                            lob.code.toLowerCase().includes(provisionLobSearch.toLowerCase()) ||
+                                                            lob.org_unit.toLowerCase().includes(provisionLobSearch.toLowerCase())
+                                                        ).length === 0 && (
+                                                            <div className="px-4 py-2 text-sm text-gray-500">No results found</div>
+                                                        )}
+                                                    </div>
+                                                )}
+                                                {provisionLobId && (
+                                                    <p className="mt-1 text-sm text-green-600">
+                                                        ✓ Selected: [{lobUnits.find(l => l.lob_id === provisionLobId)?.org_unit}] {lobUnits.find(l => l.lob_id === provisionLobId)?.full_path || 'Unknown'}
+                                                    </p>
+                                                )}
+                                                {!provisionLobId && (
+                                                    <p className="mt-1 text-sm text-red-600">LOB selection is required</p>
+                                                )}
+                                            </div>
+                                        </div>
+
                                         {/* Region Selection for Regional Approvers */}
                                         {provisionRole === 'Regional Approver' && (
                                             <div className="mt-3 p-3 border border-gray-200 rounded-lg">
@@ -644,6 +850,7 @@ export function UsersContent() {
                                 className="btn-primary"
                                 disabled={
                                     !selectedEntraUser ||
+                                    !provisionLobId ||
                                     (provisionRole === 'Regional Approver' && provisionRegionIds.length === 0)
                                 }
                             >

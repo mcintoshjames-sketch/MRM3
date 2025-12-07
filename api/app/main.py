@@ -1,7 +1,7 @@
 """FastAPI application entry point."""
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.api import auth, models, vendors, taxonomies, audit_logs, validation_workflow, validation_policies, workflow_sla, regions, model_regions, model_versions, model_delegates, model_change_taxonomy, model_types, methodology, dashboard, export_views, version_deployment_tasks, regional_compliance_report, analytics, saved_queries, model_hierarchy, model_dependencies, approver_roles, conditional_approval_rules, fry, map_applications, model_applications, overdue_commentary, overdue_revalidation_report, decommissioning, kpm, monitoring, recommendations, risk_assessment, qualitative_factors, scorecard, uat_tools, residual_risk_map, limitations, attestations
+from app.api import auth, models, vendors, taxonomies, audit_logs, validation_workflow, validation_policies, workflow_sla, regions, model_regions, model_versions, model_delegates, model_change_taxonomy, model_types, methodology, dashboard, export_views, version_deployment_tasks, regional_compliance_report, analytics, saved_queries, model_hierarchy, model_dependencies, approver_roles, conditional_approval_rules, fry, map_applications, model_applications, overdue_commentary, overdue_revalidation_report, decommissioning, kpm, monitoring, recommendations, risk_assessment, qualitative_factors, scorecard, uat_tools, residual_risk_map, limitations, attestations, lob_units
 
 app = FastAPI(title="MRM System v3", version="3.0.0")
 
@@ -94,6 +94,8 @@ app.include_router(uat_tools.router, prefix="/uat", tags=["uat-tools"])
 app.include_router(limitations.router, tags=["limitations"])
 # Model Risk Attestations
 app.include_router(attestations.router, prefix="/attestations", tags=["attestations"])
+# LOB (Line of Business) Hierarchy
+app.include_router(lob_units.router, prefix="/lob-units", tags=["lob-units"])
 
 
 @app.get("/")

@@ -112,6 +112,9 @@ interface Model {
     development_type: string;
     owner_id: number;
     developer_id: number | null;
+    shared_owner_id: number | null;
+    shared_developer_id: number | null;
+    monitoring_manager_id: number | null;
     vendor_id: number | null;
     risk_tier_id: number | null;
     validation_type_id: number | null;
@@ -130,6 +133,9 @@ interface Model {
     is_aiml: boolean | null;
     owner: User;
     developer: User | null;
+    shared_owner: User | null;
+    shared_developer: User | null;
+    monitoring_manager: User | null;
     vendor: Vendor | null;
     risk_tier: TaxonomyValue | null;
     validation_type: TaxonomyValue | null;
@@ -142,6 +148,24 @@ interface Model {
     regulatory_categories: TaxonomyValue[];
     submitted_by_user: User | null;
     submission_comments: SubmissionComment[];
+}
+
+interface UserWithLOBRollup {
+    user_id: number;
+    email: string;
+    full_name: string;
+    role: string;
+    lob_id: number;
+    lob_name: string | null;
+    lob_rollup_name: string | null;
+}
+
+interface ModelRolesWithLOB {
+    owner: UserWithLOBRollup;
+    shared_owner: UserWithLOBRollup | null;
+    developer: UserWithLOBRollup | null;
+    shared_developer: UserWithLOBRollup | null;
+    monitoring_manager: UserWithLOBRollup | null;
 }
 
 interface ValidationRequest {
@@ -278,6 +302,7 @@ export default function ModelDetailsPage() {
     const [validationRequests, setValidationRequests] = useState<ValidationRequest[]>([]);
     const [versions, setVersions] = useState<ModelVersion[]>([]);
     const [revalidationStatus, setRevalidationStatus] = useState<RevalidationStatus | null>(null);
+    const [rolesWithLOB, setRolesWithLOB] = useState<ModelRolesWithLOB | null>(null);
     const [decommissioningRequests, setDecommissioningRequests] = useState<DecommissioningRequestListItem[]>([]);
     const [loading, setLoading] = useState(true);
     const [editing, setEditing] = useState(false);
@@ -323,6 +348,9 @@ export default function ModelDetailsPage() {
         development_type: 'In-House',
         owner_id: 0,
         developer_id: null as number | null,
+        shared_owner_id: null as number | null,
+        shared_developer_id: null as number | null,
+        monitoring_manager_id: null as number | null,
         vendor_id: null as number | null,
         risk_tier_id: null as number | null,
         model_type_id: null as number | null,
@@ -455,6 +483,9 @@ export default function ModelDetailsPage() {
                 development_type: modelData.development_type,
                 owner_id: modelData.owner_id,
                 developer_id: modelData.developer_id,
+                shared_owner_id: modelData.shared_owner_id,
+                shared_developer_id: modelData.shared_developer_id,
+                monitoring_manager_id: modelData.monitoring_manager_id,
                 vendor_id: modelData.vendor_id,
                 risk_tier_id: modelData.risk_tier_id,
                 model_type_id: modelData.model_type_id,
@@ -472,18 +503,20 @@ export default function ModelDetailsPage() {
 
             // Fetch validation requests and versions separately - this is optional and shouldn't break the page
             try {
-                const [validationRequestsRes, versionsRes, revalidationRes, decommissioningRes, nameHistoryRes] = await Promise.all([
+                const [validationRequestsRes, versionsRes, revalidationRes, decommissioningRes, nameHistoryRes, rolesWithLOBRes] = await Promise.all([
                     api.get(`/validation-workflow/requests/?model_id=${id}`),
                     api.get(`/models/${id}/versions`),
                     api.get(`/models/${id}/revalidation-status`),
                     api.get(`/decommissioning/?model_id=${id}`),
-                    api.get(`/models/${id}/name-history`)
+                    api.get(`/models/${id}/name-history`),
+                    api.get(`/models/${id}/roles-with-lob`)
                 ]);
                 setValidationRequests(validationRequestsRes.data);
                 setVersions(versionsRes.data);
                 setRevalidationStatus(revalidationRes.data);
                 setDecommissioningRequests(decommissioningRes.data);
                 setNameHistory(nameHistoryRes.data.history || []);
+                setRolesWithLOB(rolesWithLOBRes.data);
             } catch (validationError) {
                 console.error('Failed to fetch validation data:', validationError);
                 // Keep as empty arrays - don't break the page
@@ -492,6 +525,7 @@ export default function ModelDetailsPage() {
                 setRevalidationStatus(null);
                 setDecommissioningRequests([]);
                 setNameHistory([]);
+                setRolesWithLOB(null);
             }
 
             // Fetch final risk ranking (optional - may not exist for models without approved validations)
@@ -579,6 +613,15 @@ export default function ModelDetailsPage() {
                 }
                 if (formData.developer_id !== originalFormData.developer_id) {
                     payload.developer_id = formData.developer_id || null;
+                }
+                if (formData.shared_owner_id !== originalFormData.shared_owner_id) {
+                    payload.shared_owner_id = formData.shared_owner_id || null;
+                }
+                if (formData.shared_developer_id !== originalFormData.shared_developer_id) {
+                    payload.shared_developer_id = formData.shared_developer_id || null;
+                }
+                if (formData.monitoring_manager_id !== originalFormData.monitoring_manager_id) {
+                    payload.monitoring_manager_id = formData.monitoring_manager_id || null;
                 }
                 if (formData.vendor_id !== originalFormData.vendor_id) {
                     payload.vendor_id = formData.vendor_id || null;
@@ -1973,6 +2016,73 @@ export default function ModelDetailsPage() {
                                 </select>
                             </div>
 
+                            <div className="mb-4">
+                                <label htmlFor="shared_owner_id" className="block text-sm font-medium mb-2">
+                                    Shared Owner (Co-Owner)
+                                </label>
+                                <select
+                                    id="shared_owner_id"
+                                    className="input-field"
+                                    value={formData.shared_owner_id || ''}
+                                    onChange={(e) => setFormData({
+                                        ...formData,
+                                        shared_owner_id: e.target.value ? parseInt(e.target.value) : null
+                                    })}
+                                >
+                                    <option value="">None</option>
+                                    {users
+                                        .filter(u => u.user_id !== formData.owner_id)
+                                        .map(u => (
+                                            <option key={u.user_id} value={u.user_id}>{u.full_name}</option>
+                                        ))}
+                                </select>
+                                <p className="text-xs text-gray-500 mt-1">Optional co-owner for shared ownership scenarios</p>
+                            </div>
+
+                            <div className="mb-4">
+                                <label htmlFor="shared_developer_id" className="block text-sm font-medium mb-2">
+                                    Shared Developer (Co-Developer)
+                                </label>
+                                <select
+                                    id="shared_developer_id"
+                                    className="input-field"
+                                    value={formData.shared_developer_id || ''}
+                                    onChange={(e) => setFormData({
+                                        ...formData,
+                                        shared_developer_id: e.target.value ? parseInt(e.target.value) : null
+                                    })}
+                                >
+                                    <option value="">None</option>
+                                    {users
+                                        .filter(u => u.user_id !== formData.developer_id)
+                                        .map(u => (
+                                            <option key={u.user_id} value={u.user_id}>{u.full_name}</option>
+                                        ))}
+                                </select>
+                                <p className="text-xs text-gray-500 mt-1">Optional co-developer for shared development scenarios</p>
+                            </div>
+
+                            <div className="mb-4">
+                                <label htmlFor="monitoring_manager_id" className="block text-sm font-medium mb-2">
+                                    Monitoring Manager
+                                </label>
+                                <select
+                                    id="monitoring_manager_id"
+                                    className="input-field"
+                                    value={formData.monitoring_manager_id || ''}
+                                    onChange={(e) => setFormData({
+                                        ...formData,
+                                        monitoring_manager_id: e.target.value ? parseInt(e.target.value) : null
+                                    })}
+                                >
+                                    <option value="">None</option>
+                                    {users.map(u => (
+                                        <option key={u.user_id} value={u.user_id}>{u.full_name}</option>
+                                    ))}
+                                </select>
+                                <p className="text-xs text-gray-500 mt-1">User responsible for ongoing model monitoring</p>
+                            </div>
+
                             {formData.development_type === 'Third-Party' && (
                                 <div className="mb-4">
                                     <label htmlFor="vendor_id" className="block text-sm font-medium mb-2">
@@ -2399,21 +2509,70 @@ export default function ModelDetailsPage() {
                                 <p className="text-lg">Global</p>
                             )}
                         </div>
-                        <div>
-                            <h4 className="text-sm font-medium text-gray-500 mb-1">Owner</h4>
-                            <p className="text-lg">{model.owner.full_name}</p>
-                            <p className="text-sm text-gray-500">{model.owner.email}</p>
-                        </div>
-                        <div>
-                            <h4 className="text-sm font-medium text-gray-500 mb-1">Developer</h4>
-                            {model.developer ? (
-                                <>
-                                    <p className="text-lg">{model.developer.full_name}</p>
-                                    <p className="text-sm text-gray-500">{model.developer.email}</p>
-                                </>
-                            ) : (
-                                <p className="text-lg">-</p>
-                            )}
+                        {/* Model Roles Section */}
+                        <div className="col-span-2">
+                            <h4 className="text-sm font-medium text-gray-500 mb-3 flex items-center gap-2">
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+                                </svg>
+                                Model Roles
+                            </h4>
+                            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 p-4 bg-gray-50 rounded-lg border border-gray-200">
+                                {/* Owner */}
+                                <div className="border-r border-gray-200 pr-4 last:border-r-0">
+                                    <p className="text-xs font-medium text-gray-400 uppercase tracking-wide mb-1">Owner</p>
+                                    <p className="text-sm font-medium text-gray-900">{model.owner.full_name}</p>
+                                    <p className="text-xs text-gray-500">{model.owner.email}</p>
+                                    {rolesWithLOB?.owner.lob_rollup_name && (
+                                        <p className="text-xs text-blue-600 mt-1">{rolesWithLOB.owner.lob_rollup_name}</p>
+                                    )}
+                                </div>
+                                {/* Shared Owner */}
+                                <div className="border-r border-gray-200 pr-4 last:border-r-0">
+                                    <p className="text-xs font-medium text-gray-400 uppercase tracking-wide mb-1">Shared Owner</p>
+                                    {model.shared_owner ? (
+                                        <>
+                                            <p className="text-sm font-medium text-gray-900">{model.shared_owner.full_name}</p>
+                                            <p className="text-xs text-gray-500">{model.shared_owner.email}</p>
+                                            {rolesWithLOB?.shared_owner?.lob_rollup_name && (
+                                                <p className="text-xs text-blue-600 mt-1">{rolesWithLOB.shared_owner.lob_rollup_name}</p>
+                                            )}
+                                        </>
+                                    ) : (
+                                        <p className="text-sm text-gray-400">-</p>
+                                    )}
+                                </div>
+                                {/* Developer */}
+                                <div className="border-r border-gray-200 pr-4 last:border-r-0">
+                                    <p className="text-xs font-medium text-gray-400 uppercase tracking-wide mb-1">Developer</p>
+                                    {model.developer ? (
+                                        <>
+                                            <p className="text-sm font-medium text-gray-900">{model.developer.full_name}</p>
+                                            <p className="text-xs text-gray-500">{model.developer.email}</p>
+                                            {rolesWithLOB?.developer?.lob_rollup_name && (
+                                                <p className="text-xs text-blue-600 mt-1">{rolesWithLOB.developer.lob_rollup_name}</p>
+                                            )}
+                                        </>
+                                    ) : (
+                                        <p className="text-sm text-gray-400">-</p>
+                                    )}
+                                </div>
+                                {/* Shared Developer */}
+                                <div>
+                                    <p className="text-xs font-medium text-gray-400 uppercase tracking-wide mb-1">Shared Developer</p>
+                                    {model.shared_developer ? (
+                                        <>
+                                            <p className="text-sm font-medium text-gray-900">{model.shared_developer.full_name}</p>
+                                            <p className="text-xs text-gray-500">{model.shared_developer.email}</p>
+                                            {rolesWithLOB?.shared_developer?.lob_rollup_name && (
+                                                <p className="text-xs text-blue-600 mt-1">{rolesWithLOB.shared_developer.lob_rollup_name}</p>
+                                            )}
+                                        </>
+                                    ) : (
+                                        <p className="text-sm text-gray-400">-</p>
+                                    )}
+                                </div>
+                            </div>
                         </div>
 
                         {/* Delegates Collapsible Section */}
@@ -3298,7 +3457,11 @@ export default function ModelDetailsPage() {
                 </div>
             ) : activeTab === 'monitoring' ? (
                 <div className="bg-white p-6 rounded-lg shadow-md">
-                    <ModelMonitoringTab modelId={model.model_id} modelName={model.model_name} />
+                    <ModelMonitoringTab
+                        modelId={model.model_id}
+                        modelName={model.model_name}
+                        monitoringManager={rolesWithLOB?.monitoring_manager}
+                    />
                 </div>
             ) : activeTab === 'decommissioning' ? (
                 <div className="bg-white p-6 rounded-lg shadow-md">

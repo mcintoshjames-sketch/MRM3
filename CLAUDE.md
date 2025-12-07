@@ -31,6 +31,23 @@ docker compose up --build
 - Frontend: http://localhost:5174
 - API docs: http://localhost:8001/docs
 
+### Shell Command Patterns (for Claude Code)
+**IMPORTANT**: When testing API endpoints with curl and auth tokens, avoid shell variable assignment with command substitution - it causes parse errors. Instead:
+
+```bash
+# DON'T DO THIS - causes "parse error near `('"
+TOKEN=$(curl -s ... | grep -o ...)
+curl -s "..." -H "Authorization: Bearer $TOKEN"
+
+# DO THIS INSTEAD - save to file, then use inline
+curl -s -X POST "http://localhost:8001/auth/login" -H "Content-Type: application/json" \
+  -d '{"email":"admin@example.com","password":"admin123"}' > /tmp/login.json
+
+# Then either read the token manually or use it directly in subsequent commands
+curl -s "http://localhost:8001/endpoint" \
+  -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+```
+
 ### Database Migrations
 **IMPORTANT**: Migrations must be run inside the Docker container because the database uses Docker networking (hostname "db"). Running locally will fail with "could not translate host name 'db' to address".
 

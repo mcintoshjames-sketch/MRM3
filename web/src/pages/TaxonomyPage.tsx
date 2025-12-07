@@ -3,6 +3,9 @@ import { useSearchParams } from 'react-router-dom';
 import api from '../api/client';
 import Layout from '../components/Layout';
 import { useAuth } from '../contexts/AuthContext';
+import LOBTreeView from '../components/LOBTreeView';
+import LOBImportPanel from '../components/LOBImportPanel';
+import { LOBUnitTreeNode } from '../api/lob';
 import {
     listFactors,
     createFactor,
@@ -251,7 +254,7 @@ export default function TaxonomyPage() {
 
     // Tab management - initialize from URL param or default to 'general'
     const tabParam = searchParams.get('tab');
-    const validTabs = ['general', 'change-type', 'model-type', 'methodology-library', 'kpm', 'fry', 'recommendation-priority', 'risk-factors', 'scorecard', 'residual-risk-map'] as const;
+    const validTabs = ['general', 'change-type', 'model-type', 'methodology-library', 'kpm', 'fry', 'recommendation-priority', 'risk-factors', 'scorecard', 'residual-risk-map', 'organizations'] as const;
     type TabType = typeof validTabs[number];
     const initialTab: TabType = validTabs.includes(tabParam as TabType) ? (tabParam as TabType) : 'general';
     const [activeTab, setActiveTab] = useState<TabType>(initialTab);
@@ -362,6 +365,9 @@ export default function TaxonomyPage() {
         version_name: '',
         description: ''
     });
+
+    // LOB (Organization Hierarchy) state
+    const [selectedLOB, setSelectedLOB] = useState<LOBUnitTreeNode | null>(null);
 
     // General taxonomy state
     const [taxonomies, setTaxonomies] = useState<Taxonomy[]>([]);
@@ -1968,6 +1974,7 @@ export default function TaxonomyPage() {
                         <option value="risk-factors">Risk Factors</option>
                         <option value="scorecard">Scorecard Config</option>
                         <option value="residual-risk-map">Residual Risk Map</option>
+                        <option value="organizations">Organizations (LOB)</option>
                     </select>
                 </div>
             </div>
@@ -5901,6 +5908,181 @@ export default function TaxonomyPage() {
                             )}
                         </>
                     )}
+                </>
+            )}
+
+            {/* ORGANIZATIONS (LOB) TAB */}
+            {activeTab === 'organizations' && (
+                <>
+                    <div className="mb-6">
+                        <h2 className="text-xl font-semibold text-gray-900 mb-2">
+                            Organization Hierarchy (Lines of Business)
+                        </h2>
+                        <p className="text-gray-600 text-sm">
+                            Manage the organizational hierarchy structure. Users are assigned to LOB units for reporting and access control.
+                        </p>
+                    </div>
+
+                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                        {/* LOB Tree - 2 columns */}
+                        <div className="lg:col-span-2">
+                            <div className="bg-white rounded-lg shadow-md p-4">
+                                <h3 className="text-lg font-semibold mb-4">LOB Hierarchy</h3>
+                                <LOBTreeView
+                                    showInactive={true}
+                                    onSelectLOB={(lob) => setSelectedLOB(lob)}
+                                    selectedLOBId={selectedLOB?.lob_id}
+                                />
+                            </div>
+                        </div>
+
+                        {/* Right column - Details Panel or Import Panel */}
+                        <div className="lg:col-span-1 space-y-4">
+                            {/* LOB Detail Panel */}
+                            {selectedLOB && (
+                                <div className="bg-white rounded-lg shadow-md p-4">
+                                    <div className="flex items-center justify-between mb-4">
+                                        <h3 className="text-lg font-semibold">LOB Details</h3>
+                                        <button
+                                            onClick={() => setSelectedLOB(null)}
+                                            className="text-gray-400 hover:text-gray-600"
+                                            title="Close"
+                                        >
+                                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                            </svg>
+                                        </button>
+                                    </div>
+
+                                    {/* Header with org_unit badge */}
+                                    <div className="mb-4 pb-4 border-b border-gray-200">
+                                        <div className="flex items-center gap-2 mb-2">
+                                            <span className="inline-flex items-center px-2.5 py-1 rounded-md text-sm font-mono font-bold bg-blue-100 text-blue-800">
+                                                {selectedLOB.org_unit}
+                                            </span>
+                                            {!selectedLOB.is_active && (
+                                                <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-red-100 text-red-800">
+                                                    Inactive
+                                                </span>
+                                            )}
+                                        </div>
+                                        <h4 className="text-lg font-semibold text-gray-900">{selectedLOB.name}</h4>
+                                        <p className="text-sm text-gray-500">Code: {selectedLOB.code}</p>
+                                    </div>
+
+                                    {/* Path */}
+                                    <div className="mb-4">
+                                        <label className="block text-xs font-medium text-gray-500 uppercase mb-1">Full Path</label>
+                                        <p className="text-sm text-gray-800 break-words">{selectedLOB.full_path}</p>
+                                    </div>
+
+                                    {/* Grid of basic info */}
+                                    <div className="grid grid-cols-2 gap-4 mb-4">
+                                        <div>
+                                            <label className="block text-xs font-medium text-gray-500 uppercase mb-1">Level</label>
+                                            <p className="text-sm text-gray-800">{selectedLOB.level}</p>
+                                        </div>
+                                        <div>
+                                            <label className="block text-xs font-medium text-gray-500 uppercase mb-1">Sort Order</label>
+                                            <p className="text-sm text-gray-800">{selectedLOB.sort_order}</p>
+                                        </div>
+                                        <div>
+                                            <label className="block text-xs font-medium text-gray-500 uppercase mb-1">Users</label>
+                                            <p className="text-sm text-gray-800">
+                                                {selectedLOB.user_count} user{selectedLOB.user_count !== 1 ? 's' : ''}
+                                            </p>
+                                        </div>
+                                        <div>
+                                            <label className="block text-xs font-medium text-gray-500 uppercase mb-1">Children</label>
+                                            <p className="text-sm text-gray-800">
+                                                {selectedLOB.children?.length || 0} child node{(selectedLOB.children?.length || 0) !== 1 ? 's' : ''}
+                                            </p>
+                                        </div>
+                                    </div>
+
+                                    {/* Description (if any) */}
+                                    {selectedLOB.description && (
+                                        <div className="mb-4">
+                                            <label className="block text-xs font-medium text-gray-500 uppercase mb-1">Description</label>
+                                            <p className="text-sm text-gray-800">{selectedLOB.description}</p>
+                                        </div>
+                                    )}
+
+                                    {/* Metadata Section (if any metadata fields exist) */}
+                                    {(selectedLOB.contact_name || selectedLOB.legal_entity_name || selectedLOB.short_name || selectedLOB.tier || selectedLOB.status_code) && (
+                                        <div className="border-t border-gray-200 pt-4 mt-4">
+                                            <h5 className="text-sm font-semibold text-gray-700 mb-3">Additional Metadata</h5>
+                                            <div className="space-y-3">
+                                                {selectedLOB.contact_name && (
+                                                    <div>
+                                                        <label className="block text-xs font-medium text-gray-500 uppercase mb-1">Contact</label>
+                                                        <p className="text-sm text-gray-800">{selectedLOB.contact_name}</p>
+                                                    </div>
+                                                )}
+                                                {selectedLOB.legal_entity_name && (
+                                                    <div>
+                                                        <label className="block text-xs font-medium text-gray-500 uppercase mb-1">Legal Entity</label>
+                                                        <p className="text-sm text-gray-800">
+                                                            {selectedLOB.legal_entity_name}
+                                                            {selectedLOB.legal_entity_id && (
+                                                                <span className="text-gray-500 ml-1">({selectedLOB.legal_entity_id})</span>
+                                                            )}
+                                                        </p>
+                                                    </div>
+                                                )}
+                                                {selectedLOB.short_name && (
+                                                    <div>
+                                                        <label className="block text-xs font-medium text-gray-500 uppercase mb-1">Short Name</label>
+                                                        <p className="text-sm text-gray-800">{selectedLOB.short_name}</p>
+                                                    </div>
+                                                )}
+                                                {selectedLOB.tier && (
+                                                    <div>
+                                                        <label className="block text-xs font-medium text-gray-500 uppercase mb-1">Tier</label>
+                                                        <p className="text-sm text-gray-800">{selectedLOB.tier}</p>
+                                                    </div>
+                                                )}
+                                                {selectedLOB.status_code && (
+                                                    <div>
+                                                        <label className="block text-xs font-medium text-gray-500 uppercase mb-1">Status Code</label>
+                                                        <p className="text-sm text-gray-800">{selectedLOB.status_code}</p>
+                                                    </div>
+                                                )}
+                                                {selectedLOB.org_description && (
+                                                    <div>
+                                                        <label className="block text-xs font-medium text-gray-500 uppercase mb-1">Org Description</label>
+                                                        <p className="text-sm text-gray-800">{selectedLOB.org_description}</p>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+
+                            {/* Import Panel - Admin only */}
+                            {isAdmin && (
+                                <LOBImportPanel
+                                    onImportComplete={() => {
+                                        // Force re-render of tree by toggling a key
+                                        // The LOBTreeView component will re-fetch data
+                                        setSelectedLOB(null);
+                                    }}
+                                />
+                            )}
+
+                            {/* Help text for non-admins when nothing is selected */}
+                            {!isAdmin && !selectedLOB && (
+                                <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
+                                    <h3 className="text-lg font-semibold mb-2">LOB Structure</h3>
+                                    <p className="text-sm text-gray-600">
+                                        The organization hierarchy shows the Lines of Business (LOB) structure.
+                                        Click on any node to view its details.
+                                    </p>
+                                </div>
+                            )}
+                        </div>
+                    </div>
                 </>
             )}
         </Layout>

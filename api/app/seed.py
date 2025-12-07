@@ -6,6 +6,7 @@ from app.core.database import SessionLocal
 from app.core.time import utc_now
 from app.core.security import get_password_hash
 from app.models import User, UserRole, Vendor, EntraUser, Taxonomy, TaxonomyValue, ValidationWorkflowSLA, ValidationPolicy, Region, ValidationComponentDefinition, ComponentDefinitionConfiguration, ComponentDefinitionConfigItem, ModelTypeCategory, ModelType, ValidationRequest, ValidationOutcome, ValidationRequestModelVersion, ApproverRole, ConditionalApprovalRule, RuleRequiredApprover, MapApplication, ValidationAssignment, ValidationStatusHistory
+from app.models.lob import LOBUnit
 from app.models.recommendation import RecommendationPriorityConfig, RecommendationTimeframeConfig
 from app.models.attestation import AttestationSchedulingRule, AttestationSchedulingRuleType, AttestationFrequency, CoverageTarget, AttestationQuestionConfig
 from app.models.kpm import KpmCategory, Kpm
@@ -827,12 +828,167 @@ def seed_timeframe_configs(db):
         f"✓ Created {created_count} timeframe configs, skipped {skipped_count} existing")
 
 
+def seed_lob_units(db) -> int:
+    """Seed LOB (Line of Business) hierarchy and return the default LOB ID.
+
+    Creates a basic organizational hierarchy:
+    - Enterprise (level 1)
+      - Global Banking (level 2)
+        - Commercial Banking (level 3)
+        - Investment Banking (level 3)
+      - Consumer Banking (level 2)
+        - Retail Banking (level 3)
+        - Wealth Management (level 3)
+      - Risk & Compliance (level 2)
+        - Model Risk Management (level 3) <- Default for seeded users
+        - Credit Risk (level 3)
+
+    Returns the lob_id of "Model Risk Management" as the default for users.
+    """
+    # Check if already seeded (either MRM exists or imported LOBs exist)
+    existing_mrm = db.query(LOBUnit).filter(LOBUnit.code == "MRM").first()
+    if existing_mrm:
+        print("✓ LOB units already exist")
+        return existing_mrm.lob_id
+
+    # Check if S0001 already exists (from imported data)
+    existing_s0001 = db.query(LOBUnit).filter(LOBUnit.org_unit == "S0001").first()
+    if existing_s0001:
+        print("✓ LOB units already imported (found S0001), skipping seed")
+        # Return placeholder LOB if it exists, otherwise first LOB
+        placeholder = db.query(LOBUnit).filter(LOBUnit.org_unit == "S9999").first()
+        if placeholder:
+            return placeholder.lob_id
+        return existing_s0001.lob_id
+
+    # Create root node - Enterprise (synthetic org_unit S0001)
+    enterprise = LOBUnit(
+        code="ENT",
+        name="Enterprise",
+        org_unit="S0001",
+        level=1,
+        parent_id=None,
+        sort_order=1,
+        is_active=True
+    )
+    db.add(enterprise)
+    db.flush()  # Get ID
+
+    # Level 2 - Business Units (synthetic org_units S0002-S0004)
+    global_banking = LOBUnit(
+        code="GB",
+        name="Global Banking",
+        org_unit="S0002",
+        level=2,
+        parent_id=enterprise.lob_id,
+        sort_order=1,
+        is_active=True
+    )
+    consumer_banking = LOBUnit(
+        code="CB",
+        name="Consumer Banking",
+        org_unit="S0003",
+        level=2,
+        parent_id=enterprise.lob_id,
+        sort_order=2,
+        is_active=True
+    )
+    risk_compliance = LOBUnit(
+        code="RC",
+        name="Risk & Compliance",
+        org_unit="S0004",
+        level=2,
+        parent_id=enterprise.lob_id,
+        sort_order=3,
+        is_active=True
+    )
+    db.add_all([global_banking, consumer_banking, risk_compliance])
+    db.flush()
+
+    # Level 3 - Departments under Global Banking (synthetic org_units S0005-S0006)
+    commercial = LOBUnit(
+        code="COM",
+        name="Commercial Banking",
+        org_unit="S0005",
+        level=3,
+        parent_id=global_banking.lob_id,
+        sort_order=1,
+        is_active=True
+    )
+    investment = LOBUnit(
+        code="INV",
+        name="Investment Banking",
+        org_unit="S0006",
+        level=3,
+        parent_id=global_banking.lob_id,
+        sort_order=2,
+        is_active=True
+    )
+
+    # Level 3 - Departments under Consumer Banking (synthetic org_units S0007-S0008)
+    retail = LOBUnit(
+        code="RET",
+        name="Retail Banking",
+        org_unit="S0007",
+        level=3,
+        parent_id=consumer_banking.lob_id,
+        sort_order=1,
+        is_active=True
+    )
+    wealth = LOBUnit(
+        code="WM",
+        name="Wealth Management",
+        org_unit="S0008",
+        level=3,
+        parent_id=consumer_banking.lob_id,
+        sort_order=2,
+        is_active=True
+    )
+
+    # Level 3 - Departments under Risk & Compliance (synthetic org_units S0009-S0010)
+    mrm = LOBUnit(
+        code="MRM",
+        name="Model Risk Management",
+        org_unit="S0009",
+        level=3,
+        parent_id=risk_compliance.lob_id,
+        sort_order=1,
+        is_active=True
+    )
+    credit_risk = LOBUnit(
+        code="CR",
+        name="Credit Risk",
+        org_unit="S0010",
+        level=3,
+        parent_id=risk_compliance.lob_id,
+        sort_order=2,
+        is_active=True
+    )
+
+    db.add_all([commercial, investment, retail, wealth, mrm, credit_risk])
+    db.commit()
+
+    print("✓ Created LOB hierarchy (9 units)")
+    return mrm.lob_id
+
+
 def seed_database():
     """Seed essential data."""
     db = SessionLocal()
 
     try:
         print("Starting database seeding...")
+
+        # Seed LOB hierarchy first (users need LOB assignment)
+        default_lob_id = seed_lob_units(db)
+
+        # Helper to assign LOB to existing users if not set
+        def ensure_user_lob(user):
+            if user.lob_id is None:
+                user.lob_id = default_lob_id
+                db.add(user)
+                return True
+            return False
 
         # Create admin user
         admin = db.query(User).filter(
@@ -842,13 +998,18 @@ def seed_database():
                 email="admin@example.com",
                 full_name="Admin User",
                 password_hash=get_password_hash("admin123"),
-                role=UserRole.ADMIN
+                role=UserRole.ADMIN,
+                lob_id=default_lob_id
             )
             db.add(admin)
             db.commit()
             print("✓ Created admin user (admin@example.com / admin123)")
         else:
-            print("✓ Admin user already exists")
+            if ensure_user_lob(admin):
+                db.commit()
+                print("✓ Updated admin user with LOB assignment")
+            else:
+                print("✓ Admin user already exists")
 
         # Create validator user for UAT
         validator = db.query(User).filter(
@@ -858,13 +1019,18 @@ def seed_database():
                 email="validator@example.com",
                 full_name="Sarah Chen",
                 password_hash=get_password_hash("validator123"),
-                role=UserRole.VALIDATOR
+                role=UserRole.VALIDATOR,
+                lob_id=default_lob_id
             )
             db.add(validator)
             db.commit()
             print("✓ Created validator user (validator@example.com / validator123)")
         else:
-            print("✓ Validator user already exists")
+            if ensure_user_lob(validator):
+                db.commit()
+                print("✓ Updated validator user with LOB assignment")
+            else:
+                print("✓ Validator user already exists")
 
         # Create regular user for testing
         regular_user = db.query(User).filter(
@@ -874,13 +1040,18 @@ def seed_database():
                 email="user@example.com",
                 full_name="Model Owner User",
                 password_hash=get_password_hash("user123"),
-                role=UserRole.USER
+                role=UserRole.USER,
+                lob_id=default_lob_id
             )
             db.add(regular_user)
             db.commit()
             print("✓ Created regular user (user@example.com / user123)")
         else:
-            print("✓ Regular user already exists")
+            if ensure_user_lob(regular_user):
+                db.commit()
+                print("✓ Updated regular user with LOB assignment")
+            else:
+                print("✓ Regular user already exists")
 
         # Create global approver user
         global_approver = db.query(User).filter(
@@ -890,13 +1061,18 @@ def seed_database():
                 email="globalapprover@example.com",
                 full_name="Global Approver",
                 password_hash=get_password_hash("approver123"),
-                role=UserRole.GLOBAL_APPROVER
+                role=UserRole.GLOBAL_APPROVER,
+                lob_id=default_lob_id
             )
             db.add(global_approver)
             db.commit()
             print("✓ Created global approver (globalapprover@example.com / approver123)")
         else:
-            print("✓ Global approver already exists")
+            if ensure_user_lob(global_approver):
+                db.commit()
+                print("✓ Updated global approver with LOB assignment")
+            else:
+                print("✓ Global approver already exists")
 
         # Create John Smith (UAT User)
         john_smith = db.query(User).filter(
@@ -906,17 +1082,22 @@ def seed_database():
                 email="john.smith@contoso.com",
                 full_name="John Smith",
                 password_hash=get_password_hash("john123"),
-                role=UserRole.USER
+                role=UserRole.USER,
+                lob_id=default_lob_id
             )
             db.add(john_smith)
             db.commit()
             print("✓ Created John Smith (john.smith@contoso.com / john123)")
         else:
+            updated = False
             if john_smith.role != UserRole.USER:
                 john_smith.role = UserRole.USER
-                db.add(john_smith)
+                updated = True
+            if ensure_user_lob(john_smith):
+                updated = True
+            if updated:
                 db.commit()
-                print("✓ Updated John Smith role to USER (Model Developer)")
+                print("✓ Updated John Smith (role/LOB)")
             else:
                 print("✓ John Smith already exists")
 
@@ -975,7 +1156,8 @@ def seed_database():
                 email="usapprover@example.com",
                 full_name="US Regional Approver",
                 password_hash=get_password_hash("approver123"),
-                role=UserRole.REGIONAL_APPROVER
+                role=UserRole.REGIONAL_APPROVER,
+                lob_id=default_lob_id
             )
             # Associate with US region
             us_region = db.query(Region).filter(Region.code == "US").first()
@@ -985,7 +1167,11 @@ def seed_database():
             db.commit()
             print("✓ Created US regional approver (usapprover@example.com / approver123)")
         else:
-            print("✓ US regional approver already exists")
+            if ensure_user_lob(us_approver):
+                db.commit()
+                print("✓ Updated US regional approver with LOB assignment")
+            else:
+                print("✓ US regional approver already exists")
 
         # EU/UK Regional Approver
         eu_approver = db.query(User).filter(
@@ -995,7 +1181,8 @@ def seed_database():
                 email="euapprover@example.com",
                 full_name="EU Regional Approver",
                 password_hash=get_password_hash("approver123"),
-                role=UserRole.REGIONAL_APPROVER
+                role=UserRole.REGIONAL_APPROVER,
+                lob_id=default_lob_id
             )
             # Associate with EU and UK regions
             eu_region = db.query(Region).filter(Region.code == "EU").first()
@@ -1008,7 +1195,11 @@ def seed_database():
             db.commit()
             print("✓ Created EU regional approver (euapprover@example.com / approver123)")
         else:
-            print("✓ EU regional approver already exists")
+            if ensure_user_lob(eu_approver):
+                db.commit()
+                print("✓ Updated EU regional approver with LOB assignment")
+            else:
+                print("✓ EU regional approver already exists")
 
         # Create mock Microsoft Entra directory users
         entra_users = [

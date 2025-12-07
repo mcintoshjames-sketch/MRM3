@@ -1,7 +1,7 @@
 """Authentication routes."""
 import csv
 import io
-from typing import List
+from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session, joinedload
@@ -13,8 +13,9 @@ from app.models.user import User
 from app.models.model import Model
 from app.models.entra_user import EntraUser
 from app.models.region import Region
+from app.models.lob import LOBUnit
 from app.models.audit_log import AuditLog
-from app.schemas.user import LoginRequest, Token, UserResponse, UserCreate, UserUpdate
+from app.schemas.user import LoginRequest, Token, UserResponse, UserCreate, UserUpdate, LOBUnitBrief
 from app.schemas.entra_user import EntraUserResponse, EntraUserProvisionRequest
 from app.schemas.model import ModelDetailResponse
 
@@ -33,6 +34,42 @@ def create_audit_log(db: Session, entity_type: str, entity_id: int, action: str,
     db.add(audit_log)
 
 
+def get_lob_full_path(db: Session, lob: LOBUnit) -> str:
+    """Build full path string from root to this LOB node."""
+    path_parts = []
+    current = lob
+    while current:
+        path_parts.insert(0, current.name)
+        if current.parent_id:
+            current = db.query(LOBUnit).filter(LOBUnit.lob_id == current.parent_id).first()
+        else:
+            current = None
+    return " > ".join(path_parts)
+
+
+def get_user_with_lob(db: Session, user: User) -> dict:
+    """Convert user to response dict with LOB info."""
+    user_dict = {
+        "user_id": user.user_id,
+        "email": user.email,
+        "full_name": user.full_name,
+        "role": user.role,
+        "high_fluctuation_flag": user.high_fluctuation_flag,
+        "regions": user.regions,
+        "lob_id": user.lob_id,
+        "lob": None
+    }
+    if user.lob_id and user.lob:
+        user_dict["lob"] = LOBUnitBrief(
+            lob_id=user.lob.lob_id,
+            code=user.lob.code,
+            name=user.lob.name,
+            level=user.lob.level,
+            full_path=get_lob_full_path(db, user.lob)
+        )
+    return user_dict
+
+
 @router.post("/login", response_model=Token)
 def login(login_data: LoginRequest, db: Session = Depends(get_db)):
     """Login endpoint."""
@@ -49,9 +86,17 @@ def login(login_data: LoginRequest, db: Session = Depends(get_db)):
 
 
 @router.get("/me", response_model=UserResponse)
-def get_me(current_user: User = Depends(get_current_user)):
+def get_me(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
     """Get current user."""
-    return current_user
+    # Reload with LOB relationship to compute full_path
+    user = db.query(User).options(
+        joinedload(User.regions),
+        joinedload(User.lob)
+    ).filter(User.user_id == current_user.user_id).first()
+    return get_user_with_lob(db, user)
 
 
 @router.get("/users", response_model=List[UserResponse])
@@ -61,9 +106,10 @@ def list_users(
 ):
     """List all users."""
     users = db.query(User).options(
-        joinedload(User.regions)
+        joinedload(User.regions),
+        joinedload(User.lob)
     ).all()
-    return users
+    return [get_user_with_lob(db, u) for u in users]
 
 
 @router.get("/users/{user_id}", response_model=UserResponse)
@@ -74,14 +120,15 @@ def get_user(
 ):
     """Get a specific user by ID."""
     user = db.query(User).options(
-        joinedload(User.regions)
+        joinedload(User.regions),
+        joinedload(User.lob)
     ).filter(User.user_id == user_id).first()
     if not user:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="User not found"
         )
-    return user
+    return get_user_with_lob(db, user)
 
 
 @router.get("/users/{user_id}/models", response_model=List[ModelDetailResponse])
@@ -129,12 +176,24 @@ def register(user_data: UserCreate, db: Session = Depends(get_db)):
             detail="Email already registered"
         )
 
+    # Validate LOB (required for all users)
+    lob = db.query(LOBUnit).filter(
+        LOBUnit.lob_id == user_data.lob_id,
+        LOBUnit.is_active == True
+    ).first()
+    if not lob:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid or inactive LOB unit"
+        )
+
     # Create user
     user = User(
         email=user_data.email,
         full_name=user_data.full_name,
         password_hash=get_password_hash(user_data.password),
-        role=user_data.role
+        role=user_data.role,
+        lob_id=user_data.lob_id
     )
 
     # Handle region associations for Regional Approvers
@@ -157,14 +216,15 @@ def register(user_data: UserCreate, db: Session = Depends(get_db)):
             "email": user_data.email,
             "full_name": user_data.full_name,
             "role": user_data.role,
-            "region_ids": user_data.region_ids or []
+            "region_ids": user_data.region_ids or [],
+            "lob_id": user_data.lob_id
         }
     )
 
     db.commit()
     db.refresh(user)
 
-    return user
+    return get_user_with_lob(db, user)
 
 
 @router.patch("/users/{user_id}", response_model=UserResponse)
@@ -176,7 +236,8 @@ def update_user(
 ):
     """Update a user."""
     user = db.query(User).options(
-        joinedload(User.regions)
+        joinedload(User.regions),
+        joinedload(User.lob)
     ).filter(User.user_id == user_id).first()
     if not user:
         raise HTTPException(
@@ -193,6 +254,18 @@ def update_user(
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Email already registered"
+            )
+
+    # Validate LOB if being updated
+    if 'lob_id' in update_data and update_data['lob_id'] is not None:
+        lob = db.query(LOBUnit).filter(
+            LOBUnit.lob_id == update_data['lob_id'],
+            LOBUnit.is_active == True
+        ).first()
+        if not lob:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid or inactive LOB unit"
             )
 
     # Track changes for audit log
@@ -243,6 +316,11 @@ def update_user(
                     "old": old_value,
                     "new": value
                 }
+            elif field == "lob_id":
+                changes["lob_id"] = {
+                    "old": old_value,
+                    "new": value
+                }
         setattr(user, field, value)
 
     # Create audit log if changes were made
@@ -258,7 +336,7 @@ def update_user(
 
     db.commit()
     db.refresh(user)
-    return user
+    return get_user_with_lob(db, user)
 
 
 @router.delete("/users/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -381,13 +459,25 @@ def provision_entra_user(
                 detail="Regional Approvers must have at least one region assigned"
             )
 
+    # Validate LOB (required for all users)
+    lob = db.query(LOBUnit).filter(
+        LOBUnit.lob_id == provision_data.lob_id,
+        LOBUnit.is_active == True
+    ).first()
+    if not lob:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid or inactive LOB unit"
+        )
+
     # Create application user from Entra data
     # In production, password would not be used as auth goes through Entra ID
     user = User(
         email=entra_user.mail,
         full_name=entra_user.display_name,
         password_hash=get_password_hash("entra_sso_placeholder"),  # Placeholder for SSO
-        role=provision_data.role
+        role=provision_data.role,
+        lob_id=provision_data.lob_id
     )
     db.add(user)
     db.flush()  # Flush to get user_id before attaching regions
@@ -432,7 +522,7 @@ def export_users_csv(
     current_user: User = Depends(get_current_user)
 ):
     """Export all users to CSV."""
-    users = db.query(User).all()
+    users = db.query(User).options(joinedload(User.lob)).all()
 
     # Create CSV in memory
     output = io.StringIO()
@@ -443,16 +533,25 @@ def export_users_csv(
         "User ID",
         "Email",
         "Full Name",
-        "Role"
+        "Role",
+        "LOB Code",
+        "LOB Name",
+        "LOB Path"
     ])
 
     # Write data rows
     for user in users:
+        lob_code = user.lob.code if user.lob else ""
+        lob_name = user.lob.name if user.lob else ""
+        lob_path = get_lob_full_path(db, user.lob) if user.lob else ""
         writer.writerow([
             user.user_id,
             user.email,
             user.full_name,
-            user.role
+            user.role,
+            lob_code,
+            lob_name,
+            lob_path
         ])
 
     # Reset stream position

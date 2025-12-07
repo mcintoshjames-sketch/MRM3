@@ -13,6 +13,7 @@ from app.models.user import User
 from app.models.model import Model
 from app.models.vendor import Vendor
 from app.models.model_pending_edit import ModelPendingEdit  # For pending edit workflow tests
+from app.models.lob import LOBUnit
 
 # In-memory SQLite for testing
 SQLALCHEMY_DATABASE_URL = "sqlite:///:memory:"
@@ -59,13 +60,82 @@ def client(db_session):
 
 
 @pytest.fixture
-def test_user(db_session):
+def lob_hierarchy(db_session):
+    """Create a test LOB hierarchy for testing.
+
+    Note: full_path is a computed property, not stored in DB.
+    org_unit format: S#### for synthetic (test) data, 5 digits for real data.
+    """
+    # Root level: Corporate (synthetic org_unit since it's SBU level)
+    corporate = LOBUnit(
+        code="CORP",
+        name="Corporate",
+        org_unit="S0001",  # Synthetic org_unit for SBU
+        level=0,
+        parent_id=None,
+        is_active=True
+    )
+    db_session.add(corporate)
+    db_session.flush()
+
+    # Level 1: Business Units
+    retail = LOBUnit(
+        code="RET",
+        name="Retail Banking",
+        org_unit="10001",  # 5-digit org_unit
+        level=1,
+        parent_id=corporate.lob_id,
+        is_active=True
+    )
+    wholesale = LOBUnit(
+        code="WHL",
+        name="Wholesale Banking",
+        org_unit="10002",  # 5-digit org_unit
+        level=1,
+        parent_id=corporate.lob_id,
+        is_active=True
+    )
+    db_session.add_all([retail, wholesale])
+    db_session.flush()
+
+    # Level 2: Departments under Retail
+    credit = LOBUnit(
+        code="CRD",
+        name="Credit",
+        org_unit="20001",  # 5-digit org_unit
+        level=2,
+        parent_id=retail.lob_id,
+        is_active=True
+    )
+    deposits = LOBUnit(
+        code="DEP",
+        name="Deposits",
+        org_unit="20002",  # 5-digit org_unit
+        level=2,
+        parent_id=retail.lob_id,
+        is_active=True
+    )
+    db_session.add_all([credit, deposits])
+    db_session.commit()
+
+    return {
+        "corporate": corporate,
+        "retail": retail,
+        "wholesale": wholesale,
+        "credit": credit,
+        "deposits": deposits
+    }
+
+
+@pytest.fixture
+def test_user(db_session, lob_hierarchy):
     """Create a test user."""
     user = User(
         email="test@example.com",
         full_name="Test User",
         password_hash=get_password_hash("testpass123"),
-        role="User"
+        role="User",
+        lob_id=lob_hierarchy["retail"].lob_id
     )
     db_session.add(user)
     db_session.commit()
@@ -74,13 +144,14 @@ def test_user(db_session):
 
 
 @pytest.fixture
-def admin_user(db_session):
+def admin_user(db_session, lob_hierarchy):
     """Create an admin user."""
     user = User(
         email="admin@example.com",
         full_name="Admin User",
         password_hash=get_password_hash("admin123"),
-        role="Admin"
+        role="Admin",
+        lob_id=lob_hierarchy["corporate"].lob_id
     )
     db_session.add(user)
     db_session.commit()
@@ -164,13 +235,14 @@ def sample_vendor(db_session):
 
 
 @pytest.fixture
-def second_user(db_session):
+def second_user(db_session, lob_hierarchy):
     """Create a second test user for developer/user relationships."""
     user = User(
         email="developer@example.com",
         full_name="Developer User",
         password_hash=get_password_hash("devpass123"),
-        role="User"
+        role="User",
+        lob_id=lob_hierarchy["credit"].lob_id
     )
     db_session.add(user)
     db_session.commit()
@@ -186,13 +258,14 @@ def second_user_headers(second_user):
 
 
 @pytest.fixture
-def validator_user(db_session):
+def validator_user(db_session, lob_hierarchy):
     """Create a validator user."""
     user = User(
         email="validator@example.com",
         full_name="Validator User",
         password_hash=get_password_hash("validator123"),
-        role="Validator"
+        role="Validator",
+        lob_id=lob_hierarchy["wholesale"].lob_id
     )
     db_session.add(user)
     db_session.commit()

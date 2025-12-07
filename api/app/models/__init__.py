@@ -1,4 +1,5 @@
 """Models package."""
+from app.models.lob import LOBUnit
 from app.models.user import User, UserRole, user_regions
 from app.models.model import Model, ModelStatus, DevelopmentType, model_users, model_regulatory_categories
 from app.models.vendor import Vendor
@@ -112,6 +113,8 @@ from app.models.attestation import (
 )
 
 __all__ = [
+    # LOB (Line of Business) hierarchy
+    "LOBUnit",
     "User", "UserRole", "user_regions",
     "Model", "ModelStatus", "DevelopmentType", "model_users", "model_regulatory_categories",
     "Vendor",

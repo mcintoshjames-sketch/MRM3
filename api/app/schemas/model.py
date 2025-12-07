@@ -14,6 +14,29 @@ if TYPE_CHECKING:
     pass
 
 
+class UserWithLOBRollup(BaseModel):
+    """User info with LOB rolled up to LOB4 level for display."""
+    user_id: int
+    email: str
+    full_name: str
+    role: str
+    lob_id: int
+    lob_name: Optional[str] = None  # User's actual LOB name
+    lob_rollup_name: Optional[str] = None  # LOB name rolled up to LOB4
+
+    class Config:
+        from_attributes = True
+
+
+class ModelRolesWithLOB(BaseModel):
+    """Response for model roles with LOB information rolled up to LOB4."""
+    owner: UserWithLOBRollup
+    shared_owner: Optional[UserWithLOBRollup] = None
+    developer: Optional[UserWithLOBRollup] = None
+    shared_developer: Optional[UserWithLOBRollup] = None
+    monitoring_manager: Optional[UserWithLOBRollup] = None
+
+
 class ModelBase(BaseModel):
     model_name: str
     description: Optional[str] = None
@@ -25,6 +48,9 @@ class ModelCreate(ModelBase):
     owner_id: int
     usage_frequency_id: int  # Required field
     developer_id: Optional[int] = None
+    shared_owner_id: Optional[int] = None
+    shared_developer_id: Optional[int] = None
+    monitoring_manager_id: Optional[int] = None
     vendor_id: Optional[int] = None
     risk_tier_id: Optional[int] = None
     validation_type_id: Optional[int] = None
@@ -60,6 +86,9 @@ class ModelUpdate(BaseModel):
     development_type: Optional[str] = None
     owner_id: Optional[int] = None
     developer_id: Optional[int] = None
+    shared_owner_id: Optional[int] = None
+    shared_developer_id: Optional[int] = None
+    monitoring_manager_id: Optional[int] = None
     vendor_id: Optional[int] = None
     risk_tier_id: Optional[int] = None
     validation_type_id: Optional[int] = None
@@ -80,6 +109,9 @@ class ModelResponse(ModelBase):
     owner_id: int
     usage_frequency_id: int  # Required field
     developer_id: Optional[int] = None
+    shared_owner_id: Optional[int] = None
+    shared_developer_id: Optional[int] = None
+    monitoring_manager_id: Optional[int] = None
     vendor_id: Optional[int] = None
     risk_tier_id: Optional[int] = None
     validation_type_id: Optional[int] = None
@@ -116,6 +148,9 @@ class ModelDetailResponse(ModelResponse):
     owner: UserResponse
     usage_frequency: TaxonomyValueResponse  # Required field
     developer: Optional[UserResponse] = None
+    shared_owner: Optional[UserResponse] = None
+    shared_developer: Optional[UserResponse] = None
+    monitoring_manager: Optional[UserResponse] = None
     submitted_by_user: Optional[UserResponse] = None
     vendor: Optional[VendorResponse] = None
     risk_tier: Optional[TaxonomyValueResponse] = None
@@ -161,6 +196,9 @@ class ModelCreateResponse(BaseModel):
     owner_id: int
     usage_frequency_id: int  # Required field
     developer_id: Optional[int] = None
+    shared_owner_id: Optional[int] = None
+    shared_developer_id: Optional[int] = None
+    monitoring_manager_id: Optional[int] = None
     vendor_id: Optional[int] = None
     risk_tier_id: Optional[int] = None
     validation_type_id: Optional[int] = None
@@ -181,6 +219,9 @@ class ModelCreateResponse(BaseModel):
     owner: UserResponse
     usage_frequency: TaxonomyValueResponse  # Required field
     developer: Optional[UserResponse] = None
+    shared_owner: Optional[UserResponse] = None
+    shared_developer: Optional[UserResponse] = None
+    monitoring_manager: Optional[UserResponse] = None
     submitted_by_user: Optional[UserResponse] = None
     vendor: Optional[VendorResponse] = None
     risk_tier: Optional[TaxonomyValueResponse] = None

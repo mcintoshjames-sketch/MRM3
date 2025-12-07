@@ -50,11 +50,12 @@ Model Risk Management inventory system with a FastAPI backend, React/TypeScript 
   - `qualitative_factors.py`: Admin-configurable qualitative risk factor management (CRUD for factors and rating guidance with weighted scoring).
   - `scorecard.py`: Validation scorecard configuration (sections, criteria, weights), ratings per validation request, computed results, and configuration versioning with publish workflow.
   - `limitations.py`: Model limitations CRUD, retirement workflow, and critical limitations report with region filtering.
+  - `lob_units.py`: LOB (Line of Business) hierarchy CRUD, tree retrieval, CSV import/export with dry-run preview.
 - Core services:
   - DB session management (`core/database.py`), auth dependency (`core/deps.py`), security utilities (`core/security.py`), row-level security filters (`core/rls.py`).
   - PDF/report helpers in `validation_workflow.py` (FPDF) for generated artifacts.
 - Models (`app/models/`):
-  - Users & directory: `user.py`, `entra_user.py`, roles include Admin/Validator/Global Approver/Regional Approver/User.
+  - Users & directory: `user.py`, `entra_user.py`, `lob.py` (LOBUnit hierarchy with levels 1-6: SBU→LOB1→LOB2→LOB3→LOB4→LOB5+), roles include Admin/Validator/Global Approver/Regional Approver/User. **LOB Rollup**: `core/lob_utils.py` provides `get_lob_rollup_name()` to roll up deep LOB levels (LOB5+) to LOB4 for display purposes.
   - Catalog: `model.py`, `vendor.py`, `taxonomy.py`, `region.py`, `model_version.py`, `model_region.py`, `model_delegate.py`, `model_change_taxonomy.py`, `model_version_region.py`, `model_type.py` (ModelType, ModelTypeCategory), `methodology.py` (MethodologyCategory, Methodology).
   - Model relationships: `model_hierarchy.py` (parent-child links with effective/end dates), `model_feed_dependency.py` (feeder-consumer data flows with active status tracking), `model_dependency_metadata.py` (extended metadata for dependencies, not yet exposed in UI).
   - Validation workflow: `validation.py` (ValidationRequest, ValidationStatusHistory, ValidationAssignment, ValidationOutcome, ValidationApproval, ValidationReviewOutcome, ValidationPlan, ValidationPlanComponent, ValidationComponentDefinition, ComponentDefinitionConfiguration/ConfigItem, ValidationPolicy, ValidationWorkflowSLA).
@@ -89,7 +90,7 @@ Model Risk Management inventory system with a FastAPI backend, React/TypeScript 
 
 ## Data Model (conceptual)
 - User & EntraUser directory entries; roles drive permissions.
-- Model with vendor, owner/developer, taxonomy links (risk tier, model type, etc.), regulatory categories, delegates, and region assignments via ModelRegion. **Note**: Validation Type is associated with ValidationRequest, not Model (deprecated from Model UI).
+- Model with vendor, owner/developer, **shared_owner** (co-owner), **shared_developer** (co-developer), **monitoring_manager** (responsible for ongoing monitoring), taxonomy links (risk tier, model type, etc.), regulatory categories, delegates, and region assignments via ModelRegion. **Validation rules**: shared_owner ≠ owner, shared_developer ≠ developer. **Note**: Validation Type is associated with ValidationRequest, not Model (deprecated from Model UI).
 - **ModelPendingEdit**: Edit approval workflow for approved models. When non-admin users edit an already-approved model, a pending edit record is created with `proposed_changes` and `original_values` (JSON). Admin reviews the changes via dashboard widget or model details page and can approve (applies changes) or reject (with comment). Includes `requested_by_id`, `reviewed_by_id`, `status` (pending/approved/rejected), `review_comment`, and timestamps.
 - **Model Types**: Hierarchical classification with Categories (e.g., "Financial", "Operational") and Types (e.g., "Credit Risk", "Fraud Detection").
 - **Methodology Library**: Categories (e.g., "AI/ML Tabular", "Statistical") and Methodologies (e.g., "Random Forest", "Linear Regression") assigned to models. **AI/ML Classification**: `is_aiml` boolean on MethodologyCategory flags whether models using that category's methodologies are AI/ML models. Models with no methodology show "Undefined". Admin-editable via Taxonomy UI; displayed in Models list (with filter) and Model Details page.
@@ -667,6 +668,59 @@ Model Risk Management inventory system with a FastAPI backend, React/TypeScript 
 - **Navigation**: "My Attestations" link for all users with pending count badge, "Attestation Cycles" in Admin section
 - **UI Enhancements**: When submitting with "No" answers but no linked changes, prompt modal guides users to make inventory changes via the navigation buttons
 - **Testing**: 32 tests in `tests/test_attestations.py` covering cycles, questions, evidence, submission, review, scheduling rules, dashboard stats, and linked changes.
+
+## LOB (Line of Business) Hierarchy
+- **Purpose**: Organizational hierarchy for assigning users to business units, enabling LOB-based filtering and reporting.
+- **Data Model**:
+  - **LOBUnit**: Self-referential hierarchical model for business units. Fields:
+    - Core: lob_id, parent_id (FK to self), code, name, org_unit (5-char external ID, globally unique), level (auto-calculated), sort_order, is_active, full_path (computed), created_at, updated_at
+    - Metadata (typically on leaf nodes): description, contact_name, org_description, legal_entity_id, legal_entity_name, short_name, status_code, tier
+  - **User.lob_id**: Required FK to LOBUnit - all users must belong to an LOB unit.
+- **org_unit Field**:
+  - **Purpose**: External organizational identifier for integration with enterprise systems
+  - **Format**: Exactly 5 characters
+    - **Real org_units**: 5 digits (e.g., "85033", "90555") - from source CSV
+    - **Synthetic org_units**: S + 4 digits (e.g., "S0001") - auto-generated for nodes without source IDs (e.g., SBU level)
+  - **Globally unique**: Enforced via unique constraint and index
+  - **Validation**: Schema validators enforce 5-char format (digits or S+4 digits)
+- **Hierarchy Features**:
+  - **Multi-level nesting**: Supports unlimited hierarchy depth (e.g., SBU → LOB1 → LOB2 → LOB3 → LOB4 → LOB5)
+  - **Level calculation**: Automatically computed from parent chain (root=0, children=parent.level+1)
+  - **Full path computation**: Property returns breadcrumb trail (e.g., "OMEGA CAPITAL MARKETS > INSTITUTIONAL BANKING > GLOBAL TRANSACTION SVCS")
+  - **Active/inactive status**: Soft delete via is_active flag; inactive nodes hidden by default
+  - **Sort order**: Controls display order within siblings
+  - **Padding support**: When LOB levels repeat the same org_unit (ragged hierarchy), import correctly handles "padding" where hierarchy stops early
+- **User LOB Requirement**:
+  - **All users must have an LOB assignment** - lob_id is required (NOT NULL) in UserCreate schema
+  - Enforced at registration (manual user creation) and Entra provisioning (SSO import)
+  - Frontend validation prevents form submission without LOB selection
+  - Existing users without LOB receive default assignment via seed migration
+- **CSV Import/Export**:
+  - **Enterprise Format**: Supports denormalized enterprise CSV with columns:
+    - SBU (root level name), Lob1Code/Lob1Description, Lob2Code/Lob2Description, ..., Lob5Code/Lob5Description
+    - OrgUnit (leaf node 5-digit ID), OrgUnitDescription, OrgUnitContactName, OrgUnitLegalEntityId, OrgUnitLegalEntityName, OrgUnitShortName, OrgUnitStatusCode, OrgUnitTier
+  - **Column mapping**: Lob*Code columns contain org_unit values; Lob*Description contains descriptions
+  - **Synthetic org_unit generation**: SBU level (no source org_unit) gets S#### prefix
+  - **Deduplication**: Same parent nodes appearing on multiple rows are merged
+  - **Dry run preview**: Preview mode shows to_create, to_update, to_skip counts with detected_columns and max_depth
+  - **Export**: Downloads current hierarchy as CSV
+- **API Endpoints** (prefix: `/lob-units`):
+  - `GET /` - List all LOB units (flat, optional include_inactive)
+  - `GET /tree` - Get LOB units as nested tree structure with metadata fields (optional include_inactive)
+  - `GET /{id}` - Get single LOB unit with user_count and metadata
+  - `POST /` - Create LOB unit (Admin)
+  - `PATCH /{id}` - Update LOB unit (Admin)
+  - `DELETE /{id}` - Soft delete (deactivate) LOB unit (Admin)
+  - `GET /{id}/users` - List users assigned to LOB unit
+  - `POST /import-csv` - Import hierarchy from CSV (dry_run parameter for preview)
+  - `GET /export-csv` - Export hierarchy to CSV
+- **Frontend**:
+  - **TaxonomyPage "LOB Units" tab**: Full CRUD with tree view, expand/collapse all, import/export CSV, user count badges
+  - **LOB Detail Panel**: Selecting a node in tree view shows detail panel with org_unit, full_path, level, and metadata (contact_name, legal_entity_name, legal_entity_id, tier, status_code, short_name)
+  - **UsersPage**: Searchable LOB dropdown for user creation/editing, LOB column in user list
+  - **Entra Import Modal**: LOB selection required before provisioning SSO users
+- **Pre-seeded Data**: Default "Enterprise" hierarchy with 9 units across 3 levels (synthetic S#### org_units)
+- **Testing**: Tests cover CRUD operations, tree retrieval, CSV import/export, parent resolution, user assignment, and org_unit validation.
 
 ## Security, Error Handling, Logging
 - JWT auth with token expiry; passwords hashed with bcrypt.

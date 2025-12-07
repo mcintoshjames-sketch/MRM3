@@ -16,6 +16,7 @@ interface User {
 interface Model {
     model_id: number;
     model_name: string;
+    monitoring_manager_id?: number | null;
 }
 
 interface MonitoringTeam {
@@ -196,10 +197,12 @@ export default function MonitoringPlansPage() {
             if (model) {
                 hasProcessedModelParam.current = true;
                 // Pre-populate form with the model and auto-open
+                // If model has a monitoring_manager, default the data provider to that user
                 setPlanFormData(prev => ({
                     ...prev,
                     name: `Monitoring Plan - ${model.model_name}`,
-                    model_ids: [modelId]
+                    model_ids: [modelId],
+                    data_provider_user_id: model.monitoring_manager_id || null
                 }));
                 setShowPlanForm(true);
                 setActiveTab('plans');
