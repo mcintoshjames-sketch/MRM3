@@ -31,6 +31,7 @@ from app.schemas.risk_assessment import (
     RegionBrief,
     UserBrief,
     TaxonomyValueBrief,
+    GlobalAssessmentStatusResponse,
 )
 from app.models.region import Region
 from app.api.validation_workflow import reset_validation_plan_for_tier_change
@@ -108,6 +109,56 @@ def get_tier_value(db: Session, tier_code: str) -> Optional[TaxonomyValue]:
         )
         .first()
     )
+
+
+def get_global_assessment_status(db: Session, model_id: int) -> dict:
+    """
+    Get the status of the global risk assessment for a model.
+
+    Returns a dict with:
+    - has_assessment: bool - whether a global assessment exists
+    - is_complete: bool - whether the assessment is complete (has all required ratings)
+    - assessed_at: datetime or None - when the assessment was last finalized
+    - final_tier_id: int or None - the computed tier ID
+    - assessment_id: int or None - the assessment ID
+    """
+    assessment = (
+        db.query(ModelRiskAssessment)
+        .options(
+            joinedload(ModelRiskAssessment.factor_assessments)
+            .joinedload(QualitativeFactorAssessment.factor)
+        )
+        .filter(
+            ModelRiskAssessment.model_id == model_id,
+            ModelRiskAssessment.region_id.is_(None)  # Global assessment
+        )
+        .first()
+    )
+
+    if not assessment:
+        return {
+            "has_assessment": False,
+            "is_complete": False,
+            "assessed_at": None,
+            "final_tier_id": None,
+            "assessment_id": None,
+        }
+
+    # Check if assessment is complete (same logic as build_assessment_response)
+    has_quantitative = assessment.quantitative_rating is not None
+    factor_assessments = assessment.factor_assessments or []
+    has_all_factors = len(factor_assessments) > 0 and all(
+        fa.rating is not None for fa in factor_assessments
+    )
+    is_complete = has_quantitative and has_all_factors
+
+    return {
+        "has_assessment": True,
+        "is_complete": is_complete,
+        "assessed_at": assessment.assessed_at,
+        "final_tier_id": assessment.final_tier_id,
+        "assessment_id": assessment.assessment_id,
+    }
 
 
 def build_assessment_response(
@@ -266,6 +317,36 @@ def list_assessments(
     )
 
     return [build_assessment_response(a, db) for a in assessments]
+
+
+@router.get(
+    "/models/{model_id}/risk-assessments/status",
+    response_model=GlobalAssessmentStatusResponse,
+)
+def get_assessment_status(
+    model_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> GlobalAssessmentStatusResponse:
+    """
+    Get the status of the global risk assessment for a model.
+
+    Used by the frontend to determine:
+    - Whether to allow direct risk tier editing (only if no assessment exists)
+    - Whether risk assessment is complete (for validation workflow checks)
+    """
+    # Verify model exists
+    get_model_or_404(db, model_id)
+
+    status = get_global_assessment_status(db, model_id)
+    return GlobalAssessmentStatusResponse(
+        model_id=model_id,
+        has_assessment=status["has_assessment"],
+        is_complete=status["is_complete"],
+        assessed_at=status["assessed_at"],
+        final_tier_id=status["final_tier_id"],
+        assessment_id=status["assessment_id"],
+    )
 
 
 @router.get(

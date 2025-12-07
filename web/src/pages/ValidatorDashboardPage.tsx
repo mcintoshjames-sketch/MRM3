@@ -288,13 +288,14 @@ export default function ValidatorDashboardPage() {
             // Newly assigned (within last 3 days and still in Intake/Planning)
             if (req.current_status === 'Intake' || req.current_status === 'Planning') {
                 const createdAt = new Date(req.created_at);
-                const daysSinceCreated = Math.floor((now.getTime() - createdAt.getTime()) / (1000 * 60 * 60 * 24));
+                const daysSinceCreated = Math.max(0, Math.floor((now.getTime() - createdAt.getTime()) / (1000 * 60 * 60 * 24)));
 
                 if (daysSinceCreated <= 3) {
+                    const timeAgoText = daysSinceCreated === 0 ? 'today' : `${daysSinceCreated} day${daysSinceCreated !== 1 ? 's' : ''} ago`;
                     activities.push({
                         type: 'newly_assigned',
                         request: req,
-                        message: `Newly assigned ${daysSinceCreated} day${daysSinceCreated !== 1 ? 's' : ''} ago`,
+                        message: `Newly assigned ${timeAgoText}`,
                         severity: 'medium'
                     });
                 }

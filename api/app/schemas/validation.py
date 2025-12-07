@@ -120,6 +120,7 @@ class ValidationRequestStatusUpdate(BaseModel):
     """Schema for updating validation request status."""
     new_status_id: int
     change_reason: Optional[str] = None
+    skip_assessment_warning: bool = False  # Skip warning about outdated risk assessments
 
 
 class ValidationRequestDecline(BaseModel):
@@ -237,7 +238,6 @@ class ValidationOutcomeBase(BaseModel):
     """Base schema for validation outcome."""
     overall_rating_id: int
     executive_summary: str
-    recommended_review_frequency: int  # in months
     effective_date: date
     expiration_date: Optional[date] = None
 
@@ -251,7 +251,6 @@ class ValidationOutcomeUpdate(BaseModel):
     """Schema for updating a validation outcome."""
     overall_rating_id: Optional[int] = None
     executive_summary: Optional[str] = None
-    recommended_review_frequency: Optional[int] = None
     effective_date: Optional[date] = None
     expiration_date: Optional[date] = None
 
@@ -262,7 +261,6 @@ class ValidationOutcomeResponse(BaseModel):
     request_id: int
     overall_rating: TaxonomyValueResponse
     executive_summary: str
-    recommended_review_frequency: int
     effective_date: date
     expiration_date: Optional[date] = None
     created_at: datetime
@@ -336,13 +334,13 @@ class ValidationApprovalCreate(ValidationApprovalBase):
 
 class ValidationApprovalUpdate(BaseModel):
     """Schema for updating a validation approval (submitting approval)."""
-    approval_status: str  # Pending, Approved, Rejected
+    approval_status: str  # Pending, Approved, Rejected, Sent Back
     comments: Optional[str] = None
 
     @field_validator('approval_status')
     @classmethod
     def validate_status(cls, v):
-        allowed = ['Pending', 'Approved', 'Rejected']
+        allowed = ['Pending', 'Approved', 'Rejected', 'Sent Back']
         if v not in allowed:
             raise ValueError(f'approval_status must be one of {allowed}')
         return v
@@ -354,6 +352,7 @@ class ValidationApprovalResponse(BaseModel):
     request_id: int
     approver: Optional[UserSummary] = None  # None for conditional approvals until submitted
     approver_role: str
+    approval_type: str  # Global, Regional, or Conditional
     is_required: bool
     approval_status: str
     comments: Optional[str] = None
@@ -361,6 +360,9 @@ class ValidationApprovalResponse(BaseModel):
     created_at: datetime
     # Historical context field
     represented_region_id: Optional[int] = None
+    # Voided status (approvals may be voided due to model risk tier changes)
+    voided_at: Optional[datetime] = None
+    void_reason: Optional[str] = None
 
     class Config:
         from_attributes = True

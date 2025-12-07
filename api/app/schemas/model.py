@@ -91,6 +91,7 @@ class ModelResponse(ModelBase):
     created_at: datetime
     updated_at: datetime
     is_model: bool = True  # True for models, False for non-models
+    is_aiml: Optional[bool] = None  # Computed from methodology category
     # Row approval workflow fields
     row_approval_status: Optional[str] = None
     submitted_by_user_id: Optional[int] = None
@@ -171,6 +172,7 @@ class ModelCreateResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
     is_model: bool = True  # True for models, False for non-models
+    is_aiml: Optional[bool] = None  # Computed from methodology category
     # Row approval workflow fields
     row_approval_status: Optional[str] = None
     submitted_by_user_id: Optional[int] = None
@@ -187,7 +189,7 @@ class ModelCreateResponse(BaseModel):
     methodology: Optional[MethodologyResponse] = None
     ownership_type: Optional[TaxonomyValueResponse] = None
     status_value: Optional[TaxonomyValueResponse] = None
-    wholly_owned_region: Optional[Any] = None
+    wholly_owned_region: Optional[Region] = None
     users: List[UserResponse] = []
     regulatory_categories: List[TaxonomyValueResponse] = []
     regions: List[ModelRegionListItem] = []

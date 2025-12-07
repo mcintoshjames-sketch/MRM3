@@ -41,6 +41,7 @@ class MethodologyCategoryBase(BaseModel):
     code: str
     name: str
     sort_order: int = 0
+    is_aiml: bool = False
 
 
 class MethodologyCategoryCreate(MethodologyCategoryBase):
@@ -53,6 +54,7 @@ class MethodologyCategoryUpdate(BaseModel):
     code: Optional[str] = None
     name: Optional[str] = None
     sort_order: Optional[int] = None
+    is_aiml: Optional[bool] = None
 
 
 class MethodologyCategoryResponse(MethodologyCategoryBase):

@@ -26,6 +26,7 @@ Model Risk Management inventory system with a FastAPI backend, React/TypeScript 
   - `model_hierarchy.py`: parent-child model relationships (e.g., sub-models).
   - `model_dependencies.py`: feeder-consumer data flow relationships with DFS-based cycle detection to maintain DAG constraint.
   - `model_types.py`: hierarchical model type classification (categories and types).
+  - `methodology.py`: methodology library management - categories and methodologies with model linkage, search/filter, and soft delete.
   - `vendors.py`: vendor CRUD.
   - `taxonomies.py`: taxonomy/category and value management.
   - `validation_workflow.py`: end-to-end validation lifecycle (requests, status updates, assignments, outcomes, approvals, audit logging, component configurations, reports including deviation trends).
@@ -54,7 +55,7 @@ Model Risk Management inventory system with a FastAPI backend, React/TypeScript 
   - PDF/report helpers in `validation_workflow.py` (FPDF) for generated artifacts.
 - Models (`app/models/`):
   - Users & directory: `user.py`, `entra_user.py`, roles include Admin/Validator/Global Approver/Regional Approver/User.
-  - Catalog: `model.py`, `vendor.py`, `taxonomy.py`, `region.py`, `model_version.py`, `model_region.py`, `model_delegate.py`, `model_change_taxonomy.py`, `model_version_region.py`, `model_type.py` (ModelType, ModelTypeCategory).
+  - Catalog: `model.py`, `vendor.py`, `taxonomy.py`, `region.py`, `model_version.py`, `model_region.py`, `model_delegate.py`, `model_change_taxonomy.py`, `model_version_region.py`, `model_type.py` (ModelType, ModelTypeCategory), `methodology.py` (MethodologyCategory, Methodology).
   - Model relationships: `model_hierarchy.py` (parent-child links with effective/end dates), `model_feed_dependency.py` (feeder-consumer data flows with active status tracking), `model_dependency_metadata.py` (extended metadata for dependencies, not yet exposed in UI).
   - Validation workflow: `validation.py` (ValidationRequest, ValidationStatusHistory, ValidationAssignment, ValidationOutcome, ValidationApproval, ValidationReviewOutcome, ValidationPlan, ValidationPlanComponent, ValidationComponentDefinition, ComponentDefinitionConfiguration/ConfigItem, ValidationPolicy, ValidationWorkflowSLA).
   - Overdue commentary: `overdue_revalidation_comment.py` (OverdueRevalidationComment - tracks explanations for overdue submissions/validations with supersession chain).
@@ -91,6 +92,7 @@ Model Risk Management inventory system with a FastAPI backend, React/TypeScript 
 - Model with vendor, owner/developer, taxonomy links (risk tier, model type, etc.), regulatory categories, delegates, and region assignments via ModelRegion. **Note**: Validation Type is associated with ValidationRequest, not Model (deprecated from Model UI).
 - **ModelPendingEdit**: Edit approval workflow for approved models. When non-admin users edit an already-approved model, a pending edit record is created with `proposed_changes` and `original_values` (JSON). Admin reviews the changes via dashboard widget or model details page and can approve (applies changes) or reject (with comment). Includes `requested_by_id`, `reviewed_by_id`, `status` (pending/approved/rejected), `review_comment`, and timestamps.
 - **Model Types**: Hierarchical classification with Categories (e.g., "Financial", "Operational") and Types (e.g., "Credit Risk", "Fraud Detection").
+- **Methodology Library**: Categories (e.g., "AI/ML Tabular", "Statistical") and Methodologies (e.g., "Random Forest", "Linear Regression") assigned to models. **AI/ML Classification**: `is_aiml` boolean on MethodologyCategory flags whether models using that category's methodologies are AI/ML models. Models with no methodology show "Undefined". Admin-editable via Taxonomy UI; displayed in Models list (with filter) and Model Details page.
 - **Model Relationships** (Admin-managed with full audit logging):
   - **ModelHierarchy**: Parent-child relationships (e.g., sub-models) with relation type taxonomy, effective/end dates, and notes. Prevents self-reference via database constraints.
   - **ModelFeedDependency**: Feeder-consumer data flow relationships with dependency type taxonomy, description, effective/end dates, and is_active flag. **Cycle detection enforced**: DFS algorithm prevents creation of circular dependencies to maintain DAG (Directed Acyclic Graph) constraint. Includes detailed error reporting with cycle path and model names.
@@ -574,10 +576,15 @@ Model Risk Management inventory system with a FastAPI backend, React/TypeScript 
   3. **Final Tier Override**: Override the derived inherent risk tier with justification
 - **Per-Region Assessments**: Models can have both a global assessment (region_id=null) and region-specific assessments for deployment regions.
 - **Automatic Tier Sync**: When assessment is completed (is_complete=true), the model's risk_tier_id is automatically updated to match the final_tier_id.
+- **Direct Tier Edit Blocking**: When a global assessment exists for a model, direct edits to the model's risk_tier_id are blocked (400 error). Users must update the Risk Assessment tab to change the tier. Frontend disables the Risk Tier dropdown with explanatory message.
+- **Open Validations Impact Check**: Before saving a risk assessment with a tier change, the frontend checks for open validation requests via `GET /validation-workflow/risk-tier-impact/check/{model_id}?proposed_tier_code=TIER_X`. If open validations exist, a warning modal shows affected requests and requires user confirmation before proceeding.
+- **Validation Workflow Integration**:
+  - **REVIEW/PENDING_APPROVAL Blocking**: Validation requests cannot transition to REVIEW or PENDING_APPROVAL status unless all models have a completed risk assessment (both quantitative and qualitative ratings). Returns 400 error with specific model details.
+  - **Outdated Assessment Warning**: If the risk assessment was last updated before the most recent approved validation completion date, a 409 Conflict warning is returned. Users can acknowledge the warning and proceed with `skip_assessment_warning=true`.
 - **API Endpoints**:
   - Factor Config (Admin): `GET/POST /risk-assessment/factors/`, `PUT/DELETE /risk-assessment/factors/{id}`, `PATCH /risk-assessment/factors/{id}/weight`, `POST /risk-assessment/factors/validate-weights`, `POST /risk-assessment/factors/reorder`
   - Guidance: `POST /risk-assessment/factors/{id}/guidance`, `PUT/DELETE /risk-assessment/factors/guidance/{id}`
-  - Assessments: `GET/POST /models/{id}/risk-assessments/`, `GET/PUT/DELETE /models/{id}/risk-assessments/{assessment_id}`
+  - Assessments: `GET/POST /models/{id}/risk-assessments/`, `GET/PUT/DELETE /models/{id}/risk-assessments/{assessment_id}`, `GET /models/{id}/risk-assessments/status` (check global assessment existence/completion)
 - **Frontend**:
   - ModelDetailsPage "Risk Assessment" tab with assessment form and results display
   - TaxonomyPage "Risk Factors" tab for admin factor configuration with weighted guidance

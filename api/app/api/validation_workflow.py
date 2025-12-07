@@ -50,6 +50,7 @@ from app.schemas.conditional_approval import (
     VoidApprovalRequirementRequest,
     VoidApprovalRequirementResponse
 )
+# Note: get_global_assessment_status is imported inside functions to avoid circular import
 
 router = APIRouter()
 
@@ -76,6 +77,47 @@ def check_admin(user: User):
 
 # Staleness threshold for overdue comments (matches overdue_commentary.py)
 COMMENT_STALENESS_DAYS = 45
+
+
+def create_revision_snapshot(db: Session, validation_request: ValidationRequest) -> dict:
+    """
+    Create a snapshot of the current validation state for comparison when resubmitting
+    from REVISION status. Used to determine if approvals should be reset.
+
+    Returns a dict with:
+    - overall_rating: Current scorecard overall rating (if any)
+    - recommendation_ids: List of recommendation IDs linked to this validation
+    - limitation_ids: List of limitation IDs linked to this validation
+    - snapshot_at: Timestamp of snapshot creation
+    """
+    from app.models.recommendation import Recommendation
+    from app.models.limitation import ModelLimitation
+
+    # Get scorecard overall rating if exists
+    overall_rating = None
+    if validation_request.scorecard_result:
+        overall_rating = validation_request.scorecard_result.overall_rating
+
+    # Get recommendation IDs linked to this validation request
+    recommendation_ids = [
+        r.recommendation_id for r in db.query(Recommendation.recommendation_id).filter(
+            Recommendation.validation_request_id == validation_request.request_id
+        ).all()
+    ]
+
+    # Get limitation IDs linked to this validation request
+    limitation_ids = [
+        l.limitation_id for l in db.query(ModelLimitation.limitation_id).filter(
+            ModelLimitation.validation_request_id == validation_request.request_id
+        ).all()
+    ]
+
+    return {
+        "snapshot_at": utc_now().isoformat(),
+        "overall_rating": overall_rating,
+        "recommendation_ids": sorted(recommendation_ids),
+        "limitation_ids": sorted(limitation_ids)
+    }
 
 # Open/Active status codes (not closed)
 CLOSED_STATUS_CODES = {"APPROVED", "CANCELLED"}
@@ -106,6 +148,105 @@ def get_open_validations_for_model(db: Session, model_id: int) -> List[Validatio
     ).all()
 
     return open_requests
+
+
+def get_last_validation_completion_date(db: Session, model_id: int) -> Optional[datetime]:
+    """
+    Get the completion date of the most recent approved validation for a model.
+
+    Returns None if no approved validation exists for the model.
+    """
+    # Get approved status
+    approved_status = db.query(TaxonomyValue).join(
+        Taxonomy, TaxonomyValue.taxonomy_id == Taxonomy.taxonomy_id
+    ).filter(
+        Taxonomy.name == "Validation Request Status",
+        TaxonomyValue.code == "APPROVED"
+    ).first()
+
+    if not approved_status:
+        return None
+
+    # Find the most recent approved validation for this model
+    latest_approved = db.query(ValidationRequest).join(
+        ValidationRequestModelVersion,
+        ValidationRequest.request_id == ValidationRequestModelVersion.request_id
+    ).filter(
+        ValidationRequestModelVersion.model_id == model_id,
+        ValidationRequest.current_status_id == approved_status.value_id,
+        ValidationRequest.completion_date.isnot(None)
+    ).order_by(desc(ValidationRequest.completion_date)).first()
+
+    if not latest_approved:
+        return None
+
+    return latest_approved.completion_date
+
+
+def check_risk_assessment_for_workflow_progression(
+    db: Session,
+    models: List[Model],
+    target_status_code: str
+) -> Tuple[bool, List[str], List[str]]:
+    """
+    Check risk assessment status for models before allowing workflow progression.
+
+    Args:
+        db: Database session
+        models: List of models in the validation request
+        target_status_code: Target status code (e.g., "REVIEW", "PENDING_APPROVAL")
+
+    Returns:
+        Tuple of:
+        - can_proceed: bool - whether transition should be allowed
+        - blocking_errors: List[str] - errors that block progression (no completed assessment)
+        - warnings: List[str] - warnings for outdated assessments (user should review)
+    """
+    # Import here to avoid circular import
+    from app.api.risk_assessment import get_global_assessment_status
+
+    blocking_errors = []
+    warnings = []
+
+    for model in models:
+        # Get global assessment status
+        assessment_status = get_global_assessment_status(db, model.model_id)
+
+        # Check if assessment exists and is complete
+        if not assessment_status["has_assessment"]:
+            blocking_errors.append(
+                f"Model '{model.model_name}' (ID: {model.model_id}) has no risk assessment. "
+                f"A completed risk assessment is required before moving to {target_status_code.replace('_', ' ').title()}."
+            )
+            continue
+
+        if not assessment_status["is_complete"]:
+            blocking_errors.append(
+                f"Model '{model.model_name}' (ID: {model.model_id}) has an incomplete risk assessment. "
+                f"Please complete the risk assessment before moving to {target_status_code.replace('_', ' ').title()}."
+            )
+            continue
+
+        # Check if assessment is outdated (last modified before last validation completion)
+        assessed_at = assessment_status["assessed_at"]
+        if assessed_at:
+            last_validation_date = get_last_validation_completion_date(db, model.model_id)
+            if last_validation_date:
+                # Normalize both datetimes to naive (strip timezone info) for comparison
+                assessed_at_naive = assessed_at.replace(tzinfo=None) if assessed_at.tzinfo else assessed_at
+                last_validation_naive = last_validation_date.replace(tzinfo=None) if last_validation_date.tzinfo else last_validation_date
+                if assessed_at_naive < last_validation_naive:
+                    warnings.append(
+                        f"Model '{model.model_name}' (ID: {model.model_id}) has a risk assessment "
+                        f"that was last updated on {assessed_at.strftime('%Y-%m-%d')}, "
+                        f"before the prior validation completed on {last_validation_date.strftime('%Y-%m-%d')}. "
+                        f"Please review and update the risk assessment to ensure it reflects current model risk."
+                    )
+
+    # Blocking errors prevent progression
+    can_proceed = len(blocking_errors) == 0
+
+    return can_proceed, blocking_errors, warnings
 
 
 def reset_validation_plan_for_tier_change(
@@ -558,9 +699,10 @@ def check_valid_status_transition(old_status_code: Optional[str], new_status_cod
         "PLANNING": ["IN_PROGRESS", "CANCELLED", "ON_HOLD"],
         "IN_PROGRESS": ["REVIEW", "CANCELLED", "ON_HOLD"],
         "REVIEW": ["PENDING_APPROVAL", "IN_PROGRESS", "CANCELLED", "ON_HOLD"],
-        "PENDING_APPROVAL": ["APPROVED", "REVIEW", "IN_PROGRESS", "CANCELLED", "ON_HOLD"],
+        "PENDING_APPROVAL": ["APPROVED", "REVISION", "REVIEW", "IN_PROGRESS", "CANCELLED", "ON_HOLD"],
+        "REVISION": ["PENDING_APPROVAL", "CANCELLED", "ON_HOLD"],  # Sent back for revisions
         "APPROVED": [],  # Terminal state
-        "ON_HOLD": ["INTAKE", "PLANNING", "IN_PROGRESS", "REVIEW", "PENDING_APPROVAL", "CANCELLED"],
+        "ON_HOLD": ["INTAKE", "PLANNING", "IN_PROGRESS", "REVIEW", "PENDING_APPROVAL", "REVISION", "CANCELLED"],
         "CANCELLED": [],  # Terminal state
     }
 
@@ -804,6 +946,19 @@ def auto_assign_approvers(
     approvals_to_create = []
     assigned_approver_ids = set()  # Track to avoid duplicates
 
+    # Check for existing ACTIVE Global/Regional approvals to make this function idempotent
+    # This is important when re-evaluating approvers at PENDING_APPROVAL transition
+    # IMPORTANT: Ignore voided approvals - they've been invalidated and new ones should be created
+    existing_approvals = db.query(ValidationApproval).filter(
+        ValidationApproval.request_id == validation_request.request_id,
+        ValidationApproval.approval_type.in_(["Global", "Regional"]),
+        ValidationApproval.voided_by_id.is_(None)  # Only active approvals
+    ).all()
+
+    for existing in existing_approvals:
+        if existing.approver_id:
+            assigned_approver_ids.add(existing.approver_id)
+
     # Collect all unique regions across governance, deployment, and validation scope
     all_region_ids = set()
 
@@ -823,94 +978,56 @@ def auto_assign_approvers(
         for region in validation_request.regions:
             all_region_ids.add(region.region_id)
 
-        # Check if this is a single-region scenario
-        # All models must be wholly-owned by the same region
-        wholly_owned_region_id = None
-        all_wholly_owned_by_same_region = False
+        # Business Rule: Global Approvers are ALWAYS required for all validations
+        # Regional Approvers are required for regions that have requires_regional_approval=True
 
-        if len(governance_region_ids) == 1:
-            wholly_owned_region_id = list(governance_region_ids)[0]
-            # Check if ALL regions (deployment + validation scope) are only this region
-            if all_region_ids == {wholly_owned_region_id}:
-                all_wholly_owned_by_same_region = True
+        # 1. ALWAYS assign Global Approvers
+        global_approvers = db.query(User).filter(
+            User.role == UserRole.GLOBAL_APPROVER
+        ).all()
 
-        # Apply business rules
-        if all_wholly_owned_by_same_region and wholly_owned_region_id is not None:
-            # Pure single-region scenario - only assign Regional Approvers
-            regional_approvers = db.query(User).join(user_regions).filter(
-                User.role == UserRole.REGIONAL_APPROVER,
-                user_regions.c.region_id == wholly_owned_region_id
-            ).all()
+        for approver in global_approvers:
+            if approver.user_id not in assigned_approver_ids:
+                approver_role = "Global Approver"
+                validate_approver_role_or_raise(db, approver_role)
+                approvals_to_create.append(ValidationApproval(
+                    request_id=validation_request.request_id,
+                    approver_id=approver.user_id,
+                    approver_role=approver_role,
+                    approval_type="Global",
+                    is_required=True,
+                    approval_status="Pending",
+                    represented_region_id=None,  # Global approver - no specific region
+                    created_at=utc_now()
+                ))
+                assigned_approver_ids.add(approver.user_id)
 
+        # 2. Assign Regional Approvers for all relevant regions that require approval
+        for region_id in all_region_ids:
             region = db.query(Region).filter(
-                Region.region_id == wholly_owned_region_id).first()
-            region_code = region.code if region else f"Region {wholly_owned_region_id}"
+                Region.region_id == region_id).first()
+            if region and region.requires_regional_approval:
+                regional_approvers = db.query(User).join(user_regions).filter(
+                    User.role == UserRole.REGIONAL_APPROVER,
+                    user_regions.c.region_id == region_id
+                ).all()
 
-            for approver in regional_approvers:
-                if approver.user_id not in assigned_approver_ids:
-                    approver_role = f"Regional Approver ({region_code})"
-                    validate_approver_role_or_raise(db, approver_role)
-                    approvals_to_create.append(ValidationApproval(
-                        request_id=validation_request.request_id,
-                        approver_id=approver.user_id,
-                        approver_role=approver_role,
-                        approval_type="Regional",
-                        region_id=wholly_owned_region_id,
-                        is_required=True,
-                        approval_status="Pending",
-                        represented_region_id=wholly_owned_region_id,  # Snapshot region context
-                        created_at=utc_now()
-                    ))
-                    assigned_approver_ids.add(approver.user_id)
-        else:
-            # Multi-region or global scenario
-            # Assign Global Approvers
-            global_approvers = db.query(User).filter(
-                User.role == UserRole.GLOBAL_APPROVER
-            ).all()
-
-            for approver in global_approvers:
-                if approver.user_id not in assigned_approver_ids:
-                    approver_role = "Global Approver"
-                    validate_approver_role_or_raise(db, approver_role)
-                    approvals_to_create.append(ValidationApproval(
-                        request_id=validation_request.request_id,
-                        approver_id=approver.user_id,
-                        approver_role=approver_role,
-                        approval_type="Global",
-                        is_required=True,
-                        approval_status="Pending",
-                        represented_region_id=None,  # Global approver - no specific region
-                        created_at=utc_now()
-                    ))
-                    assigned_approver_ids.add(approver.user_id)
-
-            # Additionally, assign Regional Approvers for all relevant regions
-            for region_id in all_region_ids:
-                region = db.query(Region).filter(
-                    Region.region_id == region_id).first()
-                if region and region.requires_regional_approval:
-                    regional_approvers = db.query(User).join(user_regions).filter(
-                        User.role == UserRole.REGIONAL_APPROVER,
-                        user_regions.c.region_id == region_id
-                    ).all()
-
-                    for approver in regional_approvers:
-                        if approver.user_id not in assigned_approver_ids:
-                            approver_role = f"Regional Approver ({region.code})"
-                            validate_approver_role_or_raise(db, approver_role)
-                            approvals_to_create.append(ValidationApproval(
-                                request_id=validation_request.request_id,
-                                approver_id=approver.user_id,
-                                approver_role=approver_role,
-                                approval_type="Regional",
-                                region_id=region_id,
-                                is_required=True,
-                                approval_status="Pending",
-                                represented_region_id=region_id,  # Snapshot region context
-                                created_at=utc_now()
-                            ))
-                            assigned_approver_ids.add(approver.user_id)
+                for approver in regional_approvers:
+                    if approver.user_id not in assigned_approver_ids:
+                        approver_role = f"Regional Approver ({region.code})"
+                        validate_approver_role_or_raise(db, approver_role)
+                        approvals_to_create.append(ValidationApproval(
+                            request_id=validation_request.request_id,
+                            approver_id=approver.user_id,
+                            approver_role=approver_role,
+                            approval_type="Regional",
+                            region_id=region_id,
+                            is_required=True,
+                            approval_status="Pending",
+                            represented_region_id=region_id,  # Snapshot region context
+                            created_at=utc_now()
+                        ))
+                        assigned_approver_ids.add(approver.user_id)
 
     # Add all approvals to session
     for approval in approvals_to_create:
@@ -989,6 +1106,20 @@ def evaluate_and_create_conditional_approvals(
 
 # ==================== REVALIDATION LIFECYCLE HELPERS ====================
 
+
+def _format_validation_summary(validation: Optional[ValidationRequest]) -> Optional[Dict]:
+    """Format a validation request for the key dates summary."""
+    if not validation:
+        return None
+    approval_date = (validation.completion_date.date() if validation.completion_date
+                     else validation.updated_at.date())
+    return {
+        "request_id": validation.request_id,
+        "approval_date": approval_date.isoformat(),
+        "validation_type": validation.validation_type.label if validation.validation_type else "Unknown"
+    }
+
+
 def calculate_model_revalidation_status(model: Model, db: Session) -> Dict:
     """
     Calculate revalidation status for a model dynamically.
@@ -1015,21 +1146,75 @@ def calculate_model_revalidation_status(model: Model, db: Session) -> Dict:
         ValidationRequest.updated_at.desc()
     ).first()
 
+    # Query INITIAL/COMPREHENSIVE validations for key dates summary
+    # These are the "full" validations that reset the revalidation cycle
+    full_validations = db.query(ValidationRequest).join(
+        ValidationRequestModelVersion
+    ).filter(
+        ValidationRequestModelVersion.model_id == model.model_id,
+        ValidationRequest.current_status.has(TaxonomyValue.code == "APPROVED"),
+        ValidationRequest.validation_type.has(
+            TaxonomyValue.code.in_(["INITIAL", "COMPREHENSIVE"])
+        )
+    ).order_by(
+        ValidationRequest.completion_date.desc().nullslast(),
+        ValidationRequest.updated_at.desc()
+    ).limit(2).all()
+
+    most_recent_full = full_validations[0] if len(full_validations) > 0 else None
+    previous_full = full_validations[1] if len(full_validations) > 1 else None
+
+    # Query INTERIM validation for fallback dates if no full validation
+    interim_expiration = None
+    if not most_recent_full:
+        interim_validation = db.query(ValidationRequest).join(
+            ValidationRequestModelVersion
+        ).outerjoin(
+            ValidationOutcome, ValidationRequest.request_id == ValidationOutcome.request_id
+        ).filter(
+            ValidationRequestModelVersion.model_id == model.model_id,
+            ValidationRequest.current_status.has(TaxonomyValue.code == "APPROVED"),
+            ValidationRequest.validation_type.has(TaxonomyValue.code == "INTERIM"),
+            ValidationOutcome.expiration_date.isnot(None)
+        ).order_by(
+            ValidationOutcome.expiration_date.desc()
+        ).first()
+
+        if interim_validation and interim_validation.outcome:
+            interim_expiration = interim_validation.outcome.expiration_date
+
     if not last_validation:
+        # Check for INTERIM-derived dates
+        today = date.today()
+        interim_submission_due = None
+        interim_validation_due = None
+
+        if interim_expiration:
+            # Get policy for lead_time calculation
+            policy = db.query(ValidationPolicy).filter(
+                ValidationPolicy.risk_tier_id == model.risk_tier_id
+            ).first()
+            if policy:
+                interim_submission_due = interim_expiration - timedelta(days=policy.model_change_lead_time_days)
+                interim_validation_due = interim_expiration
+
         return {
             "model_id": model.model_id,
             "model_name": model.model_name,
             "model_owner": model.owner.full_name if model.owner else "Unknown",
             "risk_tier": model.risk_tier.label if model.risk_tier else None,
-            "status": "Never Validated",
+            "status": "Pending Full Validation" if interim_expiration else "Never Validated",
             "last_validation_date": None,
-            "next_submission_due": None,
+            "next_submission_due": interim_submission_due,
             "grace_period_end": None,
-            "next_validation_due": None,
-            "days_until_submission_due": None,
-            "days_until_validation_due": None,
+            "next_validation_due": interim_validation_due,
+            "days_until_submission_due": (interim_submission_due - today).days if interim_submission_due else None,
+            "days_until_validation_due": (interim_validation_due - today).days if interim_validation_due else None,
             "active_request_id": None,
-            "submission_received": None
+            "submission_received": None,
+            "interim_expiration": interim_expiration.isoformat() if interim_expiration else None,
+            "most_recent_validation": _format_validation_summary(most_recent_full),
+            "previous_validation": _format_validation_summary(previous_full)
         }
 
     # Get validation policy for this model's risk tier
@@ -1038,6 +1223,8 @@ def calculate_model_revalidation_status(model: Model, db: Session) -> Dict:
     ).first()
 
     if not policy:
+        # Even without a policy, if we have interim_expiration, use it as the hard deadline
+        today = date.today()
         return {
             "model_id": model.model_id,
             "model_name": model.model_name,
@@ -1047,45 +1234,68 @@ def calculate_model_revalidation_status(model: Model, db: Session) -> Dict:
             "last_validation_date": last_validation.updated_at.date(),
             "next_submission_due": None,
             "grace_period_end": None,
-            "next_validation_due": None,
+            "next_validation_due": interim_expiration,  # Use interim expiration as deadline
             "days_until_submission_due": None,
-            "days_until_validation_due": None,
+            "days_until_validation_due": (interim_expiration - today).days if interim_expiration else None,
             "active_request_id": None,
-            "submission_received": None
+            "submission_received": None,
+            "interim_expiration": interim_expiration.isoformat() if interim_expiration else None,
+            "most_recent_validation": _format_validation_summary(most_recent_full),
+            "previous_validation": _format_validation_summary(previous_full)
         }
 
     # Calculate dates
-    last_completed = last_validation.updated_at.date()
-    submission_due = last_completed + \
-        relativedelta(months=policy.frequency_months)
-    grace_period_end = submission_due + relativedelta(months=policy.grace_period_months)
-
-    # Check if active revalidation request exists
-    active_request = db.query(ValidationRequest).join(
-        ValidationRequestModelVersion
-    ).filter(
-        ValidationRequestModelVersion.model_id == model.model_id,
-        ValidationRequest.validation_type.has(
-            TaxonomyValue.code == "COMPREHENSIVE"),
-        ValidationRequest.prior_validation_request_id == last_validation.request_id,
-        ValidationRequest.current_status.has(
-            TaxonomyValue.code.notin_(["APPROVED", "CANCELLED"]))
-    ).first()
-
-    # Calculate validation_due:
-    # - If active_request exists (potentially multi-model), use request's applicable_lead_time_days
-    #   which is MAX across all models' policies (most conservative)
-    # - If no active_request, use this model's policy (for calculating when request should be created)
-    if active_request:
-        lead_time_days = active_request.applicable_lead_time_days
-    else:
+    # If we have an INTERIM expiration but no full validation, use INTERIM dates instead
+    if interim_expiration and not most_recent_full:
+        # INTERIM expiration is the hard deadline
         lead_time_days = policy.model_change_lead_time_days
-    validation_due = grace_period_end + timedelta(days=lead_time_days)
+        submission_due = interim_expiration - timedelta(days=lead_time_days)
+        grace_period_end = None  # No grace period for INTERIM - expiration is absolute
+        validation_due = interim_expiration
+        last_completed = last_validation.updated_at.date()
+        active_request = None  # Don't look for COMPREHENSIVE request linked to INTERIM
+    else:
+        # Standard calculation from last full validation
+        last_completed = last_validation.updated_at.date()
+        submission_due = last_completed + \
+            relativedelta(months=policy.frequency_months)
+        grace_period_end = submission_due + relativedelta(months=policy.grace_period_months)
+
+        # Check if active revalidation request exists
+        active_request = db.query(ValidationRequest).join(
+            ValidationRequestModelVersion
+        ).filter(
+            ValidationRequestModelVersion.model_id == model.model_id,
+            ValidationRequest.validation_type.has(
+                TaxonomyValue.code == "COMPREHENSIVE"),
+            ValidationRequest.prior_validation_request_id == last_validation.request_id,
+            ValidationRequest.current_status.has(
+                TaxonomyValue.code.notin_(["APPROVED", "CANCELLED"]))
+        ).first()
+
+        # Calculate validation_due:
+        # - If active_request exists (potentially multi-model), use request's applicable_lead_time_days
+        #   which is MAX across all models' policies (most conservative)
+        # - If no active_request, use this model's policy (for calculating when request should be created)
+        if active_request:
+            lead_time_days = active_request.applicable_lead_time_days
+        else:
+            lead_time_days = policy.model_change_lead_time_days
+        validation_due = grace_period_end + timedelta(days=lead_time_days)
 
     today = date.today()
 
     # Determine status
-    if active_request:
+    # For INTERIM (no full validation), grace_period_end is None - use different logic
+    if interim_expiration and not most_recent_full:
+        # INTERIM case: simpler status based on expiration
+        if today > validation_due:
+            status = "INTERIM Expired - Full Validation Required"
+        elif today > submission_due:
+            status = "Submission Overdue (INTERIM)"
+        else:
+            status = "Pending Full Validation"
+    elif active_request:
         if not active_request.submission_received_date:
             if today > grace_period_end:
                 status = "Submission Overdue"
@@ -1099,7 +1309,7 @@ def calculate_model_revalidation_status(model: Model, db: Session) -> Dict:
             else:
                 status = "Validation In Progress"
     else:
-        # No active request
+        # No active request - standard revalidation lifecycle
         if today > validation_due:
             status = "Revalidation Overdue (No Request)"
         elif today > grace_period_end:
@@ -1120,7 +1330,10 @@ def calculate_model_revalidation_status(model: Model, db: Session) -> Dict:
         "days_until_submission_due": (submission_due - today).days,
         "days_until_validation_due": (validation_due - today).days,
         "active_request_id": active_request.request_id if active_request else None,
-        "submission_received": active_request.submission_received_date if active_request else None
+        "submission_received": active_request.submission_received_date if active_request else None,
+        "interim_expiration": interim_expiration.isoformat() if interim_expiration else None,
+        "most_recent_validation": _format_validation_summary(most_recent_full),
+        "previous_validation": _format_validation_summary(previous_full)
     }
 
 
@@ -1843,7 +2056,8 @@ def update_validation_request_status(
         joinedload(ValidationRequest.priority),
         joinedload(ValidationRequest.current_status),
         joinedload(ValidationRequest.regions),
-        joinedload(ValidationRequest.validation_plan)
+        joinedload(ValidationRequest.validation_plan),
+        joinedload(ValidationRequest.scorecard_result)  # Needed for REVISION resubmission comparison
     ).filter(ValidationRequest.request_id == request_id).first()
 
     if not validation_request:
@@ -1888,6 +2102,17 @@ def update_validation_request_status(
             detail=f"Invalid status transition from '{old_status_code}' to '{new_status_code}'"
         )
 
+    # BUSINESS RULE: REVISION status can only be set via the send-back approval flow
+    # Manual status changes to REVISION are blocked to ensure:
+    # 1. Proper snapshot is captured for approval reset logic
+    # 2. Comments are required explaining what needs revision
+    # 3. Only Global/Regional approvers can initiate send-back
+    if new_status_code == "REVISION":
+        raise HTTPException(
+            status_code=400,
+            detail="Cannot manually set status to Revision. Use the 'Send Back' option in the approval workflow instead. This ensures proper tracking of revision requests and approval resets."
+        )
+
     # Additional business rules
 
     # BUSINESS RULE: Cannot move to or remain in active workflow statuses without a primary validator
@@ -1921,6 +2146,29 @@ def update_validation_request_status(
             raise HTTPException(
                 status_code=400, detail="Cannot move to Review without assigned validators")
 
+        # Check risk assessment status for all models
+        models = validation_request.models
+        if models:
+            can_proceed, blocking_errors, assessment_warnings = check_risk_assessment_for_workflow_progression(
+                db, models, new_status_code
+            )
+            if not can_proceed:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Risk assessment requirements not met:\n" + "\n".join(f"• {err}" for err in blocking_errors)
+                )
+            # If there are warnings and user hasn't acknowledged them
+            if assessment_warnings and not status_update.skip_assessment_warning:
+                raise HTTPException(
+                    status_code=409,  # Conflict - requires user confirmation
+                    detail={
+                        "warning_type": "outdated_risk_assessment",
+                        "message": "Risk assessment review recommended",
+                        "warnings": assessment_warnings,
+                        "action": "Set skip_assessment_warning=true to proceed"
+                    }
+                )
+
         # Validate plan compliance (deviations must have rationale)
         is_valid, validation_errors = validate_plan_compliance(
             db,
@@ -1941,6 +2189,29 @@ def update_validation_request_status(
         if not validation_request.outcome:
             raise HTTPException(
                 status_code=400, detail="Cannot move to Pending Approval without creating outcome")
+
+        # Check risk assessment status for all models
+        models = validation_request.models
+        if models:
+            can_proceed, blocking_errors, assessment_warnings = check_risk_assessment_for_workflow_progression(
+                db, models, new_status_code
+            )
+            if not can_proceed:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Risk assessment requirements not met:\n" + "\n".join(f"• {err}" for err in blocking_errors)
+                )
+            # If there are warnings and user hasn't acknowledged them
+            if assessment_warnings and not status_update.skip_assessment_warning:
+                raise HTTPException(
+                    status_code=409,  # Conflict - requires user confirmation
+                    detail={
+                        "warning_type": "outdated_risk_assessment",
+                        "message": "Risk assessment review recommended",
+                        "warnings": assessment_warnings,
+                        "action": "Set skip_assessment_warning=true to proceed"
+                    }
+                )
 
         # Validate plan compliance (deviations must have rationale)
         is_valid, validation_errors = validate_plan_compliance(
@@ -1975,6 +2246,11 @@ def update_validation_request_status(
             for model in models:
                 evaluate_and_create_conditional_approvals(
                     db, validation_request, model)
+
+        # Re-evaluate standard approvers (Global/Regional) in case they weren't created at
+        # request creation time (e.g., no approvers existed then, or regions weren't configured)
+        # The function is idempotent - it won't create duplicates for existing approvals
+        auto_assign_approvers(db, validation_request, current_user)
 
     # Update status
     old_status_id = validation_request.current_status_id
@@ -2148,6 +2424,107 @@ def update_validation_request_status(
                     timestamp=utc_now()
                 )
                 db.add(model_audit)
+
+    # ===== RESUBMISSION FROM REVISION - CONDITIONAL APPROVAL RESET =====
+    # When resubmitting from REVISION to PENDING_APPROVAL, conditionally reset approvals
+    if old_status_code == "REVISION" and new_status_code == "PENDING_APPROVAL":
+        from app.models.recommendation import Recommendation
+        from app.models.limitation import ModelLimitation
+
+        # Find the most recent revision snapshot (entry into REVISION status)
+        last_revision_entry = db.query(ValidationStatusHistory).filter(
+            ValidationStatusHistory.request_id == request_id,
+            ValidationStatusHistory.additional_context.isnot(None)
+        ).order_by(desc(ValidationStatusHistory.changed_at)).first()
+
+        if last_revision_entry and last_revision_entry.additional_context:
+            snapshot = json.loads(last_revision_entry.additional_context)
+
+            # Get current state for comparison
+            current_rating = None
+            if validation_request.scorecard_result:
+                current_rating = validation_request.scorecard_result.overall_rating
+
+            current_rec_ids = set(
+                r.recommendation_id for r in db.query(Recommendation.recommendation_id).filter(
+                    Recommendation.validation_request_id == request_id
+                ).all()
+            )
+
+            current_lim_ids = set(
+                l.limitation_id for l in db.query(ModelLimitation.limitation_id).filter(
+                    ModelLimitation.validation_request_id == request_id
+                ).all()
+            )
+
+            # Compare to snapshot
+            snapshot_rating = snapshot.get("overall_rating")
+            snapshot_rec_ids = set(snapshot.get("recommendation_ids", []))
+            snapshot_lim_ids = set(snapshot.get("limitation_ids", []))
+
+            material_change = (
+                current_rating != snapshot_rating or
+                current_rec_ids != snapshot_rec_ids or
+                current_lim_ids != snapshot_lim_ids
+            )
+
+            # Identify the approver who sent back (to always reset their approval)
+            sent_back_approval_id = snapshot.get("sent_back_by_approval_id")
+
+            # Reset approvals based on logic
+            approvals = db.query(ValidationApproval).filter(
+                ValidationApproval.request_id == request_id,
+                ValidationApproval.voided_by_id.is_(None)  # Only active approvals
+            ).all()
+
+            reset_approvals = []
+            for approval in approvals:
+                should_reset = False
+
+                # Always reset the sender's approval
+                if approval.approval_id == sent_back_approval_id:
+                    should_reset = True
+
+                # Reset other "Approved" approvals only if material changes detected
+                elif approval.approval_status == "Approved" and material_change:
+                    should_reset = True
+
+                # Reset "Sent Back" approvals (the sender, if not matched by ID)
+                elif approval.approval_status == "Sent Back":
+                    should_reset = True
+
+                if should_reset:
+                    old_approval_status = approval.approval_status
+                    approval.approval_status = "Pending"
+                    approval.approved_at = None
+                    approval.comments = None
+                    approval.updated_at = utc_now()
+                    reset_approvals.append({
+                        "approval_id": approval.approval_id,
+                        "approval_type": approval.approval_type,
+                        "approver_role": approval.approver_role,
+                        "old_status": old_approval_status
+                    })
+
+            # Create audit log for resubmission
+            resubmit_audit = AuditLog(
+                entity_type="ValidationRequest",
+                entity_id=request_id,
+                action="RESUBMIT_FROM_REVISION",
+                user_id=current_user.user_id,
+                changes={
+                    "material_change_detected": material_change,
+                    "change_details": {
+                        "rating_changed": current_rating != snapshot_rating,
+                        "recommendations_changed": current_rec_ids != snapshot_rec_ids,
+                        "limitations_changed": current_lim_ids != snapshot_lim_ids
+                    },
+                    "approvals_reset": reset_approvals,
+                    "reason": status_update.change_reason
+                },
+                timestamp=utc_now()
+            )
+            db.add(resubmit_audit)
 
     # Auto-update linked model version statuses based on validation status
     update_version_statuses_for_validation(
@@ -2806,7 +3183,8 @@ def create_outcome(
     # Verify request exists
     validation_request = db.query(ValidationRequest).options(
         joinedload(ValidationRequest.current_status),
-        joinedload(ValidationRequest.outcome)
+        joinedload(ValidationRequest.outcome),
+        joinedload(ValidationRequest.validation_type)
     ).filter(ValidationRequest.request_id == request_id).first()
 
     if not validation_request:
@@ -2826,6 +3204,14 @@ def create_outcome(
             detail="Outcome can only be created after work has begun. Please 'Mark Submission Received' to move out of the Planning stage."
         )
 
+    # INTERIM validations require expiration_date
+    validation_type_code = validation_request.validation_type.code if validation_request.validation_type else None
+    if validation_type_code == "INTERIM" and not outcome_data.expiration_date:
+        raise HTTPException(
+            status_code=400,
+            detail="Expiration date is required for INTERIM validations. Interim approvals are time-limited and must have an expiration date."
+        )
+
     # Verify overall rating exists
     rating = db.query(TaxonomyValue).filter(
         TaxonomyValue.value_id == outcome_data.overall_rating_id
@@ -2838,7 +3224,6 @@ def create_outcome(
         request_id=request_id,
         overall_rating_id=outcome_data.overall_rating_id,
         executive_summary=outcome_data.executive_summary,
-        recommended_review_frequency=outcome_data.recommended_review_frequency,
         effective_date=outcome_data.effective_date,
         expiration_date=outcome_data.expiration_date,
         created_at=utc_now(),
@@ -2853,8 +3238,7 @@ def create_outcome(
         action="CREATE",
         user_id=current_user.user_id,
         changes={
-            "overall_rating": rating.label,
-            "recommended_review_frequency": outcome_data.recommended_review_frequency
+            "overall_rating": rating.label
         },
         timestamp=utc_now()
     )
@@ -2882,7 +3266,9 @@ def update_outcome(
         raise HTTPException(status_code=404, detail="Outcome not found")
 
     # Check if request is in approved status (locked)
-    request = db.query(ValidationRequest).filter(
+    request = db.query(ValidationRequest).options(
+        joinedload(ValidationRequest.validation_type)
+    ).filter(
         ValidationRequest.request_id == outcome.request_id
     ).first()
     if request and request.current_status and request.current_status.code == "APPROVED":
@@ -2890,6 +3276,16 @@ def update_outcome(
             status_code=400, detail="Cannot modify outcome of approved validation")
 
     update_dict = update_data.model_dump(exclude_unset=True)
+
+    # INTERIM validations require expiration_date - check if update would remove it
+    validation_type_code = request.validation_type.code if request and request.validation_type else None
+    if validation_type_code == "INTERIM":
+        # Check if update explicitly sets expiration_date to None
+        if 'expiration_date' in update_dict and update_dict['expiration_date'] is None:
+            raise HTTPException(
+                status_code=400,
+                detail="Expiration date cannot be removed for INTERIM validations. Interim approvals must have an expiration date."
+            )
 
     # Track changes for audit
     changes = {}
@@ -3167,10 +3563,40 @@ def submit_approval(
     if not approval:
         raise HTTPException(status_code=404, detail="Approval not found")
 
+    # Get the validation request to check its status
+    validation_request = db.query(ValidationRequest).options(
+        joinedload(ValidationRequest.current_status),
+        joinedload(ValidationRequest.models),
+        joinedload(ValidationRequest.approvals),
+        joinedload(ValidationRequest.scorecard_result)
+    ).filter(
+        ValidationRequest.request_id == approval.request_id
+    ).first()
+
+    if not validation_request:
+        raise HTTPException(status_code=404, detail="Associated validation request not found")
+
+    # BUSINESS RULE: Approvals can only be submitted when request is in PENDING_APPROVAL status
+    current_status_code = validation_request.current_status.code if validation_request.current_status else None
+    if current_status_code != "PENDING_APPROVAL":
+        status_label = validation_request.current_status.label if validation_request.current_status else "Unknown"
+        raise HTTPException(
+            status_code=400,
+            detail=f"Cannot submit approval when request is in '{status_label}' status. Approvals can only be submitted when the request is in 'Pending Approval' status."
+        )
+
     # Only the designated approver or Admin can update approval
     if current_user.user_id != approval.approver_id and current_user.role != "Admin":
         raise HTTPException(
             status_code=403, detail="Only the designated approver or Admin can update this approval")
+
+    # BUSINESS RULE: Voided approvals cannot be modified
+    # Approvals may be voided due to model risk tier changes or other lifecycle events
+    if approval.voided_at:
+        raise HTTPException(
+            status_code=400,
+            detail="This approval has been voided and cannot be modified. New approvals will be created if needed."
+        )
 
     approval.approval_status = update_data.approval_status
     approval.comments = update_data.comments
@@ -3183,36 +3609,96 @@ def submit_approval(
 
         # If this is a conditional approval being withdrawn, also clear model use_approval_date
         if approval.approver_role_id:
-            validation_request = db.query(ValidationRequest).options(
-                joinedload(ValidationRequest.models)
-            ).filter(
-                ValidationRequest.request_id == approval.request_id
+            for model in validation_request.models:
+                if model.use_approval_date:
+                    # Clear the approval date since conditional approvals are no longer all complete
+                    model.use_approval_date = None
+
+                    # Create audit log for model approval reversal
+                    model_audit = AuditLog(
+                        entity_type="Model",
+                        entity_id=model.model_id,
+                        action="CONDITIONAL_APPROVAL_REVERTED",
+                        user_id=current_user.user_id,
+                        changes={
+                            "reason": "Conditional approval withdrawn",
+                            "validation_request_id": approval.request_id,
+                            "approval_id": approval_id
+                        },
+                        timestamp=utc_now()
+                    )
+                    db.add(model_audit)
+
+    elif update_data.approval_status == "Sent Back":
+        # Handle send-back for revision - only Global and Regional approvers
+        if approval.approval_type not in ["Global", "Regional"]:
+            raise HTTPException(
+                status_code=400,
+                detail="Only Global and Regional approvers can send back for revision"
+            )
+
+        # Comments are mandatory for send-back
+        if not update_data.comments or not update_data.comments.strip():
+            raise HTTPException(
+                status_code=400,
+                detail="Comments are required when sending back for revision"
+            )
+
+        approval.approved_at = utc_now()  # Track when sent back
+
+        # validation_request already loaded above with scorecard_result and current_status
+        if validation_request:
+            # Create snapshot of current state for comparison on resubmission
+            snapshot = create_revision_snapshot(db, validation_request)
+            snapshot["sent_back_by_approval_id"] = approval.approval_id
+            snapshot["sent_back_by_role"] = approval.approver_role
+
+            # Transition validation request to REVISION status
+            revision_status = db.query(TaxonomyValue).join(Taxonomy).filter(
+                Taxonomy.name == "Validation Request Status",
+                TaxonomyValue.code == "REVISION"
             ).first()
 
-            if validation_request:
-                for model in validation_request.models:
-                    if model.use_approval_date:
-                        # Clear the approval date since conditional approvals are no longer all complete
-                        model.use_approval_date = None
+            if revision_status:
+                old_status_id = validation_request.current_status_id
 
-                        # Create audit log for model approval reversal
-                        model_audit = AuditLog(
-                            entity_type="Model",
-                            entity_id=model.model_id,
-                            action="CONDITIONAL_APPROVAL_REVERTED",
-                            user_id=current_user.user_id,
-                            changes={
-                                "reason": "Conditional approval withdrawn",
-                                "validation_request_id": approval.request_id,
-                                "approval_id": approval_id
-                            },
-                            timestamp=utc_now()
-                        )
-                        db.add(model_audit)
+                # Update validation request status
+                validation_request.current_status_id = revision_status.value_id
+
+                # Create status history entry with snapshot in additional_context
+                history = ValidationStatusHistory(
+                    request_id=validation_request.request_id,
+                    old_status_id=old_status_id,
+                    new_status_id=revision_status.value_id,
+                    changed_by_id=current_user.user_id,
+                    change_reason=f"Sent back by {approval.approver_role}: {update_data.comments}",
+                    additional_context=json.dumps(snapshot),
+                    changed_at=utc_now()
+                )
+                db.add(history)
+
+                # Create audit log for status transition
+                status_audit = AuditLog(
+                    entity_type="ValidationRequest",
+                    entity_id=validation_request.request_id,
+                    action="STATUS_SENT_BACK",
+                    user_id=current_user.user_id,
+                    changes={
+                        "old_status": validation_request.current_status.code if validation_request.current_status else "PENDING_APPROVAL",
+                        "new_status": "REVISION",
+                        "sent_back_by_role": approval.approver_role,
+                        "approval_id": approval_id,
+                        "comments": update_data.comments
+                    },
+                    timestamp=utc_now()
+                )
+                db.add(status_audit)
 
     # Create audit log with appropriate action type
     if update_data.approval_status == "Pending":
         action = "APPROVAL_WITHDRAWN"
+    elif update_data.approval_status == "Sent Back":
+        action = "APPROVAL_SENT_BACK"
     else:
         action = "APPROVAL_SUBMITTED"
 
@@ -3254,6 +3740,66 @@ def submit_approval(
 
         # Set completion_date to latest approval date, or None if no approvals
         validation_request.completion_date = latest_approval_date
+
+        # Auto-transition to APPROVED if all required approvals are complete
+        if update_data.approval_status == "Approved":
+            # Check if current status is PENDING_APPROVAL
+            current_status_code = validation_request.current_status.code if validation_request.current_status else None
+            if current_status_code == "PENDING_APPROVAL":
+                # Count required approvals and approved approvals
+                all_required_approvals = db.query(ValidationApproval).filter(
+                    ValidationApproval.request_id == approval.request_id,
+                    ValidationApproval.is_required == True
+                ).all()
+
+                all_approved = all(a.approval_status == "Approved" for a in all_required_approvals)
+
+                if all_approved and len(all_required_approvals) > 0:
+                    # Get APPROVED status taxonomy value
+                    approved_status = db.query(TaxonomyValue).join(Taxonomy).filter(
+                        Taxonomy.name == "Validation Request Status",
+                        TaxonomyValue.code == "APPROVED"
+                    ).first()
+
+                    if approved_status:
+                        old_status_id = validation_request.current_status_id
+
+                        # Update validation request status
+                        validation_request.current_status_id = approved_status.value_id
+
+                        # Create status history entry
+                        create_status_history_entry(
+                            db=db,
+                            request_id=validation_request.request_id,
+                            old_status_id=old_status_id,
+                            new_status_id=approved_status.value_id,
+                            changed_by_id=current_user.user_id,
+                            change_reason="Auto-transitioned: All required approvals complete"
+                        )
+
+                        # Update linked model version statuses
+                        update_version_statuses_for_validation(
+                            db=db,
+                            validation_request=validation_request,
+                            new_validation_status="APPROVED",
+                            current_user=current_user
+                        )
+
+                        # Create audit log for status transition
+                        status_audit = AuditLog(
+                            entity_type="ValidationRequest",
+                            entity_id=validation_request.request_id,
+                            action="STATUS_AUTO_TRANSITION",
+                            user_id=current_user.user_id,
+                            changes={
+                                "old_status": "PENDING_APPROVAL",
+                                "new_status": "APPROVED",
+                                "reason": "All required approvals complete",
+                                "final_approval_id": approval_id
+                            },
+                            timestamp=utc_now()
+                        )
+                        db.add(status_audit)
 
     db.commit()
     db.refresh(approval)
@@ -4401,6 +4947,137 @@ def get_my_pending_submissions(
     urgency_order = {"overdue": 0, "in_grace_period": 1,
                      "due_soon": 2, "upcoming": 3, "unknown": 4}
     return sorted(filtered_results, key=lambda x: (urgency_order.get(x["urgency"], 4), x["days_until_submission_due"] or 999))
+
+
+@router.get("/my-pending-approvals")
+def get_my_pending_approvals(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Get validation requests pending approval by the current user.
+
+    For Global Approvers: Returns validation requests where they have a pending Global approval
+    For Regional Approvers: Returns validation requests where they have a pending Regional approval
+    For Admins: Returns all validation requests with any pending approvals
+
+    Only returns requests in PENDING_APPROVAL status.
+    """
+    from app.models.user import UserRole
+
+    # Common joinedload options for all queries
+    approval_options = [
+        joinedload(ValidationApproval.request).joinedload(ValidationRequest.models),
+        joinedload(ValidationApproval.request).joinedload(ValidationRequest.current_status),
+        joinedload(ValidationApproval.request).joinedload(ValidationRequest.validation_type),
+        joinedload(ValidationApproval.request).joinedload(ValidationRequest.priority),
+        joinedload(ValidationApproval.request).joinedload(ValidationRequest.requestor),
+        joinedload(ValidationApproval.request).joinedload(ValidationRequest.assignments).joinedload(ValidationAssignment.validator),
+        joinedload(ValidationApproval.approver),
+        joinedload(ValidationApproval.represented_region)
+    ]
+
+    # Query validation requests with pending approvals assigned to current user
+    if current_user.role == UserRole.ADMIN:
+        # Admin can see all pending approvals
+        pending_approvals = db.query(ValidationApproval).options(
+            *approval_options
+        ).filter(
+            ValidationApproval.approval_status == "Pending",
+            ValidationApproval.voided_at.is_(None),
+            ValidationApproval.approval_type.in_(["Global", "Regional"])  # Exclude conditional
+        ).all()
+
+    elif current_user.role == UserRole.GLOBAL_APPROVER:
+        # Global approvers see their assigned Global approvals
+        pending_approvals = db.query(ValidationApproval).options(
+            *approval_options
+        ).filter(
+            ValidationApproval.approver_id == current_user.user_id,
+            ValidationApproval.approval_status == "Pending",
+            ValidationApproval.voided_at.is_(None),
+            ValidationApproval.approval_type == "Global"
+        ).all()
+
+    elif current_user.role == UserRole.REGIONAL_APPROVER:
+        # Regional approvers see their assigned Regional approvals
+        pending_approvals = db.query(ValidationApproval).options(
+            *approval_options
+        ).filter(
+            ValidationApproval.approver_id == current_user.user_id,
+            ValidationApproval.approval_status == "Pending",
+            ValidationApproval.voided_at.is_(None),
+            ValidationApproval.approval_type == "Regional"
+        ).all()
+
+    else:
+        # Other roles don't have approval responsibilities
+        pending_approvals = []
+
+    # Build response with validation request details
+    results = []
+    seen_request_ids = set()
+
+    for approval in pending_approvals:
+        vr = approval.request
+        if not vr or vr.request_id in seen_request_ids:
+            continue
+
+        # Only include requests that are in PENDING_APPROVAL status
+        if vr.current_status and vr.current_status.code != "PENDING_APPROVAL":
+            continue
+
+        seen_request_ids.add(vr.request_id)
+
+        # Get model names
+        model_names = [m.model_name for m in vr.models] if vr.models else []
+
+        # Calculate days in status
+        days_in_status = None
+        if vr.status_history:
+            latest_history = max(vr.status_history, key=lambda h: h.changed_at, default=None)
+            if latest_history:
+                days_in_status = (date.today() - latest_history.changed_at.date()).days
+
+        # Get requestor name
+        requestor_name = vr.requestor.full_name if vr.requestor else None
+
+        # Get primary validator
+        primary_validator = None
+        for assignment in vr.assignments or []:
+            if assignment.is_primary and assignment.validator:
+                primary_validator = assignment.validator.full_name
+                break
+
+        # Calculate days pending (how long has this approval been waiting)
+        days_pending = (date.today() - approval.created_at.date()).days if approval.created_at else 0
+
+        # Get represented region name
+        represented_region = None
+        if approval.represented_region:
+            represented_region = approval.represented_region.name
+
+        results.append({
+            "approval_id": approval.approval_id,
+            "request_id": vr.request_id,
+            "model_ids": [m.model_id for m in vr.models] if vr.models else [],
+            "model_names": model_names,
+            "validation_type": vr.validation_type.label if vr.validation_type else None,
+            "priority": vr.priority.label if vr.priority else None,
+            "current_status": vr.current_status.label if vr.current_status else None,
+            "requestor_name": requestor_name,
+            "primary_validator": primary_validator,
+            "target_completion_date": vr.target_completion_date.isoformat() if vr.target_completion_date else None,
+            "approval_type": approval.approval_type,
+            "approver_role": approval.approver_role,
+            "is_required": approval.is_required,
+            "represented_region": represented_region,
+            "days_pending": days_pending,
+            "request_date": vr.request_date.isoformat() if vr.request_date else None,
+        })
+
+    # Sort by days pending (longest first)
+    return sorted(results, key=lambda x: (x["days_pending"] or 0), reverse=True)
 
 
 @router.get("/models/{model_id}/revalidation-status")
@@ -6330,6 +7007,7 @@ def get_recent_approvals(
 def check_open_validations_for_risk_tier_change(
     model_id: int,
     proposed_tier_id: Optional[int] = Query(None, description="Proposed new risk tier ID (optional, for warning message)"),
+    proposed_tier_code: Optional[str] = Query(None, description="Proposed new tier code (e.g., 'TIER_2') for change detection"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
@@ -6340,7 +7018,7 @@ def check_open_validations_for_risk_tier_change(
     finalization or Model Edit) to warn the user about potential impacts.
 
     Returns:
-    - has_open_validations: Whether there are active validation requests
+    - has_open_validations: Whether there are active validation requests AND tier is changing
     - open_validations: List of affected validation request summaries
     - warning_message: Human-readable warning if action needed
     - requires_confirmation: Whether user should confirm before proceeding
@@ -6353,20 +7031,40 @@ def check_open_validations_for_risk_tier_change(
             detail=f"Model {model_id} not found"
         )
 
-    # Get current and proposed tier labels
+    # Get current tier info
     current_tier_label = None
-    proposed_tier_label = None
+    current_tier_code = None
 
     if model.risk_tier_id:
         current_tier = db.query(TaxonomyValue).filter(TaxonomyValue.value_id == model.risk_tier_id).first()
-        current_tier_label = current_tier.label if current_tier else None
+        if current_tier:
+            current_tier_label = current_tier.label
+            current_tier_code = current_tier.code
+
+    # Get proposed tier info
+    proposed_tier_label = None
+    effective_proposed_code = proposed_tier_code  # Use code directly if provided
 
     if proposed_tier_id:
         proposed_tier = db.query(TaxonomyValue).filter(TaxonomyValue.value_id == proposed_tier_id).first()
-        proposed_tier_label = proposed_tier.label if proposed_tier else None
+        if proposed_tier:
+            proposed_tier_label = proposed_tier.label
+            if not effective_proposed_code:
+                effective_proposed_code = proposed_tier.code
 
-    # Find open validation requests
-    open_requests = get_open_validations_for_model(db, model_id)
+    # Check if tier is actually changing
+    tier_is_changing = True
+    if effective_proposed_code and current_tier_code:
+        # Both tiers are known - compare them
+        tier_is_changing = (effective_proposed_code != current_tier_code)
+    elif effective_proposed_code is None and current_tier_code is None:
+        # Both null - no change
+        tier_is_changing = False
+
+    # Find open validation requests only if tier is changing
+    open_requests = []
+    if tier_is_changing:
+        open_requests = get_open_validations_for_model(db, model_id)
 
     # Build summaries
     validation_summaries = []
@@ -6404,13 +7102,26 @@ def check_open_validations_for_risk_tier_change(
     if open_requests:
         requires_confirmation = True
         plan_count = sum(1 for v in validation_summaries if v.has_plan)
-        approval_count = sum(v.pending_approvals_count for v in validation_summaries)
+
+        # Count approvals that will actually be voided (only those at PENDING_APPROVAL stage)
+        # For earlier stages, approvals will be re-evaluated when they reach that stage
+        voided_approval_count = 0
+        reevaluate_count = 0
+        for req, summary in zip(open_requests, validation_summaries):
+            status_code = req.current_status.code if req.current_status else ""
+            if status_code == "PENDING_APPROVAL" and summary.pending_approvals_count > 0:
+                voided_approval_count += summary.pending_approvals_count
+            elif summary.pending_approvals_count > 0:
+                # Earlier stages - approvals exist but haven't been formally solicited
+                reevaluate_count += 1
 
         warning_parts = []
         if plan_count > 0:
             warning_parts.append(f"{plan_count} validation plan(s) will be reset")
-        if approval_count > 0:
-            warning_parts.append(f"{approval_count} pending approval(s) will be voided")
+        if voided_approval_count > 0:
+            warning_parts.append(f"{voided_approval_count} pending approval(s) will be voided")
+        if reevaluate_count > 0:
+            warning_parts.append(f"approval requirements for {reevaluate_count} request(s) will be re-evaluated")
 
         tier_change_text = ""
         if proposed_tier_label and current_tier_label:
@@ -6628,4 +7339,229 @@ def get_risk_mismatch_report(
         models_with_mismatch=len(mismatch_items),
         items=mismatch_items,
         generated_at=utc_now()
+    )
+
+
+# ===== EFFECTIVE CHALLENGE PDF EXPORT =====
+
+
+@router.get("/requests/{request_id}/effective-challenge-report")
+def export_effective_challenge_report(
+    request_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Generate PDF documenting effective challenge process (send-backs and responses).
+
+    This report captures the history of approver send-backs and validator responses,
+    demonstrating the "effective challenge" process for audit and compliance purposes.
+    """
+    from fpdf import FPDF
+    import io
+    from fastapi.responses import StreamingResponse
+
+    # Fetch validation request with relationships
+    validation_request = db.query(ValidationRequest).options(
+        joinedload(ValidationRequest.models),
+        joinedload(ValidationRequest.current_status),
+        joinedload(ValidationRequest.validation_type),
+        joinedload(ValidationRequest.outcome),
+        joinedload(ValidationRequest.approvals).joinedload(ValidationApproval.approver)
+    ).filter(ValidationRequest.request_id == request_id).first()
+
+    if not validation_request:
+        raise HTTPException(status_code=404, detail="Validation request not found")
+
+    # Fetch status history ordered by date
+    status_history = db.query(ValidationStatusHistory).options(
+        joinedload(ValidationStatusHistory.old_status),
+        joinedload(ValidationStatusHistory.new_status),
+        joinedload(ValidationStatusHistory.changed_by)
+    ).filter(
+        ValidationStatusHistory.request_id == request_id
+    ).order_by(ValidationStatusHistory.changed_at.asc()).all()
+
+    # Find all REVISION entries (send-backs) and responses
+    revision_entries = [h for h in status_history if h.new_status and h.new_status.code == "REVISION"]
+    resubmit_entries = [h for h in status_history if h.old_status and h.old_status.code == "REVISION"]
+
+    # Build rounds of challenge
+    challenge_rounds = []
+    for i, revision in enumerate(revision_entries):
+        round_data = {
+            "round_number": i + 1,
+            "sent_back_at": revision.changed_at,
+            "sent_back_by": revision.changed_by.full_name if revision.changed_by else "Unknown",
+            "send_back_reason": revision.change_reason or "No reason provided",
+            "snapshot": None,
+            "response": None,
+            "response_at": None,
+            "responded_by": None
+        }
+
+        # Parse snapshot from additional_context
+        if revision.additional_context:
+            try:
+                snapshot = json.loads(revision.additional_context)
+                round_data["snapshot"] = snapshot
+                round_data["approver_role"] = snapshot.get("sent_back_by_role", "Unknown")
+            except json.JSONDecodeError:
+                pass
+
+        # Find corresponding resubmission (next REVISION -> PENDING_APPROVAL transition)
+        for resubmit in resubmit_entries:
+            if resubmit.changed_at > revision.changed_at:
+                round_data["response"] = resubmit.change_reason or "Revisions completed"
+                round_data["response_at"] = resubmit.changed_at
+                round_data["responded_by"] = resubmit.changed_by.full_name if resubmit.changed_by else "Unknown"
+                break
+
+        challenge_rounds.append(round_data)
+
+    # Generate PDF
+    pdf = FPDF()
+    pdf.set_auto_page_break(auto=True, margin=15)
+    pdf.add_page()
+
+    # Title
+    pdf.set_font('Helvetica', 'B', 18)
+    pdf.cell(0, 10, 'Effective Challenge Report', ln=True, align='C')
+    pdf.ln(5)
+
+    # Subtitle with request info
+    pdf.set_font('Helvetica', 'I', 11)
+    model_names = ", ".join([m.model_name for m in validation_request.models[:3]])
+    if len(validation_request.models) > 3:
+        model_names += f" (+{len(validation_request.models) - 3} more)"
+    pdf.cell(0, 6, f'Validation Request #{request_id}: {model_names}', ln=True, align='C')
+
+    pdf.set_font('Helvetica', '', 10)
+    pdf.cell(0, 6, f'Generated: {utc_now().strftime("%Y-%m-%d %H:%M UTC")}', ln=True, align='C')
+    pdf.ln(10)
+
+    # Summary section
+    pdf.set_font('Helvetica', 'B', 14)
+    pdf.cell(0, 8, 'Summary', ln=True)
+    pdf.set_font('Helvetica', '', 10)
+    pdf.ln(2)
+
+    # Summary table
+    pdf.set_fill_color(240, 240, 240)
+    summary_items = [
+        ("Validation Type", validation_request.validation_type.label if validation_request.validation_type else "N/A"),
+        ("Current Status", validation_request.current_status.label if validation_request.current_status else "N/A"),
+        ("Total Challenge Rounds", str(len(challenge_rounds))),
+        ("Final Outcome", validation_request.outcome.outcome if validation_request.outcome else "Pending")
+    ]
+
+    for label, value in summary_items:
+        pdf.cell(60, 7, label + ":", border=1, fill=True)
+        pdf.cell(0, 7, value, border=1, ln=True)
+
+    pdf.ln(10)
+
+    # Challenge rounds section
+    if challenge_rounds:
+        pdf.set_font('Helvetica', 'B', 14)
+        pdf.cell(0, 8, 'Challenge Rounds', ln=True)
+        pdf.ln(5)
+
+        for round_data in challenge_rounds:
+            # Round header
+            pdf.set_font('Helvetica', 'B', 12)
+            pdf.set_fill_color(66, 133, 244)  # Blue
+            pdf.set_text_color(255, 255, 255)
+            pdf.cell(0, 8, f'Round {round_data["round_number"]}', ln=True, fill=True)
+            pdf.set_text_color(0, 0, 0)
+            pdf.ln(3)
+
+            # Send-back details
+            pdf.set_font('Helvetica', 'B', 10)
+            pdf.set_fill_color(255, 235, 205)  # Light orange
+            pdf.cell(0, 7, 'SEND-BACK', ln=True, fill=True)
+
+            pdf.set_font('Helvetica', '', 10)
+            pdf.cell(35, 6, 'Date:')
+            pdf.cell(0, 6, round_data["sent_back_at"].strftime("%Y-%m-%d %H:%M UTC") if round_data["sent_back_at"] else "N/A", ln=True)
+
+            pdf.cell(35, 6, 'Approver:')
+            pdf.cell(0, 6, f'{round_data["sent_back_by"]} ({round_data.get("approver_role", "Unknown")})', ln=True)
+
+            pdf.cell(35, 6, 'Feedback:')
+            # Multi-line for long feedback
+            pdf.multi_cell(0, 6, round_data["send_back_reason"])
+            pdf.ln(3)
+
+            # Response details (if any)
+            if round_data["response"]:
+                pdf.set_font('Helvetica', 'B', 10)
+                pdf.set_fill_color(209, 250, 229)  # Light green
+                pdf.cell(0, 7, 'RESPONSE', ln=True, fill=True)
+
+                pdf.set_font('Helvetica', '', 10)
+                pdf.cell(35, 6, 'Date:')
+                pdf.cell(0, 6, round_data["response_at"].strftime("%Y-%m-%d %H:%M UTC") if round_data["response_at"] else "N/A", ln=True)
+
+                pdf.cell(35, 6, 'Responder:')
+                pdf.cell(0, 6, round_data["responded_by"] or "N/A", ln=True)
+
+                pdf.cell(35, 6, 'Response:')
+                pdf.multi_cell(0, 6, round_data["response"])
+            else:
+                pdf.set_font('Helvetica', 'I', 10)
+                pdf.set_text_color(128, 128, 128)
+                pdf.cell(0, 6, 'Awaiting response...', ln=True)
+                pdf.set_text_color(0, 0, 0)
+
+            pdf.ln(8)
+    else:
+        pdf.set_font('Helvetica', 'I', 11)
+        pdf.cell(0, 10, 'No challenge rounds recorded for this validation request.', ln=True)
+
+    # Approval status section
+    pdf.add_page()
+    pdf.set_font('Helvetica', 'B', 14)
+    pdf.cell(0, 8, 'Current Approval Status', ln=True)
+    pdf.ln(5)
+
+    approvals = [a for a in validation_request.approvals if a.voided_by_id is None]
+    if approvals:
+        # Table header
+        pdf.set_font('Helvetica', 'B', 10)
+        pdf.set_fill_color(200, 200, 200)
+        pdf.cell(50, 7, 'Approver Role', border=1, fill=True)
+        pdf.cell(30, 7, 'Type', border=1, fill=True)
+        pdf.cell(30, 7, 'Status', border=1, fill=True)
+        pdf.cell(0, 7, 'Comments', border=1, ln=True, fill=True)
+
+        pdf.set_font('Helvetica', '', 9)
+        for approval in approvals:
+            pdf.cell(50, 7, approval.approver_role or "N/A", border=1)
+            pdf.cell(30, 7, approval.approval_type or "N/A", border=1)
+            pdf.cell(30, 7, approval.approval_status or "N/A", border=1)
+            comments = (approval.comments or "")[:50]
+            if len(approval.comments or "") > 50:
+                comments += "..."
+            pdf.cell(0, 7, comments, border=1, ln=True)
+    else:
+        pdf.set_font('Helvetica', 'I', 10)
+        pdf.cell(0, 7, 'No approvals configured.', ln=True)
+
+    # Footer
+    pdf.ln(15)
+    pdf.set_font('Helvetica', 'I', 8)
+    pdf.set_text_color(128, 128, 128)
+    pdf.cell(0, 5, 'This report was auto-generated for compliance and audit purposes.', ln=True, align='C')
+    pdf.cell(0, 5, f'Request ID: {request_id} | User: {current_user.email}', ln=True, align='C')
+
+    # Output PDF
+    pdf_bytes = bytes(pdf.output())
+
+    return StreamingResponse(
+        io.BytesIO(pdf_bytes),
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f'attachment; filename="effective_challenge_VR{request_id}.pdf"'
+        }
     )

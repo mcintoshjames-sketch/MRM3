@@ -245,11 +245,20 @@ export interface OpenValidationsCheckResponse {
 
 /**
  * Check if a model has open validation requests that will be affected by a risk tier change.
+ * @param modelId - The model ID to check
+ * @param proposedTierCode - The proposed new tier code (e.g., 'TIER_2') for change detection
  */
-export async function checkOpenValidationsForModel(modelId: number): Promise<OpenValidationsCheckResponse> {
-    const response = await client.get<OpenValidationsCheckResponse>(
-        `/validation-workflow/risk-tier-impact/check/${modelId}`
-    );
+export async function checkOpenValidationsForModel(
+    modelId: number,
+    proposedTierCode?: string
+): Promise<OpenValidationsCheckResponse> {
+    const params = new URLSearchParams();
+    if (proposedTierCode) {
+        params.append('proposed_tier_code', proposedTierCode);
+    }
+    const queryString = params.toString();
+    const url = `/validation-workflow/risk-tier-impact/check/${modelId}${queryString ? `?${queryString}` : ''}`;
+    const response = await client.get<OpenValidationsCheckResponse>(url);
     return response.data;
 }
 

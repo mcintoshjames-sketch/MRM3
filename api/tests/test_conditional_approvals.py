@@ -1191,7 +1191,7 @@ class TestApprovalWorkflowIntegration:
 
         # Create outcome (required before PENDING_APPROVAL)
         # Need "Overall Rating" taxonomy value - use pass_with_findings as it's commonly used
-        # The outcome needs: overall_rating_id, executive_summary, recommended_review_frequency, effective_date
+        # The outcome needs: overall_rating_id, executive_summary, effective_date
         from app.models.taxonomy import Taxonomy, TaxonomyValue as TV
         overall_rating_tax = db_session.query(Taxonomy).filter(Taxonomy.name == "Overall Rating").first()
         if not overall_rating_tax:
@@ -1209,7 +1209,6 @@ class TestApprovalWorkflowIntegration:
         outcome_payload = {
             "overall_rating_id": rating_id,
             "executive_summary": "Test validation completed successfully",
-            "recommended_review_frequency": 12,
             "effective_date": "2025-01-01"
         }
         response = client.post(f"/validation-workflow/requests/{request_id}/outcome", json=outcome_payload, headers=admin_headers)

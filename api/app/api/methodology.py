@@ -71,6 +71,7 @@ def list_categories(
             "code": category.code,
             "name": category.name,
             "sort_order": category.sort_order,
+            "is_aiml": category.is_aiml,
             "methodologies": [
                 {
                     "methodology_id": m.methodology_id,
@@ -173,7 +174,8 @@ def create_category(
     new_category = MethodologyCategory(
         code=category.code,
         name=category.name,
-        sort_order=category.sort_order
+        sort_order=category.sort_order,
+        is_aiml=category.is_aiml
     )
 
     db.add(new_category)
@@ -241,6 +243,10 @@ def update_category(
     if update_data.sort_order is not None:
         changes["sort_order"] = {"old": category.sort_order, "new": update_data.sort_order}
         category.sort_order = update_data.sort_order
+
+    if update_data.is_aiml is not None:
+        changes["is_aiml"] = {"old": category.is_aiml, "new": update_data.is_aiml}
+        category.is_aiml = update_data.is_aiml
 
     if changes:
         create_audit_log(

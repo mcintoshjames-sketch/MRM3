@@ -52,7 +52,6 @@ interface ValidationOutcome {
     request_id: number;
     overall_rating: TaxonomyValue;
     executive_summary: string;
-    recommended_review_frequency: number;
     effective_date: string;
     expiration_date: string | null;
     created_at: string;
@@ -64,11 +63,15 @@ interface ValidationApproval {
     request_id: number;
     approver: UserSummary;
     approver_role: string;
+    approval_type: string;  // Global, Regional, Conditional
     is_required: boolean;
     approval_status: string;
     comments: string | null;
     approved_at: string | null;
     created_at: string;
+    // Voided status - approvals may be voided due to model risk tier changes
+    voided_at: string | null;
+    void_reason: string | null;
 }
 
 interface ValidationStatusHistory {
@@ -213,7 +216,6 @@ export default function ValidationRequestDetailPage() {
     const [newOutcome, setNewOutcome] = useState({
         overall_rating_id: 0,
         executive_summary: '',
-        recommended_review_frequency: 12,
         effective_date: new Date().toISOString().split('T')[0],
         expiration_date: ''
     });
@@ -223,6 +225,8 @@ export default function ValidationRequestDetailPage() {
     const [signOffData, setSignOffData] = useState({ assignment_id: 0, comments: '' });
     const [overdueCommentary, setOverdueCommentary] = useState<CurrentOverdueCommentaryResponse | null>(null);
     const [showCommentaryModal, setShowCommentaryModal] = useState(false);
+    const [showResubmitModal, setShowResubmitModal] = useState(false);
+    const [resubmitResponse, setResubmitResponse] = useState('');
     const [commentaryModalType, setCommentaryModalType] = useState<OverdueType>('VALIDATION_IN_PROGRESS');
     const [editAssignment, setEditAssignment] = useState({
         assignment_id: 0,
@@ -234,6 +238,11 @@ export default function ValidationRequestDetailPage() {
     const [showSelectPrimaryModal, setShowSelectPrimaryModal] = useState(false);
     const [deleteAssignmentData, setDeleteAssignmentData] = useState({ assignment_id: 0, new_primary_id: 0 });
     const [priorValidation, setPriorValidation] = useState<PriorValidationSummary | null>(null);
+
+    // Assessment warning modal state
+    const [showAssessmentWarningModal, setShowAssessmentWarningModal] = useState(false);
+    const [assessmentWarnings, setAssessmentWarnings] = useState<string[]>([]);
+    const [pendingStatusUpdate, setPendingStatusUpdate] = useState<{ status_id: number; reason: string } | null>(null);
 
     useEffect(() => {
         fetchData();
@@ -452,6 +461,7 @@ export default function ValidationRequestDetailPage() {
             case 'In Progress': return 'bg-yellow-100 text-yellow-800';
             case 'Review': return 'bg-purple-100 text-purple-800';
             case 'Pending Approval': return 'bg-orange-100 text-orange-800';
+            case 'Revision': return 'bg-amber-100 text-amber-800';  // Sent back for revisions
             case 'Approved': return 'bg-green-100 text-green-800';
             case 'On Hold': return 'bg-red-100 text-red-800';
             case 'Cancelled': return 'bg-gray-400 text-white';
@@ -474,6 +484,7 @@ export default function ValidationRequestDetailPage() {
             case 'Pending': return 'bg-yellow-100 text-yellow-800';
             case 'Approved': return 'bg-green-100 text-green-800';
             case 'Rejected': return 'bg-red-100 text-red-800';
+            case 'Sent Back': return 'bg-amber-100 text-amber-800';
             default: return 'bg-gray-100 text-gray-800';
         }
     };
@@ -508,27 +519,65 @@ export default function ValidationRequestDetailPage() {
         }
     };
 
-    const handleStatusUpdate = async () => {
-        if (!newStatus.status_id) return;
+    const handleStatusUpdate = async (skipAssessmentWarning: boolean = false) => {
+        const statusToUpdate = pendingStatusUpdate || newStatus;
+        if (!statusToUpdate.status_id) return;
 
-        // Check for unsaved plan changes first
-        const canProceed = await checkUnsavedPlanChanges();
-        if (!canProceed) return;
+        // Check for unsaved plan changes first (only if this is the initial request)
+        if (!skipAssessmentWarning) {
+            const canProceed = await checkUnsavedPlanChanges();
+            if (!canProceed) return;
+        }
 
         setActionLoading(true);
         try {
             await api.patch(`/validation-workflow/requests/${id}/status`, {
-                new_status_id: newStatus.status_id,
-                change_reason: newStatus.reason || null
+                new_status_id: statusToUpdate.status_id,
+                change_reason: statusToUpdate.reason || null,
+                skip_assessment_warning: skipAssessmentWarning
             });
             setShowStatusModal(false);
+            setShowAssessmentWarningModal(false);
             setNewStatus({ status_id: 0, reason: '' });
+            setPendingStatusUpdate(null);
+            setAssessmentWarnings([]);
             fetchData();
         } catch (err: any) {
-            setError(err.response?.data?.detail || 'Failed to update status');
+            // Check for 409 Conflict with assessment warnings
+            if (err.response?.status === 409) {
+                const detail = err.response?.data?.detail;
+                if (detail?.warning_type === 'outdated_risk_assessment') {
+                    // Store the pending status update and show warning modal
+                    setPendingStatusUpdate(statusToUpdate);
+                    setAssessmentWarnings(detail.warnings || [detail.message]);
+                    setShowAssessmentWarningModal(true);
+                    setShowStatusModal(false);
+                    return;
+                }
+            }
+            // Handle other errors (including 400 blocking errors)
+            const errorDetail = err.response?.data?.detail;
+            if (typeof errorDetail === 'string') {
+                setError(errorDetail);
+            } else if (typeof errorDetail === 'object' && errorDetail?.message) {
+                setError(errorDetail.message);
+            } else {
+                setError('Failed to update status');
+            }
         } finally {
             setActionLoading(false);
         }
+    };
+
+    const handleConfirmAssessmentWarning = () => {
+        // User acknowledged the warning, retry with skip flag
+        handleStatusUpdate(true);
+    };
+
+    const handleCancelAssessmentWarning = () => {
+        setShowAssessmentWarningModal(false);
+        setPendingStatusUpdate(null);
+        setAssessmentWarnings([]);
     };
 
     const handleAddAssignment = async () => {
@@ -640,12 +689,16 @@ export default function ValidationRequestDetailPage() {
             setError('Rating and executive summary are required');
             return;
         }
+        // INTERIM validations require expiration date
+        if (request?.validation_type?.code === 'INTERIM' && !newOutcome.expiration_date) {
+            setError('Expiration date is required for INTERIM validations. Interim approvals are time-limited and must have an expiration date.');
+            return;
+        }
         setActionLoading(true);
         try {
             await api.post(`/validation-workflow/requests/${id}/outcome`, {
                 overall_rating_id: newOutcome.overall_rating_id,
                 executive_summary: newOutcome.executive_summary,
-                recommended_review_frequency: newOutcome.recommended_review_frequency,
                 effective_date: newOutcome.effective_date,
                 expiration_date: newOutcome.expiration_date || null
             });
@@ -653,7 +706,6 @@ export default function ValidationRequestDetailPage() {
             setNewOutcome({
                 overall_rating_id: 0,
                 executive_summary: '',
-                recommended_review_frequency: 12,
                 effective_date: new Date().toISOString().split('T')[0],
                 expiration_date: ''
             });
@@ -671,12 +723,16 @@ export default function ValidationRequestDetailPage() {
             setError('Rating and executive summary are required');
             return;
         }
+        // INTERIM validations require expiration date
+        if (request?.validation_type?.code === 'INTERIM' && !newOutcome.expiration_date) {
+            setError('Expiration date is required for INTERIM validations. Interim approvals are time-limited and must have an expiration date.');
+            return;
+        }
         setActionLoading(true);
         try {
             await api.patch(`/validation-workflow/outcomes/${request.outcome.outcome_id}`, {
                 overall_rating_id: newOutcome.overall_rating_id,
                 executive_summary: newOutcome.executive_summary,
-                recommended_review_frequency: newOutcome.recommended_review_frequency,
                 effective_date: newOutcome.effective_date,
                 expiration_date: newOutcome.expiration_date || null
             });
@@ -684,7 +740,6 @@ export default function ValidationRequestDetailPage() {
             setNewOutcome({
                 overall_rating_id: 0,
                 executive_summary: '',
-                recommended_review_frequency: 12,
                 effective_date: new Date().toISOString().split('T')[0],
                 expiration_date: ''
             });
@@ -700,12 +755,18 @@ export default function ValidationRequestDetailPage() {
         setApprovalValidationError(null);
 
         if (!approvalUpdate.status) {
-            setApprovalValidationError('Please select a decision (Approve or Reject)');
+            setApprovalValidationError('Please select a decision');
             return;
         }
 
-        // Validate proxy approval certification
-        if (approvalUpdate.isProxyApproval) {
+        // Validate comments required for "Sent Back"
+        if (approvalUpdate.status === 'Sent Back' && !approvalUpdate.comments?.trim()) {
+            setApprovalValidationError('Comments are required when sending back for revision. Please explain what needs to be addressed.');
+            return;
+        }
+
+        // Validate proxy approval certification (not required for Send Back)
+        if (approvalUpdate.isProxyApproval && approvalUpdate.status !== 'Sent Back') {
             if (!approvalUpdate.certificationEvidence.trim()) {
                 setApprovalValidationError('Authorization evidence is required. Please provide a reference to the documentation that evidences proper authorization.');
                 return;
@@ -718,9 +779,9 @@ export default function ValidationRequestDetailPage() {
 
         setActionLoading(true);
         try {
-            // Build comments with certification evidence if proxy approval
+            // Build comments with certification evidence if proxy approval (not for Send Back)
             let finalComments = approvalUpdate.comments || '';
-            if (approvalUpdate.isProxyApproval && approvalUpdate.certificationEvidence) {
+            if (approvalUpdate.isProxyApproval && approvalUpdate.status !== 'Sent Back' && approvalUpdate.certificationEvidence) {
                 finalComments = `${finalComments}\n\n[PROXY APPROVAL - Authorization Evidence: ${approvalUpdate.certificationEvidence}]`.trim();
             }
 
@@ -873,6 +934,80 @@ export default function ValidationRequestDetailPage() {
         }
     };
 
+    // Get the most recent send-back feedback from status history
+    const getSendBackFeedback = () => {
+        if (!request?.status_history) return null;
+        // Find the most recent transition TO REVISION status
+        const revisionEntry = request.status_history.find(
+            h => h.new_status?.code === 'REVISION'
+        );
+        if (!revisionEntry) return null;
+
+        // Extract the feedback - format is "Sent back by {role}: {comments}"
+        const reason = revisionEntry.change_reason || '';
+        const match = reason.match(/^Sent back by (.+?): (.+)$/s);
+        if (match) {
+            return {
+                approverRole: match[1],
+                comments: match[2],
+                date: revisionEntry.changed_at
+            };
+        }
+        return { approverRole: 'Approver', comments: reason, date: revisionEntry.changed_at };
+    };
+
+    // Handle resubmitting validation from REVISION to PENDING_APPROVAL
+    const handleResubmitForApproval = async () => {
+        if (!request || !resubmitResponse.trim()) return;
+
+        const pendingApprovalStatus = statusOptions.find(s => s.code === 'PENDING_APPROVAL');
+        if (!pendingApprovalStatus) {
+            setError('PENDING_APPROVAL status not found');
+            return;
+        }
+
+        setActionLoading(true);
+        try {
+            await api.patch(`/validation-workflow/requests/${id}/status`, {
+                new_status_id: pendingApprovalStatus.value_id,
+                change_reason: resubmitResponse
+            });
+            setShowResubmitModal(false);
+            setResubmitResponse('');
+            await fetchData();
+        } catch (err: any) {
+            setError(err.response?.data?.detail || 'Failed to resubmit for approval');
+        } finally {
+            setActionLoading(false);
+        }
+    };
+
+    // Handle downloading effective challenge PDF report
+    const handleDownloadEffectiveChallengeReport = async () => {
+        if (!request) return;
+
+        setActionLoading(true);
+        try {
+            const response = await api.get(`/validation-workflow/requests/${id}/effective-challenge-report`, {
+                responseType: 'blob'
+            });
+
+            // Create download link
+            const url = window.URL.createObjectURL(new Blob([response.data]));
+            const link = document.createElement('a');
+            link.href = url;
+            link.setAttribute('download', `effective_challenge_VR${id}.pdf`);
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+            window.URL.revokeObjectURL(url);
+        } catch (err: any) {
+            setError(err.response?.data?.detail || 'Failed to download report');
+        } finally {
+            setActionLoading(false);
+        }
+    };
+
     const canEditRequest = user?.role === 'Admin' || user?.role === 'Validator';
     const isPrimaryValidator = request && user && request.assignments.some(
         a => a.is_primary && a.validator.user_id === user.user_id
@@ -885,9 +1020,13 @@ export default function ValidationRequestDetailPage() {
             .filter(h => h.new_status.label === request.current_status.label)
             .sort((a, b) => new Date(b.changed_at).getTime() - new Date(a.changed_at).getTime())[0];
 
-        if (!currentStatusEntry) return 0;
+        // If no status history entry found, fallback to created_at date
+        // This handles cases where requests were created before status history tracking
+        // or where the initial status was set directly without a history entry
+        const statusChangeDate = currentStatusEntry
+            ? new Date(currentStatusEntry.changed_at)
+            : new Date(request.created_at);
 
-        const statusChangeDate = new Date(currentStatusEntry.changed_at);
         const now = new Date();
         const diffMs = now.getTime() - statusChangeDate.getTime();
         // Use Math.max to prevent negative days due to minor clock differences
@@ -1032,6 +1171,17 @@ export default function ValidationRequestDetailPage() {
                         </button>
                     )}
 
+                    {/* Resubmit for Approval Button (when in REVISION status) */}
+                    {canEditRequest && request.current_status.code === 'REVISION' && (
+                        <button
+                            onClick={() => setShowResubmitModal(true)}
+                            disabled={actionLoading}
+                            className="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700 disabled:opacity-50"
+                        >
+                            Resubmit for Approval
+                        </button>
+                    )}
+
                     {/* Update Status Button (for admins/validators) */}
                     {canEditRequest && (
                         <button
@@ -1050,6 +1200,32 @@ export default function ValidationRequestDetailPage() {
                     <button onClick={() => setError(null)} className="float-right font-bold">×</button>
                 </div>
             )}
+
+            {/* Revision Feedback Banner - shown when request is sent back for revision */}
+            {request.current_status?.code === 'REVISION' && (() => {
+                const feedback = getSendBackFeedback();
+                return feedback ? (
+                    <div className="bg-amber-50 border-l-4 border-amber-500 p-4 mb-6">
+                        <div className="flex items-start">
+                            <svg className="h-6 w-6 text-amber-600 mt-0.5 mr-3 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                            </svg>
+                            <div className="flex-1">
+                                <h3 className="text-sm font-bold text-amber-800">Revision Requested</h3>
+                                <p className="text-xs text-amber-600 mt-0.5">
+                                    Sent back by {feedback.approverRole} on {new Date(feedback.date).toLocaleDateString()}
+                                </p>
+                                <div className="mt-2 p-3 bg-white border border-amber-200 rounded">
+                                    <p className="text-sm text-gray-800 whitespace-pre-wrap">{feedback.comments}</p>
+                                </div>
+                                <p className="text-sm text-amber-700 mt-3">
+                                    Please address the feedback above and click <strong>"Resubmit for Approval"</strong> when ready.
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                ) : null;
+            })()}
 
             {/* Overdue Validation Alert Banner */}
             {isOverdueValidation() && (
@@ -1165,7 +1341,7 @@ export default function ValidationRequestDetailPage() {
             {/* Tabs */}
             <div className="border-b border-gray-200 mb-6">
                 <nav className="-mb-px flex space-x-8">
-                    {(['overview', 'plan', 'assignments', 'scorecard', 'outcome', 'limitations', 'approvals', 'history'] as TabType[]).map((tab) => (
+                    {(['overview', 'assignments', 'plan', 'scorecard', 'outcome', 'limitations', 'approvals', 'history'] as TabType[]).map((tab) => (
                         <button
                             key={tab}
                             onClick={() => {
@@ -1683,10 +1859,6 @@ export default function ValidationRequestDetailPage() {
                                         </span>
                                     </div>
                                     <div>
-                                        <h4 className="text-sm font-medium text-gray-500 mb-1">Recommended Review</h4>
-                                        <p className="text-lg">{request.outcome.recommended_review_frequency} months</p>
-                                    </div>
-                                    <div>
                                         <h4 className="text-sm font-medium text-gray-500 mb-1">Effective Date</h4>
                                         <p className="text-lg">{request.outcome.effective_date}</p>
                                     </div>
@@ -1712,7 +1884,6 @@ export default function ValidationRequestDetailPage() {
                                                 setNewOutcome({
                                                     overall_rating_id: request.outcome!.overall_rating.value_id,
                                                     executive_summary: request.outcome!.executive_summary,
-                                                    recommended_review_frequency: request.outcome!.recommended_review_frequency,
                                                     effective_date: request.outcome!.effective_date,
                                                     expiration_date: request.outcome!.expiration_date || ''
                                                 });
@@ -1749,17 +1920,6 @@ export default function ValidationRequestDetailPage() {
                                         </select>
                                     </div>
                                     <div className="mb-4">
-                                        <label className="block text-sm font-medium mb-2">Recommended Review (months) *</label>
-                                        <input
-                                            type="number"
-                                            className="input-field"
-                                            value={newOutcome.recommended_review_frequency}
-                                            onChange={(e) => setNewOutcome({ ...newOutcome, recommended_review_frequency: parseInt(e.target.value) })}
-                                            min="1"
-                                            max="60"
-                                        />
-                                    </div>
-                                    <div className="mb-4">
                                         <label className="block text-sm font-medium mb-2">Effective Date *</label>
                                         <input
                                             type="date"
@@ -1769,13 +1929,21 @@ export default function ValidationRequestDetailPage() {
                                         />
                                     </div>
                                     <div className="mb-4">
-                                        <label className="block text-sm font-medium mb-2">Expiration Date (Optional)</label>
+                                        <label className="block text-sm font-medium mb-2">
+                                            Expiration Date {request?.validation_type?.code === 'INTERIM' ? '*' : '(Optional)'}
+                                        </label>
                                         <input
                                             type="date"
                                             className="input-field"
                                             value={newOutcome.expiration_date}
                                             onChange={(e) => setNewOutcome({ ...newOutcome, expiration_date: e.target.value })}
+                                            required={request?.validation_type?.code === 'INTERIM'}
                                         />
+                                        {request?.validation_type?.code === 'INTERIM' && (
+                                            <p className="mt-1 text-xs text-amber-600">
+                                                Required for INTERIM validations. Interim approvals are time-limited.
+                                            </p>
+                                        )}
                                     </div>
                                 </div>
                                 <div className="mb-4">
@@ -2023,14 +2191,30 @@ export default function ValidationRequestDetailPage() {
 
                 {activeTab === 'approvals' && (
                     <div>
-                        <h3 className="text-lg font-bold mb-4">Approval Status</h3>
-                        {request.approvals.length === 0 ? (
+                        <div className="flex justify-between items-center mb-4">
+                            <h3 className="text-lg font-bold">Approval Status</h3>
+                            <button
+                                onClick={handleDownloadEffectiveChallengeReport}
+                                disabled={actionLoading}
+                                className="bg-gray-600 text-white px-3 py-1.5 text-sm rounded hover:bg-gray-700 disabled:opacity-50"
+                                title="Download PDF report documenting effective challenge (send-backs and responses)"
+                            >
+                                {actionLoading ? 'Downloading...' : '📄 Export Challenge Report'}
+                            </button>
+                        </div>
+                        {/* Filter out Conditional approvals - they're shown in the ConditionalApprovalsSection below */}
+                        {request.approvals.filter(a => a.approver_role !== 'Conditional' && !a.voided_at).length === 0 ? (
                             <div className="text-gray-500 text-center py-8">
-                                No approvals configured for this project.
+                                {request.approvals.filter(a => a.approver_role !== 'Conditional' && a.voided_at).length > 0
+                                    ? 'All approvals have been voided. New approvals will be created when status returns to Pending Approval.'
+                                    : 'No approvals configured for this project.'}
                             </div>
                         ) : (
                             <div className="space-y-4">
-                                {request.approvals.map((approval) => (
+                                {/* Active (non-voided) Global/Regional approvals */}
+                                {request.approvals
+                                    .filter(a => a.approver_role !== 'Conditional' && !a.voided_at)
+                                    .map((approval) => (
                                     <div key={approval.approval_id} className="border rounded-lg p-4">
                                         <div className="flex justify-between items-start">
                                             <div>
@@ -2046,11 +2230,6 @@ export default function ValidationRequestDetailPage() {
                                                     Role: {approval.approver_role}
                                                     {approval.is_required && ' (Required)'}
                                                 </p>
-                                                {approval.comments && (
-                                                    <p className="text-sm text-gray-600 mt-1 italic">
-                                                        "{approval.comments}"
-                                                    </p>
-                                                )}
                                             </div>
                                             <div className="flex items-center gap-2">
                                                 <span className={`px-2 py-1 text-xs rounded ${getApprovalStatusColor(approval.approval_status)}`}>
@@ -2071,7 +2250,15 @@ export default function ValidationRequestDetailPage() {
                                                                 });
                                                                 setShowApprovalModal(true);
                                                             }}
-                                                            className="btn-primary text-xs"
+                                                            disabled={request?.current_status?.code !== 'PENDING_APPROVAL'}
+                                                            className={`text-xs ${
+                                                                request?.current_status?.code !== 'PENDING_APPROVAL'
+                                                                    ? 'btn-secondary opacity-50 cursor-not-allowed'
+                                                                    : 'btn-primary'
+                                                            }`}
+                                                            title={request?.current_status?.code !== 'PENDING_APPROVAL'
+                                                                ? `Cannot submit approval until request reaches 'Pending Approval' status (currently: ${request?.current_status?.label || 'Unknown'})`
+                                                                : undefined}
                                                         >
                                                             {user?.role === 'Admin' && user?.user_id !== approval.approver.user_id ? 'Approve on Behalf' : 'Submit'}
                                                         </button>
@@ -2135,6 +2322,44 @@ export default function ValidationRequestDetailPage() {
                                         })()}
                                     </div>
                                 ))}
+
+                                {/* Voided approvals (historical, shown collapsed) */}
+                                {request.approvals.filter(a => a.approver_role !== 'Conditional' && a.voided_at).length > 0 && (
+                                    <details className="mt-4 border border-gray-200 rounded-lg">
+                                        <summary className="px-4 py-2 bg-gray-50 cursor-pointer text-sm text-gray-600 hover:bg-gray-100 rounded-t-lg">
+                                            <span className="ml-1">
+                                                Voided Approvals ({request.approvals.filter(a => a.approver_role !== 'Conditional' && a.voided_at).length})
+                                            </span>
+                                        </summary>
+                                        <div className="p-4 space-y-3">
+                                            {request.approvals
+                                                .filter(a => a.approver_role !== 'Conditional' && a.voided_at)
+                                                .map((approval) => (
+                                                <div key={approval.approval_id} className="border border-gray-200 rounded-lg p-3 bg-gray-50 opacity-60">
+                                                    <div className="flex justify-between items-start">
+                                                        <div>
+                                                            <p className="font-medium text-gray-500 line-through">
+                                                                {approval.approver?.full_name || 'Unknown Approver'}
+                                                            </p>
+                                                            <p className="text-xs text-gray-400">
+                                                                Role: {approval.approver_role}
+                                                            </p>
+                                                        </div>
+                                                        <span className="px-2 py-1 text-xs rounded bg-gray-200 text-gray-600">
+                                                            Voided
+                                                        </span>
+                                                    </div>
+                                                    <p className="text-xs text-gray-400 mt-2">
+                                                        {approval.void_reason || 'No reason provided'}
+                                                    </p>
+                                                    <p className="text-xs text-gray-400">
+                                                        Voided on: {approval.voided_at ? new Date(approval.voided_at).toLocaleDateString() : 'Unknown'}
+                                                    </p>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </details>
+                                )}
                             </div>
                         )}
 
@@ -2417,7 +2642,10 @@ export default function ValidationRequestDetailPage() {
                                 onChange={(e) => setNewStatus({ ...newStatus, status_id: parseInt(e.target.value) })}
                             >
                                 <option value={0}>Select Status</option>
-                                {statusOptions.map((opt) => (
+                                {/* Filter out REVISION - it can only be set via the send-back approval flow */}
+                                {statusOptions
+                                    .filter((opt) => opt.code !== 'REVISION')
+                                    .map((opt) => (
                                     <option key={opt.value_id} value={opt.value_id}>
                                         {opt.label}
                                     </option>
@@ -2436,7 +2664,7 @@ export default function ValidationRequestDetailPage() {
                         </div>
                         <div className="flex gap-2">
                             <button
-                                onClick={handleStatusUpdate}
+                                onClick={() => handleStatusUpdate()}
                                 disabled={actionLoading || !newStatus.status_id}
                                 className="btn-primary"
                             >
@@ -2444,6 +2672,57 @@ export default function ValidationRequestDetailPage() {
                             </button>
                             <button onClick={() => setShowStatusModal(false)} className="btn-secondary">
                                 Cancel
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Risk Assessment Warning Modal */}
+            {showAssessmentWarningModal && (
+                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+                    <div className="bg-white rounded-lg p-6 w-full max-w-lg">
+                        <div className="flex items-center gap-3 mb-4">
+                            <div className="flex-shrink-0">
+                                <svg className="h-8 w-8 text-yellow-500" fill="none" viewBox="0 0 24 24" strokeWidth="1.5" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" />
+                                </svg>
+                            </div>
+                            <h3 className="text-lg font-bold text-yellow-700">Risk Assessment Review Recommended</h3>
+                        </div>
+                        <div className="mb-4">
+                            <p className="text-sm text-gray-600 mb-3">
+                                The following models have risk assessments that may need to be reviewed before proceeding:
+                            </p>
+                            <div className="bg-yellow-50 border border-yellow-200 rounded p-3 max-h-48 overflow-y-auto">
+                                <ul className="text-sm text-yellow-800 space-y-2">
+                                    {assessmentWarnings.map((warning, index) => (
+                                        <li key={index} className="flex items-start gap-2">
+                                            <span className="text-yellow-600 mt-0.5">•</span>
+                                            <span>{warning}</span>
+                                        </li>
+                                    ))}
+                                </ul>
+                            </div>
+                        </div>
+                        <div className="bg-gray-50 p-3 rounded mb-4">
+                            <p className="text-sm text-gray-700">
+                                <strong>Recommendation:</strong> Review and update the risk assessment(s) to ensure they reflect the current model risk profile before moving forward with this validation.
+                            </p>
+                        </div>
+                        <div className="flex gap-2 justify-end">
+                            <button
+                                onClick={handleCancelAssessmentWarning}
+                                className="btn-secondary"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={handleConfirmAssessmentWarning}
+                                disabled={actionLoading}
+                                className="bg-yellow-600 hover:bg-yellow-700 text-white px-4 py-2 rounded font-medium"
+                            >
+                                {actionLoading ? 'Processing...' : 'Proceed Anyway'}
                             </button>
                         </div>
                     </div>
@@ -2639,7 +2918,31 @@ export default function ValidationRequestDetailPage() {
                                 <option value="">Select Decision</option>
                                 <option value="Approved">Approve</option>
                                 <option value="Rejected">Reject</option>
+                                {/* Only Global and Regional approvers can send back for revision */}
+                                {request && (() => {
+                                    const currentApproval = request.approvals.find(a => a.approval_id === approvalUpdate.approval_id);
+                                    if (!currentApproval) return false;
+                                    // Check approval_type first, fallback to approver_role for compatibility
+                                    const isGlobalOrRegional =
+                                        currentApproval.approval_type === 'Global' ||
+                                        currentApproval.approval_type === 'Regional' ||
+                                        currentApproval.approver_role?.includes('Global') ||
+                                        currentApproval.approver_role?.includes('Regional');
+                                    return isGlobalOrRegional;
+                                })() && (
+                                    <option value="Sent Back">Send Back for Revision</option>
+                                )}
                             </select>
+                            {approvalUpdate.status === 'Sent Back' && (
+                                <div className="mt-2 p-3 bg-amber-50 border border-amber-200 rounded">
+                                    <p className="text-sm text-amber-800">
+                                        <strong>Send Back:</strong> This will return the validation to the team for revisions.
+                                    </p>
+                                    <p className="text-xs text-amber-700 mt-1">
+                                        Comments are required to explain what needs to be addressed.
+                                    </p>
+                                </div>
+                            )}
                         </div>
                         <div className="mb-4">
                             <label className="block text-sm font-medium mb-2">Comments</label>
@@ -2652,7 +2955,8 @@ export default function ValidationRequestDetailPage() {
                             />
                         </div>
 
-                        {approvalUpdate.isProxyApproval && (
+                        {/* Authorization Evidence only required for proxy Approve/Reject, not Send Back */}
+                        {approvalUpdate.isProxyApproval && approvalUpdate.status !== 'Sent Back' && (
                             <>
                                 <div className="mb-4">
                                     <label className="block text-sm font-medium mb-2">
@@ -2703,6 +3007,63 @@ export default function ValidationRequestDetailPage() {
                                 onClick={() => {
                                     setShowApprovalModal(false);
                                     setApprovalValidationError(null);
+                                }}
+                                className="btn-secondary"
+                            >
+                                Cancel
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Resubmit for Approval Modal */}
+            {showResubmitModal && (
+                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+                    <div className="bg-white rounded-lg p-6 w-full max-w-lg">
+                        <h3 className="text-lg font-bold mb-4">Resubmit for Approval</h3>
+
+                        {/* Show the original feedback */}
+                        {(() => {
+                            const feedback = getSendBackFeedback();
+                            return feedback ? (
+                                <div className="mb-4 p-3 bg-amber-50 border border-amber-200 rounded">
+                                    <p className="text-xs font-medium text-amber-800 mb-1">
+                                        Feedback from {feedback.approverRole}:
+                                    </p>
+                                    <p className="text-sm text-gray-700 whitespace-pre-wrap">{feedback.comments}</p>
+                                </div>
+                            ) : null;
+                        })()}
+
+                        <div className="mb-4">
+                            <label className="block text-sm font-medium mb-2">
+                                Your Response <span className="text-red-500">*</span>
+                            </label>
+                            <textarea
+                                className="input-field"
+                                rows={4}
+                                value={resubmitResponse}
+                                onChange={(e) => setResubmitResponse(e.target.value)}
+                                placeholder="Describe the changes made to address the feedback..."
+                            />
+                            <p className="text-xs text-gray-500 mt-1">
+                                Explain how you've addressed the approver's concerns.
+                            </p>
+                        </div>
+
+                        <div className="flex gap-2">
+                            <button
+                                onClick={handleResubmitForApproval}
+                                disabled={actionLoading || !resubmitResponse.trim()}
+                                className="btn-primary disabled:opacity-50"
+                            >
+                                {actionLoading ? 'Resubmitting...' : 'Resubmit for Approval'}
+                            </button>
+                            <button
+                                onClick={() => {
+                                    setShowResubmitModal(false);
+                                    setResubmitResponse('');
                                 }}
                                 className="btn-secondary"
                             >

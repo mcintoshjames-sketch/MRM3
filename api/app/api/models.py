@@ -21,6 +21,7 @@ from app.models.model_region import ModelRegion
 from app.models.validation_grouping import ValidationGroupingMemory
 from app.models.model_hierarchy import ModelHierarchy
 from app.models.monitoring import MonitoringCycle, MonitoringCycleApproval, MonitoringPlan, monitoring_plan_models
+from app.models.methodology import Methodology
 from app.schemas.model import (
     ModelCreate, ModelUpdate, ModelDetailResponse, ValidationGroupingSuggestion, ModelCreateResponse,
     ModelNameHistoryItem, ModelNameHistoryResponse, NameChangeStatistics
@@ -28,6 +29,7 @@ from app.schemas.model import (
 from app.schemas.submission_action import SubmissionAction, SubmissionFeedback, SubmissionCommentCreate
 from app.schemas.activity_timeline import ActivityTimelineItem, ActivityTimelineResponse
 from app.models.model_name_history import ModelNameHistory
+from app.api.risk_assessment import get_global_assessment_status
 
 router = APIRouter()
 
@@ -71,7 +73,7 @@ def list_models(
         joinedload(Model.risk_tier),
         joinedload(Model.validation_type),
         joinedload(Model.model_type),
-        joinedload(Model.methodology),
+        joinedload(Model.methodology).joinedload(Methodology.category),
         joinedload(Model.regulatory_categories),
         joinedload(Model.model_regions).joinedload(ModelRegion.region),
         joinedload(Model.submitted_by_user),
@@ -411,8 +413,14 @@ def create_model(
         joinedload(Model.risk_tier),
         joinedload(Model.validation_type),
         joinedload(Model.model_type),
+        joinedload(Model.methodology).joinedload(Methodology.category),
         joinedload(Model.regulatory_categories),
         joinedload(Model.submitted_by_user),
+        joinedload(Model.usage_frequency),
+        joinedload(Model.ownership_type),
+        joinedload(Model.status_value),
+        joinedload(Model.wholly_owned_region),
+        joinedload(Model.model_regions).joinedload(ModelRegion.region),
         joinedload(Model.submission_comments).joinedload(
             ModelSubmissionComment.user)
     ).filter(Model.model_id == model.model_id).first()
@@ -622,7 +630,7 @@ def get_model(
         joinedload(Model.risk_tier),
         joinedload(Model.validation_type),
         joinedload(Model.model_type),
-        joinedload(Model.methodology),
+        joinedload(Model.methodology).joinedload(Methodology.category),
         joinedload(Model.wholly_owned_region),
         joinedload(Model.regulatory_categories)
     ).filter(Model.model_id == model_id).first()
@@ -853,6 +861,17 @@ def update_model(
         )
 
     update_data = model_data.model_dump(exclude_unset=True)
+
+    # Block direct risk_tier_id changes if a global risk assessment exists
+    # Users should update the risk assessment instead of directly changing the tier
+    if 'risk_tier_id' in update_data:
+        assessment_status = get_global_assessment_status(db, model_id)
+        if assessment_status["has_assessment"]:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Cannot directly change risk tier when a risk assessment exists. "
+                       "Please update the Risk Assessment to change the model's risk tier."
+            )
 
     # Handle development_type and vendor_id together
     new_dev_type = update_data.get('development_type', model.development_type)

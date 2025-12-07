@@ -13,6 +13,7 @@ class MethodologyCategory(Base):
     code: Mapped[str] = mapped_column(String(50), unique=True, nullable=False, index=True)
     name: Mapped[str] = mapped_column(String(100), nullable=False)
     sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    is_aiml: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 
     # Relationships
     methodologies: Mapped[List["Methodology"]] = relationship(

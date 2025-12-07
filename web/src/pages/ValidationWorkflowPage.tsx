@@ -40,6 +40,7 @@ interface TaxonomyValue {
     value_id: number;
     code: string;
     label: string;
+    is_active?: boolean;
 }
 
 interface ValidationWarning {
@@ -310,10 +311,10 @@ export default function ValidationWorkflowPage() {
             const priority = taxonomies.find((t: any) => t.name === 'Validation Priority');
 
             if (valType) {
-                setValidationTypes(valType.values || []);
+                setValidationTypes((valType.values || []).filter((v: TaxonomyValue) => v.is_active !== false));
             }
             if (priority) {
-                setPriorities(priority.values || []);
+                setPriorities((priority.values || []).filter((v: TaxonomyValue) => v.is_active !== false));
             }
 
             // Fetch regions
@@ -460,6 +461,7 @@ export default function ValidationWorkflowPage() {
             case 'In Progress': return 'bg-yellow-100 text-yellow-800';
             case 'Review': return 'bg-purple-100 text-purple-800';
             case 'Pending Approval': return 'bg-orange-100 text-orange-800';
+            case 'Revision': return 'bg-amber-100 text-amber-800';  // Sent back for revisions
             case 'Approved': return 'bg-green-100 text-green-800';
             case 'On Hold': return 'bg-red-100 text-red-800';
             case 'Cancelled': return 'bg-gray-400 text-white';
@@ -896,6 +898,7 @@ export default function ValidationWorkflowPage() {
                             { value: 'In Progress', label: 'In Progress' },
                             { value: 'Review', label: 'Review' },
                             { value: 'Pending Approval', label: 'Pending Approval' },
+                            { value: 'Revision', label: 'Revision' },
                             { value: 'Approved', label: 'Approved' },
                             { value: 'On Hold', label: 'On Hold' },
                             { value: 'Cancelled', label: 'Cancelled' }

@@ -14,6 +14,7 @@ This document tracks the regression testing strategy and test coverage for itera
 # Added: 54 tests for Model Risk Assessment (qualitative/quantitative scoring, factor config)
 # Added: 56 tests for Validation Scorecard (rating conversions, score computation, config loading)
 # Added: 27 tests for Model Limitations (CRUD, retirement workflow, critical limitations report)
+# Added: 33 tests for Methodology Library (categories, methodologies, model integration)
 cd api && python -m pytest
 
 # Run all frontend tests (128 tests passing)
@@ -428,6 +429,51 @@ cd web && pnpm test:coverage
 - [x] Delete dependency as non-admin blocked (403)
 - [x] Delete dependency creates audit log
 - [x] **Delete dependency allows previously blocked edges (cycle removal)**
+
+#### Methodology Library (`test_methodology.py`)
+
+##### List Endpoints (5 tests)
+- [x] List categories returns all categories with methodologies
+- [x] List categories active_only filter works
+- [x] List methodologies with search filter
+- [x] List methodologies filtered by category
+- [x] Get specific methodology by ID
+
+##### Category CRUD - Admin Only (8 tests)
+- [x] Create category as Admin succeeds
+- [x] Create category as non-Admin fails (403)
+- [x] Create category with duplicate code fails (400)
+- [x] Update category name as Admin succeeds
+- [x] Update category with duplicate code fails
+- [x] Delete category cascades to methodologies
+- [x] Delete category with model references blocked (409) unless force=true
+- [x] Delete non-existent category returns 404
+
+##### Methodology CRUD - Admin Only (10 tests)
+- [x] Create methodology with valid category succeeds
+- [x] Create methodology with invalid category fails (404)
+- [x] Create methodology as non-Admin fails (403)
+- [x] Update methodology name as Admin succeeds
+- [x] Update methodology to different category succeeds
+- [x] Toggle methodology is_active flag
+- [x] Delete methodology successfully
+- [x] Delete methodology with model references blocked (409) unless force=true
+- [x] Delete non-existent methodology returns 404
+- [x] Update methodology variants field
+
+##### Model Integration (6 tests)
+- [x] Create model with methodology_id succeeds
+- [x] Update model methodology_id succeeds
+- [x] Model detail response includes methodology relationship
+- [x] Setting methodology_id to null succeeds
+- [x] Invalid methodology_id returns 404
+- [x] Model methodology eager-loaded in list response
+
+##### Audit Logging (4 tests)
+- [x] Create category creates audit log
+- [x] Update category creates audit log with changes
+- [x] Delete category creates audit log
+- [x] Methodology changes create audit logs
 
 #### MAP Applications (`test_map_applications.py`)
 - [x] List MAP applications when empty
@@ -1193,6 +1239,7 @@ describe('NewPage', () => {
 | **Validation Scorecard** | ✅ test_scorecard.py (56 tests) | ✅ ValidationScorecardTab.tsx (auto-save, section summaries, progress indicator) | 2025-12-01 |
 | **Model Limitations** | ✅ test_limitations.py (30 tests) | ✅ ModelLimitationsTab.tsx (CRUD modals, retirement) + CriticalLimitationsReportPage.tsx + ValidationRequestDetailPage limitations tab | 2025-12-02 |
 | **Final Model Risk Ranking** | 📋 test_final_rating.py (40 tests pending) | ✅ ModelDetailsPage Risk Assessment Summary (Final Risk Ranking display with penalty info) | 2025-12-02 |
+| **Methodology Library** | ✅ test_methodology.py (33 tests) | ✅ ModelDetailsPage methodology dropdown + TaxonomyPage methodology management (pending) | 2025-12-05 |
 
 **Features Added:**
 - Development type (In-House / Third-Party)
@@ -1229,8 +1276,9 @@ describe('NewPage', () => {
 - **Validation Scorecard** (standardized rating framework for validators; 3 sections with 14 criteria loaded from SCORE_CRITERIA.json; rating scale Green(6) to Red(1) with N/A(0); weighted section summaries with half-up rounding; overall assessment computation; auto-save on rating change; linked to ValidationRequest enabling scorecard completion before outcome determination; ValidationScorecardTab.tsx with summary card, progress indicator, collapsible sections)
 - **Model Limitations** (track inherent constraints/weaknesses discovered during validation; Critical vs Non-Critical significance; category taxonomy: Data, Implementation, Methodology, Model Output, Other; conclusion workflow: Mitigate or Accept; user_awareness_description required for Critical; optional links to validation requests, model versions, and recommendations; retirement workflow with commentary; Critical Limitations Report with region filtering and CSV export; ModelLimitationsTab.tsx with CRUD modals + CriticalLimitationsReportPage.tsx)
 - **Final Model Risk Ranking** (penalty-adjusted risk rating based on overdue validation status; scorecard outcome downgraded by configurable notches from Past Due Level bucket taxonomy; adjusted scorecard fed into Residual Risk Map; downgrade_notches field on bucket taxonomy values [0=CURRENT to 5=OBSOLETE]; computation module in api/app/core/final_rating.py; API endpoint GET /models/{id}/final-risk-ranking; ModelDetailsPage Risk Assessment Summary enhanced with penalty display showing original vs adjusted scorecard and final rating)
+- **Methodology Library** (standardized library of model methodologies organized by category; 20 categories with ~47 methodologies seeded from METHOD_LIBRARY.json; model-methodology linkage via methodology_id FK; search by name/description, filter by category, active_only flag; Admin CRUD for categories and methodologies with cascade delete and model reference protection; audit logging for all changes; frontend methodology dropdown on ModelDetailsPage grouped by category)
 
-**Total: 778+ tests (650+ backend + 128 frontend)**
+**Total: 811+ tests (683+ backend + 128 frontend)**
 - Backend: 650+ passing (some pre-existing failures in recommendations/regional scope tests)
 - Frontend: 128 passing
 - **Note**: Core regression suite stable. Model Limitations tests (30 tests) fully passing. Added limitations tracking with Critical/Non-Critical significance, category taxonomy, retirement workflow, Critical Limitations Report, and validation request limitations tab.

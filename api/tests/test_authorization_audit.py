@@ -102,7 +102,7 @@ class TestAuditLogging:
         response = client.patch(
             f"/models/{sample_model.model_id}",
             headers=auth_headers,
-            json={"model_name": "Updated Model Name", "status": "Production"}
+            json={"model_name": "Updated Model Name", "status": "Active"}
         )
         assert response.status_code == 200
 
@@ -120,7 +120,7 @@ class TestAuditLogging:
         assert audit_log.changes["model_name"]["new"] == "Updated Model Name"
         assert "status" in audit_log.changes
         assert audit_log.changes["status"]["old"] == "In Development"
-        assert audit_log.changes["status"]["new"] == "Production"
+        assert audit_log.changes["status"]["new"] == "Active"
 
     def test_delete_model_creates_audit_log(self, client, auth_headers, sample_model, test_user, db_session):
         """Deleting a model creates an audit log entry."""

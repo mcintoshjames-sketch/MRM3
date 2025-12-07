@@ -313,11 +313,14 @@ export default function AdminDashboardPage() {
     };
 
     const formatTimeAgo = (timestamp: string) => {
-        const date = new Date(timestamp);
+        // Ensure timestamp is treated as UTC (API returns UTC without 'Z' suffix)
+        const utcTimestamp = timestamp.endsWith('Z') ? timestamp : timestamp + 'Z';
+        const date = new Date(utcTimestamp);
         const now = new Date();
         const diffMs = now.getTime() - date.getTime();
         const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
 
+        if (diffDays < 0) return 'Just now';  // Handle timezone edge cases
         if (diffDays === 0) return 'Today';
         if (diffDays === 1) return 'Yesterday';
         if (diffDays < 7) return `${diffDays} days ago`;

@@ -658,6 +658,10 @@ class ValidationStatusHistory(Base):
         Integer, ForeignKey("users.user_id"), nullable=False
     )
     change_reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    additional_context: Mapped[Optional[str]] = mapped_column(
+        Text, nullable=True,
+        comment="JSON storing action-specific details (e.g., revision snapshots for send-back)"
+    )
     changed_at: Mapped[datetime] = mapped_column(
         DateTime, nullable=False, default=utc_now
     )
@@ -750,8 +754,6 @@ class ValidationOutcome(Base):
         Integer, ForeignKey("taxonomy_values.value_id"), nullable=False
     )
     executive_summary: Mapped[str] = mapped_column(Text, nullable=False)
-    recommended_review_frequency: Mapped[int] = mapped_column(
-        Integer, nullable=False)  # in months
     effective_date: Mapped[date] = mapped_column(Date, nullable=False)
     expiration_date: Mapped[Optional[date]
                             ] = mapped_column(Date, nullable=True)

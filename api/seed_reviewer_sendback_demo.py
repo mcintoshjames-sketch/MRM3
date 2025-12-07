@@ -101,7 +101,6 @@ def seed_reviewer_sendback():
                 request_id=request.request_id,
                 overall_rating_id=pass_with_findings.value_id,
                 executive_summary="Initial validation completed with several findings that need to be addressed.\n\nKey Findings:\n1. Model documentation incomplete in sections 3.5 and 4.2\n2. Back-testing results need additional explanation\n3. Governance approval signature missing\n\nRecommendations:\nUpdate documentation, provide detailed back-testing analysis, obtain required signatures.",
-                recommended_review_frequency=12,  # 12 months
                 effective_date=date.today(),
                 expiration_date=None,
                 created_at=utc_now()

@@ -23,6 +23,7 @@ import {
     RATING_COLORS,
     lookupInherentRisk,
     TIER_LABELS,
+    TIER_MAP,
 } from '../api/riskAssessment';
 import { listFactors, FactorResponse } from '../api/qualitativeFactors';
 import { useAuth } from '../contexts/AuthContext';
@@ -261,16 +262,17 @@ const ModelRiskAssessmentTab: React.FC<Props> = ({ modelId, regions = [] }) => {
             return;
         }
 
-        // Check if this is a Global assessment (region_id is null) and if tier will change
+        // Check if this is a Global assessment (region_id is null)
         const isGlobalAssessment = selectedRegionId === null;
-        const currentTier = currentAssessment?.final_tier?.code || null;
-        const newTier = effectiveTier; // This is derived from form values
 
-        // Only check for tier change impact on Global assessments
-        if (isGlobalAssessment && currentTier !== newTier) {
+        // For Global assessments, check with backend if tier change will affect open validations
+        // The backend compares the model's current tier with the proposed tier
+        if (isGlobalAssessment && effectiveTier) {
             try {
-                // Check for open validations that would be affected
-                const impact = await checkOpenValidationsForModel(modelId);
+                // Convert effectiveTier (e.g., "MEDIUM") to code format (e.g., "TIER_2")
+                const proposedTierCode = TIER_MAP[effectiveTier];
+                // Check for open validations that would be affected by a tier change
+                const impact = await checkOpenValidationsForModel(modelId, proposedTierCode);
 
                 if (impact.has_open_validations) {
                     // Show warning modal and store the save action
@@ -401,7 +403,6 @@ const ModelRiskAssessmentTab: React.FC<Props> = ({ modelId, regions = [] }) => {
                                                 </ul>
                                             </div>
                                             <p className="text-sm text-gray-500">
-                                                Proceeding will reset validation plan components and void any pending approvals.
                                                 Are you sure you want to continue?
                                             </p>
                                         </div>

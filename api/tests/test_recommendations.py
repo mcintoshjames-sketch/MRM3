@@ -233,7 +233,7 @@ def model_with_region(db_session, test_user, test_region):
         model_name="Regional Model",
         description="Model deployed in a region",
         development_type="In-House",
-        status="In Production",
+        status="Active",
         owner_id=test_user.user_id,
         row_approval_status="approved"
     )
@@ -3200,7 +3200,7 @@ def model_deployed_us(db_session, test_user, multiple_regions):
         model_name="US Model",
         description="Model deployed only in US",
         development_type="In-House",
-        status="In Production",
+        status="Active",
         owner_id=test_user.user_id,
         row_approval_status="approved"
     )
@@ -3224,7 +3224,7 @@ def model_deployed_us_emea(db_session, test_user, multiple_regions):
         model_name="US EMEA Model",
         description="Model deployed in US and EMEA",
         development_type="In-House",
-        status="In Production",
+        status="Active",
         owner_id=test_user.user_id,
         row_approval_status="approved"
     )
@@ -3246,7 +3246,7 @@ def model_global_only(db_session, test_user):
         model_name="Global Model",
         description="Model with no specific regional deployment",
         development_type="In-House",
-        status="In Production",
+        status="Active",
         owner_id=test_user.user_id,
         row_approval_status="approved"
     )

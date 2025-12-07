@@ -9,6 +9,7 @@ from app.models.model import Model
 from app.models.model_submission_comment import ModelSubmissionComment
 from app.models.decommissioning import DecommissioningStatusHistory, DecommissioningRequest
 from app.models.monitoring import MonitoringCycle, MonitoringCycleApproval, MonitoringPlan, monitoring_plan_models
+from app.models.validation import ValidationApproval, ValidationRequest, validation_request_models
 from app.core.rls import apply_model_rls
 
 router = APIRouter()
@@ -132,6 +133,48 @@ def get_news_feed(
                     "model_id": first_model_id,
                     "created_at": approval.approved_at
                 })
+
+    # Get recent validation workflow approvals for accessible models
+    validation_approvals = db.query(ValidationApproval).options(
+        joinedload(ValidationApproval.approver),
+        joinedload(ValidationApproval.request).joinedload(ValidationRequest.models),
+        joinedload(ValidationApproval.represented_region)
+    ).join(
+        ValidationRequest, ValidationApproval.request_id == ValidationRequest.request_id
+    ).join(
+        validation_request_models,
+        ValidationRequest.request_id == validation_request_models.c.request_id
+    ).filter(
+        validation_request_models.c.model_id.in_(accessible_model_ids),
+        ValidationApproval.approval_status.in_(["Approved", "Rejected"]),
+        ValidationApproval.approved_at.isnot(None)
+    ).order_by(ValidationApproval.approved_at.desc()).limit(50).all()
+
+    # Add validation workflow approvals to feed
+    for approval in validation_approvals:
+        # Get model names for context
+        model_names = [m.model_name for m in approval.request.models if m.model_id in accessible_model_ids]
+        model_context = model_names[0] if len(model_names) == 1 else f"{len(model_names)} models"
+        first_model_id = next((m.model_id for m in approval.request.models if m.model_id in accessible_model_ids), None)
+
+        # Build approval description
+        approval_status = "approved" if approval.approval_status == "Approved" else "rejected"
+        role_text = approval.approver_role or "Approver"
+
+        # Only add region if not already in the role text
+        if approval.represented_region and approval.represented_region.code not in role_text:
+            role_text = f"{role_text} ({approval.represented_region.name})"
+
+        feed.append({
+            "id": f"validation_approval_{approval.approval_id}",
+            "type": "validation",
+            "action": approval_status,
+            "text": f"Validation {role_text} {approval_status}",
+            "user_name": approval.approver.full_name if approval.approver else None,
+            "model_name": model_context,
+            "model_id": first_model_id,
+            "created_at": approval.approved_at
+        })
 
     # Sort combined feed by created_at descending and limit to 50
     feed.sort(key=lambda x: x["created_at"], reverse=True)

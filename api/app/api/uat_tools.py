@@ -605,6 +605,7 @@ def seed_uat_data(
         ActionPlanTask, TaxonomyValue, Taxonomy, Region,
         ModelRiskAssessment, QualitativeFactorAssessment, QualitativeRiskFactor
     )
+    from app.models.model import ModelStatus
     from app.models.validation import ValidationRequestModelVersion
     from decimal import Decimal
 
@@ -690,7 +691,7 @@ def seed_uat_data(
             developer_id=validator_user.user_id if validator_user else admin_user.user_id,
             risk_tier_id=tier_1.value_id if tier_1 else None,
             usage_frequency_id=usage_daily.value_id,
-            status="Production",
+            status=ModelStatus.ACTIVE.value,
             created_at=utc_now(),
             updated_at=utc_now()
         )
@@ -755,7 +756,6 @@ def seed_uat_data(
             request_id=val_req1.request_id,
             overall_rating_id=outcome_fit.value_id if outcome_fit else outcome_fit_conditions.value_id,
             executive_summary="Model performs within acceptable thresholds. Minor documentation updates recommended.",
-            recommended_review_frequency=12,
             effective_date=today - timedelta(days=35),
             created_at=utc_now() - timedelta(days=40)
         )
@@ -780,7 +780,7 @@ def seed_uat_data(
             owner_id=admin_user.user_id,
             risk_tier_id=tier_2.value_id if tier_2 else None,
             usage_frequency_id=usage_daily.value_id,
-            status="Production",
+            status=ModelStatus.ACTIVE.value,
             created_at=utc_now() - timedelta(days=365),
             updated_at=utc_now()
         )
@@ -848,7 +848,7 @@ def seed_uat_data(
             vendor_id=1,  # Assumes vendor exists
             risk_tier_id=tier_3.value_id if tier_3 else None,
             usage_frequency_id=usage_quarterly.value_id,
-            status="Development",
+            status=ModelStatus.IN_DEVELOPMENT.value,
             created_at=utc_now() - timedelta(days=30),
             updated_at=utc_now()
         )
@@ -903,7 +903,7 @@ def seed_uat_data(
             developer_id=validator_user.user_id if validator_user else None,
             risk_tier_id=tier_1.value_id if tier_1 else None,
             usage_frequency_id=usage_quarterly.value_id,
-            status="Production",
+            status=ModelStatus.ACTIVE.value,
             created_at=utc_now() - timedelta(days=500),
             updated_at=utc_now()
         )
@@ -948,7 +948,6 @@ def seed_uat_data(
             request_id=val_req4.request_id,
             overall_rating_id=outcome_fit_conditions.value_id if outcome_fit_conditions else outcome_fit.value_id,
             executive_summary="Model approved with conditions. Two recommendations require remediation.",
-            recommended_review_frequency=12,
             effective_date=today - timedelta(days=50),
             created_at=utc_now() - timedelta(days=50)
         )
@@ -1024,7 +1023,7 @@ def seed_uat_data(
             owner_id=admin_user.user_id,
             risk_tier_id=tier_2.value_id if tier_2 else None,
             usage_frequency_id=usage_daily.value_id,
-            status="Production",
+            status=ModelStatus.ACTIVE.value,
             created_at=utc_now() - timedelta(days=400),
             updated_at=utc_now()
         )
@@ -1069,7 +1068,6 @@ def seed_uat_data(
             request_id=val_req5.request_id,
             overall_rating_id=outcome_fit.value_id if outcome_fit else outcome_fit_conditions.value_id,
             executive_summary="Model meets all performance criteria.",
-            recommended_review_frequency=12,
             effective_date=today - timedelta(days=335),
             created_at=utc_now() - timedelta(days=335)
         )
@@ -1091,7 +1089,7 @@ def seed_uat_data(
             owner_id=admin_user.user_id,
             risk_tier_id=tier_1.value_id if tier_1 else None,
             usage_frequency_id=usage_monthly.value_id,
-            status="Production",
+            status=ModelStatus.ACTIVE.value,
             created_at=utc_now() - timedelta(days=200),
             updated_at=utc_now()
         )
@@ -1159,7 +1157,7 @@ def seed_uat_data(
             developer_id=validator_user.user_id if validator_user else None,
             risk_tier_id=tier_1.value_id if tier_1 else None,
             usage_frequency_id=usage_quarterly.value_id,
-            status="Production",
+            status=ModelStatus.ACTIVE.value,
             created_at=utc_now() - timedelta(days=800),
             updated_at=utc_now()
         )
@@ -1223,7 +1221,6 @@ def seed_uat_data(
             request_id=val_req7.request_id,
             overall_rating_id=outcome_fit.value_id if outcome_fit else outcome_fit_conditions.value_id,
             executive_summary="Model meets performance criteria. Next validation due in 12 months.",
-            recommended_review_frequency=12,
             effective_date=today - timedelta(days=430),
             created_at=utc_now() - timedelta(days=430)
         )
@@ -1246,7 +1243,7 @@ def seed_uat_data(
             owner_id=admin_user.user_id,
             risk_tier_id=tier_1.value_id if tier_1 else None,
             usage_frequency_id=usage_monthly.value_id,
-            status="Production",
+            status=ModelStatus.ACTIVE.value,
             created_at=utc_now() - timedelta(days=1000),
             updated_at=utc_now()
         )
@@ -1309,7 +1306,6 @@ def seed_uat_data(
             request_id=val_req8.request_id,
             overall_rating_id=outcome_fit.value_id if outcome_fit else outcome_fit_conditions.value_id,
             executive_summary="Model approved. Annual revalidation required.",
-            recommended_review_frequency=12,
             effective_date=today - timedelta(days=550),
             created_at=utc_now() - timedelta(days=550)
         )
@@ -1333,7 +1329,7 @@ def seed_uat_data(
             developer_id=admin_user.user_id,
             risk_tier_id=tier_2.value_id if tier_2 else None,
             usage_frequency_id=usage_daily.value_id,
-            status="Production",
+            status=ModelStatus.ACTIVE.value,
             created_at=utc_now() - timedelta(days=600),
             updated_at=utc_now()
         )
@@ -1419,7 +1415,7 @@ def seed_uat_data(
             vendor_id=1,  # Assumes vendor exists
             risk_tier_id=tier_1.value_id if tier_1 else None,
             usage_frequency_id=usage_monthly.value_id,
-            status="Production",
+            status=ModelStatus.ACTIVE.value,
             created_at=utc_now() - timedelta(days=700),
             updated_at=utc_now()
         )
@@ -1482,7 +1478,6 @@ def seed_uat_data(
             request_id=val_req10.request_id,
             overall_rating_id=outcome_fit_conditions.value_id if outcome_fit_conditions else outcome_fit.value_id,
             executive_summary="Model approved with conditions. Critical recommendations require immediate attention.",
-            recommended_review_frequency=12,
             effective_date=today - timedelta(days=90),
             created_at=utc_now() - timedelta(days=90)
         )

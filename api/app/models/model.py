@@ -145,6 +145,21 @@ class Model(Base):
             for mr in self.model_regions
         ]
 
+    @property
+    def is_aiml(self) -> Optional[bool]:
+        """Compute AI/ML classification from methodology's category.
+
+        Returns:
+            True if methodology's category is flagged as AI/ML
+            False if methodology's category is NOT flagged as AI/ML
+            None if model has no methodology assigned (Undefined)
+        """
+        if self.methodology is None:
+            return None
+        if self.methodology.category is None:
+            return None
+        return self.methodology.category.is_aiml
+
     # Model versions
     versions: Mapped[List["ModelVersion"]] = relationship(
         "ModelVersion", back_populates="model", cascade="all, delete-orphan", order_by="desc(ModelVersion.created_at)"

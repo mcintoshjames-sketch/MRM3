@@ -35,7 +35,8 @@ export default function Layout({ children }: LayoutProps) {
         deployments: 0,
         decommissioning: 0,
         monitoring: 0,
-        attestations: 0
+        attestations: 0,
+        approvals: 0
     });
 
     // Load collapsed state from localStorage
@@ -113,12 +114,22 @@ export default function Layout({ children }: LayoutProps) {
                     // Silently fail - attestations may not be set up yet
                 }
 
+                // Fetch pending approvals count (for approvers)
+                let pendingApprovals = 0;
+                try {
+                    const approvalsRes = await api.get('/validation-workflow/my-pending-approvals');
+                    pendingApprovals = approvalsRes.data.length;
+                } catch {
+                    // Silently fail - user may not be an approver
+                }
+
                 setPendingCounts({
                     submissions: urgentSubmissions,
                     deployments: pendingDeployments,
                     decommissioning: pendingDecommissioning,
                     monitoring: pendingMonitoring,
-                    attestations: pendingAttestations
+                    attestations: pendingAttestations,
+                    approvals: pendingApprovals
                 });
             } catch (error) {
                 console.error('Failed to fetch pending counts:', error);
@@ -139,7 +150,8 @@ export default function Layout({ children }: LayoutProps) {
 
     // Calculate total tasks badge
     const totalTasksBadge = pendingCounts.submissions + pendingCounts.deployments +
-        pendingCounts.decommissioning + (user?.role !== 'Admin' ? pendingCounts.attestations : 0);
+        pendingCounts.decommissioning + (user?.role !== 'Admin' ? pendingCounts.attestations : 0) +
+        pendingCounts.approvals;
 
     // Reusable nav link component
     const NavItem = ({ to, children, badge, badgeColor = 'red' }: {
@@ -272,6 +284,11 @@ export default function Layout({ children }: LayoutProps) {
                                 <NavItem to="/pending-decommissioning" badge={pendingCounts.decommissioning} badgeColor="purple">
                                     Pending Decommissioning
                                 </NavItem>
+                                {(user?.role === 'Admin' || user?.role === 'Global Approver' || user?.role === 'Regional Approver') && pendingCounts.approvals > 0 && (
+                                    <NavItem to="/approver-dashboard" badge={pendingCounts.approvals} badgeColor="orange">
+                                        Pending Approvals
+                                    </NavItem>
+                                )}
                                 {user?.role !== 'Admin' && (
                                     <NavItem to="/my-attestations" badge={pendingCounts.attestations} badgeColor="orange">
                                         My Attestations

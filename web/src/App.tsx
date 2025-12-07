@@ -43,6 +43,7 @@ import MyAttestationsPage from './pages/MyAttestationsPage';
 import AttestationDetailPage from './pages/AttestationDetailPage';
 import BulkAttestationPage from './pages/BulkAttestationPage';
 import ReferenceDataPage from './pages/ReferenceDataPage';
+import ApproverDashboardPage from './pages/ApproverDashboardPage';
 
 function App() {
     const { user, loading } = useAuth();
@@ -63,6 +64,7 @@ function App() {
             <Route path="/login" element={!user ? <LoginPage /> : <Navigate to={getDefaultRoute()} />} />
             <Route path="/dashboard" element={user?.role === 'Admin' ? <AdminDashboardPage /> : <Navigate to="/models" />} />
             <Route path="/validator-dashboard" element={user?.role === 'Validator' ? <ValidatorDashboardPage /> : <Navigate to="/models" />} />
+            <Route path="/approver-dashboard" element={user?.role === 'Admin' || user?.role === 'Global Approver' || user?.role === 'Regional Approver' ? <ApproverDashboardPage /> : <Navigate to="/models" />} />
             <Route path="/my-dashboard" element={user && user.role !== 'Admin' && user.role !== 'Validator' ? <ModelOwnerDashboardPage /> : <Navigate to={getDefaultRoute()} />} />
             <Route path="/models" element={user ? <ModelsPage /> : <Navigate to="/login" />} />
             <Route path="/models/:model_id/versions/:version_id" element={user ? <ModelChangeRecordPage /> : <Navigate to="/login" />} />

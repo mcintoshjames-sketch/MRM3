@@ -70,6 +70,7 @@ interface Model {
     row_approval_status: string | null;
     submitted_at: string | null;
     is_model: boolean;
+    is_aiml: boolean | null;
     owner: User;
     developer: User | null;
     vendor: Vendor | null;
@@ -200,6 +201,7 @@ export default function ModelsPage() {
         { key: 'model_name', label: 'Model Name', default: true },
         { key: 'description', label: 'Description and Purpose', default: true },
         { key: 'development_type', label: 'Development Type', default: true },
+        { key: 'is_aiml', label: 'AI/ML', default: true },
         { key: 'status', label: 'Status', default: true },
         { key: 'owner', label: 'Owner', default: true },
         { key: 'developer', label: 'Developer', default: true },
@@ -269,7 +271,8 @@ export default function ModelsPage() {
         owner_ids: [] as number[],
         vendor_ids: [] as number[],
         region_ids: [] as number[],
-        include_sub_models: false
+        include_sub_models: false,
+        is_aiml: '' as '' | 'true' | 'false' | 'null'  // '', 'true', 'false', 'null' (undefined)
     });
 
     // Apply filters first, then sort
@@ -321,6 +324,19 @@ export default function ModelsPage() {
         // Model/Non-Model classification filter - exclude non-models unless checkbox is checked
         if (!includeNonModels && model.is_model === false) {
             return false;
+        }
+
+        // AI/ML classification filter
+        if (filters.is_aiml !== '') {
+            if (filters.is_aiml === 'true' && model.is_aiml !== true) {
+                return false;
+            }
+            if (filters.is_aiml === 'false' && model.is_aiml !== false) {
+                return false;
+            }
+            if (filters.is_aiml === 'null' && model.is_aiml !== null) {
+                return false;
+            }
         }
 
         return true;
@@ -674,6 +690,9 @@ export default function ModelsPage() {
                             break;
                         case 'development_type':
                             value = model.development_type;
+                            break;
+                        case 'is_aiml':
+                            value = model.is_aiml === true ? 'AI/ML' : model.is_aiml === false ? 'Non-AI/ML' : 'Undefined';
                             break;
                         case 'status':
                             value = model.status;
@@ -1497,6 +1516,21 @@ export default function ModelsPage() {
                             onChange={(values) => setFilters({ ...filters, region_ids: values as number[] })}
                         />
 
+                        {/* AI/ML Classification */}
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">AI/ML Classification</label>
+                            <select
+                                value={filters.is_aiml}
+                                onChange={(e) => setFilters({ ...filters, is_aiml: e.target.value as '' | 'true' | 'false' | 'null' })}
+                                className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 text-sm"
+                            >
+                                <option value="">All Models</option>
+                                <option value="true">AI/ML Models</option>
+                                <option value="false">Non-AI/ML Models</option>
+                                <option value="null">Undefined (No Methodology)</option>
+                            </select>
+                        </div>
+
                         {/* Include Non-Models Toggle */}
                         <div className="flex items-center space-x-2 pt-5">
                             <input
@@ -1541,7 +1575,8 @@ export default function ModelsPage() {
                                     owner_ids: [],
                                     vendor_ids: [],
                                     region_ids: [],
-                                    include_sub_models: false
+                                    include_sub_models: false,
+                                    is_aiml: ''
                                 });
                                 setIncludeNonModels(false);
                             }}
@@ -1567,11 +1602,11 @@ export default function ModelsPage() {
                                 </th>
                                 <th
                                     className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100"
-                                    onClick={() => requestSort('development_type')}
+                                    onClick={() => requestSort('is_aiml')}
                                 >
                                     <div className="flex items-center gap-2">
-                                        Type
-                                        {getSortIcon('development_type')}
+                                        AI/ML
+                                        {getSortIcon('is_aiml')}
                                     </div>
                                 </th>
                                 <th
@@ -1620,7 +1655,7 @@ export default function ModelsPage() {
                         <tbody className="bg-white divide-y divide-gray-200">
                             {sortedData.length === 0 ? (
                                 <tr>
-                                    <td colSpan={9} className="px-6 py-4 text-center text-gray-500">
+                                    <td colSpan={8} className="px-6 py-4 text-center text-gray-500">
                                         No models yet. Click "Add Model" to create one.
                                     </td>
                                 </tr>
@@ -1647,7 +1682,7 @@ export default function ModelsPage() {
                                                             ? 'bg-orange-100 text-orange-800'
                                                             : 'bg-gray-100 text-gray-800'
                                                         }`}>
-                                                        {model.row_approval_status === 'pending' ? 'Pending Approval' :
+                                                        {model.row_approval_status === 'pending' ? 'Draft' :
                                                             model.row_approval_status === 'needs_revision' ? 'Needs Revision' :
                                                                 model.row_approval_status}
                                                     </span>
@@ -1661,15 +1696,21 @@ export default function ModelsPage() {
                                                     </span>
                                                 )}
                                             </div>
-                                            <div className="text-sm text-gray-500">{model.description || '-'}</div>
                                         </td>
                                         <td className="px-6 py-4 whitespace-nowrap">
-                                            <span className={`px-2 py-1 text-xs rounded ${model.development_type === 'In-House'
-                                                ? 'bg-green-100 text-green-800'
-                                                : 'bg-purple-100 text-purple-800'
-                                                }`}>
-                                                {model.development_type}
-                                            </span>
+                                            {model.is_aiml === true ? (
+                                                <span className="px-2 py-1 text-xs rounded bg-purple-100 text-purple-800 font-medium">
+                                                    AI/ML
+                                                </span>
+                                            ) : model.is_aiml === false ? (
+                                                <span className="px-2 py-1 text-xs rounded bg-gray-100 text-gray-700">
+                                                    Non-AI/ML
+                                                </span>
+                                            ) : (
+                                                <span className="text-sm text-gray-400 italic">
+                                                    Undefined
+                                                </span>
+                                            )}
                                         </td>
                                         <td className="px-6 py-4 whitespace-nowrap text-sm">
                                             {model.owner.full_name}

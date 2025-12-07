@@ -133,6 +133,7 @@ interface MethodologyCategory {
     code: string;
     name: string;
     sort_order: number;
+    is_aiml: boolean;
     methodologies: Methodology[];
 }
 
@@ -433,7 +434,8 @@ export default function TaxonomyPage() {
     const [methodologyCategoryFormData, setMethodologyCategoryFormData] = useState({
         code: '',
         name: '',
-        sort_order: 0
+        sort_order: 0,
+        is_aiml: false
     });
     const [methodologyFormData, setMethodologyFormData] = useState({
         category_id: 0,
@@ -1440,7 +1442,7 @@ export default function TaxonomyPage() {
     };
 
     const resetMethodologyCategoryForm = () => {
-        setMethodologyCategoryFormData({ code: '', name: '', sort_order: 0 });
+        setMethodologyCategoryFormData({ code: '', name: '', sort_order: 0, is_aiml: false });
         setEditingMethodologyCategory(null);
         setShowMethodologyCategoryForm(false);
     };
@@ -1479,7 +1481,8 @@ export default function TaxonomyPage() {
         setMethodologyCategoryFormData({
             code: category.code,
             name: category.name,
-            sort_order: category.sort_order
+            sort_order: category.sort_order,
+            is_aiml: category.is_aiml
         });
         setShowMethodologyCategoryForm(true);
     };
@@ -3063,6 +3066,19 @@ export default function TaxonomyPage() {
                                             required
                                         />
                                     </div>
+                                    <div className="mb-4 flex items-center">
+                                        <label className="flex items-center gap-2 cursor-pointer">
+                                            <input
+                                                id="meth_cat_is_aiml"
+                                                type="checkbox"
+                                                checked={methodologyCategoryFormData.is_aiml}
+                                                onChange={(e) => setMethodologyCategoryFormData({ ...methodologyCategoryFormData, is_aiml: e.target.checked })}
+                                                className="h-4 w-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500"
+                                            />
+                                            <span className="text-sm font-medium text-gray-700">AI/ML Category</span>
+                                        </label>
+                                        <span className="ml-2 text-xs text-gray-500">(Models using methodologies in this category will be classified as AI/ML)</span>
+                                    </div>
                                 </div>
                                 <div className="flex gap-2">
                                     <button type="submit" className="btn-primary">
@@ -3205,6 +3221,11 @@ export default function TaxonomyPage() {
                                                 <span className="text-xs text-gray-400 bg-gray-100 px-2 py-0.5 rounded">
                                                     {category.code}
                                                 </span>
+                                                {category.is_aiml && (
+                                                    <span className="text-xs text-purple-700 bg-purple-100 px-2 py-0.5 rounded font-medium">
+                                                        AI/ML
+                                                    </span>
+                                                )}
                                                 <span className="text-sm text-gray-500">
                                                     ({category.methodologies?.length || 0} methodologies)
                                                 </span>

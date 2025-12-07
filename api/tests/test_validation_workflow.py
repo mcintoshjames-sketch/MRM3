@@ -23,7 +23,8 @@ def workflow_taxonomies(db_session):
     db_session.flush()
 
     urgent = TaxonomyValue(taxonomy_id=priority_tax.taxonomy_id, code="URGENT", label="Urgent", sort_order=1)
-    standard = TaxonomyValue(taxonomy_id=priority_tax.taxonomy_id, code="STANDARD", label="Standard", sort_order=2)
+    medium = TaxonomyValue(taxonomy_id=priority_tax.taxonomy_id, code="MEDIUM", label="Medium", sort_order=2)
+    standard = TaxonomyValue(taxonomy_id=priority_tax.taxonomy_id, code="STANDARD", label="Standard", sort_order=3)
 
     # Validation Request Status
     status_tax = Taxonomy(name="Validation Request Status", is_system=True)
@@ -35,6 +36,7 @@ def workflow_taxonomies(db_session):
     in_progress = TaxonomyValue(taxonomy_id=status_tax.taxonomy_id, code="IN_PROGRESS", label="In Progress", sort_order=3)
     review = TaxonomyValue(taxonomy_id=status_tax.taxonomy_id, code="REVIEW", label="Review", sort_order=4)
     pending_approval = TaxonomyValue(taxonomy_id=status_tax.taxonomy_id, code="PENDING_APPROVAL", label="Pending Approval", sort_order=5)
+    revision = TaxonomyValue(taxonomy_id=status_tax.taxonomy_id, code="REVISION", label="Revision", sort_order=5.5)
     approved = TaxonomyValue(taxonomy_id=status_tax.taxonomy_id, code="APPROVED", label="Approved", sort_order=6)
     on_hold = TaxonomyValue(taxonomy_id=status_tax.taxonomy_id, code="ON_HOLD", label="On Hold", sort_order=7)
     cancelled = TaxonomyValue(taxonomy_id=status_tax.taxonomy_id, code="CANCELLED", label="Cancelled", sort_order=8)
@@ -77,8 +79,8 @@ def workflow_taxonomies(db_session):
     not_fit = TaxonomyValue(taxonomy_id=rating_tax.taxonomy_id, code="NOT_FIT", label="Not Fit for Purpose", sort_order=3)
 
     db_session.add_all([
-        urgent, standard,
-        intake, planning, in_progress, review, pending_approval, approved, on_hold, cancelled,
+        urgent, medium, standard,
+        intake, planning, in_progress, review, pending_approval, revision, approved, on_hold, cancelled,
         initial_val, comprehensive_val,
         conceptual, data_quality, implementation, performance, documentation,
         not_started, comp_in_progress, completed,
@@ -87,10 +89,10 @@ def workflow_taxonomies(db_session):
     db_session.commit()
 
     return {
-        "priority": {"urgent": urgent, "standard": standard},
+        "priority": {"urgent": urgent, "medium": medium, "standard": standard},
         "status": {
             "intake": intake, "planning": planning, "in_progress": in_progress,
-            "review": review, "pending_approval": pending_approval, "approved": approved,
+            "review": review, "pending_approval": pending_approval, "revision": revision, "approved": approved,
             "on_hold": on_hold, "cancelled": cancelled
         },
         "type": {"initial": initial_val, "comprehensive": comprehensive_val},
@@ -869,7 +871,6 @@ class TestOutcomeCreation:
             json={
                 "overall_rating_id": workflow_taxonomies["rating"]["fit_with_conditions"].value_id,
                 "executive_summary": "Model performs well but requires monitoring",
-                "recommended_review_frequency": 6,
                 "effective_date": effective_date
             }
         )
@@ -877,7 +878,6 @@ class TestOutcomeCreation:
         data = response.json()
         assert data["overall_rating"]["label"] == "Fit with Conditions"
         assert data["executive_summary"] == "Model performs well but requires monitoring"
-        assert data["recommended_review_frequency"] == 6
 
     def test_cannot_create_duplicate_outcome(self, client, admin_headers, sample_model, validator_user, workflow_taxonomies):
         """Test that only one outcome can exist per request."""
@@ -927,7 +927,6 @@ class TestOutcomeCreation:
             json={
                 "overall_rating_id": workflow_taxonomies["rating"]["fit_for_purpose"].value_id,
                 "executive_summary": "First outcome",
-                "recommended_review_frequency": 12,
                 "effective_date": date.today().isoformat()
             }
         )
@@ -939,7 +938,6 @@ class TestOutcomeCreation:
             json={
                 "overall_rating_id": workflow_taxonomies["rating"]["not_fit"].value_id,
                 "executive_summary": "Second outcome",
-                "recommended_review_frequency": 3,
                 "effective_date": date.today().isoformat()
             }
         )
@@ -1088,6 +1086,151 @@ class TestApprovalWorkflow:
         )
         assert response.status_code == 422  # Validation error
 
+    def test_auto_transition_to_approved_when_all_approvals_complete(
+        self, client, admin_headers, sample_model, admin_user, workflow_taxonomies, db_session, validator_user
+    ):
+        """Test that validation request auto-transitions to APPROVED when all required approvals are complete."""
+        from app.models.validation import ValidationRequest
+
+        target_date = (date.today() + timedelta(days=30)).isoformat()
+
+        # Create validation request (starts at INTAKE)
+        create_response = client.post(
+            "/validation-workflow/requests/",
+            headers=admin_headers,
+            json={
+                "model_ids": [sample_model.model_id],
+                "validation_type_id": workflow_taxonomies["type"]["initial"].value_id,
+                "priority_id": workflow_taxonomies["priority"]["standard"].value_id,
+                "target_completion_date": target_date,
+            }
+        )
+        assert create_response.status_code == 201
+        request_id = create_response.json()["request_id"]
+
+        # Assign a primary validator (required before transitioning to PLANNING)
+        assign_response = client.post(
+            f"/validation-workflow/requests/{request_id}/assignments",
+            headers=admin_headers,
+            json={
+                "validator_id": validator_user.user_id,
+                "is_primary": True,
+                "independence_attestation": True
+            }
+        )
+        assert assign_response.status_code == 201
+
+        # Transition: PLANNING → IN_PROGRESS → REVIEW
+        for status_key, reason in [
+            ("in_progress", "Starting validation work"),
+            ("review", "Entering review phase"),
+        ]:
+            status_value = workflow_taxonomies["status"][status_key]
+            status_response = client.patch(
+                f"/validation-workflow/requests/{request_id}/status",
+                headers=admin_headers,
+                json={
+                    "new_status_id": status_value.value_id,
+                    "change_reason": reason
+                }
+            )
+            assert status_response.status_code == 200, f"Failed to transition to {status_key}: {status_response.json()}"
+
+        # Create outcome (required before PENDING_APPROVAL)
+        outcome_response = client.post(
+            f"/validation-workflow/requests/{request_id}/outcome",
+            headers=admin_headers,
+            json={
+                "overall_rating_id": workflow_taxonomies["rating"]["fit_for_purpose"].value_id,
+                "executive_summary": "Model validation complete with satisfactory results",
+                "effective_date": date.today().isoformat()
+            }
+        )
+        assert outcome_response.status_code == 201, f"Failed to create outcome: {outcome_response.json()}"
+
+        # Transition to PENDING_APPROVAL
+        pending_approval_status = workflow_taxonomies["status"]["pending_approval"]
+        status_response = client.patch(
+            f"/validation-workflow/requests/{request_id}/status",
+            headers=admin_headers,
+            json={
+                "new_status_id": pending_approval_status.value_id,
+                "change_reason": "Ready for approval"
+            }
+        )
+        assert status_response.status_code == 200, f"Failed to transition to pending_approval: {status_response.json()}"
+
+        # Verify we're at PENDING_APPROVAL
+        get_response = client.get(f"/validation-workflow/requests/{request_id}", headers=admin_headers)
+        assert get_response.json()["current_status"]["code"] == "PENDING_APPROVAL"
+
+        # Add two required approvals
+        approval1_response = client.post(
+            f"/validation-workflow/requests/{request_id}/approvals",
+            headers=admin_headers,
+            json={
+                "approver_id": admin_user.user_id,
+                "approver_role": "Model Risk Committee",
+                "is_required": True
+            }
+        )
+        assert approval1_response.status_code == 201
+        approval1_id = approval1_response.json()["approval_id"]
+
+        approval2_response = client.post(
+            f"/validation-workflow/requests/{request_id}/approvals",
+            headers=admin_headers,
+            json={
+                "approver_id": admin_user.user_id,
+                "approver_role": "Senior Management",
+                "is_required": True
+            }
+        )
+        assert approval2_response.status_code == 201
+        approval2_id = approval2_response.json()["approval_id"]
+
+        # Submit first approval - should NOT auto-transition (still missing one)
+        response1 = client.patch(
+            f"/validation-workflow/approvals/{approval1_id}",
+            headers=admin_headers,
+            json={
+                "approval_status": "Approved",
+                "comments": "First approval complete"
+            }
+        )
+        assert response1.status_code == 200
+        assert response1.json()["approval_status"] == "Approved"
+
+        # Check request is still PENDING_APPROVAL
+        get_response = client.get(
+            f"/validation-workflow/requests/{request_id}",
+            headers=admin_headers
+        )
+        assert get_response.status_code == 200
+        assert get_response.json()["current_status"]["code"] == "PENDING_APPROVAL"
+
+        # Submit second approval - should auto-transition to APPROVED
+        response2 = client.patch(
+            f"/validation-workflow/approvals/{approval2_id}",
+            headers=admin_headers,
+            json={
+                "approval_status": "Approved",
+                "comments": "Second approval complete"
+            }
+        )
+        assert response2.status_code == 200
+        assert response2.json()["approval_status"] == "Approved"
+
+        # Verify request auto-transitioned to APPROVED
+        db_session.expire_all()  # Force refresh from DB
+        final_response = client.get(
+            f"/validation-workflow/requests/{request_id}",
+            headers=admin_headers
+        )
+        assert final_response.status_code == 200
+        assert final_response.json()["current_status"]["code"] == "APPROVED", \
+            f"Expected APPROVED, got {final_response.json()['current_status']['code']}"
+
 
 class TestDashboardEndpoints:
     """Test dashboard and reporting endpoints."""
@@ -1234,18 +1377,19 @@ class TestValidationGroupingMemory:
     """Test validation grouping memory functionality (Phase 1)."""
 
     def test_grouping_memory_created_for_multi_model_regular_validation(
-        self, client, admin_headers, sample_model, workflow_taxonomies, db_session
+        self, client, admin_headers, sample_model, workflow_taxonomies, db_session, usage_frequency
     ):
         """Test that grouping memory is created for multi-model regular validations."""
         from app.models.validation_grouping import ValidationGroupingMemory
-        
+
         # Create a second model
         second_model = Model(
             model_name="Test Model 2",
             description="Second test model",
             owner_id=1,
             development_type="In-House",
-            status="Active"
+            status="Active",
+            usage_frequency_id=usage_frequency["daily"].value_id
         )
         db_session.add(second_model)
         db_session.commit()
@@ -1318,12 +1462,12 @@ class TestValidationGroupingMemory:
         assert memory is None
 
     def test_grouping_memory_not_created_for_targeted_validation(
-        self, client, admin_headers, sample_model, workflow_taxonomies, db_session
+        self, client, admin_headers, sample_model, workflow_taxonomies, db_session, usage_frequency
     ):
         """Test that grouping memory is NOT created for targeted validations."""
         from app.models.validation_grouping import ValidationGroupingMemory
         from app.models.taxonomy import Taxonomy, TaxonomyValue
-        
+
         # Create TARGETED validation type
         type_tax = db_session.query(Taxonomy).filter(Taxonomy.name == "Validation Type").first()
         targeted_val = TaxonomyValue(
@@ -1342,7 +1486,8 @@ class TestValidationGroupingMemory:
             description="Second test model",
             owner_id=1,
             development_type="In-House",
-            status="Active"
+            status="Active",
+            usage_frequency_id=usage_frequency["daily"].value_id
         )
         db_session.add(second_model)
         db_session.commit()
@@ -1375,14 +1520,14 @@ class TestValidationGroupingMemory:
         assert memory2 is None
 
     def test_grouping_memory_updates_on_new_validation(
-        self, client, admin_headers, sample_model, workflow_taxonomies, db_session
+        self, client, admin_headers, sample_model, workflow_taxonomies, db_session, usage_frequency
     ):
         """Test that grouping memory updates when a new validation is created."""
         from app.models.validation_grouping import ValidationGroupingMemory
-        
+
         # Create three models
-        model2 = Model(model_name="Model 2", owner_id=1, development_type="In-House", status="Active")
-        model3 = Model(model_name="Model 3", owner_id=1, development_type="In-House", status="Active")
+        model2 = Model(model_name="Model 2", owner_id=1, development_type="In-House", status="Active", usage_frequency_id=usage_frequency["daily"].value_id)
+        model3 = Model(model_name="Model 3", owner_id=1, development_type="In-House", status="Active", usage_frequency_id=usage_frequency["daily"].value_id)
         db_session.add_all([model2, model3])
         db_session.commit()
         db_session.refresh(model2)
@@ -1437,11 +1582,11 @@ class TestValidationGroupingMemory:
         assert model2.model_id not in grouped_ids  # Should be replaced
 
     def test_validation_suggestions_endpoint_success(
-        self, client, admin_headers, sample_model, workflow_taxonomies, db_session
+        self, client, admin_headers, sample_model, workflow_taxonomies, db_session, usage_frequency
     ):
         """Test GET /models/{id}/validation-suggestions endpoint."""
         # Create second model
-        model2 = Model(model_name="Model 2", owner_id=1, development_type="In-House", status="Active")
+        model2 = Model(model_name="Model 2", owner_id=1, development_type="In-House", status="Active", usage_frequency_id=usage_frequency["daily"].value_id)
         db_session.add(model2)
         db_session.commit()
         db_session.refresh(model2)
@@ -1508,14 +1653,14 @@ class TestValidationGroupingMemory:
         assert response.status_code == 403
 
     def test_three_model_grouping(
-        self, client, admin_headers, sample_model, workflow_taxonomies, db_session
+        self, client, admin_headers, sample_model, workflow_taxonomies, db_session, usage_frequency
     ):
         """Test grouping memory with three models."""
         from app.models.validation_grouping import ValidationGroupingMemory
-        
+
         # Create two more models
-        model2 = Model(model_name="Model 2", owner_id=1, development_type="In-House", status="Active")
-        model3 = Model(model_name="Model 3", owner_id=1, development_type="In-House", status="Active")
+        model2 = Model(model_name="Model 2", owner_id=1, development_type="In-House", status="Active", usage_frequency_id=usage_frequency["daily"].value_id)
+        model3 = Model(model_name="Model 3", owner_id=1, development_type="In-House", status="Active", usage_frequency_id=usage_frequency["daily"].value_id)
         db_session.add_all([model2, model3])
         db_session.commit()
         db_session.refresh(model2)
@@ -1801,7 +1946,7 @@ class TestRegionalScopeIntelligence:
         return {"us": us_region, "eu": eu_region, "apac": apac_region}
 
     @pytest.fixture
-    def models_with_regions(self, db_session, test_user, regions):
+    def models_with_regions(self, db_session, test_user, regions, usage_frequency):
         """Create models with regional associations."""
         from app.models.model import Model
 
@@ -1810,28 +1955,32 @@ class TestRegionalScopeIntelligence:
             model_name="US Credit Risk Model",
             development_type="In-House",
             owner_id=test_user.user_id,
-            status="Active"
+            status="Active",
+            usage_frequency_id=usage_frequency["daily"].value_id
         )
         # Model 2: EU only
         model2 = Model(
             model_name="EU Fraud Detection Model",
             development_type="In-House",
             owner_id=test_user.user_id,
-            status="Active"
+            status="Active",
+            usage_frequency_id=usage_frequency["daily"].value_id
         )
         # Model 3: US and APAC
         model3 = Model(
             model_name="Global Pricing Model",
             development_type="In-House",
             owner_id=test_user.user_id,
-            status="Active"
+            status="Active",
+            usage_frequency_id=usage_frequency["daily"].value_id
         )
         # Model 4: No regions
         model4 = Model(
             model_name="Internal Tool",
             development_type="In-House",
             owner_id=test_user.user_id,
-            status="Active"
+            status="Active",
+            usage_frequency_id=usage_frequency["daily"].value_id
         )
 
         db_session.add_all([model1, model2, model3, model4])
@@ -2472,3 +2621,434 @@ class TestPriorValidationAutoPopulation:
 
         # Manual prior should be preserved (first_request), not auto-populated with second_request
         assert third_request["prior_validation_request_id"] == first_request["request_id"]
+
+
+# ==================== SEND-BACK WORKFLOW TESTS ====================
+
+
+class TestSendBackWorkflow:
+    """Tests for the Send Back approval workflow feature."""
+
+    def test_send_back_requires_comments(
+        self, client, admin_headers, db_session, workflow_taxonomies, sample_model, admin_user
+    ):
+        """Test that sending back requires mandatory comments."""
+        # Create validation request in PENDING_APPROVAL status with a Global approval
+        validation_req = ValidationRequest(
+            requestor_id=admin_user.user_id,
+            validation_type_id=workflow_taxonomies["type"]["initial"].value_id,
+            priority_id=workflow_taxonomies["priority"]["medium"].value_id,
+            current_status_id=workflow_taxonomies["status"]["pending_approval"].value_id,
+            target_completion_date=date.today() + timedelta(days=30),
+            created_at=datetime.now(),
+            updated_at=datetime.now()
+        )
+        validation_req.models = [sample_model]
+        db_session.add(validation_req)
+        db_session.flush()
+
+        # Create Global approval
+        global_approval = ValidationApproval(
+            request_id=validation_req.request_id,
+            approver_id=admin_user.user_id,
+            approver_role="Global Approver",
+            approval_type="Global",
+            is_required=True,
+            approval_status="Pending",
+            created_at=datetime.now()
+        )
+        db_session.add(global_approval)
+        db_session.commit()
+
+        # Try to send back without comments
+        response = client.patch(
+            f"/validation-workflow/approvals/{global_approval.approval_id}",
+            headers=admin_headers,
+            json={
+                "approval_status": "Sent Back",
+                "comments": ""
+            }
+        )
+        assert response.status_code == 400
+        assert "comments are required" in response.json()["detail"].lower()
+
+        # Try with whitespace-only comments
+        response2 = client.patch(
+            f"/validation-workflow/approvals/{global_approval.approval_id}",
+            headers=admin_headers,
+            json={
+                "approval_status": "Sent Back",
+                "comments": "   "
+            }
+        )
+        assert response2.status_code == 400
+        assert "comments are required" in response2.json()["detail"].lower()
+
+    def test_send_back_only_global_regional(
+        self, client, admin_headers, db_session, workflow_taxonomies, sample_model, admin_user
+    ):
+        """Test that only Global and Regional approvers can send back."""
+        # Create validation request
+        validation_req = ValidationRequest(
+            requestor_id=admin_user.user_id,
+            validation_type_id=workflow_taxonomies["type"]["initial"].value_id,
+            priority_id=workflow_taxonomies["priority"]["medium"].value_id,
+            current_status_id=workflow_taxonomies["status"]["pending_approval"].value_id,
+            target_completion_date=date.today() + timedelta(days=30),
+            created_at=datetime.now(),
+            updated_at=datetime.now()
+        )
+        validation_req.models = [sample_model]
+        db_session.add(validation_req)
+        db_session.flush()
+
+        # Create Conditional approval
+        conditional_approval = ValidationApproval(
+            request_id=validation_req.request_id,
+            approver_id=admin_user.user_id,
+            approver_role="Model Owner",
+            approval_type="Conditional",
+            is_required=True,
+            approval_status="Pending",
+            created_at=datetime.now()
+        )
+        db_session.add(conditional_approval)
+        db_session.commit()
+
+        # Try to send back with Conditional approver (should fail)
+        response = client.patch(
+            f"/validation-workflow/approvals/{conditional_approval.approval_id}",
+            headers=admin_headers,
+            json={
+                "approval_status": "Sent Back",
+                "comments": "Please revise documentation"
+            }
+        )
+        assert response.status_code == 400
+        assert "global and regional" in response.json()["detail"].lower()
+
+    def test_send_back_transitions_to_revision(
+        self, client, admin_headers, db_session, workflow_taxonomies, sample_model, admin_user
+    ):
+        """Test that sending back transitions status to REVISION."""
+        # Create validation request in PENDING_APPROVAL
+        validation_req = ValidationRequest(
+            requestor_id=admin_user.user_id,
+            validation_type_id=workflow_taxonomies["type"]["initial"].value_id,
+            priority_id=workflow_taxonomies["priority"]["medium"].value_id,
+            current_status_id=workflow_taxonomies["status"]["pending_approval"].value_id,
+            target_completion_date=date.today() + timedelta(days=30),
+            created_at=datetime.now(),
+            updated_at=datetime.now()
+        )
+        validation_req.models = [sample_model]
+        db_session.add(validation_req)
+        db_session.flush()
+
+        # Create Global approval
+        global_approval = ValidationApproval(
+            request_id=validation_req.request_id,
+            approver_id=admin_user.user_id,
+            approver_role="Global Approver",
+            approval_type="Global",
+            is_required=True,
+            approval_status="Pending",
+            created_at=datetime.now()
+        )
+        db_session.add(global_approval)
+        db_session.commit()
+
+        # Send back with comments
+        response = client.patch(
+            f"/validation-workflow/approvals/{global_approval.approval_id}",
+            headers=admin_headers,
+            json={
+                "approval_status": "Sent Back",
+                "comments": "Please address the data quality concerns."
+            }
+        )
+        assert response.status_code == 200
+
+        # Verify approval status
+        db_session.refresh(global_approval)
+        assert global_approval.approval_status == "Sent Back"
+
+        # Verify validation request status is now REVISION
+        db_session.refresh(validation_req)
+        assert validation_req.current_status_id == workflow_taxonomies["status"]["revision"].value_id
+
+        # Verify status history entry was created with snapshot
+        history = db_session.query(ValidationStatusHistory).filter(
+            ValidationStatusHistory.request_id == validation_req.request_id,
+            ValidationStatusHistory.new_status_id == workflow_taxonomies["status"]["revision"].value_id
+        ).first()
+        assert history is not None
+        assert "Sent back" in history.change_reason
+        assert history.additional_context is not None
+        snapshot = json.loads(history.additional_context)
+        assert "sent_back_by_approval_id" in snapshot
+        assert snapshot["sent_back_by_approval_id"] == global_approval.approval_id
+
+    def test_resubmit_resets_sender_approval(
+        self, client, admin_headers, db_session, workflow_taxonomies, sample_model, admin_user
+    ):
+        """Test that resubmitting from REVISION resets the sender's approval."""
+        # Create validation request in REVISION status
+        validation_req = ValidationRequest(
+            requestor_id=admin_user.user_id,
+            validation_type_id=workflow_taxonomies["type"]["initial"].value_id,
+            priority_id=workflow_taxonomies["priority"]["medium"].value_id,
+            current_status_id=workflow_taxonomies["status"]["revision"].value_id,
+            target_completion_date=date.today() + timedelta(days=30),
+            created_at=datetime.now(),
+            updated_at=datetime.now()
+        )
+        validation_req.models = [sample_model]
+        db_session.add(validation_req)
+        db_session.flush()
+
+        # Create outcome (required for PENDING_APPROVAL transition)
+        outcome = ValidationOutcome(
+            request_id=validation_req.request_id,
+            overall_rating_id=workflow_taxonomies["rating"]["fit_for_purpose"].value_id,
+            executive_summary="Test validation summary",
+            effective_date=date.today(),
+            created_at=datetime.now(),
+            updated_at=datetime.now()
+        )
+        db_session.add(outcome)
+        db_session.flush()
+
+        # Create validator assignment (required for PENDING_APPROVAL transition)
+        assignment = ValidationAssignment(
+            request_id=validation_req.request_id,
+            validator_id=admin_user.user_id,
+            is_primary=True,
+            assignment_date=date.today(),
+            created_at=datetime.now()
+        )
+        db_session.add(assignment)
+        db_session.flush()
+
+        # Create approvals - one "Sent Back" (the sender), one "Approved"
+        sender_approval = ValidationApproval(
+            request_id=validation_req.request_id,
+            approver_id=admin_user.user_id,
+            approver_role="Global Approver",
+            approval_type="Global",
+            is_required=True,
+            approval_status="Sent Back",
+            approved_at=datetime.now(),
+            created_at=datetime.now()
+        )
+        other_approval = ValidationApproval(
+            request_id=validation_req.request_id,
+            approver_id=admin_user.user_id,
+            approver_role="Regional Approver",
+            approval_type="Regional",
+            is_required=True,
+            approval_status="Approved",
+            approved_at=datetime.now(),
+            created_at=datetime.now()
+        )
+        db_session.add_all([sender_approval, other_approval])
+        db_session.flush()
+
+        # Create snapshot history entry (simulating the send-back)
+        snapshot = {
+            "snapshot_at": datetime.now().isoformat(),
+            "overall_rating": None,
+            "recommendation_ids": [],
+            "limitation_ids": [],
+            "sent_back_by_approval_id": sender_approval.approval_id,
+            "sent_back_by_role": "Global"
+        }
+        history_entry = ValidationStatusHistory(
+            request_id=validation_req.request_id,
+            old_status_id=workflow_taxonomies["status"]["pending_approval"].value_id,
+            new_status_id=workflow_taxonomies["status"]["revision"].value_id,
+            changed_by_id=admin_user.user_id,
+            change_reason="Sent back for revisions",
+            additional_context=json.dumps(snapshot),
+            changed_at=datetime.now()
+        )
+        db_session.add(history_entry)
+        db_session.commit()
+
+        # Resubmit for approval (REVISION -> PENDING_APPROVAL)
+        response = client.patch(
+            f"/validation-workflow/requests/{validation_req.request_id}/status",
+            headers=admin_headers,
+            json={
+                "new_status_id": workflow_taxonomies["status"]["pending_approval"].value_id,
+                "change_reason": "Addressed feedback, resubmitting for approval"
+            }
+        )
+        assert response.status_code == 200
+
+        # Verify sender's approval was reset
+        db_session.refresh(sender_approval)
+        assert sender_approval.approval_status == "Pending"
+        assert sender_approval.approved_at is None
+
+        # Verify other approval stays Approved (no material changes)
+        db_session.refresh(other_approval)
+        assert other_approval.approval_status == "Approved"
+
+    def test_regional_send_back_works(
+        self, client, admin_headers, db_session, workflow_taxonomies, sample_model, admin_user
+    ):
+        """Test that Regional approvers can also send back."""
+        # Create validation request
+        validation_req = ValidationRequest(
+            requestor_id=admin_user.user_id,
+            validation_type_id=workflow_taxonomies["type"]["initial"].value_id,
+            priority_id=workflow_taxonomies["priority"]["medium"].value_id,
+            current_status_id=workflow_taxonomies["status"]["pending_approval"].value_id,
+            target_completion_date=date.today() + timedelta(days=30),
+            created_at=datetime.now(),
+            updated_at=datetime.now()
+        )
+        validation_req.models = [sample_model]
+        db_session.add(validation_req)
+        db_session.flush()
+
+        # Create Regional approval
+        regional_approval = ValidationApproval(
+            request_id=validation_req.request_id,
+            approver_id=admin_user.user_id,
+            approver_role="US Regional Approver",
+            approval_type="Regional",
+            is_required=True,
+            approval_status="Pending",
+            created_at=datetime.now()
+        )
+        db_session.add(regional_approval)
+        db_session.commit()
+
+        # Send back with Regional approver
+        response = client.patch(
+            f"/validation-workflow/approvals/{regional_approval.approval_id}",
+            headers=admin_headers,
+            json={
+                "approval_status": "Sent Back",
+                "comments": "Regional compliance requirements not fully addressed."
+            }
+        )
+        assert response.status_code == 200
+
+        # Verify status changed to REVISION
+        db_session.refresh(validation_req)
+        assert validation_req.current_status_id == workflow_taxonomies["status"]["revision"].value_id
+
+    def test_effective_challenge_pdf_endpoint(
+        self, client, admin_headers, db_session, workflow_taxonomies, sample_model, admin_user
+    ):
+        """Test that the effective challenge PDF export endpoint works."""
+        # Create validation request
+        validation_req = ValidationRequest(
+            requestor_id=admin_user.user_id,
+            validation_type_id=workflow_taxonomies["type"]["initial"].value_id,
+            priority_id=workflow_taxonomies["priority"]["medium"].value_id,
+            current_status_id=workflow_taxonomies["status"]["pending_approval"].value_id,
+            target_completion_date=date.today() + timedelta(days=30),
+            created_at=datetime.now(),
+            updated_at=datetime.now()
+        )
+        validation_req.models = [sample_model]
+        db_session.add(validation_req)
+        db_session.commit()
+
+        # Request PDF report
+        response = client.get(
+            f"/validation-workflow/requests/{validation_req.request_id}/effective-challenge-report",
+            headers=admin_headers
+        )
+        assert response.status_code == 200
+        assert response.headers["content-type"] == "application/pdf"
+        assert "attachment" in response.headers.get("content-disposition", "")
+        assert f"effective_challenge_VR{validation_req.request_id}.pdf" in response.headers.get("content-disposition", "")
+
+    def test_manual_revision_status_blocked(
+        self, client, admin_headers, db_session, workflow_taxonomies, sample_model, admin_user
+    ):
+        """Test that manual status changes to REVISION are blocked - must use send-back flow."""
+        # Create validation request in PENDING_APPROVAL status
+        validation_req = ValidationRequest(
+            requestor_id=admin_user.user_id,
+            validation_type_id=workflow_taxonomies["type"]["initial"].value_id,
+            priority_id=workflow_taxonomies["priority"]["medium"].value_id,
+            current_status_id=workflow_taxonomies["status"]["pending_approval"].value_id,
+            target_completion_date=date.today() + timedelta(days=30),
+            created_at=datetime.now(),
+            updated_at=datetime.now()
+        )
+        validation_req.models = [sample_model]
+        db_session.add(validation_req)
+        db_session.commit()
+
+        # Try to manually set status to REVISION (should be blocked)
+        response = client.patch(
+            f"/validation-workflow/requests/{validation_req.request_id}/status",
+            headers=admin_headers,
+            json={
+                "new_status_id": workflow_taxonomies["status"]["revision"].value_id,
+                "change_reason": "Attempting manual revision"
+            }
+        )
+        assert response.status_code == 400
+        assert "Cannot manually set status to Revision" in response.json()["detail"]
+        assert "Send Back" in response.json()["detail"]
+
+        # Verify status did not change
+        db_session.refresh(validation_req)
+        assert validation_req.current_status_id == workflow_taxonomies["status"]["pending_approval"].value_id
+
+    def test_approval_blocked_before_pending_approval_status(
+        self, client, admin_headers, db_session, workflow_taxonomies, sample_model, admin_user
+    ):
+        """Test that approvals cannot be submitted before the request reaches PENDING_APPROVAL status."""
+        # Create validation request in IN_PROGRESS status (not yet at approval stage)
+        validation_req = ValidationRequest(
+            requestor_id=admin_user.user_id,
+            validation_type_id=workflow_taxonomies["type"]["initial"].value_id,
+            priority_id=workflow_taxonomies["priority"]["medium"].value_id,
+            current_status_id=workflow_taxonomies["status"]["in_progress"].value_id,
+            target_completion_date=date.today() + timedelta(days=30),
+            created_at=datetime.now(),
+            updated_at=datetime.now()
+        )
+        validation_req.models = [sample_model]
+        db_session.add(validation_req)
+        db_session.flush()
+
+        # Create an approval (as if added prematurely)
+        approval = ValidationApproval(
+            request_id=validation_req.request_id,
+            approver_id=admin_user.user_id,
+            approver_role="US Regional Approver",
+            approval_type="Regional",
+            is_required=True,
+            approval_status="Pending",
+            created_at=datetime.now()
+        )
+        db_session.add(approval)
+        db_session.commit()
+
+        # Try to submit approval while request is still IN_PROGRESS (should be blocked)
+        response = client.patch(
+            f"/validation-workflow/approvals/{approval.approval_id}",
+            headers=admin_headers,
+            json={
+                "approval_status": "Approved",
+                "comments": "Attempting premature approval"
+            }
+        )
+        assert response.status_code == 400
+        assert "Cannot submit approval" in response.json()["detail"]
+        assert "Pending Approval" in response.json()["detail"]
+
+        # Verify approval status did not change
+        db_session.refresh(approval)
+        assert approval.approval_status == "Pending"
+        assert approval.approved_at is None

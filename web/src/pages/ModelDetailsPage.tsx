@@ -127,6 +127,7 @@ interface Model {
     submitted_by_user_id: number | null;
     submitted_at: string | null;
     is_model: boolean;
+    is_aiml: boolean | null;
     owner: User;
     developer: User | null;
     vendor: Vendor | null;
@@ -173,6 +174,12 @@ interface DecommissioningRequestListItem {
     created_by_name: string;
 }
 
+interface ValidationSummary {
+    request_id: number;
+    approval_date: string;
+    validation_type: string;
+}
+
 interface RevalidationStatus {
     model_id: number;
     model_name: string;
@@ -191,6 +198,9 @@ interface RevalidationStatus {
     model_compliance_status: string | null;
     validation_team_sla_status: string | null;
     validation_team_sla_due_date: string | null;
+    interim_expiration: string | null;
+    most_recent_validation: ValidationSummary | null;
+    previous_validation: ValidationSummary | null;
 }
 
 interface ActivityTimelineItem {
@@ -303,6 +313,8 @@ export default function ModelDetailsPage() {
     const [recommendations, setRecommendations] = useState<RecommendationListItem[]>([]);
     const [recommendationsLoading, setRecommendationsLoading] = useState(false);
     const [finalRiskRanking, setFinalRiskRanking] = useState<FinalRiskRanking | null>(null);
+    // Track whether the model has a global risk assessment (disables direct risk tier editing)
+    const [hasGlobalAssessment, setHasGlobalAssessment] = useState(false);
     // Store original form values to compute diff when saving
     const [originalFormData, setOriginalFormData] = useState<typeof formData | null>(null);
     const [formData, setFormData] = useState({
@@ -492,6 +504,15 @@ export default function ModelDetailsPage() {
                     console.error('Failed to fetch final risk ranking:', rankingError);
                 }
                 setFinalRiskRanking(null);
+            }
+
+            // Check if model has a global risk assessment (disables direct risk tier editing)
+            try {
+                const assessmentStatusRes = await api.get(`/models/${id}/risk-assessments/status`);
+                setHasGlobalAssessment(assessmentStatusRes.data.has_assessment);
+            } catch (assessmentError) {
+                console.error('Failed to fetch assessment status:', assessmentError);
+                setHasGlobalAssessment(false);
             }
         } catch (error) {
             console.error('Failed to fetch model:', error);
@@ -1643,8 +1664,8 @@ export default function ModelDetailsPage() {
             {/* Revalidation Alert Banner */}
             {!editing && revalidationStatus && (
                 <>
-                    {/* Critical: Overdue for validation */}
-                    {(revalidationStatus.status.includes('Overdue') || (revalidationStatus.days_until_validation_due !== null && revalidationStatus.days_until_validation_due < 0)) && (
+                    {/* Critical: Validation Actually Overdue (days_until_validation_due < 0) */}
+                    {revalidationStatus.days_until_validation_due !== null && revalidationStatus.days_until_validation_due < 0 && (
                         <div className="bg-red-50 border-l-4 border-red-500 p-4 mb-6">
                             <div className="flex items-start">
                                 <svg className="h-5 w-5 text-red-600 mt-0.5 mr-3" fill="currentColor" viewBox="0 0 20 20">
@@ -1653,7 +1674,7 @@ export default function ModelDetailsPage() {
                                 <div className="flex-1">
                                     <h3 className="text-sm font-bold text-red-800">Revalidation Overdue</h3>
                                     <p className="text-sm text-red-700 mt-1">
-                                        This model is <strong>{Math.abs(revalidationStatus.days_until_validation_due || 0)} days overdue</strong> for revalidation.
+                                        This model is <strong>{Math.abs(revalidationStatus.days_until_validation_due)} days overdue</strong> for revalidation.
                                         {revalidationStatus.next_validation_due && ` Validation was due on ${revalidationStatus.next_validation_due}.`}
                                         {revalidationStatus.active_request_id && (
                                             <Link to={`/validation-workflow/${revalidationStatus.active_request_id}`} className="ml-2 underline font-medium hover:text-red-900">
@@ -2004,11 +2025,15 @@ export default function ModelDetailsPage() {
                                 <div className="mb-4">
                                     <label htmlFor="risk_tier_id" className="block text-sm font-medium mb-2">
                                         Risk Tier
+                                        {hasGlobalAssessment && (
+                                            <span className="ml-2 text-xs text-gray-500 font-normal">(Managed by Risk Assessment)</span>
+                                        )}
                                     </label>
                                     <select
                                         id="risk_tier_id"
-                                        className="input-field"
+                                        className={`input-field ${hasGlobalAssessment ? 'bg-gray-100 cursor-not-allowed' : ''}`}
                                         value={formData.risk_tier_id || ''}
+                                        disabled={hasGlobalAssessment}
                                         onChange={(e) => setFormData({
                                             ...formData,
                                             risk_tier_id: e.target.value ? parseInt(e.target.value) : null
@@ -2022,6 +2047,11 @@ export default function ModelDetailsPage() {
                                                 <option key={v.value_id} value={v.value_id}>{v.label}</option>
                                             ))}
                                     </select>
+                                    {hasGlobalAssessment && (
+                                        <p className="mt-1 text-xs text-gray-500">
+                                            Risk tier is determined by the Risk Assessment. Go to the Risk Assessment tab to update.
+                                        </p>
+                                    )}
                                 </div>
                             )}
 
@@ -2341,6 +2371,22 @@ export default function ModelDetailsPage() {
                             )}
                         </div>
                         <div>
+                            <h4 className="text-sm font-medium text-gray-500 mb-1">AI/ML Classification</h4>
+                            {model.is_aiml === true ? (
+                                <span className="px-2 py-1 text-sm rounded bg-purple-100 text-purple-800 font-medium">
+                                    AI/ML Model
+                                </span>
+                            ) : model.is_aiml === false ? (
+                                <span className="px-2 py-1 text-sm rounded bg-gray-100 text-gray-700">
+                                    Non-AI/ML Model
+                                </span>
+                            ) : (
+                                <span className="px-2 py-1 text-sm rounded bg-gray-50 text-gray-500 italic">
+                                    Undefined (No Methodology)
+                                </span>
+                            )}
+                        </div>
+                        <div>
                             <h4 className="text-sm font-medium text-gray-500 mb-1">Wholly-Owned By Region</h4>
                             {model.wholly_owned_region ? (
                                 <span className="inline-flex items-center gap-1.5 px-2 py-1 text-sm rounded bg-indigo-100 text-indigo-800 border border-indigo-300 font-medium">
@@ -2654,128 +2700,188 @@ export default function ModelDetailsPage() {
                 </div>
             ) : activeTab === 'validations' ? (
                 <div className="space-y-6">
-                    {/* Revalidation Status */}
-                    {revalidationStatus && revalidationStatus.status !== 'Never Validated' && revalidationStatus.status !== 'No Policy Configured' && (
-                        <div className="bg-white rounded-lg shadow-md overflow-hidden">
-                            <div className="p-4 border-b bg-purple-50">
-                                <h3 className="text-lg font-bold text-purple-900">Revalidation Status</h3>
-                                <p className="text-sm text-purple-700">Periodic revalidation lifecycle tracking</p>
-                            </div>
-                            <div className="p-6">
-                                {/* Status Badge */}
-                                <div className="mb-6 flex items-center gap-3">
-                                    <span className="text-sm font-medium text-gray-600">Overall Status:</span>
-                                    <span className={`px-3 py-1 text-sm font-semibold rounded-full ${revalidationStatus.status.includes('Overdue') ? 'bg-red-100 text-red-800' :
-                                        revalidationStatus.status.includes('In Progress') || revalidationStatus.status.includes('Awaiting') ? 'bg-yellow-100 text-yellow-800' :
+                    {/* Validation Key Dates Summary - Always shown */}
+                    <div className="bg-white rounded-lg shadow-md overflow-hidden">
+                        <div className="p-4 border-b bg-green-50">
+                            <div className="flex justify-between items-start">
+                                <div>
+                                    <h3 className="text-lg font-bold text-green-900">Validation Key Dates</h3>
+                                    <p className="text-sm text-green-700">Summary of model validation history and upcoming dates</p>
+                                </div>
+                                {revalidationStatus && (
+                                    <div className="flex items-center gap-2">
+                                        <span className="text-sm font-medium text-gray-600">Status:</span>
+                                        <span className={`px-3 py-1 text-sm font-semibold rounded-full ${
+                                            revalidationStatus.status.includes('Overdue') || revalidationStatus.status.includes('Expired') ? 'bg-red-100 text-red-800' :
+                                            revalidationStatus.status.includes('In Progress') || revalidationStatus.status.includes('Awaiting') ? 'bg-yellow-100 text-yellow-800' :
                                             revalidationStatus.status === 'Upcoming' ? 'bg-blue-100 text-blue-800' :
-                                                'bg-gray-100 text-gray-800'
+                                            revalidationStatus.status.includes('Pending') ? 'bg-purple-100 text-purple-800' :
+                                            revalidationStatus.status === 'Never Validated' ? 'bg-gray-100 text-gray-800' :
+                                            'bg-green-100 text-green-800'
                                         }`}>
-                                        {revalidationStatus.status}
-                                    </span>
+                                            {revalidationStatus.status}
+                                        </span>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                        <div className="p-6">
+                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                                {/* Most Recent Validation */}
+                                <div className="border rounded-lg p-4 bg-gray-50">
+                                    <div className="text-xs font-medium text-gray-500 uppercase mb-1">
+                                        Most Recent Validation
+                                    </div>
+                                    {revalidationStatus?.most_recent_validation ? (
+                                        <>
+                                            <div className="text-lg font-semibold text-gray-900">
+                                                {revalidationStatus.most_recent_validation.approval_date}
+                                            </div>
+                                            <div className="text-sm text-gray-600">
+                                                {revalidationStatus.most_recent_validation.validation_type}
+                                            </div>
+                                            <Link
+                                                to={`/validation-workflow/${revalidationStatus.most_recent_validation.request_id}`}
+                                                className="text-blue-600 hover:text-blue-800 text-sm hover:underline"
+                                            >
+                                                Project #{revalidationStatus.most_recent_validation.request_id}
+                                            </Link>
+                                        </>
+                                    ) : (
+                                        <div className="text-gray-400 italic">Never validated</div>
+                                    )}
                                 </div>
 
-                                {/* Timeline */}
-                                <div className="space-y-4">
-                                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                                        {/* Last Validation */}
-                                        {revalidationStatus.last_validation_date && (
-                                            <div className="border-l-4 border-green-500 pl-4">
-                                                <div className="text-xs font-medium text-gray-500 uppercase">Last Validation</div>
-                                                <div className="text-lg font-semibold text-gray-900">{revalidationStatus.last_validation_date}</div>
-                                            </div>
-                                        )}
-
-                                        {/* Submission Due */}
-                                        {revalidationStatus.next_submission_due && (
-                                            <div className={`border-l-4 pl-4 ${revalidationStatus.days_until_submission_due && revalidationStatus.days_until_submission_due < 0 ? 'border-red-500' :
-                                                revalidationStatus.days_until_submission_due && revalidationStatus.days_until_submission_due < 30 ? 'border-yellow-500' :
-                                                    'border-blue-500'
-                                                }`}>
-                                                <div className="text-xs font-medium text-gray-500 uppercase">Submission Due</div>
-                                                <div className="text-lg font-semibold text-gray-900">{revalidationStatus.next_submission_due}</div>
-                                                {revalidationStatus.days_until_submission_due !== null && (
-                                                    <div className={`text-xs font-medium ${revalidationStatus.days_until_submission_due < 0 ? 'text-red-600' :
-                                                        revalidationStatus.days_until_submission_due < 30 ? 'text-yellow-600' :
-                                                            'text-blue-600'
-                                                        }`}>
-                                                        {revalidationStatus.days_until_submission_due < 0 ?
-                                                            `${Math.abs(revalidationStatus.days_until_submission_due)} days overdue` :
-                                                            `${revalidationStatus.days_until_submission_due} days left`
-                                                        }
-                                                    </div>
-                                                )}
-                                            </div>
-                                        )}
-
-                                        {/* Validation Due */}
-                                        {revalidationStatus.next_validation_due && (
-                                            <div className={`border-l-4 pl-4 ${revalidationStatus.days_until_validation_due && revalidationStatus.days_until_validation_due < 0 ? 'border-red-500' :
-                                                revalidationStatus.days_until_validation_due && revalidationStatus.days_until_validation_due < 60 ? 'border-orange-500' :
-                                                    'border-purple-500'
-                                                }`}>
-                                                <div className="text-xs font-medium text-gray-500 uppercase">Validation Due</div>
-                                                <div className="text-lg font-semibold text-gray-900">{revalidationStatus.next_validation_due}</div>
-                                                {revalidationStatus.days_until_validation_due !== null && (
-                                                    <div className={`text-xs font-medium ${revalidationStatus.days_until_validation_due < 0 ? 'text-red-600' :
-                                                        revalidationStatus.days_until_validation_due < 60 ? 'text-orange-600' :
-                                                            'text-purple-600'
-                                                        }`}>
-                                                        {revalidationStatus.days_until_validation_due < 0 ?
-                                                            `${Math.abs(revalidationStatus.days_until_validation_due)} days overdue` :
-                                                            `${revalidationStatus.days_until_validation_due} days left`
-                                                        }
-                                                    </div>
-                                                )}
-                                            </div>
-                                        )}
+                                {/* Previous Validation */}
+                                <div className="border rounded-lg p-4 bg-gray-50">
+                                    <div className="text-xs font-medium text-gray-500 uppercase mb-1">
+                                        Previous Validation
                                     </div>
-
-                                    {/* Additional Details */}
-                                    {(revalidationStatus.submission_status || revalidationStatus.model_compliance_status) && (
-                                        <div className="mt-4 pt-4 border-t grid grid-cols-1 md:grid-cols-2 gap-4">
-                                            {revalidationStatus.submission_status && (
-                                                <div>
-                                                    <span className="text-sm font-medium text-gray-600">Submission Status: </span>
-                                                    <span className={`text-sm font-semibold ${revalidationStatus.submission_status.includes('Overdue') || revalidationStatus.submission_status.includes('Late') ? 'text-red-600' :
-                                                        revalidationStatus.submission_status.includes('Grace') ? 'text-yellow-600' :
-                                                            revalidationStatus.submission_status.includes('On Time') ? 'text-green-600' :
-                                                                'text-gray-600'
-                                                        }`}>
-                                                        {revalidationStatus.submission_status}
-                                                    </span>
-                                                </div>
-                                            )}
-                                            {revalidationStatus.model_compliance_status && (
-                                                <div>
-                                                    <span className="text-sm font-medium text-gray-600">Compliance Status: </span>
-                                                    <span className={`text-sm font-semibold ${revalidationStatus.model_compliance_status.includes('Overdue') ? 'text-red-600' :
-                                                        revalidationStatus.model_compliance_status.includes('At Risk') ? 'text-orange-600' :
-                                                            revalidationStatus.model_compliance_status.includes('Grace') ? 'text-yellow-600' :
-                                                                revalidationStatus.model_compliance_status.includes('On Time') ? 'text-green-600' :
-                                                                    'text-gray-600'
-                                                        }`}>
-                                                        {revalidationStatus.model_compliance_status}
-                                                    </span>
-                                                </div>
-                                            )}
+                                    {revalidationStatus?.previous_validation ? (
+                                        <>
+                                            <div className="text-lg font-semibold text-gray-900">
+                                                {revalidationStatus.previous_validation.approval_date}
+                                            </div>
+                                            <div className="text-sm text-gray-600">
+                                                {revalidationStatus.previous_validation.validation_type}
+                                            </div>
+                                            <Link
+                                                to={`/validation-workflow/${revalidationStatus.previous_validation.request_id}`}
+                                                className="text-blue-600 hover:text-blue-800 text-sm hover:underline"
+                                            >
+                                                Project #{revalidationStatus.previous_validation.request_id}
+                                            </Link>
+                                        </>
+                                    ) : (
+                                        <div className="text-gray-400 italic">
+                                            {revalidationStatus?.most_recent_validation ? 'No prior validation' : '-'}
                                         </div>
                                     )}
+                                </div>
 
-                                    {/* Active Request Link */}
-                                    {revalidationStatus.active_request_id && (
-                                        <div className="mt-4 pt-4 border-t">
-                                            <Link
-                                                to={`/validation-workflow/${revalidationStatus.active_request_id}`}
-                                                className="text-blue-600 hover:text-blue-800 text-sm font-medium hover:underline"
-                                            >
-                                                → View Active Revalidation Project #{revalidationStatus.active_request_id}
-                                            </Link>
+                                {/* Next Model Submission Due */}
+                                <div className="border rounded-lg p-4 bg-gray-50">
+                                    <div className="text-xs font-medium text-gray-500 uppercase mb-1">
+                                        Next Submission Due
+                                        {revalidationStatus?.interim_expiration && (
+                                            <span className="ml-1 text-purple-600">(INTERIM)</span>
+                                        )}
+                                    </div>
+                                    {revalidationStatus?.next_submission_due ? (
+                                        <>
+                                            <div className={`text-lg font-semibold ${
+                                                revalidationStatus.days_until_submission_due !== null &&
+                                                revalidationStatus.days_until_submission_due < 0
+                                                    ? 'text-red-600'
+                                                    : revalidationStatus.days_until_submission_due !== null &&
+                                                      revalidationStatus.days_until_submission_due < 30
+                                                        ? 'text-yellow-600'
+                                                        : 'text-gray-900'
+                                            }`}>
+                                                {revalidationStatus.next_submission_due}
+                                            </div>
+                                            {revalidationStatus.days_until_submission_due !== null && (
+                                                <div className={`text-sm ${
+                                                    revalidationStatus.days_until_submission_due < 0
+                                                        ? 'text-red-500'
+                                                        : 'text-gray-600'
+                                                }`}>
+                                                    {revalidationStatus.days_until_submission_due < 0
+                                                        ? `${Math.abs(revalidationStatus.days_until_submission_due)} days overdue`
+                                                        : `${revalidationStatus.days_until_submission_due} days`}
+                                                </div>
+                                            )}
+                                            {revalidationStatus.interim_expiration && (
+                                                <div className="text-xs text-purple-600 mt-1">
+                                                    INTERIM expires: {revalidationStatus.interim_expiration}
+                                                </div>
+                                            )}
+                                        </>
+                                    ) : (
+                                        <div className="text-gray-400 italic">
+                                            {revalidationStatus?.status === 'Never Validated'
+                                                ? 'Pending initial validation'
+                                                : revalidationStatus?.status === 'Pending Full Validation'
+                                                    ? 'Pending full validation'
+                                                    : revalidationStatus?.status === 'No Policy Configured'
+                                                        ? 'No policy configured'
+                                                        : '-'}
+                                        </div>
+                                    )}
+                                </div>
+
+                                {/* Next Validation Due */}
+                                <div className="border rounded-lg p-4 bg-gray-50">
+                                    <div className="text-xs font-medium text-gray-500 uppercase mb-1">
+                                        {revalidationStatus?.interim_expiration
+                                            ? 'INTERIM Expiration'
+                                            : 'Next Validation Due'}
+                                    </div>
+                                    {revalidationStatus?.next_validation_due ? (
+                                        <>
+                                            <div className={`text-lg font-semibold ${
+                                                revalidationStatus.days_until_validation_due !== null &&
+                                                revalidationStatus.days_until_validation_due < 0
+                                                    ? 'text-red-600'
+                                                    : revalidationStatus.days_until_validation_due !== null &&
+                                                      revalidationStatus.days_until_validation_due < 60
+                                                        ? 'text-orange-600'
+                                                        : 'text-gray-900'
+                                            }`}>
+                                                {revalidationStatus.next_validation_due}
+                                            </div>
+                                            {revalidationStatus.days_until_validation_due !== null && (
+                                                <div className={`text-sm ${
+                                                    revalidationStatus.days_until_validation_due < 0
+                                                        ? 'text-red-500'
+                                                        : 'text-gray-600'
+                                                }`}>
+                                                    {revalidationStatus.days_until_validation_due < 0
+                                                        ? `${Math.abs(revalidationStatus.days_until_validation_due)} days overdue`
+                                                        : `${revalidationStatus.days_until_validation_due} days`}
+                                                </div>
+                                            )}
+                                            {revalidationStatus.interim_expiration && (
+                                                <div className="text-xs text-purple-600 mt-1">
+                                                    Full validation required before this date
+                                                </div>
+                                            )}
+                                        </>
+                                    ) : (
+                                        <div className="text-gray-400 italic">
+                                            {revalidationStatus?.status === 'Never Validated'
+                                                ? 'Pending initial validation'
+                                                : revalidationStatus?.status === 'Pending Full Validation'
+                                                    ? 'Pending full validation'
+                                                    : revalidationStatus?.status === 'No Policy Configured'
+                                                        ? 'No policy configured'
+                                                        : '-'}
                                         </div>
                                     )}
                                 </div>
                             </div>
                         </div>
-                    )}
+                    </div>
 
                     {/* Active Validation Projects */}
                     <div className="bg-white rounded-lg shadow-md overflow-hidden">

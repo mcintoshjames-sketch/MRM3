@@ -140,14 +140,14 @@ class TestUpdateModel:
             json={
                 "model_name": "Fully Updated",
                 "description": "New description",
-                "status": "In Production"
+                "status": "Active"
             }
         )
         assert response.status_code == 200
         data = response.json()
         assert data["model_name"] == "Fully Updated"
         assert data["description"] == "New description"
-        assert data["status"] == "In Production"
+        assert data["status"] == "Active"
 
     def test_update_model_not_found(self, client, auth_headers):
         """Test updating non-existent model fails."""

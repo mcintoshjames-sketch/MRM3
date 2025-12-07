@@ -179,3 +179,17 @@ class RiskAssessmentHistoryItem(BaseModel):
     old_qualitative: Optional[str] = None
     new_qualitative: Optional[str] = None
     changes_summary: str  # Human-readable summary
+
+
+# ============================================================================
+# Assessment Status Schema
+# ============================================================================
+
+class GlobalAssessmentStatusResponse(BaseModel):
+    """Response schema for global risk assessment status check."""
+    model_id: int
+    has_assessment: bool
+    is_complete: bool
+    assessed_at: Optional[datetime] = None
+    final_tier_id: Optional[int] = None
+    assessment_id: Optional[int] = None

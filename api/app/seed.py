@@ -1285,6 +1285,12 @@ def seed_database():
                         "sort_order": 5
                     },
                     {
+                        "code": "REVISION",
+                        "label": "Revision",
+                        "description": "Sent back by approver for revisions - awaiting validator updates",
+                        "sort_order": 5.5
+                    },
+                    {
                         "code": "APPROVED",
                         "label": "Approved",
                         "description": "Validation complete with all approvals",
@@ -2040,7 +2046,6 @@ def seed_database():
                     request_id=req.request_id,
                     overall_rating_id=fit_for_purpose.value_id,
                     executive_summary="Comprehensive validation completed. Model performing as expected.",
-                    recommended_review_frequency=18,
                     effective_date=val_date,
                     created_at=val_date
                 )
@@ -2089,7 +2094,6 @@ def seed_database():
                     request_id=req.request_id,
                     overall_rating_id=fit_for_purpose.value_id,
                     executive_summary="Comprehensive validation completed.",
-                    recommended_review_frequency=18,
                     effective_date=val_date,
                     created_at=val_date
                 )
@@ -2138,7 +2142,6 @@ def seed_database():
                     request_id=req.request_id,
                     overall_rating_id=fit_for_purpose.value_id,
                     executive_summary="Comprehensive validation completed.",
-                    recommended_review_frequency=18,
                     effective_date=val_date,
                     created_at=val_date
                 )
@@ -2204,7 +2207,6 @@ def seed_database():
                     request_id=req.request_id,
                     overall_rating_id=fit_for_purpose.value_id,
                     executive_summary="Comprehensive validation completed. Model is compliant.",
-                    recommended_review_frequency=18,
                     effective_date=val_date,
                     created_at=val_date
                 )
@@ -2293,7 +2295,6 @@ def seed_database():
                         request_id=prior_req_f.request_id,
                         overall_rating_id=fit_for_purpose.value_id,
                         executive_summary="Annual comprehensive validation completed. Model performing within expectations.",
-                        recommended_review_frequency=12,
                         effective_date=prior_val_date,
                         created_at=prior_val_date
                     )
@@ -2383,7 +2384,6 @@ def seed_database():
                         request_id=prior_req_g.request_id,
                         overall_rating_id=fit_for_purpose.value_id,
                         executive_summary="Annual comprehensive validation completed successfully.",
-                        recommended_review_frequency=12,
                         effective_date=prior_val_date_g,
                         created_at=prior_val_date_g
                     )
@@ -3793,26 +3793,26 @@ def seed_methodology_library(db):
 
     # Define categories with their codes
     categories_data = [
-        {"code": "CR_WHOLESALE", "name": "Credit Risk (Wholesale)", "sort_order": 1},
-        {"code": "CR_PORTFOLIO", "name": "Credit Risk (Portfolio)", "sort_order": 2},
-        {"code": "CR_ACCOUNTING", "name": "Credit Risk (Accounting)", "sort_order": 3},
-        {"code": "MR_RATES", "name": "Market Risk (Rates)", "sort_order": 4},
-        {"code": "MR_VOLATILITY", "name": "Market Risk (Volatility)", "sort_order": 5},
-        {"code": "MR_VAR", "name": "Market Risk (VaR)", "sort_order": 6},
-        {"code": "NUM_INTEGRATION", "name": "Numerical Methods (Integration)", "sort_order": 7},
-        {"code": "NUM_PRICING", "name": "Numerical Methods (Pricing)", "sort_order": 8},
-        {"code": "NUM_ROOTS", "name": "Numerical Methods (Roots)", "sort_order": 9},
-        {"code": "NUM_PDE", "name": "Numerical Methods (PDE)", "sort_order": 10},
-        {"code": "OPTIMIZATION", "name": "Optimization", "sort_order": 11},
-        {"code": "ALM_BEHAVIORAL", "name": "ALM (Behavioral)", "sort_order": 12},
-        {"code": "ALM_PREPAYMENT", "name": "ALM (Prepayment)", "sort_order": 13},
-        {"code": "ALM_LIQUIDITY", "name": "ALM (Liquidity)", "sort_order": 14},
-        {"code": "OP_RISK", "name": "Operational Risk", "sort_order": 15},
-        {"code": "FRAUD", "name": "Fraud Detection", "sort_order": 16},
-        {"code": "AIML_TABULAR", "name": "AI/ML (Tabular)", "sort_order": 17},
-        {"code": "AIML_TIMESERIES", "name": "AI/ML (Time Series)", "sort_order": 18},
-        {"code": "AIML_NLP", "name": "AI/ML (NLP)", "sort_order": 19},
-        {"code": "AIML_RL", "name": "AI/ML (RL)", "sort_order": 20},
+        {"code": "CR_WHOLESALE", "name": "Credit Risk (Wholesale)", "sort_order": 1, "is_aiml": False},
+        {"code": "CR_PORTFOLIO", "name": "Credit Risk (Portfolio)", "sort_order": 2, "is_aiml": False},
+        {"code": "CR_ACCOUNTING", "name": "Credit Risk (Accounting)", "sort_order": 3, "is_aiml": False},
+        {"code": "MR_RATES", "name": "Market Risk (Rates)", "sort_order": 4, "is_aiml": False},
+        {"code": "MR_VOLATILITY", "name": "Market Risk (Volatility)", "sort_order": 5, "is_aiml": False},
+        {"code": "MR_VAR", "name": "Market Risk (VaR)", "sort_order": 6, "is_aiml": False},
+        {"code": "NUM_INTEGRATION", "name": "Numerical Methods (Integration)", "sort_order": 7, "is_aiml": False},
+        {"code": "NUM_PRICING", "name": "Numerical Methods (Pricing)", "sort_order": 8, "is_aiml": False},
+        {"code": "NUM_ROOTS", "name": "Numerical Methods (Roots)", "sort_order": 9, "is_aiml": False},
+        {"code": "NUM_PDE", "name": "Numerical Methods (PDE)", "sort_order": 10, "is_aiml": False},
+        {"code": "OPTIMIZATION", "name": "Optimization", "sort_order": 11, "is_aiml": False},
+        {"code": "ALM_BEHAVIORAL", "name": "ALM (Behavioral)", "sort_order": 12, "is_aiml": False},
+        {"code": "ALM_PREPAYMENT", "name": "ALM (Prepayment)", "sort_order": 13, "is_aiml": False},
+        {"code": "ALM_LIQUIDITY", "name": "ALM (Liquidity)", "sort_order": 14, "is_aiml": False},
+        {"code": "OP_RISK", "name": "Operational Risk", "sort_order": 15, "is_aiml": False},
+        {"code": "FRAUD", "name": "Fraud Detection", "sort_order": 16, "is_aiml": False},
+        {"code": "AIML_TABULAR", "name": "AI/ML (Tabular)", "sort_order": 17, "is_aiml": True},
+        {"code": "AIML_TIMESERIES", "name": "AI/ML (Time Series)", "sort_order": 18, "is_aiml": True},
+        {"code": "AIML_NLP", "name": "AI/ML (NLP)", "sort_order": 19, "is_aiml": True},
+        {"code": "AIML_RL", "name": "AI/ML (RL)", "sort_order": 20, "is_aiml": True},
     ]
 
     # Create a mapping of category name to code for lookups
@@ -4004,7 +4004,8 @@ def seed_methodology_library(db):
             category = MethodologyCategory(
                 code=cat_data["code"],
                 name=cat_data["name"],
-                sort_order=cat_data["sort_order"]
+                sort_order=cat_data["sort_order"],
+                is_aiml=cat_data.get("is_aiml", False)
             )
             db.add(category)
             db.flush()
@@ -4014,6 +4015,7 @@ def seed_methodology_library(db):
             # Update if needed
             existing.name = cat_data["name"]
             existing.sort_order = cat_data["sort_order"]
+            existing.is_aiml = cat_data.get("is_aiml", False)
             category_map[cat_data["code"]] = existing
 
     db.commit()
