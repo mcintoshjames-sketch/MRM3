@@ -9,7 +9,7 @@ from app.models import ModelLimitation, Taxonomy, TaxonomyValue, Region, ModelRe
 # ==================== FIXTURES ====================
 
 @pytest.fixture
-def validator_user(db_session):
+def validator_user(db_session, lob_hierarchy):
     """Create a validator user."""
     from app.models.user import User
     from app.core.security import get_password_hash
@@ -18,7 +18,8 @@ def validator_user(db_session):
         email="validator@example.com",
         full_name="Validator User",
         password_hash=get_password_hash("validator123"),
-        role="Validator"
+        role="Validator",
+        lob_id=lob_hierarchy["retail"].lob_id
     )
     db_session.add(user)
     db_session.commit()

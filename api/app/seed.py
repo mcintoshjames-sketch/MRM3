@@ -15,6 +15,12 @@ from app.models.model import Model
 from app.models.risk_assessment import QualitativeRiskFactor, QualitativeFactorGuidance
 from app.models.scorecard import ScorecardSection, ScorecardCriterion
 from app.models.residual_risk_map import ResidualRiskMapConfig
+from app.core.monitoring_constants import (
+    QUALITATIVE_OUTCOME_TAXONOMY_NAME,
+    OUTCOME_GREEN,
+    OUTCOME_YELLOW,
+    OUTCOME_RED,
+)
 
 
 REGULATORY_CATEGORY_VALUES = [
@@ -158,12 +164,13 @@ MODEL_TYPE_VALUES = [
 
 
 # Qualitative Outcome values for qualitative KPM assessments
+# Uses constants from monitoring_constants.py to ensure consistency with API logic
 QUALITATIVE_OUTCOME_VALUES = [
-    {"code": "GREEN", "label": "Green",
+    {"code": OUTCOME_GREEN, "label": "Green",
         "description": "KPM within acceptable parameters; no concerns identified."},
-    {"code": "YELLOW", "label": "Yellow",
+    {"code": OUTCOME_YELLOW, "label": "Yellow",
         "description": "KPM warrants attention; minor concerns or approaching thresholds."},
-    {"code": "RED", "label": "Red",
+    {"code": OUTCOME_RED, "label": "Red",
         "description": "KPM breached thresholds or significant concerns identified; action required."},
 ]
 
@@ -347,7 +354,7 @@ def seed_taxonomy_reference_data(db):
     )
     _upsert_taxonomy_with_values(
         db,
-        name="Qualitative Outcome",
+        name=QUALITATIVE_OUTCOME_TAXONOMY_NAME,
         description="Assessment outcomes for qualitative KPMs (Red/Yellow/Green rating scale).",
         values=QUALITATIVE_OUTCOME_VALUES,
     )

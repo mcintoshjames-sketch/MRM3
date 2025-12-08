@@ -28,7 +28,7 @@ def hierarchy_taxonomy(db_session):
 
 
 @pytest.fixture
-def parent_model(db_session, test_user):
+def parent_model(db_session, test_user, usage_frequency):
     """Create a parent model."""
     model = Model(
         model_name="Parent Model",
@@ -37,7 +37,8 @@ def parent_model(db_session, test_user):
         status="In Development",
         owner_id=test_user.user_id,
         row_approval_status="pending",
-        submitted_by_user_id=test_user.user_id
+        submitted_by_user_id=test_user.user_id,
+        usage_frequency_id=usage_frequency["daily"].value_id
     )
     db_session.add(model)
     db_session.commit()
@@ -46,7 +47,7 @@ def parent_model(db_session, test_user):
 
 
 @pytest.fixture
-def child_model(db_session, test_user):
+def child_model(db_session, test_user, usage_frequency):
     """Create a child model."""
     model = Model(
         model_name="Child Model",
@@ -55,7 +56,8 @@ def child_model(db_session, test_user):
         status="In Development",
         owner_id=test_user.user_id,
         row_approval_status="pending",
-        submitted_by_user_id=test_user.user_id
+        submitted_by_user_id=test_user.user_id,
+        usage_frequency_id=usage_frequency["daily"].value_id
     )
     db_session.add(model)
     db_session.commit()
@@ -64,7 +66,7 @@ def child_model(db_session, test_user):
 
 
 @pytest.fixture
-def another_child_model(db_session, test_user):
+def another_child_model(db_session, test_user, usage_frequency):
     """Create another child model."""
     model = Model(
         model_name="Another Child Model",
@@ -73,7 +75,8 @@ def another_child_model(db_session, test_user):
         status="In Development",
         owner_id=test_user.user_id,
         row_approval_status="pending",
-        submitted_by_user_id=test_user.user_id
+        submitted_by_user_id=test_user.user_id,
+        usage_frequency_id=usage_frequency["daily"].value_id
     )
     db_session.add(model)
     db_session.commit()

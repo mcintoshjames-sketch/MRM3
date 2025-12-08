@@ -1,12 +1,93 @@
 """Tests for Conditional Model Use Approvals feature."""
 import pytest
 from datetime import date, datetime
+from decimal import Decimal
 from app.models.conditional_approval import ApproverRole, ConditionalApprovalRule, RuleRequiredApprover
 from app.models.validation import ValidationRequest, ValidationApproval
 from app.models.region import Region
 from app.models.model import Model
 from app.models.model_region import ModelRegion
 from app.core.rule_evaluation import get_required_approver_roles
+from app.models.risk_assessment import QualitativeRiskFactor, ModelRiskAssessment, QualitativeFactorAssessment
+from app.core.time import utc_now
+
+
+@pytest.fixture
+def qualitative_factors(db_session):
+    """Create the 4 standard qualitative risk factors with guidance."""
+    factors_data = [
+        {
+            "code": "REPUTATION_LEGAL",
+            "name": "Reputation, Regulatory Compliance and/or Financial Reporting Risk",
+            "weight": Decimal("0.3000"),
+            "sort_order": 1
+        },
+        {
+            "code": "COMPLEXITY",
+            "name": "Complexity of the Model",
+            "weight": Decimal("0.3000"),
+            "sort_order": 2
+        },
+        {
+            "code": "USAGE_DEPENDENCY",
+            "name": "Model Usage and Model Dependency",
+            "weight": Decimal("0.2000"),
+            "sort_order": 3
+        },
+        {
+            "code": "PERFORMANCE_CHANGE",
+            "name": "Performance and/or Model Change",
+            "weight": Decimal("0.2000"),
+            "sort_order": 4
+        },
+    ]
+
+    factors = []
+    for fd in factors_data:
+        factor = QualitativeRiskFactor(
+            code=fd["code"],
+            name=fd["name"],
+            weight=fd["weight"],
+            sort_order=fd["sort_order"],
+            is_active=True
+        )
+        db_session.add(factor)
+        factors.append(factor)
+
+    db_session.commit()
+    return factors
+
+
+def create_complete_risk_assessment(db_session, model_id, factors):
+    """
+    Helper function to create a complete global risk assessment for a model.
+    """
+    # Create the global assessment (region_id = None)
+    assessment = ModelRiskAssessment(
+        model_id=model_id,
+        region_id=None,  # Global assessment
+        quantitative_rating="MEDIUM",
+        assessed_at=utc_now(),
+        created_at=utc_now(),
+        updated_at=utc_now()
+    )
+    db_session.add(assessment)
+    db_session.flush()
+
+    # Add factor assessments for all factors
+    for factor in factors:
+        factor_assessment = QualitativeFactorAssessment(
+            assessment_id=assessment.assessment_id,
+            factor_id=factor.factor_id,
+            rating="MEDIUM",
+            comment="Test assessment for conditional approvals",
+            weight_at_assessment=factor.weight,
+            score=Decimal("2.00") * factor.weight  # MEDIUM = 2 points
+        )
+        db_session.add(factor_assessment)
+
+    db_session.commit()
+    return assessment
 
 
 class TestApproverRoleCRUD:
@@ -366,12 +447,13 @@ class TestConditionalApprovalRuleCRUD:
 class TestRuleEvaluationLogic:
     """Test rule evaluation logic."""
 
-    def test_no_rules_configured_returns_empty(self, db_session, test_user, taxonomy_values):
+    def test_no_rules_configured_returns_empty(self, db_session, test_user, taxonomy_values, usage_frequency):
         """No rules configured returns empty required roles."""
         model = Model(
             model_name="Test Model",
             owner_id=test_user.user_id,
-            risk_tier_id=taxonomy_values["tier1"].value_id
+            risk_tier_id=taxonomy_values["tier1"].value_id,
+            usage_frequency_id=usage_frequency["daily"].value_id
         )
         db_session.add(model)
         db_session.flush()
@@ -390,7 +472,7 @@ class TestRuleEvaluationLogic:
         result = get_required_approver_roles(db_session, validation_request, model)
         assert result["required_roles"] == []
 
-    def test_single_matching_rule_returns_one_role(self, db_session, test_user, taxonomy_values):
+    def test_single_matching_rule_returns_one_role(self, db_session, test_user, taxonomy_values, usage_frequency):
         """Single matching rule returns one required role."""
         role = ApproverRole(role_name="Test Committee")
         db_session.add(role)
@@ -412,7 +494,8 @@ class TestRuleEvaluationLogic:
         model = Model(
             model_name="Test Model",
             owner_id=test_user.user_id,
-            risk_tier_id=taxonomy_values["tier1"].value_id
+            risk_tier_id=taxonomy_values["tier1"].value_id,
+            usage_frequency_id=usage_frequency["daily"].value_id
         )
         db_session.add(model)
         db_session.flush()
@@ -432,7 +515,7 @@ class TestRuleEvaluationLogic:
         assert len(result["required_roles"]) == 1
         assert result["required_roles"][0]["role_name"] == "Test Committee"
 
-    def test_multiple_matching_rules_return_deduplicated_roles(self, db_session, test_user, taxonomy_values):
+    def test_multiple_matching_rules_return_deduplicated_roles(self, db_session, test_user, taxonomy_values, usage_frequency):
         """Multiple matching rules return deduplicated roles."""
         role = ApproverRole(role_name="Shared Committee")
         db_session.add(role)
@@ -459,7 +542,8 @@ class TestRuleEvaluationLogic:
         model = Model(
             model_name="Test Model",
             owner_id=test_user.user_id,
-            risk_tier_id=taxonomy_values["tier1"].value_id
+            risk_tier_id=taxonomy_values["tier1"].value_id,
+            usage_frequency_id=usage_frequency["daily"].value_id
         )
         db_session.add(model)
         db_session.flush()
@@ -478,7 +562,7 @@ class TestRuleEvaluationLogic:
         result = get_required_approver_roles(db_session, validation_request, model)
         assert len(result["required_roles"]) == 1  # Deduplicated
 
-    def test_rule_matches_when_all_non_empty_dimensions_match(self, db_session, test_user, taxonomy_values):
+    def test_rule_matches_when_all_non_empty_dimensions_match(self, db_session, test_user, taxonomy_values, usage_frequency):
         """Rule matches when all non-empty dimensions match."""
         region = Region(name="US", code="US")
         db_session.add(region)
@@ -506,7 +590,8 @@ class TestRuleEvaluationLogic:
             model_name="Test Model",
             owner_id=test_user.user_id,
             risk_tier_id=taxonomy_values["tier1"].value_id,
-            wholly_owned_region_id=region.region_id
+            wholly_owned_region_id=region.region_id,
+            usage_frequency_id=usage_frequency["daily"].value_id
         )
         db_session.add(model)
         db_session.flush()
@@ -525,7 +610,7 @@ class TestRuleEvaluationLogic:
         result = get_required_approver_roles(db_session, validation_request, model)
         assert len(result["required_roles"]) == 1
 
-    def test_rule_does_not_match_when_one_dimension_fails(self, db_session, test_user, taxonomy_values):
+    def test_rule_does_not_match_when_one_dimension_fails(self, db_session, test_user, taxonomy_values, usage_frequency):
         """Rule does not match when one dimension fails."""
         role = ApproverRole(role_name="Test Committee")
         db_session.add(role)
@@ -547,7 +632,8 @@ class TestRuleEvaluationLogic:
         model = Model(
             model_name="Test Model",
             owner_id=test_user.user_id,
-            risk_tier_id=taxonomy_values["tier2"].value_id  # Doesn't match tier1
+            risk_tier_id=taxonomy_values["tier2"].value_id,  # Doesn't match tier1
+            usage_frequency_id=usage_frequency["daily"].value_id
         )
         db_session.add(model)
         db_session.flush()
@@ -566,7 +652,7 @@ class TestRuleEvaluationLogic:
         result = get_required_approver_roles(db_session, validation_request, model)
         assert len(result["required_roles"]) == 0
 
-    def test_empty_validation_type_ids_matches_any_validation_type(self, db_session, test_user, taxonomy_values):
+    def test_empty_validation_type_ids_matches_any_validation_type(self, db_session, test_user, taxonomy_values, usage_frequency):
         """Empty validation_type_ids matches ANY validation type."""
         role = ApproverRole(role_name="Test Committee")
         db_session.add(role)
@@ -588,7 +674,8 @@ class TestRuleEvaluationLogic:
         model = Model(
             model_name="Test Model",
             owner_id=test_user.user_id,
-            risk_tier_id=taxonomy_values["tier1"].value_id
+            risk_tier_id=taxonomy_values["tier1"].value_id,
+            usage_frequency_id=usage_frequency["daily"].value_id
         )
         db_session.add(model)
         db_session.flush()
@@ -611,7 +698,7 @@ class TestRuleEvaluationLogic:
             db_session.delete(validation_request)
             db_session.commit()
 
-    def test_empty_risk_tier_ids_matches_any_risk_tier(self, db_session, test_user, taxonomy_values):
+    def test_empty_risk_tier_ids_matches_any_risk_tier(self, db_session, test_user, taxonomy_values, usage_frequency):
         """Empty risk_tier_ids matches ANY risk tier."""
         role = ApproverRole(role_name="Test Committee")
         db_session.add(role)
@@ -645,7 +732,8 @@ class TestRuleEvaluationLogic:
             model = Model(
                 model_name=f"Model {tier.code}",
                 owner_id=test_user.user_id,
-                risk_tier_id=tier.value_id
+                risk_tier_id=tier.value_id,
+                usage_frequency_id=usage_frequency["daily"].value_id
             )
             db_session.add(model)
             db_session.flush()
@@ -656,7 +744,7 @@ class TestRuleEvaluationLogic:
             db_session.delete(model)
             db_session.commit()
 
-    def test_empty_governance_region_ids_matches_any_governance_region(self, db_session, test_user, taxonomy_values):
+    def test_empty_governance_region_ids_matches_any_governance_region(self, db_session, test_user, taxonomy_values, usage_frequency):
         """Empty governance_region_ids matches ANY governance region."""
         region1 = Region(name="US", code="US")
         region2 = Region(name="EU", code="EU")
@@ -695,7 +783,8 @@ class TestRuleEvaluationLogic:
             model = Model(
                 model_name=f"Model {region.code}",
                 owner_id=test_user.user_id,
-                wholly_owned_region_id=region.region_id
+                wholly_owned_region_id=region.region_id,
+                usage_frequency_id=usage_frequency["daily"].value_id
             )
             db_session.add(model)
             db_session.flush()
@@ -706,7 +795,7 @@ class TestRuleEvaluationLogic:
             db_session.delete(model)
             db_session.commit()
 
-    def test_empty_deployed_region_ids_matches_any_deployed_regions(self, db_session, test_user, taxonomy_values):
+    def test_empty_deployed_region_ids_matches_any_deployed_regions(self, db_session, test_user, taxonomy_values, usage_frequency):
         """Empty deployed_region_ids matches ANY deployed regions."""
         region1 = Region(name="US", code="US")
         region2 = Region(name="EU", code="EU")
@@ -732,7 +821,8 @@ class TestRuleEvaluationLogic:
 
         model = Model(
             model_name="Test Model",
-            owner_id=test_user.user_id
+            owner_id=test_user.user_id,
+            usage_frequency_id=usage_frequency["daily"].value_id
         )
         db_session.add(model)
         db_session.flush()
@@ -756,7 +846,7 @@ class TestRuleEvaluationLogic:
         result = get_required_approver_roles(db_session, validation_request, model)
         assert len(result["required_roles"]) == 1
 
-    def test_deployed_regions_any_overlap_triggers_rule(self, db_session, test_user, taxonomy_values):
+    def test_deployed_regions_any_overlap_triggers_rule(self, db_session, test_user, taxonomy_values, usage_frequency):
         """Deployed regions: ANY overlap triggers rule."""
         region1 = Region(name="US", code="US")
         region2 = Region(name="EU", code="EU")
@@ -784,7 +874,8 @@ class TestRuleEvaluationLogic:
 
         model = Model(
             model_name="Test Model",
-            owner_id=test_user.user_id
+            owner_id=test_user.user_id,
+            usage_frequency_id=usage_frequency["daily"].value_id
         )
         db_session.add(model)
         db_session.flush()
@@ -809,7 +900,7 @@ class TestRuleEvaluationLogic:
         result = get_required_approver_roles(db_session, validation_request, model)
         assert len(result["required_roles"]) == 1  # Triggered because US overlaps
 
-    def test_deployed_regions_no_overlap_does_not_trigger_rule(self, db_session, test_user, taxonomy_values):
+    def test_deployed_regions_no_overlap_does_not_trigger_rule(self, db_session, test_user, taxonomy_values, usage_frequency):
         """Deployed regions: no overlap does not trigger rule."""
         region1 = Region(name="US", code="US")
         region2 = Region(name="EU", code="EU")
@@ -837,7 +928,8 @@ class TestRuleEvaluationLogic:
 
         model = Model(
             model_name="Test Model",
-            owner_id=test_user.user_id
+            owner_id=test_user.user_id,
+            usage_frequency_id=usage_frequency["daily"].value_id
         )
         db_session.add(model)
         db_session.flush()
@@ -861,7 +953,7 @@ class TestRuleEvaluationLogic:
         result = get_required_approver_roles(db_session, validation_request, model)
         assert len(result["required_roles"]) == 0  # No overlap, rule doesn't apply
 
-    def test_existing_approval_prevents_duplicate_requirement_creation(self, db_session, test_user, taxonomy_values):
+    def test_existing_approval_prevents_duplicate_requirement_creation(self, db_session, test_user, taxonomy_values, usage_frequency):
         """Existing approval prevents duplicate requirement creation."""
         role = ApproverRole(role_name="Test Committee")
         db_session.add(role)
@@ -881,7 +973,8 @@ class TestRuleEvaluationLogic:
 
         model = Model(
             model_name="Test Model",
-            owner_id=test_user.user_id
+            owner_id=test_user.user_id,
+            usage_frequency_id=usage_frequency["daily"].value_id
         )
         db_session.add(model)
         db_session.flush()
@@ -921,7 +1014,7 @@ class TestRuleEvaluationLogic:
         assert len(result["required_roles"]) == 1
         assert result["required_roles"][0]["approval_id"] is not None
 
-    def test_voided_approval_does_not_prevent_re_evaluation(self, db_session, test_user, admin_user, taxonomy_values):
+    def test_voided_approval_does_not_prevent_re_evaluation(self, db_session, test_user, admin_user, taxonomy_values, usage_frequency):
         """Voided approval does not prevent re-evaluation."""
         role = ApproverRole(role_name="Test Committee")
         db_session.add(role)
@@ -941,7 +1034,8 @@ class TestRuleEvaluationLogic:
 
         model = Model(
             model_name="Test Model",
-            owner_id=test_user.user_id
+            owner_id=test_user.user_id,
+            usage_frequency_id=usage_frequency["daily"].value_id
         )
         db_session.add(model)
         db_session.flush()
@@ -984,7 +1078,7 @@ class TestRuleEvaluationLogic:
         assert len(result["required_roles"]) == 1
         assert result["required_roles"][0]["approval_id"] is None  # Voided approval ignored
 
-    def test_english_translation_includes_all_matching_dimensions(self, db_session, test_user, taxonomy_values):
+    def test_english_translation_includes_all_matching_dimensions(self, db_session, test_user, taxonomy_values, usage_frequency):
         """English translation includes all matching dimensions."""
         region = Region(name="United States", code="US")
         db_session.add(region)
@@ -1012,7 +1106,8 @@ class TestRuleEvaluationLogic:
             model_name="Test Model",
             owner_id=test_user.user_id,
             risk_tier_id=taxonomy_values["tier1"].value_id,
-            wholly_owned_region_id=region.region_id
+            wholly_owned_region_id=region.region_id,
+            usage_frequency_id=usage_frequency["daily"].value_id
         )
         db_session.add(model)
         db_session.flush()
@@ -1035,7 +1130,7 @@ class TestRuleEvaluationLogic:
         assert "Tier 1" in explanation or "risk tier" in explanation.lower()
         assert "United States" in explanation or "governance region" in explanation.lower()
 
-    def test_english_translation_handles_or_within_dimensions_correctly(self, db_session, test_user, taxonomy_values):
+    def test_english_translation_handles_or_within_dimensions_correctly(self, db_session, test_user, taxonomy_values, usage_frequency):
         """English translation handles OR within dimensions correctly."""
         role = ApproverRole(role_name="Test Committee")
         db_session.add(role)
@@ -1055,7 +1150,8 @@ class TestRuleEvaluationLogic:
 
         model = Model(
             model_name="Test Model",
-            owner_id=test_user.user_id
+            owner_id=test_user.user_id,
+            usage_frequency_id=usage_frequency["daily"].value_id
         )
         db_session.add(model)
         db_session.flush()
@@ -1080,7 +1176,7 @@ class TestRuleEvaluationLogic:
 class TestApprovalWorkflowIntegration:
     """Test approval workflow integration."""
 
-    def test_rule_evaluation_on_validation_request_creation(self, client, db_session, test_user, admin_user, admin_headers, taxonomy_values):
+    def test_rule_evaluation_on_validation_request_creation(self, client, db_session, test_user, admin_user, admin_headers, taxonomy_values, usage_frequency):
         """Rule evaluation happens when validation request is created."""
         role = ApproverRole(role_name="Test Committee")
         db_session.add(role)
@@ -1101,7 +1197,8 @@ class TestApprovalWorkflowIntegration:
         model = Model(
             model_name="Test Model",
             owner_id=test_user.user_id,
-            row_approval_status="approved"
+            row_approval_status="approved",
+            usage_frequency_id=usage_frequency["daily"].value_id
         )
         db_session.add(model)
         db_session.commit()
@@ -1125,7 +1222,7 @@ class TestApprovalWorkflowIntegration:
         assert approval is not None
         assert approval.approval_status == "Pending"
 
-    def test_rule_re_evaluation_when_moving_to_pending_approval_status(self, client, db_session, test_user, admin_user, admin_headers, taxonomy_values, validator_user):
+    def test_rule_re_evaluation_when_moving_to_pending_approval_status(self, client, db_session, test_user, admin_user, admin_headers, taxonomy_values, validator_user, usage_frequency, qualitative_factors):
         """Rule re-evaluation happens when moving to Pending Approval status."""
         role = ApproverRole(role_name="Test Committee")
         db_session.add(role)
@@ -1147,7 +1244,8 @@ class TestApprovalWorkflowIntegration:
             model_name="Test Model",
             owner_id=test_user.user_id,
             risk_tier_id=None,  # Initially null
-            row_approval_status="approved"
+            row_approval_status="approved",
+            usage_frequency_id=usage_frequency["daily"].value_id
         )
         db_session.add(model)
         db_session.commit()
@@ -1177,6 +1275,9 @@ class TestApprovalWorkflowIntegration:
         # Update model risk tier
         model.risk_tier_id = taxonomy_values["tier1"].value_id
         db_session.commit()
+
+        # Create risk assessment for the model (required before transitioning to REVIEW)
+        create_complete_risk_assessment(db_session, model.model_id, qualitative_factors)
 
         # Progress through workflow states: INTAKE → PLANNING → IN_PROGRESS → REVIEW
         for status_name in ["status_planning", "status_in_progress", "status_review"]:
@@ -1231,7 +1332,7 @@ class TestApprovalWorkflowIntegration:
         ).first()
         assert approval is not None
 
-    def test_submit_conditional_approval_as_admin_with_evidence(self, client, db_session, test_user, admin_user, admin_headers, taxonomy_values):
+    def test_submit_conditional_approval_as_admin_with_evidence(self, client, db_session, test_user, admin_user, admin_headers, taxonomy_values, usage_frequency):
         """Submit conditional approval as Admin with evidence."""
         role = ApproverRole(role_name="Test Committee")
         db_session.add(role)
@@ -1240,7 +1341,8 @@ class TestApprovalWorkflowIntegration:
         model = Model(
             model_name="Test Model",
             owner_id=test_user.user_id,
-            row_approval_status="approved"
+            row_approval_status="approved",
+            usage_frequency_id=usage_frequency["daily"].value_id
         )
         db_session.add(model)
         db_session.flush()
@@ -1289,7 +1391,7 @@ class TestApprovalWorkflowIntegration:
         assert approval.approval_evidence == "Approved via MRM Committee meeting minutes 2025-11-23"
         assert approval.approver_id == admin_user.user_id
 
-    def test_submit_conditional_approval_as_non_admin_fails(self, client, db_session, test_user, admin_user, auth_headers, taxonomy_values):
+    def test_submit_conditional_approval_as_non_admin_fails(self, client, db_session, test_user, admin_user, auth_headers, taxonomy_values, usage_frequency):
         """Submit conditional approval as non-Admin fails with 403."""
         role = ApproverRole(role_name="Test Committee")
         db_session.add(role)
@@ -1298,7 +1400,8 @@ class TestApprovalWorkflowIntegration:
         model = Model(
             model_name="Test Model",
             owner_id=test_user.user_id,
-            row_approval_status="approved"
+            row_approval_status="approved",
+            usage_frequency_id=usage_frequency["daily"].value_id
         )
         db_session.add(model)
         db_session.flush()
@@ -1341,7 +1444,7 @@ class TestApprovalWorkflowIntegration:
         response = client.post(f"/validation-workflow/approvals/{approval.approval_id}/submit-additional", json=payload, headers=auth_headers)
         assert response.status_code == 403
 
-    def test_submit_approval_updates_model_use_approval_date_when_all_complete(self, client, db_session, test_user, admin_user, admin_headers, taxonomy_values):
+    def test_submit_approval_updates_model_use_approval_date_when_all_complete(self, client, db_session, test_user, admin_user, admin_headers, taxonomy_values, usage_frequency):
         """Submit approval updates Model.use_approval_date when all complete."""
         role = ApproverRole(role_name="Test Committee")
         db_session.add(role)
@@ -1351,7 +1454,8 @@ class TestApprovalWorkflowIntegration:
             model_name="Test Model",
             owner_id=test_user.user_id,
             row_approval_status="approved",
-            use_approval_date=None
+            use_approval_date=None,
+            usage_frequency_id=usage_frequency["daily"].value_id
         )
         db_session.add(model)
         db_session.flush()
@@ -1399,7 +1503,7 @@ class TestApprovalWorkflowIntegration:
         db_session.refresh(model)
         assert model.use_approval_date is not None
 
-    def test_void_approval_requirement_with_reason(self, client, db_session, test_user, admin_user, admin_headers, taxonomy_values):
+    def test_void_approval_requirement_with_reason(self, client, db_session, test_user, admin_user, admin_headers, taxonomy_values, usage_frequency):
         """Void approval requirement with reason."""
         role = ApproverRole(role_name="Test Committee")
         db_session.add(role)
@@ -1408,7 +1512,8 @@ class TestApprovalWorkflowIntegration:
         model = Model(
             model_name="Test Model",
             owner_id=test_user.user_id,
-            row_approval_status="approved"
+            row_approval_status="approved",
+            usage_frequency_id=usage_frequency["daily"].value_id
         )
         db_session.add(model)
         db_session.flush()
@@ -1452,7 +1557,7 @@ class TestApprovalWorkflowIntegration:
         assert approval.void_reason == "Rule no longer applies due to scope change"
         assert approval.voided_at is not None
 
-    def test_void_approval_creates_audit_log(self, client, db_session, test_user, admin_user, admin_headers, taxonomy_values):
+    def test_void_approval_creates_audit_log(self, client, db_session, test_user, admin_user, admin_headers, taxonomy_values, usage_frequency):
         """Void approval creates audit log with CONDITIONAL_APPROVAL_VOID action."""
         from app.models.audit_log import AuditLog
 
@@ -1463,7 +1568,8 @@ class TestApprovalWorkflowIntegration:
         model = Model(
             model_name="Test Model",
             owner_id=test_user.user_id,
-            row_approval_status="approved"
+            row_approval_status="approved",
+            usage_frequency_id=usage_frequency["daily"].value_id
         )
         db_session.add(model)
         db_session.flush()
@@ -1511,7 +1617,7 @@ class TestApprovalWorkflowIntegration:
         assert audit_log is not None
         assert audit_log.user_id == admin_user.user_id
 
-    def test_submit_approval_creates_audit_log(self, client, db_session, test_user, admin_user, admin_headers, taxonomy_values):
+    def test_submit_approval_creates_audit_log(self, client, db_session, test_user, admin_user, admin_headers, taxonomy_values, usage_frequency):
         """Submit approval creates audit log with CONDITIONAL_APPROVAL_SUBMIT action."""
         from app.models.audit_log import AuditLog
 
@@ -1522,7 +1628,8 @@ class TestApprovalWorkflowIntegration:
         model = Model(
             model_name="Test Model",
             owner_id=test_user.user_id,
-            row_approval_status="approved"
+            row_approval_status="approved",
+            usage_frequency_id=usage_frequency["daily"].value_id
         )
         db_session.add(model)
         db_session.flush()

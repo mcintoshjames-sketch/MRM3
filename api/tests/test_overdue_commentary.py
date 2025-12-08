@@ -66,12 +66,13 @@ class TestOverdueCommentaryAPI:
         return {"taxonomy": taxonomy, "comprehensive": val_type}
 
     @pytest.fixture
-    def test_model_for_commentary(self, db_session, admin_user):
+    def test_model_for_commentary(self, db_session, admin_user, usage_frequency):
         """Create a test model for commentary tests."""
         model = Model(
             model_name="Test Model for Commentary",
             owner_id=admin_user.user_id,
-            row_approval_status="approved"
+            row_approval_status="approved",
+            usage_frequency_id=usage_frequency["daily"].value_id
         )
         db_session.add(model)
         db_session.commit()
@@ -80,9 +81,9 @@ class TestOverdueCommentaryAPI:
     @pytest.fixture
     def sla_config(self, db_session):
         """Create SLA configuration."""
-        sla = ValidationWorkflowSLA(
-            model_change_lead_time_days=90
-        )
+        # Note: model_change_lead_time_days was moved to ValidationPolicy
+        # ValidationWorkflowSLA uses defaults for assignment_days, begin_work_days, approval_days
+        sla = ValidationWorkflowSLA()
         db_session.add(sla)
         db_session.commit()
         return sla
@@ -374,14 +375,15 @@ class TestOverdueCommentaryAPI:
         assert data["current_comment"]["reason_comment"] == payload["reason_comment"]
 
     def test_get_model_overdue_commentary_no_request(
-        self, client, admin_headers, db_session, admin_user
+        self, client, admin_headers, db_session, admin_user, usage_frequency
     ):
         """Test model convenience endpoint when no validation request exists."""
         # Create model without validation request
         model = Model(
             model_name="Model Without Validation",
             owner_id=admin_user.user_id,
-            row_approval_status="approved"
+            row_approval_status="approved",
+            usage_frequency_id=usage_frequency["daily"].value_id
         )
         db_session.add(model)
         db_session.commit()
@@ -394,7 +396,7 @@ class TestOverdueCommentaryAPI:
         assert "no validation request" in response.json()["detail"].lower()
 
     def test_non_admin_owner_can_create_pre_submission(
-        self, client, db_session, validation_request_pre_submission, test_model_for_commentary
+        self, client, db_session, validation_request_pre_submission, test_model_for_commentary, lob_hierarchy
     ):
         """Test that model owner can create PRE_SUBMISSION commentary."""
         # Create a regular user who owns the model
@@ -402,7 +404,8 @@ class TestOverdueCommentaryAPI:
             email="owner_commentary@example.com",
             password_hash=get_password_hash("testpass"),
             full_name="Model Owner",
-            role="User"
+            role="User",
+            lob_id=lob_hierarchy["retail"].lob_id
         )
         db_session.add(owner)
         db_session.flush()
@@ -427,14 +430,15 @@ class TestOverdueCommentaryAPI:
         assert response.status_code == 201
 
     def test_non_owner_cannot_create_pre_submission(
-        self, client, db_session, validation_request_pre_submission
+        self, client, db_session, validation_request_pre_submission, lob_hierarchy
     ):
         """Test that non-owner cannot create PRE_SUBMISSION commentary."""
         other_user = User(
             email="other_commentary@example.com",
             password_hash=get_password_hash("testpass"),
             full_name="Other User",
-            role="User"
+            role="User",
+            lob_id=lob_hierarchy["retail"].lob_id
         )
         db_session.add(other_user)
         db_session.commit()
@@ -455,14 +459,15 @@ class TestOverdueCommentaryAPI:
         assert response.status_code == 403
 
     def test_delegate_can_create_pre_submission(
-        self, client, db_session, validation_request_pre_submission, test_model_for_commentary
+        self, client, db_session, validation_request_pre_submission, test_model_for_commentary, lob_hierarchy
     ):
         """Test that model delegate can create PRE_SUBMISSION commentary."""
         delegate_user = User(
             email="delegate_commentary@example.com",
             password_hash=get_password_hash("testpass"),
             full_name="Delegate User",
-            role="User"
+            role="User",
+            lob_id=lob_hierarchy["retail"].lob_id
         )
         db_session.add(delegate_user)
         db_session.flush()
@@ -492,14 +497,15 @@ class TestOverdueCommentaryAPI:
         assert response.status_code == 201
 
     def test_assigned_validator_can_create_in_progress(
-        self, client, db_session, validation_request_in_progress
+        self, client, db_session, validation_request_in_progress, lob_hierarchy
     ):
         """Test that assigned validator can create VALIDATION_IN_PROGRESS commentary."""
         validator = User(
             email="validator_commentary@example.com",
             password_hash=get_password_hash("testpass"),
             full_name="Validator User",
-            role="Validator"
+            role="Validator",
+            lob_id=lob_hierarchy["retail"].lob_id
         )
         db_session.add(validator)
         db_session.flush()
@@ -530,14 +536,15 @@ class TestOverdueCommentaryAPI:
         assert response.status_code == 201
 
     def test_unassigned_validator_cannot_create_in_progress(
-        self, client, db_session, validation_request_in_progress
+        self, client, db_session, validation_request_in_progress, lob_hierarchy
     ):
         """Test that unassigned validator cannot create VALIDATION_IN_PROGRESS commentary."""
         validator = User(
             email="unassigned_validator@example.com",
             password_hash=get_password_hash("testpass"),
             full_name="Unassigned Validator",
-            role="Validator"
+            role="Validator",
+            lob_id=lob_hierarchy["retail"].lob_id
         )
         db_session.add(validator)
         db_session.commit()
@@ -615,7 +622,7 @@ class TestOverdueCommentaryAPI:
         assert data["computed_completion_date"] == expected
 
     def test_admin_can_create_pre_submission_for_non_owned_model(
-        self, client, admin_headers, db_session, validation_request_pre_submission, test_model_for_commentary
+        self, client, admin_headers, db_session, validation_request_pre_submission, test_model_for_commentary, lob_hierarchy
     ):
         """Test that Admin can create PRE_SUBMISSION commentary even for models they don't own."""
         # Create a different user to be the model owner
@@ -623,7 +630,8 @@ class TestOverdueCommentaryAPI:
             email="other_owner_admin_test@example.com",
             password_hash=get_password_hash("testpass"),
             full_name="Other Owner",
-            role="User"
+            role="User",
+            lob_id=lob_hierarchy["retail"].lob_id
         )
         db_session.add(other_owner)
         db_session.flush()

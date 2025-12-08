@@ -135,6 +135,20 @@ export default function MyMonitoringPage() {
         );
     }
 
+    // Split tasks into Action Required and Information
+    const actionRequiredTasks = tasks.filter(t =>
+        t.is_overdue ||
+        t.action_needed.toLowerCase().includes('approve') ||
+        t.status === 'PENDING_APPROVAL'
+    );
+
+    // Note: Can use for two-section layout if needed
+    // const informationalTasks = tasks.filter(t =>
+    //     !t.is_overdue &&
+    //     !t.action_needed.toLowerCase().includes('approve') &&
+    //     t.status !== 'PENDING_APPROVAL'
+    // );
+
     return (
         <Layout>
             <div className="mb-6">
@@ -143,6 +157,34 @@ export default function MyMonitoringPage() {
                     Monitoring cycles that require your attention
                 </p>
             </div>
+
+            {/* Quick Stats Cards */}
+            {tasks.length > 0 && (
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+                    <div className="bg-white p-4 rounded-lg border border-gray-200 shadow-sm">
+                        <div className="text-2xl font-bold text-gray-900">{tasks.length}</div>
+                        <div className="text-sm text-gray-500">Total Active Tasks</div>
+                    </div>
+                    <div className={`p-4 rounded-lg border shadow-sm ${actionRequiredTasks.length > 0 ? 'bg-red-50 border-red-200' : 'bg-white border-gray-200'}`}>
+                        <div className={`text-2xl font-bold ${actionRequiredTasks.length > 0 ? 'text-red-600' : 'text-gray-900'}`}>
+                            {actionRequiredTasks.length}
+                        </div>
+                        <div className="text-sm text-gray-500">Action Required</div>
+                    </div>
+                    <div className="bg-white p-4 rounded-lg border border-gray-200 shadow-sm">
+                        <div className="text-2xl font-bold text-orange-600">
+                            {tasks.filter(t => t.is_overdue).length}
+                        </div>
+                        <div className="text-sm text-gray-500">Overdue</div>
+                    </div>
+                    <div className="bg-white p-4 rounded-lg border border-gray-200 shadow-sm">
+                        <div className="text-2xl font-bold text-purple-600">
+                            {tasks.filter(t => t.status === 'PENDING_APPROVAL').length}
+                        </div>
+                        <div className="text-sm text-gray-500">Pending Approval</div>
+                    </div>
+                </div>
+            )}
 
             {/* Filter buttons */}
             <div className="flex gap-2 mb-6">

@@ -35,7 +35,9 @@ import DecommissioningRequestPage from './pages/DecommissioningRequestPage';
 import PendingDecommissioningPage from './pages/PendingDecommissioningPage';
 import MonitoringPlansPage from './pages/MonitoringPlansPage';
 import MonitoringPlanDetailPage from './pages/MonitoringPlanDetailPage';
+import MonitoringCycleDetailPage from './pages/MonitoringCycleDetailPage';
 import MyMonitoringPage from './pages/MyMonitoringPage';
+import MyMonitoringTasksPage from './pages/MyMonitoringTasksPage';
 import RecommendationsPage from './pages/RecommendationsPage';
 import RecommendationDetailPage from './pages/RecommendationDetailPage';
 import AttestationCyclesPage from './pages/AttestationCyclesPage';
@@ -78,6 +80,7 @@ function App() {
             <Route path="/my-pending-submissions" element={user ? <MyPendingSubmissionsPage /> : <Navigate to="/login" />} />
             <Route path="/my-deployment-tasks" element={user ? <MyDeploymentTasksPage /> : <Navigate to="/login" />} />
             <Route path="/my-monitoring" element={user?.role === 'Admin' ? <Navigate to="/monitoring-plans" /> : (user ? <MyMonitoringPage /> : <Navigate to="/login" />)} />
+            <Route path="/my-monitoring-tasks" element={user ? <MyMonitoringTasksPage /> : <Navigate to="/login" />} />
             <Route path="/pending-decommissioning" element={user ? <PendingDecommissioningPage /> : <Navigate to="/login" />} />
             <Route path="/reference-data" element={user?.role === 'Admin' || user?.role === 'Validator' ? <ReferenceDataPage /> : <Navigate to="/models" />} />
             <Route path="/vendors" element={<Navigate to="/reference-data" />} />
@@ -97,6 +100,7 @@ function App() {
             <Route path="/fry-config" element={<Navigate to="/taxonomy" />} />
             <Route path="/monitoring-plans" element={user?.role === 'Admin' ? <MonitoringPlansPage /> : <Navigate to="/models" />} />
             <Route path="/monitoring/:id" element={user ? <MonitoringPlanDetailPage /> : <Navigate to="/login" />} />
+            <Route path="/monitoring/cycles/:cycleId" element={user ? <MonitoringCycleDetailPage /> : <Navigate to="/login" />} />
             <Route path="/reports" element={user ? <ReportsPage /> : <Navigate to="/login" />} />
             <Route path="/reports/regional-compliance" element={user ? <RegionalComplianceReportPage /> : <Navigate to="/login" />} />
             <Route path="/reports/deviation-trends" element={user ? <DeviationTrendsReportPage /> : <Navigate to="/login" />} />

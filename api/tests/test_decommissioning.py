@@ -104,13 +104,14 @@ class TestDecommissioningAPI:
         }
 
     @pytest.fixture
-    def validator_user(self, db_session):
+    def validator_user(self, db_session, lob_hierarchy):
         """Create a validator user."""
         user = User(
             email="validator@example.com",
             full_name="Validator User",
             password_hash=get_password_hash("validator123"),
-            role="Validator"
+            role="Validator",
+            lob_id=lob_hierarchy["retail"].lob_id
         )
         db_session.add(user)
         db_session.commit()
@@ -123,26 +124,28 @@ class TestDecommissioningAPI:
         return {"Authorization": f"Bearer {token}"}
 
     @pytest.fixture
-    def test_model(self, db_session, admin_user, model_status_taxonomy):
+    def test_model(self, db_session, admin_user, model_status_taxonomy, usage_frequency):
         """Create a test model for decommissioning."""
         model = Model(
             model_name="Test Model for Decommission",
             owner_id=admin_user.user_id,
             status="Active",
-            status_id=model_status_taxonomy["active"].value_id
+            status_id=model_status_taxonomy["active"].value_id,
+            usage_frequency_id=usage_frequency["daily"].value_id
         )
         db_session.add(model)
         db_session.commit()
         return model
 
     @pytest.fixture
-    def replacement_model(self, db_session, admin_user, model_status_taxonomy):
+    def replacement_model(self, db_session, admin_user, model_status_taxonomy, usage_frequency):
         """Create a replacement model."""
         model = Model(
             model_name="Replacement Model",
             owner_id=admin_user.user_id,
             status="Active",
-            status_id=model_status_taxonomy["active"].value_id
+            status_id=model_status_taxonomy["active"].value_id,
+            usage_frequency_id=usage_frequency["daily"].value_id
         )
         db_session.add(model)
         db_session.flush()
@@ -506,13 +509,14 @@ class TestDecommissioningAPI:
     # --- Owner Approval Tests (Dual Approval Workflow) ---
 
     @pytest.fixture
-    def non_owner_user(self, db_session):
+    def non_owner_user(self, db_session, lob_hierarchy):
         """Create a non-owner user who can initiate decommissioning."""
         user = User(
             email="nonowner@example.com",
             full_name="Non Owner User",
             password_hash=get_password_hash("nonowner123"),
-            role="User"
+            role="User",
+            lob_id=lob_hierarchy["retail"].lob_id
         )
         db_session.add(user)
         db_session.commit()
@@ -525,13 +529,14 @@ class TestDecommissioningAPI:
         return {"Authorization": f"Bearer {token}"}
 
     @pytest.fixture
-    def owner_user(self, db_session):
+    def owner_user(self, db_session, lob_hierarchy):
         """Create a model owner user."""
         user = User(
             email="owner@example.com",
             full_name="Model Owner",
             password_hash=get_password_hash("owner123"),
-            role="User"
+            role="User",
+            lob_id=lob_hierarchy["retail"].lob_id
         )
         db_session.add(user)
         db_session.commit()
@@ -544,13 +549,14 @@ class TestDecommissioningAPI:
         return {"Authorization": f"Bearer {token}"}
 
     @pytest.fixture
-    def owner_model(self, db_session, owner_user, model_status_taxonomy):
+    def owner_model(self, db_session, owner_user, model_status_taxonomy, usage_frequency):
         """Create a model owned by owner_user."""
         model = Model(
             model_name="Owner's Model",
             owner_id=owner_user.user_id,
             status="Active",
-            status_id=model_status_taxonomy["active"].value_id
+            status_id=model_status_taxonomy["active"].value_id,
+            usage_frequency_id=usage_frequency["daily"].value_id
         )
         db_session.add(model)
         db_session.commit()

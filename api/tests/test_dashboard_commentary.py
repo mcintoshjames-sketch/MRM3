@@ -15,13 +15,14 @@ class TestDashboardCommentaryAPI:
     """Tests for dashboard endpoints with commentary integration."""
 
     @pytest.fixture
-    def admin_user(self, db_session):
+    def admin_user(self, db_session, lob_hierarchy):
         """Create admin user."""
         user = User(
             email="dashboard_admin@example.com",
             password_hash=get_password_hash("admin123"),
             full_name="Dashboard Admin",
-            role="Admin"
+            role="Admin",
+            lob_id=lob_hierarchy["retail"].lob_id
         )
         db_session.add(user)
         db_session.commit()
@@ -34,13 +35,14 @@ class TestDashboardCommentaryAPI:
         return {"Authorization": f"Bearer {token}"}
 
     @pytest.fixture
-    def regular_user(self, db_session):
+    def regular_user(self, db_session, lob_hierarchy):
         """Create regular user."""
         user = User(
             email="regular_user@example.com",
             password_hash=get_password_hash("user123"),
             full_name="Regular User",
-            role="User"
+            role="User",
+            lob_id=lob_hierarchy["retail"].lob_id
         )
         db_session.add(user)
         db_session.commit()
@@ -53,13 +55,14 @@ class TestDashboardCommentaryAPI:
         return {"Authorization": f"Bearer {token}"}
 
     @pytest.fixture
-    def validator_user(self, db_session):
+    def validator_user(self, db_session, lob_hierarchy):
         """Create validator user."""
         user = User(
             email="validator@example.com",
             password_hash=get_password_hash("val123"),
             full_name="Validator User",
-            role="Validator"
+            role="Validator",
+            lob_id=lob_hierarchy["retail"].lob_id
         )
         db_session.add(user)
         db_session.commit()
@@ -131,20 +134,21 @@ class TestDashboardCommentaryAPI:
     @pytest.fixture
     def sla_config(self, db_session):
         """Create SLA configuration."""
-        sla = ValidationWorkflowSLA(
-            model_change_lead_time_days=90
-        )
+        # Note: model_change_lead_time_days was moved to ValidationPolicy
+        # ValidationWorkflowSLA uses defaults for assignment_days, begin_work_days, approval_days
+        sla = ValidationWorkflowSLA()
         db_session.add(sla)
         db_session.commit()
         return sla
 
     @pytest.fixture
-    def test_model(self, db_session, regular_user):
+    def test_model(self, db_session, regular_user, usage_frequency):
         """Create a test model owned by regular_user."""
         model = Model(
             model_name="Dashboard Test Model",
             owner_id=regular_user.user_id,
-            row_approval_status="approved"
+            row_approval_status="approved",
+            usage_frequency_id=usage_frequency["daily"].value_id
         )
         db_session.add(model)
         db_session.commit()
@@ -468,7 +472,7 @@ class TestDashboardCommentaryAPI:
                 break
 
     def test_my_overdue_items_shows_delegate_items(
-        self, client, db_session, test_model, admin_user, validation_taxonomies, sla_config
+        self, client, db_session, test_model, admin_user, validation_taxonomies, sla_config, lob_hierarchy
     ):
         """Test that my-overdue-items shows items where user is delegate."""
         # Create a delegate user
@@ -476,7 +480,8 @@ class TestDashboardCommentaryAPI:
             email="delegate@example.com",
             password_hash=get_password_hash("del123"),
             full_name="Delegate User",
-            role="User"
+            role="User",
+            lob_id=lob_hierarchy["retail"].lob_id
         )
         db_session.add(delegate_user)
         db_session.flush()

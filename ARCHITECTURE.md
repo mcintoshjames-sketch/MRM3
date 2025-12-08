@@ -90,7 +90,7 @@ Model Risk Management inventory system with a FastAPI backend, React/TypeScript 
 
 ## Data Model (conceptual)
 - User & EntraUser directory entries; roles drive permissions.
-- Model with vendor, owner/developer, **shared_owner** (co-owner), **shared_developer** (co-developer), **monitoring_manager** (responsible for ongoing monitoring), taxonomy links (risk tier, model type, etc.), regulatory categories, delegates, and region assignments via ModelRegion. **Validation rules**: shared_owner ≠ owner, shared_developer ≠ developer. **Note**: Validation Type is associated with ValidationRequest, not Model (deprecated from Model UI).
+- Model with vendor, owner/developer, **shared_owner** (co-owner), **shared_developer** (co-developer), **monitoring_manager** (responsible for ongoing monitoring), taxonomy links (risk tier, model type, etc.), regulatory categories, delegates, and region assignments via ModelRegion. **Required fields**: `usage_frequency_id` (taxonomy reference). **Validation rules**: shared_owner ≠ owner, shared_developer ≠ developer. **Note**: Validation Type is associated with ValidationRequest, not Model (deprecated from Model UI).
 - **ModelPendingEdit**: Edit approval workflow for approved models. When non-admin users edit an already-approved model, a pending edit record is created with `proposed_changes` and `original_values` (JSON). Admin reviews the changes via dashboard widget or model details page and can approve (applies changes) or reject (with comment). Includes `requested_by_id`, `reviewed_by_id`, `status` (pending/approved/rejected), `review_comment`, and timestamps.
 - **Model Types**: Hierarchical classification with Categories (e.g., "Financial", "Operational") and Types (e.g., "Credit Risk", "Fraud Detection").
 - **Methodology Library**: Categories (e.g., "AI/ML Tabular", "Statistical") and Methodologies (e.g., "Random Forest", "Linear Regression") assigned to models. **AI/ML Classification**: `is_aiml` boolean on MethodologyCategory flags whether models using that category's methodologies are AI/ML models. Models with no methodology show "Undefined". Admin-editable via Taxonomy UI; displayed in Models list (with filter) and Model Details page.
@@ -379,6 +379,8 @@ Model Risk Management inventory system with a FastAPI backend, React/TypeScript 
                            ↘ REBUTTAL_SUBMITTED → PENDING_RESPONSE (if rejected)
                                                 → WITHDRAWN (if accepted)
   ```
+- **API Validation Rules**:
+  - **Target Date**: `original_target_date` cannot be in the past (returns 400: "Target date cannot be before the creation date")
 - **Key Workflow Features**:
   - **Finalization**: Validator finalizes draft → moves to PENDING_RESPONSE
   - **Developer Response**: Submit action plan OR skip (if priority allows)

@@ -147,13 +147,14 @@ def priority_configs(db_session, recommendation_taxonomies):
 
 
 @pytest.fixture
-def developer_user(db_session):
+def developer_user(db_session, lob_hierarchy):
     """Create a developer/owner user for recommendations."""
     user = User(
         email="developer@example.com",
         full_name="Developer User",
         password_hash=get_password_hash("developer123"),
-        role="User"
+        role="User",
+        lob_id=lob_hierarchy["retail"].lob_id
     )
     db_session.add(user)
     db_session.commit()
@@ -169,13 +170,14 @@ def developer_headers(developer_user):
 
 
 @pytest.fixture
-def global_approver_user(db_session):
+def global_approver_user(db_session, lob_hierarchy):
     """Create a Global Approver user."""
     user = User(
         email="global_approver@example.com",
         full_name="Global Approver",
         password_hash=get_password_hash("approver123"),
-        role="Global Approver"
+        role="Global Approver",
+        lob_id=lob_hierarchy["retail"].lob_id
     )
     db_session.add(user)
     db_session.commit()
@@ -191,13 +193,14 @@ def global_approver_headers(global_approver_user):
 
 
 @pytest.fixture
-def regional_approver_user(db_session):
+def regional_approver_user(db_session, lob_hierarchy):
     """Create a Regional Approver user."""
     user = User(
         email="regional_approver@example.com",
         full_name="Regional Approver",
         password_hash=get_password_hash("approver123"),
-        role="Regional Approver"
+        role="Regional Approver",
+        lob_id=lob_hierarchy["retail"].lob_id
     )
     db_session.add(user)
     db_session.commit()
@@ -227,7 +230,7 @@ def test_region(db_session):
 
 
 @pytest.fixture
-def model_with_region(db_session, test_user, test_region):
+def model_with_region(db_session, test_user, test_region, usage_frequency):
     """Create a model deployed to a region."""
     model = Model(
         model_name="Regional Model",
@@ -235,7 +238,8 @@ def model_with_region(db_session, test_user, test_region):
         development_type="In-House",
         status="Active",
         owner_id=test_user.user_id,
-        row_approval_status="approved"
+        row_approval_status="approved",
+        usage_frequency_id=usage_frequency["daily"].value_id
     )
     db_session.add(model)
     db_session.flush()
@@ -2858,11 +2862,11 @@ class TestDashboardAndReports:
 
     def test_my_tasks_overdue_tracking(
         self, client, validator_headers, developer_headers, sample_model,
-        developer_user, recommendation_taxonomies
+        developer_user, recommendation_taxonomies, db_session
     ):
         """Tasks with past due dates are marked as overdue and counted."""
-        # Use past date for overdue
-        past_date = (date.today() - timedelta(days=5)).isoformat()
+        # Create with future date (API validation requires this)
+        future_date = (date.today() + timedelta(days=5)).isoformat()
 
         create_resp = client.post(
             "/recommendations/",
@@ -2873,11 +2877,20 @@ class TestDashboardAndReports:
                 "description": "Description",
                 "priority_id": recommendation_taxonomies["priority"]["high"].value_id,
                 "assigned_to_id": developer_user.user_id,
-                "original_target_date": past_date
+                "original_target_date": future_date
             }
         )
+        assert create_resp.status_code == 201, f"Create failed: {create_resp.json()}"
         rec_id = create_resp.json()["recommendation_id"]
         client.post(f"/recommendations/{rec_id}/submit", headers=validator_headers)
+
+        # Update target date to past to make it overdue (bypass API validation for testing)
+        from app.models.recommendation import Recommendation
+        rec = db_session.query(Recommendation).filter(Recommendation.recommendation_id == rec_id).first()
+        past_date = date.today() - timedelta(days=5)
+        rec.current_target_date = past_date
+        rec.original_target_date = past_date
+        db_session.commit()
 
         response = client.get("/recommendations/my-tasks", headers=developer_headers)
         assert response.status_code == 200
@@ -2939,13 +2952,12 @@ class TestDashboardAndReports:
 
     def test_dashboard_overdue_recommendations(
         self, client, validator_headers, developer_headers, admin_headers,
-        sample_model, developer_user, recommendation_taxonomies
+        sample_model, developer_user, recommendation_taxonomies, db_session
     ):
         """Dashboard returns list of overdue recommendations."""
-        past_date = (date.today() - timedelta(days=10)).isoformat()
         future_date = (date.today() + timedelta(days=30)).isoformat()
 
-        # Create overdue recommendation
+        # Create recommendation with future date (API validation requires this)
         create_resp = client.post(
             "/recommendations/",
             headers=validator_headers,
@@ -2955,11 +2967,20 @@ class TestDashboardAndReports:
                 "description": "Description",
                 "priority_id": recommendation_taxonomies["priority"]["high"].value_id,
                 "assigned_to_id": developer_user.user_id,
-                "original_target_date": past_date
+                "original_target_date": future_date
             }
         )
+        assert create_resp.status_code == 201, f"Create failed: {create_resp.json()}"
         overdue_rec_id = create_resp.json()["recommendation_id"]
         client.post(f"/recommendations/{overdue_rec_id}/submit", headers=validator_headers)
+
+        # Update target date to past to make it overdue (bypass API validation for testing)
+        from app.models.recommendation import Recommendation
+        rec = db_session.query(Recommendation).filter(Recommendation.recommendation_id == overdue_rec_id).first()
+        past_date = date.today() - timedelta(days=10)
+        rec.current_target_date = past_date
+        rec.original_target_date = past_date
+        db_session.commit()
 
         # Create on-time recommendation
         client.post(
@@ -3101,7 +3122,7 @@ class TestDashboardAndReports:
         assert response.status_code == 404
 
     def test_my_tasks_empty_for_new_user(
-        self, client, db_session, recommendation_taxonomies
+        self, client, db_session, recommendation_taxonomies, lob_hierarchy
     ):
         """New user with no assignments sees empty task list."""
         # Create a fresh user
@@ -3109,7 +3130,8 @@ class TestDashboardAndReports:
             email="newuser@example.com",
             full_name="New User",
             password_hash=get_password_hash("pass123"),
-            role="User"
+            role="User",
+            lob_id=lob_hierarchy["retail"].lob_id
         )
         db_session.add(new_user)
         db_session.commit()
@@ -3194,7 +3216,7 @@ def multiple_regions(db_session):
 
 
 @pytest.fixture
-def model_deployed_us(db_session, test_user, multiple_regions):
+def model_deployed_us(db_session, test_user, multiple_regions, usage_frequency):
     """Create a model deployed to US region only."""
     model = Model(
         model_name="US Model",
@@ -3202,7 +3224,8 @@ def model_deployed_us(db_session, test_user, multiple_regions):
         development_type="In-House",
         status="Active",
         owner_id=test_user.user_id,
-        row_approval_status="approved"
+        row_approval_status="approved",
+        usage_frequency_id=usage_frequency["daily"].value_id
     )
     db_session.add(model)
     db_session.flush()
@@ -3218,7 +3241,7 @@ def model_deployed_us(db_session, test_user, multiple_regions):
 
 
 @pytest.fixture
-def model_deployed_us_emea(db_session, test_user, multiple_regions):
+def model_deployed_us_emea(db_session, test_user, multiple_regions, usage_frequency):
     """Create a model deployed to US and EMEA regions."""
     model = Model(
         model_name="US EMEA Model",
@@ -3226,7 +3249,8 @@ def model_deployed_us_emea(db_session, test_user, multiple_regions):
         development_type="In-House",
         status="Active",
         owner_id=test_user.user_id,
-        row_approval_status="approved"
+        row_approval_status="approved",
+        usage_frequency_id=usage_frequency["daily"].value_id
     )
     db_session.add(model)
     db_session.flush()
@@ -3240,7 +3264,7 @@ def model_deployed_us_emea(db_session, test_user, multiple_regions):
 
 
 @pytest.fixture
-def model_global_only(db_session, test_user):
+def model_global_only(db_session, test_user, usage_frequency):
     """Create a model with no regional deployments (global only)."""
     model = Model(
         model_name="Global Model",
@@ -3248,7 +3272,8 @@ def model_global_only(db_session, test_user):
         development_type="In-House",
         status="Active",
         owner_id=test_user.user_id,
-        row_approval_status="approved"
+        row_approval_status="approved",
+        usage_frequency_id=usage_frequency["daily"].value_id
     )
     db_session.add(model)
     db_session.commit()

@@ -58,10 +58,9 @@ def validation_setup(db_session, taxonomy_values):
     )
     db_session.add(policy)
 
-    # Create SLA
+    # Create SLA (model_change_lead_time_days is now on ValidationPolicy, not SLA)
     sla = ValidationWorkflowSLA(
-        workflow_type="Validation",
-        model_change_lead_time_days=90
+        workflow_type="Validation"
     )
     db_session.add(sla)
 
@@ -75,7 +74,7 @@ def validation_setup(db_session, taxonomy_values):
     }
 
 
-def test_implementation_date_error(client, db_session, test_user, auth_headers, validation_setup):
+def test_implementation_date_error(client, db_session, test_user, auth_headers, validation_setup, usage_frequency):
     """Test that an error is generated when target date is after implementation date."""
     # Create model
     model = Model(
@@ -83,7 +82,8 @@ def test_implementation_date_error(client, db_session, test_user, auth_headers, 
         development_type="In-House",
         status="In Development",
         owner_id=test_user.user_id,
-        risk_tier_id=validation_setup["tier1_id"]
+        risk_tier_id=validation_setup["tier1_id"],
+        usage_frequency_id=usage_frequency["daily"].value_id
     )
     db_session.add(model)
     db_session.commit()
@@ -130,7 +130,7 @@ def test_implementation_date_error(client, db_session, test_user, auth_headers, 
     assert "after the implementation date" in warning["message"]
 
 
-def test_create_request_with_versions(client, db_session, test_user, auth_headers, validation_setup):
+def test_create_request_with_versions(client, db_session, test_user, auth_headers, validation_setup, usage_frequency):
     """Test creating a validation request with specific model versions."""
     # Create model
     model = Model(
@@ -138,7 +138,8 @@ def test_create_request_with_versions(client, db_session, test_user, auth_header
         development_type="In-House",
         status="In Development",
         owner_id=test_user.user_id,
-        risk_tier_id=validation_setup["tier1_id"]
+        risk_tier_id=validation_setup["tier1_id"],
+        usage_frequency_id=usage_frequency["daily"].value_id
     )
     db_session.add(model)
     db_session.commit()
@@ -184,7 +185,7 @@ def test_create_request_with_versions(client, db_session, test_user, auth_header
     assert assoc.version_id == version.version_id
 
 
-def test_check_warnings_flag_in_create(client, db_session, test_user, auth_headers, validation_setup):
+def test_check_warnings_flag_in_create(client, db_session, test_user, auth_headers, validation_setup, usage_frequency):
     """Test that check_warnings=True in create endpoint returns warnings and does NOT create request."""
     # Create model
     model = Model(
@@ -192,7 +193,8 @@ def test_check_warnings_flag_in_create(client, db_session, test_user, auth_heade
         development_type="In-House",
         status="In Development",
         owner_id=test_user.user_id,
-        risk_tier_id=validation_setup["tier1_id"]
+        risk_tier_id=validation_setup["tier1_id"],
+        usage_frequency_id=usage_frequency["daily"].value_id
     )
     db_session.add(model)
     db_session.commit()

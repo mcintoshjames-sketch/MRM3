@@ -67,7 +67,7 @@ class TestModelAuthorization:
 class TestAuditLogging:
     """Test audit logging for model operations."""
 
-    def test_create_model_creates_audit_log(self, client, auth_headers, test_user, db_session):
+    def test_create_model_creates_audit_log(self, client, auth_headers, test_user, db_session, usage_frequency):
         """Creating a model creates an audit log entry."""
         response = client.post(
             "/models/",
@@ -77,7 +77,8 @@ class TestAuditLogging:
                 "development_type": "In-House",
                 "status": "In Development",
                 "owner_id": test_user.user_id,
-                "user_ids": [test_user.user_id]
+                "user_ids": [test_user.user_id],
+                "usage_frequency_id": usage_frequency["daily"].value_id
             }
         )
         assert response.status_code == 201

@@ -57,7 +57,7 @@ def workflow_taxonomies(db_session):
     }
 
 
-def test_submission_due_date_calculation_comprehensive(client, admin_headers, workflow_taxonomies, db_session, test_user):
+def test_submission_due_date_calculation_comprehensive(client, admin_headers, workflow_taxonomies, db_session, test_user, usage_frequency):
     """
     Verify that submission_due_date is calculated correctly for COMPREHENSIVE validations.
     This ensures that the removal of 'ANNUAL' does not break periodic revalidation logic.
@@ -78,7 +78,8 @@ def test_submission_due_date_calculation_comprehensive(client, admin_headers, wo
         development_type="In-House",
         owner_id=test_user.user_id,
         status="Active",
-        risk_tier_id=workflow_taxonomies["tier"]["tier2"].value_id
+        risk_tier_id=workflow_taxonomies["tier"]["tier2"].value_id,
+        usage_frequency_id=usage_frequency["daily"].value_id
     )
     db_session.add(model)
     db_session.commit()

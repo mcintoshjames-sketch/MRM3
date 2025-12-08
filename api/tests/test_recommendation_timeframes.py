@@ -408,7 +408,7 @@ class TestRecommendationTargetDateReason:
     """Phase 1: Test target_date_change_reason field on Recommendation model."""
 
     def test_recommendation_has_target_date_change_reason_field(
-        self, db_session, timeframe_taxonomies
+        self, db_session, timeframe_taxonomies, lob_hierarchy
     ):
         """RED: Recommendation should have target_date_change_reason text field."""
         from app.models.recommendation import Recommendation
@@ -418,7 +418,8 @@ class TestRecommendationTargetDateReason:
             email="validator@test.com",
             full_name="Validator",
             password_hash=get_password_hash("test123"),
-            role="Validator"
+            role="Validator",
+            lob_id=lob_hierarchy["retail"].lob_id
         )
         db_session.add(user)
         db_session.flush()
@@ -454,7 +455,7 @@ class TestRecommendationTargetDateReason:
         assert rec.target_date_change_reason == "Accelerated timeline per management request"
 
     def test_recommendation_target_date_change_reason_nullable(
-        self, db_session, timeframe_taxonomies
+        self, db_session, timeframe_taxonomies, lob_hierarchy
     ):
         """RED: target_date_change_reason should be nullable."""
         from app.models.recommendation import Recommendation
@@ -464,7 +465,8 @@ class TestRecommendationTargetDateReason:
             email="validator2@test.com",
             full_name="Validator 2",
             password_hash=get_password_hash("test123"),
-            role="Validator"
+            role="Validator",
+            lob_id=lob_hierarchy["retail"].lob_id
         )
         db_session.add(user)
         db_session.flush()
@@ -500,7 +502,7 @@ class TestRecommendationTargetDateReason:
         assert rec.target_date_change_reason is None
 
     def test_recommendation_target_date_change_reason_can_be_updated(
-        self, db_session, timeframe_taxonomies
+        self, db_session, timeframe_taxonomies, lob_hierarchy
     ):
         """RED: target_date_change_reason should be updatable."""
         from app.models.recommendation import Recommendation
@@ -510,7 +512,8 @@ class TestRecommendationTargetDateReason:
             email="validator3@test.com",
             full_name="Validator 3",
             password_hash=get_password_hash("test123"),
-            role="Validator"
+            role="Validator",
+            lob_id=lob_hierarchy["retail"].lob_id
         )
         db_session.add(user)
         db_session.flush()
@@ -732,7 +735,7 @@ class TestGetMaxDaysForRecommendation:
 # ============================================================================
 
 @pytest.fixture
-def enforcement_setup(db_session, timeframe_taxonomies):
+def enforcement_setup(db_session, timeframe_taxonomies, lob_hierarchy):
     """Set up data for testing is_timeframe_enforced function."""
     from app.models.recommendation import (
         Recommendation, RecommendationPriorityConfig, RecommendationPriorityRegionalOverride
@@ -752,7 +755,8 @@ def enforcement_setup(db_session, timeframe_taxonomies):
         email="enforce_test@test.com",
         full_name="Enforce Tester",
         password_hash=get_password_hash("test123"),
-        role="Validator"
+        role="Validator",
+        lob_id=lob_hierarchy["retail"].lob_id
     )
     db_session.add(user)
     db_session.flush()
@@ -1579,7 +1583,7 @@ class TestValidateTargetDate:
 # ============================================================================
 
 @pytest.fixture
-def api_setup(db_session, seed_timeframe_configs, enforcement_setup):
+def api_setup(db_session, seed_timeframe_configs, enforcement_setup, lob_hierarchy):
     """Set up data for API endpoint testing."""
     from app.core.security import create_access_token
 
@@ -1588,7 +1592,8 @@ def api_setup(db_session, seed_timeframe_configs, enforcement_setup):
         email="admin@example.com",
         full_name="Admin User",
         password_hash=get_password_hash("admin123"),
-        role="Admin"
+        role="Admin",
+        lob_id=lob_hierarchy["retail"].lob_id
     )
     db_session.add(admin_user)
     db_session.commit()
@@ -1600,7 +1605,8 @@ def api_setup(db_session, seed_timeframe_configs, enforcement_setup):
         email="user@example.com",
         full_name="Regular User",
         password_hash=get_password_hash("test123"),
-        role="User"
+        role="User",
+        lob_id=lob_hierarchy["retail"].lob_id
     )
     db_session.add(regular_user)
     db_session.commit()
@@ -1816,7 +1822,7 @@ class TestCalculateTimeframeEndpoint:
 # ============================================================================
 
 @pytest.fixture
-def recommendation_setup(db_session, seed_timeframe_configs, enforcement_setup):
+def recommendation_setup(db_session, seed_timeframe_configs, enforcement_setup, lob_hierarchy):
     """Set up data for testing recommendation create/update with timeframe validation."""
     from app.core.security import create_access_token
 
@@ -1825,7 +1831,8 @@ def recommendation_setup(db_session, seed_timeframe_configs, enforcement_setup):
         email="validator@example.com",
         full_name="Test Validator",
         password_hash=get_password_hash("validator123"),
-        role="Validator"
+        role="Validator",
+        lob_id=lob_hierarchy["retail"].lob_id
     )
     db_session.add(validator_user)
     db_session.commit()
@@ -1837,7 +1844,8 @@ def recommendation_setup(db_session, seed_timeframe_configs, enforcement_setup):
         email="developer@example.com",
         full_name="Test Developer",
         password_hash=get_password_hash("developer123"),
-        role="User"
+        role="User",
+        lob_id=lob_hierarchy["retail"].lob_id
     )
     db_session.add(developer_user)
     db_session.commit()

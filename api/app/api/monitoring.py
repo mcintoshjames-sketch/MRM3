@@ -1,19 +1,30 @@
 """Monitoring Plans and Teams routes."""
-from typing import List, Optional
+import csv
+import io
+from typing import List, Optional, Union
 from datetime import date, datetime, timedelta
 from dateutil.relativedelta import relativedelta
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form, Query
 from sqlalchemy.orm import Session, joinedload
-from sqlalchemy import func
+from sqlalchemy import func, or_
 from app.core.database import get_db
 from app.core.time import utc_now
 from app.core.deps import get_current_user
+from app.core.monitoring_constants import (
+    QUALITATIVE_OUTCOME_TAXONOMY_NAME,
+    OUTCOME_GREEN,
+    OUTCOME_YELLOW,
+    OUTCOME_RED,
+    OUTCOME_NA,
+    OUTCOME_UNCONFIGURED,
+    VALID_OUTCOME_CODES,
+)
 from app.models.user import User, UserRole
 from app.models.model import Model
 from app.models.kpm import Kpm
 from app.models.audit_log import AuditLog
 from app.models.region import Region
-from app.models.taxonomy import TaxonomyValue
+from app.models.taxonomy import Taxonomy, TaxonomyValue
 from app.models.monitoring import (
     MonitoringTeam,
     MonitoringPlan,
@@ -77,6 +88,11 @@ from app.schemas.monitoring import (
     ApproveRequest,
     RejectRequest,
     VoidApprovalRequest,
+    # CSV Import schemas
+    CSVImportPreviewRow,
+    CSVImportPreviewSummary,
+    CSVImportPreviewResponse,
+    CSVImportResultResponse,
 )
 
 router = APIRouter()
@@ -139,83 +155,15 @@ def check_plan_edit_permission(db: Session, plan_id: int, current_user: User) ->
     )
 
 
-def compute_has_unpublished_changes(db: Session, plan_id: int) -> bool:
+def set_plan_dirty(db: Session, plan_id: int) -> None:
+    """Mark a monitoring plan as having unpublished changes.
+
+    This is a lightweight operation that replaces expensive diff queries.
+    Call this whenever metrics or models are modified.
     """
-    Compare current active metrics AND models with the latest published version to determine
-    if there are unpublished changes.
-
-    Returns True if:
-    - No versions exist (metrics or models configured but never published)
-    - Active metrics differ from latest version's snapshot (different KPMs, thresholds, or guidance)
-    - Current models differ from latest version's model snapshot
-    """
-    # Get current active metrics for the plan
-    current_metrics = db.query(MonitoringPlanMetric).filter(
-        MonitoringPlanMetric.plan_id == plan_id,
-        MonitoringPlanMetric.is_active == True
-    ).all()
-
-    # Get current models for the plan
-    plan = db.query(MonitoringPlan).options(
-        joinedload(MonitoringPlan.models)
-    ).filter(MonitoringPlan.plan_id == plan_id).first()
-    current_model_ids = {m.model_id for m in plan.models} if plan else set()
-
-    # Get the latest version
-    latest_version = db.query(MonitoringPlanVersion).filter(
-        MonitoringPlanVersion.plan_id == plan_id,
-        MonitoringPlanVersion.is_active == True
-    ).order_by(MonitoringPlanVersion.version_number.desc()).first()
-
-    # If there are metrics or models but no version, there are unpublished changes
-    if (current_metrics or current_model_ids) and not latest_version:
-        return True
-
-    # If no metrics, no models, and no version, no unpublished changes
-    if not current_metrics and not current_model_ids and not latest_version:
-        return False
-
-    # If no version but no metrics and no models, no unpublished changes (nothing to publish)
-    if not latest_version:
-        return False
-
-    # Get metric snapshots from the latest version
-    version_metric_snapshots = db.query(MonitoringPlanMetricSnapshot).filter(
-        MonitoringPlanMetricSnapshot.version_id == latest_version.version_id,
-        MonitoringPlanMetricSnapshot.is_active == True
-    ).all()
-
-    # Get model snapshots from the latest version
-    version_model_snapshots = db.query(MonitoringPlanModelSnapshot).filter(
-        MonitoringPlanModelSnapshot.version_id == latest_version.version_id
-    ).all()
-    snapshot_model_ids = {s.model_id for s in version_model_snapshots}
-
-    # Compare metrics by creating sets of comparable tuples
-    # A metric is defined by: kpm_id, thresholds, guidance, sort_order
-    def metric_key(m):
-        return (
-            m.kpm_id,
-            m.yellow_min,
-            m.yellow_max,
-            m.red_min,
-            m.red_max,
-            m.qualitative_guidance or '',
-            m.sort_order
-        )
-
-    current_metric_set = {metric_key(m) for m in current_metrics}
-    snapshot_metric_set = {metric_key(s) for s in version_metric_snapshots}
-
-    # Check if metrics changed
-    if current_metric_set != snapshot_metric_set:
-        return True
-
-    # Check if models changed
-    if current_model_ids != snapshot_model_ids:
-        return True
-
-    return False
+    db.query(MonitoringPlan).filter(
+        MonitoringPlan.plan_id == plan_id
+    ).update({"is_dirty": True}, synchronize_session=False)
 
 
 def validate_metric_thresholds(
@@ -227,13 +175,31 @@ def validate_metric_thresholds(
     """Validate that metric thresholds are logically consistent.
 
     Rules:
-    - If both yellow_max and red_max are set, red_max must be > yellow_max
-      (otherwise the yellow_max threshold becomes unreachable)
-    - If both yellow_min and red_min are set, red_min must be < yellow_min
-      (otherwise the yellow_min threshold becomes unreachable)
+    1. yellow_min <= yellow_max (if both set) - Yellow zone must be valid
+    2. red_min < red_max (if both set) - Prevents impossible configuration
+    3. red_max > yellow_max (if both set) - Red severity must be beyond yellow
+    4. red_min < yellow_min (if both set) - Red severity must be beyond yellow
 
     Raises HTTPException with 400 status if validation fails.
     """
+    # Rule 1: Yellow zone must be valid (min <= max)
+    if yellow_min is not None and yellow_max is not None:
+        if yellow_min > yellow_max:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid threshold configuration: yellow_min ({yellow_min}) must be <= yellow_max ({yellow_max})."
+            )
+
+    # Rule 2: Red zone boundaries must not overlap (creates impossible config)
+    if red_min is not None and red_max is not None:
+        if red_min >= red_max:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid threshold configuration: red_min ({red_min}) must be < red_max ({red_max}). "
+                       f"This creates an impossible configuration."
+            )
+
+    # Rule 3: Red max must be beyond yellow max (higher values are worse)
     if yellow_max is not None and red_max is not None:
         if red_max <= yellow_max:
             raise HTTPException(
@@ -242,6 +208,7 @@ def validate_metric_thresholds(
                        f"Otherwise yellow_max threshold becomes unreachable."
             )
 
+    # Rule 4: Red min must be below yellow min (lower values are worse)
     if yellow_min is not None and red_min is not None:
         if red_min >= yellow_min:
             raise HTTPException(
@@ -547,7 +514,7 @@ def list_monitoring_plans(
             "metric_count": len([m for m in plan.metrics if m.is_active]),
             "version_count": len(plan.versions),
             "active_version_number": active_version.version_number if active_version else None,
-            "has_unpublished_changes": compute_has_unpublished_changes(db, plan.plan_id)
+            "has_unpublished_changes": plan.is_dirty
         })
 
     return result
@@ -652,7 +619,7 @@ def get_monitoring_plan(
             for metric in plan.metrics
         ],
         "active_version_number": active_version.version_number if active_version else None,
-        "has_unpublished_changes": compute_has_unpublished_changes(db, plan.plan_id)
+        "has_unpublished_changes": plan.is_dirty
     }
 
 
@@ -866,6 +833,8 @@ def update_monitoring_plan(
         if set(old_model_ids) != set(update_data.model_ids):
             changes["model_ids"] = {
                 "old": old_model_ids, "new": update_data.model_ids}
+            # Mark plan as having unpublished changes (models changed)
+            plan.is_dirty = True
 
     # Recalculate dates if frequency or lead days changed
     if recalculate_dates and plan.next_submission_due_date:
@@ -999,11 +968,11 @@ def get_model_monitoring_plans(
 
             if results:
                 green_count = sum(
-                    1 for r in results if r.calculated_outcome == "GREEN")
+                    1 for r in results if r.calculated_outcome == OUTCOME_GREEN)
                 yellow_count = sum(
-                    1 for r in results if r.calculated_outcome == "YELLOW")
+                    1 for r in results if r.calculated_outcome == OUTCOME_YELLOW)
                 red_count = sum(
-                    1 for r in results if r.calculated_outcome == "RED")
+                    1 for r in results if r.calculated_outcome == OUTCOME_RED)
                 latest_cycle_outcome_summary = f"{green_count} Green, {yellow_count} Yellow, {red_count} Red"
 
         result.append({
@@ -1240,6 +1209,9 @@ def publish_plan_version(
         }
     )
 
+    # Clear dirty flag - version now reflects current state
+    plan.is_dirty = False
+
     db.commit()
     db.refresh(new_version)
 
@@ -1449,6 +1421,9 @@ def add_plan_metric(
         }
     )
 
+    # Mark plan as having unpublished changes
+    set_plan_dirty(db, plan_id)
+
     db.commit()
     db.refresh(metric)
 
@@ -1581,6 +1556,8 @@ def update_plan_metric(
             user_id=current_user.user_id,
             changes=changes
         )
+        # Mark plan as having unpublished changes
+        set_plan_dirty(db, plan_id)
 
     db.commit()
     db.refresh(metric)
@@ -1644,6 +1621,9 @@ def delete_plan_metric(
             "kpm_name": metric.kpm.name
         }
     )
+
+    # Mark plan as having unpublished changes
+    set_plan_dirty(db, plan_id)
 
     db.delete(metric)
     db.commit()
@@ -2046,17 +2026,17 @@ def get_admin_monitoring_overview(
 
         green_count = db.query(func.count(MonitoringResult.result_id)).filter(
             MonitoringResult.cycle_id == cycle.cycle_id,
-            MonitoringResult.calculated_outcome == "GREEN"
+            MonitoringResult.calculated_outcome == OUTCOME_GREEN
         ).scalar() or 0
 
         yellow_count = db.query(func.count(MonitoringResult.result_id)).filter(
             MonitoringResult.cycle_id == cycle.cycle_id,
-            MonitoringResult.calculated_outcome == "YELLOW"
+            MonitoringResult.calculated_outcome == OUTCOME_YELLOW
         ).scalar() or 0
 
         red_count = db.query(func.count(MonitoringResult.result_id)).filter(
             MonitoringResult.cycle_id == cycle.cycle_id,
-            MonitoringResult.calculated_outcome == "RED"
+            MonitoringResult.calculated_outcome == OUTCOME_RED
         ).scalar() or 0
 
         cycle_summaries.append(AdminMonitoringCycleSummary(
@@ -2174,24 +2154,67 @@ def calculate_period_dates(frequency: MonitoringFrequency, from_date: date = Non
 
 
 def calculate_outcome(value: float, metric: MonitoringPlanMetric) -> str:
-    """Calculate outcome (GREEN, YELLOW, RED) based on thresholds."""
+    """Calculate outcome (GREEN, YELLOW, RED, UNCONFIGURED) based on thresholds."""
     if value is None:
-        return "N/A"
+        return OUTCOME_NA
+
+    # Check if any thresholds are configured
+    has_thresholds = any([
+        metric.red_min is not None,
+        metric.red_max is not None,
+        metric.yellow_min is not None,
+        metric.yellow_max is not None,
+    ])
+    if not has_thresholds:
+        return OUTCOME_UNCONFIGURED
 
     # Check red thresholds first (highest severity)
     if metric.red_min is not None and value < metric.red_min:
-        return "RED"
+        return OUTCOME_RED
     if metric.red_max is not None and value > metric.red_max:
-        return "RED"
+        return OUTCOME_RED
 
     # Check yellow thresholds
     if metric.yellow_min is not None and value < metric.yellow_min:
-        return "YELLOW"
+        return OUTCOME_YELLOW
     if metric.yellow_max is not None and value > metric.yellow_max:
-        return "YELLOW"
+        return OUTCOME_YELLOW
 
     # If passed all threshold checks, it's green
-    return "GREEN"
+    return OUTCOME_GREEN
+
+
+def resolve_outcome_value_id(db: Session, outcome_code: str) -> int | None:
+    """Resolve outcome_value_id from taxonomy for a given outcome code.
+
+    This function links the string outcome (GREEN, YELLOW, RED) to its
+    corresponding TaxonomyValue.value_id in the 'Qualitative Outcome' taxonomy.
+    This enables consistent foreign key references across all entry paths
+    (manual POST/PATCH and CSV import).
+
+    Args:
+        db: Database session
+        outcome_code: String outcome code (GREEN, YELLOW, RED, UNCONFIGURED, N/A)
+
+    Returns:
+        The value_id from TaxonomyValue, or None if not found or not applicable
+    """
+    if not outcome_code or outcome_code in (OUTCOME_NA, OUTCOME_UNCONFIGURED):
+        return None
+
+    taxonomy = db.query(Taxonomy).filter(
+        Taxonomy.name == QUALITATIVE_OUTCOME_TAXONOMY_NAME
+    ).first()
+    if not taxonomy:
+        return None
+
+    value = db.query(TaxonomyValue).filter(
+        TaxonomyValue.taxonomy_id == taxonomy.taxonomy_id,
+        TaxonomyValue.code == outcome_code.upper(),
+        TaxonomyValue.is_active == True
+    ).first()
+
+    return value.value_id if value else None
 
 
 def check_cycle_edit_permission(db: Session, cycle_id: int, current_user: User) -> MonitoringCycle:
@@ -2462,11 +2485,11 @@ def list_plan_cycles(
     for cycle in cycles:
         # Count outcomes
         green_count = sum(
-            1 for r in cycle.results if r.calculated_outcome == "GREEN")
+            1 for r in cycle.results if r.calculated_outcome == OUTCOME_GREEN)
         yellow_count = sum(
-            1 for r in cycle.results if r.calculated_outcome == "YELLOW")
+            1 for r in cycle.results if r.calculated_outcome == OUTCOME_YELLOW)
         red_count = sum(
-            1 for r in cycle.results if r.calculated_outcome == "RED")
+            1 for r in cycle.results if r.calculated_outcome == OUTCOME_RED)
 
         # Count approvals (only required, non-voided ones)
         required_approvals = [
@@ -2759,11 +2782,14 @@ def create_monitoring_result(
                 detail="Cannot create model-specific result: a plan-level result already exists for this metric. Delete the plan-level result first or continue with plan-level entry."
             )
 
-    # Calculate outcome for quantitative metrics
+    # Calculate outcome for quantitative metrics and resolve outcome_value_id
     calculated_outcome = None
+    resolved_outcome_value_id = result_data.outcome_value_id  # Default: use provided value
     if metric.kpm.evaluation_type == "Quantitative" and result_data.numeric_value is not None:
         calculated_outcome = calculate_outcome(
             result_data.numeric_value, metric)
+        # Auto-resolve outcome_value_id from calculated outcome (links to taxonomy)
+        resolved_outcome_value_id = resolve_outcome_value_id(db, calculated_outcome)
     elif result_data.outcome_value_id:
         # For qualitative/outcome-only, use the selected outcome
         outcome_value = db.query(TaxonomyValue).filter(
@@ -2784,7 +2810,7 @@ def create_monitoring_result(
         plan_metric_id=result_data.plan_metric_id,
         model_id=result_data.model_id,
         numeric_value=result_data.numeric_value,
-        outcome_value_id=result_data.outcome_value_id,
+        outcome_value_id=resolved_outcome_value_id,  # Use resolved value for quantitative
         calculated_outcome=calculated_outcome,
         narrative=result_data.narrative,
         supporting_data=result_data.supporting_data,
@@ -2944,13 +2970,16 @@ def update_monitoring_result(
             changes["numeric_value"] = {
                 "old": result.numeric_value, "new": update_data.numeric_value}
         result.numeric_value = update_data.numeric_value
-        # Recalculate outcome (or clear if value is now null)
+        # Recalculate outcome AND outcome_value_id (or clear if value is now null)
         if result.plan_metric.kpm.evaluation_type == "Quantitative":
             if update_data.numeric_value is not None:
                 result.calculated_outcome = calculate_outcome(
                     update_data.numeric_value, result.plan_metric)
+                # Auto-resolve outcome_value_id from calculated outcome (links to taxonomy)
+                result.outcome_value_id = resolve_outcome_value_id(db, result.calculated_outcome)
             else:
                 result.calculated_outcome = None
+                result.outcome_value_id = None
 
     if "outcome_value_id" in provided_fields:
         if result.outcome_value_id != update_data.outcome_value_id:
@@ -3042,6 +3071,379 @@ def delete_monitoring_result(
     db.delete(result)
     db.commit()
     return None
+
+
+# ============================================================================
+# CSV IMPORT ENDPOINT
+# ============================================================================
+
+@router.post("/monitoring/cycles/{cycle_id}/results/import", response_model=Union[CSVImportPreviewResponse, CSVImportResultResponse])
+def import_cycle_results_csv(
+    cycle_id: int,
+    file: UploadFile = File(...),
+    dry_run: bool = Query(default=True),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Import monitoring results from CSV file.
+
+    CSV format: model_id, metric_id, value, outcome, narrative
+    - model_id: Required, must be a model in the plan
+    - metric_id: Required, must be a metric in the plan
+    - value: Optional numeric value
+    - outcome: Optional outcome code (GREEN, YELLOW, RED)
+    - narrative: Optional text narrative
+
+    When dry_run=true (default): Returns preview of what would be created/updated
+    When dry_run=false: Actually imports the data and returns counts
+    """
+    # Check cycle exists and get version details
+    cycle = db.query(MonitoringCycle).options(
+        joinedload(MonitoringCycle.plan),
+        joinedload(MonitoringCycle.plan_version)
+    ).filter(MonitoringCycle.cycle_id == cycle_id).first()
+
+    if not cycle:
+        raise HTTPException(status_code=404, detail="Monitoring cycle not found")
+
+    # Check edit permission
+    check_cycle_edit_permission(db, cycle_id, current_user)
+
+    # Must be in DATA_COLLECTION or UNDER_REVIEW
+    if cycle.status not in [MonitoringCycleStatus.DATA_COLLECTION.value, MonitoringCycleStatus.UNDER_REVIEW.value]:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Cannot import results when cycle is in {cycle.status} status"
+        )
+
+    # Get valid models for this plan
+    valid_model_ids = set()
+    model_names = {}
+    if cycle.plan_version_id:
+        # Use model snapshots from locked version
+        model_snapshots = db.query(MonitoringPlanModelSnapshot).filter(
+            MonitoringPlanModelSnapshot.version_id == cycle.plan_version_id
+        ).all()
+        for snapshot in model_snapshots:
+            valid_model_ids.add(snapshot.model_id)
+            model_names[snapshot.model_id] = snapshot.model_name
+    else:
+        # Use live plan models
+        for model in cycle.plan.models:
+            valid_model_ids.add(model.model_id)
+            model_names[model.model_id] = model.model_name
+
+    # Get valid metrics for this plan
+    valid_metric_ids = set()
+    metric_names = {}
+    # Store snapshot info for threshold calculation in locked versions
+    metric_snapshots_by_id: dict[int, MonitoringPlanMetricSnapshot] = {}
+
+    if cycle.plan_version_id:
+        # Use metric snapshots from locked version
+        metric_snapshots = db.query(MonitoringPlanMetricSnapshot).filter(
+            MonitoringPlanMetricSnapshot.version_id == cycle.plan_version_id
+        ).all()
+        for snapshot in metric_snapshots:
+            if snapshot.original_metric_id:
+                valid_metric_ids.add(snapshot.original_metric_id)
+                metric_names[snapshot.original_metric_id] = snapshot.kpm_name
+                metric_snapshots_by_id[snapshot.original_metric_id] = snapshot
+    else:
+        # Use live plan metrics
+        metrics = db.query(MonitoringPlanMetric).options(
+            joinedload(MonitoringPlanMetric.kpm)
+        ).filter(
+            MonitoringPlanMetric.plan_id == cycle.plan_id,
+            MonitoringPlanMetric.is_active == True
+        ).all()
+        for metric in metrics:
+            valid_metric_ids.add(metric.plan_metric_id)
+            metric_names[metric.plan_metric_id] = metric.kpm.name if metric.kpm else f"Metric {metric.plan_metric_id}"
+
+    # Build metrics lookup for threshold calculation
+    metrics_by_id: dict[int, MonitoringPlanMetric] = {}
+    if not cycle.plan_version_id:
+        for metric in metrics:
+            metrics_by_id[metric.plan_metric_id] = metric
+
+    # Build outcome_value_id lookup for qualitative metrics
+    # Maps outcome code (GREEN, YELLOW, RED) to taxonomy value_id
+    outcome_code_to_value_id: dict[str, int] = {}
+    qualitative_outcome_taxonomy = db.query(Taxonomy).filter(
+        Taxonomy.name == QUALITATIVE_OUTCOME_TAXONOMY_NAME
+    ).first()
+    if qualitative_outcome_taxonomy:
+        outcome_values = db.query(TaxonomyValue).filter(
+            TaxonomyValue.taxonomy_id == qualitative_outcome_taxonomy.taxonomy_id,
+            TaxonomyValue.is_active == True
+        ).all()
+        for ov in outcome_values:
+            outcome_code_to_value_id[ov.code.upper()] = ov.value_id
+
+    # Get existing results for this cycle
+    existing_results = db.query(MonitoringResult).filter(
+        MonitoringResult.cycle_id == cycle_id
+    ).all()
+    existing_map = {}
+    for r in existing_results:
+        key = (r.model_id, r.plan_metric_id)
+        existing_map[key] = r
+
+    # Valid outcome codes (VALID_OUTCOME_CODES + empty string for blank values)
+    valid_outcomes = VALID_OUTCOME_CODES | {''}  # Union with empty string
+
+    # Read and parse CSV
+    try:
+        content = file.file.read().decode('utf-8')
+        reader = csv.DictReader(io.StringIO(content))
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Failed to parse CSV: {str(e)}")
+
+    valid_rows = []
+    error_rows = []
+    row_number = 0
+
+    for row in reader:
+        row_number += 1
+
+        # Parse model_id
+        try:
+            model_id = int(row.get('model_id', '').strip())
+        except (ValueError, AttributeError):
+            error_rows.append(CSVImportPreviewRow(
+                row_number=row_number,
+                model_id=0,
+                metric_id=0,
+                action="skip",
+                error="Invalid or missing model_id"
+            ))
+            continue
+
+        # Parse metric_id
+        try:
+            metric_id = int(row.get('metric_id', '').strip())
+        except (ValueError, AttributeError):
+            error_rows.append(CSVImportPreviewRow(
+                row_number=row_number,
+                model_id=model_id,
+                model_name=model_names.get(model_id),
+                metric_id=0,
+                action="skip",
+                error="Invalid or missing metric_id"
+            ))
+            continue
+
+        # Validate model is in plan
+        if model_id not in valid_model_ids:
+            error_rows.append(CSVImportPreviewRow(
+                row_number=row_number,
+                model_id=model_id,
+                metric_id=metric_id,
+                action="skip",
+                error=f"Model {model_id} is not in this monitoring plan"
+            ))
+            continue
+
+        # Validate metric is in plan
+        if metric_id not in valid_metric_ids:
+            error_rows.append(CSVImportPreviewRow(
+                row_number=row_number,
+                model_id=model_id,
+                model_name=model_names.get(model_id),
+                metric_id=metric_id,
+                action="skip",
+                error=f"Metric {metric_id} is not in this monitoring plan"
+            ))
+            continue
+
+        # Parse value
+        value_str = row.get('value', '').strip()
+        value = None
+        if value_str:
+            try:
+                value = float(value_str)
+            except ValueError:
+                error_rows.append(CSVImportPreviewRow(
+                    row_number=row_number,
+                    model_id=model_id,
+                    model_name=model_names.get(model_id),
+                    metric_id=metric_id,
+                    metric_name=metric_names.get(metric_id),
+                    action="skip",
+                    error=f"Invalid numeric value: {value_str}"
+                ))
+                continue
+
+        # Parse outcome
+        outcome = row.get('outcome', '').strip().upper()
+        if outcome and outcome not in valid_outcomes:
+            error_rows.append(CSVImportPreviewRow(
+                row_number=row_number,
+                model_id=model_id,
+                model_name=model_names.get(model_id),
+                metric_id=metric_id,
+                metric_name=metric_names.get(metric_id),
+                value=value,
+                action="skip",
+                error=f"Invalid outcome: {outcome}. Must be GREEN, YELLOW, or RED"
+            ))
+            continue
+
+        # SECURITY: Quantitative metrics MUST derive outcome from numeric value
+        # Check metric type and enforce the rule
+        metric = metrics_by_id.get(metric_id)
+        snapshot = metric_snapshots_by_id.get(metric_id)
+        is_quantitative = (
+            (metric and metric.kpm and metric.kpm.evaluation_type == "Quantitative") or
+            (snapshot and snapshot.evaluation_type == "Quantitative")
+        )
+
+        if is_quantitative:
+            if value is None:
+                error_rows.append(CSVImportPreviewRow(
+                    row_number=row_number,
+                    model_id=model_id,
+                    model_name=model_names.get(model_id),
+                    metric_id=metric_id,
+                    metric_name=metric_names.get(metric_id),
+                    action="skip",
+                    error="Quantitative metrics require a numeric value; outcome cannot be set directly"
+                ))
+                continue
+            # Clear any explicit outcome - will be calculated from thresholds
+            if outcome:
+                outcome = None  # Silently ignore explicit outcome for quantitative metrics
+
+        # Parse narrative
+        narrative = row.get('narrative', '').strip()
+
+        # Determine action
+        key = (model_id, metric_id)
+        action = "update" if key in existing_map else "create"
+
+        valid_rows.append(CSVImportPreviewRow(
+            row_number=row_number,
+            model_id=model_id,
+            model_name=model_names.get(model_id),
+            metric_id=metric_id,
+            metric_name=metric_names.get(metric_id),
+            value=value,
+            outcome=outcome if outcome else None,
+            narrative=narrative if narrative else None,
+            action=action
+        ))
+
+    # If dry_run, return preview
+    if dry_run:
+        create_count = sum(1 for r in valid_rows if r.action == "create")
+        update_count = sum(1 for r in valid_rows if r.action == "update")
+
+        return CSVImportPreviewResponse(
+            valid_rows=valid_rows,
+            error_rows=error_rows,
+            summary=CSVImportPreviewSummary(
+                total_rows=row_number,
+                create_count=create_count,
+                update_count=update_count,
+                skip_count=0,
+                error_count=len(error_rows)
+            )
+        )
+
+    # Actually import the data
+    created = 0
+    updated = 0
+    skipped = 0
+    error_messages = []
+
+    for row in valid_rows:
+        try:
+            key = (row.model_id, row.metric_id)
+
+            # Calculate outcome from thresholds and resolve outcome_value_id
+            calculated_outcome = None
+            outcome_value_id = None
+            if row.value is not None:
+                # Try live metric first, then snapshot
+                metric = metrics_by_id.get(row.metric_id)
+                snapshot = metric_snapshots_by_id.get(row.metric_id)
+
+                if metric and metric.kpm and metric.kpm.evaluation_type == "Quantitative":
+                    calculated_outcome = calculate_outcome(row.value, metric)
+                elif snapshot and snapshot.evaluation_type == "Quantitative":
+                    # Use snapshot thresholds (duck typing - snapshot has same threshold attrs)
+                    calculated_outcome = calculate_outcome(row.value, snapshot)
+
+                # Also set outcome_value_id for quantitative metrics (taxonomy linkage)
+                if calculated_outcome:
+                    outcome_value_id = outcome_code_to_value_id.get(calculated_outcome)
+            elif row.outcome:
+                # CSV outcome override for qualitative metrics
+                calculated_outcome = row.outcome.upper()
+                # Look up the taxonomy value_id for this outcome code
+                outcome_value_id = outcome_code_to_value_id.get(calculated_outcome)
+
+            if key in existing_map:
+                # Update existing result
+                result = existing_map[key]
+                if row.value is not None:
+                    result.numeric_value = row.value
+                if calculated_outcome:
+                    result.calculated_outcome = calculated_outcome
+                if outcome_value_id:
+                    result.outcome_value_id = outcome_value_id
+                if row.narrative:
+                    result.narrative = row.narrative
+                # NOTE: Don't update entered_by_user_id on updates (preserve original entry user)
+                result.updated_at = utc_now()
+                updated += 1
+            else:
+                # Create new result
+                result = MonitoringResult(
+                    cycle_id=cycle_id,
+                    plan_metric_id=row.metric_id,
+                    model_id=row.model_id,
+                    numeric_value=row.value,
+                    calculated_outcome=calculated_outcome,
+                    outcome_value_id=outcome_value_id,
+                    narrative=row.narrative,
+                    entered_by_user_id=current_user.user_id
+                    # entered_at uses default=utc_now
+                )
+                db.add(result)
+                existing_map[key] = result
+                created += 1
+
+        except Exception as e:
+            error_messages.append(f"Row {row.row_number}: {str(e)}")
+            skipped += 1
+
+    db.commit()
+
+    # Create audit log for bulk import
+    create_audit_log(
+        db=db,
+        entity_type="MonitoringCycle",
+        entity_id=cycle_id,
+        action="BULK_IMPORT",
+        user_id=current_user.user_id,
+        changes={
+            "created": created,
+            "updated": updated,
+            "skipped": skipped,
+            "errors": len(error_messages)
+        }
+    )
+
+    return CSVImportResultResponse(
+        success=len(error_messages) == 0,
+        created=created,
+        updated=updated,
+        skipped=skipped,
+        errors=len(error_messages),
+        error_messages=error_messages
+    )
 
 
 # ============================================================================
@@ -3299,6 +3701,39 @@ def request_cycle_approval(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Can only request approval for a cycle in UNDER_REVIEW status (current: {cycle.status})"
+        )
+
+    # Breach protocol enforcement: RED results require justification narrative before approval
+    red_results_without_narrative = db.query(MonitoringResult).options(
+        joinedload(MonitoringResult.plan_metric).joinedload(MonitoringPlanMetric.kpm),
+        joinedload(MonitoringResult.model)
+    ).filter(
+        MonitoringResult.cycle_id == cycle_id,
+        MonitoringResult.calculated_outcome == OUTCOME_RED,
+        or_(
+            MonitoringResult.narrative.is_(None),
+            MonitoringResult.narrative == ""
+        )
+    ).all()
+
+    if red_results_without_narrative:
+        missing_justifications = []
+        for r in red_results_without_narrative:
+            metric_name = r.plan_metric.kpm.name if r.plan_metric and r.plan_metric.kpm else f"Metric {r.plan_metric_id}"
+            model_name = r.model.model_name if r.model else "Plan-level"
+            missing_justifications.append({
+                "result_id": r.result_id,
+                "metric_name": metric_name,
+                "model_name": model_name,
+                "numeric_value": r.numeric_value
+            })
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={
+                "error": "breach_justification_required",
+                "message": f"{len(red_results_without_narrative)} RED result(s) require breach justification before requesting approval",
+                "missing_justifications": missing_justifications
+            }
         )
 
     # Get the plan with models to determine regions
@@ -3919,11 +4354,11 @@ def get_performance_summary(
 
     # Count outcomes
     total = len(results)
-    green_count = sum(1 for r in results if r.calculated_outcome == "GREEN")
-    yellow_count = sum(1 for r in results if r.calculated_outcome == "YELLOW")
-    red_count = sum(1 for r in results if r.calculated_outcome == "RED")
+    green_count = sum(1 for r in results if r.calculated_outcome == OUTCOME_GREEN)
+    yellow_count = sum(1 for r in results if r.calculated_outcome == OUTCOME_YELLOW)
+    red_count = sum(1 for r in results if r.calculated_outcome == OUTCOME_RED)
     na_count = sum(1 for r in results if r.calculated_outcome ==
-                   "N/A" or r.calculated_outcome is None)
+                   OUTCOME_NA or r.calculated_outcome is None)
 
     # Group by metric for breakdown
     metric_outcomes = {}
@@ -3933,11 +4368,11 @@ def get_performance_summary(
             metric_outcomes[metric_id] = {
                 "green": 0, "yellow": 0, "red": 0, "na": 0}
 
-        if result.calculated_outcome == "GREEN":
+        if result.calculated_outcome == OUTCOME_GREEN:
             metric_outcomes[metric_id]["green"] += 1
-        elif result.calculated_outcome == "YELLOW":
+        elif result.calculated_outcome == OUTCOME_YELLOW:
             metric_outcomes[metric_id]["yellow"] += 1
-        elif result.calculated_outcome == "RED":
+        elif result.calculated_outcome == OUTCOME_RED:
             metric_outcomes[metric_id]["red"] += 1
         else:
             metric_outcomes[metric_id]["na"] += 1
@@ -4036,7 +4471,7 @@ def export_cycle_results(
             metric.kpm.name if metric and metric.kpm else f"Metric {result.plan_metric_id}",
             result.model.model_name if result.model else "All Models",
             result.numeric_value if result.numeric_value is not None else "",
-            result.calculated_outcome or "N/A",
+            result.calculated_outcome or OUTCOME_NA,
             result.narrative or "",
             result.entered_by.full_name if result.entered_by else "",
             result.entered_at.strftime(

@@ -1871,13 +1871,14 @@ class TestApprovalWorkflow:
 class TestModelMonitoringPlansLookup:
     """Tests for the model -> monitoring plans lookup endpoint (Component 9b)."""
 
-    def test_model_monitoring_plans_returns_empty_when_no_plans(self, client, admin_headers):
+    def test_model_monitoring_plans_returns_empty_when_no_plans(self, client, admin_headers, usage_frequency):
         """Returns empty list when model has no monitoring plans."""
         # Create a model without any monitoring plans
         model_resp = client.post("/models/", headers=admin_headers, json={
             "model_name": "Model Without Plans",
             "owner_id": 1,
-            "status": "Draft"
+            "status": "Draft",
+            "usage_frequency_id": usage_frequency["daily"].value_id
         })
         assert model_resp.status_code == 201
         model_id = model_resp.json()["model_id"]
@@ -1887,13 +1888,14 @@ class TestModelMonitoringPlansLookup:
         assert response.status_code == 200
         assert response.json() == []
 
-    def test_model_monitoring_plans_returns_plans_covering_model(self, client, admin_headers):
+    def test_model_monitoring_plans_returns_plans_covering_model(self, client, admin_headers, usage_frequency):
         """Returns monitoring plans that cover the model."""
         # Create a model
         model_resp = client.post("/models/", headers=admin_headers, json={
             "model_name": "Model With Plan",
             "owner_id": 1,
-            "status": "Draft"
+            "status": "Draft",
+            "usage_frequency_id": usage_frequency["daily"].value_id
         })
         model_id = model_resp.json()["model_id"]
 
@@ -1914,13 +1916,14 @@ class TestModelMonitoringPlansLookup:
         assert data[0]["plan_name"] == "Plan Covering Model"
         assert data[0]["frequency"] == "Quarterly"
 
-    def test_model_monitoring_plans_includes_versions(self, client, admin_headers):
+    def test_model_monitoring_plans_includes_versions(self, client, admin_headers, usage_frequency):
         """Returns monitoring plan with version information."""
         # Create model
         model_resp = client.post("/models/", headers=admin_headers, json={
             "model_name": "Model With Versioned Plan",
             "owner_id": 1,
-            "status": "Draft"
+            "status": "Draft",
+            "usage_frequency_id": usage_frequency["daily"].value_id
         })
         model_id = model_resp.json()["model_id"]
 
@@ -1956,13 +1959,14 @@ class TestModelMonitoringPlansLookup:
         response = client.get("/models/99999/monitoring-plans", headers=admin_headers)
         assert response.status_code == 404
 
-    def test_model_monitoring_plans_excludes_inactive_plans(self, client, admin_headers):
+    def test_model_monitoring_plans_excludes_inactive_plans(self, client, admin_headers, usage_frequency):
         """Does not return inactive monitoring plans."""
         # Create model
         model_resp = client.post("/models/", headers=admin_headers, json={
             "model_name": "Model With Inactive Plan",
             "owner_id": 1,
-            "status": "Draft"
+            "status": "Draft",
+            "usage_frequency_id": usage_frequency["daily"].value_id
         })
         model_id = model_resp.json()["model_id"]
 
@@ -2034,14 +2038,15 @@ class TestComponent9bFields:
         assert plan_resp.status_code == 201, f"Failed to create plan: {plan_resp.json()}"
         return request_id, plan_resp.json()["plan_id"]
 
-    def test_update_component_9b_with_version(self, client, admin_headers, taxonomy_values, component_definitions):
+    def test_update_component_9b_with_version(self, client, admin_headers, taxonomy_values, component_definitions, usage_frequency):
         """Can update component 9b with monitoring plan version ID."""
         # Create model with risk tier
         model_resp = client.post("/models/", headers=admin_headers, json={
             "model_name": "Model For 9b Test",
             "owner_id": 1,
             "status": "Draft",
-            "risk_tier_id": taxonomy_values["tier1"].value_id
+            "risk_tier_id": taxonomy_values["tier1"].value_id,
+            "usage_frequency_id": usage_frequency["daily"].value_id
         })
         assert model_resp.status_code == 201, f"Failed to create model: {model_resp.json()}"
         model_id = model_resp.json()["model_id"]
@@ -2099,14 +2104,15 @@ class TestComponent9bFields:
         assert updated_comp_9b["monitoring_plan_version_id"] == version_id
         assert updated_comp_9b["monitoring_review_notes"] == "Reviewed Q1 metrics"
 
-    def test_update_component_9b_with_invalid_version_fails(self, client, admin_headers, taxonomy_values, component_definitions):
+    def test_update_component_9b_with_invalid_version_fails(self, client, admin_headers, taxonomy_values, component_definitions, usage_frequency):
         """Cannot update component 9b with non-existent version ID."""
         # Create model with risk tier
         model_resp = client.post("/models/", headers=admin_headers, json={
             "model_name": "Model For Invalid 9b",
             "owner_id": 1,
             "status": "Draft",
-            "risk_tier_id": taxonomy_values["tier1"].value_id
+            "risk_tier_id": taxonomy_values["tier1"].value_id,
+            "usage_frequency_id": usage_frequency["daily"].value_id
         })
         assert model_resp.status_code == 201, f"Failed to create model: {model_resp.json()}"
         model_id = model_resp.json()["model_id"]
@@ -2138,7 +2144,7 @@ class TestComponent9bFields:
         assert "not found" in update_resp.json()["detail"].lower()
 
     def test_component_9b_planned_without_version_fails_status_transition(
-        self, client, admin_headers, db_session, taxonomy_values, component_definitions
+        self, client, admin_headers, db_session, taxonomy_values, component_definitions, usage_frequency, lob_hierarchy
     ):
         """Component 9b marked as Planned without version fails validation on status transition to REVIEW."""
         from app.models.user import User
@@ -2148,7 +2154,8 @@ class TestComponent9bFields:
             email="validator_9b@test.com",
             password_hash="$2b$12$test",
             full_name="Validator User",
-            role="Validator"
+            role="Validator",
+            lob_id=lob_hierarchy["wholesale"].lob_id
         )
         db_session.add(validator)
         db_session.commit()
@@ -2159,7 +2166,8 @@ class TestComponent9bFields:
             "model_name": "Model For 9b Validation Test",
             "owner_id": 1,
             "status": "Draft",
-            "risk_tier_id": taxonomy_values["tier1"].value_id
+            "risk_tier_id": taxonomy_values["tier1"].value_id,
+            "usage_frequency_id": usage_frequency["daily"].value_id
         })
         assert model_resp.status_code == 201
         model_id = model_resp.json()["model_id"]
@@ -2222,7 +2230,7 @@ class TestComponent9bFields:
         assert "9b" in error_detail or "monitoring plan" in error_detail, f"Expected 9b validation error, got: {error_detail}"
 
     def test_component_9b_not_planned_without_rationale_fails_update(
-        self, client, admin_headers, taxonomy_values, component_definitions
+        self, client, admin_headers, taxonomy_values, component_definitions, usage_frequency
     ):
         """Component 9b marked as NotPlanned without rationale fails at update time (deviation requires rationale)."""
         # Create model with Tier 1 risk (9b is Required)
@@ -2230,7 +2238,8 @@ class TestComponent9bFields:
             "model_name": "Model For 9b NotPlanned Test",
             "owner_id": 1,
             "status": "Draft",
-            "risk_tier_id": taxonomy_values["tier1"].value_id
+            "risk_tier_id": taxonomy_values["tier1"].value_id,
+            "usage_frequency_id": usage_frequency["daily"].value_id
         })
         assert model_resp.status_code == 201
         model_id = model_resp.json()["model_id"]
@@ -2264,7 +2273,7 @@ class TestComponent9bFields:
         assert "rationale" in error_detail or "9b" in error_detail, f"Expected rationale error, got: {error_detail}"
 
     def test_component_9b_not_planned_with_rationale_succeeds(
-        self, client, admin_headers, taxonomy_values, component_definitions
+        self, client, admin_headers, taxonomy_values, component_definitions, usage_frequency
     ):
         """Component 9b marked as NotPlanned with rationale succeeds (proper deviation handling)."""
         # Create model with Tier 1 risk (9b is Required)
@@ -2272,7 +2281,8 @@ class TestComponent9bFields:
             "model_name": "Model For 9b NotPlanned With Rationale",
             "owner_id": 1,
             "status": "Draft",
-            "risk_tier_id": taxonomy_values["tier1"].value_id
+            "risk_tier_id": taxonomy_values["tier1"].value_id,
+            "usage_frequency_id": usage_frequency["daily"].value_id
         })
         assert model_resp.status_code == 201
         model_id = model_resp.json()["model_id"]
@@ -2311,7 +2321,7 @@ class TestComponent9bFields:
         assert "monitoring plan" in updated_comp_9b["rationale"].lower()
 
     def test_component_9b_planned_with_version_passes_validation(
-        self, client, admin_headers, taxonomy_values, component_definitions
+        self, client, admin_headers, taxonomy_values, component_definitions, usage_frequency
     ):
         """Component 9b properly configured passes validation."""
         # Create model with Tier 1 risk
@@ -2319,7 +2329,8 @@ class TestComponent9bFields:
             "model_name": "Model For 9b Pass Test",
             "owner_id": 1,
             "status": "Draft",
-            "risk_tier_id": taxonomy_values["tier1"].value_id
+            "risk_tier_id": taxonomy_values["tier1"].value_id,
+            "usage_frequency_id": usage_frequency["daily"].value_id
         })
         assert model_resp.status_code == 201
         model_id = model_resp.json()["model_id"]
@@ -2375,3 +2386,520 @@ class TestComponent9bFields:
                                if c["component_definition"]["component_code"] == "9b"), None)
         assert updated_comp_9b["monitoring_plan_version_id"] == version_id
         assert updated_comp_9b["planned_treatment"] == "Planned"
+
+
+class TestCSVImport:
+    """Tests for Monitoring Cycle CSV Import endpoint."""
+
+    def _setup_plan_with_metrics(self, client, admin_headers, db_session, usage_frequency):
+        """Helper to create plan, metrics, cycle ready for CSV import."""
+        from app.models.taxonomy import Taxonomy, TaxonomyValue
+        from app.models.model import Model
+        from app.models.user import User
+
+        # Ensure Qualitative Outcome taxonomy exists
+        qual_taxonomy = db_session.query(Taxonomy).filter(
+            Taxonomy.name == "Qualitative Outcome"
+        ).first()
+        if not qual_taxonomy:
+            qual_taxonomy = Taxonomy(
+                name="Qualitative Outcome",
+                description="Outcome values for qualitative KPMs",
+                is_system=True,
+                taxonomy_type="standard"
+            )
+            db_session.add(qual_taxonomy)
+            db_session.flush()
+
+            for code, label in [("GREEN", "Green"), ("YELLOW", "Yellow"), ("RED", "Red")]:
+                tv = TaxonomyValue(
+                    taxonomy_id=qual_taxonomy.taxonomy_id,
+                    code=code,
+                    label=label,
+                    is_active=True
+                )
+                db_session.add(tv)
+            db_session.commit()
+
+        # Get or create a model
+        user = db_session.query(User).first()
+        model = db_session.query(Model).first()
+        if not model:
+            model = Model(
+                model_name="Test Model for CSV Import",
+                description="Test model",
+                owner_id=user.user_id if user else 1,
+                development_type="In-House",
+                usage_frequency_id=usage_frequency["daily"].value_id
+            )
+            db_session.add(model)
+            db_session.commit()
+            db_session.refresh(model)
+
+        # Create KPM category
+        cat_resp = client.post("/kpm/categories", headers=admin_headers, json={
+            "code": "CSV_CAT",
+            "name": "CSV Import Category"
+        })
+        cat_id = cat_resp.json()["category_id"]
+
+        # Create quantitative KPM
+        quant_kpm_resp = client.post("/kpm/kpms", headers=admin_headers, json={
+            "category_id": cat_id,
+            "name": "CSV Quantitative Metric",
+            "evaluation_type": "Quantitative"
+        })
+        quant_kpm_id = quant_kpm_resp.json()["kpm_id"]
+
+        # Create plan with model
+        plan_resp = client.post("/monitoring/plans", headers=admin_headers, json={
+            "name": "CSV Import Test Plan",
+            "frequency": "Quarterly",
+            "model_ids": [model.model_id]
+        })
+        plan_id = plan_resp.json()["plan_id"]
+
+        # Add quantitative metric to plan with thresholds
+        metric_resp = client.post(f"/monitoring/plans/{plan_id}/metrics", headers=admin_headers, json={
+            "kpm_id": quant_kpm_id,
+            "yellow_min": 0.1,
+            "yellow_max": 0.2,
+            "red_min": 0.0,
+            "red_max": 0.3
+        })
+        metric_id = metric_resp.json()["metric_id"]
+
+        # Publish version
+        client.post(f"/monitoring/plans/{plan_id}/versions/publish", headers=admin_headers, json={})
+
+        # Create and start cycle
+        cycle_resp = client.post(f"/monitoring/plans/{plan_id}/cycles", headers=admin_headers, json={})
+        cycle_id = cycle_resp.json()["cycle_id"]
+        client.post(f"/monitoring/cycles/{cycle_id}/start", headers=admin_headers)
+
+        return {
+            "plan_id": plan_id,
+            "cycle_id": cycle_id,
+            "metric_id": metric_id,
+            "model_id": model.model_id
+        }
+
+    def test_csv_import_dry_run_preview(self, client, admin_headers, db_session, usage_frequency):
+        """Dry run returns preview without saving data."""
+        setup = self._setup_plan_with_metrics(client, admin_headers, db_session, usage_frequency)
+
+        csv_content = f"model_id,metric_id,value,outcome,narrative\n{setup['model_id']},{setup['metric_id']},0.05,,Green value"
+
+        from io import BytesIO
+        response = client.post(
+            f"/monitoring/cycles/{setup['cycle_id']}/results/import?dry_run=true",
+            headers=admin_headers,
+            files={"file": ("results.csv", BytesIO(csv_content.encode()), "text/csv")}
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        # dry_run=true returns summary with create_count
+        assert "summary" in data
+        assert data["summary"]["create_count"] >= 1
+
+    def test_csv_import_creates_results(self, client, admin_headers, db_session, usage_frequency):
+        """CSV import with dry_run=false creates results in database."""
+        setup = self._setup_plan_with_metrics(client, admin_headers, db_session, usage_frequency)
+
+        csv_content = f"model_id,metric_id,value,outcome,narrative\n{setup['model_id']},{setup['metric_id']},0.05,,Test import result"
+
+        from io import BytesIO
+        response = client.post(
+            f"/monitoring/cycles/{setup['cycle_id']}/results/import?dry_run=false",
+            headers=admin_headers,
+            files={"file": ("results.csv", BytesIO(csv_content.encode()), "text/csv")}
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["success"] is True
+        assert data["created"] >= 1
+
+        # Verify result was created
+        results_resp = client.get(
+            f"/monitoring/cycles/{setup['cycle_id']}/results",
+            headers=admin_headers
+        )
+        assert results_resp.status_code == 200
+        results = results_resp.json()
+        assert len(results) >= 1
+        assert results[0]["numeric_value"] == 0.05
+
+    def test_csv_import_calculates_outcome_green(self, client, admin_headers, db_session, usage_frequency):
+        """CSV import correctly calculates GREEN outcome for value within acceptable range."""
+        setup = self._setup_plan_with_metrics(client, admin_headers, db_session, usage_frequency)
+
+        # Value 0.15 is between yellow_min (0.1) and yellow_max (0.2), so should be GREEN
+        csv_content = f"model_id,metric_id,value,outcome,narrative\n{setup['model_id']},{setup['metric_id']},0.15,,Should be green"
+
+        from io import BytesIO
+        response = client.post(
+            f"/monitoring/cycles/{setup['cycle_id']}/results/import?dry_run=false",
+            headers=admin_headers,
+            files={"file": ("results.csv", BytesIO(csv_content.encode()), "text/csv")}
+        )
+
+        assert response.status_code == 200
+
+        # Verify outcome
+        results_resp = client.get(
+            f"/monitoring/cycles/{setup['cycle_id']}/results",
+            headers=admin_headers
+        )
+        results = results_resp.json()
+        assert results[0]["calculated_outcome"] == "GREEN"
+
+    def test_csv_import_calculates_outcome_yellow(self, client, admin_headers, db_session, usage_frequency):
+        """CSV import correctly calculates YELLOW outcome for value below acceptable range."""
+        setup = self._setup_plan_with_metrics(client, admin_headers, db_session, usage_frequency)
+
+        # Value 0.05 is below yellow_min (0.1), so should be YELLOW (warning)
+        csv_content = f"model_id,metric_id,value,outcome,narrative\n{setup['model_id']},{setup['metric_id']},0.05,,Should be yellow"
+
+        from io import BytesIO
+        response = client.post(
+            f"/monitoring/cycles/{setup['cycle_id']}/results/import?dry_run=false",
+            headers=admin_headers,
+            files={"file": ("results.csv", BytesIO(csv_content.encode()), "text/csv")}
+        )
+
+        assert response.status_code == 200
+
+        results_resp = client.get(
+            f"/monitoring/cycles/{setup['cycle_id']}/results",
+            headers=admin_headers
+        )
+        results = results_resp.json()
+        assert results[0]["calculated_outcome"] == "YELLOW"
+
+    def test_csv_import_calculates_outcome_red(self, client, admin_headers, db_session, usage_frequency):
+        """CSV import correctly calculates RED outcome for value above red threshold."""
+        setup = self._setup_plan_with_metrics(client, admin_headers, db_session, usage_frequency)
+
+        # Value 0.35 is above red_max (0.3), so should be RED
+        csv_content = f"model_id,metric_id,value,outcome,narrative\n{setup['model_id']},{setup['metric_id']},0.35,,Should be red"
+
+        from io import BytesIO
+        response = client.post(
+            f"/monitoring/cycles/{setup['cycle_id']}/results/import?dry_run=false",
+            headers=admin_headers,
+            files={"file": ("results.csv", BytesIO(csv_content.encode()), "text/csv")}
+        )
+
+        assert response.status_code == 200
+
+        results_resp = client.get(
+            f"/monitoring/cycles/{setup['cycle_id']}/results",
+            headers=admin_headers
+        )
+        results = results_resp.json()
+        assert results[0]["calculated_outcome"] == "RED"
+
+    def test_csv_import_updates_existing_results(self, client, admin_headers, db_session, usage_frequency):
+        """CSV import updates existing results rather than duplicating."""
+        setup = self._setup_plan_with_metrics(client, admin_headers, db_session, usage_frequency)
+
+        from io import BytesIO
+
+        # First import
+        csv1 = f"model_id,metric_id,value,outcome,narrative\n{setup['model_id']},{setup['metric_id']},0.05,,First import"
+        client.post(
+            f"/monitoring/cycles/{setup['cycle_id']}/results/import?dry_run=false",
+            headers=admin_headers,
+            files={"file": ("results.csv", BytesIO(csv1.encode()), "text/csv")}
+        )
+
+        # Second import with updated value
+        csv2 = f"model_id,metric_id,value,outcome,narrative\n{setup['model_id']},{setup['metric_id']},0.25,,Updated import"
+        response = client.post(
+            f"/monitoring/cycles/{setup['cycle_id']}/results/import?dry_run=false",
+            headers=admin_headers,
+            files={"file": ("results.csv", BytesIO(csv2.encode()), "text/csv")}
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["updated"] >= 1
+        assert data["created"] == 0
+
+        # Verify only one result exists with updated value
+        results_resp = client.get(
+            f"/monitoring/cycles/{setup['cycle_id']}/results",
+            headers=admin_headers
+        )
+        results = results_resp.json()
+        assert len(results) == 1
+        assert results[0]["numeric_value"] == 0.25
+        assert results[0]["calculated_outcome"] == "YELLOW"  # 0.25 is in yellow range
+
+    def test_csv_import_invalid_model_id_fails(self, client, admin_headers, db_session, usage_frequency):
+        """CSV import rejects invalid model IDs."""
+        setup = self._setup_plan_with_metrics(client, admin_headers, db_session, usage_frequency)
+
+        csv_content = f"model_id,metric_id,value,outcome,narrative\n99999,{setup['metric_id']},0.05,,Invalid model"
+
+        from io import BytesIO
+        response = client.post(
+            f"/monitoring/cycles/{setup['cycle_id']}/results/import?dry_run=true",
+            headers=admin_headers,
+            files={"file": ("results.csv", BytesIO(csv_content.encode()), "text/csv")}
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["summary"]["error_count"] >= 1
+
+    def test_csv_import_invalid_metric_id_fails(self, client, admin_headers, db_session, usage_frequency):
+        """CSV import rejects invalid metric IDs."""
+        setup = self._setup_plan_with_metrics(client, admin_headers, db_session, usage_frequency)
+
+        csv_content = f"model_id,metric_id,value,outcome,narrative\n{setup['model_id']},99999,0.05,,Invalid metric"
+
+        from io import BytesIO
+        response = client.post(
+            f"/monitoring/cycles/{setup['cycle_id']}/results/import?dry_run=true",
+            headers=admin_headers,
+            files={"file": ("results.csv", BytesIO(csv_content.encode()), "text/csv")}
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["summary"]["error_count"] >= 1
+
+    def test_csv_import_non_admin_fails(self, client, auth_headers, admin_headers, db_session, usage_frequency):
+        """Non-admin cannot import CSV results."""
+        setup = self._setup_plan_with_metrics(client, admin_headers, db_session, usage_frequency)
+
+        csv_content = f"model_id,metric_id,value,outcome,narrative\n{setup['model_id']},{setup['metric_id']},0.05,,Unauthorized"
+
+        from io import BytesIO
+        response = client.post(
+            f"/monitoring/cycles/{setup['cycle_id']}/results/import?dry_run=false",
+            headers=auth_headers,
+            files={"file": ("results.csv", BytesIO(csv_content.encode()), "text/csv")}
+        )
+
+        assert response.status_code == 403
+
+    def test_csv_import_qualitative_outcome_sets_value_id(self, client, admin_headers, db_session, usage_frequency):
+        """CSV import for qualitative metrics sets outcome_value_id correctly."""
+        from app.models.taxonomy import Taxonomy, TaxonomyValue
+
+        # Ensure Qualitative Outcome taxonomy exists
+        qual_taxonomy = db_session.query(Taxonomy).filter(
+            Taxonomy.name == "Qualitative Outcome"
+        ).first()
+        if not qual_taxonomy:
+            qual_taxonomy = Taxonomy(
+                name="Qualitative Outcome",
+                description="Outcome values for qualitative KPMs",
+                is_system=True,
+                taxonomy_type="standard"
+            )
+            db_session.add(qual_taxonomy)
+            db_session.flush()
+
+            for code, label in [("GREEN", "Green"), ("YELLOW", "Yellow"), ("RED", "Red")]:
+                tv = TaxonomyValue(
+                    taxonomy_id=qual_taxonomy.taxonomy_id,
+                    code=code,
+                    label=label,
+                    is_active=True
+                )
+                db_session.add(tv)
+            db_session.commit()
+
+        # Get the GREEN taxonomy value ID
+        green_value = db_session.query(TaxonomyValue).filter(
+            TaxonomyValue.taxonomy_id == qual_taxonomy.taxonomy_id,
+            TaxonomyValue.code == "GREEN"
+        ).first()
+
+        # Create a qualitative KPM setup
+        cat_resp = client.post("/kpm/categories", headers=admin_headers, json={
+            "code": "QUAL_CSV",
+            "name": "Qualitative CSV Category"
+        })
+        cat_id = cat_resp.json()["category_id"]
+
+        kpm_resp = client.post("/kpm/kpms", headers=admin_headers, json={
+            "category_id": cat_id,
+            "name": "Qualitative Import Metric",
+            "evaluation_type": "Qualitative"
+        })
+        kpm_id = kpm_resp.json()["kpm_id"]
+
+        from app.models.model import Model
+        from app.models.user import User
+        user = db_session.query(User).first()
+        model = Model(
+            model_name="Qualitative Test Model",
+            description="Test model",
+            owner_id=user.user_id,
+            development_type="In-House",
+            usage_frequency_id=usage_frequency["daily"].value_id
+        )
+        db_session.add(model)
+        db_session.commit()
+        db_session.refresh(model)
+
+        plan_resp = client.post("/monitoring/plans", headers=admin_headers, json={
+            "name": "Qualitative CSV Plan",
+            "frequency": "Quarterly",
+            "model_ids": [model.model_id]
+        })
+        plan_id = plan_resp.json()["plan_id"]
+
+        metric_resp = client.post(f"/monitoring/plans/{plan_id}/metrics", headers=admin_headers, json={
+            "kpm_id": kpm_id
+        })
+        metric_id = metric_resp.json()["metric_id"]
+
+        client.post(f"/monitoring/plans/{plan_id}/versions/publish", headers=admin_headers, json={})
+
+        cycle_resp = client.post(f"/monitoring/plans/{plan_id}/cycles", headers=admin_headers, json={})
+        cycle_id = cycle_resp.json()["cycle_id"]
+        client.post(f"/monitoring/cycles/{cycle_id}/start", headers=admin_headers)
+
+        # Import with outcome (no value for qualitative)
+        csv_content = f"model_id,metric_id,value,outcome,narrative\n{model.model_id},{metric_id},,GREEN,Qualitative assessment passed"
+
+        from io import BytesIO
+        response = client.post(
+            f"/monitoring/cycles/{cycle_id}/results/import?dry_run=false",
+            headers=admin_headers,
+            files={"file": ("results.csv", BytesIO(csv_content.encode()), "text/csv")}
+        )
+
+        assert response.status_code == 200
+        assert response.json()["created"] >= 1
+
+        # Verify outcome_value_id was set
+        from app.models.monitoring import MonitoringResult
+        result = db_session.query(MonitoringResult).filter(
+            MonitoringResult.cycle_id == cycle_id,
+            MonitoringResult.plan_metric_id == metric_id
+        ).first()
+
+        assert result is not None
+        assert result.calculated_outcome == "GREEN"
+        # outcome_value_id should match the GREEN taxonomy value
+        if green_value:
+            assert result.outcome_value_id == green_value.value_id
+
+    def test_csv_import_quantitative_sets_outcome_value_id(self, client, admin_headers, db_session, usage_frequency):
+        """CSV import for quantitative metrics sets outcome_value_id when computed from thresholds."""
+        from app.models.taxonomy import Taxonomy, TaxonomyValue
+
+        # Ensure Qualitative Outcome taxonomy exists (used for all outcome types)
+        qual_taxonomy = db_session.query(Taxonomy).filter(
+            Taxonomy.name == "Qualitative Outcome"
+        ).first()
+        if not qual_taxonomy:
+            qual_taxonomy = Taxonomy(
+                name="Qualitative Outcome",
+                description="Outcome values for KPMs",
+                is_system=True,
+                taxonomy_type="standard"
+            )
+            db_session.add(qual_taxonomy)
+            db_session.flush()
+
+            for code, label in [("GREEN", "Green"), ("YELLOW", "Yellow"), ("RED", "Red")]:
+                tv = TaxonomyValue(
+                    taxonomy_id=qual_taxonomy.taxonomy_id,
+                    code=code,
+                    label=label,
+                    is_active=True
+                )
+                db_session.add(tv)
+            db_session.commit()
+
+        # Get the GREEN taxonomy value ID
+        green_value = db_session.query(TaxonomyValue).filter(
+            TaxonomyValue.taxonomy_id == qual_taxonomy.taxonomy_id,
+            TaxonomyValue.code == "GREEN"
+        ).first()
+
+        # Create a quantitative KPM with thresholds
+        cat_resp = client.post("/kpm/categories", headers=admin_headers, json={
+            "code": "QUANT_VID",
+            "name": "Quantitative Value ID Category"
+        })
+        cat_id = cat_resp.json()["category_id"]
+
+        kpm_resp = client.post("/kpm/kpms", headers=admin_headers, json={
+            "category_id": cat_id,
+            "name": "Quantitative Value ID Metric",
+            "evaluation_type": "Quantitative"
+        })
+        kpm_id = kpm_resp.json()["kpm_id"]
+
+        from app.models.model import Model
+        from app.models.user import User
+        user = db_session.query(User).first()
+        model = Model(
+            model_name="Quantitative Value ID Model",
+            description="Test model for outcome_value_id",
+            owner_id=user.user_id,
+            development_type="In-House",
+            usage_frequency_id=usage_frequency["daily"].value_id
+        )
+        db_session.add(model)
+        db_session.commit()
+        db_session.refresh(model)
+
+        plan_resp = client.post("/monitoring/plans", headers=admin_headers, json={
+            "name": "Quantitative Value ID Plan",
+            "frequency": "Quarterly",
+            "model_ids": [model.model_id]
+        })
+        plan_id = plan_resp.json()["plan_id"]
+
+        # Add metric with thresholds where 0.15 is GREEN (within yellow_min=0.1 and yellow_max=0.9)
+        metric_resp = client.post(f"/monitoring/plans/{plan_id}/metrics", headers=admin_headers, json={
+            "kpm_id": kpm_id,
+            "yellow_min": 0.1,
+            "yellow_max": 0.9,
+            "red_max": 1.0
+        })
+        metric_id = metric_resp.json()["metric_id"]
+
+        client.post(f"/monitoring/plans/{plan_id}/versions/publish", headers=admin_headers, json={})
+
+        cycle_resp = client.post(f"/monitoring/plans/{plan_id}/cycles", headers=admin_headers, json={})
+        cycle_id = cycle_resp.json()["cycle_id"]
+        client.post(f"/monitoring/cycles/{cycle_id}/start", headers=admin_headers)
+
+        # Import with numeric value (0.15 should compute to GREEN)
+        csv_content = f"model_id,metric_id,value,outcome,narrative\n{model.model_id},{metric_id},0.15,,Computed from thresholds"
+
+        from io import BytesIO
+        response = client.post(
+            f"/monitoring/cycles/{cycle_id}/results/import?dry_run=false",
+            headers=admin_headers,
+            files={"file": ("results.csv", BytesIO(csv_content.encode()), "text/csv")}
+        )
+
+        assert response.status_code == 200
+        assert response.json()["created"] >= 1
+
+        # Verify outcome_value_id was set for quantitative metric
+        from app.models.monitoring import MonitoringResult
+        result = db_session.query(MonitoringResult).filter(
+            MonitoringResult.cycle_id == cycle_id,
+            MonitoringResult.plan_metric_id == metric_id
+        ).first()
+
+        assert result is not None
+        assert result.calculated_outcome == "GREEN"
+        # CRITICAL: outcome_value_id should ALSO be set for quantitative metrics
+        assert result.outcome_value_id is not None, "outcome_value_id should be set for quantitative metrics"
+        if green_value:
+            assert result.outcome_value_id == green_value.value_id, f"Expected {green_value.value_id}, got {result.outcome_value_id}"

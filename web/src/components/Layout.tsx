@@ -313,7 +313,7 @@ export default function Layout({ children }: LayoutProps) {
                                     <NavItem to="/monitoring-plans">Performance Monitoring</NavItem>
                                 )}
                                 {user?.role !== 'Admin' && (
-                                    <NavItem to="/my-monitoring" badge={pendingCounts.monitoring} badgeColor="green">
+                                    <NavItem to="/my-monitoring-tasks" badge={pendingCounts.monitoring} badgeColor="green">
                                         My Monitoring Tasks
                                     </NavItem>
                                 )}

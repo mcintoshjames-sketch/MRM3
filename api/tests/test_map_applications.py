@@ -167,12 +167,13 @@ class TestModelApplicationsAPI:
         return {"taxonomy": taxonomy, "data_source": values[0], "execution": values[1]}
 
     @pytest.fixture
-    def test_model_for_apps(self, db_session, admin_user):
+    def test_model_for_apps(self, db_session, admin_user, usage_frequency):
         """Create a test model owned by admin for application tests."""
         model = Model(
             model_name="Test Model for Applications",
             owner_id=admin_user.user_id,
-            row_approval_status="approved"
+            row_approval_status="approved",
+            usage_frequency_id=usage_frequency["daily"].value_id
         )
         db_session.add(model)
         db_session.commit()
@@ -298,14 +299,15 @@ class TestModelApplicationsAPI:
         assert response.status_code == 200
         assert len(response.json()) == 1
 
-    def test_non_owner_cannot_add_application(self, client, db_session, test_model_for_apps, test_application, relationship_taxonomy):
+    def test_non_owner_cannot_add_application(self, client, db_session, test_model_for_apps, test_application, relationship_taxonomy, lob_hierarchy):
         """Test that non-owner/non-admin cannot add application links."""
         # Create a different user (regular User role)
         other_user = User(
             email="other_map@example.com",
             password_hash=get_password_hash("testpass"),
             full_name="Other User",
-            role="User"
+            role="User",
+            lob_id=lob_hierarchy["retail"].lob_id
         )
         db_session.add(other_user)
         db_session.commit()

@@ -1,263 +1,19 @@
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import Layout from '../components/Layout';
 import TrendChartModal from '../components/TrendChartModal';
+import BreachResolutionWizard, { BreachItem, BreachResolution } from '../components/BreachResolutionWizard';
+import ThresholdWizard, { ThresholdValues } from '../components/ThresholdWizard';
 import api from '../api/client';
 import { useAuth } from '../contexts/AuthContext';
+import { useMonitoringPlan, VersionDetail as HookVersionDetail } from '../hooks/useMonitoringPlan';
+import { useMonitoringCycle, MonitoringCycle, CycleDetail } from '../hooks/useMonitoringCycle';
 
-// Types
-interface UserRef {
-    user_id: number;
-    email: string;
-    full_name: string;
-}
+// Types - only page-specific types needed here
+// Most types are imported from hooks: MonitoringCycle, CycleDetail
 
-interface TeamMember {
-    user_id: number;
-    email: string;
-    full_name: string;
-}
-
-interface MonitoringTeam {
-    team_id: number;
-    name: string;
-    description: string | null;
-    is_active: boolean;
-    member_count?: number;
-    members?: TeamMember[];
-}
-
-interface UserPermissions {
-    is_admin: boolean;
-    is_team_member: boolean;
-    is_data_provider: boolean;
-    can_start_cycle: boolean;
-    can_submit_cycle: boolean;
-    can_request_approval: boolean;
-    can_cancel_cycle: boolean;
-}
-
-interface Model {
-    model_id: number;
-    model_name: string;
-}
-
-interface KpmRef {
-    kpm_id: number;
-    name: string;
-    category_id: number;
-    category_name: string | null;
-    evaluation_type: string;
-}
-
-interface PlanMetric {
-    metric_id: number;
-    kpm_id: number;
-    kpm: KpmRef;
-    yellow_min: number | null;
-    yellow_max: number | null;
-    red_min: number | null;
-    red_max: number | null;
-    qualitative_guidance: string | null;
-    sort_order: number;
-    is_active: boolean;
-}
-
-interface Kpm {
-    kpm_id: number;
-    name: string;
-    description: string | null;
-    evaluation_type: 'Quantitative' | 'Qualitative' | 'Outcome Only';
-}
-
-interface KpmCategory {
-    category_id: number;
-    code: string;
-    name: string;
-    kpms: Kpm[];
-}
-
-interface PlanVersion {
-    version_id: number;
-    version_number: number;
-    version_name: string | null;
-    effective_date: string;
-    is_active: boolean;
-    metrics_count?: number;
-    models_count?: number;
-}
-
-interface MonitoringPlan {
-    plan_id: number;
-    name: string;
-    description: string | null;
-    frequency: string;
-    is_active: boolean;
-    next_submission_due_date: string | null;
-    next_report_due_date: string | null;
-    reporting_lead_days: number;
-    monitoring_team_id: number | null;
-    data_provider_user_id: number | null;
-    team?: MonitoringTeam | null;
-    data_provider?: UserRef | null;
-    models?: Model[];
-    metrics?: PlanMetric[];
-    active_version_number?: number | null;
-    has_unpublished_changes?: boolean;
-    version_count?: number;
-    user_permissions?: UserPermissions;
-}
-
-interface MonitoringCycle {
-    cycle_id: number;
-    plan_id: number;
-    period_start_date: string;
-    period_end_date: string;
-    submission_due_date: string;
-    report_due_date: string;
-    status: string;
-    assigned_to_name?: string | null;
-    report_url?: string | null;
-    plan_version_id?: number | null;
-    version_number?: number | null;
-    version_name?: string | null;
-    version_locked_at?: string | null;
-    result_count: number;
-    green_count: number;
-    yellow_count: number;
-    red_count: number;
-    approval_count: number;
-    pending_approval_count: number;
-    // Overdue status (calculated server-side)
-    is_overdue: boolean;
-    days_overdue: number;
-}
-
-interface CycleApproval {
-    approval_id: number;
-    approval_type: string;
-    region_id: number | null;
-    region_name?: string | null;
-    approval_status: string;
-    approver_name?: string | null;
-    approved_at?: string | null;
-    comments?: string | null;
-    is_required: boolean;
-    voided_at?: string | null;
-    void_reason?: string | null;
-    can_approve: boolean;  // Server-calculated permission
-}
-
-interface CycleDetail extends MonitoringCycle {
-    assigned_to?: UserRef | null;
-    submitted_at?: string | null;
-    submitted_by?: UserRef | null;
-    completed_at?: string | null;
-    completed_by?: UserRef | null;
-    notes?: string | null;
-    version_locked_at?: string | null;
-    version_locked_by?: UserRef | null;
-    approvals?: CycleApproval[];
-    plan_version?: PlanVersion | null;
-}
-
-// Results Entry Types
-interface MetricSnapshot {
-    snapshot_id: number;
-    original_metric_id: number | null;  // FK to MonitoringPlanMetric for result submission
-    kpm_id: number;
-    kpm_name: string;
-    kpm_category_name: string | null;
-    evaluation_type: string;
-    yellow_min: number | null;
-    yellow_max: number | null;
-    red_min: number | null;
-    red_max: number | null;
-    qualitative_guidance: string | null;
-    sort_order: number;
-}
-
-interface ModelSnapshot {
-    snapshot_id: number;
-    model_id: number;
-    model_name: string;
-}
-
-interface VersionDetail {
-    version_id: number;
-    plan_id: number;
-    version_number: number;
-    version_name: string | null;
-    effective_date: string;
-    published_at: string;
-    is_active: boolean;
-    metric_snapshots: MetricSnapshot[];
-    model_snapshots: ModelSnapshot[];
-}
-
-interface OutcomeValue {
-    value_id: number;
-    code: string;
-    label: string;
-}
-
-interface MonitoringResult {
-    result_id: number;
-    cycle_id: number;
-    plan_metric_id: number;
-    model_id: number | null;
-    numeric_value: number | null;
-    outcome_value: OutcomeValue | null;
-    calculated_outcome: string | null;
-    narrative: string | null;
-    entered_by: UserRef;
-    entered_at: string;
-}
-
-interface ResultFormData {
-    metric_id: number;
-    snapshot_id?: number;
-    kpm_name: string;
-    evaluation_type: string;
-    numeric_value: string;
-    outcome_value_id: number | null;
-    narrative: string;
-    yellow_min: number | null;
-    yellow_max: number | null;
-    red_min: number | null;
-    red_max: number | null;
-    qualitative_guidance: string | null;
-    calculatedOutcome: string | null;
-    existingResultId: number | null;
-    dirty: boolean;
-    skipped: boolean;  // Whether this metric is being skipped (requires explanation)
-    // Inline trend context
-    previousValue: number | null;
-    previousOutcome: string | null;
-    previousPeriod: string | null;
-    // Model-specific results
-    model_id: number | null;  // null = plan-level (aggregate across all models)
-}
-
-// Phase 7: Reporting & Trends
-interface MetricSummary {
-    metric_id: number;
-    metric_name: string;
-    green_count: number;
-    yellow_count: number;
-    red_count: number;
-    na_count: number;
-    total: number;
-}
-
-interface PerformanceSummary {
-    total_results: number;
-    green_count: number;
-    yellow_count: number;
-    red_count: number;
-    na_count: number;
-    by_metric: MetricSummary[];
-}
+// VersionDetail - use HookVersionDetail imported from hooks
+type VersionDetail = HookVersionDetail;
 
 type TabType = 'dashboard' | 'models' | 'metrics' | 'versions' | 'cycles';
 
@@ -442,97 +198,10 @@ const CycleSparkline: React.FC<{ cycles: MonitoringCycle[] }> = ({ cycles }) => 
 const MonitoringPlanDetailPage: React.FC = () => {
     const { id } = useParams<{ id: string }>();
     const { user } = useAuth();
-    const [loading, setLoading] = useState(true);
-    const [plan, setPlan] = useState<MonitoringPlan | null>(null);
-    const [error, setError] = useState<string | null>(null);
+    const planId = id ? parseInt(id, 10) : null;
+
+    // Page-specific state (not in hooks)
     const [activeTab, setActiveTab] = useState<TabType>('dashboard');
-
-    // Cycles state
-    const [cycles, setCycles] = useState<MonitoringCycle[]>([]);
-    const [loadingCycles, setLoadingCycles] = useState(false);
-    const [selectedCycle, setSelectedCycle] = useState<CycleDetail | null>(null);
-    const [loadingCycleDetail, setLoadingCycleDetail] = useState(false);
-
-    // Create cycle modal
-    const [showCreateModal, setShowCreateModal] = useState(false);
-    const [creating, setCreating] = useState(false);
-    const [createForm, setCreateForm] = useState({
-        notes: ''
-    });
-
-    // Action state
-    const [actionLoading, setActionLoading] = useState(false);
-    const [actionError, setActionError] = useState<string | null>(null);
-
-    // Results Entry state
-    const [showResultsModal, setShowResultsModal] = useState(false);
-    const [resultsEntryCycle, setResultsEntryCycle] = useState<MonitoringCycle | null>(null);
-    const [versionDetail, setVersionDetail] = useState<VersionDetail | null>(null);
-    const [outcomeValues, setOutcomeValues] = useState<OutcomeValue[]>([]);
-    const [resultForms, setResultForms] = useState<ResultFormData[]>([]);
-    const [loadingResults, setLoadingResults] = useState(false);
-    const [savingResult, setSavingResult] = useState<number | null>(null);
-    const [deletingResult, setDeletingResult] = useState<number | null>(null);
-    const [resultsError, setResultsError] = useState<string | null>(null);
-    // Model-specific results state (null = plan-level, number = specific model)
-    const [selectedResultsModel, setSelectedResultsModel] = useState<number | null>(null);
-    const [allCycleResults, setAllCycleResults] = useState<MonitoringResult[]>([]);  // All results for current cycle
-
-    // Compute the current "mode" of existing results for exclusive mode enforcement
-    // Returns: 'none' (no results), 'plan-level' (only model_id=null), 'model-specific' (has model_id values)
-    const existingResultsMode = useMemo<'none' | 'plan-level' | 'model-specific'>(() => {
-        if (allCycleResults.length === 0) return 'none';
-        const hasPlanLevel = allCycleResults.some(r => r.model_id === null);
-        const hasModelSpecific = allCycleResults.some(r => r.model_id !== null);
-        if (hasPlanLevel && !hasModelSpecific) return 'plan-level';
-        if (hasModelSpecific && !hasPlanLevel) return 'model-specific';
-        // Mixed state shouldn't happen with backend validation, but handle it
-        return hasModelSpecific ? 'model-specific' : 'plan-level';
-    }, [allCycleResults]);
-
-    // Approval modal state
-    const [approvalModalType, setApprovalModalType] = useState<'approve' | 'reject' | 'void' | null>(null);
-    const [selectedApproval, setSelectedApproval] = useState<CycleApproval | null>(null);
-    const [approvalComments, setApprovalComments] = useState('');
-    const [approvalLoading, setApprovalLoading] = useState(false);
-    const [approvalError, setApprovalError] = useState<string | null>(null);
-
-    // Cancel cycle modal state
-    const [showCancelModal, setShowCancelModal] = useState(false);
-    const [cancelCycleId, setCancelCycleId] = useState<number | null>(null);
-    const [cancelReason, setCancelReason] = useState('');
-
-    // Start cycle modal state
-    const [showStartCycleModal, setShowStartCycleModal] = useState(false);
-    const [startCycleId, setStartCycleId] = useState<number | null>(null);
-
-    // Edit assignee state
-    const [editingAssignee, setEditingAssignee] = useState(false);
-    const [newAssigneeId, setNewAssigneeId] = useState<number | null>(null);
-    const [savingAssignee, setSavingAssignee] = useState(false);
-
-    // Edit plan details state
-    const [editingPlanDetails, setEditingPlanDetails] = useState(false);
-    const [planDetailsForm, setPlanDetailsForm] = useState({
-        data_provider_user_id: null as number | null,
-        reporting_lead_days: 5
-    });
-    const [savingPlanDetails, setSavingPlanDetails] = useState(false);
-    const [availableUsers, setAvailableUsers] = useState<{ user_id: number; full_name: string }[]>([]);
-    const [showUpdateCycleAssigneePrompt, setShowUpdateCycleAssigneePrompt] = useState(false);
-    const [pendingDataProviderChange, setPendingDataProviderChange] = useState<number | null>(null);
-
-    // Request approval modal state
-    const [showRequestApprovalModal, setShowRequestApprovalModal] = useState(false);
-    const [requestApprovalCycleId, setRequestApprovalCycleId] = useState<number | null>(null);
-    const [reportUrl, setReportUrl] = useState('');
-
-    // Phase 7: Performance summary state
-    const [performanceSummary, setPerformanceSummary] = useState<PerformanceSummary | null>(null);
-    const [loadingPerformance, setLoadingPerformance] = useState(false);
-    const [exportingCycle, setExportingCycle] = useState<number | null>(null);
-
-    // Trend chart modal state
     const [trendModalMetric, setTrendModalMetric] = useState<{
         metric_id: number;
         metric_name: string;
@@ -543,323 +212,154 @@ const MonitoringPlanDetailPage: React.FC = () => {
             red_max: number | null;
         };
     } | null>(null);
+    const [showBreachWizard, setShowBreachWizard] = useState(false);
+    const [pendingBreaches, setPendingBreaches] = useState<BreachItem[]>([]);
+    const [breachResolutionLoading, setBreachResolutionLoading] = useState(false);
+    const [pendingDataProviderChange, setPendingDataProviderChange] = useState<number | null>(null);
 
-    // Version management state
-    const [versions, setVersions] = useState<PlanVersion[]>([]);
-    const [loadingVersions, setLoadingVersions] = useState(false);
-    const [selectedVersionDetail, setSelectedVersionDetail] = useState<VersionDetail | null>(null);
-    const [loadingVersionDetail, setLoadingVersionDetail] = useState(false);
-    const [showPublishModal, setShowPublishModal] = useState(false);
-    const [publishForm, setPublishForm] = useState({
-        version_name: '',
-        description: '',
-        effective_date: new Date().toISOString().split('T')[0]
-    });
-    const [publishing, setPublishing] = useState(false);
-    const [publishError, setPublishError] = useState<string | null>(null);
+    // Use the plan configuration hook
+    const {
+        plan,
+        loading,
+        error,
+        fetchPlan,
+        // Versions
+        versions,
+        loadingVersions,
+        selectedVersionDetail,
+        loadingVersionDetail,
+        fetchVersions,
+        fetchVersionDetail,
+        // Publish
+        showPublishModal,
+        setShowPublishModal,
+        publishForm,
+        setPublishForm,
+        publishing,
+        publishError,
+        setPublishError,
+        handlePublishVersion,
+        // Metric editing
+        editingMetric,
+        setEditingMetric,
+        showMetricModal,
+        setShowMetricModal,
+        metricForm,
+        setMetricForm,
+        savingMetric,
+        metricError,
+        setMetricError,
+        openEditMetric,
+        handleSaveMetric,
+        handleDeactivateMetric,
+        // Add metric
+        showAddMetricModal,
+        setShowAddMetricModal,
+        kpmCategories,
+        addMetricForm,
+        setAddMetricForm,
+        addingMetric,
+        addMetricError,
+        setAddMetricError,
+        handleAddMetric,
+        // Models
+        showAddModelModal,
+        setShowAddModelModal,
+        loadingAllModels,
+        addingModel,
+        removingModelId,
+        modelSearchTerm,
+        setModelSearchTerm,
+        availableModels,
+        filteredAvailableModels,
+        openAddModelModal,
+        handleAddModel,
+        handleRemoveModel,
+        // Plan details editing
+        editingPlanDetails,
+        setEditingPlanDetails,
+        planDetailsForm,
+        setPlanDetailsForm,
+        savingPlanDetails,
+        setSavingPlanDetails,
+        availableUsers,
+        startEditingPlanDetails,
+        cancelEditingPlanDetails,
+        // Note: handleSavePlanDetails is defined locally for cycle assignee update logic
+        // Cycle assignee prompt
+        showUpdateCycleAssigneePrompt,
+        setShowUpdateCycleAssigneePrompt,
+        // Note: handleCycleAssigneePromptResponse is defined locally to use local handleSavePlanDetails
+    } = useMonitoringPlan(id);
 
-    // Metric editing state
-    const [editingMetric, setEditingMetric] = useState<PlanMetric | null>(null);
-    const [showMetricModal, setShowMetricModal] = useState(false);
-    const [metricForm, setMetricForm] = useState({
-        yellow_min: '' as string,
-        yellow_max: '' as string,
-        red_min: '' as string,
-        red_max: '' as string,
-        qualitative_guidance: ''
-    });
-    const [savingMetric, setSavingMetric] = useState(false);
-    const [metricError, setMetricError] = useState<string | null>(null);
+    // Use the cycle management hook
+    const {
+        cycles,
+        loadingCycles,
+        selectedCycle,
+        fetchCycles,
+        fetchCycleDetail,
+        // Create cycle
+        showCreateModal,
+        setShowCreateModal,
+        creating,
+        createForm,
+        setCreateForm,
+        handleCreateCycle,
+        // Actions
+        actionLoading,
+        actionError,
+        handleCycleAction,
+        // Start cycle
+        showStartCycleModal,
+        setShowStartCycleModal,
+        startCycleId,
+        setStartCycleId,
+        openStartCycleModal,
+        handleStartCycle,
+        // Cancel cycle
+        showCancelModal,
+        setShowCancelModal,
+        cancelCycleId,
+        setCancelCycleId,
+        cancelReason,
+        setCancelReason,
+        openCancelModal,
+        handleCancelCycle,
+        // Request approval
+        showRequestApprovalModal,
+        setShowRequestApprovalModal,
+        requestApprovalCycleId,
+        setRequestApprovalCycleId,
+        reportUrl,
+        setReportUrl,
+        openRequestApprovalModal,
+        // Note: handleRequestApproval is defined locally to handle breach wizard integration
+        setActionLoading,
+        setActionError,
+        // Performance
+        performanceSummary,
+        loadingPerformance,
+        exportingCycle,
+        fetchPerformanceSummary,
+        exportCycleCSV,
+        // Helpers
+        formatPeriod,
+    } = useMonitoringCycle(id, plan, fetchPlan);
 
-    // Add metric state
-    const [showAddMetricModal, setShowAddMetricModal] = useState(false);
-    const [kpmCategories, setKpmCategories] = useState<KpmCategory[]>([]);
-    const [addMetricForm, setAddMetricForm] = useState({
-        kpm_id: 0,
-        yellow_min: '' as string,
-        yellow_max: '' as string,
-        red_min: '' as string,
-        red_max: '' as string,
-        qualitative_guidance: '',
-        sort_order: 0
-    });
-    const [addingMetric, setAddingMetric] = useState(false);
-    const [addMetricError, setAddMetricError] = useState<string | null>(null);
-
-    // Add model state
-    const [showAddModelModal, setShowAddModelModal] = useState(false);
-    const [allModels, setAllModels] = useState<Model[]>([]);
-    const [loadingAllModels, setLoadingAllModels] = useState(false);
-    const [addingModel, setAddingModel] = useState(false);
-    const [removingModelId, setRemovingModelId] = useState<number | null>(null);
-    const [modelSearchTerm, setModelSearchTerm] = useState('');
-
+    // Fetch performance summary when dashboard or cycles tab is selected
     useEffect(() => {
-        if (id) {
-            fetchPlan();
-            fetchCycles();
-        }
-    }, [id]);
-
-    // Phase 7: Fetch performance summary when dashboard or cycles tab is selected
-    useEffect(() => {
-        if (id && (activeTab === 'dashboard' || activeTab === 'cycles')) {
+        if (planId && (activeTab === 'dashboard' || activeTab === 'cycles')) {
             fetchPerformanceSummary();
         }
-    }, [id, activeTab]);
+    }, [planId, activeTab, fetchPerformanceSummary]);
 
     // Fetch versions when versions tab is selected
     useEffect(() => {
-        if (id && activeTab === 'versions') {
+        if (planId && activeTab === 'versions') {
             fetchVersions();
         }
-    }, [id, activeTab]);
-
-    // Fetch KPM categories when metrics tab is selected (for adding new metrics)
-    useEffect(() => {
-        if (id && activeTab === 'metrics' && kpmCategories.length === 0) {
-            fetchKpmCategories();
-        }
-    }, [id, activeTab]);
-
-    const fetchKpmCategories = async () => {
-        try {
-            const response = await api.get('/kpm/categories?active_only=false');
-            setKpmCategories(response.data);
-        } catch (err) {
-            console.error('Failed to load KPM categories:', err);
-        }
-    };
-
-    // Fetch all models when Add Model modal is opened
-    const fetchAllModels = async () => {
-        setLoadingAllModels(true);
-        try {
-            const response = await api.get('/models/?limit=1000');
-            setAllModels(response.data.items || response.data);
-        } catch (err) {
-            console.error('Failed to load models:', err);
-        } finally {
-            setLoadingAllModels(false);
-        }
-    };
-
-    // Add model to the plan
-    const handleAddModel = async (modelId: number) => {
-        if (!plan) return;
-        setAddingModel(true);
-        try {
-            const currentModelIds = plan.models?.map(m => m.model_id) || [];
-            const updatedModelIds = [...currentModelIds, modelId];
-            await api.patch(`/monitoring/plans/${id}`, {
-                model_ids: updatedModelIds
-            });
-            await fetchPlan();
-            setShowAddModelModal(false);
-            setModelSearchTerm('');
-        } catch (err: any) {
-            console.error('Failed to add model:', err);
-            alert(err.response?.data?.detail || 'Failed to add model');
-        } finally {
-            setAddingModel(false);
-        }
-    };
-
-    // Remove model from the plan
-    const handleRemoveModel = async (modelId: number) => {
-        if (!plan) return;
-        if (!window.confirm('Are you sure you want to remove this model from the plan?')) return;
-        setRemovingModelId(modelId);
-        try {
-            const currentModelIds = plan.models?.map(m => m.model_id) || [];
-            const updatedModelIds = currentModelIds.filter(id => id !== modelId);
-            await api.patch(`/monitoring/plans/${id}`, {
-                model_ids: updatedModelIds
-            });
-            await fetchPlan();
-        } catch (err: any) {
-            console.error('Failed to remove model:', err);
-            alert(err.response?.data?.detail || 'Failed to remove model');
-        } finally {
-            setRemovingModelId(null);
-        }
-    };
-
-    // Open Add Model modal
-    const openAddModelModal = () => {
-        setShowAddModelModal(true);
-        setModelSearchTerm('');
-        if (allModels.length === 0) {
-            fetchAllModels();
-        }
-    };
-
-    // Filter models not already in plan
-    const availableModels = useMemo(() => {
-        const planModelIds = new Set(plan?.models?.map(m => m.model_id) || []);
-        return allModels.filter(m => !planModelIds.has(m.model_id));
-    }, [allModels, plan?.models]);
-
-    // Filter by search term
-    const filteredAvailableModels = useMemo(() => {
-        if (!modelSearchTerm.trim()) return availableModels;
-        const term = modelSearchTerm.toLowerCase();
-        return availableModels.filter(m =>
-            m.model_name.toLowerCase().includes(term) ||
-            m.model_id.toString().includes(term)
-        );
-    }, [availableModels, modelSearchTerm]);
-
-    const fetchPlan = async () => {
-        setLoading(true);
-        try {
-            const response = await api.get(`/monitoring/plans/${id}`);
-            setPlan(response.data);
-        } catch (err: any) {
-            setError(err.response?.data?.detail || 'Failed to load plan');
-        } finally {
-            setLoading(false);
-        }
-    };
-
-    const fetchCycles = async () => {
-        setLoadingCycles(true);
-        try {
-            const response = await api.get(`/monitoring/plans/${id}/cycles`);
-            setCycles(response.data);
-        } catch (err) {
-            console.error('Failed to load cycles:', err);
-        } finally {
-            setLoadingCycles(false);
-        }
-    };
-
-    const fetchCycleDetail = async (cycleId: number) => {
-        setLoadingCycleDetail(true);
-        try {
-            // Fetch cycle details and approvals in parallel
-            const [cycleResponse, approvalsResponse] = await Promise.all([
-                api.get(`/monitoring/cycles/${cycleId}`),
-                api.get(`/monitoring/cycles/${cycleId}/approvals`)
-            ]);
-
-            // Map approvals to include region_name for display
-            const approvals = approvalsResponse.data.map((a: any) => ({
-                ...a,
-                region_name: a.region?.region_name || null,
-                approver_name: a.approver?.full_name || null
-            }));
-
-            // Merge cycle data with approvals
-            setSelectedCycle({
-                ...cycleResponse.data,
-                approvals
-            });
-        } catch (err) {
-            console.error('Failed to load cycle detail:', err);
-        } finally {
-            setLoadingCycleDetail(false);
-        }
-    };
-
-    // Phase 7: Fetch performance summary for History tab
-    const fetchPerformanceSummary = async () => {
-        setLoadingPerformance(true);
-        try {
-            const response = await api.get(`/monitoring/plans/${id}/performance-summary?cycles=10`);
-            setPerformanceSummary(response.data);
-        } catch (err) {
-            console.error('Failed to load performance summary:', err);
-        } finally {
-            setLoadingPerformance(false);
-        }
-    };
-
-    // Phase 7: Export cycle results as CSV
-    const exportCycleCSV = async (cycleId: number) => {
-        setExportingCycle(cycleId);
-        try {
-            const response = await api.get(`/monitoring/plans/${id}/cycles/${cycleId}/export`, {
-                responseType: 'blob'
-            });
-
-            // Create blob link to download
-            const url = window.URL.createObjectURL(new Blob([response.data]));
-            const link = document.createElement('a');
-            link.href = url;
-
-            // Get filename from content-disposition header or use default
-            const contentDisposition = response.headers['content-disposition'];
-            let filename = `cycle_${cycleId}_results.csv`;
-            if (contentDisposition) {
-                const filenameMatch = contentDisposition.match(/filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/);
-                if (filenameMatch && filenameMatch[1]) {
-                    filename = filenameMatch[1].replace(/['"]/g, '');
-                }
-            }
-
-            link.setAttribute('download', filename);
-            document.body.appendChild(link);
-            link.click();
-            link.remove();
-            window.URL.revokeObjectURL(url);
-        } catch (err) {
-            console.error('Failed to export cycle:', err);
-        } finally {
-            setExportingCycle(null);
-        }
-    };
-
-    // Version management functions
-    const fetchVersions = async () => {
-        setLoadingVersions(true);
-        try {
-            const response = await api.get(`/monitoring/plans/${id}/versions`);
-            setVersions(response.data);
-        } catch (err) {
-            console.error('Failed to load versions:', err);
-        } finally {
-            setLoadingVersions(false);
-        }
-    };
-
-    const fetchVersionDetail = async (versionId: number) => {
-        setLoadingVersionDetail(true);
-        try {
-            const response = await api.get(`/monitoring/plans/${id}/versions/${versionId}`);
-            setSelectedVersionDetail(response.data);
-        } catch (err) {
-            console.error('Failed to load version detail:', err);
-        } finally {
-            setLoadingVersionDetail(false);
-        }
-    };
-
-    const handlePublishVersion = async (e: React.FormEvent) => {
-        e.preventDefault();
-        setPublishing(true);
-        setPublishError(null);
-
-        try {
-            await api.post(`/monitoring/plans/${id}/versions/publish`, {
-                version_name: publishForm.version_name || null,
-                description: publishForm.description || null,
-                effective_date: publishForm.effective_date || null
-            });
-            setShowPublishModal(false);
-            setPublishForm({
-                version_name: '',
-                description: '',
-                effective_date: new Date().toISOString().split('T')[0]
-            });
-            fetchVersions();
-            fetchPlan(); // Refresh plan to get updated version count and has_unpublished_changes
-        } catch (err: any) {
-            setPublishError(err.response?.data?.detail || 'Failed to publish version');
-        } finally {
-            setPublishing(false);
-        }
-    };
+    }, [planId, activeTab, fetchVersions]);
 
     const exportVersionCSV = (version: VersionDetail) => {
         const headers = ['KPM Name', 'Category', 'Type', 'Yellow Min', 'Yellow Max', 'Red Min', 'Red Max', 'Guidance'];
@@ -888,297 +388,6 @@ const MonitoringPlanDetailPage: React.FC = () => {
         a.click();
         document.body.removeChild(a);
         URL.revokeObjectURL(url);
-    };
-
-    // Metric editing functions
-    const openEditMetric = (metric: PlanMetric) => {
-        setEditingMetric(metric);
-        setMetricForm({
-            yellow_min: metric.yellow_min?.toString() || '',
-            yellow_max: metric.yellow_max?.toString() || '',
-            red_min: metric.red_min?.toString() || '',
-            red_max: metric.red_max?.toString() || '',
-            qualitative_guidance: metric.qualitative_guidance || ''
-        });
-        setMetricError(null);
-        setShowMetricModal(true);
-    };
-
-    const handleSaveMetric = async (e: React.FormEvent) => {
-        e.preventDefault();
-        if (!editingMetric) return;
-
-        // Validate threshold consistency
-        const yellowMin = metricForm.yellow_min ? parseFloat(metricForm.yellow_min) : null;
-        const yellowMax = metricForm.yellow_max ? parseFloat(metricForm.yellow_max) : null;
-        const redMin = metricForm.red_min ? parseFloat(metricForm.red_min) : null;
-        const redMax = metricForm.red_max ? parseFloat(metricForm.red_max) : null;
-
-        if (yellowMax !== null && redMax !== null && redMax <= yellowMax) {
-            setMetricError(`Invalid threshold configuration: red_max (${redMax}) must be greater than yellow_max (${yellowMax}).`);
-            return;
-        }
-
-        if (yellowMin !== null && redMin !== null && redMin >= yellowMin) {
-            setMetricError(`Invalid threshold configuration: red_min (${redMin}) must be less than yellow_min (${yellowMin}).`);
-            return;
-        }
-
-        setSavingMetric(true);
-        setMetricError(null);
-
-        try {
-            await api.patch(`/monitoring/plans/${id}/metrics/${editingMetric.metric_id}`, {
-                yellow_min: metricForm.yellow_min ? parseFloat(metricForm.yellow_min) : null,
-                yellow_max: metricForm.yellow_max ? parseFloat(metricForm.yellow_max) : null,
-                red_min: metricForm.red_min ? parseFloat(metricForm.red_min) : null,
-                red_max: metricForm.red_max ? parseFloat(metricForm.red_max) : null,
-                qualitative_guidance: metricForm.qualitative_guidance || null
-            });
-            setShowMetricModal(false);
-            setEditingMetric(null);
-            fetchPlan(); // Refresh to show updated thresholds and has_unpublished_changes
-        } catch (err: any) {
-            setMetricError(err.response?.data?.detail || 'Failed to save metric');
-        } finally {
-            setSavingMetric(false);
-        }
-    };
-
-    // Handle adding a new metric to the plan
-    const handleAddMetric = async (e: React.FormEvent) => {
-        e.preventDefault();
-        if (!addMetricForm.kpm_id) {
-            setAddMetricError('Please select a KPM');
-            return;
-        }
-
-        setAddingMetric(true);
-        setAddMetricError(null);
-
-        try {
-            await api.post(`/monitoring/plans/${id}/metrics`, {
-                kpm_id: addMetricForm.kpm_id,
-                yellow_min: addMetricForm.yellow_min ? parseFloat(addMetricForm.yellow_min) : null,
-                yellow_max: addMetricForm.yellow_max ? parseFloat(addMetricForm.yellow_max) : null,
-                red_min: addMetricForm.red_min ? parseFloat(addMetricForm.red_min) : null,
-                red_max: addMetricForm.red_max ? parseFloat(addMetricForm.red_max) : null,
-                qualitative_guidance: addMetricForm.qualitative_guidance || null,
-                sort_order: plan?.metrics?.length || 0,
-                is_active: true
-            });
-            setShowAddMetricModal(false);
-            setAddMetricForm({
-                kpm_id: 0,
-                yellow_min: '',
-                yellow_max: '',
-                red_min: '',
-                red_max: '',
-                qualitative_guidance: '',
-                sort_order: 0
-            });
-            fetchPlan(); // Refresh to show new metric and has_unpublished_changes
-        } catch (err: any) {
-            setAddMetricError(err.response?.data?.detail || 'Failed to add metric');
-        } finally {
-            setAddingMetric(false);
-        }
-    };
-
-    // Handle deactivating a metric from the plan (soft delete)
-    const handleDeactivateMetric = async (metricId: number) => {
-        if (!confirm('Deactivate this metric from the plan? It will be hidden but can be reactivated later.')) return;
-
-        try {
-            await api.patch(`/monitoring/plans/${id}/metrics/${metricId}`, { is_active: false });
-            fetchPlan(); // Refresh to show updated metrics list and has_unpublished_changes
-        } catch (err: any) {
-            alert(err.response?.data?.detail || 'Failed to deactivate metric');
-        }
-    };
-
-    const handleCreateCycle = async (e: React.FormEvent) => {
-        e.preventDefault();
-        setCreating(true);
-        setActionError(null);
-
-        try {
-            await api.post(`/monitoring/plans/${id}/cycles`, {
-                notes: createForm.notes || null
-            });
-            setShowCreateModal(false);
-            setCreateForm({ notes: '' });
-            fetchCycles();
-            fetchPlan(); // Refresh plan to get updated next_submission_due_date
-        } catch (err: any) {
-            setActionError(err.response?.data?.detail || 'Failed to create cycle');
-        } finally {
-            setCreating(false);
-        }
-    };
-
-    const handleCycleAction = async (cycleId: number, action: string, payload?: object) => {
-        setActionLoading(true);
-        setActionError(null);
-
-        try {
-            await api.post(`/monitoring/cycles/${cycleId}/${action}`, payload || {});
-            fetchCycles();
-            if (selectedCycle?.cycle_id === cycleId) {
-                fetchCycleDetail(cycleId);
-            }
-        } catch (err: any) {
-            setActionError(err.response?.data?.detail || `Failed to ${action} cycle`);
-        } finally {
-            setActionLoading(false);
-        }
-    };
-
-    // Cancel cycle functions
-    const openCancelModal = (cycleId: number) => {
-        setCancelCycleId(cycleId);
-        setCancelReason('');
-        setActionError(null);
-        setShowCancelModal(true);
-    };
-
-    const handleCancelCycle = async () => {
-        if (!cancelCycleId || !cancelReason.trim()) return;
-
-        setActionLoading(true);
-        setActionError(null);
-
-        try {
-            await api.post(`/monitoring/cycles/${cancelCycleId}/cancel`, {
-                cancel_reason: cancelReason.trim()
-            });
-            setShowCancelModal(false);
-            setCancelCycleId(null);
-            setCancelReason('');
-            fetchCycles();
-            if (selectedCycle?.cycle_id === cancelCycleId) {
-                setSelectedCycle(null);
-            }
-        } catch (err: any) {
-            setActionError(err.response?.data?.detail || 'Failed to cancel cycle');
-        } finally {
-            setActionLoading(false);
-        }
-    };
-
-    // Start cycle functions
-    const openStartCycleModal = (cycleId: number) => {
-        setStartCycleId(cycleId);
-        setActionError(null);
-        setShowStartCycleModal(true);
-    };
-
-    const handleStartCycle = async () => {
-        if (!startCycleId) return;
-
-        setActionLoading(true);
-        setActionError(null);
-
-        try {
-            await api.post(`/monitoring/cycles/${startCycleId}/start`);
-            setShowStartCycleModal(false);
-            setStartCycleId(null);
-            fetchCycles();
-            fetchPlan(); // Refresh plan to update version status
-        } catch (err: any) {
-            setActionError(err.response?.data?.detail || 'Failed to start cycle');
-        } finally {
-            setActionLoading(false);
-        }
-    };
-
-    // Edit assignee functions
-    const startEditingAssignee = () => {
-        if (selectedCycle) {
-            setNewAssigneeId(selectedCycle.assigned_to?.user_id || null);
-            setEditingAssignee(true);
-        }
-    };
-
-    const cancelEditingAssignee = () => {
-        setEditingAssignee(false);
-        setNewAssigneeId(null);
-    };
-
-    const handleSaveAssignee = async () => {
-        if (!selectedCycle) return;
-
-        setSavingAssignee(true);
-        setActionError(null);
-
-        try {
-            await api.patch(`/monitoring/cycles/${selectedCycle.cycle_id}`, {
-                assigned_to_user_id: newAssigneeId || 0  // 0 means unassign
-            });
-            // Refresh cycle detail
-            await fetchCycleDetail(selectedCycle.cycle_id);
-            fetchCycles(); // Refresh cycles list too
-            setEditingAssignee(false);
-        } catch (err: any) {
-            setActionError(err.response?.data?.detail || 'Failed to update assignee');
-        } finally {
-            setSavingAssignee(false);
-        }
-    };
-
-    // Get available assignees (team members + data provider)
-    const getAvailableAssignees = (): { user_id: number; full_name: string }[] => {
-        const assignees: { user_id: number; full_name: string }[] = [];
-        const seenIds = new Set<number>();
-
-        // Add team members
-        if (plan?.team?.members) {
-            for (const member of plan.team.members) {
-                if (!seenIds.has(member.user_id)) {
-                    assignees.push({ user_id: member.user_id, full_name: member.full_name });
-                    seenIds.add(member.user_id);
-                }
-            }
-        }
-
-        // Add data provider if not already in list
-        if (plan?.data_provider && !seenIds.has(plan.data_provider.user_id)) {
-            assignees.push({ user_id: plan.data_provider.user_id, full_name: plan.data_provider.full_name });
-        }
-
-        return assignees.sort((a, b) => a.full_name.localeCompare(b.full_name));
-    };
-
-    // Edit plan details functions
-    const fetchAvailableUsers = async () => {
-        try {
-            const response = await api.get('/auth/users');
-            setAvailableUsers(response.data.map((u: any) => ({
-                user_id: u.user_id,
-                full_name: u.full_name
-            })));
-        } catch (err) {
-            console.error('Failed to fetch users:', err);
-        }
-    };
-
-    const startEditingPlanDetails = () => {
-        if (plan) {
-            setPlanDetailsForm({
-                data_provider_user_id: plan.data_provider_user_id,
-                reporting_lead_days: plan.reporting_lead_days
-            });
-            fetchAvailableUsers();
-            setEditingPlanDetails(true);
-        }
-    };
-
-    const cancelEditingPlanDetails = () => {
-        setEditingPlanDetails(false);
-        setPlanDetailsForm({
-            data_provider_user_id: null,
-            reporting_lead_days: 5
-        });
     };
 
     // Get active cycle that could have assignee updated (PENDING or DATA_COLLECTION)
@@ -1237,14 +446,7 @@ const MonitoringPlanDetailPage: React.FC = () => {
         handleSavePlanDetails(updateAssignee);
     };
 
-    // Request approval functions
-    const openRequestApprovalModal = (cycleId: number) => {
-        setRequestApprovalCycleId(cycleId);
-        setReportUrl('');
-        setActionError(null);
-        setShowRequestApprovalModal(true);
-    };
-
+    // Request approval handler (local to integrate breach wizard)
     const handleRequestApproval = async () => {
         if (!requestApprovalCycleId || !reportUrl.trim()) return;
 
@@ -1263,466 +465,77 @@ const MonitoringPlanDetailPage: React.FC = () => {
                 fetchCycleDetail(requestApprovalCycleId);
             }
         } catch (err: any) {
-            setActionError(err.response?.data?.detail || 'Failed to request approval');
+            const errorDetail = err.response?.data?.detail;
+            // Check for breach justification required error
+            if (errorDetail?.error === 'breach_justification_required' && errorDetail?.missing_justifications) {
+                // Close the request approval modal and show breach wizard
+                setShowRequestApprovalModal(false);
+                setPendingBreaches(errorDetail.missing_justifications);
+                setShowBreachWizard(true);
+            } else {
+                setActionError(typeof errorDetail === 'string' ? errorDetail : errorDetail?.message || 'Failed to request approval');
+            }
         } finally {
             setActionLoading(false);
         }
     };
 
-    // ========== Results Entry Functions ==========
+    // Handle breach resolution completion
+    const handleBreachResolutionComplete = async (resolutions: BreachResolution[]) => {
+        if (!requestApprovalCycleId) return;
 
-    // Helper function to build form data for a specific model selection
-    const buildResultForms = (
-        metricsToShow: { metric_id: number; snapshot_id?: number; kpm_name: string; evaluation_type: string; yellow_min: number | null; yellow_max: number | null; red_min: number | null; red_max: number | null; qualitative_guidance: string | null }[],
-        currentResults: MonitoringResult[],
-        previousResults: MonitoringResult[],
-        previousPeriodLabel: string | null,
-        modelId: number | null
-    ): ResultFormData[] => {
-        return metricsToShow.map(m => {
-            // Find existing result for this metric AND model combination
-            const existing = currentResults.find((r: MonitoringResult) =>
-                r.plan_metric_id === m.metric_id && r.model_id === modelId
-            );
-
-            // Find previous cycle's result for this metric AND model
-            const previousResult = previousResults.find((r: MonitoringResult) =>
-                r.plan_metric_id === m.metric_id && r.model_id === modelId
-            );
-
-            // Determine if this was a skipped metric (has narrative but no value)
-            const wasSkipped = existing &&
-                existing.numeric_value === null &&
-                existing.outcome_value === null &&
-                existing.narrative;
-
-            return {
-                metric_id: m.metric_id,
-                snapshot_id: m.snapshot_id,
-                kpm_name: m.kpm_name,
-                evaluation_type: m.evaluation_type,
-                numeric_value: existing?.numeric_value?.toString() ?? '',
-                outcome_value_id: existing?.outcome_value?.value_id ?? null,
-                narrative: existing?.narrative ?? '',
-                yellow_min: m.yellow_min,
-                yellow_max: m.yellow_max,
-                red_min: m.red_min,
-                red_max: m.red_max,
-                qualitative_guidance: m.qualitative_guidance,
-                calculatedOutcome: existing?.calculated_outcome ?? null,
-                existingResultId: existing?.result_id ?? null,
-                dirty: false,
-                skipped: !!wasSkipped,
-                // Inline trend context
-                previousValue: previousResult?.numeric_value ?? null,
-                previousOutcome: previousResult?.calculated_outcome ?? null,
-                previousPeriod: previousPeriodLabel,
-                // Model-specific
-                model_id: modelId
-            };
-        });
-    };
-
-    const openResultsEntry = async (cycle: MonitoringCycle) => {
-        setResultsEntryCycle(cycle);
-        setShowResultsModal(true);
-        setLoadingResults(true);
-        setResultsError(null);
+        setBreachResolutionLoading(true);
 
         try {
-            // Fetch outcome values for qualitative selection
-            const outcomeResponse = await api.get('/taxonomies/');
-            const taxonomies = outcomeResponse.data;
-            const qualitativeOutcomeTax = taxonomies.find((t: { name: string }) => t.name === 'Qualitative Outcome');
-            if (qualitativeOutcomeTax) {
-                // GET /taxonomies/{id} returns the taxonomy with values included
-                const taxDetailResponse = await api.get(`/taxonomies/${qualitativeOutcomeTax.taxonomy_id}`);
-                const values = taxDetailResponse.data.values || [];
-                setOutcomeValues(values.filter((v: OutcomeValue & { is_active: boolean }) => v.is_active));
-            }
-
-            // Fetch existing results for this cycle (ALL results, regardless of model)
-            const resultsResponse = await api.get(`/monitoring/cycles/${cycle.cycle_id}/results`);
-            const allResults: MonitoringResult[] = resultsResponse.data;
-            setAllCycleResults(allResults);
-
-            // Determine which metrics to show
-            let metricsToShow: { metric_id: number; snapshot_id?: number; kpm_name: string; evaluation_type: string; yellow_min: number | null; yellow_max: number | null; red_min: number | null; red_max: number | null; qualitative_guidance: string | null }[] = [];
-
-            // If cycle has a locked version, use the metric snapshots
-            if (cycle.plan_version_id) {
-                const versionResponse = await api.get(`/monitoring/plans/${id}/versions/${cycle.plan_version_id}`);
-                setVersionDetail(versionResponse.data);
-                metricsToShow = versionResponse.data.metric_snapshots.map((s: MetricSnapshot) => ({
-                    metric_id: s.original_metric_id ?? s.snapshot_id,  // Use original_metric_id for result submission
-                    snapshot_id: s.snapshot_id,
-                    kpm_name: s.kpm_name,
-                    evaluation_type: s.evaluation_type,
-                    yellow_min: s.yellow_min,
-                    yellow_max: s.yellow_max,
-                    red_min: s.red_min,
-                    red_max: s.red_max,
-                    qualitative_guidance: s.qualitative_guidance
-                }));
-            } else if (plan?.metrics) {
-                // Use live plan metrics (before version lock)
-                setVersionDetail(null);
-                metricsToShow = plan.metrics.filter(m => m.is_active).map(m => ({
-                    metric_id: m.metric_id,
-                    kpm_name: m.kpm?.name || 'Unknown',
-                    evaluation_type: m.kpm?.evaluation_type || 'Quantitative',
-                    yellow_min: m.yellow_min,
-                    yellow_max: m.yellow_max,
-                    red_min: m.red_min,
-                    red_max: m.red_max,
-                    qualitative_guidance: m.qualitative_guidance
-                }));
-            }
-
-            // Find previous approved cycle for trend context
-            const previousApprovedCycle = cycles.find(c =>
-                c.status === 'APPROVED' &&
-                c.period_end_date < cycle.period_end_date
-            );
-            let previousResults: MonitoringResult[] = [];
-            let previousPeriodLabel: string | null = null;
-
-            if (previousApprovedCycle) {
-                try {
-                    const prevResultsResponse = await api.get(`/monitoring/cycles/${previousApprovedCycle.cycle_id}/results`);
-                    previousResults = prevResultsResponse.data;
-                    previousPeriodLabel = formatPeriod(previousApprovedCycle.period_start_date, previousApprovedCycle.period_end_date);
-                } catch {
-                    // Silently fail - previous context is optional
-                }
-            }
-
-            // Determine initial model selection:
-            // - If plan has only 1 model, pre-select that model
-            // - If plan has multiple models, start with null (plan-level)
-            const planModels = plan?.models || [];
-            const initialModelId = planModels.length === 1 ? planModels[0].model_id : null;
-            setSelectedResultsModel(initialModelId);
-
-            // Build form data for the initial model selection
-            const forms = buildResultForms(metricsToShow, allResults, previousResults, previousPeriodLabel, initialModelId);
-            setResultForms(forms);
-
-            // Store metrics for model switching (stored in a ref-like way via closure)
-            (window as any).__resultsMetrics = metricsToShow;
-            (window as any).__previousResults = previousResults;
-            (window as any).__previousPeriodLabel = previousPeriodLabel;
-        } catch (err: any) {
-            setResultsError(err.response?.data?.detail || 'Failed to load results data');
-        } finally {
-            setLoadingResults(false);
-        }
-    };
-
-    // Handler for model selection change in results entry
-    const handleResultsModelChange = (modelId: number | null) => {
-        setSelectedResultsModel(modelId);
-
-        // Rebuild forms for the new model selection
-        const metricsToShow = (window as any).__resultsMetrics || [];
-        const previousResults = (window as any).__previousResults || [];
-        const previousPeriodLabel = (window as any).__previousPeriodLabel || null;
-
-        const forms = buildResultForms(metricsToShow, allCycleResults, previousResults, previousPeriodLabel, modelId);
-        setResultForms(forms);
-    };
-
-    const calculateOutcome = (value: number, metric: ResultFormData): string => {
-        // Check red thresholds first (highest severity)
-        if (metric.red_min !== null && value < metric.red_min) return 'RED';
-        if (metric.red_max !== null && value > metric.red_max) return 'RED';
-        // Check yellow thresholds
-        if (metric.yellow_min !== null && value < metric.yellow_min) return 'YELLOW';
-        if (metric.yellow_max !== null && value > metric.yellow_max) return 'YELLOW';
-        // Passed all checks
-        return 'GREEN';
-    };
-
-    const handleResultChange = (index: number, field: string, value: string | number | null) => {
-        setResultForms(prev => {
-            const updated = [...prev];
-            const form = { ...updated[index], [field]: value, dirty: true };
-
-            // Calculate outcome for quantitative metrics
-            if (form.evaluation_type === 'Quantitative' && field === 'numeric_value') {
-                if (value !== '' && value !== null) {
-                    const numValue = parseFloat(value as string);
-                    if (!isNaN(numValue)) {
-                        form.calculatedOutcome = calculateOutcome(numValue, form);
-                    } else {
-                        form.calculatedOutcome = null;
-                    }
-                } else {
-                    // Value cleared - also clear the outcome
-                    form.calculatedOutcome = null;
-                }
-            }
-
-            // For qualitative/outcome-only, update calculated outcome from selected value
-            if (field === 'outcome_value_id') {
-                if (value !== null) {
-                    const selectedOutcome = outcomeValues.find(o => o.value_id === value);
-                    if (selectedOutcome) {
-                        form.calculatedOutcome = selectedOutcome.code;
-                    }
-                } else {
-                    // Outcome cleared
-                    form.calculatedOutcome = null;
-                }
-            }
-
-            updated[index] = form;
-            return updated;
-        });
-    };
-
-    const handleSkipToggle = (index: number, isSkipped: boolean) => {
-        setResultForms(prev => {
-            const updated = [...prev];
-            const form = { ...updated[index], skipped: isSkipped, dirty: true };
-
-            if (isSkipped) {
-                // Clear value when skip is checked
-                form.numeric_value = '';
-                form.outcome_value_id = null;
-                form.calculatedOutcome = null;
-            }
-
-            updated[index] = form;
-            return updated;
-        });
-    };
-
-    const saveResult = async (index: number) => {
-        const form = resultForms[index];
-        if (!resultsEntryCycle) return;
-
-        // Validate skipped metrics require explanation
-        if (form.skipped && !form.narrative.trim()) {
-            setResultsError('An explanation is required when skipping a metric');
-            return;
-        }
-
-        // Validate qualitative requires narrative
-        if (form.evaluation_type === 'Qualitative' && !form.narrative.trim()) {
-            setResultsError('Narrative is required for qualitative metrics');
-            return;
-        }
-
-        setSavingResult(index);
-        setResultsError(null);
-
-        try {
-            const payload: Record<string, unknown> = {
-                plan_metric_id: form.metric_id,
-                model_id: form.model_id,  // null for plan-level, number for model-specific
-                narrative: form.narrative || null
-            };
-
-            if (form.evaluation_type === 'Quantitative') {
-                payload.numeric_value = form.numeric_value ? parseFloat(form.numeric_value) : null;
-            } else {
-                payload.outcome_value_id = form.outcome_value_id;
-            }
-
-            let savedResultId = form.existingResultId;
-            if (form.existingResultId) {
-                // Update existing
-                await api.patch(`/monitoring/results/${form.existingResultId}`, payload);
-            } else {
-                // Create new
-                const response = await api.post(`/monitoring/cycles/${resultsEntryCycle.cycle_id}/results`, payload);
-                savedResultId = response.data.result_id;
-                // Update the form with the new result ID
-                setResultForms(prev => {
-                    const updated = [...prev];
-                    updated[index] = { ...updated[index], existingResultId: response.data.result_id, dirty: false };
-                    return updated;
+            // Save each breach narrative
+            for (const resolution of resolutions) {
+                await api.patch(`/monitoring/cycles/${requestApprovalCycleId}/results/${resolution.result_id}`, {
+                    narrative: resolution.narrative
                 });
             }
 
-            // Mark as saved
-            setResultForms(prev => {
-                const updated = [...prev];
-                updated[index] = { ...updated[index], dirty: false };
-                return updated;
+            // Close the breach wizard
+            setShowBreachWizard(false);
+            setPendingBreaches([]);
+
+            // Retry request approval
+            await api.post(`/monitoring/cycles/${requestApprovalCycleId}/request-approval`, {
+                report_url: reportUrl.trim()
             });
 
-            // Update allCycleResults to keep state in sync for model switching
-            setAllCycleResults(prev => {
-                // Remove any existing result for this metric/model combination
-                const filtered = prev.filter((r: MonitoringResult) =>
-                    !(r.plan_metric_id === form.metric_id && r.model_id === form.model_id)
-                );
-                // Add the new/updated result (used for local state tracking when switching models)
-                const newResult: MonitoringResult = {
-                    result_id: savedResultId!,
-                    cycle_id: resultsEntryCycle.cycle_id,
-                    plan_metric_id: form.metric_id,
-                    model_id: form.model_id,
-                    numeric_value: form.evaluation_type === 'Quantitative' && form.numeric_value ? parseFloat(form.numeric_value) : null,
-                    outcome_value: form.outcome_value_id ? { value_id: form.outcome_value_id, code: '', label: '' } : null,
-                    narrative: form.narrative || null,
-                    calculated_outcome: form.calculatedOutcome,
-                    entered_by: { user_id: 0, email: '', full_name: '' },  // Placeholder - actual value from server
-                    entered_at: new Date().toISOString()
-                };
-                return [...filtered, newResult];
-            });
-
-            // Refresh cycles to update counts
+            // Success - clear state and refresh
+            setRequestApprovalCycleId(null);
+            setReportUrl('');
             fetchCycles();
+            if (selectedCycle?.cycle_id === requestApprovalCycleId) {
+                fetchCycleDetail(requestApprovalCycleId);
+            }
         } catch (err: any) {
-            setResultsError(err.response?.data?.detail || 'Failed to save result');
+            const errorDetail = err.response?.data?.detail;
+            // If there are still more breaches (somehow), show them
+            if (errorDetail?.error === 'breach_justification_required' && errorDetail?.missing_justifications) {
+                setPendingBreaches(errorDetail.missing_justifications);
+            } else {
+                setShowBreachWizard(false);
+                setPendingBreaches([]);
+                setActionError(typeof errorDetail === 'string' ? errorDetail : errorDetail?.message || 'Failed to request approval');
+            }
         } finally {
-            setSavingResult(null);
+            setBreachResolutionLoading(false);
         }
     };
 
-    const deleteResult = async (index: number) => {
-        const form = resultForms[index];
-        if (!form.existingResultId) return;
-
-        if (!window.confirm('Are you sure you want to delete this result? This cannot be undone.')) {
-            return;
-        }
-
-        setDeletingResult(index);
-        setResultsError(null);
-
-        try {
-            await api.delete(`/monitoring/results/${form.existingResultId}`);
-
-            // Reset the form to empty state
-            setResultForms(prev => {
-                const updated = [...prev];
-                updated[index] = {
-                    ...updated[index],
-                    existingResultId: null,
-                    numeric_value: '',
-                    outcome_value_id: null,
-                    narrative: '',
-                    calculatedOutcome: null,
-                    skipped: false,
-                    dirty: false
-                };
-                return updated;
-            });
-
-            // Refresh cycles to update counts
-            fetchCycles();
-        } catch (err: any) {
-            setResultsError(err.response?.data?.detail || 'Failed to delete result');
-        } finally {
-            setDeletingResult(null);
-        }
+    const handleBreachResolutionCancel = () => {
+        setShowBreachWizard(false);
+        setPendingBreaches([]);
+        // Re-open the request approval modal
+        setShowRequestApprovalModal(true);
     };
 
-    const getOutcomeColor = (outcome: string | null): string => {
-        switch (outcome) {
-            case 'GREEN': return 'bg-green-100 text-green-800 border-green-300';
-            case 'YELLOW': return 'bg-yellow-100 text-yellow-800 border-yellow-300';
-            case 'RED': return 'bg-red-100 text-red-800 border-red-300';
-            default: return 'bg-gray-100 text-gray-600 border-gray-300';
-        }
-    };
-
-    const getOutcomeIcon = (outcome: string | null): string => {
-        switch (outcome) {
-            case 'GREEN': return '●';
-            case 'YELLOW': return '●';
-            case 'RED': return '●';
-            default: return '○';
-        }
-    };
+    // ========== Page-specific Helper Functions ==========
 
     const canEnterResults = (cycle: MonitoringCycle): boolean => {
         return ['DATA_COLLECTION', 'UNDER_REVIEW'].includes(cycle.status);
-    };
-
-    const closeResultsModal = () => {
-        setShowResultsModal(false);
-        setResultsEntryCycle(null);
-        setVersionDetail(null);
-        setResultForms([]);
-        setResultsError(null);
-    };
-
-    // ========== Approval Functions ==========
-
-    const openApprovalModal = (approval: CycleApproval, type: 'approve' | 'reject' | 'void') => {
-        setSelectedApproval(approval);
-        setApprovalModalType(type);
-        setApprovalComments('');
-        setApprovalError(null);
-    };
-
-    const closeApprovalModal = () => {
-        setApprovalModalType(null);
-        setSelectedApproval(null);
-        setApprovalComments('');
-        setApprovalError(null);
-    };
-
-    const handleApprovalSubmit = async () => {
-        if (!selectedApproval || !selectedCycle || !approvalModalType) return;
-
-        // Validate rejection/void requires comments
-        if ((approvalModalType === 'reject' || approvalModalType === 'void') && !approvalComments.trim()) {
-            setApprovalError(`${approvalModalType === 'reject' ? 'Rejection reason' : 'Void reason'} is required`);
-            return;
-        }
-
-        setApprovalLoading(true);
-        setApprovalError(null);
-
-        try {
-            const endpoint = `/monitoring/cycles/${selectedCycle.cycle_id}/approvals/${selectedApproval.approval_id}/${approvalModalType}`;
-            const payload = approvalModalType === 'void'
-                ? { void_reason: approvalComments }
-                : { comments: approvalComments || null };
-
-            await api.post(endpoint, payload);
-
-            // Refresh the cycle detail to get updated approvals
-            await fetchCycleDetail(selectedCycle.cycle_id);
-
-            // Also refresh the cycles list to update status if it changed
-            fetchCycles();
-
-            closeApprovalModal();
-        } catch (err: any) {
-            setApprovalError(err.response?.data?.detail || `Failed to ${approvalModalType} approval`);
-        } finally {
-            setApprovalLoading(false);
-        }
-    };
-
-    const canApprove = (approval: CycleApproval): boolean => {
-        // Use server-calculated permission which checks:
-        // - Cycle is in PENDING_APPROVAL status
-        // - Approval is pending and not voided
-        // - User has permission (Admin, team member for Global, regional approver for Regional)
-        return approval.can_approve;
-    };
-
-    const canVoid = (approval: CycleApproval): boolean => {
-        // Admin only, and only for pending approvals
-        if (user?.role !== 'Admin') return false;
-        if (approval.approval_status === 'Approved') return false;
-        if (approval.voided_at) return false;
-        return true;
-    };
-
-    const getApprovalProgress = (approvals: CycleApproval[]): { completed: number; total: number } => {
-        const required = approvals.filter(a => a.is_required && !a.voided_at);
-        const completed = required.filter(a => a.approval_status === 'Approved');
-        return { completed: completed.length, total: required.length };
     };
 
     const getStatusBadgeColor = (status: string) => {
@@ -1746,15 +559,6 @@ const MonitoringPlanDetailPage: React.FC = () => {
 
     const formatStatus = (status: string) => {
         return status.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
-    };
-
-    const formatPeriod = (start: string, end: string) => {
-        const startDate = new Date(start);
-        const endDate = new Date(end);
-        const startMonth = startDate.toLocaleString('default', { month: 'short' });
-        const endMonth = endDate.toLocaleString('default', { month: 'short' });
-        const year = endDate.getFullYear();
-        return `${startMonth} - ${endMonth} ${year}`;
     };
 
     // Permission checks based on user_permissions from API
@@ -2024,20 +828,20 @@ const MonitoringPlanDetailPage: React.FC = () => {
                                         </div>
                                         <div className="flex flex-col gap-2">
                                             {canEnterResults(currentCycle) && (
-                                                <button
-                                                    onClick={() => openResultsEntry(currentCycle)}
+                                                <Link
+                                                    to={`/monitoring/cycles/${currentCycle.cycle_id}`}
                                                     className="px-4 py-2 rounded text-sm font-medium bg-green-600 text-white hover:bg-green-700"
                                                 >
                                                     Enter Results
-                                                </button>
+                                                </Link>
                                             )}
                                             {currentCycle.status === 'PENDING_APPROVAL' && (
-                                                <button
-                                                    onClick={() => fetchCycleDetail(currentCycle.cycle_id)}
+                                                <Link
+                                                    to={`/monitoring/cycles/${currentCycle.cycle_id}`}
                                                     className="px-4 py-2 rounded text-sm font-medium bg-purple-600 text-white hover:bg-purple-700"
                                                 >
                                                     View Approvals
-                                                </button>
+                                                </Link>
                                             )}
                                             {getAvailableActions(currentCycle).slice(0, 1).map((action) => (
                                                 <button
@@ -2856,20 +1660,12 @@ const MonitoringPlanDetailPage: React.FC = () => {
                                                         {actionLoading ? 'Processing...' : action.label}
                                                     </button>
                                                 ))}
-                                                {canEnterResults(currentCycle) && (
-                                                    <button
-                                                        onClick={() => openResultsEntry(currentCycle)}
-                                                        className="px-4 py-2 rounded text-sm font-medium bg-green-600 text-white hover:bg-green-700"
-                                                    >
-                                                        Enter Results
-                                                    </button>
-                                                )}
-                                                <button
-                                                    onClick={() => fetchCycleDetail(currentCycle.cycle_id)}
-                                                    className="px-4 py-2 rounded text-sm font-medium bg-gray-100 text-gray-700 hover:bg-gray-200"
+                                                <Link
+                                                    to={`/monitoring/cycles/${currentCycle.cycle_id}`}
+                                                    className={`px-4 py-2 rounded text-sm font-medium ${canEnterResults(currentCycle) ? 'bg-green-600 text-white hover:bg-green-700' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}
                                                 >
-                                                    View Details
-                                                </button>
+                                                    {canEnterResults(currentCycle) ? 'Enter Results' : 'View Details'}
+                                                </Link>
                                             </div>
                                         </div>
                                     </div>
@@ -2941,12 +1737,12 @@ const MonitoringPlanDetailPage: React.FC = () => {
                                                         )}
                                                     </td>
                                                     <td className="px-4 py-3 text-right space-x-2">
-                                                        <button
-                                                            onClick={() => fetchCycleDetail(cycle.cycle_id)}
+                                                        <Link
+                                                            to={`/monitoring/cycles/${cycle.cycle_id}`}
                                                             className="text-blue-600 hover:underline text-sm"
                                                         >
                                                             View
-                                                        </button>
+                                                        </Link>
                                                         <button
                                                             onClick={() => exportCycleCSV(cycle.cycle_id)}
                                                             disabled={exportingCycle === cycle.cycle_id}
@@ -3015,284 +1811,6 @@ const MonitoringPlanDetailPage: React.FC = () => {
                         </div>
                     )}
                 </div>
-
-                {/* Cycle Detail Modal */}
-                {selectedCycle && (
-                    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-                        <div className="bg-white rounded-lg shadow-xl w-full max-w-3xl max-h-[90vh] overflow-hidden">
-                            <div className="p-4 border-b flex justify-between items-center bg-gray-50">
-                                <h3 className="text-lg font-bold">
-                                    Cycle Details: {formatPeriod(selectedCycle.period_start_date, selectedCycle.period_end_date)}
-                                </h3>
-                                <button onClick={() => { setSelectedCycle(null); setEditingAssignee(false); }} className="text-gray-500 hover:text-gray-700">
-                                    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                                    </svg>
-                                </button>
-                            </div>
-
-                            <div className="p-6 overflow-y-auto max-h-[70vh]">
-                                {loadingCycleDetail ? (
-                                    <div className="text-center py-8">Loading...</div>
-                                ) : (
-                                    <div className="space-y-6">
-                                        {/* Status & Version */}
-                                        <div className="flex items-center gap-3 flex-wrap">
-                                            <span className={`px-3 py-1 rounded-full text-sm ${getStatusBadgeColor(selectedCycle.status)}`}>
-                                                {formatStatus(selectedCycle.status)}
-                                            </span>
-                                            {selectedCycle.plan_version ? (
-                                                <span className="px-3 py-1 rounded-full text-sm bg-blue-100 text-blue-800">
-                                                    Using Plan Version {selectedCycle.plan_version.version_number}
-                                                    {selectedCycle.plan_version.version_name && (
-                                                        <span className="ml-1">({selectedCycle.plan_version.version_name})</span>
-                                                    )}
-                                                </span>
-                                            ) : selectedCycle.status === 'PENDING' && plan?.active_version_number ? (
-                                                <span className="px-3 py-1 rounded-full text-sm bg-gray-100 text-gray-600 italic">
-                                                    Will use Version {plan.active_version_number} (current active)
-                                                </span>
-                                            ) : selectedCycle.status === 'PENDING' && !plan?.active_version_number ? (
-                                                <span className="px-3 py-1 rounded-full text-sm bg-amber-100 text-amber-800">
-                                                    No published version available
-                                                </span>
-                                            ) : null}
-                                            {selectedCycle.version_locked_at && (
-                                                <span className="px-3 py-1 rounded-full text-sm bg-gray-100 text-gray-600">
-                                                    Locked {selectedCycle.version_locked_at.split('T')[0]}
-                                                </span>
-                                            )}
-                                        </div>
-
-                                        {/* Details Grid */}
-                                        <div className="grid grid-cols-2 gap-4">
-                                            <div>
-                                                <label className="text-sm text-gray-500">Period</label>
-                                                <p className="font-medium">{selectedCycle.period_start_date} to {selectedCycle.period_end_date}</p>
-                                            </div>
-                                            <div>
-                                                <label className="text-sm text-gray-500">Submission Due</label>
-                                                <p className="font-medium">{selectedCycle.submission_due_date}</p>
-                                            </div>
-                                            <div>
-                                                <label className="text-sm text-gray-500">Report Due</label>
-                                                <p className="font-medium">{selectedCycle.report_due_date}</p>
-                                            </div>
-                                            <div>
-                                                <label className="text-sm text-gray-500">Assigned To</label>
-                                                {editingAssignee ? (
-                                                    <div className="flex items-center gap-2 mt-1">
-                                                        <select
-                                                            value={newAssigneeId || ''}
-                                                            onChange={(e) => setNewAssigneeId(e.target.value ? parseInt(e.target.value) : null)}
-                                                            className="flex-1 border border-gray-300 rounded px-2 py-1 text-sm"
-                                                            disabled={savingAssignee}
-                                                        >
-                                                            <option value="">Unassigned</option>
-                                                            {getAvailableAssignees().map(user => (
-                                                                <option key={user.user_id} value={user.user_id}>
-                                                                    {user.full_name}
-                                                                </option>
-                                                            ))}
-                                                        </select>
-                                                        <button
-                                                            onClick={handleSaveAssignee}
-                                                            disabled={savingAssignee}
-                                                            className="px-2 py-1 text-sm bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50"
-                                                        >
-                                                            {savingAssignee ? '...' : 'Save'}
-                                                        </button>
-                                                        <button
-                                                            onClick={cancelEditingAssignee}
-                                                            disabled={savingAssignee}
-                                                            className="px-2 py-1 text-sm text-gray-600 hover:text-gray-800"
-                                                        >
-                                                            Cancel
-                                                        </button>
-                                                    </div>
-                                                ) : (
-                                                    <div className="flex items-center gap-2">
-                                                        <p className="font-medium">{selectedCycle.assigned_to?.full_name || '-'}</p>
-                                                        {selectedCycle.status === 'DATA_COLLECTION' &&
-                                                         (plan?.user_permissions?.is_admin || plan?.user_permissions?.is_team_member) && (
-                                                            <button
-                                                                onClick={startEditingAssignee}
-                                                                className="text-blue-600 hover:text-blue-800 text-sm"
-                                                                title="Change assignee"
-                                                            >
-                                                                ✏️
-                                                            </button>
-                                                        )}
-                                                    </div>
-                                                )}
-                                            </div>
-                                            {selectedCycle.submitted_at && (
-                                                <div>
-                                                    <label className="text-sm text-gray-500">Submitted</label>
-                                                    <p className="font-medium">
-                                                        {selectedCycle.submitted_at.split('T')[0]} by {selectedCycle.submitted_by?.full_name || 'Unknown'}
-                                                    </p>
-                                                </div>
-                                            )}
-                                            {selectedCycle.completed_at && (
-                                                <div>
-                                                    <label className="text-sm text-gray-500">Completed</label>
-                                                    <p className="font-medium">
-                                                        {selectedCycle.completed_at.split('T')[0]} by {selectedCycle.completed_by?.full_name || 'Unknown'}
-                                                    </p>
-                                                </div>
-                                            )}
-                                        </div>
-
-                                        {/* Notes */}
-                                        {selectedCycle.notes && (
-                                            <div>
-                                                <label className="text-sm text-gray-500">Notes</label>
-                                                <p className="mt-1 text-gray-700">{selectedCycle.notes}</p>
-                                            </div>
-                                        )}
-
-                                        {/* Report Document for Approvers */}
-                                        {selectedCycle.report_url && (
-                                            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
-                                                <div className="flex items-center gap-3">
-                                                    <span className="text-2xl">📄</span>
-                                                    <div className="flex-1">
-                                                        <h4 className="font-semibold text-blue-800">Final Monitoring Report</h4>
-                                                        <p className="text-sm text-blue-600 mt-1">
-                                                            Please review the report before providing your approval.
-                                                        </p>
-                                                    </div>
-                                                    <a
-                                                        href={selectedCycle.report_url}
-                                                        target="_blank"
-                                                        rel="noopener noreferrer"
-                                                        className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium flex items-center gap-2"
-                                                    >
-                                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-                                                        </svg>
-                                                        Open Report
-                                                    </a>
-                                                </div>
-                                            </div>
-                                        )}
-
-                                        {/* Approvals */}
-                                        {selectedCycle.approvals && selectedCycle.approvals.length > 0 && (
-                                            <div>
-                                                <div className="flex items-center justify-between mb-3">
-                                                    <h4 className="font-semibold">Approvals</h4>
-                                                    {/* Progress Indicator */}
-                                                    {(() => {
-                                                        const progress = getApprovalProgress(selectedCycle.approvals);
-                                                        return (
-                                                            <div className="flex items-center gap-2">
-                                                                <span className={`text-sm ${
-                                                                    progress.completed === progress.total
-                                                                        ? 'text-green-600 font-medium'
-                                                                        : 'text-gray-600'
-                                                                }`}>
-                                                                    {progress.completed} / {progress.total} Complete
-                                                                </span>
-                                                                <div className="w-24 bg-gray-200 rounded-full h-2">
-                                                                    <div
-                                                                        className={`h-2 rounded-full transition-all ${
-                                                                            progress.completed === progress.total
-                                                                                ? 'bg-green-500'
-                                                                                : 'bg-blue-500'
-                                                                        }`}
-                                                                        style={{ width: progress.total > 0 ? `${(progress.completed / progress.total) * 100}%` : '0%' }}
-                                                                    />
-                                                                </div>
-                                                            </div>
-                                                        );
-                                                    })()}
-                                                </div>
-                                                <div className="space-y-2">
-                                                    {selectedCycle.approvals.map((approval) => (
-                                                        <div key={approval.approval_id} className={`p-3 rounded-lg border ${
-                                                            approval.approval_status === 'Approved' ? 'bg-green-50 border-green-200' :
-                                                            approval.approval_status === 'Rejected' ? 'bg-red-50 border-red-200' :
-                                                            approval.voided_at ? 'bg-gray-50 border-gray-200' :
-                                                            'bg-yellow-50 border-yellow-200'
-                                                        }`}>
-                                                            <div className="flex items-center justify-between">
-                                                                <div className="flex-1">
-                                                                    <div className="flex items-center gap-2">
-                                                                        <span className="font-medium">
-                                                                            {approval.approval_type === 'Global' ? 'Global Approval' : `${approval.region_name || 'Regional'} Approval`}
-                                                                        </span>
-                                                                        <span className={`px-2 py-0.5 rounded text-xs ${
-                                                                            approval.approval_status === 'Approved' ? 'bg-green-100 text-green-800' :
-                                                                            approval.approval_status === 'Rejected' ? 'bg-red-100 text-red-800' :
-                                                                            approval.voided_at ? 'bg-gray-100 text-gray-600' :
-                                                                            'bg-yellow-100 text-yellow-800'
-                                                                        }`}>
-                                                                            {approval.voided_at ? 'Voided' : approval.approval_status}
-                                                                        </span>
-                                                                    </div>
-                                                                    {/* Approval details */}
-                                                                    {approval.approver_name && (
-                                                                        <p className="text-sm text-gray-600 mt-1">
-                                                                            {approval.approval_status === 'Approved' ? 'Approved' : 'Processed'} by {approval.approver_name}
-                                                                            {approval.approved_at && ` on ${approval.approved_at.split('T')[0]}`}
-                                                                        </p>
-                                                                    )}
-                                                                    {approval.comments && (
-                                                                        <p className="text-sm text-gray-700 mt-1 italic">"{approval.comments}"</p>
-                                                                    )}
-                                                                    {approval.voided_at && approval.void_reason && (
-                                                                        <p className="text-sm text-gray-600 mt-1">
-                                                                            <span className="font-medium">Void reason:</span> {approval.void_reason}
-                                                                        </p>
-                                                                    )}
-                                                                </div>
-                                                                {/* Action buttons */}
-                                                                <div className="flex items-center gap-2 ml-4">
-                                                                    {canApprove(approval) && (
-                                                                        <>
-                                                                            <button
-                                                                                onClick={() => openApprovalModal(approval, 'approve')}
-                                                                                className="px-3 py-1 text-sm bg-green-600 text-white rounded hover:bg-green-700"
-                                                                            >
-                                                                                Approve
-                                                                            </button>
-                                                                            <button
-                                                                                onClick={() => openApprovalModal(approval, 'reject')}
-                                                                                className="px-3 py-1 text-sm bg-red-600 text-white rounded hover:bg-red-700"
-                                                                            >
-                                                                                Reject
-                                                                            </button>
-                                                                        </>
-                                                                    )}
-                                                                    {canVoid(approval) && (
-                                                                        <button
-                                                                            onClick={() => openApprovalModal(approval, 'void')}
-                                                                            className="px-3 py-1 text-sm bg-gray-600 text-white rounded hover:bg-gray-700"
-                                                                        >
-                                                                            Void
-                                                                        </button>
-                                                                    )}
-                                                                </div>
-                                                            </div>
-                                                        </div>
-                                                    ))}
-                                                </div>
-                                            </div>
-                                        )}
-                                    </div>
-                                )}
-                            </div>
-
-                            <div className="p-4 border-t bg-gray-50 flex justify-end">
-                                <button onClick={() => { setSelectedCycle(null); setEditingAssignee(false); }} className="btn-secondary">
-                                    Close
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-                )}
 
                 {/* Create Cycle Modal */}
                 {showCreateModal && (
@@ -3363,603 +1881,6 @@ const MonitoringPlanDetailPage: React.FC = () => {
                                     </button>
                                 </div>
                             </form>
-                        </div>
-                    </div>
-                )}
-
-                {/* Results Entry Modal */}
-                {showResultsModal && resultsEntryCycle && (
-                    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-                        <div className="bg-white rounded-lg shadow-xl w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col">
-                            <div className="p-4 border-b bg-gray-50 flex justify-between items-center">
-                                <div>
-                                    <h3 className="text-lg font-bold">Enter Results</h3>
-                                    <p className="text-sm text-gray-600">
-                                        {formatPeriod(resultsEntryCycle.period_start_date, resultsEntryCycle.period_end_date)}
-                                    </p>
-                                </div>
-                                <button onClick={closeResultsModal} className="text-gray-500 hover:text-gray-700">
-                                    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                                    </svg>
-                                </button>
-                            </div>
-
-                            {/* Version Info Banner */}
-                            {versionDetail && (
-                                <div className="px-4 py-3 bg-blue-50 border-b border-blue-200">
-                                    <div className="flex items-center gap-2">
-                                        <span className="text-blue-600 font-medium">
-                                            Using v{versionDetail.version_number} metrics configuration
-                                        </span>
-                                        {resultsEntryCycle.version_locked_at && (
-                                            <span className="text-blue-500 text-sm">
-                                                (locked {resultsEntryCycle.version_locked_at.split('T')[0]})
-                                            </span>
-                                        )}
-                                    </div>
-                                    <p className="text-sm text-blue-600">
-                                        Effective: {versionDetail.effective_date} | {versionDetail.metric_snapshots.length} metrics
-                                    </p>
-                                </div>
-                            )}
-
-                            {!versionDetail && !loadingResults && (
-                                <div className="px-4 py-3 bg-amber-50 border-b border-amber-200">
-                                    <p className="text-amber-700 text-sm">
-                                        Using live plan metrics (not yet locked to a version)
-                                    </p>
-                                </div>
-                            )}
-
-                            {/* Model Selector - Only show when plan has multiple models */}
-                            {plan && plan.models && plan.models.length > 1 && (
-                                <div className="px-4 py-3 bg-gray-50 border-b border-gray-200">
-                                    <div className="flex flex-col gap-2">
-                                        <div className="flex items-center gap-3">
-                                            <label className="text-sm font-medium text-gray-700">
-                                                Enter Results For:
-                                            </label>
-                                            <select
-                                                value={selectedResultsModel === null ? 'plan-level' : selectedResultsModel}
-                                                onChange={(e) => {
-                                                    const value = e.target.value;
-                                                    handleResultsModelChange(value === 'plan-level' ? null : parseInt(value));
-                                                }}
-                                                className="border rounded-md px-3 py-1.5 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                                            >
-                                                <option
-                                                    value="plan-level"
-                                                    disabled={existingResultsMode === 'model-specific'}
-                                                >
-                                                    Plan Level (All Models){existingResultsMode === 'model-specific' ? ' - locked' : ''}
-                                                </option>
-                                                {plan.models.map((model: Model) => (
-                                                    <option
-                                                        key={model.model_id}
-                                                        value={model.model_id}
-                                                        disabled={existingResultsMode === 'plan-level'}
-                                                    >
-                                                        {model.model_name} (ID: {model.model_id}){existingResultsMode === 'plan-level' ? ' - locked' : ''}
-                                                    </option>
-                                                ))}
-                                            </select>
-                                            {/* Mode indicator badge */}
-                                            {existingResultsMode !== 'none' && (
-                                                <span className={`px-2 py-0.5 text-xs rounded-full ${
-                                                    existingResultsMode === 'plan-level'
-                                                        ? 'bg-blue-100 text-blue-700'
-                                                        : 'bg-purple-100 text-purple-700'
-                                                }`}>
-                                                    {existingResultsMode === 'plan-level' ? 'Plan-level mode' : 'Model-specific mode'}
-                                                </span>
-                                            )}
-                                        </div>
-                                        {/* Contextual guidance */}
-                                        <p className="text-xs text-gray-500">
-                                            {existingResultsMode === 'none' ? (
-                                                selectedResultsModel === null
-                                                    ? 'Results will apply to all models in this plan. Once saved, you cannot switch to model-specific results.'
-                                                    : `Results specific to ${plan.models.find((m: Model) => m.model_id === selectedResultsModel)?.model_name}. Once saved, you cannot switch to plan-level results.`
-                                            ) : existingResultsMode === 'plan-level' ? (
-                                                'This cycle has plan-level results. Model-specific entry is disabled to maintain consistency.'
-                                            ) : (
-                                                'This cycle has model-specific results. Plan-level entry is disabled to maintain consistency.'
-                                            )}
-                                        </p>
-                                    </div>
-                                </div>
-                            )}
-
-                            {/* Error display */}
-                            {resultsError && (
-                                <div className="px-4 py-3 bg-red-100 border-b border-red-300">
-                                    <p className="text-red-700 text-sm">{resultsError}</p>
-                                </div>
-                            )}
-
-                            {/* Metrics List */}
-                            <div className="flex-1 overflow-y-auto p-4">
-                                {loadingResults ? (
-                                    <div className="text-center py-12 text-gray-500">Loading metrics...</div>
-                                ) : resultForms.length === 0 ? (
-                                    <div className="text-center py-12 text-gray-500">No metrics configured for this plan.</div>
-                                ) : (
-                                    <div className="space-y-6">
-                                        {/* Progress indicator */}
-                                        <div className="flex items-center gap-4 mb-4">
-                                            <span className="text-sm text-gray-600">
-                                                Progress{plan && plan.models && plan.models.length > 1 && selectedResultsModel !== null
-                                                    ? ` (${plan.models.find((m: Model) => m.model_id === selectedResultsModel)?.model_name})`
-                                                    : plan && plan.models && plan.models.length > 1
-                                                    ? ' (Plan Level)'
-                                                    : ''}: {resultForms.filter(f => f.existingResultId !== null).length} / {resultForms.length} entered
-                                            </span>
-                                            <div className="flex-1 bg-gray-200 rounded-full h-2">
-                                                <div
-                                                    className="bg-green-500 h-2 rounded-full transition-all"
-                                                    style={{ width: `${(resultForms.filter(f => f.existingResultId !== null).length / resultForms.length) * 100}%` }}
-                                                />
-                                            </div>
-                                        </div>
-
-                                        {resultForms.map((form, index) => (
-                                            <div key={form.metric_id} className="border rounded-lg p-4 bg-white shadow-sm">
-                                                <div className="flex justify-between items-start mb-4">
-                                                    <div>
-                                                        <h4 className="font-semibold text-lg">{form.kpm_name}</h4>
-                                                        <span className={`inline-block mt-1 px-2 py-0.5 text-xs rounded-full ${
-                                                            form.evaluation_type === 'Quantitative' ? 'bg-blue-100 text-blue-800' :
-                                                            form.evaluation_type === 'Qualitative' ? 'bg-purple-100 text-purple-800' :
-                                                            'bg-green-100 text-green-800'
-                                                        }`}>
-                                                            {form.evaluation_type}
-                                                        </span>
-                                                    </div>
-                                                    <div className={`px-3 py-1.5 rounded-lg border text-sm font-medium ${getOutcomeColor(form.calculatedOutcome)}`}>
-                                                        <span className="mr-1">{getOutcomeIcon(form.calculatedOutcome)}</span>
-                                                        {form.calculatedOutcome || 'Not Set'}
-                                                    </div>
-                                                </div>
-
-                                                {/* Quantitative Metric */}
-                                                {form.evaluation_type === 'Quantitative' && (
-                                                    <div className="space-y-3">
-                                                        {/* Threshold Visualization */}
-                                                        <div className="bg-gray-50 rounded-lg p-3">
-                                                            <div className="text-sm text-gray-600 mb-2">Thresholds:</div>
-                                                            <div className="flex flex-wrap gap-2">
-                                                                <span className="inline-flex items-center px-2 py-1 bg-green-100 text-green-800 rounded text-xs">
-                                                                    <span className="w-2 h-2 rounded-full bg-green-500 mr-1"></span>
-                                                                    Green: {form.yellow_min !== null || form.yellow_max !== null ? (
-                                                                        <>
-                                                                            {form.yellow_min !== null ? `>${form.yellow_min}` : ''}
-                                                                            {form.yellow_min !== null && form.yellow_max !== null ? ' and ' : ''}
-                                                                            {form.yellow_max !== null ? `<${form.yellow_max}` : ''}
-                                                                        </>
-                                                                    ) : 'Default'}
-                                                                </span>
-                                                                {(form.yellow_min !== null || form.yellow_max !== null) && (
-                                                                    <span className="inline-flex items-center px-2 py-1 bg-yellow-100 text-yellow-800 rounded text-xs">
-                                                                        <span className="w-2 h-2 rounded-full bg-yellow-500 mr-1"></span>
-                                                                        Yellow: {form.yellow_min ?? '-'} to {form.yellow_max ?? '-'}
-                                                                    </span>
-                                                                )}
-                                                                {(form.red_min !== null || form.red_max !== null) && (
-                                                                    <span className="inline-flex items-center px-2 py-1 bg-red-100 text-red-800 rounded text-xs">
-                                                                        <span className="w-2 h-2 rounded-full bg-red-500 mr-1"></span>
-                                                                        Red: {form.red_min !== null ? `<${form.red_min}` : ''}{form.red_min !== null && form.red_max !== null ? ' or ' : ''}{form.red_max !== null ? `>${form.red_max}` : ''}
-                                                                    </span>
-                                                                )}
-                                                            </div>
-                                                        </div>
-
-                                                        {/* Previous Value Context */}
-                                                        {form.previousValue !== null && (
-                                                            <div className="bg-blue-50 rounded-lg p-3 flex items-center justify-between">
-                                                                <div>
-                                                                    <span className="text-xs text-blue-600 font-medium">Previous Cycle</span>
-                                                                    {form.previousPeriod && (
-                                                                        <span className="text-xs text-blue-500 ml-1">({form.previousPeriod})</span>
-                                                                    )}
-                                                                </div>
-                                                                <div className="flex items-center gap-2">
-                                                                    <span className="text-sm font-medium text-blue-900">{form.previousValue.toFixed(4)}</span>
-                                                                    {form.previousOutcome && (
-                                                                        <span className={`px-2 py-0.5 rounded text-xs font-medium ${
-                                                                            form.previousOutcome === 'GREEN' ? 'bg-green-100 text-green-800' :
-                                                                            form.previousOutcome === 'YELLOW' ? 'bg-yellow-100 text-yellow-800' :
-                                                                            form.previousOutcome === 'RED' ? 'bg-red-100 text-red-800' :
-                                                                            'bg-gray-100 text-gray-800'
-                                                                        }`}>
-                                                                            {form.previousOutcome}
-                                                                        </span>
-                                                                    )}
-                                                                </div>
-                                                            </div>
-                                                        )}
-
-                                                        {/* Value Input with Skip checkbox */}
-                                                        <div>
-                                                            <div className="flex items-center justify-between mb-1">
-                                                                <label className="block text-sm font-medium text-gray-700">Value</label>
-                                                                <label className="flex items-center gap-2 text-sm cursor-pointer">
-                                                                    <input
-                                                                        type="checkbox"
-                                                                        checked={form.skipped}
-                                                                        onChange={(e) => handleSkipToggle(index, e.target.checked)}
-                                                                        className="rounded border-gray-300 text-amber-600 focus:ring-amber-500"
-                                                                    />
-                                                                    <span className="text-gray-600">Skip this metric</span>
-                                                                </label>
-                                                            </div>
-                                                            <input
-                                                                type="number"
-                                                                step="any"
-                                                                className={`w-full border border-gray-300 rounded-lg px-3 py-2 ${
-                                                                    form.skipped ? 'bg-gray-100 text-gray-400' : ''
-                                                                }`}
-                                                                value={form.numeric_value}
-                                                                onChange={(e) => handleResultChange(index, 'numeric_value', e.target.value)}
-                                                                placeholder={form.skipped ? "Skipped" : "Enter numeric value..."}
-                                                                disabled={form.skipped}
-                                                            />
-                                                        </div>
-
-                                                        {/* Skip Explanation (only shown when skipped) */}
-                                                        {form.skipped && (
-                                                            <div>
-                                                                <label className="block text-sm font-medium text-gray-700 mb-1">
-                                                                    Skip Explanation <span className="text-red-500">*</span>
-                                                                </label>
-                                                                <textarea
-                                                                    className={`w-full border rounded-lg px-3 py-2 text-sm ${
-                                                                        !form.narrative.trim()
-                                                                            ? 'border-amber-300 bg-amber-50'
-                                                                            : 'border-gray-300'
-                                                                    }`}
-                                                                    rows={2}
-                                                                    value={form.narrative}
-                                                                    onChange={(e) => handleResultChange(index, 'narrative', e.target.value)}
-                                                                    placeholder="Required: Explain why this metric was not measured..."
-                                                                />
-                                                                {!form.narrative.trim() && (
-                                                                    <p className="text-xs text-amber-600 mt-1">
-                                                                        ⚠️ An explanation is required when skipping a metric.
-                                                                    </p>
-                                                                )}
-                                                            </div>
-                                                        )}
-
-                                                        {/* Notes (only shown when not skipped) */}
-                                                        {!form.skipped && (
-                                                            <div>
-                                                                <label className="block text-sm font-medium text-gray-700 mb-1">Notes (optional)</label>
-                                                                <textarea
-                                                                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
-                                                                    rows={2}
-                                                                    value={form.narrative}
-                                                                    onChange={(e) => handleResultChange(index, 'narrative', e.target.value)}
-                                                                    placeholder="Any supporting notes..."
-                                                                />
-                                                            </div>
-                                                        )}
-                                                    </div>
-                                                )}
-
-                                                {/* Qualitative Metric */}
-                                                {form.evaluation_type === 'Qualitative' && (
-                                                    <div className="space-y-3">
-                                                        {form.qualitative_guidance && (
-                                                            <div className="bg-gray-50 rounded-lg p-3">
-                                                                <div className="text-sm text-gray-600 mb-1">Guidance:</div>
-                                                                <p className="text-sm">{form.qualitative_guidance}</p>
-                                                            </div>
-                                                        )}
-
-                                                        {/* Outcome Input with Skip checkbox */}
-                                                        <div>
-                                                            <div className="flex items-center justify-between mb-1">
-                                                                <label className="block text-sm font-medium text-gray-700">Outcome</label>
-                                                                <label className="flex items-center gap-2 text-sm cursor-pointer">
-                                                                    <input
-                                                                        type="checkbox"
-                                                                        checked={form.skipped}
-                                                                        onChange={(e) => handleSkipToggle(index, e.target.checked)}
-                                                                        className="rounded border-gray-300 text-amber-600 focus:ring-amber-500"
-                                                                    />
-                                                                    <span className="text-gray-600">Skip this metric</span>
-                                                                </label>
-                                                            </div>
-                                                            <select
-                                                                className={`w-full border border-gray-300 rounded-lg px-3 py-2 ${
-                                                                    form.skipped ? 'bg-gray-100 text-gray-400' : ''
-                                                                }`}
-                                                                value={form.outcome_value_id || ''}
-                                                                onChange={(e) => handleResultChange(index, 'outcome_value_id', e.target.value ? parseInt(e.target.value) : null)}
-                                                                disabled={form.skipped}
-                                                            >
-                                                                <option value="">{form.skipped ? "Skipped" : "Select outcome..."}</option>
-                                                                {outcomeValues.map(o => (
-                                                                    <option key={o.value_id} value={o.value_id}>{o.label}</option>
-                                                                ))}
-                                                            </select>
-                                                        </div>
-
-                                                        {/* Skip Explanation (only shown when skipped) */}
-                                                        {form.skipped && (
-                                                            <div>
-                                                                <label className="block text-sm font-medium text-gray-700 mb-1">
-                                                                    Skip Explanation <span className="text-red-500">*</span>
-                                                                </label>
-                                                                <textarea
-                                                                    className={`w-full border rounded-lg px-3 py-2 text-sm ${
-                                                                        !form.narrative.trim()
-                                                                            ? 'border-amber-300 bg-amber-50'
-                                                                            : 'border-gray-300'
-                                                                    }`}
-                                                                    rows={2}
-                                                                    value={form.narrative}
-                                                                    onChange={(e) => handleResultChange(index, 'narrative', e.target.value)}
-                                                                    placeholder="Required: Explain why this metric was not measured..."
-                                                                />
-                                                                {!form.narrative.trim() && (
-                                                                    <p className="text-xs text-amber-600 mt-1">
-                                                                        ⚠️ An explanation is required when skipping a metric.
-                                                                    </p>
-                                                                )}
-                                                            </div>
-                                                        )}
-
-                                                        {/* Rationale (only shown when not skipped) */}
-                                                        {!form.skipped && (
-                                                            <div>
-                                                                <label className="block text-sm font-medium text-gray-700 mb-1">
-                                                                    Rationale <span className="text-red-500">*</span>
-                                                                </label>
-                                                                <textarea
-                                                                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
-                                                                    rows={3}
-                                                                    value={form.narrative}
-                                                                    onChange={(e) => handleResultChange(index, 'narrative', e.target.value)}
-                                                                    placeholder="Required: Explain the rationale for this outcome..."
-                                                                />
-                                                            </div>
-                                                        )}
-                                                    </div>
-                                                )}
-
-                                                {/* Outcome Only Metric */}
-                                                {form.evaluation_type === 'Outcome Only' && (
-                                                    <div className="space-y-3">
-                                                        {form.qualitative_guidance && (
-                                                            <div className="bg-gray-50 rounded-lg p-3">
-                                                                <div className="text-sm text-gray-600 mb-1">Guidance:</div>
-                                                                <p className="text-sm">{form.qualitative_guidance}</p>
-                                                            </div>
-                                                        )}
-
-                                                        {/* Outcome Input with Skip checkbox */}
-                                                        <div>
-                                                            <div className="flex items-center justify-between mb-1">
-                                                                <label className="block text-sm font-medium text-gray-700">Outcome</label>
-                                                                <label className="flex items-center gap-2 text-sm cursor-pointer">
-                                                                    <input
-                                                                        type="checkbox"
-                                                                        checked={form.skipped}
-                                                                        onChange={(e) => handleSkipToggle(index, e.target.checked)}
-                                                                        className="rounded border-gray-300 text-amber-600 focus:ring-amber-500"
-                                                                    />
-                                                                    <span className="text-gray-600">Skip this metric</span>
-                                                                </label>
-                                                            </div>
-                                                            <select
-                                                                className={`w-full border border-gray-300 rounded-lg px-3 py-2 ${
-                                                                    form.skipped ? 'bg-gray-100 text-gray-400' : ''
-                                                                }`}
-                                                                value={form.outcome_value_id || ''}
-                                                                onChange={(e) => handleResultChange(index, 'outcome_value_id', e.target.value ? parseInt(e.target.value) : null)}
-                                                                disabled={form.skipped}
-                                                            >
-                                                                <option value="">{form.skipped ? "Skipped" : "Select outcome..."}</option>
-                                                                {outcomeValues.map(o => (
-                                                                    <option key={o.value_id} value={o.value_id}>{o.label}</option>
-                                                                ))}
-                                                            </select>
-                                                        </div>
-
-                                                        {/* Skip Explanation (only shown when skipped) */}
-                                                        {form.skipped && (
-                                                            <div>
-                                                                <label className="block text-sm font-medium text-gray-700 mb-1">
-                                                                    Skip Explanation <span className="text-red-500">*</span>
-                                                                </label>
-                                                                <textarea
-                                                                    className={`w-full border rounded-lg px-3 py-2 text-sm ${
-                                                                        !form.narrative.trim()
-                                                                            ? 'border-amber-300 bg-amber-50'
-                                                                            : 'border-gray-300'
-                                                                    }`}
-                                                                    rows={2}
-                                                                    value={form.narrative}
-                                                                    onChange={(e) => handleResultChange(index, 'narrative', e.target.value)}
-                                                                    placeholder="Required: Explain why this metric was not measured..."
-                                                                />
-                                                                {!form.narrative.trim() && (
-                                                                    <p className="text-xs text-amber-600 mt-1">
-                                                                        ⚠️ An explanation is required when skipping a metric.
-                                                                    </p>
-                                                                )}
-                                                            </div>
-                                                        )}
-
-                                                        {/* Notes (only shown when not skipped) */}
-                                                        {!form.skipped && (
-                                                            <div>
-                                                                <label className="block text-sm font-medium text-gray-700 mb-1">Notes (optional)</label>
-                                                                <textarea
-                                                                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
-                                                                    rows={2}
-                                                                    value={form.narrative}
-                                                                    onChange={(e) => handleResultChange(index, 'narrative', e.target.value)}
-                                                                    placeholder="Any supporting notes..."
-                                                                />
-                                                            </div>
-                                                        )}
-                                                    </div>
-                                                )}
-
-                                                {/* Save/Delete Buttons */}
-                                                <div className="mt-4 flex justify-between items-center">
-                                                    <div className="flex items-center gap-2">
-                                                        {form.existingResultId && !form.dirty && (
-                                                            <span className="text-green-600 text-sm flex items-center gap-1">
-                                                                <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-                                                                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-                                                                </svg>
-                                                                Saved
-                                                            </span>
-                                                        )}
-                                                        {form.dirty && (
-                                                            <span className="text-amber-600 text-sm">Unsaved changes</span>
-                                                        )}
-                                                    </div>
-                                                    <div className="flex items-center gap-2">
-                                                        {form.existingResultId && (
-                                                            <button
-                                                                onClick={() => deleteResult(index)}
-                                                                disabled={deletingResult === index || savingResult === index}
-                                                                className="px-3 py-2 rounded text-sm font-medium text-red-600 hover:bg-red-50 border border-red-300 disabled:opacity-50"
-                                                            >
-                                                                {deletingResult === index ? 'Deleting...' : 'Delete'}
-                                                            </button>
-                                                        )}
-                                                        <button
-                                                            onClick={() => saveResult(index)}
-                                                            disabled={savingResult === index || deletingResult === index || (!form.dirty && form.existingResultId !== null)}
-                                                            className={`px-4 py-2 rounded text-sm font-medium ${
-                                                                form.dirty
-                                                                    ? 'bg-blue-600 text-white hover:bg-blue-700'
-                                                                    : 'bg-gray-200 text-gray-600'
-                                                            } disabled:opacity-50`}
-                                                        >
-                                                            {savingResult === index ? 'Saving...' : form.existingResultId ? 'Update' : 'Save'}
-                                                        </button>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        ))}
-                                    </div>
-                                )}
-                            </div>
-
-                            {/* Footer */}
-                            <div className="p-4 border-t bg-gray-50 flex justify-between items-center">
-                                <div className="text-sm text-gray-600">
-                                    {resultForms.filter(f => f.dirty).length > 0 && (
-                                        <span className="text-amber-600">
-                                            {resultForms.filter(f => f.dirty).length} unsaved changes
-                                        </span>
-                                    )}
-                                </div>
-                                <button onClick={closeResultsModal} className="btn-secondary">
-                                    Close
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-                )}
-
-                {/* Approval Action Modal */}
-                {approvalModalType && selectedApproval && (
-                    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-                        <div className="bg-white rounded-lg shadow-xl w-full max-w-md">
-                            <div className={`p-4 border-b ${
-                                approvalModalType === 'approve' ? 'bg-green-50' :
-                                approvalModalType === 'reject' ? 'bg-red-50' :
-                                'bg-gray-50'
-                            }`}>
-                                <h3 className="text-lg font-bold">
-                                    {approvalModalType === 'approve' ? 'Approve' :
-                                     approvalModalType === 'reject' ? 'Reject' :
-                                     'Void'} {selectedApproval.approval_type === 'Global' ? 'Global Approval' : `${selectedApproval.region_name || 'Regional'} Approval`}
-                                </h3>
-                            </div>
-
-                            <div className="p-4 space-y-4">
-                                {approvalError && (
-                                    <div className="bg-red-100 border border-red-400 text-red-700 px-3 py-2 rounded text-sm">
-                                        {approvalError}
-                                    </div>
-                                )}
-
-                                {approvalModalType === 'approve' && (
-                                    <div className="bg-green-50 border border-green-200 rounded-lg p-3">
-                                        <p className="text-green-800 text-sm">
-                                            You are about to approve this monitoring cycle. This action confirms the results have been reviewed and are acceptable.
-                                        </p>
-                                    </div>
-                                )}
-
-                                {approvalModalType === 'reject' && (
-                                    <div className="bg-red-50 border border-red-200 rounded-lg p-3">
-                                        <p className="text-red-800 text-sm">
-                                            Rejecting will return the cycle to <strong>Under Review</strong> status for the team to address concerns.
-                                        </p>
-                                    </div>
-                                )}
-
-                                {approvalModalType === 'void' && (
-                                    <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
-                                        <p className="text-amber-800 text-sm">
-                                            Voiding removes this approval requirement without completing it. Use this when the approval is no longer applicable.
-                                        </p>
-                                    </div>
-                                )}
-
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                                        {approvalModalType === 'approve' ? 'Comments (optional)' :
-                                         approvalModalType === 'reject' ? 'Rejection Reason *' :
-                                         'Void Reason *'}
-                                    </label>
-                                    <textarea
-                                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
-                                        rows={3}
-                                        value={approvalComments}
-                                        onChange={(e) => setApprovalComments(e.target.value)}
-                                        placeholder={
-                                            approvalModalType === 'approve' ? 'Optional comments...' :
-                                            approvalModalType === 'reject' ? 'Please explain why this is being rejected...' :
-                                            'Please explain why this approval is being voided...'
-                                        }
-                                    />
-                                </div>
-                            </div>
-
-                            <div className="p-4 border-t bg-gray-50 flex justify-end gap-2">
-                                <button
-                                    onClick={closeApprovalModal}
-                                    disabled={approvalLoading}
-                                    className="btn-secondary"
-                                >
-                                    Cancel
-                                </button>
-                                <button
-                                    onClick={handleApprovalSubmit}
-                                    disabled={approvalLoading}
-                                    className={`px-4 py-2 rounded text-white font-medium disabled:opacity-50 ${
-                                        approvalModalType === 'approve' ? 'bg-green-600 hover:bg-green-700' :
-                                        approvalModalType === 'reject' ? 'bg-red-600 hover:bg-red-700' :
-                                        'bg-gray-600 hover:bg-gray-700'
-                                    }`}
-                                >
-                                    {approvalLoading ? 'Processing...' :
-                                     approvalModalType === 'approve' ? 'Confirm Approval' :
-                                     approvalModalType === 'reject' ? 'Confirm Rejection' :
-                                     'Confirm Void'}
-                                </button>
-                            </div>
                         </div>
                     </div>
                 )}
@@ -4196,6 +2117,16 @@ const MonitoringPlanDetailPage: React.FC = () => {
                     </div>
                 )}
 
+                {/* Breach Resolution Wizard */}
+                {showBreachWizard && pendingBreaches.length > 0 && (
+                    <BreachResolutionWizard
+                        breaches={pendingBreaches}
+                        onComplete={handleBreachResolutionComplete}
+                        onCancel={handleBreachResolutionCancel}
+                        isLoading={breachResolutionLoading}
+                    />
+                )}
+
                 {/* Publish Version Modal */}
                 {showPublishModal && (
                     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
@@ -4309,84 +2240,25 @@ const MonitoringPlanDetailPage: React.FC = () => {
                                     )}
 
                                     {editingMetric.kpm?.evaluation_type === 'Quantitative' ? (
-                                        <>
-                                            <div className="bg-gray-50 rounded-lg p-3">
-                                                <p className="text-sm text-gray-600">
-                                                    Configure threshold boundaries. Leave fields blank for no threshold.
-                                                </p>
-                                            </div>
-
-                                            <div className="grid grid-cols-2 gap-4">
-                                                <div>
-                                                    <label className="block text-sm font-medium text-yellow-700 mb-1">
-                                                        Yellow Min
-                                                    </label>
-                                                    <input
-                                                        type="number"
-                                                        step="any"
-                                                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
-                                                        value={metricForm.yellow_min}
-                                                        onChange={(e) => setMetricForm(prev => ({ ...prev, yellow_min: e.target.value }))}
-                                                        placeholder="No minimum"
-                                                    />
-                                                    <p className="text-xs text-gray-500 mt-1">Yellow zone starts above this</p>
-                                                </div>
-                                                <div>
-                                                    <label className="block text-sm font-medium text-yellow-700 mb-1">
-                                                        Yellow Max
-                                                    </label>
-                                                    <input
-                                                        type="number"
-                                                        step="any"
-                                                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
-                                                        value={metricForm.yellow_max}
-                                                        onChange={(e) => setMetricForm(prev => ({ ...prev, yellow_max: e.target.value }))}
-                                                        placeholder="No maximum"
-                                                    />
-                                                    <p className="text-xs text-gray-500 mt-1">Yellow zone ends below this</p>
-                                                </div>
-                                            </div>
-
-                                            <div className="grid grid-cols-2 gap-4">
-                                                <div>
-                                                    <label className="block text-sm font-medium text-red-700 mb-1">
-                                                        Red Min
-                                                    </label>
-                                                    <input
-                                                        type="number"
-                                                        step="any"
-                                                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
-                                                        value={metricForm.red_min}
-                                                        onChange={(e) => setMetricForm(prev => ({ ...prev, red_min: e.target.value }))}
-                                                        placeholder="No minimum"
-                                                    />
-                                                    <p className="text-xs text-gray-500 mt-1">Red zone starts below this</p>
-                                                </div>
-                                                <div>
-                                                    <label className="block text-sm font-medium text-red-700 mb-1">
-                                                        Red Max
-                                                    </label>
-                                                    <input
-                                                        type="number"
-                                                        step="any"
-                                                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
-                                                        value={metricForm.red_max}
-                                                        onChange={(e) => setMetricForm(prev => ({ ...prev, red_max: e.target.value }))}
-                                                        placeholder="No maximum"
-                                                    />
-                                                    <p className="text-xs text-gray-500 mt-1">Red zone starts above this</p>
-                                                </div>
-                                            </div>
-
-                                            <div className="bg-blue-50 rounded-lg p-3 text-sm">
-                                                <p className="font-medium text-blue-800 mb-2">Common Threshold Patterns:</p>
-                                                <ul className="list-disc list-inside text-blue-700 space-y-1">
-                                                    <li><strong>Lower is better:</strong> Set Yellow Max and Red Max (e.g., error rate)</li>
-                                                    <li><strong>Higher is better:</strong> Set Yellow Min and Red Min (e.g., accuracy)</li>
-                                                    <li><strong>Range-based:</strong> Set Yellow Min and Yellow Max (e.g., p-value)</li>
-                                                </ul>
-                                            </div>
-                                        </>
+                                        <ThresholdWizard
+                                            values={{
+                                                yellow_min: metricForm.yellow_min ? parseFloat(metricForm.yellow_min) : null,
+                                                yellow_max: metricForm.yellow_max ? parseFloat(metricForm.yellow_max) : null,
+                                                red_min: metricForm.red_min ? parseFloat(metricForm.red_min) : null,
+                                                red_max: metricForm.red_max ? parseFloat(metricForm.red_max) : null,
+                                            }}
+                                            onChange={(values: ThresholdValues) => {
+                                                setMetricForm(prev => ({
+                                                    ...prev,
+                                                    yellow_min: values.yellow_min?.toString() ?? '',
+                                                    yellow_max: values.yellow_max?.toString() ?? '',
+                                                    red_min: values.red_min?.toString() ?? '',
+                                                    red_max: values.red_max?.toString() ?? '',
+                                                }));
+                                            }}
+                                            suggestedMin={0}
+                                            suggestedMax={1}
+                                        />
                                     ) : (
                                         <div>
                                             <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -4499,69 +2371,25 @@ const MonitoringPlanDetailPage: React.FC = () => {
                                         if (isQuantitative) {
                                             return (
                                                 <>
-                                                    <div className="bg-gray-50 rounded-lg p-3">
-                                                        <p className="text-sm text-gray-600">
-                                                            Configure threshold boundaries. Leave fields blank for no threshold.
-                                                        </p>
-                                                    </div>
-
-                                                    <div className="grid grid-cols-2 gap-4">
-                                                        <div>
-                                                            <label className="block text-sm font-medium text-yellow-700 mb-1">
-                                                                Yellow Min
-                                                            </label>
-                                                            <input
-                                                                type="number"
-                                                                step="any"
-                                                                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
-                                                                value={addMetricForm.yellow_min}
-                                                                onChange={(e) => setAddMetricForm(prev => ({ ...prev, yellow_min: e.target.value }))}
-                                                                placeholder="No minimum"
-                                                            />
-                                                        </div>
-                                                        <div>
-                                                            <label className="block text-sm font-medium text-yellow-700 mb-1">
-                                                                Yellow Max
-                                                            </label>
-                                                            <input
-                                                                type="number"
-                                                                step="any"
-                                                                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
-                                                                value={addMetricForm.yellow_max}
-                                                                onChange={(e) => setAddMetricForm(prev => ({ ...prev, yellow_max: e.target.value }))}
-                                                                placeholder="No maximum"
-                                                            />
-                                                        </div>
-                                                    </div>
-
-                                                    <div className="grid grid-cols-2 gap-4">
-                                                        <div>
-                                                            <label className="block text-sm font-medium text-red-700 mb-1">
-                                                                Red Min
-                                                            </label>
-                                                            <input
-                                                                type="number"
-                                                                step="any"
-                                                                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
-                                                                value={addMetricForm.red_min}
-                                                                onChange={(e) => setAddMetricForm(prev => ({ ...prev, red_min: e.target.value }))}
-                                                                placeholder="No minimum"
-                                                            />
-                                                        </div>
-                                                        <div>
-                                                            <label className="block text-sm font-medium text-red-700 mb-1">
-                                                                Red Max
-                                                            </label>
-                                                            <input
-                                                                type="number"
-                                                                step="any"
-                                                                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
-                                                                value={addMetricForm.red_max}
-                                                                onChange={(e) => setAddMetricForm(prev => ({ ...prev, red_max: e.target.value }))}
-                                                                placeholder="No maximum"
-                                                            />
-                                                        </div>
-                                                    </div>
+                                                    <ThresholdWizard
+                                                        values={{
+                                                            yellow_min: addMetricForm.yellow_min ? parseFloat(addMetricForm.yellow_min) : null,
+                                                            yellow_max: addMetricForm.yellow_max ? parseFloat(addMetricForm.yellow_max) : null,
+                                                            red_min: addMetricForm.red_min ? parseFloat(addMetricForm.red_min) : null,
+                                                            red_max: addMetricForm.red_max ? parseFloat(addMetricForm.red_max) : null,
+                                                        }}
+                                                        onChange={(values: ThresholdValues) => {
+                                                            setAddMetricForm(prev => ({
+                                                                ...prev,
+                                                                yellow_min: values.yellow_min?.toString() ?? '',
+                                                                yellow_max: values.yellow_max?.toString() ?? '',
+                                                                red_min: values.red_min?.toString() ?? '',
+                                                                red_max: values.red_max?.toString() ?? '',
+                                                            }));
+                                                        }}
+                                                        suggestedMin={0}
+                                                        suggestedMax={1}
+                                                    />
 
                                                     {/* Additional Guidance for Quantitative */}
                                                     <div>

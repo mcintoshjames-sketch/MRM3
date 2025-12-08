@@ -36,7 +36,7 @@ def dependency_taxonomy(db_session):
 
 
 @pytest.fixture
-def model_a(db_session, test_user):
+def model_a(db_session, test_user, usage_frequency):
     """Create Model A."""
     model = Model(
         model_name="Model A",
@@ -45,7 +45,8 @@ def model_a(db_session, test_user):
         status="In Development",
         owner_id=test_user.user_id,
         row_approval_status="pending",
-        submitted_by_user_id=test_user.user_id
+        submitted_by_user_id=test_user.user_id,
+        usage_frequency_id=usage_frequency["daily"].value_id
     )
     db_session.add(model)
     db_session.commit()
@@ -54,7 +55,7 @@ def model_a(db_session, test_user):
 
 
 @pytest.fixture
-def model_b(db_session, test_user):
+def model_b(db_session, test_user, usage_frequency):
     """Create Model B."""
     model = Model(
         model_name="Model B",
@@ -63,7 +64,8 @@ def model_b(db_session, test_user):
         status="In Development",
         owner_id=test_user.user_id,
         row_approval_status="pending",
-        submitted_by_user_id=test_user.user_id
+        submitted_by_user_id=test_user.user_id,
+        usage_frequency_id=usage_frequency["daily"].value_id
     )
     db_session.add(model)
     db_session.commit()
@@ -72,7 +74,7 @@ def model_b(db_session, test_user):
 
 
 @pytest.fixture
-def model_c(db_session, test_user):
+def model_c(db_session, test_user, usage_frequency):
     """Create Model C."""
     model = Model(
         model_name="Model C",
@@ -81,7 +83,8 @@ def model_c(db_session, test_user):
         status="In Development",
         owner_id=test_user.user_id,
         row_approval_status="pending",
-        submitted_by_user_id=test_user.user_id
+        submitted_by_user_id=test_user.user_id,
+        usage_frequency_id=usage_frequency["daily"].value_id
     )
     db_session.add(model)
     db_session.commit()
@@ -90,7 +93,7 @@ def model_c(db_session, test_user):
 
 
 @pytest.fixture
-def model_d(db_session, test_user):
+def model_d(db_session, test_user, usage_frequency):
     """Create Model D."""
     model = Model(
         model_name="Model D",
@@ -99,7 +102,8 @@ def model_d(db_session, test_user):
         status="In Development",
         owner_id=test_user.user_id,
         row_approval_status="pending",
-        submitted_by_user_id=test_user.user_id
+        submitted_by_user_id=test_user.user_id,
+        usage_frequency_id=usage_frequency["daily"].value_id
     )
     db_session.add(model)
     db_session.commit()

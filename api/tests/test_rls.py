@@ -8,7 +8,7 @@ from app.models.validation import ValidationRequest, ValidationRequestModelVersi
 from app.core.rls import apply_validation_request_rls, can_access_validation_request
 
 
-def test_admin_can_see_all_models(db_session, admin_user, test_user, second_user):
+def test_admin_can_see_all_models(db_session, admin_user, test_user, second_user, usage_frequency):
     """Test that admin users can see all models regardless of ownership."""
     # Create models owned by different users
     model1 = Model(
@@ -16,14 +16,16 @@ def test_admin_can_see_all_models(db_session, admin_user, test_user, second_user
         description="Owned by user 1",
         development_type="In-House",
         status="Active",
-        owner_id=test_user.user_id
+        owner_id=test_user.user_id,
+        usage_frequency_id=usage_frequency["daily"].value_id
     )
     model2 = Model(
         model_name="User 2 Model",
         description="Owned by user 2",
         development_type="In-House",
         status="Active",
-        owner_id=second_user.user_id
+        owner_id=second_user.user_id,
+        usage_frequency_id=usage_frequency["daily"].value_id
     )
     db_session.add_all([model1, model2])
     db_session.commit()
@@ -42,7 +44,7 @@ def test_admin_can_see_all_models(db_session, admin_user, test_user, second_user
     assert can_access_model(model2.model_id, admin_user, db_session) is True
 
 
-def test_validator_can_see_all_models(db_session, validator_user, test_user, second_user):
+def test_validator_can_see_all_models(db_session, validator_user, test_user, second_user, usage_frequency):
     """Test that validator users can see all models."""
     # Create models owned by different users
     model1 = Model(
@@ -50,14 +52,16 @@ def test_validator_can_see_all_models(db_session, validator_user, test_user, sec
         description="Owned by user 1",
         development_type="In-House",
         status="Active",
-        owner_id=test_user.user_id
+        owner_id=test_user.user_id,
+        usage_frequency_id=usage_frequency["daily"].value_id
     )
     model2 = Model(
         model_name="User 2 Model",
         description="Owned by user 2",
         development_type="In-House",
         status="Active",
-        owner_id=second_user.user_id
+        owner_id=second_user.user_id,
+        usage_frequency_id=usage_frequency["daily"].value_id
     )
     db_session.add_all([model1, model2])
     db_session.commit()
@@ -76,7 +80,7 @@ def test_validator_can_see_all_models(db_session, validator_user, test_user, sec
         model2.model_id, validator_user, db_session) is True
 
 
-def test_user_can_see_owned_models(db_session, test_user, second_user):
+def test_user_can_see_owned_models(db_session, test_user, second_user, usage_frequency):
     """Test that users can see models they own."""
     # Create model owned by test_user
     model = Model(
@@ -84,7 +88,8 @@ def test_user_can_see_owned_models(db_session, test_user, second_user):
         description="Owned by me",
         development_type="In-House",
         status="Active",
-        owner_id=test_user.user_id
+        owner_id=test_user.user_id,
+        usage_frequency_id=usage_frequency["daily"].value_id
     )
     # Create model owned by someone else
     other_model = Model(
@@ -92,7 +97,8 @@ def test_user_can_see_owned_models(db_session, test_user, second_user):
         description="Not owned by me",
         development_type="In-House",
         status="Active",
-        owner_id=second_user.user_id
+        owner_id=second_user.user_id,
+        usage_frequency_id=usage_frequency["daily"].value_id
     )
     db_session.add_all([model, other_model])
     db_session.commit()
@@ -111,7 +117,7 @@ def test_user_can_see_owned_models(db_session, test_user, second_user):
                             test_user, db_session) is False
 
 
-def test_user_can_see_developed_models(db_session, test_user, second_user):
+def test_user_can_see_developed_models(db_session, test_user, second_user, usage_frequency):
     """Test that users can see models they are the developer for."""
     # Create model developed by test_user (owned by someone else)
     model = Model(
@@ -120,7 +126,8 @@ def test_user_can_see_developed_models(db_session, test_user, second_user):
         development_type="In-House",
         status="Active",
         owner_id=second_user.user_id,
-        developer_id=test_user.user_id
+        developer_id=test_user.user_id,
+        usage_frequency_id=usage_frequency["daily"].value_id
     )
     db_session.add(model)
     db_session.commit()
@@ -137,7 +144,7 @@ def test_user_can_see_developed_models(db_session, test_user, second_user):
     assert can_access_model(model.model_id, test_user, db_session) is True
 
 
-def test_user_can_see_delegated_models(db_session, test_user, second_user):
+def test_user_can_see_delegated_models(db_session, test_user, second_user, usage_frequency):
     """Test that users can see models they are a delegate for."""
     # Create model owned by someone else
     model = Model(
@@ -145,7 +152,8 @@ def test_user_can_see_delegated_models(db_session, test_user, second_user):
         description="I am a delegate",
         development_type="In-House",
         status="Active",
-        owner_id=second_user.user_id
+        owner_id=second_user.user_id,
+        usage_frequency_id=usage_frequency["daily"].value_id
     )
     db_session.add(model)
     db_session.commit()
@@ -172,7 +180,7 @@ def test_user_can_see_delegated_models(db_session, test_user, second_user):
     assert can_access_model(model.model_id, test_user, db_session) is True
 
 
-def test_user_cannot_see_revoked_delegated_models(db_session, test_user, second_user):
+def test_user_cannot_see_revoked_delegated_models(db_session, test_user, second_user, usage_frequency):
     """Test that users cannot see models where their delegation was revoked."""
     # Create model owned by someone else
     model = Model(
@@ -180,7 +188,8 @@ def test_user_cannot_see_revoked_delegated_models(db_session, test_user, second_
         description="I was a delegate",
         development_type="In-House",
         status="Active",
-        owner_id=second_user.user_id
+        owner_id=second_user.user_id,
+        usage_frequency_id=usage_frequency["daily"].value_id
     )
     db_session.add(model)
     db_session.commit()
@@ -208,7 +217,7 @@ def test_user_cannot_see_revoked_delegated_models(db_session, test_user, second_
     assert can_access_model(model.model_id, test_user, db_session) is False
 
 
-def test_user_can_see_validation_requests_for_accessible_models(db_session, test_user, second_user, taxonomy_values):
+def test_user_can_see_validation_requests_for_accessible_models(db_session, test_user, second_user, taxonomy_values, usage_frequency):
     """Test that users can see validation requests for models they have access to."""
     # Create model owned by test_user
     model = Model(
@@ -216,7 +225,8 @@ def test_user_can_see_validation_requests_for_accessible_models(db_session, test
         description="Owned by me",
         development_type="In-House",
         status="Active",
-        owner_id=test_user.user_id
+        owner_id=test_user.user_id,
+        usage_frequency_id=usage_frequency["daily"].value_id
     )
     db_session.add(model)
     db_session.commit()
@@ -258,7 +268,7 @@ def test_user_can_see_validation_requests_for_accessible_models(db_session, test
         val_req.request_id, test_user, db_session) is True
 
 
-def test_user_cannot_see_validation_requests_for_inaccessible_models(db_session, test_user, second_user, taxonomy_values):
+def test_user_cannot_see_validation_requests_for_inaccessible_models(db_session, test_user, second_user, taxonomy_values, usage_frequency):
     """Test that users cannot see validation requests for models they do not have access to."""
     # Create model owned by someone else
     model = Model(
@@ -266,7 +276,8 @@ def test_user_cannot_see_validation_requests_for_inaccessible_models(db_session,
         description="Not owned by me",
         development_type="In-House",
         status="Active",
-        owner_id=second_user.user_id
+        owner_id=second_user.user_id,
+        usage_frequency_id=usage_frequency["daily"].value_id
     )
     db_session.add(model)
     db_session.commit()

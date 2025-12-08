@@ -2,6 +2,7 @@
 import pytest
 import json
 from datetime import date, datetime, timedelta
+from decimal import Decimal
 from sqlalchemy import text
 from app.models.taxonomy import Taxonomy, TaxonomyValue
 from app.models.validation import (
@@ -12,6 +13,13 @@ from app.models.model import Model
 from app.models.validation_grouping import ValidationGroupingMemory
 from app.models.region import Region
 from app.models.model_region import ModelRegion
+from app.models.risk_assessment import (
+    QualitativeRiskFactor,
+    QualitativeFactorGuidance,
+    ModelRiskAssessment,
+    QualitativeFactorAssessment
+)
+from app.core.time import utc_now
 
 
 @pytest.fixture
@@ -107,6 +115,93 @@ def workflow_taxonomies(db_session):
             "fit_for_purpose": fit_for_purpose, "fit_with_conditions": fit_with_conditions, "not_fit": not_fit
         }
     }
+
+
+@pytest.fixture
+def qualitative_factors(db_session):
+    """Create the 4 standard qualitative risk factors with guidance."""
+    factors_data = [
+        {
+            "code": "REPUTATION_LEGAL",
+            "name": "Reputation, Regulatory Compliance and/or Financial Reporting Risk",
+            "weight": Decimal("0.3000"),
+            "sort_order": 1
+        },
+        {
+            "code": "COMPLEXITY",
+            "name": "Complexity of the Model",
+            "weight": Decimal("0.3000"),
+            "sort_order": 2
+        },
+        {
+            "code": "USAGE_DEPENDENCY",
+            "name": "Model Usage and Model Dependency",
+            "weight": Decimal("0.2000"),
+            "sort_order": 3
+        },
+        {
+            "code": "STABILITY",
+            "name": "Stability of the Model",
+            "weight": Decimal("0.2000"),
+            "sort_order": 4
+        }
+    ]
+
+    factors = []
+    for data in factors_data:
+        factor = QualitativeRiskFactor(**data)
+        db_session.add(factor)
+        db_session.flush()
+
+        # Add guidance for each rating level
+        for rating, points in [("HIGH", 3), ("MEDIUM", 2), ("LOW", 1)]:
+            guidance = QualitativeFactorGuidance(
+                factor_id=factor.factor_id,
+                rating=rating,
+                points=points,
+                description=f"{rating} guidance for {data['code']}",
+                sort_order=4 - points  # HIGH first
+            )
+            db_session.add(guidance)
+
+        factors.append(factor)
+
+    db_session.commit()
+    return factors
+
+
+def create_complete_risk_assessment(db_session, model_id, factors):
+    """
+    Helper function to create a complete global risk assessment for a model.
+    This is needed for validation workflow tests that require a model to have
+    a risk assessment before transitioning to REVIEW status.
+    """
+    # Create the global assessment (region_id = None)
+    assessment = ModelRiskAssessment(
+        model_id=model_id,
+        region_id=None,  # Global assessment
+        quantitative_rating="MEDIUM",
+        assessed_at=utc_now(),
+        created_at=utc_now(),
+        updated_at=utc_now()
+    )
+    db_session.add(assessment)
+    db_session.flush()
+
+    # Add factor assessments for all factors
+    for factor in factors:
+        factor_assessment = QualitativeFactorAssessment(
+            assessment_id=assessment.assessment_id,
+            factor_id=factor.factor_id,
+            rating="MEDIUM",
+            comment="Test assessment for workflow",
+            weight_at_assessment=factor.weight,  # Required field
+            score=Decimal("2.00") * factor.weight  # MEDIUM = 2 points
+        )
+        db_session.add(factor_assessment)
+
+    db_session.commit()
+    return assessment
 
 
 class TestValidationRequestCRUD:
@@ -386,10 +481,13 @@ class TestStatusTransitions:
         assert response.json()["current_status"]["label"] == "On Hold"
 
     def test_review_requires_plan_when_region_enforces(
-        self, client, admin_headers, validator_user, sample_model, workflow_taxonomies, db_session
+        self, client, admin_headers, validator_user, sample_model, workflow_taxonomies, db_session, qualitative_factors
     ):
         """Ensure regions with plan enforcement block status change without a plan."""
         from app.models.region import Region
+
+        # Create risk assessment for the model (required before transitioning to REVIEW)
+        create_complete_risk_assessment(db_session, sample_model.model_id, qualitative_factors)
 
         region = Region(code="NA", name="North America",
                         requires_regional_approval=False, enforce_validation_plan=True)
@@ -448,7 +546,9 @@ class TestStatusTransitions:
                 "reason": "Attempt review without plan"
             }
         )
-        assert review_resp.status_code == 400
+        print(f"DEBUG: review_resp.status_code = {review_resp.status_code}")
+        print(f"DEBUG: review_resp.json() = {review_resp.json()}")
+        assert review_resp.status_code == 400, f"Expected 400 but got {review_resp.status_code}: {review_resp.json()}"
         assert "Validation plan is required" in review_resp.json()["detail"]
 
         # Create plan then retry
@@ -471,10 +571,13 @@ class TestStatusTransitions:
         assert review_resp.json()["current_status"]["code"] == "REVIEW"
 
     def test_review_allows_no_plan_when_region_not_enforcing(
-        self, client, admin_headers, validator_user, sample_model, workflow_taxonomies, db_session
+        self, client, admin_headers, validator_user, sample_model, workflow_taxonomies, db_session, qualitative_factors
     ):
         """Regions without enforcement should not block review when plan is absent."""
         from app.models.region import Region
+
+        # Create risk assessment for the model (required before transitioning to REVIEW)
+        create_complete_risk_assessment(db_session, sample_model.model_id, qualitative_factors)
 
         region = Region(code="LA", name="Latin America",
                         requires_regional_approval=False, enforce_validation_plan=False)
@@ -817,8 +920,11 @@ class TestValidatorIndependence:
 class TestOutcomeCreation:
     """Test outcome creation validation."""
 
-    def test_outcome_includes_required_fields(self, client, admin_headers, sample_model, validator_user, workflow_taxonomies):
+    def test_outcome_includes_required_fields(self, client, admin_headers, sample_model, validator_user, workflow_taxonomies, db_session, qualitative_factors):
         """Test that outcome includes all required information."""
+        # Create risk assessment for the model (required before transitioning to REVIEW)
+        create_complete_risk_assessment(db_session, sample_model.model_id, qualitative_factors)
+
         target_date = (date.today() + timedelta(days=30)).isoformat()
         create_response = client.post(
             "/validation-workflow/requests/",
@@ -879,8 +985,11 @@ class TestOutcomeCreation:
         assert data["overall_rating"]["label"] == "Fit with Conditions"
         assert data["executive_summary"] == "Model performs well but requires monitoring"
 
-    def test_cannot_create_duplicate_outcome(self, client, admin_headers, sample_model, validator_user, workflow_taxonomies):
+    def test_cannot_create_duplicate_outcome(self, client, admin_headers, sample_model, validator_user, workflow_taxonomies, db_session, qualitative_factors):
         """Test that only one outcome can exist per request."""
+        # Create risk assessment for the model (required before transitioning to REVIEW)
+        create_complete_risk_assessment(db_session, sample_model.model_id, qualitative_factors)
+
         target_date = (date.today() + timedelta(days=30)).isoformat()
         create_response = client.post(
             "/validation-workflow/requests/",
@@ -974,8 +1083,11 @@ class TestApprovalWorkflow:
         assert response.status_code == 201
         assert response.json()["approval_status"] == "Pending"
 
-    def test_submit_approval(self, client, admin_headers, sample_model, admin_user, workflow_taxonomies):
+    def test_submit_approval(self, client, admin_headers, sample_model, admin_user, workflow_taxonomies, db_session, validator_user, qualitative_factors):
         """Test submitting an approval decision."""
+        # Create risk assessment for the model (required before transitioning to REVIEW)
+        create_complete_risk_assessment(db_session, sample_model.model_id, qualitative_factors)
+
         target_date = (date.today() + timedelta(days=30)).isoformat()
         create_response = client.post(
             "/validation-workflow/requests/",
@@ -988,6 +1100,49 @@ class TestApprovalWorkflow:
             }
         )
         request_id = create_response.json()["request_id"]
+
+        # Assign validator (transitions to PLANNING)
+        client.post(
+            f"/validation-workflow/requests/{request_id}/assignments",
+            headers=admin_headers,
+            json={
+                "validator_id": validator_user.user_id,
+                "is_primary": True,
+                "independence_attestation": True
+            }
+        )
+
+        # Transition: PLANNING → IN_PROGRESS → REVIEW
+        for status_key in ["in_progress", "review"]:
+            client.patch(
+                f"/validation-workflow/requests/{request_id}/status",
+                headers=admin_headers,
+                json={
+                    "new_status_id": workflow_taxonomies["status"][status_key].value_id,
+                    "change_reason": f"Moving to {status_key}"
+                }
+            )
+
+        # Create outcome (required before PENDING_APPROVAL)
+        client.post(
+            f"/validation-workflow/requests/{request_id}/outcome",
+            headers=admin_headers,
+            json={
+                "overall_rating_id": workflow_taxonomies["rating"]["fit_for_purpose"].value_id,
+                "executive_summary": "Validation complete",
+                "effective_date": date.today().isoformat()
+            }
+        )
+
+        # Transition to PENDING_APPROVAL (required before submitting approvals)
+        client.patch(
+            f"/validation-workflow/requests/{request_id}/status",
+            headers=admin_headers,
+            json={
+                "new_status_id": workflow_taxonomies["status"]["pending_approval"].value_id,
+                "change_reason": "Ready for approval"
+            }
+        )
 
         # Add approval request
         approval_response = client.post(
@@ -1016,8 +1171,11 @@ class TestApprovalWorkflow:
         # Check that decision timestamp was recorded
         assert "updated_at" in data or "created_at" in data
 
-    def test_reject_approval(self, client, admin_headers, sample_model, admin_user, workflow_taxonomies):
+    def test_reject_approval(self, client, admin_headers, sample_model, admin_user, workflow_taxonomies, db_session, validator_user, qualitative_factors):
         """Test rejecting an approval."""
+        # Create risk assessment for the model (required before transitioning to REVIEW)
+        create_complete_risk_assessment(db_session, sample_model.model_id, qualitative_factors)
+
         target_date = (date.today() + timedelta(days=30)).isoformat()
         create_response = client.post(
             "/validation-workflow/requests/",
@@ -1030,6 +1188,49 @@ class TestApprovalWorkflow:
             }
         )
         request_id = create_response.json()["request_id"]
+
+        # Assign validator (transitions to PLANNING)
+        client.post(
+            f"/validation-workflow/requests/{request_id}/assignments",
+            headers=admin_headers,
+            json={
+                "validator_id": validator_user.user_id,
+                "is_primary": True,
+                "independence_attestation": True
+            }
+        )
+
+        # Transition: PLANNING → IN_PROGRESS → REVIEW
+        for status_key in ["in_progress", "review"]:
+            client.patch(
+                f"/validation-workflow/requests/{request_id}/status",
+                headers=admin_headers,
+                json={
+                    "new_status_id": workflow_taxonomies["status"][status_key].value_id,
+                    "change_reason": f"Moving to {status_key}"
+                }
+            )
+
+        # Create outcome (required before PENDING_APPROVAL)
+        client.post(
+            f"/validation-workflow/requests/{request_id}/outcome",
+            headers=admin_headers,
+            json={
+                "overall_rating_id": workflow_taxonomies["rating"]["fit_for_purpose"].value_id,
+                "executive_summary": "Validation complete",
+                "effective_date": date.today().isoformat()
+            }
+        )
+
+        # Transition to PENDING_APPROVAL (required before submitting approvals)
+        client.patch(
+            f"/validation-workflow/requests/{request_id}/status",
+            headers=admin_headers,
+            json={
+                "new_status_id": workflow_taxonomies["status"]["pending_approval"].value_id,
+                "change_reason": "Ready for approval"
+            }
+        )
 
         approval_response = client.post(
             f"/validation-workflow/requests/{request_id}/approvals",
@@ -1087,10 +1288,13 @@ class TestApprovalWorkflow:
         assert response.status_code == 422  # Validation error
 
     def test_auto_transition_to_approved_when_all_approvals_complete(
-        self, client, admin_headers, sample_model, admin_user, workflow_taxonomies, db_session, validator_user
+        self, client, admin_headers, sample_model, admin_user, workflow_taxonomies, db_session, validator_user, qualitative_factors
     ):
         """Test that validation request auto-transitions to APPROVED when all required approvals are complete."""
         from app.models.validation import ValidationRequest
+
+        # Create risk assessment for the model (required before transitioning to REVIEW)
+        create_complete_risk_assessment(db_session, sample_model.model_id, qualitative_factors)
 
         target_date = (date.today() + timedelta(days=30)).isoformat()
 
@@ -2136,7 +2340,7 @@ class TestSmartApproverAssignment:
     """Test Phase 5: Smart Approver Assignment."""
 
     def test_global_validation_assigns_global_approver(
-        self, client, db_session, admin_headers, sample_model, workflow_taxonomies
+        self, client, db_session, admin_headers, sample_model, workflow_taxonomies, lob_hierarchy
     ):
         """Test that global validations auto-assign Global Approvers."""
         # Create a Global Approver user
@@ -2147,7 +2351,8 @@ class TestSmartApproverAssignment:
             email="global.approver@example.com",
             full_name="Global Approver",
             password_hash=get_password_hash("password123"),
-            role=UserRole.GLOBAL_APPROVER
+            role=UserRole.GLOBAL_APPROVER,
+            lob_id=lob_hierarchy["retail"].lob_id
         )
         db_session.add(global_approver)
         db_session.commit()
@@ -2182,7 +2387,7 @@ class TestSmartApproverAssignment:
         assert approvals[0].approval_status == "Pending"
 
     def test_regional_validation_with_approval_required_assigns_regional_approver(
-        self, client, db_session, admin_headers, sample_model, workflow_taxonomies
+        self, client, db_session, admin_headers, sample_model, workflow_taxonomies, lob_hierarchy
     ):
         """Test that regional validations with requires_regional_approval=True assign Regional Approvers."""
         from app.models.user import User, UserRole, user_regions
@@ -2203,7 +2408,8 @@ class TestSmartApproverAssignment:
             email="us.approver@example.com",
             full_name="US Regional Approver",
             password_hash=get_password_hash("password123"),
-            role=UserRole.REGIONAL_APPROVER
+            role=UserRole.REGIONAL_APPROVER,
+            lob_id=lob_hierarchy["retail"].lob_id
         )
         db_session.add(regional_approver)
         db_session.flush()
@@ -2247,7 +2453,7 @@ class TestSmartApproverAssignment:
         assert approvals[0].approval_status == "Pending"
 
     def test_regional_validation_without_approval_required_assigns_global_approver(
-        self, client, db_session, admin_headers, sample_model, workflow_taxonomies
+        self, client, db_session, admin_headers, sample_model, workflow_taxonomies, lob_hierarchy
     ):
         """Test that regional validations with requires_regional_approval=False assign Global Approvers."""
         from app.models.user import User, UserRole
@@ -2268,7 +2474,8 @@ class TestSmartApproverAssignment:
             email="global.approver2@example.com",
             full_name="Global Approver 2",
             password_hash=get_password_hash("password123"),
-            role=UserRole.GLOBAL_APPROVER
+            role=UserRole.GLOBAL_APPROVER,
+            lob_id=lob_hierarchy["retail"].lob_id
         )
         db_session.add(global_approver)
         db_session.commit()
@@ -2303,7 +2510,7 @@ class TestSmartApproverAssignment:
         assert approvals[0].approval_status == "Pending"
 
     def test_multiple_global_approvers_all_assigned(
-        self, client, db_session, admin_headers, sample_model, workflow_taxonomies
+        self, client, db_session, admin_headers, sample_model, workflow_taxonomies, lob_hierarchy
     ):
         """Test that all Global Approvers are assigned to global validations."""
         from app.models.user import User, UserRole
@@ -2314,19 +2521,22 @@ class TestSmartApproverAssignment:
             email="global1@example.com",
             full_name="Global Approver 1",
             password_hash=get_password_hash("password123"),
-            role=UserRole.GLOBAL_APPROVER
+            role=UserRole.GLOBAL_APPROVER,
+            lob_id=lob_hierarchy["retail"].lob_id
         )
         approver2 = User(
             email="global2@example.com",
             full_name="Global Approver 2",
             password_hash=get_password_hash("password123"),
-            role=UserRole.GLOBAL_APPROVER
+            role=UserRole.GLOBAL_APPROVER,
+            lob_id=lob_hierarchy["retail"].lob_id
         )
         approver3 = User(
             email="global3@example.com",
             full_name="Global Approver 3",
             password_hash=get_password_hash("password123"),
-            role=UserRole.GLOBAL_APPROVER
+            role=UserRole.GLOBAL_APPROVER,
+            lob_id=lob_hierarchy["retail"].lob_id
         )
         db_session.add_all([approver1, approver2, approver3])
         db_session.commit()
@@ -2398,7 +2608,7 @@ class TestSmartApproverAssignment:
         assert len(approvals) == 0
 
     def test_audit_log_created_for_approver_assignment(
-        self, client, db_session, admin_headers, sample_model, workflow_taxonomies
+        self, client, db_session, admin_headers, sample_model, workflow_taxonomies, lob_hierarchy
     ):
         """Test that auto-assigning approvers creates an audit log entry."""
         from app.models.user import User, UserRole
@@ -2410,7 +2620,8 @@ class TestSmartApproverAssignment:
             email="audittest@example.com",
             full_name="Audit Test Approver",
             password_hash=get_password_hash("password123"),
-            role=UserRole.GLOBAL_APPROVER
+            role=UserRole.GLOBAL_APPROVER,
+            lob_id=lob_hierarchy["retail"].lob_id
         )
         db_session.add(global_approver)
         db_session.commit()

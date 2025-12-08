@@ -102,6 +102,12 @@ class MonitoringPlan(Base):
     # Status
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
 
+    # Dirty flag - tracks unpublished changes (optimization to avoid expensive diff queries)
+    is_dirty: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, index=True,
+        comment="True when metrics or models have been changed since last version publish"
+    )
+
     # Timestamps
     created_at: Mapped[datetime] = mapped_column(
         DateTime, default=utc_now, nullable=False)

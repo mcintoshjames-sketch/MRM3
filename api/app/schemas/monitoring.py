@@ -762,3 +762,47 @@ class AdminMonitoringOverviewResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+# ============================================================================
+# CSV IMPORT SCHEMAS
+# ============================================================================
+
+class CSVImportPreviewRow(BaseModel):
+    """Preview row for CSV import."""
+    row_number: int
+    model_id: int
+    model_name: Optional[str] = None
+    metric_id: int
+    metric_name: Optional[str] = None
+    value: Optional[float] = None
+    outcome: Optional[str] = None
+    narrative: Optional[str] = None
+    action: str  # "create", "update", "skip"
+    error: Optional[str] = None
+
+
+class CSVImportPreviewSummary(BaseModel):
+    """Summary for CSV import preview."""
+    total_rows: int
+    create_count: int
+    update_count: int
+    skip_count: int
+    error_count: int
+
+
+class CSVImportPreviewResponse(BaseModel):
+    """Response for CSV import preview (dry_run=true)."""
+    valid_rows: List[CSVImportPreviewRow] = []
+    error_rows: List[CSVImportPreviewRow] = []
+    summary: CSVImportPreviewSummary
+
+
+class CSVImportResultResponse(BaseModel):
+    """Response for actual CSV import (dry_run=false)."""
+    success: bool
+    created: int
+    updated: int
+    skipped: int
+    errors: int
+    error_messages: List[str] = []
