@@ -14,7 +14,8 @@ export default function RegionsPage() {
         code: '',
         name: '',
         requires_regional_approval: false,
-        enforce_validation_plan: false
+        enforce_validation_plan: false,
+        requires_standalone_rating: false
     });
     const [error, setError] = useState<string | null>(null);
 
@@ -34,7 +35,7 @@ export default function RegionsPage() {
     };
 
     const resetForm = () => {
-        setFormData({ code: '', name: '', requires_regional_approval: false, enforce_validation_plan: false });
+        setFormData({ code: '', name: '', requires_regional_approval: false, enforce_validation_plan: false, requires_standalone_rating: false });
         setEditingRegion(null);
         setShowForm(false);
         setError(null);
@@ -63,7 +64,8 @@ export default function RegionsPage() {
             code: region.code,
             name: region.name,
             requires_regional_approval: region.requires_regional_approval ?? false,
-            enforce_validation_plan: region.enforce_validation_plan ?? false
+            enforce_validation_plan: region.enforce_validation_plan ?? false,
+            requires_standalone_rating: region.requires_standalone_rating ?? false
         });
         setShowForm(true);
     };
@@ -188,6 +190,23 @@ export default function RegionsPage() {
                             When enabled, validations scoped to this region cannot advance without a validation plan.
                         </p>
                     </div>
+                    <div className="mb-4">
+                        <label className="flex items-center">
+                            <input
+                                type="checkbox"
+                                checked={formData.requires_standalone_rating}
+                                onChange={(e) => setFormData({ ...formData, requires_standalone_rating: e.target.checked })}
+                                className="h-4 w-4 text-blue-600 rounded focus:ring-blue-500"
+                            />
+                            <span className="ml-2 text-sm font-medium">
+                                Requires Standalone Risk Rating
+                            </span>
+                        </label>
+                        <p className="text-xs text-gray-500 mt-1 ml-6">
+                            When enabled, models deployed to this region must have a completed regional risk assessment
+                            before validations can progress to Review or Approval status.
+                        </p>
+                    </div>
                         <div className="flex gap-2">
                             <button type="submit" className="btn-primary">
                                 {editingRegion ? 'Update' : 'Create'}
@@ -209,6 +228,7 @@ export default function RegionsPage() {
                             <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Name</th>
                             <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Approval Required</th>
                             <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Validation Plan Required</th>
+                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Standalone Rating</th>
                             <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Created</th>
                             <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
                         </tr>
@@ -216,7 +236,7 @@ export default function RegionsPage() {
                     <tbody className="bg-white divide-y divide-gray-200">
                         {regions.length === 0 ? (
                             <tr>
-                                <td colSpan={7} className="px-6 py-4 text-center text-gray-500">
+                                <td colSpan={8} className="px-6 py-4 text-center text-gray-500">
                                     No regions yet. Click "Add Region" to create one.
                                 </td>
                             </tr>
@@ -248,6 +268,17 @@ export default function RegionsPage() {
                                     <td className="px-6 py-4 whitespace-nowrap">
                                         {region.enforce_validation_plan ? (
                                             <span className="px-2 py-1 bg-green-100 text-green-800 text-xs font-semibold rounded">
+                                                Yes
+                                            </span>
+                                        ) : (
+                                            <span className="px-2 py-1 bg-gray-100 text-gray-800 text-xs font-semibold rounded">
+                                                No
+                                            </span>
+                                        )}
+                                    </td>
+                                    <td className="px-6 py-4 whitespace-nowrap">
+                                        {region.requires_standalone_rating ? (
+                                            <span className="px-2 py-1 bg-purple-100 text-purple-800 text-xs font-semibold rounded">
                                                 Yes
                                             </span>
                                         ) : (

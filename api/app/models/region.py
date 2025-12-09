@@ -24,6 +24,10 @@ class Region(Base):
         Boolean, nullable=False, default=False, server_default="false",
         comment="When true, validation plans are required for requests scoped to this region"
     )
+    requires_standalone_rating: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false",
+        comment="When true, models deployed to this region require a region-specific risk assessment"
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime, default=utc_now, nullable=False
     )

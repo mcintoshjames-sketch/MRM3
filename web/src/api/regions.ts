@@ -6,6 +6,7 @@ export interface Region {
     name: string;
     requires_regional_approval?: boolean; // Optional for backward compatibility
     enforce_validation_plan?: boolean;
+    requires_standalone_rating?: boolean; // When true, models in this region require regional risk assessments
     created_at: string;
 }
 

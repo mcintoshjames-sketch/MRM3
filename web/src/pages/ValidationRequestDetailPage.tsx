@@ -129,6 +129,10 @@ interface ValidationRequestDetail {
     outcome: ValidationOutcome | null;
     // Risk-tier-based lead time (replaces fixed complete_work_days for work stages)
     applicable_lead_time_days: number;
+    // Hold time tracking
+    total_hold_days: number;
+    previous_status_before_hold: string | null;
+    adjusted_validation_team_sla_due_date: string | null;
 }
 
 interface PriorValidationSummary {
@@ -176,12 +180,18 @@ export default function ValidationRequestDetailPage() {
     const validationPlanRef = useRef<ValidationPlanFormHandle>(null);
 
     // Form states
-    const [showStatusModal, setShowStatusModal] = useState(false);
     const [showAssignmentModal, setShowAssignmentModal] = useState(false);
     const [showEditAssignmentModal, setShowEditAssignmentModal] = useState(false);
     const [showOutcomeModal, setShowOutcomeModal] = useState(false);
     const [showApprovalModal, setShowApprovalModal] = useState(false);
     const [showSubmissionModal, setShowSubmissionModal] = useState(false);
+    // Hold/Cancel/Resume modals
+    const [showHoldModal, setShowHoldModal] = useState(false);
+    const [showCancelModal, setShowCancelModal] = useState(false);
+    const [showResumeModal, setShowResumeModal] = useState(false);
+    const [holdReason, setHoldReason] = useState('');
+    const [cancelReason, setCancelReason] = useState('');
+    const [resumeNotes, setResumeNotes] = useState('');
 
     const [statusOptions, setStatusOptions] = useState<TaxonomyValue[]>([]);
     const [ratingOptions, setRatingOptions] = useState<TaxonomyValue[]>([]);
@@ -196,7 +206,11 @@ export default function ValidationRequestDetailPage() {
     // Limitations state
     const [limitations, setLimitations] = useState<LimitationListItem[]>([]);
 
+    // Admin status override state (kept for potential future use)
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const [_showStatusModal, setShowStatusModal] = useState(false);
     const [newStatus, setNewStatus] = useState({ status_id: 0, reason: '' });
+
     const [newAssignment, setNewAssignment] = useState({
         validator_id: 0,
         is_primary: false,
@@ -239,10 +253,11 @@ export default function ValidationRequestDetailPage() {
     const [deleteAssignmentData, setDeleteAssignmentData] = useState({ assignment_id: 0, new_primary_id: 0 });
     const [priorValidation, setPriorValidation] = useState<PriorValidationSummary | null>(null);
 
-    // Assessment warning modal state
+    // Assessment warning modal state (for status transitions that trigger risk assessment checks)
     const [showAssessmentWarningModal, setShowAssessmentWarningModal] = useState(false);
     const [assessmentWarnings, setAssessmentWarnings] = useState<string[]>([]);
     const [pendingStatusUpdate, setPendingStatusUpdate] = useState<{ status_id: number; reason: string } | null>(null);
+    const [pendingCompleteWork, setPendingCompleteWork] = useState<{ status_id: number; reason: string } | null>(null);
 
     useEffect(() => {
         fetchData();
@@ -519,6 +534,7 @@ export default function ValidationRequestDetailPage() {
         }
     };
 
+    // Admin status update handler (with assessment warning support)
     const handleStatusUpdate = async (skipAssessmentWarning: boolean = false) => {
         const statusToUpdate = pendingStatusUpdate || newStatus;
         if (!statusToUpdate.status_id) return;
@@ -571,13 +587,77 @@ export default function ValidationRequestDetailPage() {
 
     const handleConfirmAssessmentWarning = () => {
         // User acknowledged the warning, retry with skip flag
-        handleStatusUpdate(true);
+        if (pendingCompleteWork) {
+            // Retry complete work action
+            handleCompleteWork(true);
+        } else if (pendingStatusUpdate) {
+            // Retry status update
+            handleStatusUpdate(true);
+        }
     };
 
     const handleCancelAssessmentWarning = () => {
         setShowAssessmentWarningModal(false);
         setPendingStatusUpdate(null);
+        setPendingCompleteWork(null);
         setAssessmentWarnings([]);
+    };
+
+    // Hold/Cancel/Resume handlers
+    const handlePutOnHold = async () => {
+        if (holdReason.trim().length < 10) {
+            setError('Hold reason must be at least 10 characters');
+            return;
+        }
+        setActionLoading(true);
+        try {
+            await api.post(`/validation-workflow/requests/${id}/hold`, {
+                hold_reason: holdReason.trim()
+            });
+            setShowHoldModal(false);
+            setHoldReason('');
+            fetchData();
+        } catch (err: any) {
+            setError(err.response?.data?.detail || 'Failed to put request on hold');
+        } finally {
+            setActionLoading(false);
+        }
+    };
+
+    const handleCancelRequest = async () => {
+        if (cancelReason.trim().length < 10) {
+            setError('Cancel reason must be at least 10 characters');
+            return;
+        }
+        setActionLoading(true);
+        try {
+            await api.post(`/validation-workflow/requests/${id}/cancel`, {
+                cancel_reason: cancelReason.trim()
+            });
+            setShowCancelModal(false);
+            setCancelReason('');
+            fetchData();
+        } catch (err: any) {
+            setError(err.response?.data?.detail || 'Failed to cancel request');
+        } finally {
+            setActionLoading(false);
+        }
+    };
+
+    const handleResumeFromHold = async () => {
+        setActionLoading(true);
+        try {
+            await api.post(`/validation-workflow/requests/${id}/resume`, {
+                resume_notes: resumeNotes.trim() || null
+            });
+            setShowResumeModal(false);
+            setResumeNotes('');
+            fetchData();
+        } catch (err: any) {
+            setError(err.response?.data?.detail || 'Failed to resume request');
+        } finally {
+            setActionLoading(false);
+        }
     };
 
     const handleAddAssignment = async () => {
@@ -859,7 +939,7 @@ export default function ValidationRequestDetailPage() {
         }
     };
 
-    const handleCompleteWork = async () => {
+    const handleCompleteWork = async (skipAssessmentWarning: boolean = false) => {
         if (!request) return;
 
         // Check if outcome has been created
@@ -868,9 +948,11 @@ export default function ValidationRequestDetailPage() {
             return;
         }
 
-        // Check for unsaved plan changes
-        const canProceed = await checkUnsavedPlanChanges();
-        if (!canProceed) return;
+        // Check for unsaved plan changes (only on initial request)
+        if (!skipAssessmentWarning) {
+            const canProceed = await checkUnsavedPlanChanges();
+            if (!canProceed) return;
+        }
 
         // Check if there's a reviewer assigned
         const hasReviewer = request.assignments.some(a => a.is_reviewer);
@@ -884,8 +966,11 @@ export default function ValidationRequestDetailPage() {
             warningMessage = 'No reviewer is assigned to this validation. The validation will move directly to Pending Approval, skipping the review step. ';
         }
 
-        const confirmMessage = warningMessage + 'Are you sure you want to complete this validation?';
-        if (!confirm(confirmMessage)) return;
+        // Only show confirmation on first attempt (not when retrying after assessment warning)
+        if (!skipAssessmentWarning) {
+            const confirmMessage = warningMessage + 'Are you sure you want to complete this validation?';
+            if (!confirm(confirmMessage)) return;
+        }
 
         const targetStatus = statusOptions.find(s => s.code === targetStatusCode);
         if (!targetStatus) {
@@ -893,15 +978,41 @@ export default function ValidationRequestDetailPage() {
             return;
         }
 
+        const changeReason = hasReviewer ? 'Work completed, ready for review' : 'Work completed, moving to approval (no reviewer assigned)';
+
         setActionLoading(true);
         try {
             await api.patch(`/validation-workflow/requests/${id}/status`, {
                 new_status_id: targetStatus.value_id,
-                change_reason: hasReviewer ? 'Work completed, ready for review' : 'Work completed, moving to approval (no reviewer assigned)'
+                change_reason: changeReason,
+                skip_assessment_warning: skipAssessmentWarning
             });
+            // Clear any pending state on success
+            setPendingCompleteWork(null);
+            setAssessmentWarnings([]);
+            setShowAssessmentWarningModal(false);
             await fetchData();
         } catch (err: any) {
-            setError(err.response?.data?.detail || 'Failed to complete work');
+            // Check for 409 Conflict with assessment warnings
+            if (err.response?.status === 409) {
+                const detail = err.response?.data?.detail;
+                if (detail?.warning_type === 'outdated_risk_assessment') {
+                    // Store the pending action and show warning modal
+                    setPendingCompleteWork({ status_id: targetStatus.value_id, reason: changeReason });
+                    setAssessmentWarnings(detail.warnings || [detail.message]);
+                    setShowAssessmentWarningModal(true);
+                    return;
+                }
+            }
+            // Handle other errors
+            const errorDetail = err.response?.data?.detail;
+            if (typeof errorDetail === 'string') {
+                setError(errorDetail);
+            } else if (typeof errorDetail === 'object' && errorDetail?.message) {
+                setError(errorDetail.message);
+            } else {
+                setError('Failed to complete work');
+            }
         } finally {
             setActionLoading(false);
         }
@@ -954,6 +1065,22 @@ export default function ValidationRequestDetailPage() {
             };
         }
         return { approverRole: 'Approver', comments: reason, date: revisionEntry.changed_at };
+    };
+
+    // Get the most recent hold reason from status history
+    const getLastHoldReason = () => {
+        if (!request?.status_history) return null;
+        // Find the most recent transition TO ON_HOLD status
+        const holdEntries = request.status_history
+            .filter(h => h.new_status?.code === 'ON_HOLD')
+            .sort((a, b) => new Date(b.changed_at).getTime() - new Date(a.changed_at).getTime());
+        if (holdEntries.length === 0) return null;
+        const mostRecent = holdEntries[0];
+        return {
+            reason: mostRecent.change_reason || 'No reason provided',
+            date: mostRecent.changed_at,
+            changedBy: mostRecent.changed_by?.full_name || 'Unknown'
+        };
     };
 
     // Handle resubmitting validation from REVISION to PENDING_APPROVAL
@@ -1141,7 +1268,7 @@ export default function ValidationRequestDetailPage() {
                     {/* Complete Work Button */}
                     {isPrimaryValidator && request.current_status.code === 'IN_PROGRESS' && (
                         <button
-                            onClick={handleCompleteWork}
+                            onClick={() => handleCompleteWork()}
                             disabled={actionLoading}
                             className="bg-purple-600 text-white px-4 py-2 rounded hover:bg-purple-700 disabled:opacity-50"
                         >
@@ -1152,7 +1279,7 @@ export default function ValidationRequestDetailPage() {
                     {/* Admin Progress Work Button (Admin only, when in In Progress) */}
                     {user?.role === 'Admin' && request.current_status.code === 'IN_PROGRESS' && (
                         <button
-                            onClick={handleCompleteWork}
+                            onClick={() => handleCompleteWork()}
                             disabled={actionLoading}
                             className="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700 disabled:opacity-50"
                         >
@@ -1182,15 +1309,42 @@ export default function ValidationRequestDetailPage() {
                         </button>
                     )}
 
-                    {/* Update Status Button (for admins/validators) */}
-                    {canEditRequest && (
-                        <button
-                            onClick={() => setShowStatusModal(true)}
-                            className="btn-primary"
-                        >
-                            Update Status
-                        </button>
+                    {/* Hold/Cancel/Resume Buttons - replaces generic Update Status for cleaner workflow */}
+                    {canEditRequest && !['APPROVED', 'CANCELLED', 'ON_HOLD'].includes(request.current_status.code) && (
+                        <>
+                            <button
+                                onClick={() => setShowHoldModal(true)}
+                                className="bg-amber-600 text-white px-4 py-2 rounded hover:bg-amber-700"
+                            >
+                                Put on Hold
+                            </button>
+                            <button
+                                onClick={() => setShowCancelModal(true)}
+                                className="bg-red-600 text-white px-4 py-2 rounded hover:bg-red-700"
+                            >
+                                Cancel Request
+                            </button>
+                        </>
                     )}
+
+                    {/* Resume and Cancel when ON_HOLD */}
+                    {canEditRequest && request.current_status.code === 'ON_HOLD' && (
+                        <>
+                            <button
+                                onClick={() => setShowResumeModal(true)}
+                                className="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700"
+                            >
+                                Resume Work
+                            </button>
+                            <button
+                                onClick={() => setShowCancelModal(true)}
+                                className="bg-red-600 text-white px-4 py-2 rounded hover:bg-red-700"
+                            >
+                                Cancel Request
+                            </button>
+                        </>
+                    )}
+
                 </div>
             </div>
 
@@ -1200,6 +1354,49 @@ export default function ValidationRequestDetailPage() {
                     <button onClick={() => setError(null)} className="float-right font-bold">×</button>
                 </div>
             )}
+
+            {/* On Hold Banner - shown when request is currently on hold */}
+            {request.current_status?.code === 'ON_HOLD' && (() => {
+                const holdInfo = getLastHoldReason();
+                return (
+                    <div className="bg-amber-50 border-l-4 border-amber-500 p-4 mb-6">
+                        <div className="flex items-start">
+                            <svg className="h-6 w-6 text-amber-600 mt-0.5 mr-3 flex-shrink-0" fill="none" viewBox="0 0 24 24" strokeWidth="1.5" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 5.25v13.5m-7.5-13.5v13.5" />
+                            </svg>
+                            <div className="flex-1">
+                                <h3 className="text-sm font-bold text-amber-800">
+                                    This Validation Request is ON HOLD
+                                </h3>
+                                <div className="mt-1 text-sm text-amber-700 space-y-1">
+                                    <p>
+                                        <strong>Duration:</strong> {request.total_hold_days} day{request.total_hold_days !== 1 ? 's' : ''}
+                                        {request.previous_status_before_hold && (
+                                            <span className="ml-3">
+                                                <strong>Previous status:</strong> {request.previous_status_before_hold}
+                                            </span>
+                                        )}
+                                    </p>
+                                    {holdInfo && (
+                                        <p className="text-xs text-amber-600">
+                                            Put on hold by {holdInfo.changedBy} on {holdInfo.date.split('T')[0]}
+                                        </p>
+                                    )}
+                                </div>
+                                {holdInfo && (
+                                    <div className="mt-2 p-3 bg-white border border-amber-200 rounded">
+                                        <p className="text-sm text-gray-700 font-medium mb-1">Reason:</p>
+                                        <p className="text-sm text-gray-800 whitespace-pre-wrap">{holdInfo.reason}</p>
+                                    </div>
+                                )}
+                                <p className="text-sm text-amber-700 mt-3">
+                                    Team SLA clock is paused. Click <strong>"Resume Work"</strong> to continue validation.
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                );
+            })()}
 
             {/* Revision Feedback Banner - shown when request is sent back for revision */}
             {request.current_status?.code === 'REVISION' && (() => {
@@ -2629,48 +2826,53 @@ export default function ValidationRequestDetailPage() {
                 )}
             </div>
 
-            {/* Status Update Modal */}
-            {showStatusModal && (
+            {/* Put on Hold Modal */}
+            {showHoldModal && (
                 <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-                    <div className="bg-white rounded-lg p-6 w-full max-w-md">
-                        <h3 className="text-lg font-bold mb-4">Update Project Status</h3>
-                        <div className="mb-4">
-                            <label className="block text-sm font-medium mb-2">New Status</label>
-                            <select
-                                className="input-field"
-                                value={newStatus.status_id}
-                                onChange={(e) => setNewStatus({ ...newStatus, status_id: parseInt(e.target.value) })}
-                            >
-                                <option value={0}>Select Status</option>
-                                {/* Filter out REVISION - it can only be set via the send-back approval flow */}
-                                {statusOptions
-                                    .filter((opt) => opt.code !== 'REVISION')
-                                    .map((opt) => (
-                                    <option key={opt.value_id} value={opt.value_id}>
-                                        {opt.label}
-                                    </option>
-                                ))}
-                            </select>
+                    <div className="bg-white rounded-lg p-6 w-full max-w-md border-t-4 border-amber-500">
+                        <div className="flex items-center gap-3 mb-4">
+                            <svg className="h-6 w-6 text-amber-600" fill="none" viewBox="0 0 24 24" strokeWidth="1.5" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 5.25v13.5m-7.5-13.5v13.5" />
+                            </svg>
+                            <h3 className="text-lg font-bold text-amber-800">Put Validation on Hold</h3>
+                        </div>
+                        <div className="bg-amber-50 border border-amber-200 rounded p-3 mb-4">
+                            <p className="text-sm text-amber-800">
+                                <strong>What happens when on hold:</strong>
+                            </p>
+                            <ul className="text-sm text-amber-700 mt-2 ml-4 list-disc">
+                                <li>Model version status reverts to DRAFT</li>
+                                <li>Team SLA clock is paused (hold time excluded from calculations)</li>
+                                <li>Compliance deadline remains unchanged</li>
+                            </ul>
                         </div>
                         <div className="mb-4">
-                            <label className="block text-sm font-medium mb-2">Reason (Optional)</label>
+                            <label className="block text-sm font-medium mb-2">
+                                Hold Reason <span className="text-red-500">*</span>
+                            </label>
                             <textarea
                                 className="input-field"
-                                rows={3}
-                                value={newStatus.reason}
-                                onChange={(e) => setNewStatus({ ...newStatus, reason: e.target.value })}
-                                placeholder="Explain why this status change is being made..."
+                                rows={4}
+                                value={holdReason}
+                                onChange={(e) => setHoldReason(e.target.value)}
+                                placeholder="Explain why this validation is being put on hold (minimum 10 characters)..."
                             />
+                            <p className="text-xs text-gray-500 mt-1">
+                                {holdReason.length}/10 characters minimum
+                            </p>
                         </div>
                         <div className="flex gap-2">
                             <button
-                                onClick={() => handleStatusUpdate()}
-                                disabled={actionLoading || !newStatus.status_id}
-                                className="btn-primary"
+                                onClick={handlePutOnHold}
+                                disabled={actionLoading || holdReason.trim().length < 10}
+                                className="bg-amber-600 text-white px-4 py-2 rounded hover:bg-amber-700 disabled:opacity-50"
                             >
-                                {actionLoading ? 'Updating...' : 'Update Status'}
+                                {actionLoading ? 'Processing...' : 'Put on Hold'}
                             </button>
-                            <button onClick={() => setShowStatusModal(false)} className="btn-secondary">
+                            <button
+                                onClick={() => { setShowHoldModal(false); setHoldReason(''); }}
+                                className="btn-secondary"
+                            >
                                 Cancel
                             </button>
                         </div>
@@ -2678,51 +2880,101 @@ export default function ValidationRequestDetailPage() {
                 </div>
             )}
 
-            {/* Risk Assessment Warning Modal */}
-            {showAssessmentWarningModal && (
+            {/* Cancel Request Modal */}
+            {showCancelModal && (
                 <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-                    <div className="bg-white rounded-lg p-6 w-full max-w-lg">
+                    <div className="bg-white rounded-lg p-6 w-full max-w-md border-t-4 border-red-500">
                         <div className="flex items-center gap-3 mb-4">
-                            <div className="flex-shrink-0">
-                                <svg className="h-8 w-8 text-yellow-500" fill="none" viewBox="0 0 24 24" strokeWidth="1.5" stroke="currentColor">
-                                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" />
-                                </svg>
-                            </div>
-                            <h3 className="text-lg font-bold text-yellow-700">Risk Assessment Review Recommended</h3>
+                            <svg className="h-6 w-6 text-red-600" fill="none" viewBox="0 0 24 24" strokeWidth="1.5" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                            </svg>
+                            <h3 className="text-lg font-bold text-red-800">Cancel Validation Request</h3>
+                        </div>
+                        <div className="bg-red-50 border border-red-200 rounded p-3 mb-4">
+                            <p className="text-sm text-red-800 font-medium">
+                                Warning: This action cannot be undone
+                            </p>
+                            <p className="text-sm text-red-700 mt-1">
+                                Cancelling will terminate this validation request permanently.
+                                Model version status will revert to DRAFT.
+                            </p>
                         </div>
                         <div className="mb-4">
-                            <p className="text-sm text-gray-600 mb-3">
-                                The following models have risk assessments that may need to be reviewed before proceeding:
-                            </p>
-                            <div className="bg-yellow-50 border border-yellow-200 rounded p-3 max-h-48 overflow-y-auto">
-                                <ul className="text-sm text-yellow-800 space-y-2">
-                                    {assessmentWarnings.map((warning, index) => (
-                                        <li key={index} className="flex items-start gap-2">
-                                            <span className="text-yellow-600 mt-0.5">•</span>
-                                            <span>{warning}</span>
-                                        </li>
-                                    ))}
-                                </ul>
-                            </div>
-                        </div>
-                        <div className="bg-gray-50 p-3 rounded mb-4">
-                            <p className="text-sm text-gray-700">
-                                <strong>Recommendation:</strong> Review and update the risk assessment(s) to ensure they reflect the current model risk profile before moving forward with this validation.
+                            <label className="block text-sm font-medium mb-2">
+                                Cancellation Reason <span className="text-red-500">*</span>
+                            </label>
+                            <textarea
+                                className="input-field"
+                                rows={4}
+                                value={cancelReason}
+                                onChange={(e) => setCancelReason(e.target.value)}
+                                placeholder="Explain why this validation is being cancelled (minimum 10 characters)..."
+                            />
+                            <p className="text-xs text-gray-500 mt-1">
+                                {cancelReason.length}/10 characters minimum
                             </p>
                         </div>
-                        <div className="flex gap-2 justify-end">
+                        <div className="flex gap-2">
                             <button
-                                onClick={handleCancelAssessmentWarning}
+                                onClick={handleCancelRequest}
+                                disabled={actionLoading || cancelReason.trim().length < 10}
+                                className="bg-red-600 text-white px-4 py-2 rounded hover:bg-red-700 disabled:opacity-50"
+                            >
+                                {actionLoading ? 'Processing...' : 'Cancel Request'}
+                            </button>
+                            <button
+                                onClick={() => { setShowCancelModal(false); setCancelReason(''); }}
+                                className="btn-secondary"
+                            >
+                                Go Back
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Resume from Hold Modal */}
+            {showResumeModal && (
+                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+                    <div className="bg-white rounded-lg p-6 w-full max-w-md border-t-4 border-green-500">
+                        <div className="flex items-center gap-3 mb-4">
+                            <svg className="h-6 w-6 text-green-600" fill="none" viewBox="0 0 24 24" strokeWidth="1.5" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M5.25 5.653c0-.856.917-1.398 1.667-.986l11.54 6.348a1.125 1.125 0 010 1.971l-11.54 6.347a1.125 1.125 0 01-1.667-.985V5.653z" />
+                            </svg>
+                            <h3 className="text-lg font-bold text-green-800">Resume Validation Work</h3>
+                        </div>
+                        <div className="bg-green-50 border border-green-200 rounded p-3 mb-4">
+                            <p className="text-sm text-green-800">
+                                <strong>Hold Summary:</strong>
+                            </p>
+                            <ul className="text-sm text-green-700 mt-2">
+                                <li>On hold for: <strong>{request.total_hold_days}</strong> days</li>
+                                <li>Will resume to: <strong>{request.previous_status_before_hold || 'Previous status'}</strong></li>
+                            </ul>
+                        </div>
+                        <div className="mb-4">
+                            <label className="block text-sm font-medium mb-2">Resume Notes (Optional)</label>
+                            <textarea
+                                className="input-field"
+                                rows={3}
+                                value={resumeNotes}
+                                onChange={(e) => setResumeNotes(e.target.value)}
+                                placeholder="Add any notes about resuming work..."
+                            />
+                        </div>
+                        <div className="flex gap-2">
+                            <button
+                                onClick={handleResumeFromHold}
+                                disabled={actionLoading}
+                                className="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700 disabled:opacity-50"
+                            >
+                                {actionLoading ? 'Processing...' : 'Resume Work'}
+                            </button>
+                            <button
+                                onClick={() => { setShowResumeModal(false); setResumeNotes(''); }}
                                 className="btn-secondary"
                             >
                                 Cancel
-                            </button>
-                            <button
-                                onClick={handleConfirmAssessmentWarning}
-                                disabled={actionLoading}
-                                className="bg-yellow-600 hover:bg-yellow-700 text-white px-4 py-2 rounded font-medium"
-                            >
-                                {actionLoading ? 'Processing...' : 'Proceed Anyway'}
                             </button>
                         </div>
                     </div>
@@ -3336,6 +3588,48 @@ export default function ValidationRequestDetailPage() {
                     preselectedModelId={request.models[0]?.model_id}
                     preselectedValidationRequestId={request.request_id}
                 />
+            )}
+
+            {/* Assessment Warning Modal - shown when status transition would proceed despite outdated risk assessment */}
+            {showAssessmentWarningModal && (
+                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+                    <div className="bg-white rounded-lg p-6 w-full max-w-md">
+                        <div className="flex items-center gap-3 mb-4">
+                            <svg className="h-6 w-6 text-amber-500" fill="none" viewBox="0 0 24 24" strokeWidth="1.5" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" />
+                            </svg>
+                            <h3 className="text-lg font-bold text-amber-800">Risk Assessment Warning</h3>
+                        </div>
+                        <div className="bg-amber-50 border border-amber-200 rounded p-3 mb-4">
+                            <p className="text-sm text-amber-800 font-medium mb-2">
+                                The following issues were detected:
+                            </p>
+                            <ul className="list-disc list-inside text-sm text-amber-700 space-y-1">
+                                {assessmentWarnings.map((warning, idx) => (
+                                    <li key={idx}>{warning}</li>
+                                ))}
+                            </ul>
+                        </div>
+                        <p className="text-sm text-gray-600 mb-4">
+                            Do you want to proceed with this status change despite the warning? The validation will continue, but consider updating the risk assessment afterward.
+                        </p>
+                        <div className="flex gap-2">
+                            <button
+                                onClick={handleConfirmAssessmentWarning}
+                                disabled={actionLoading}
+                                className="bg-amber-600 text-white px-4 py-2 rounded hover:bg-amber-700 disabled:opacity-50"
+                            >
+                                {actionLoading ? 'Processing...' : 'Proceed Anyway'}
+                            </button>
+                            <button
+                                onClick={handleCancelAssessmentWarning}
+                                className="btn-secondary"
+                            >
+                                Cancel
+                            </button>
+                        </div>
+                    </div>
+                </div>
             )}
         </Layout>
     );

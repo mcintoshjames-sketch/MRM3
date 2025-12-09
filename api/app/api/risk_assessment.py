@@ -161,6 +161,56 @@ def get_global_assessment_status(db: Session, model_id: int) -> dict:
     }
 
 
+def get_regional_assessment_status(db: Session, model_id: int, region_id: int) -> dict:
+    """
+    Get the status of a regional risk assessment for a model.
+
+    Returns a dict with:
+    - has_assessment: bool - whether a regional assessment exists
+    - is_complete: bool - whether the assessment is complete (has all required ratings)
+    - assessed_at: datetime or None - when the assessment was last finalized
+    - final_tier_id: int or None - the computed tier ID
+    - assessment_id: int or None - the assessment ID
+    """
+    assessment = (
+        db.query(ModelRiskAssessment)
+        .options(
+            joinedload(ModelRiskAssessment.factor_assessments)
+            .joinedload(QualitativeFactorAssessment.factor)
+        )
+        .filter(
+            ModelRiskAssessment.model_id == model_id,
+            ModelRiskAssessment.region_id == region_id  # Regional assessment
+        )
+        .first()
+    )
+
+    if not assessment:
+        return {
+            "has_assessment": False,
+            "is_complete": False,
+            "assessed_at": None,
+            "final_tier_id": None,
+            "assessment_id": None,
+        }
+
+    # Check if assessment is complete (same logic as build_assessment_response)
+    has_quantitative = assessment.quantitative_rating is not None
+    factor_assessments = assessment.factor_assessments or []
+    has_all_factors = len(factor_assessments) > 0 and all(
+        fa.rating is not None for fa in factor_assessments
+    )
+    is_complete = has_quantitative and has_all_factors
+
+    return {
+        "has_assessment": True,
+        "is_complete": is_complete,
+        "assessed_at": assessment.assessed_at,
+        "final_tier_id": assessment.final_tier_id,
+        "assessment_id": assessment.assessment_id,
+    }
+
+
 def build_assessment_response(
     assessment: ModelRiskAssessment,
     db: Session,

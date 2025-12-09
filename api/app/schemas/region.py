@@ -15,6 +15,10 @@ class RegionBase(BaseModel):
         default=False,
         description="Whether validations in this region must include a validation plan"
     )
+    requires_standalone_rating: bool = Field(
+        default=False,
+        description="Whether models deployed to this region require a region-specific risk assessment"
+    )
 
 
 class RegionCreate(RegionBase):
@@ -28,6 +32,7 @@ class RegionUpdate(BaseModel):
     name: str | None = Field(None, max_length=100)
     requires_regional_approval: bool | None = Field(None)
     enforce_validation_plan: bool | None = Field(None)
+    requires_standalone_rating: bool | None = Field(None)
 
 
 class Region(RegionBase):

@@ -123,6 +123,36 @@ class ValidationRequestStatusUpdate(BaseModel):
     skip_assessment_warning: bool = False  # Skip warning about outdated risk assessments
 
 
+class ValidationRequestHold(BaseModel):
+    """Schema for putting a validation request on hold - reason required."""
+    hold_reason: str = Field(
+        ...,
+        min_length=10,
+        description="Required explanation for putting request on hold (min 10 characters)"
+    )
+
+
+class ValidationRequestCancel(BaseModel):
+    """Schema for cancelling a validation request - reason required."""
+    cancel_reason: str = Field(
+        ...,
+        min_length=10,
+        description="Required explanation for cancellation (min 10 characters)"
+    )
+
+
+class ValidationRequestResume(BaseModel):
+    """Schema for resuming a validation request from hold."""
+    resume_notes: Optional[str] = Field(
+        None,
+        description="Optional explanation for resuming"
+    )
+    target_status_code: Optional[str] = Field(
+        None,
+        description="Override status to resume to (defaults to previous status before hold)"
+    )
+
+
 class ValidationRequestDecline(BaseModel):
     """Schema for admin declining a validation request."""
     decline_reason: str
@@ -439,6 +469,20 @@ class ValidationRequestResponse(BaseModel):
     applicable_lead_time_days: int = Field(
         90,
         description="Risk-tier-specific completion lead time in days from ValidationPolicy"
+    )
+
+    # Hold time tracking
+    total_hold_days: int = Field(
+        0,
+        description="Total days this request has spent in ON_HOLD status"
+    )
+    previous_status_before_hold: Optional[str] = Field(
+        None,
+        description="Status code before most recent ON_HOLD (for Resume functionality)"
+    )
+    adjusted_validation_team_sla_due_date: Optional[date] = Field(
+        None,
+        description="Team SLA due date adjusted for hold time (extends by hold days)"
     )
 
     class Config:

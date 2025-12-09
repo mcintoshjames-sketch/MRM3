@@ -1,5 +1,5 @@
 """Validation workflow models."""
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 from typing import Optional, List, TYPE_CHECKING
 from sqlalchemy import String, Integer, Text, ForeignKey, DateTime, Date, Boolean, Float, Table, Column
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -529,6 +529,9 @@ class ValidationRequest(Base):
         """
         Is the validation TEAM behind on their SLA?
         Based on validation_team_sla_due_date (from submission received).
+
+        IMPORTANT: Uses adjusted_validation_team_sla_due_date which excludes hold time.
+        Team should not be penalized for periods when work was paused.
         """
         if not self.is_periodic_revalidation:
             return "N/A"
@@ -536,19 +539,22 @@ class ValidationRequest(Base):
         if not self.submission_received_date:
             return "Awaiting Submission"
 
+        # Use adjusted due date that accounts for hold time
+        adjusted_due = self.adjusted_validation_team_sla_due_date
+
         if self.current_status.code == "APPROVED":
-            # Check if completed within SLA
+            # Check if completed within SLA (adjusted for hold time)
             completed_date = self.updated_at.date()
-            if self.validation_team_sla_due_date and completed_date <= self.validation_team_sla_due_date:
+            if adjusted_due and completed_date <= adjusted_due:
                 return "Completed Within SLA"
             else:
                 return "Completed Past SLA"
 
         today = date.today()
-        if not self.validation_team_sla_due_date:
+        if not adjusted_due:
             return "Unknown"
 
-        if today <= self.validation_team_sla_due_date:
+        if today <= adjusted_due:
             return "In Progress (On Time)"
         else:
             return "In Progress (Past SLA)"
@@ -570,10 +576,82 @@ class ValidationRequest(Base):
 
     @property
     def days_until_team_sla_due(self) -> Optional[int]:
-        """Days until validation team SLA expires (negative if past)."""
-        if not self.validation_team_sla_due_date:
+        """
+        Days until validation team SLA expires (negative if past).
+
+        Uses adjusted due date that accounts for hold time.
+        """
+        adjusted_due = self.adjusted_validation_team_sla_due_date
+        if not adjusted_due:
             return None
-        return (self.validation_team_sla_due_date - date.today()).days
+        return (adjusted_due - date.today()).days
+
+    @property
+    def total_hold_days(self) -> int:
+        """
+        Calculate total days this request has spent in ON_HOLD status.
+
+        Computed from status history by summing durations of all ON_HOLD periods.
+        Requires status_history to be eager-loaded for accuracy.
+        """
+        hold_days = 0
+        hold_start = None
+
+        # Sort by changed_at ascending to process chronologically
+        sorted_history = sorted(self.status_history, key=lambda x: x.changed_at)
+
+        for entry in sorted_history:
+            if entry.new_status and entry.new_status.code == "ON_HOLD":
+                # Started a hold period
+                hold_start = entry.changed_at
+            elif hold_start is not None:
+                # Ended a hold period (transitioned away from ON_HOLD)
+                delta = entry.changed_at - hold_start
+                hold_days += delta.days
+                hold_start = None
+
+        # If currently on hold, add time from last hold start to now
+        if hold_start is not None:
+            delta = utc_now() - hold_start
+            hold_days += delta.days
+
+        return hold_days
+
+    @property
+    def previous_status_before_hold(self) -> Optional[str]:
+        """
+        Get the status code before the most recent ON_HOLD transition.
+
+        Used for "Resume" functionality to return to the appropriate status.
+        Returns None if not currently on hold or no history available.
+        """
+        if not self.current_status or self.current_status.code != "ON_HOLD":
+            return None
+
+        # Find the history entry that transitioned TO ON_HOLD (most recent)
+        sorted_history = sorted(self.status_history, key=lambda x: x.changed_at, reverse=True)
+
+        for entry in sorted_history:
+            if entry.new_status and entry.new_status.code == "ON_HOLD":
+                if entry.old_status:
+                    return entry.old_status.code
+                break
+
+        return None
+
+    @property
+    def adjusted_validation_team_sla_due_date(self) -> Optional[date]:
+        """
+        Validation team SLA due date adjusted for hold time.
+
+        Extends the deadline by the total number of days the request was on hold.
+        This ensures the team isn't penalized for hold periods outside their control.
+        """
+        base_due = self.validation_team_sla_due_date
+        if not base_due:
+            return None
+
+        return base_due + timedelta(days=self.total_hold_days)
 
     @property
     def scorecard_overall_rating(self) -> Optional[str]:

@@ -27,6 +27,7 @@ from app.models import (
 from app.models.model_delegate import ModelDelegate
 from app.schemas.validation import (
     ValidationRequestCreate, ValidationRequestUpdate, ValidationRequestStatusUpdate,
+    ValidationRequestHold, ValidationRequestCancel, ValidationRequestResume,
     ValidationRequestDecline, ValidationRequestMarkSubmission, ValidationApprovalUnlink,
     ValidationWarning, ValidationRequestWarningsResponse,
     ValidationRequestResponse, ValidationRequestDetailResponse, ValidationRequestListResponse,
@@ -191,6 +192,10 @@ def check_risk_assessment_for_workflow_progression(
     """
     Check risk assessment status for models before allowing workflow progression.
 
+    Checks both:
+    1. Global risk assessment (required for all models)
+    2. Regional risk assessments (required for deployed regions where requires_standalone_rating=True)
+
     Args:
         db: Database session
         models: List of models in the validation request
@@ -203,26 +208,28 @@ def check_risk_assessment_for_workflow_progression(
         - warnings: List[str] - warnings for outdated assessments (user should review)
     """
     # Import here to avoid circular import
-    from app.api.risk_assessment import get_global_assessment_status
+    from app.api.risk_assessment import get_global_assessment_status, get_regional_assessment_status
 
     blocking_errors = []
     warnings = []
 
     for model in models:
-        # Get global assessment status
+        # ========================================
+        # 1. Check global assessment (required)
+        # ========================================
         assessment_status = get_global_assessment_status(db, model.model_id)
 
         # Check if assessment exists and is complete
         if not assessment_status["has_assessment"]:
             blocking_errors.append(
-                f"Model '{model.model_name}' (ID: {model.model_id}) has no risk assessment. "
+                f"Model '{model.model_name}' (ID: {model.model_id}) has no global risk assessment. "
                 f"A completed risk assessment is required before moving to {target_status_code.replace('_', ' ').title()}."
             )
             continue
 
         if not assessment_status["is_complete"]:
             blocking_errors.append(
-                f"Model '{model.model_name}' (ID: {model.model_id}) has an incomplete risk assessment. "
+                f"Model '{model.model_name}' (ID: {model.model_id}) has an incomplete global risk assessment. "
                 f"Please complete the risk assessment before moving to {target_status_code.replace('_', ' ').title()}."
             )
             continue
@@ -237,11 +244,52 @@ def check_risk_assessment_for_workflow_progression(
                 last_validation_naive = last_validation_date.replace(tzinfo=None) if last_validation_date.tzinfo else last_validation_date
                 if assessed_at_naive < last_validation_naive:
                     warnings.append(
-                        f"Model '{model.model_name}' (ID: {model.model_id}) has a risk assessment "
+                        f"Model '{model.model_name}' (ID: {model.model_id}) has a global risk assessment "
                         f"that was last updated on {assessed_at.strftime('%Y-%m-%d')}, "
                         f"before the prior validation completed on {last_validation_date.strftime('%Y-%m-%d')}. "
                         f"Please review and update the risk assessment to ensure it reflects current model risk."
                     )
+
+        # ========================================
+        # 2. Check regional assessments (for deployed regions with requires_standalone_rating=True)
+        # ========================================
+        if hasattr(model, 'model_regions') and model.model_regions:
+            for model_region in model.model_regions:
+                region = model_region.region
+                if region and region.requires_standalone_rating:
+                    regional_status = get_regional_assessment_status(
+                        db, model.model_id, region.region_id
+                    )
+
+                    if not regional_status["has_assessment"]:
+                        blocking_errors.append(
+                            f"Model '{model.model_name}' (ID: {model.model_id}) is deployed to region "
+                            f"'{region.name}' which requires a standalone risk rating, but no regional "
+                            f"risk assessment exists. Please complete a regional risk assessment for "
+                            f"'{region.name}' before moving to {target_status_code.replace('_', ' ').title()}."
+                        )
+                    elif not regional_status["is_complete"]:
+                        blocking_errors.append(
+                            f"Model '{model.model_name}' (ID: {model.model_id}) has an incomplete "
+                            f"regional risk assessment for '{region.name}'. Please complete the "
+                            f"regional risk assessment before moving to {target_status_code.replace('_', ' ').title()}."
+                        )
+                    else:
+                        # Check if regional assessment is outdated
+                        regional_assessed_at = regional_status["assessed_at"]
+                        if regional_assessed_at:
+                            last_validation_date = get_last_validation_completion_date(db, model.model_id)
+                            if last_validation_date:
+                                regional_assessed_naive = regional_assessed_at.replace(tzinfo=None) if regional_assessed_at.tzinfo else regional_assessed_at
+                                last_validation_naive = last_validation_date.replace(tzinfo=None) if last_validation_date.tzinfo else last_validation_date
+                                if regional_assessed_naive < last_validation_naive:
+                                    warnings.append(
+                                        f"Model '{model.model_name}' (ID: {model.model_id}) has a regional "
+                                        f"risk assessment for '{region.name}' that was last updated on "
+                                        f"{regional_assessed_at.strftime('%Y-%m-%d')}, before the prior "
+                                        f"validation completed on {last_validation_date.strftime('%Y-%m-%d')}. "
+                                        f"Please review and update the regional risk assessment."
+                                    )
 
     # Blocking errors prevent progression
     can_proceed = len(blocking_errors) == 0
@@ -2618,6 +2666,283 @@ def decline_validation_request(
     return validation_request
 
 
+# ==================== HOLD / CANCEL / RESUME ENDPOINTS ====================
+
+
+@router.post("/requests/{request_id}/hold", response_model=ValidationRequestResponse)
+def put_request_on_hold(
+    request_id: int,
+    hold_data: ValidationRequestHold,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Put a validation request on hold with mandatory reason.
+
+    - Pauses the validation workflow
+    - Model version status reverts from IN_VALIDATION to DRAFT
+    - Team SLA clock is paused (hold time excluded from calculations)
+    - Compliance deadline remains unchanged
+    """
+    check_validator_or_admin(current_user)
+
+    validation_request = db.query(ValidationRequest).options(
+        joinedload(ValidationRequest.models),
+        joinedload(ValidationRequest.requestor),
+        joinedload(ValidationRequest.validation_type),
+        joinedload(ValidationRequest.priority),
+        joinedload(ValidationRequest.current_status),
+        joinedload(ValidationRequest.regions),
+        joinedload(ValidationRequest.status_history).joinedload(ValidationStatusHistory.new_status),
+        joinedload(ValidationRequest.status_history).joinedload(ValidationStatusHistory.old_status)
+    ).filter(ValidationRequest.request_id == request_id).first()
+
+    if not validation_request:
+        raise HTTPException(status_code=404, detail="Validation request not found")
+
+    # Check current status allows transition to ON_HOLD
+    old_status = validation_request.current_status
+    old_status_code = old_status.code if old_status else None
+
+    if not check_valid_status_transition(old_status_code, "ON_HOLD"):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Cannot put request on hold from status '{old_status_code}'. Request may already be on hold, cancelled, or approved."
+        )
+
+    # Get ON_HOLD status
+    on_hold_status = db.query(TaxonomyValue).join(Taxonomy).filter(
+        Taxonomy.name == "Validation Request Status",
+        TaxonomyValue.code == "ON_HOLD"
+    ).first()
+
+    if not on_hold_status:
+        raise HTTPException(status_code=500, detail="ON_HOLD status not found in taxonomy")
+
+    # Update status
+    old_status_id = validation_request.current_status_id
+    validation_request.current_status_id = on_hold_status.value_id
+    validation_request.updated_at = utc_now()
+
+    # Create status history with mandatory reason
+    create_status_history_entry(
+        db, request_id, old_status_id, on_hold_status.value_id,
+        current_user.user_id, hold_data.hold_reason
+    )
+
+    # Create audit log
+    audit_log = AuditLog(
+        entity_type="ValidationRequest",
+        entity_id=request_id,
+        action="PUT_ON_HOLD",
+        user_id=current_user.user_id,
+        changes={
+            "old_status": old_status.label if old_status else None,
+            "new_status": on_hold_status.label,
+            "hold_reason": hold_data.hold_reason
+        },
+        timestamp=utc_now()
+    )
+    db.add(audit_log)
+
+    # Auto-update linked model version statuses (IN_VALIDATION -> DRAFT)
+    update_version_statuses_for_validation(
+        db, validation_request, "ON_HOLD", current_user
+    )
+
+    db.commit()
+    db.refresh(validation_request)
+    return validation_request
+
+
+@router.post("/requests/{request_id}/cancel", response_model=ValidationRequestResponse)
+def cancel_validation_request(
+    request_id: int,
+    cancel_data: ValidationRequestCancel,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Cancel a validation request with mandatory reason.
+
+    - This is a terminal state - cannot be undone
+    - Model version status reverts from IN_VALIDATION to DRAFT
+    - Unlike 'decline', this can be used by validators (not just admins)
+    """
+    check_validator_or_admin(current_user)
+
+    validation_request = db.query(ValidationRequest).options(
+        joinedload(ValidationRequest.models),
+        joinedload(ValidationRequest.requestor),
+        joinedload(ValidationRequest.validation_type),
+        joinedload(ValidationRequest.priority),
+        joinedload(ValidationRequest.current_status),
+        joinedload(ValidationRequest.regions),
+        joinedload(ValidationRequest.status_history).joinedload(ValidationStatusHistory.new_status),
+        joinedload(ValidationRequest.status_history).joinedload(ValidationStatusHistory.old_status)
+    ).filter(ValidationRequest.request_id == request_id).first()
+
+    if not validation_request:
+        raise HTTPException(status_code=404, detail="Validation request not found")
+
+    # Check current status allows transition to CANCELLED
+    old_status = validation_request.current_status
+    old_status_code = old_status.code if old_status else None
+
+    if not check_valid_status_transition(old_status_code, "CANCELLED"):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Cannot cancel request from status '{old_status_code}'. Request may already be cancelled or approved."
+        )
+
+    # Get CANCELLED status
+    cancelled_status = db.query(TaxonomyValue).join(Taxonomy).filter(
+        Taxonomy.name == "Validation Request Status",
+        TaxonomyValue.code == "CANCELLED"
+    ).first()
+
+    if not cancelled_status:
+        raise HTTPException(status_code=500, detail="CANCELLED status not found in taxonomy")
+
+    # Update status
+    old_status_id = validation_request.current_status_id
+    validation_request.current_status_id = cancelled_status.value_id
+    validation_request.updated_at = utc_now()
+
+    # Create status history with mandatory reason
+    create_status_history_entry(
+        db, request_id, old_status_id, cancelled_status.value_id,
+        current_user.user_id, cancel_data.cancel_reason
+    )
+
+    # Create audit log
+    audit_log = AuditLog(
+        entity_type="ValidationRequest",
+        entity_id=request_id,
+        action="CANCELLED",
+        user_id=current_user.user_id,
+        changes={
+            "old_status": old_status.label if old_status else None,
+            "new_status": cancelled_status.label,
+            "cancel_reason": cancel_data.cancel_reason
+        },
+        timestamp=utc_now()
+    )
+    db.add(audit_log)
+
+    # Auto-update linked model version statuses (IN_VALIDATION -> DRAFT)
+    update_version_statuses_for_validation(
+        db, validation_request, "CANCELLED", current_user
+    )
+
+    db.commit()
+    db.refresh(validation_request)
+    return validation_request
+
+
+@router.post("/requests/{request_id}/resume", response_model=ValidationRequestResponse)
+def resume_from_hold(
+    request_id: int,
+    resume_data: ValidationRequestResume,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Resume a validation request from hold.
+
+    - Returns to the status the request was in before it was put on hold
+    - Optionally specify a different target status via target_status_code
+    """
+    check_validator_or_admin(current_user)
+
+    validation_request = db.query(ValidationRequest).options(
+        joinedload(ValidationRequest.models),
+        joinedload(ValidationRequest.requestor),
+        joinedload(ValidationRequest.validation_type),
+        joinedload(ValidationRequest.priority),
+        joinedload(ValidationRequest.current_status),
+        joinedload(ValidationRequest.regions),
+        joinedload(ValidationRequest.status_history).joinedload(ValidationStatusHistory.new_status),
+        joinedload(ValidationRequest.status_history).joinedload(ValidationStatusHistory.old_status)
+    ).filter(ValidationRequest.request_id == request_id).first()
+
+    if not validation_request:
+        raise HTTPException(status_code=404, detail="Validation request not found")
+
+    # Must be currently ON_HOLD
+    if not validation_request.current_status or validation_request.current_status.code != "ON_HOLD":
+        raise HTTPException(
+            status_code=400,
+            detail="Cannot resume - request is not currently on hold"
+        )
+
+    # Determine target status
+    target_status_code = resume_data.target_status_code
+    if not target_status_code:
+        # Use previous_status_before_hold computed property
+        target_status_code = validation_request.previous_status_before_hold
+        if not target_status_code:
+            raise HTTPException(
+                status_code=400,
+                detail="Cannot determine previous status. Please specify target_status_code."
+            )
+
+    # Validate the transition is allowed from ON_HOLD
+    if not check_valid_status_transition("ON_HOLD", target_status_code):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Cannot resume to status '{target_status_code}' from ON_HOLD"
+        )
+
+    # Get target status taxonomy value
+    target_status = db.query(TaxonomyValue).join(Taxonomy).filter(
+        Taxonomy.name == "Validation Request Status",
+        TaxonomyValue.code == target_status_code
+    ).first()
+
+    if not target_status:
+        raise HTTPException(status_code=404, detail=f"Status '{target_status_code}' not found in taxonomy")
+
+    # Update status
+    old_status = validation_request.current_status
+    old_status_id = validation_request.current_status_id
+    validation_request.current_status_id = target_status.value_id
+    validation_request.updated_at = utc_now()
+
+    # Create status history
+    reason = resume_data.resume_notes or f"Resumed from hold to {target_status.label}"
+    create_status_history_entry(
+        db, request_id, old_status_id, target_status.value_id,
+        current_user.user_id, reason
+    )
+
+    # Create audit log
+    audit_log = AuditLog(
+        entity_type="ValidationRequest",
+        entity_id=request_id,
+        action="RESUMED_FROM_HOLD",
+        user_id=current_user.user_id,
+        changes={
+            "old_status": old_status.label if old_status else None,
+            "new_status": target_status.label,
+            "total_hold_days": validation_request.total_hold_days,
+            "resume_notes": resume_data.resume_notes
+        },
+        timestamp=utc_now()
+    )
+    db.add(audit_log)
+
+    # Auto-update linked model version statuses if resuming to active work
+    if target_status_code in ["IN_PROGRESS", "REVIEW", "PENDING_APPROVAL"]:
+        update_version_statuses_for_validation(
+            db, validation_request, target_status_code, current_user
+        )
+
+    db.commit()
+    db.refresh(validation_request)
+    return validation_request
+
+
 @router.delete("/requests/{request_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_validation_request(
     request_id: int,
@@ -3999,16 +4324,21 @@ def get_sla_violations(
 
     Shows validations where time from submission_received_date to now (or completion)
     exceeds the lead time specified in the validation policy for the model's risk tier.
+
+    IMPORTANT: Hold time is excluded from SLA calculations. Requests that have been
+    on hold have their effective days reduced by the total hold duration.
     """
     check_admin(current_user)
 
     # Get all active (non-terminal) validation requests with submission received
     # NOTE: Lead time is now computed per-request via applicable_lead_time_days
     # which returns MAX across all models' risk tier policies
+    # NOTE: status_history is needed to compute total_hold_days
     requests = db.query(ValidationRequest).options(
         joinedload(ValidationRequest.models).joinedload(Model.risk_tier),
         joinedload(ValidationRequest.current_status),
-        joinedload(ValidationRequest.priority)
+        joinedload(ValidationRequest.priority),
+        joinedload(ValidationRequest.status_history).joinedload(ValidationStatusHistory.new_status)
     ).filter(
         ValidationRequest.submission_received_date.isnot(None),
         ValidationRequest.current_status.has(
@@ -4027,16 +4357,17 @@ def get_sla_violations(
         # This is the most conservative (longest) lead time for multi-model requests
         lead_time_days = req.applicable_lead_time_days
 
-        # Calculate days since submission
-        days_since_submission = (
-            now.date() - req.submission_received_date).days
+        # Calculate days since submission, EXCLUDING hold time
+        # Team should not be penalized for periods when work was paused
+        raw_days_since_submission = (now.date() - req.submission_received_date).days
+        effective_days_since_submission = raw_days_since_submission - req.total_hold_days
 
-        # Check if lead time has been exceeded
-        if days_since_submission > lead_time_days:
+        # Check if lead time has been exceeded (using effective days)
+        if effective_days_since_submission > lead_time_days:
             # For multi-model requests, show all model names
             model_names = [m.model_name for m in req.models]
             model_name = ", ".join(model_names) if len(model_names) > 1 else model_names[0]
-            days_overdue = days_since_submission - lead_time_days
+            days_overdue = effective_days_since_submission - lead_time_days
 
             # Calculate severity based on how overdue
             if days_overdue > 30:
@@ -4051,7 +4382,9 @@ def get_sla_violations(
                 "model_name": model_name,
                 "violation_type": "Validation Lead Time Exceeded",
                 "sla_days": lead_time_days,
-                "actual_days": days_since_submission,
+                "actual_days": effective_days_since_submission,
+                "raw_days": raw_days_since_submission,  # Total calendar days
+                "hold_days": req.total_hold_days,  # Days excluded from SLA
                 "days_overdue": days_overdue,
                 "current_status": req.current_status.label if req.current_status else "Unknown",
                 "priority": req.priority.label if req.priority else "Unknown",

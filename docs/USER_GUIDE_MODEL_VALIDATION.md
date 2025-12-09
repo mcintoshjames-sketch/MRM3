@@ -201,7 +201,10 @@ When a request moves to In Progress, linked model versions automatically transit
 **Key Activities**:
 - Review validation work for completeness
 - Verify methodology and conclusions
+- **Document the validation outcome** (required before moving to Pending Approval)
 - Provide sign-off or request revisions
+
+> **Important**: A validation outcome must be documented before the request can transition to Pending Approval. Navigate to the **Outcome** tab to enter the overall rating, executive summary, and effective date. The system will block the transition if no outcome exists.
 
 **Reviewer Sign-Off**:
 1. Navigate to the **Assignments** tab
@@ -211,7 +214,7 @@ When a request moves to In Progress, linked model versions automatically transit
 5. Confirm sign-off
 
 **Status Transitions**:
-- → **Pending Approval**: After reviewer sign-off
+- → **Pending Approval**: After reviewer sign-off **(outcome must be created first)**
 - → **In Progress**: If work needs revisions
 - → **Revision**: If specific changes are requested
 
@@ -250,14 +253,34 @@ When a request moves to In Progress, linked model versions automatically transit
 ### Special Statuses
 
 **On Hold**
-- Work is temporarily paused
-- Requires documented reason
-- Can resume from where it left off
-- Time in hold status is tracked separately
+
+Use the **"Put on Hold"** button when validation work must be temporarily paused due to:
+- Waiting for model owner to provide additional documentation
+- External dependencies (audit, regulatory review)
+- Resource constraints or reassignment
+
+**What happens when on hold:**
+- A mandatory reason is required (minimum 10 characters)
+- Model version status reverts from **IN_VALIDATION** to **DRAFT**
+- **Team SLA clock is paused** - hold time is excluded from SLA calculations
+- Compliance deadline remains unchanged (regulatory dates are fixed)
+- Complete audit trail is maintained
+- A yellow banner displays on the request showing hold duration and reason
+
+**To resume:** Click **"Resume Work"** to return to the previous workflow stage. The system automatically tracks which stage the request was in before being put on hold.
+
+**SLA Impact:** When calculating whether the validation team met their SLA, all time spent on hold is subtracted. For example:
+- Submission received: Jan 1
+- Lead time SLA: 90 days → Team SLA due: April 1
+- Request on hold: Jan 15-30 (15 days)
+- **Adjusted Team SLA due: April 16** (original + 15 hold days)
 
 **Cancelled**
-- Request is terminated before completion
-- Requires documented justification
+
+Use the **"Cancel Request"** button to permanently terminate a validation request. This action cannot be undone.
+
+- A mandatory reason is required (minimum 10 characters)
+- Request moves to terminal **CANCELLED** status
 - Linked model versions revert to **DRAFT** status
 - Preserved in history for audit purposes
 
@@ -375,7 +398,7 @@ When removing a validator:
 
 ### Validation Outcome
 
-When validation work is complete (Review stage or later), the outcome must be documented:
+When validation work is complete, the outcome must be documented. The outcome can be entered starting from the **Review** stage, and **must be created before the request can move to Pending Approval**.
 
 1. Navigate to the **Outcome** tab
 2. Enter the required information:
@@ -413,7 +436,7 @@ Validation outcomes require sign-off from designated approvers before becoming o
 |------|-------------|
 | **Global** | Required for all validations (e.g., Validation Head) |
 | **Regional** | Required when model is used in specific regions |
-| **Conditional** | Role-based approvals triggered by model attributes |
+| **Additional** | Role-based approvals triggered by model attributes (e.g., risk tier, validation type) |
 
 ### Approver Roles
 
@@ -648,6 +671,34 @@ The system tracks how long requests spend in each status:
 - **Aging Report**: Summarizes requests by status and duration
 - **Workload Report**: Shows validator assignments and capacity
 
+### Hold Time and SLA Calculations
+
+When a validation request is put **on hold**, the system adjusts SLA calculations:
+
+| SLA Type | Hold Time Treatment |
+|----------|---------------------|
+| **Team SLA** | Extended by hold duration - team not penalized for paused periods |
+| **Model Compliance Deadline** | Not affected - regulatory dates remain fixed |
+
+**How it works:**
+1. System tracks each ON_HOLD period via status history
+2. Total hold days are calculated automatically
+3. Team SLA due date is extended by the total hold duration
+4. SLA violation reports exclude hold time from calculations
+
+**Example:**
+- Submission received: January 1
+- Lead time policy: 90 days → Team SLA due: April 1
+- On hold: January 15-30 (15 days)
+- **Adjusted Team SLA due: April 16** (original + 15 hold days)
+
+The adjusted due date appears in:
+- Validation request details
+- SLA violation dashboard
+- Team workload reports
+
+**Note:** While Team SLA is adjusted, the regulatory compliance deadline for the model (based on prior validation expiration) is **not** adjusted. This reflects the business reality that regulatory deadlines cannot be extended by internal workflow pauses.
+
 ---
 
 ## 13. Frequently Asked Questions
@@ -658,7 +709,11 @@ The system tracks how long requests spend in each status:
 A: Yes, the system supports multi-model validation requests. This is useful for related models that share common components or are typically validated together.
 
 **Q: What happens if I need to put a validation on hold?**
-A: You can transition the request to "On Hold" status with a documented reason. When ready to resume, transition back to the appropriate stage. Time spent on hold is tracked separately.
+A: Click the **"Put on Hold"** button and provide a mandatory reason (minimum 10 characters). The system will:
+- Pause the Team SLA clock (hold time is excluded from SLA calculations)
+- Revert linked model versions to DRAFT status
+- Display a yellow banner showing hold duration and reason
+When ready, click **"Resume Work"** to return to the previous workflow stage. See [Section 4 - Special Statuses](#special-statuses) for full details.
 
 **Q: How do I know if a validation is overdue?**
 A: The system displays overdue indicators on the validation list and model details pages. You can also filter for overdue validations specifically.
