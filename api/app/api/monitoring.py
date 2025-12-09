@@ -4491,3 +4491,257 @@ def export_cycle_results(
             "Content-Disposition": f"attachment; filename={filename}"
         }
     )
+
+
+@router.get("/monitoring/cycles/{cycle_id}/report/pdf")
+def generate_cycle_report_pdf(
+    cycle_id: int,
+    include_trends: bool = True,
+    trend_periods: int = 4,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Generate a professional PDF report for a completed monitoring cycle.
+
+    Generates a comprehensive PDF report including:
+    - Cover page with branding
+    - Executive summary with outcome breakdown
+    - Detailed results table with color-coded outcomes
+    - Breach analysis with narrative comments (for YELLOW/RED outcomes)
+    - Time-series trend charts (for YELLOW/RED quantitative metrics)
+    - Approvals section
+
+    Access is restricted to:
+    - Admin users
+    - Validator users
+    - Global or Regional Approvers assigned to the cycle
+    - Members of the plan's Monitoring Team
+
+    Args:
+        cycle_id: The ID of the cycle to generate report for
+        include_trends: Whether to include trend charts (default: True)
+        trend_periods: Number of historical cycles for trends (default: 4)
+
+    Returns:
+        PDF file as StreamingResponse
+    """
+    from fastapi.responses import Response
+    import os
+    from app.core.pdf_reports import MonitoringCycleReportPDF
+
+    # Get cycle with all required relationships
+    cycle = db.query(MonitoringCycle).options(
+        joinedload(MonitoringCycle.plan).joinedload(MonitoringPlan.team).joinedload(MonitoringTeam.members),
+        joinedload(MonitoringCycle.plan).joinedload(MonitoringPlan.models),
+        joinedload(MonitoringCycle.completed_by),
+        joinedload(MonitoringCycle.approvals).joinedload(MonitoringCycleApproval.approver),
+        joinedload(MonitoringCycle.approvals).joinedload(MonitoringCycleApproval.region),
+        joinedload(MonitoringCycle.plan_version),
+    ).filter(MonitoringCycle.cycle_id == cycle_id).first()
+
+    if not cycle:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Monitoring cycle not found"
+        )
+
+    # Check access permissions
+    has_access = False
+
+    # Admin or Validator
+    if current_user.role in (UserRole.ADMIN.value, "Admin", UserRole.VALIDATOR.value, "Validator"):
+        has_access = True
+
+    # Global or Regional Approver on this cycle
+    if not has_access:
+        for approval in cycle.approvals:
+            if approval.approver_id == current_user.user_id:
+                has_access = True
+                break
+
+    # Member of the Monitoring Team
+    if not has_access and cycle.plan and cycle.plan.team:
+        team_member_ids = [member.user_id for member in cycle.plan.team.members]
+        if current_user.user_id in team_member_ids:
+            has_access = True
+
+    if not has_access:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You don't have permission to access this report. Access is limited to Admins, Validators, cycle Approvers, and Monitoring Team members."
+        )
+
+    # Verify cycle is APPROVED
+    if cycle.status != MonitoringCycleStatus.APPROVED.value:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"PDF reports can only be generated for APPROVED cycles. Current status: {cycle.status}"
+        )
+
+    # Get all results with metric and model info
+    results = db.query(MonitoringResult).options(
+        joinedload(MonitoringResult.model),
+        joinedload(MonitoringResult.entered_by),
+        joinedload(MonitoringResult.outcome_value),
+        joinedload(MonitoringResult.plan_metric).joinedload(
+            MonitoringPlanMetric.kpm).joinedload(Kpm.category)
+    ).filter(
+        MonitoringResult.cycle_id == cycle_id
+    ).order_by(MonitoringResult.plan_metric_id).all()
+
+    # Build results list for PDF
+    results_data = []
+    breached_metric_ids = set()
+
+    for result in results:
+        metric = result.plan_metric
+        kpm = metric.kpm if metric else None
+        category = kpm.category if kpm else None
+
+        result_dict = {
+            'result_id': result.result_id,
+            'metric_id': result.plan_metric_id,
+            'model_id': result.model_id,  # Include model_id for composite trend key
+            'metric_name': kpm.name if kpm else f"Metric {result.plan_metric_id}",
+            'category_name': category.name if category else 'Uncategorized',
+            'numeric_value': result.numeric_value,
+            'calculated_outcome': result.calculated_outcome,
+            'narrative': result.narrative,
+            'yellow_min': metric.yellow_min if metric else None,
+            'yellow_max': metric.yellow_max if metric else None,
+            'red_min': metric.red_min if metric else None,
+            'red_max': metric.red_max if metric else None,
+            'model_name': result.model.model_name if result.model else None,
+            'outcome_value': {
+                'code': result.outcome_value.code,
+                'label': result.outcome_value.label
+            } if result.outcome_value else None
+        }
+        results_data.append(result_dict)
+
+        # Track breached (metric_id, model_id) pairs for trend charts
+        # Use composite key to get per-model trends instead of mixing all models
+        if result.calculated_outcome in (OUTCOME_YELLOW, OUTCOME_RED) and result.numeric_value is not None:
+            breached_metric_ids.add((result.plan_metric_id, result.model_id))
+
+    # Get trend data for breached metrics if requested
+    # Key by "metric_id_model_id" to keep trends separate per model
+    trend_data = {}
+    if include_trends and breached_metric_ids:
+        for metric_id, model_id in breached_metric_ids:
+            # Get historical results for this specific metric AND model
+            trend_query = db.query(MonitoringResult).join(
+                MonitoringCycle
+            ).filter(
+                MonitoringResult.plan_metric_id == metric_id,
+                MonitoringResult.model_id == model_id,  # Filter by model too!
+                MonitoringCycle.status.in_([
+                    MonitoringCycleStatus.APPROVED.value,
+                    MonitoringCycleStatus.PENDING_APPROVAL.value,
+                    MonitoringCycleStatus.UNDER_REVIEW.value
+                ])
+            ).options(
+                joinedload(MonitoringResult.cycle)
+            ).order_by(
+                MonitoringCycle.period_end_date.desc()
+            ).limit(trend_periods).all()
+
+            # Build trend points (reverse to chronological order)
+            trend_points = []
+            for tr in reversed(trend_query):
+                if tr.numeric_value is not None:
+                    trend_points.append({
+                        'cycle_id': tr.cycle_id,
+                        'period_end_date': tr.cycle.period_end_date,
+                        'numeric_value': tr.numeric_value,
+                        'calculated_outcome': tr.calculated_outcome
+                    })
+
+            if trend_points:
+                # Use composite key: "metric_id_model_id"
+                trend_key = f"{metric_id}_{model_id}"
+                trend_data[trend_key] = trend_points
+
+    # Build approvals list
+    approvals_data = []
+    for approval in cycle.approvals:
+        approvals_data.append({
+            'approval_id': approval.approval_id,
+            'approval_type': approval.approval_type,
+            'approval_status': approval.approval_status,
+            'approved_at': approval.approved_at,
+            'comments': approval.comments,
+            'approver': {
+                'user_id': approval.approver.user_id,
+                'email': approval.approver.email,
+                'full_name': approval.approver.full_name
+            } if approval.approver else None,
+            'region': {
+                'region_id': approval.region.region_id,
+                'name': approval.region.name,
+                'code': approval.region.code
+            } if approval.region else None
+        })
+
+    # Build cycle data
+    cycle_data = {
+        'cycle_id': cycle.cycle_id,
+        'plan_id': cycle.plan_id,
+        'period_start_date': cycle.period_start_date,
+        'period_end_date': cycle.period_end_date,
+        'status': cycle.status,
+        'completed_at': cycle.completed_at,
+        'completed_by': {
+            'user_id': cycle.completed_by.user_id,
+            'email': cycle.completed_by.email,
+            'full_name': cycle.completed_by.full_name
+        } if cycle.completed_by else None
+    }
+
+    # Build plan data
+    plan_data = {
+        'plan_id': cycle.plan.plan_id,
+        'name': cycle.plan.name,
+        'description': cycle.plan.description,
+        'models': [
+            {'model_id': m.model_id, 'model_name': m.model_name}
+            for m in (cycle.plan.models or [])
+        ]
+    }
+
+    # Find logo file
+    # Look in project root directory
+    logo_path = None
+    possible_paths = [
+        '/app/CIBC_logo_2021.png',  # Docker container path
+        os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__)))), 'CIBC_logo_2021.png'),
+    ]
+    for path in possible_paths:
+        if os.path.exists(path):
+            logo_path = path
+            break
+
+    # Generate PDF
+    pdf = MonitoringCycleReportPDF(
+        cycle_data=cycle_data,
+        plan_data=plan_data,
+        results=results_data,
+        approvals=approvals_data,
+        trend_data=trend_data if include_trends else None,
+        logo_path=logo_path
+    )
+
+    pdf_bytes = pdf.generate()
+
+    # Generate filename
+    period = f"{cycle.period_start_date.strftime('%Y%m%d')}-{cycle.period_end_date.strftime('%Y%m%d')}"
+    plan_name_safe = cycle.plan.name.replace(' ', '_').replace('/', '-')[:50]
+    filename = f"Monitoring_Report_{plan_name_safe}_{period}.pdf"
+
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f"attachment; filename={filename}"
+        }
+    )
