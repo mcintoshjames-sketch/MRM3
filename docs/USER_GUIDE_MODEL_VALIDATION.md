@@ -411,9 +411,10 @@ When validation work is complete, the outcome must be documented. The outcome ca
 
 | Rating | Meaning |
 |--------|---------|
-| **Fit for Purpose** | Model performs as expected with no significant issues |
-| **Fit with Conditions** | Model is acceptable but has findings requiring remediation |
-| **Not Fit for Purpose** | Model has critical issues and should not be used |
+| **Fit for Purpose** | Model is suitable for its intended use without material concerns |
+| **Not Fit for Purpose** | Model has critical issues requiring significant remediation before use |
+
+> **Note:** Findings and recommendations are tracked separately from the overall rating. A model rated "Fit for Purpose" may still have open recommendations that need to be addressed.
 
 ### INTERIM Validations
 

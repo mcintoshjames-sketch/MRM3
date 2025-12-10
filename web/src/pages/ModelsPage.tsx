@@ -52,6 +52,27 @@ interface ModelTypeCategory {
     model_types: ModelType[];
 }
 
+interface TaxonomyValue {
+    value_id: number;
+    label: string;
+    code?: string;
+}
+
+interface Methodology {
+    methodology_id: number;
+    name: string;
+    category?: {
+        name: string;
+    };
+}
+
+interface UserWithLOB extends User {
+    lob?: {
+        lob_id: number;
+        name: string;
+    };
+}
+
 interface Model {
     model_id: number;
     model_name: string;
@@ -71,11 +92,20 @@ interface Model {
     submitted_at: string | null;
     is_model: boolean;
     is_aiml: boolean | null;
-    owner: User;
-    developer: User | null;
+    owner: UserWithLOB;
+    developer: UserWithLOB | null;
     vendor: Vendor | null;
     users: User[];
     regions: ModelRegionItem[];
+    // Additional fields from API
+    shared_owner: UserWithLOB | null;
+    shared_developer: UserWithLOB | null;
+    monitoring_manager: UserWithLOB | null;
+    business_line_name: string | null;
+    risk_tier: TaxonomyValue | null;
+    methodology: Methodology | null;
+    ownership_type: TaxonomyValue | null;
+    regulatory_categories: TaxonomyValue[];
 }
 
 export default function ModelsPage() {
@@ -188,6 +218,7 @@ export default function ModelsPage() {
         });
     };
     const [showExportModal, setShowExportModal] = useState(false);
+    const [showColumnsModal, setShowColumnsModal] = useState(false);
     const [showSaveViewModal, setShowSaveViewModal] = useState(false);
     const [newViewName, setNewViewName] = useState('');
     const [newViewDescription, setNewViewDescription] = useState('');
@@ -195,19 +226,32 @@ export default function ModelsPage() {
     const [editingViewId, setEditingViewId] = useState<number | null>(null);
     const [dbViews, setDbViews] = useState<ExportView[]>([]);
 
-    // Define available columns for export
+    // Define available columns for table and export
+    // 'default' determines which columns are shown initially in the table
     const availableColumns = [
-        { key: 'model_id', label: 'Model ID', default: true },
+        { key: 'model_id', label: 'Model ID', default: false },
         { key: 'model_name', label: 'Model Name', default: true },
-        { key: 'description', label: 'Description and Purpose', default: true },
-        { key: 'development_type', label: 'Development Type', default: true },
         { key: 'is_aiml', label: 'AI/ML', default: true },
-        { key: 'status', label: 'Status', default: true },
         { key: 'owner', label: 'Owner', default: true },
+        { key: 'owner_lob', label: 'Owner LOB', default: false },
         { key: 'developer', label: 'Developer', default: true },
-        { key: 'vendor', label: 'Vendor', default: false },
+        { key: 'shared_owner', label: 'Shared Owner', default: false },
+        { key: 'shared_owner_lob', label: 'Shared Owner LOB', default: false },
+        { key: 'shared_developer', label: 'Shared Developer', default: false },
+        { key: 'monitoring_manager', label: 'Monitoring Manager', default: false },
+        { key: 'business_line_name', label: 'Business Line', default: false },
+        { key: 'vendor', label: 'Vendor', default: true },
+        { key: 'regions', label: 'Regions', default: true },
+        { key: 'users', label: 'Users', default: true },
+        { key: 'status', label: 'Status', default: true },
+        { key: 'risk_tier', label: 'Risk Tier', default: false },
+        { key: 'methodology', label: 'Methodology', default: false },
+        { key: 'ownership_type', label: 'Ownership Type', default: false },
+        { key: 'model_type', label: 'Model Type', default: false },
+        { key: 'regulatory_categories', label: 'Regulatory Categories', default: false },
+        { key: 'description', label: 'Description', default: false },
+        { key: 'development_type', label: 'Development Type', default: false },
         { key: 'wholly_owned_region', label: 'Wholly Owned Region', default: false },
-        { key: 'regions', label: 'Regions', default: false },
         { key: 'row_approval_status', label: 'Approval Status', default: false },
         { key: 'created_at', label: 'Created Date', default: false },
         { key: 'updated_at', label: 'Updated Date', default: false }
@@ -571,6 +615,229 @@ export default function ModelsPage() {
         }
     };
 
+    // Column renderers: define how each column renders in table and CSV
+    const columnRenderers: Record<string, {
+        header: string;
+        sortKey?: string;
+        cell: (model: Model) => React.ReactNode;
+        csvValue: (model: Model) => string;
+    }> = {
+        model_id: {
+            header: 'Model ID',
+            sortKey: 'model_id',
+            cell: (model) => model.model_id,
+            csvValue: (model) => model.model_id.toString()
+        },
+        model_name: {
+            header: 'Name',
+            sortKey: 'model_name',
+            cell: (model) => (
+                <div className="flex items-center gap-2">
+                    <button
+                        onClick={() => navigate(`/models/${model.model_id}`)}
+                        className="font-medium text-blue-600 hover:text-blue-800 text-left"
+                    >
+                        {model.model_name}
+                    </button>
+                    {!model.is_model && (
+                        <span className="px-2 py-0.5 rounded text-xs font-medium bg-gray-200 text-gray-700">
+                            Non-Model
+                        </span>
+                    )}
+                    {model.row_approval_status && (
+                        <span className={`px-2 py-0.5 rounded text-xs font-medium ${model.row_approval_status === 'pending'
+                            ? 'bg-blue-100 text-blue-800'
+                            : model.row_approval_status === 'needs_revision'
+                                ? 'bg-orange-100 text-orange-800'
+                                : 'bg-gray-100 text-gray-800'
+                            }`}>
+                            {model.row_approval_status === 'pending' ? 'Draft' :
+                                model.row_approval_status === 'needs_revision' ? 'Needs Revision' :
+                                    model.row_approval_status}
+                        </span>
+                    )}
+                    {model.wholly_owned_region && (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-indigo-100 text-indigo-800 border border-indigo-300 whitespace-nowrap">
+                            <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+                                <path fillRule="evenodd" d="M3 6a3 3 0 013-3h10a1 1 0 01.8 1.6L14.25 8l2.55 3.4A1 1 0 0116 13H6a1 1 0 00-1 1v3a1 1 0 11-2 0V6z" clipRule="evenodd" />
+                            </svg>
+                            {model.wholly_owned_region.code}
+                        </span>
+                    )}
+                </div>
+            ),
+            csvValue: (model) => model.model_name
+        },
+        is_aiml: {
+            header: 'AI/ML',
+            sortKey: 'is_aiml',
+            cell: (model) => model.is_aiml === true ? (
+                <span className="px-2 py-1 text-xs rounded bg-purple-100 text-purple-800 font-medium">AI/ML</span>
+            ) : model.is_aiml === false ? (
+                <span className="px-2 py-1 text-xs rounded bg-gray-100 text-gray-700">Non-AI/ML</span>
+            ) : (
+                <span className="text-sm text-gray-400 italic">Undefined</span>
+            ),
+            csvValue: (model) => model.is_aiml === true ? 'AI/ML' : model.is_aiml === false ? 'Non-AI/ML' : 'Undefined'
+        },
+        owner: {
+            header: 'Owner',
+            sortKey: 'owner.full_name',
+            cell: (model) => model.owner?.full_name || '-',
+            csvValue: (model) => model.owner?.full_name || ''
+        },
+        owner_lob: {
+            header: 'Owner LOB',
+            cell: (model) => model.owner?.lob?.name || '-',
+            csvValue: (model) => model.owner?.lob?.name || ''
+        },
+        developer: {
+            header: 'Developer',
+            sortKey: 'developer.full_name',
+            cell: (model) => model.developer?.full_name || '-',
+            csvValue: (model) => model.developer?.full_name || ''
+        },
+        shared_owner: {
+            header: 'Shared Owner',
+            sortKey: 'shared_owner.full_name',
+            cell: (model) => model.shared_owner?.full_name || '-',
+            csvValue: (model) => model.shared_owner?.full_name || ''
+        },
+        shared_owner_lob: {
+            header: 'Shared Owner LOB',
+            cell: (model) => model.shared_owner?.lob?.name || '-',
+            csvValue: (model) => model.shared_owner?.lob?.name || ''
+        },
+        shared_developer: {
+            header: 'Shared Developer',
+            sortKey: 'shared_developer.full_name',
+            cell: (model) => model.shared_developer?.full_name || '-',
+            csvValue: (model) => model.shared_developer?.full_name || ''
+        },
+        monitoring_manager: {
+            header: 'Monitoring Manager',
+            sortKey: 'monitoring_manager.full_name',
+            cell: (model) => model.monitoring_manager?.full_name || '-',
+            csvValue: (model) => model.monitoring_manager?.full_name || ''
+        },
+        business_line_name: {
+            header: 'Business Line',
+            sortKey: 'business_line_name',
+            cell: (model) => model.business_line_name || '-',
+            csvValue: (model) => model.business_line_name || ''
+        },
+        vendor: {
+            header: 'Vendor',
+            sortKey: 'vendor.name',
+            cell: (model) => model.vendor?.name || '-',
+            csvValue: (model) => model.vendor?.name || ''
+        },
+        regions: {
+            header: 'Regions',
+            cell: (model) => model.regions && model.regions.length > 0 ? (
+                <div className="flex flex-wrap gap-1">
+                    {model.regions.map(r => (
+                        <span key={r.region_id} className="px-2 py-0.5 bg-blue-100 text-blue-800 rounded text-xs font-semibold">
+                            {r.region_code}
+                        </span>
+                    ))}
+                </div>
+            ) : (
+                <span className="text-gray-400">Global</span>
+            ),
+            csvValue: (model) => model.regions?.map(r => r.region_code).join('; ') || ''
+        },
+        users: {
+            header: 'Users',
+            cell: (model) => model.users?.length > 0 ? model.users.map(u => u.full_name).join(', ') : '-',
+            csvValue: (model) => model.users?.map(u => u.full_name).join('; ') || ''
+        },
+        status: {
+            header: 'Status',
+            sortKey: 'status',
+            cell: (model) => (
+                <span className="px-2 py-1 text-xs rounded bg-blue-100 text-blue-800">
+                    {model.status}
+                </span>
+            ),
+            csvValue: (model) => model.status
+        },
+        risk_tier: {
+            header: 'Risk Tier',
+            sortKey: 'risk_tier.label',
+            cell: (model) => model.risk_tier?.label || '-',
+            csvValue: (model) => model.risk_tier?.label || ''
+        },
+        methodology: {
+            header: 'Methodology',
+            sortKey: 'methodology.name',
+            cell: (model) => model.methodology?.name || '-',
+            csvValue: (model) => model.methodology?.name || ''
+        },
+        ownership_type: {
+            header: 'Ownership Type',
+            sortKey: 'ownership_type.label',
+            cell: (model) => model.ownership_type?.label || '-',
+            csvValue: (model) => model.ownership_type?.label || ''
+        },
+        model_type: {
+            header: 'Model Type',
+            sortKey: 'model_type.name',
+            cell: (model) => model.model_type?.name || '-',
+            csvValue: (model) => model.model_type?.name || ''
+        },
+        regulatory_categories: {
+            header: 'Regulatory Categories',
+            cell: (model) => model.regulatory_categories?.length > 0
+                ? model.regulatory_categories.map(rc => rc.label).join(', ')
+                : '-',
+            csvValue: (model) => model.regulatory_categories?.map(rc => rc.label).join('; ') || ''
+        },
+        description: {
+            header: 'Description',
+            cell: (model) => model.description ? (
+                <span className="truncate max-w-xs block" title={model.description}>
+                    {model.description.length > 50 ? model.description.slice(0, 50) + '...' : model.description}
+                </span>
+            ) : '-',
+            csvValue: (model) => model.description || ''
+        },
+        development_type: {
+            header: 'Development Type',
+            sortKey: 'development_type',
+            cell: (model) => model.development_type,
+            csvValue: (model) => model.development_type
+        },
+        wholly_owned_region: {
+            header: 'Wholly Owned Region',
+            sortKey: 'wholly_owned_region.name',
+            cell: (model) => model.wholly_owned_region
+                ? `${model.wholly_owned_region.name} (${model.wholly_owned_region.code})`
+                : '-',
+            csvValue: (model) => model.wholly_owned_region
+                ? `${model.wholly_owned_region.name} (${model.wholly_owned_region.code})`
+                : ''
+        },
+        row_approval_status: {
+            header: 'Approval Status',
+            sortKey: 'row_approval_status',
+            cell: (model) => model.row_approval_status || 'Approved',
+            csvValue: (model) => model.row_approval_status || 'Approved'
+        },
+        created_at: {
+            header: 'Created Date',
+            sortKey: 'created_at',
+            cell: (model) => model.created_at.split('T')[0],
+            csvValue: (model) => model.created_at.split('T')[0]
+        },
+        updated_at: {
+            header: 'Updated Date',
+            sortKey: 'updated_at',
+            cell: (model) => model.updated_at.split('T')[0],
+            csvValue: (model) => model.updated_at.split('T')[0]
+        }
+    };
+
     const saveCurrentView = async () => {
         if (!newViewName.trim()) {
             alert('Please enter a name for this view.');
@@ -667,61 +934,17 @@ export default function ModelsPage() {
         }
 
         try {
+            // Generate CSV headers using column renderers
+            const headers = selectedColumns
+                .filter(colKey => columnRenderers[colKey])
+                .map(colKey => columnRenderers[colKey].header);
 
-            // Generate CSV headers
-            const headers = availableColumns
-                .filter(col => selectedColumns.includes(col.key))
-                .map(col => col.label);
-
-            // Generate CSV rows
+            // Generate CSV rows using column renderers
             const rows = sortedData.map(model => {
                 const row: string[] = [];
                 selectedColumns.forEach(colKey => {
-                    let value = '';
-                    switch (colKey) {
-                        case 'model_id':
-                            value = model.model_id.toString();
-                            break;
-                        case 'model_name':
-                            value = model.model_name;
-                            break;
-                        case 'description':
-                            value = model.description || '';
-                            break;
-                        case 'development_type':
-                            value = model.development_type;
-                            break;
-                        case 'is_aiml':
-                            value = model.is_aiml === true ? 'AI/ML' : model.is_aiml === false ? 'Non-AI/ML' : 'Undefined';
-                            break;
-                        case 'status':
-                            value = model.status;
-                            break;
-                        case 'owner':
-                            value = model.owner ? model.owner.full_name : '';
-                            break;
-                        case 'developer':
-                            value = model.developer ? model.developer.full_name : '';
-                            break;
-                        case 'vendor':
-                            value = model.vendor ? model.vendor.name : '';
-                            break;
-                        case 'wholly_owned_region':
-                            value = model.wholly_owned_region ? `${model.wholly_owned_region.name} (${model.wholly_owned_region.code})` : '';
-                            break;
-                        case 'regions':
-                            value = model.regions ? model.regions.map(r => r.region_code).join('; ') : '';
-                            break;
-                        case 'row_approval_status':
-                            value = model.row_approval_status || 'Approved';
-                            break;
-                        case 'created_at':
-                            value = model.created_at.split('T')[0];
-                            break;
-                        case 'updated_at':
-                            value = model.updated_at.split('T')[0];
-                            break;
-                    }
+                    const renderer = columnRenderers[colKey];
+                    let value = renderer ? renderer.csvValue(model) : '';
                     // Escape quotes and commas for CSV
                     value = value.replace(/"/g, '""');
                     if (value.includes(',') || value.includes('"') || value.includes('\n')) {
@@ -775,6 +998,9 @@ export default function ModelsPage() {
                 <div className="flex justify-between items-center mb-6">
                     <h2 className="text-2xl font-bold">Models</h2>
                     <div className="flex gap-2">
+                        <button onClick={() => setShowColumnsModal(true)} className="btn-secondary">
+                            Columns ({selectedColumns.length})
+                        </button>
                         <button onClick={() => setShowExportModal(true)} className="btn-secondary">
                             Export CSV
                         </button>
@@ -1446,6 +1672,128 @@ export default function ModelsPage() {
                     </div>
                 )}
 
+                {/* Column Picker Modal */}
+                {showColumnsModal && (
+                    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+                        <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full mx-4 max-h-[80vh] overflow-hidden flex flex-col">
+                            <div className="p-6 border-b border-gray-200">
+                                <h3 className="text-xl font-bold">Customize Table Columns</h3>
+                                <p className="text-sm text-gray-600 mt-1">
+                                    Select which columns to display in the table. This also affects CSV exports.
+                                </p>
+                            </div>
+
+                            <div className="flex-1 overflow-y-auto p-6">
+                                {/* View Selector */}
+                                <div className="mb-4 p-4 bg-gray-50 rounded-lg">
+                                    <label className="block text-sm font-medium mb-2">Saved Views</label>
+                                    <div className="flex gap-2">
+                                        <select
+                                            value={currentViewId}
+                                            onChange={(e) => loadView(e.target.value)}
+                                            className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                        >
+                                            <optgroup label="Default Views">
+                                                {Object.values(allViews)
+                                                    .filter((v: any) => v.isDefault)
+                                                    .map((view: any) => (
+                                                        <option key={view.id} value={view.id}>
+                                                            {view.name} ({view.columns.length} columns)
+                                                        </option>
+                                                    ))}
+                                            </optgroup>
+                                            {Object.values(allViews).some((v: any) => !v.isDefault && !v.isPublic) && (
+                                                <optgroup label="My Views">
+                                                    {Object.values(allViews)
+                                                        .filter((v: any) => !v.isDefault && !v.isPublic)
+                                                        .map((view: any) => (
+                                                            <option key={view.id} value={view.id}>
+                                                                {view.name} ({view.columns.length} columns)
+                                                            </option>
+                                                        ))}
+                                                </optgroup>
+                                            )}
+                                            {Object.values(allViews).some((v: any) => v.isPublic) && (
+                                                <optgroup label="Public Views">
+                                                    {Object.values(allViews)
+                                                        .filter((v: any) => !v.isDefault && v.isPublic)
+                                                        .map((view: any) => (
+                                                            <option key={view.id} value={view.id}>
+                                                                {view.name} ({view.columns.length} columns) 🌐
+                                                            </option>
+                                                        ))}
+                                                </optgroup>
+                                            )}
+                                        </select>
+                                        <button
+                                            onClick={() => {
+                                                setNewViewName('');
+                                                setNewViewDescription('');
+                                                setNewViewIsPublic(false);
+                                                setEditingViewId(null);
+                                                setShowSaveViewModal(true);
+                                            }}
+                                            className="px-3 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 text-sm whitespace-nowrap"
+                                        >
+                                            Save as New
+                                        </button>
+                                    </div>
+                                </div>
+
+                                <div className="flex gap-2 mb-4">
+                                    <button
+                                        onClick={selectAllColumns}
+                                        className="text-sm px-3 py-1 rounded border border-gray-300 hover:bg-gray-50"
+                                    >
+                                        Select All
+                                    </button>
+                                    <button
+                                        onClick={deselectAllColumns}
+                                        className="text-sm px-3 py-1 rounded border border-gray-300 hover:bg-gray-50"
+                                    >
+                                        Deselect All
+                                    </button>
+                                    <button
+                                        onClick={() => loadView('default')}
+                                        className="text-sm px-3 py-1 rounded border border-gray-300 hover:bg-gray-50"
+                                    >
+                                        Reset to Default
+                                    </button>
+                                    <div className="ml-auto text-sm text-gray-600">
+                                        {selectedColumns.length} of {availableColumns.length} columns selected
+                                    </div>
+                                </div>
+
+                                <div className="grid grid-cols-2 gap-3">
+                                    {availableColumns.map(col => (
+                                        <label
+                                            key={col.key}
+                                            className="flex items-center gap-2 p-3 border border-gray-200 rounded hover:bg-gray-50 cursor-pointer"
+                                        >
+                                            <input
+                                                type="checkbox"
+                                                checked={selectedColumns.includes(col.key)}
+                                                onChange={() => toggleColumn(col.key)}
+                                                className="w-4 h-4 text-blue-600 rounded"
+                                            />
+                                            <span className="text-sm">{col.label}</span>
+                                        </label>
+                                    ))}
+                                </div>
+                            </div>
+
+                            <div className="p-6 border-t border-gray-200 flex justify-end gap-2">
+                                <button
+                                    onClick={() => setShowColumnsModal(false)}
+                                    className="btn-primary"
+                                >
+                                    Done
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                )}
+
                 {/* Filters */}
                 <div className="bg-white p-4 rounded-lg shadow-md mb-6">
                     <div className="grid grid-cols-1 md:grid-cols-6 gap-4">
@@ -1588,178 +1936,62 @@ export default function ModelsPage() {
                 </div>
 
                 <div className="bg-white rounded-lg shadow-md overflow-hidden">
-                    <table className="min-w-full divide-y divide-gray-200">
-                        <thead className="bg-gray-50">
-                            <tr>
-                                <th
-                                    className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100"
-                                    onClick={() => requestSort('model_name')}
-                                >
-                                    <div className="flex items-center gap-2">
-                                        Name
-                                        {getSortIcon('model_name')}
-                                    </div>
-                                </th>
-                                <th
-                                    className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100"
-                                    onClick={() => requestSort('is_aiml')}
-                                >
-                                    <div className="flex items-center gap-2">
-                                        AI/ML
-                                        {getSortIcon('is_aiml')}
-                                    </div>
-                                </th>
-                                <th
-                                    className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100"
-                                    onClick={() => requestSort('owner.full_name')}
-                                >
-                                    <div className="flex items-center gap-2">
-                                        Owner
-                                        {getSortIcon('owner.full_name')}
-                                    </div>
-                                </th>
-                                <th
-                                    className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100"
-                                    onClick={() => requestSort('developer.full_name')}
-                                >
-                                    <div className="flex items-center gap-2">
-                                        Developer
-                                        {getSortIcon('developer.full_name')}
-                                    </div>
-                                </th>
-                                <th
-                                    className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100"
-                                    onClick={() => requestSort('vendor.name')}
-                                >
-                                    <div className="flex items-center gap-2">
-                                        Vendor
-                                        {getSortIcon('vendor.name')}
-                                    </div>
-                                </th>
-                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Regions</th>
-                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Users</th>
-                                <th
-                                    className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100"
-                                    onClick={() => requestSort('status')}
-                                >
-                                    <div className="flex items-center gap-2">
-                                        Status
-                                        {getSortIcon('status')}
-                                    </div>
-                                </th>
-                                {(user?.role === 'Admin' || user?.role === 'Validator') && (
-                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
-                                )}
-                            </tr>
-                        </thead>
-                        <tbody className="bg-white divide-y divide-gray-200">
-                            {sortedData.length === 0 ? (
+                    <div className="overflow-x-auto">
+                        <table className="min-w-full divide-y divide-gray-200">
+                            <thead className="bg-gray-50">
                                 <tr>
-                                    <td colSpan={8} className="px-6 py-4 text-center text-gray-500">
-                                        No models yet. Click "Add Model" to create one.
-                                    </td>
-                                </tr>
-                            ) : (
-                                sortedData.map((model) => (
-                                    <tr key={model.model_id} className="hover:bg-gray-50">
-                                        <td className="px-6 py-4">
-                                            <div className="flex items-center gap-2">
-                                                <button
-                                                    onClick={() => navigate(`/models/${model.model_id}`)}
-                                                    className="font-medium text-blue-600 hover:text-blue-800 text-left"
-                                                >
-                                                    {model.model_name}
-                                                </button>
-                                                {!model.is_model && (
-                                                    <span className="px-2 py-0.5 rounded text-xs font-medium bg-gray-200 text-gray-700">
-                                                        Non-Model
-                                                    </span>
-                                                )}
-                                                {model.row_approval_status && (
-                                                    <span className={`px-2 py-0.5 rounded text-xs font-medium ${model.row_approval_status === 'pending'
-                                                        ? 'bg-blue-100 text-blue-800'
-                                                        : model.row_approval_status === 'needs_revision'
-                                                            ? 'bg-orange-100 text-orange-800'
-                                                            : 'bg-gray-100 text-gray-800'
-                                                        }`}>
-                                                        {model.row_approval_status === 'pending' ? 'Draft' :
-                                                            model.row_approval_status === 'needs_revision' ? 'Needs Revision' :
-                                                                model.row_approval_status}
-                                                    </span>
-                                                )}
-                                                {model.wholly_owned_region && (
-                                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-indigo-100 text-indigo-800 border border-indigo-300 whitespace-nowrap">
-                                                        <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
-                                                            <path fillRule="evenodd" d="M3 6a3 3 0 013-3h10a1 1 0 01.8 1.6L14.25 8l2.55 3.4A1 1 0 0116 13H6a1 1 0 00-1 1v3a1 1 0 11-2 0V6z" clipRule="evenodd" />
-                                                        </svg>
-                                                        {model.wholly_owned_region.code}
-                                                    </span>
-                                                )}
-                                            </div>
-                                        </td>
-                                        <td className="px-6 py-4 whitespace-nowrap">
-                                            {model.is_aiml === true ? (
-                                                <span className="px-2 py-1 text-xs rounded bg-purple-100 text-purple-800 font-medium">
-                                                    AI/ML
-                                                </span>
-                                            ) : model.is_aiml === false ? (
-                                                <span className="px-2 py-1 text-xs rounded bg-gray-100 text-gray-700">
-                                                    Non-AI/ML
-                                                </span>
-                                            ) : (
-                                                <span className="text-sm text-gray-400 italic">
-                                                    Undefined
-                                                </span>
-                                            )}
-                                        </td>
-                                        <td className="px-6 py-4 whitespace-nowrap text-sm">
-                                            {model.owner.full_name}
-                                        </td>
-                                        <td className="px-6 py-4 whitespace-nowrap text-sm">
-                                            {model.developer?.full_name || '-'}
-                                        </td>
-                                        <td className="px-6 py-4 whitespace-nowrap text-sm">
-                                            {model.vendor?.name || '-'}
-                                        </td>
-                                        <td className="px-6 py-4 text-sm">
-                                            {model.regions && model.regions.length > 0 ? (
-                                                <div className="flex flex-wrap gap-1">
-                                                    {model.regions.map(r => (
-                                                        <span key={r.region_id} className="px-2 py-0.5 bg-blue-100 text-blue-800 rounded text-xs font-semibold">
-                                                            {r.region_code}
-                                                        </span>
-                                                    ))}
+                                    {selectedColumns.filter(colKey => columnRenderers[colKey]).map(colKey => {
+                                        const renderer = columnRenderers[colKey];
+                                        const isSortable = !!renderer.sortKey;
+                                        return (
+                                            <th
+                                                key={colKey}
+                                                className={`px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase ${isSortable ? 'cursor-pointer hover:bg-gray-100' : ''}`}
+                                                onClick={isSortable ? () => requestSort(renderer.sortKey!) : undefined}
+                                            >
+                                                <div className="flex items-center gap-2">
+                                                    {renderer.header}
+                                                    {isSortable && getSortIcon(renderer.sortKey!)}
                                                 </div>
-                                            ) : (
-                                                <span className="text-gray-400">Global</span>
-                                            )}
+                                            </th>
+                                        );
+                                    })}
+                                    {(user?.role === 'Admin' || user?.role === 'Validator') && (
+                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
+                                    )}
+                                </tr>
+                            </thead>
+                            <tbody className="bg-white divide-y divide-gray-200">
+                                {sortedData.length === 0 ? (
+                                    <tr>
+                                        <td colSpan={selectedColumns.length + (user?.role === 'Admin' || user?.role === 'Validator' ? 1 : 0)} className="px-6 py-4 text-center text-gray-500">
+                                            No models yet. Click "Add Model" to create one.
                                         </td>
-                                        <td className="px-6 py-4 whitespace-nowrap text-sm">
-                                            {model.users.length > 0
-                                                ? model.users.map(u => u.full_name).join(', ')
-                                                : '-'
-                                            }
-                                        </td>
-                                        <td className="px-6 py-4 whitespace-nowrap">
-                                            <span className="px-2 py-1 text-xs rounded bg-blue-100 text-blue-800">
-                                                {model.status}
-                                            </span>
-                                        </td>
-                                        {(user?.role === 'Admin' || user?.role === 'Validator') && (
-                                            <td className="px-6 py-4 whitespace-nowrap">
-                                                <button
-                                                    onClick={() => handleDelete(model.model_id)}
-                                                    className="text-red-600 hover:text-red-800 text-sm"
-                                                >
-                                                    Delete
-                                                </button>
-                                            </td>
-                                        )}
                                     </tr>
-                                ))
-                            )}
-                        </tbody>
-                    </table>
+                                ) : (
+                                    sortedData.map((model) => (
+                                        <tr key={model.model_id} className="hover:bg-gray-50">
+                                            {selectedColumns.filter(colKey => columnRenderers[colKey]).map(colKey => (
+                                                <td key={colKey} className="px-6 py-4 whitespace-nowrap text-sm">
+                                                    {columnRenderers[colKey].cell(model)}
+                                                </td>
+                                            ))}
+                                            {(user?.role === 'Admin' || user?.role === 'Validator') && (
+                                                <td className="px-6 py-4 whitespace-nowrap">
+                                                    <button
+                                                        onClick={() => handleDelete(model.model_id)}
+                                                        className="text-red-600 hover:text-red-800 text-sm"
+                                                    >
+                                                        Delete
+                                                    </button>
+                                                </td>
+                                            )}
+                                        </tr>
+                                    ))
+                                )}
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
             </div>
         </Layout>

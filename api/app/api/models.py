@@ -14,6 +14,8 @@ from app.core.deps import get_current_user
 from app.models.user import User
 from app.models.model import Model
 from app.models.vendor import Vendor
+from app.models.region import Region
+from app.models.lob import LOBUnit
 from app.models.audit_log import AuditLog
 from app.models.taxonomy import TaxonomyValue
 from app.models.model_version import ModelVersion
@@ -22,6 +24,7 @@ from app.models.validation_grouping import ValidationGroupingMemory
 from app.models.model_hierarchy import ModelHierarchy
 from app.models.monitoring import MonitoringCycle, MonitoringCycleApproval, MonitoringPlan, monitoring_plan_models
 from app.models.methodology import Methodology
+from app.models.risk_assessment import ModelRiskAssessment
 from app.schemas.model import (
     ModelCreate, ModelUpdate, ModelDetailResponse, ValidationGroupingSuggestion, ModelCreateResponse,
     ModelNameHistoryItem, ModelNameHistoryResponse, NameChangeStatistics,
@@ -47,6 +50,201 @@ def create_audit_log(db: Session, entity_type: str, entity_id: int, action: str,
     )
     db.add(audit_log)
     # Note: commit happens with the main transaction
+
+
+def _format_audit_changes(changes: dict, db: Session) -> Optional[str]:
+    """Convert audit log changes dict to human-readable description with resolved names.
+
+    Args:
+        changes: Dict from audit log, format: {"field": {"old": value, "new": value}} or {"field": "modified"}
+        db: Database session for resolving IDs to names
+
+    Returns:
+        Human-readable description string or None if no changes
+    """
+    if not changes:
+        return None
+
+    # Field display names (snake_case -> readable)
+    field_names = {
+        "model_name": "Name",
+        "description": "Description",
+        "development_type": "Development Type",
+        "status": "Status",
+        "owner_id": "Owner",
+        "developer_id": "Developer",
+        "shared_owner_id": "Shared Owner",
+        "monitoring_manager_id": "Monitoring Manager",
+        "risk_tier_id": "Risk Tier",
+        "vendor_id": "Vendor",
+        "wholly_owned_region_id": "Wholly Owned Region",
+        "lob_id": "LOB",
+        "user_ids": "Model Users",
+        "regulatory_category_ids": "Regulatory Categories",
+        "validation_plans_reset": "Validation Plans Reset",
+        "approvals_voided": "Approvals Voided",
+    }
+
+    # Fields that need ID resolution
+    user_fields = {"owner_id", "developer_id", "shared_owner_id", "monitoring_manager_id"}
+
+    # Collect all IDs that need resolution
+    user_ids_to_resolve = set()
+    taxonomy_ids_to_resolve = set()
+    vendor_ids_to_resolve = set()
+    region_ids_to_resolve = set()
+    lob_ids_to_resolve = set()
+
+    for field, value in changes.items():
+        if isinstance(value, dict) and "old" in value and "new" in value:
+            if field in user_fields:
+                if value["old"]: user_ids_to_resolve.add(value["old"])
+                if value["new"]: user_ids_to_resolve.add(value["new"])
+            elif field == "risk_tier_id":
+                if value["old"]: taxonomy_ids_to_resolve.add(value["old"])
+                if value["new"]: taxonomy_ids_to_resolve.add(value["new"])
+            elif field == "vendor_id":
+                if value["old"]: vendor_ids_to_resolve.add(value["old"])
+                if value["new"]: vendor_ids_to_resolve.add(value["new"])
+            elif field == "wholly_owned_region_id":
+                if value["old"]: region_ids_to_resolve.add(value["old"])
+                if value["new"]: region_ids_to_resolve.add(value["new"])
+            elif field == "lob_id":
+                if value["old"]: lob_ids_to_resolve.add(value["old"])
+                if value["new"]: lob_ids_to_resolve.add(value["new"])
+
+    # Batch fetch lookups
+    user_map = {}
+    if user_ids_to_resolve:
+        users = db.query(User).filter(User.user_id.in_(user_ids_to_resolve)).all()
+        user_map = {u.user_id: u.full_name for u in users}
+
+    taxonomy_map = {}
+    if taxonomy_ids_to_resolve:
+        values = db.query(TaxonomyValue).filter(TaxonomyValue.value_id.in_(taxonomy_ids_to_resolve)).all()
+        taxonomy_map = {v.value_id: v.label for v in values}
+
+    vendor_map = {}
+    if vendor_ids_to_resolve:
+        vendors = db.query(Vendor).filter(Vendor.vendor_id.in_(vendor_ids_to_resolve)).all()
+        vendor_map = {v.vendor_id: v.name for v in vendors}
+
+    region_map = {}
+    if region_ids_to_resolve:
+        regions = db.query(Region).filter(Region.region_id.in_(region_ids_to_resolve)).all()
+        region_map = {r.region_id: r.name for r in regions}
+
+    lob_map = {}
+    if lob_ids_to_resolve:
+        lobs = db.query(LOBUnit).filter(LOBUnit.lob_id.in_(lob_ids_to_resolve)).all()
+        lob_map = {l.lob_id: l.name for l in lobs}
+
+    def resolve_value(field: str, value) -> str:
+        """Resolve a single value to its display string."""
+        if value is None:
+            return "(empty)"
+        if field in user_fields:
+            return user_map.get(value, f"User #{value}")
+        if field == "risk_tier_id":
+            return taxonomy_map.get(value, f"Tier #{value}")
+        if field == "vendor_id":
+            return vendor_map.get(value, f"Vendor #{value}")
+        if field == "wholly_owned_region_id":
+            return region_map.get(value, f"Region #{value}")
+        if field == "lob_id":
+            return lob_map.get(value, f"LOB #{value}")
+        if isinstance(value, bool):
+            return "Yes" if value else "No"
+        if isinstance(value, str) and len(value) > 50:
+            return f"'{value[:47]}...'"
+        if isinstance(value, str):
+            return f"'{value}'"
+        return str(value)
+
+    # Build description parts
+    parts = []
+
+    # Skip internal tracking fields that don't need display
+    skip_fields = {"validation_plans_reset", "approvals_voided"}
+
+    for field, value in changes.items():
+        if field in skip_fields:
+            continue
+
+        display_name = field_names.get(field, field.replace("_", " ").title())
+
+        if isinstance(value, dict) and "old" in value and "new" in value:
+            old_display = resolve_value(field, value["old"])
+            new_display = resolve_value(field, value["new"])
+            parts.append(f"{display_name}: {old_display} → {new_display}")
+        elif value == "modified":
+            parts.append(f"{display_name}: modified")
+        else:
+            # Handle other value types (e.g., counts)
+            parts.append(f"{display_name}: {value}")
+
+    if not parts:
+        return None
+
+    return ", ".join(parts)
+
+
+def _format_risk_assessment_changes(changes: dict, action: str, db: Session) -> Optional[str]:
+    """Format risk assessment audit log changes for display.
+
+    Risk assessment changes have different structures:
+    - CREATE: flat dict with field values
+    - UPDATE: {"old": {...}, "new": {...}}
+    """
+    if not changes:
+        return None
+
+    # Field display names
+    field_names = {
+        "quantitative_rating": "Quantitative Rating",
+        "quantitative_override": "Quantitative Override",
+        "qualitative_override": "Qualitative Override",
+        "derived_risk_tier": "Derived Risk Tier",
+        "derived_risk_tier_override": "Final Risk Tier Override",
+        "region_id": "Region",
+    }
+
+    # Skip fields that are not user-facing
+    skip_fields = {"model_id", "quantitative_override_comment", "qualitative_override_comment",
+                   "derived_risk_tier_override_comment"}
+
+    parts = []
+
+    if action == "CREATE":
+        # For CREATE, show key initial values
+        for field in ["quantitative_rating", "derived_risk_tier", "derived_risk_tier_override"]:
+            if field in changes and changes[field]:
+                display_name = field_names.get(field, field.replace("_", " ").title())
+                parts.append(f"{display_name}: {changes[field]}")
+
+    elif action == "UPDATE" and "old" in changes and "new" in changes:
+        old_vals = changes["old"]
+        new_vals = changes["new"]
+
+        # Compare old and new values
+        all_fields = set(old_vals.keys()) | set(new_vals.keys())
+        for field in all_fields:
+            if field in skip_fields:
+                continue
+
+            old_val = old_vals.get(field)
+            new_val = new_vals.get(field)
+
+            if old_val != new_val:
+                display_name = field_names.get(field, field.replace("_", " ").title())
+                old_display = old_val if old_val else "(empty)"
+                new_display = new_val if new_val else "(empty)"
+                parts.append(f"{display_name}: {old_display} → {new_display}")
+
+    if not parts:
+        return None
+
+    return ", ".join(parts)
 
 
 @router.get("/", response_model=List[ModelDetailResponse])
@@ -1749,12 +1947,15 @@ def get_model_activity_timeline(
     for audit in model_audits:
         icon = "📝"
         title = f"Model {audit.action.lower()}"
+        description = None
         if audit.action == "CREATE":
             title = "Model created"
             icon = "✨"
         elif audit.action == "UPDATE":
             title = "Model updated"
             icon = "📝"
+            # Format change details for display
+            description = _format_audit_changes(audit.changes, db)
         elif audit.action == "SUBMIT":
             title = "Model submitted for approval"
             icon = "📤"
@@ -1772,7 +1973,7 @@ def get_model_activity_timeline(
             timestamp=audit.timestamp,
             activity_type=f"model_{audit.action.lower()}",
             title=title,
-            description=None,
+            description=description,
             user_name=audit.user.full_name if audit.user else None,
             user_id=audit.user_id,
             entity_type="Model",
@@ -2135,6 +2336,62 @@ def get_model_activity_timeline(
                     entity_id=approval.approval_id,
                     icon="✅" if approval.approval_status == "Approved" else "❌"
                 ))
+
+    # 10. Risk assessment changes
+    # Get all assessments for this model
+    assessments = db.query(ModelRiskAssessment).filter(
+        ModelRiskAssessment.model_id == model_id
+    ).all()
+
+    assessment_ids = [a.assessment_id for a in assessments]
+
+    if assessment_ids:
+        risk_audits = db.query(AuditLog).options(
+            joinedload(AuditLog.user)
+        ).filter(
+            AuditLog.entity_type == "ModelRiskAssessment",
+            AuditLog.entity_id.in_(assessment_ids)
+        ).all()
+
+        # Build assessment_id -> region lookup for better titles
+        assessment_region_map = {}
+        for a in assessments:
+            if a.region_id:
+                region = db.query(Region).filter(Region.region_id == a.region_id).first()
+                assessment_region_map[a.assessment_id] = region.name if region else f"Region #{a.region_id}"
+            else:
+                assessment_region_map[a.assessment_id] = "Global"
+
+        for audit in risk_audits:
+            region_name = assessment_region_map.get(audit.entity_id, "")
+            scope_text = f" ({region_name})" if region_name else ""
+
+            if audit.action == "CREATE":
+                title = f"Risk assessment created{scope_text}"
+                icon = "📊"
+            elif audit.action == "UPDATE":
+                title = f"Risk assessment updated{scope_text}"
+                icon = "📊"
+            elif audit.action == "DELETE":
+                title = f"Risk assessment deleted{scope_text}"
+                icon = "🗑️"
+            else:
+                title = f"Risk assessment {audit.action.lower()}{scope_text}"
+                icon = "📊"
+
+            description = _format_risk_assessment_changes(audit.changes, audit.action, db)
+
+            activities.append(ActivityTimelineItem(
+                timestamp=audit.timestamp,
+                activity_type=f"risk_assessment_{audit.action.lower()}",
+                title=title,
+                description=description,
+                user_name=audit.user.full_name if audit.user else None,
+                user_id=audit.user_id,
+                entity_type="ModelRiskAssessment",
+                entity_id=audit.entity_id,
+                icon=icon
+            ))
 
     # Sort all activities by timestamp (newest first)
     activities.sort(key=lambda x: x.timestamp, reverse=True)

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link, useSearchParams, useLocation } from 'react-router-dom';
 import api from '../api/client';
 import { regionsApi, Region } from '../api/regions';
@@ -6,6 +6,8 @@ import Layout from '../components/Layout';
 import MultiSelectDropdown from '../components/MultiSelectDropdown';
 import ValidationWarningModal from '../components/ValidationWarningModal';
 import { useTableSort } from '../hooks/useTableSort';
+import { useColumnPreferences, ColumnDefinition } from '../hooks/useColumnPreferences';
+import { ColumnPickerModal, SaveViewModal } from '../components/ColumnPickerModal';
 
 interface ValidationRequest {
     request_id: number;
@@ -101,6 +103,50 @@ export default function ValidationWorkflowPage() {
         region_ids: [] as number[],
         overdue_only: false,
         show_cancelled: false  // Hide cancelled items by default
+    });
+
+    // Column customization configuration
+    const availableColumns: ColumnDefinition[] = [
+        { key: 'request_id', label: 'ID', default: true },
+        { key: 'model_names', label: 'Model', default: true },
+        { key: 'validation_type', label: 'Type', default: true },
+        { key: 'regions', label: 'Region', default: true },
+        { key: 'priority', label: 'Priority', default: true },
+        { key: 'current_status', label: 'Status', default: true },
+        { key: 'days_in_status', label: 'Days in Status', default: true },
+        { key: 'target_completion_date', label: 'Target Date', default: true },
+        { key: 'updated_at', label: 'Last Modified', default: true },
+        { key: 'primary_validator', label: 'Validator', default: true },
+        { key: 'requestor_name', label: 'Requestor', default: false },
+        { key: 'request_date', label: 'Request Date', default: false },
+        { key: 'created_at', label: 'Created Date', default: false },
+    ];
+
+    const defaultViews = {
+        'default': {
+            id: 'default',
+            name: 'Default View',
+            columns: availableColumns.filter(col => col.default).map(col => col.key),
+            isDefault: true
+        },
+        'compact': {
+            id: 'compact',
+            name: 'Compact View',
+            columns: ['request_id', 'model_names', 'current_status', 'priority', 'target_completion_date'],
+            isDefault: true
+        },
+        'full': {
+            id: 'full',
+            name: 'All Columns',
+            columns: availableColumns.map(col => col.key),
+            isDefault: true
+        }
+    };
+
+    const columnPrefs = useColumnPreferences({
+        entityType: 'validation_requests',
+        availableColumns,
+        defaultViews,
     });
 
     // Apply filters
@@ -490,6 +536,168 @@ export default function ValidationWorkflowPage() {
         return targetDate < today;
     };
 
+    // Column renderers for dynamic table
+    const columnRenderers: Record<string, {
+        header: string;
+        sortKey?: string;
+        cell: (req: ValidationRequest) => React.ReactNode;
+        csvValue: (req: ValidationRequest) => string;
+    }> = {
+        request_id: {
+            header: 'ID',
+            sortKey: 'request_id',
+            cell: (req) => (
+                <Link
+                    to={`/validation-workflow/${req.request_id}`}
+                    className="font-mono text-blue-600 hover:text-blue-800 hover:underline"
+                >
+                    #{req.request_id}
+                </Link>
+            ),
+            csvValue: (req) => req.request_id.toString()
+        },
+        model_names: {
+            header: 'Model',
+            cell: (req) => (
+                <div className="flex flex-wrap gap-1">
+                    {req.model_names.map((name, idx) => (
+                        <span key={req.model_ids[idx]} className="text-sm text-gray-900">
+                            {name}{idx < req.model_names.length - 1 ? ',' : ''}
+                        </span>
+                    ))}
+                </div>
+            ),
+            csvValue: (req) => req.model_names.join('; ')
+        },
+        validation_type: {
+            header: 'Type',
+            sortKey: 'validation_type',
+            cell: (req) => req.validation_type,
+            csvValue: (req) => req.validation_type
+        },
+        regions: {
+            header: 'Region',
+            cell: (req) => req.regions && req.regions.length > 0 ? (
+                <div className="flex flex-wrap gap-1">
+                    {req.regions.map(region => (
+                        <span key={region.region_id} className="px-2 py-1 text-xs rounded bg-blue-100 text-blue-800">
+                            {region.code}
+                        </span>
+                    ))}
+                </div>
+            ) : (
+                <span className="text-gray-400 text-xs">Global</span>
+            ),
+            csvValue: (req) => req.regions?.map(r => r.code).join('; ') || 'Global'
+        },
+        priority: {
+            header: 'Priority',
+            sortKey: 'priority',
+            cell: (req) => (
+                <span className={`px-2 py-1 text-xs rounded ${getPriorityColor(req.priority)}`}>
+                    {req.priority}
+                </span>
+            ),
+            csvValue: (req) => req.priority
+        },
+        current_status: {
+            header: 'Status',
+            sortKey: 'current_status',
+            cell: (req) => (
+                <div className="flex items-center gap-2">
+                    <span className={`px-2 py-1 text-xs rounded ${getStatusColor(req.current_status)}`}>
+                        {req.current_status}
+                    </span>
+                    {isOverdue(req) && (
+                        <span className="px-1.5 py-0.5 text-xs font-medium rounded bg-red-600 text-white" title="Target completion date has passed">
+                            OVERDUE
+                        </span>
+                    )}
+                </div>
+            ),
+            csvValue: (req) => isOverdue(req) ? `${req.current_status} (OVERDUE)` : req.current_status
+        },
+        days_in_status: {
+            header: 'Days in Status',
+            sortKey: 'days_in_status',
+            cell: (req) => (
+                <span className={req.days_in_status > 14 ? 'text-red-600 font-semibold' : ''}>
+                    {req.days_in_status} days
+                </span>
+            ),
+            csvValue: (req) => req.days_in_status.toString()
+        },
+        target_completion_date: {
+            header: 'Target Date',
+            sortKey: 'target_completion_date',
+            cell: (req) => req.target_completion_date,
+            csvValue: (req) => req.target_completion_date
+        },
+        updated_at: {
+            header: 'Last Modified',
+            sortKey: 'updated_at',
+            cell: (req) => req.updated_at ? req.updated_at.split('T')[0] : 'N/A',
+            csvValue: (req) => req.updated_at ? req.updated_at.split('T')[0] : ''
+        },
+        primary_validator: {
+            header: 'Validator',
+            sortKey: 'primary_validator',
+            cell: (req) => req.primary_validator || <span className="text-gray-400">Unassigned</span>,
+            csvValue: (req) => req.primary_validator || ''
+        },
+        requestor_name: {
+            header: 'Requestor',
+            sortKey: 'requestor_name',
+            cell: (req) => req.requestor_name,
+            csvValue: (req) => req.requestor_name
+        },
+        request_date: {
+            header: 'Request Date',
+            sortKey: 'request_date',
+            cell: (req) => req.request_date ? req.request_date.split('T')[0] : 'N/A',
+            csvValue: (req) => req.request_date ? req.request_date.split('T')[0] : ''
+        },
+        created_at: {
+            header: 'Created Date',
+            sortKey: 'created_at',
+            cell: (req) => req.created_at ? req.created_at.split('T')[0] : 'N/A',
+            csvValue: (req) => req.created_at ? req.created_at.split('T')[0] : ''
+        }
+    };
+
+    // CSV Export handler
+    const handleExportCSV = () => {
+        if (columnPrefs.selectedColumns.length === 0) {
+            alert('Please select at least one column to export.');
+            return;
+        }
+
+        const headers = columnPrefs.selectedColumns
+            .filter(colKey => columnRenderers[colKey])
+            .map(colKey => columnRenderers[colKey].header);
+
+        const rows = sortedData.map(req => {
+            const row: string[] = [];
+            columnPrefs.selectedColumns.forEach(colKey => {
+                const renderer = columnRenderers[colKey];
+                let value = renderer ? renderer.csvValue(req) : '';
+                value = value.replace(/"/g, '""');
+                if (value.includes(',') || value.includes('"') || value.includes('\n')) {
+                    value = `"${value}"`;
+                }
+                row.push(value);
+            });
+            return row.join(',');
+        });
+
+        const csvContent = [headers.join(','), ...rows].join('\n');
+        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(blob);
+        link.download = `validation_requests_${new Date().toISOString().split('T')[0]}.csv`;
+        link.click();
+    };
+
     if (loading) {
         return (
             <Layout>
@@ -507,9 +715,20 @@ export default function ValidationWorkflowPage() {
                         Manage validation projects through their complete lifecycle
                     </p>
                 </div>
-                <button onClick={() => setShowForm(true)} className="btn-primary">
-                    + New Validation Project
-                </button>
+                <div className="flex gap-2">
+                    <button
+                        onClick={() => columnPrefs.setShowColumnsModal(true)}
+                        className="btn-secondary"
+                    >
+                        Columns ({columnPrefs.selectedColumns.length})
+                    </button>
+                    <button onClick={handleExportCSV} className="btn-secondary">
+                        Export CSV
+                    </button>
+                    <button onClick={() => setShowForm(true)} className="btn-primary">
+                        + New Validation Project
+                    </button>
+                </div>
             </div>
 
             {error && (
@@ -990,166 +1209,89 @@ export default function ValidationWorkflowPage() {
                 </div>
             </div>
 
+            {/* Dynamic Table */}
             <div className="bg-white rounded-lg shadow-md overflow-x-auto">
                 <table className="min-w-full divide-y divide-gray-200">
                     <thead className="bg-gray-50">
                         <tr>
-                            <th
-                                className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100"
-                                onClick={() => requestSort('request_id')}
-                            >
-                                <div className="flex items-center gap-2">
-                                    ID
-                                    {getSortIcon('request_id')}
-                                </div>
-                            </th>
-                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Model</th>
-                            <th
-                                className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100"
-                                onClick={() => requestSort('validation_type')}
-                            >
-                                <div className="flex items-center gap-2">
-                                    Type
-                                    {getSortIcon('validation_type')}
-                                </div>
-                            </th>
-                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Region</th>
-                            <th
-                                className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100"
-                                onClick={() => requestSort('priority')}
-                            >
-                                <div className="flex items-center gap-2">
-                                    Priority
-                                    {getSortIcon('priority')}
-                                </div>
-                            </th>
-                            <th
-                                className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100"
-                                onClick={() => requestSort('current_status')}
-                            >
-                                <div className="flex items-center gap-2">
-                                    Status
-                                    {getSortIcon('current_status')}
-                                </div>
-                            </th>
-                            <th
-                                className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100"
-                                onClick={() => requestSort('days_in_status')}
-                            >
-                                <div className="flex items-center gap-2">
-                                    Days in Status
-                                    {getSortIcon('days_in_status')}
-                                </div>
-                            </th>
-                            <th
-                                className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100"
-                                onClick={() => requestSort('target_completion_date')}
-                            >
-                                <div className="flex items-center gap-2">
-                                    Target Date
-                                    {getSortIcon('target_completion_date')}
-                                </div>
-                            </th>
-                            <th
-                                className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100"
-                                onClick={() => requestSort('updated_at')}
-                            >
-                                <div className="flex items-center gap-2">
-                                    Last Modified
-                                    {getSortIcon('updated_at')}
-                                </div>
-                            </th>
-                            <th
-                                className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100"
-                                onClick={() => requestSort('primary_validator')}
-                            >
-                                <div className="flex items-center gap-2">
-                                    Validator
-                                    {getSortIcon('primary_validator')}
-                                </div>
-                            </th>
+                            {columnPrefs.selectedColumns.map(colKey => {
+                                const renderer = columnRenderers[colKey];
+                                if (!renderer) return null;
+                                return (
+                                    <th
+                                        key={colKey}
+                                        className={`px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase ${renderer.sortKey ? 'cursor-pointer hover:bg-gray-100' : ''}`}
+                                        onClick={() => renderer.sortKey && requestSort(renderer.sortKey)}
+                                    >
+                                        <div className="flex items-center gap-2">
+                                            {renderer.header}
+                                            {renderer.sortKey && getSortIcon(renderer.sortKey)}
+                                        </div>
+                                    </th>
+                                );
+                            })}
                         </tr>
                     </thead>
                     <tbody className="bg-white divide-y divide-gray-200">
                         {sortedData.length === 0 ? (
                             <tr>
-                                <td colSpan={10} className="px-6 py-4 text-center text-gray-500">
+                                <td colSpan={columnPrefs.selectedColumns.length} className="px-6 py-4 text-center text-gray-500">
                                     No validation projects found. Click "New Validation Project" to create one.
                                 </td>
                             </tr>
                         ) : (
                             sortedData.map((req) => (
                                 <tr key={req.request_id} className="hover:bg-gray-50">
-                                    <td className="px-6 py-4 whitespace-nowrap text-sm">
-                                        <Link
-                                            to={`/validation-workflow/${req.request_id}`}
-                                            className="font-mono text-blue-600 hover:text-blue-800 hover:underline"
-                                        >
-                                            #{req.request_id}
-                                        </Link>
-                                    </td>
-                                    <td className="px-6 py-4">
-                                        <div className="flex flex-wrap gap-1">
-                                            {req.model_names.map((name, idx) => (
-                                                <span key={req.model_ids[idx]} className="text-sm text-gray-900">
-                                                    {name}{idx < req.model_names.length - 1 ? ',' : ''}
-                                                </span>
-                                            ))}
-                                        </div>
-                                    </td>
-                                    <td className="px-6 py-4 whitespace-nowrap text-sm">
-                                        {req.validation_type}
-                                    </td>
-                                    <td className="px-6 py-4 text-sm">
-                                        {req.regions && req.regions.length > 0 ? (
-                                            <div className="flex flex-wrap gap-1">
-                                                {req.regions.map(region => (
-                                                    <span key={region.region_id} className="px-2 py-1 text-xs rounded bg-blue-100 text-blue-800">
-                                                        {region.code}
-                                                    </span>
-                                                ))}
-                                            </div>
-                                        ) : (
-                                            <span className="text-gray-400 text-xs">Global</span>
-                                        )}
-                                    </td>
-                                    <td className="px-6 py-4 whitespace-nowrap">
-                                        <span className={`px-2 py-1 text-xs rounded ${getPriorityColor(req.priority)}`}>
-                                            {req.priority}
-                                        </span>
-                                    </td>
-                                    <td className="px-6 py-4 whitespace-nowrap">
-                                        <div className="flex items-center gap-2">
-                                            <span className={`px-2 py-1 text-xs rounded ${getStatusColor(req.current_status)}`}>
-                                                {req.current_status}
-                                            </span>
-                                            {isOverdue(req) && (
-                                                <span className="px-1.5 py-0.5 text-xs font-medium rounded bg-red-600 text-white" title="Target completion date has passed">
-                                                    OVERDUE
-                                                </span>
-                                            )}
-                                        </div>
-                                    </td>
-                                    <td className="px-6 py-4 whitespace-nowrap text-sm">
-                                        <span className={req.days_in_status > 14 ? 'text-red-600 font-semibold' : ''}>
-                                            {req.days_in_status} days
-                                        </span>
-                                    </td>
-                                    <td className="px-6 py-4 whitespace-nowrap text-sm">
-                                        {req.target_completion_date}
-                                    </td>
-                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
-                                        {req.updated_at ? req.updated_at.split('T')[0] : 'N/A'}
-                                    </td>
-                                    <td className="px-6 py-4 whitespace-nowrap text-sm">
-                                        {req.primary_validator || <span className="text-gray-400">Unassigned</span>}
-                                    </td>
+                                    {columnPrefs.selectedColumns.map(colKey => {
+                                        const renderer = columnRenderers[colKey];
+                                        if (!renderer) return null;
+                                        return (
+                                            <td key={colKey} className="px-6 py-4 whitespace-nowrap text-sm">
+                                                {renderer.cell(req)}
+                                            </td>
+                                        );
+                                    })}
                                 </tr>
                             ))
                         )}
                     </tbody>
                 </table>
             </div>
+
+            {/* Column Picker Modal */}
+            <ColumnPickerModal
+                isOpen={columnPrefs.showColumnsModal}
+                onClose={() => columnPrefs.setShowColumnsModal(false)}
+                availableColumns={availableColumns}
+                selectedColumns={columnPrefs.selectedColumns}
+                toggleColumn={columnPrefs.toggleColumn}
+                selectAllColumns={columnPrefs.selectAllColumns}
+                deselectAllColumns={columnPrefs.deselectAllColumns}
+                currentViewId={columnPrefs.currentViewId}
+                allViews={columnPrefs.allViews}
+                loadView={columnPrefs.loadView}
+                onSaveAsNew={() => {
+                    columnPrefs.setEditingViewId(null);
+                    columnPrefs.setNewViewName('');
+                    columnPrefs.setNewViewDescription('');
+                    columnPrefs.setNewViewIsPublic(false);
+                    columnPrefs.setShowSaveViewModal(true);
+                }}
+            />
+
+            {/* Save View Modal */}
+            <SaveViewModal
+                isOpen={columnPrefs.showSaveViewModal}
+                onClose={() => columnPrefs.setShowSaveViewModal(false)}
+                onSave={columnPrefs.saveView}
+                viewName={columnPrefs.newViewName}
+                setViewName={columnPrefs.setNewViewName}
+                viewDescription={columnPrefs.newViewDescription}
+                setViewDescription={columnPrefs.setNewViewDescription}
+                isPublic={columnPrefs.newViewIsPublic}
+                setIsPublic={columnPrefs.setNewViewIsPublic}
+                isEditing={columnPrefs.editingViewId !== null}
+            />
         </Layout>
     );
 }

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import api from '../api/client';
 import { recommendationsApi, RecommendationListItem, TaxonomyValue } from '../api/recommendations';
@@ -6,6 +6,8 @@ import Layout from '../components/Layout';
 import MultiSelectDropdown from '../components/MultiSelectDropdown';
 import RecommendationCreateModal from '../components/RecommendationCreateModal';
 import { useTableSort } from '../hooks/useTableSort';
+import { useColumnPreferences, ColumnDefinition } from '../hooks/useColumnPreferences';
+import { ColumnPickerModal, SaveViewModal } from '../components/ColumnPickerModal';
 import { useAuth } from '../contexts/AuthContext';
 
 interface Model {
@@ -50,6 +52,49 @@ export default function RecommendationsPage() {
 
     // Terminal statuses
     const terminalStatusCodes = ['REC_DROPPED', 'REC_CLOSED'];
+
+    // Column customization configuration
+    const availableColumns: ColumnDefinition[] = [
+        { key: 'recommendation_code', label: 'Code', default: true },
+        { key: 'title', label: 'Title', default: true },
+        { key: 'model', label: 'Model', default: true },
+        { key: 'priority', label: 'Priority', default: true },
+        { key: 'current_status', label: 'Status', default: true },
+        { key: 'category', label: 'Category', default: true },
+        { key: 'assigned_to', label: 'Assigned To', default: true },
+        { key: 'current_target_date', label: 'Target Date', default: true },
+        { key: 'updated_at', label: 'Updated', default: true },
+        { key: 'created_at', label: 'Created', default: false },
+        { key: 'validation_request_id', label: 'Validation ID', default: false },
+        { key: 'monitoring_cycle_id', label: 'Monitoring Cycle', default: false },
+    ];
+
+    const defaultViews = {
+        'default': {
+            id: 'default',
+            name: 'Default View',
+            columns: availableColumns.filter(col => col.default).map(col => col.key),
+            isDefault: true
+        },
+        'compact': {
+            id: 'compact',
+            name: 'Compact View',
+            columns: ['recommendation_code', 'title', 'current_status', 'priority', 'current_target_date'],
+            isDefault: true
+        },
+        'full': {
+            id: 'full',
+            name: 'All Columns',
+            columns: availableColumns.map(col => col.key),
+            isDefault: true
+        }
+    };
+
+    const columnPrefs = useColumnPreferences({
+        entityType: 'recommendations',
+        availableColumns,
+        defaultViews,
+    });
 
     // Apply filters
     const filteredRecommendations = recommendations.filter(rec => {
@@ -222,48 +267,187 @@ export default function RecommendationsPage() {
         return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
     };
 
-    // CSV Export
+    // Column renderers for dynamic table
+    const columnRenderers: Record<string, {
+        header: string;
+        sortKey?: string;
+        cell: (rec: RecommendationListItem) => React.ReactNode;
+        csvValue: (rec: RecommendationListItem) => string;
+    }> = {
+        recommendation_code: {
+            header: 'Code',
+            sortKey: 'recommendation_code',
+            cell: (rec) => (
+                <div className="flex items-center gap-1.5">
+                    <Link
+                        to={`/recommendations/${rec.recommendation_id}`}
+                        className="font-mono text-blue-600 hover:text-blue-800 hover:underline"
+                    >
+                        {rec.recommendation_code}
+                    </Link>
+                    {rec.validation_request_id && (
+                        <span
+                            title="From Validation"
+                            className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-blue-100 text-blue-600"
+                        >
+                            <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                            </svg>
+                        </span>
+                    )}
+                    {rec.monitoring_cycle_id && (
+                        <span
+                            title="From Monitoring"
+                            className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-purple-100 text-purple-600"
+                        >
+                            <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                            </svg>
+                        </span>
+                    )}
+                </div>
+            ),
+            csvValue: (rec) => rec.recommendation_code
+        },
+        title: {
+            header: 'Title',
+            sortKey: 'title',
+            cell: (rec) => (
+                <div className="max-w-xs truncate" title={rec.title}>
+                    {rec.title}
+                </div>
+            ),
+            csvValue: (rec) => rec.title.replace(/"/g, '""')
+        },
+        model: {
+            header: 'Model',
+            sortKey: 'model.model_name',
+            cell: (rec) => rec.model ? (
+                <Link
+                    to={`/models/${rec.model.model_id}`}
+                    className="text-blue-600 hover:text-blue-800 hover:underline"
+                >
+                    {rec.model.model_name}
+                </Link>
+            ) : (
+                <span className="text-gray-400">-</span>
+            ),
+            csvValue: (rec) => rec.model?.model_name || ''
+        },
+        priority: {
+            header: 'Priority',
+            sortKey: 'priority.label',
+            cell: (rec) => (
+                <span className={`px-2 py-1 text-xs rounded ${getPriorityColor(rec.priority?.code || '')}`}>
+                    {rec.priority?.label}
+                </span>
+            ),
+            csvValue: (rec) => rec.priority?.label || ''
+        },
+        current_status: {
+            header: 'Status',
+            sortKey: 'current_status.label',
+            cell: (rec) => (
+                <div className="flex items-center gap-2">
+                    <span className={`px-2 py-1 text-xs rounded ${getStatusColor(rec.current_status?.code || '')}`}>
+                        {rec.current_status?.label}
+                    </span>
+                    {isOverdue(rec) && (
+                        <span className="px-1.5 py-0.5 text-xs font-medium rounded bg-red-600 text-white" title={`${getDaysOverdue(rec)} days overdue`}>
+                            OVERDUE
+                        </span>
+                    )}
+                </div>
+            ),
+            csvValue: (rec) => isOverdue(rec) ? `${rec.current_status?.label || ''} (OVERDUE)` : (rec.current_status?.label || '')
+        },
+        category: {
+            header: 'Category',
+            cell: (rec) => rec.category?.label || <span className="text-gray-400">-</span>,
+            csvValue: (rec) => rec.category?.label || ''
+        },
+        assigned_to: {
+            header: 'Assigned To',
+            sortKey: 'assigned_to.full_name',
+            cell: (rec) => rec.assigned_to?.full_name || <span className="text-gray-400">Unassigned</span>,
+            csvValue: (rec) => rec.assigned_to?.full_name || ''
+        },
+        current_target_date: {
+            header: 'Target Date',
+            sortKey: 'current_target_date',
+            cell: (rec) => (
+                <span className={isOverdue(rec) ? 'text-red-600 font-semibold' : ''}>
+                    {rec.current_target_date}
+                </span>
+            ),
+            csvValue: (rec) => rec.current_target_date
+        },
+        updated_at: {
+            header: 'Updated',
+            sortKey: 'updated_at',
+            cell: (rec) => rec.updated_at.split('T')[0],
+            csvValue: (rec) => rec.updated_at.split('T')[0]
+        },
+        created_at: {
+            header: 'Created',
+            sortKey: 'created_at',
+            cell: (rec) => rec.created_at.split('T')[0],
+            csvValue: (rec) => rec.created_at.split('T')[0]
+        },
+        validation_request_id: {
+            header: 'Validation ID',
+            sortKey: 'validation_request_id',
+            cell: (rec) => rec.validation_request_id ? (
+                <Link
+                    to={`/validation-workflow/${rec.validation_request_id}`}
+                    className="text-blue-600 hover:text-blue-800 hover:underline"
+                >
+                    #{rec.validation_request_id}
+                </Link>
+            ) : (
+                <span className="text-gray-400">-</span>
+            ),
+            csvValue: (rec) => rec.validation_request_id ? `#${rec.validation_request_id}` : ''
+        },
+        monitoring_cycle_id: {
+            header: 'Monitoring Cycle',
+            sortKey: 'monitoring_cycle_id',
+            cell: (rec) => rec.monitoring_cycle_id || <span className="text-gray-400">-</span>,
+            csvValue: (rec) => rec.monitoring_cycle_id?.toString() || ''
+        }
+    };
+
+    // CSV Export (uses selected columns)
     const exportToCSV = () => {
-        const headers = [
-            'Code',
-            'Title',
-            'Model',
-            'Priority',
-            'Status',
-            'Category',
-            'Assigned To',
-            'Target Date',
-            'Created At',
-            'Updated At'
-        ];
+        if (columnPrefs.selectedColumns.length === 0) {
+            alert('Please select at least one column to export.');
+            return;
+        }
 
-        const rows = sortedData.map(rec => [
-            rec.recommendation_code,
-            `"${rec.title.replace(/"/g, '""')}"`,
-            rec.model?.model_name || '',
-            rec.priority?.label || '',
-            rec.current_status?.label || '',
-            rec.category?.label || '',
-            rec.assigned_to?.full_name || '',
-            rec.current_target_date,
-            rec.created_at.split('T')[0],
-            rec.updated_at.split('T')[0]
-        ]);
+        const headers = columnPrefs.selectedColumns
+            .filter(colKey => columnRenderers[colKey])
+            .map(colKey => columnRenderers[colKey].header);
 
-        const csvContent = [
-            headers.join(','),
-            ...rows.map(row => row.join(','))
-        ].join('\n');
+        const rows = sortedData.map(rec => {
+            const row: string[] = [];
+            columnPrefs.selectedColumns.forEach(colKey => {
+                const renderer = columnRenderers[colKey];
+                let value = renderer ? renderer.csvValue(rec) : '';
+                value = value.replace(/"/g, '""');
+                if (value.includes(',') || value.includes('"') || value.includes('\n')) {
+                    value = `"${value}"`;
+                }
+                row.push(value);
+            });
+            return row.join(',');
+        });
 
+        const csvContent = [headers.join(','), ...rows].join('\n');
         const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
         const link = document.createElement('a');
-        const url = URL.createObjectURL(blob);
-        link.setAttribute('href', url);
-        link.setAttribute('download', `recommendations_${new Date().toISOString().split('T')[0]}.csv`);
-        link.style.visibility = 'hidden';
-        document.body.appendChild(link);
+        link.href = URL.createObjectURL(blob);
+        link.download = `recommendations_${new Date().toISOString().split('T')[0]}.csv`;
         link.click();
-        document.body.removeChild(link);
     };
 
     const canCreate = user?.role === 'Admin' || user?.role === 'Validator';
@@ -286,6 +470,12 @@ export default function RecommendationsPage() {
                     </p>
                 </div>
                 <div className="flex gap-2">
+                    <button
+                        onClick={() => columnPrefs.setShowColumnsModal(true)}
+                        className="btn-secondary"
+                    >
+                        Columns ({columnPrefs.selectedColumns.length})
+                    </button>
                     <button onClick={exportToCSV} className="btn-secondary">
                         Export CSV
                     </button>
@@ -429,92 +619,33 @@ export default function RecommendationsPage() {
                 </div>
             </div>
 
-            {/* Table */}
+            {/* Dynamic Table */}
             <div className="bg-white rounded-lg shadow-md overflow-x-auto">
                 <table className="min-w-full divide-y divide-gray-200">
                     <thead className="bg-gray-50">
                         <tr>
-                            <th
-                                className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100"
-                                onClick={() => requestSort('recommendation_code')}
-                            >
-                                <div className="flex items-center gap-2">
-                                    Code
-                                    {getSortIcon('recommendation_code')}
-                                </div>
-                            </th>
-                            <th
-                                className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100"
-                                onClick={() => requestSort('title')}
-                            >
-                                <div className="flex items-center gap-2">
-                                    Title
-                                    {getSortIcon('title')}
-                                </div>
-                            </th>
-                            <th
-                                className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100"
-                                onClick={() => requestSort('model.model_name')}
-                            >
-                                <div className="flex items-center gap-2">
-                                    Model
-                                    {getSortIcon('model.model_name')}
-                                </div>
-                            </th>
-                            <th
-                                className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100"
-                                onClick={() => requestSort('priority.label')}
-                            >
-                                <div className="flex items-center gap-2">
-                                    Priority
-                                    {getSortIcon('priority.label')}
-                                </div>
-                            </th>
-                            <th
-                                className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100"
-                                onClick={() => requestSort('current_status.label')}
-                            >
-                                <div className="flex items-center gap-2">
-                                    Status
-                                    {getSortIcon('current_status.label')}
-                                </div>
-                            </th>
-                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
-                                Category
-                            </th>
-                            <th
-                                className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100"
-                                onClick={() => requestSort('assigned_to.full_name')}
-                            >
-                                <div className="flex items-center gap-2">
-                                    Assigned To
-                                    {getSortIcon('assigned_to.full_name')}
-                                </div>
-                            </th>
-                            <th
-                                className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100"
-                                onClick={() => requestSort('current_target_date')}
-                            >
-                                <div className="flex items-center gap-2">
-                                    Target Date
-                                    {getSortIcon('current_target_date')}
-                                </div>
-                            </th>
-                            <th
-                                className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100"
-                                onClick={() => requestSort('updated_at')}
-                            >
-                                <div className="flex items-center gap-2">
-                                    Updated
-                                    {getSortIcon('updated_at')}
-                                </div>
-                            </th>
+                            {columnPrefs.selectedColumns.map(colKey => {
+                                const renderer = columnRenderers[colKey];
+                                if (!renderer) return null;
+                                return (
+                                    <th
+                                        key={colKey}
+                                        className={`px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase ${renderer.sortKey ? 'cursor-pointer hover:bg-gray-100' : ''}`}
+                                        onClick={() => renderer.sortKey && requestSort(renderer.sortKey)}
+                                    >
+                                        <div className="flex items-center gap-2">
+                                            {renderer.header}
+                                            {renderer.sortKey && getSortIcon(renderer.sortKey)}
+                                        </div>
+                                    </th>
+                                );
+                            })}
                         </tr>
                     </thead>
                     <tbody className="bg-white divide-y divide-gray-200">
                         {sortedData.length === 0 ? (
                             <tr>
-                                <td colSpan={9} className="px-6 py-4 text-center text-gray-500">
+                                <td colSpan={columnPrefs.selectedColumns.length} className="px-6 py-4 text-center text-gray-500">
                                     No recommendations found.
                                     {canCreate && ' Click "New Recommendation" to create one.'}
                                 </td>
@@ -522,84 +653,15 @@ export default function RecommendationsPage() {
                         ) : (
                             sortedData.map((rec) => (
                                 <tr key={rec.recommendation_id} className="hover:bg-gray-50">
-                                    <td className="px-6 py-4 whitespace-nowrap text-sm">
-                                        <div className="flex items-center gap-1.5">
-                                            <Link
-                                                to={`/recommendations/${rec.recommendation_id}`}
-                                                className="font-mono text-blue-600 hover:text-blue-800 hover:underline"
-                                            >
-                                                {rec.recommendation_code}
-                                            </Link>
-                                            {rec.validation_request_id && (
-                                                <span
-                                                    title="From Validation"
-                                                    className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-blue-100 text-blue-600"
-                                                >
-                                                    <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                                                    </svg>
-                                                </span>
-                                            )}
-                                            {rec.monitoring_cycle_id && (
-                                                <span
-                                                    title="From Monitoring"
-                                                    className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-purple-100 text-purple-600"
-                                                >
-                                                    <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-                                                    </svg>
-                                                </span>
-                                            )}
-                                        </div>
-                                    </td>
-                                    <td className="px-6 py-4 text-sm">
-                                        <div className="max-w-xs truncate" title={rec.title}>
-                                            {rec.title}
-                                        </div>
-                                    </td>
-                                    <td className="px-6 py-4 whitespace-nowrap text-sm">
-                                        {rec.model ? (
-                                            <Link
-                                                to={`/models/${rec.model.model_id}`}
-                                                className="text-blue-600 hover:text-blue-800 hover:underline"
-                                            >
-                                                {rec.model.model_name}
-                                            </Link>
-                                        ) : (
-                                            <span className="text-gray-400">-</span>
-                                        )}
-                                    </td>
-                                    <td className="px-6 py-4 whitespace-nowrap">
-                                        <span className={`px-2 py-1 text-xs rounded ${getPriorityColor(rec.priority?.code || '')}`}>
-                                            {rec.priority?.label}
-                                        </span>
-                                    </td>
-                                    <td className="px-6 py-4 whitespace-nowrap">
-                                        <div className="flex items-center gap-2">
-                                            <span className={`px-2 py-1 text-xs rounded ${getStatusColor(rec.current_status?.code || '')}`}>
-                                                {rec.current_status?.label}
-                                            </span>
-                                            {isOverdue(rec) && (
-                                                <span className="px-1.5 py-0.5 text-xs font-medium rounded bg-red-600 text-white" title={`${getDaysOverdue(rec)} days overdue`}>
-                                                    OVERDUE
-                                                </span>
-                                            )}
-                                        </div>
-                                    </td>
-                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
-                                        {rec.category?.label || '-'}
-                                    </td>
-                                    <td className="px-6 py-4 whitespace-nowrap text-sm">
-                                        {rec.assigned_to?.full_name || <span className="text-gray-400">Unassigned</span>}
-                                    </td>
-                                    <td className="px-6 py-4 whitespace-nowrap text-sm">
-                                        <span className={isOverdue(rec) ? 'text-red-600 font-semibold' : ''}>
-                                            {rec.current_target_date}
-                                        </span>
-                                    </td>
-                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
-                                        {rec.updated_at.split('T')[0]}
-                                    </td>
+                                    {columnPrefs.selectedColumns.map(colKey => {
+                                        const renderer = columnRenderers[colKey];
+                                        if (!renderer) return null;
+                                        return (
+                                            <td key={colKey} className="px-6 py-4 whitespace-nowrap text-sm">
+                                                {renderer.cell(rec)}
+                                            </td>
+                                        );
+                                    })}
                                 </tr>
                             ))
                         )}
@@ -623,6 +685,41 @@ export default function RecommendationsPage() {
                     preselectedValidationRequestId={filters.validation_request_id || undefined}
                 />
             )}
+
+            {/* Column Picker Modal */}
+            <ColumnPickerModal
+                isOpen={columnPrefs.showColumnsModal}
+                onClose={() => columnPrefs.setShowColumnsModal(false)}
+                availableColumns={availableColumns}
+                selectedColumns={columnPrefs.selectedColumns}
+                toggleColumn={columnPrefs.toggleColumn}
+                selectAllColumns={columnPrefs.selectAllColumns}
+                deselectAllColumns={columnPrefs.deselectAllColumns}
+                currentViewId={columnPrefs.currentViewId}
+                allViews={columnPrefs.allViews}
+                loadView={columnPrefs.loadView}
+                onSaveAsNew={() => {
+                    columnPrefs.setEditingViewId(null);
+                    columnPrefs.setNewViewName('');
+                    columnPrefs.setNewViewDescription('');
+                    columnPrefs.setNewViewIsPublic(false);
+                    columnPrefs.setShowSaveViewModal(true);
+                }}
+            />
+
+            {/* Save View Modal */}
+            <SaveViewModal
+                isOpen={columnPrefs.showSaveViewModal}
+                onClose={() => columnPrefs.setShowSaveViewModal(false)}
+                onSave={columnPrefs.saveView}
+                viewName={columnPrefs.newViewName}
+                setViewName={columnPrefs.setNewViewName}
+                viewDescription={columnPrefs.newViewDescription}
+                setViewDescription={columnPrefs.setNewViewDescription}
+                isPublic={columnPrefs.newViewIsPublic}
+                setIsPublic={columnPrefs.setNewViewIsPublic}
+                isEditing={columnPrefs.editingViewId !== null}
+            />
         </Layout>
     );
 }

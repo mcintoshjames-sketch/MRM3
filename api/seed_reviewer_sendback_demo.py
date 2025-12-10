@@ -60,7 +60,7 @@ def seed_reviewer_sendback():
             # Get required taxonomy values
             review_status = get_taxonomy_value_by_code(db, "Validation Request Status", "REVIEW")
             in_progress_status = get_taxonomy_value_by_code(db, "Validation Request Status", "IN_PROGRESS")
-            pass_with_findings = get_taxonomy_value_by_code(db, "Overall Rating", "FIT_WITH_CONDITIONS")
+            fit_for_purpose = get_taxonomy_value_by_code(db, "Overall Rating", "FIT_FOR_PURPOSE")
 
             # Get reviewer user (let's use Emily Davis as the reviewer)
             reviewer = db.query(User).filter(User.email == "emily.davis@contoso.com").first()
@@ -99,8 +99,8 @@ def seed_reviewer_sendback():
 
             outcome = ValidationOutcome(
                 request_id=request.request_id,
-                overall_rating_id=pass_with_findings.value_id,
-                executive_summary="Initial validation completed with several findings that need to be addressed.\n\nKey Findings:\n1. Model documentation incomplete in sections 3.5 and 4.2\n2. Back-testing results need additional explanation\n3. Governance approval signature missing\n\nRecommendations:\nUpdate documentation, provide detailed back-testing analysis, obtain required signatures.",
+                overall_rating_id=fit_for_purpose.value_id,
+                executive_summary="Model validation completed successfully. Model is fit for its intended purpose.\n\nKey Observations:\n1. Model documentation meets standards\n2. Back-testing results are satisfactory\n3. All governance approvals obtained\n\nRecommendations tracked separately.",
                 effective_date=date.today(),
                 expiration_date=None,
                 created_at=utc_now()

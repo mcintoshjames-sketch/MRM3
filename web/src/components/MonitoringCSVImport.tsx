@@ -131,16 +131,25 @@ const MonitoringCSVImport: React.FC<MonitoringCSVImportProps> = ({
     };
 
     const downloadTemplate = () => {
-        // Generate CSV template with headers and sample row
-        const headers = ['model_id', 'metric_id', 'value', 'narrative'];
+        // Generate CSV template with headers and all model/metric combinations
+        // Include human-readable names (ignored on import) for user convenience
+        const headers = ['model_id', 'model_name', 'metric_id', 'metric_name', 'value', 'outcome', 'narrative'];
         const validMetrics = metrics.filter(m => m.original_metric_id !== null);
-        const sampleRows = validMetrics.slice(0, 3).flatMap((metric) =>
-            models.slice(0, 2).map((model) =>
-                [model.model_id, metric.original_metric_id, '', ''].join(',')
-            )
+
+        // Generate a row for every model/metric combination
+        const dataRows = models.flatMap((model) =>
+            validMetrics.map((metric) => [
+                model.model_id,
+                `"${model.model_name.replace(/"/g, '""')}"`,  // Escape quotes in CSV
+                metric.original_metric_id,
+                `"${metric.kpm_name.replace(/"/g, '""')}"`,   // Escape quotes in CSV
+                '',  // value - to be filled
+                '',  // outcome - for qualitative metrics (GREEN/YELLOW/RED)
+                ''   // narrative - optional
+            ].join(','))
         );
 
-        const csv = [headers.join(','), ...sampleRows].join('\n');
+        const csv = [headers.join(','), ...dataRows].join('\n');
         const blob = new Blob([csv], { type: 'text/csv' });
         const url = window.URL.createObjectURL(blob);
         const a = document.createElement('a');
@@ -210,8 +219,9 @@ const MonitoringCSVImport: React.FC<MonitoringCSVImportProps> = ({
                                 <h4 className="font-medium text-blue-900 mb-2">CSV Format Requirements</h4>
                                 <ul className="text-sm text-blue-800 space-y-1 list-disc list-inside">
                                     <li>Required columns: <code className="bg-blue-100 px-1">model_id</code>, <code className="bg-blue-100 px-1">metric_id</code>, <code className="bg-blue-100 px-1">value</code></li>
-                                    <li>Optional column: <code className="bg-blue-100 px-1">narrative</code> (for breach explanations)</li>
-                                    <li>For qualitative metrics, use outcome labels (e.g., "Green", "Yellow", "Red") in the value column</li>
+                                    <li>Optional columns: <code className="bg-blue-100 px-1">outcome</code> (for qualitative metrics), <code className="bg-blue-100 px-1">narrative</code></li>
+                                    <li>Reference columns (ignored on import): <code className="bg-blue-100 px-1">model_name</code>, <code className="bg-blue-100 px-1">metric_name</code></li>
+                                    <li>For qualitative metrics, use outcome labels: GREEN, YELLOW, or RED</li>
                                     <li>First row must contain column headers</li>
                                 </ul>
                             </div>

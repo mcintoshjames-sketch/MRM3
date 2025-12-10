@@ -644,7 +644,7 @@ def seed_uat_data(
 
         # Get outcome values
         outcome_fit = get_taxonomy_value("Overall Rating", "FIT_FOR_PURPOSE")
-        outcome_fit_conditions = get_taxonomy_value("Overall Rating", "FIT_WITH_CONDITIONS")
+        outcome_not_fit = get_taxonomy_value("Overall Rating", "NOT_FIT_FOR_PURPOSE")
 
         # Get usage frequency values
         usage_daily = get_taxonomy_value("Model Usage Frequency", "DAILY")
@@ -754,7 +754,7 @@ def seed_uat_data(
         # Create outcome
         outcome1 = ValidationOutcome(
             request_id=val_req1.request_id,
-            overall_rating_id=outcome_fit.value_id if outcome_fit else outcome_fit_conditions.value_id,
+            overall_rating_id=outcome_fit.value_id if outcome_fit else outcome_not_fit.value_id,
             executive_summary="Model performs within acceptable thresholds. Minor documentation updates recommended.",
             effective_date=today - timedelta(days=35),
             created_at=utc_now() - timedelta(days=40)
@@ -946,7 +946,7 @@ def seed_uat_data(
 
         outcome4 = ValidationOutcome(
             request_id=val_req4.request_id,
-            overall_rating_id=outcome_fit_conditions.value_id if outcome_fit_conditions else outcome_fit.value_id,
+            overall_rating_id=outcome_fit.value_id if outcome_fit else outcome_not_fit.value_id,
             executive_summary="Model approved with conditions. Two recommendations require remediation.",
             effective_date=today - timedelta(days=50),
             created_at=utc_now() - timedelta(days=50)
@@ -1066,7 +1066,7 @@ def seed_uat_data(
 
         outcome5 = ValidationOutcome(
             request_id=val_req5.request_id,
-            overall_rating_id=outcome_fit.value_id if outcome_fit else outcome_fit_conditions.value_id,
+            overall_rating_id=outcome_fit.value_id if outcome_fit else outcome_not_fit.value_id,
             executive_summary="Model meets all performance criteria.",
             effective_date=today - timedelta(days=335),
             created_at=utc_now() - timedelta(days=335)
@@ -1219,7 +1219,7 @@ def seed_uat_data(
 
         outcome7 = ValidationOutcome(
             request_id=val_req7.request_id,
-            overall_rating_id=outcome_fit.value_id if outcome_fit else outcome_fit_conditions.value_id,
+            overall_rating_id=outcome_fit.value_id if outcome_fit else outcome_not_fit.value_id,
             executive_summary="Model meets performance criteria. Next validation due in 12 months.",
             effective_date=today - timedelta(days=430),
             created_at=utc_now() - timedelta(days=430)
@@ -1304,7 +1304,7 @@ def seed_uat_data(
 
         outcome8 = ValidationOutcome(
             request_id=val_req8.request_id,
-            overall_rating_id=outcome_fit.value_id if outcome_fit else outcome_fit_conditions.value_id,
+            overall_rating_id=outcome_fit.value_id if outcome_fit else outcome_not_fit.value_id,
             executive_summary="Model approved. Annual revalidation required.",
             effective_date=today - timedelta(days=550),
             created_at=utc_now() - timedelta(days=550)
@@ -1476,7 +1476,7 @@ def seed_uat_data(
 
         outcome10 = ValidationOutcome(
             request_id=val_req10.request_id,
-            overall_rating_id=outcome_fit_conditions.value_id if outcome_fit_conditions else outcome_fit.value_id,
+            overall_rating_id=outcome_fit.value_id if outcome_fit else outcome_not_fit.value_id,
             executive_summary="Model approved with conditions. Critical recommendations require immediate attention.",
             effective_date=today - timedelta(days=90),
             created_at=utc_now() - timedelta(days=90)

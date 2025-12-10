@@ -1520,16 +1520,10 @@ def seed_database():
                         "sort_order": 1
                     },
                     {
-                        "code": "FIT_WITH_CONDITIONS",
-                        "label": "Fit with Conditions",
-                        "description": "Model is suitable for use but with specific conditions or limitations",
-                        "sort_order": 2
-                    },
-                    {
                         "code": "NOT_FIT_FOR_PURPOSE",
                         "label": "Not Fit for Purpose",
                         "description": "Model is not suitable for its intended use and requires significant remediation",
-                        "sort_order": 3
+                        "sort_order": 2
                     },
                 ]
             },

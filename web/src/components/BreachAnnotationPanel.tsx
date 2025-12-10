@@ -19,6 +19,7 @@ interface BreachAnnotationPanelProps {
     metricInfo: MetricInfo | null;
     existingNarrative: string;
     onSave: (narrative: string) => Promise<void>;
+    onValueChange?: (newValue: number | null) => Promise<void>;
     onClose: () => void;
 }
 
@@ -28,6 +29,7 @@ const BreachAnnotationPanel: React.FC<BreachAnnotationPanelProps> = ({
     metricInfo,
     existingNarrative,
     onSave,
+    onValueChange,
     onClose,
 }) => {
     const [narrative, setNarrative] = useState(existingNarrative);
@@ -35,15 +37,73 @@ const BreachAnnotationPanel: React.FC<BreachAnnotationPanelProps> = ({
     const [error, setError] = useState<string | null>(null);
     const textareaRef = useRef<HTMLTextAreaElement>(null);
 
+    // Value editing state
+    const [isEditingValue, setIsEditingValue] = useState(false);
+    const [editValue, setEditValue] = useState('');
+    const [savingValue, setSavingValue] = useState(false);
+    const [valueError, setValueError] = useState<string | null>(null);
+    const valueInputRef = useRef<HTMLInputElement>(null);
+
     // Sync narrative when panel opens with existing narrative
     useEffect(() => {
         if (isOpen) {
             setNarrative(existingNarrative);
             setError(null);
+            setIsEditingValue(false);
+            setEditValue('');
+            setValueError(null);
             // Focus textarea when panel opens
             setTimeout(() => textareaRef.current?.focus(), 100);
         }
     }, [isOpen, existingNarrative]);
+
+    // Start editing the value
+    const handleStartEditValue = () => {
+        if (metricInfo && metricInfo.numericValue !== null) {
+            setEditValue(metricInfo.numericValue.toString());
+        } else {
+            setEditValue('');
+        }
+        setIsEditingValue(true);
+        setValueError(null);
+        setTimeout(() => valueInputRef.current?.focus(), 50);
+    };
+
+    // Cancel value editing
+    const handleCancelEditValue = () => {
+        setIsEditingValue(false);
+        setEditValue('');
+        setValueError(null);
+    };
+
+    // Save the new value
+    const handleSaveValue = async () => {
+        if (!onValueChange) return;
+
+        const trimmed = editValue.trim();
+        let newValue: number | null = null;
+
+        if (trimmed !== '') {
+            newValue = parseFloat(trimmed);
+            if (isNaN(newValue)) {
+                setValueError('Please enter a valid number');
+                return;
+            }
+        }
+
+        setSavingValue(true);
+        setValueError(null);
+
+        try {
+            await onValueChange(newValue);
+            setIsEditingValue(false);
+            setEditValue('');
+        } catch (err: any) {
+            setValueError(err.message || 'Failed to save value');
+        } finally {
+            setSavingValue(false);
+        }
+    };
 
     // Handle save
     const handleSave = async () => {
@@ -125,13 +185,82 @@ const BreachAnnotationPanel: React.FC<BreachAnnotationPanelProps> = ({
 
                             {/* Value and Outcome */}
                             <div className="flex gap-4">
-                                <div>
+                                <div className="flex-1">
                                     <span className="text-xs text-gray-500">Value</span>
-                                    <p className="font-mono text-lg">
-                                        {metricInfo.numericValue !== null
-                                            ? metricInfo.numericValue.toFixed(4)
-                                            : '-'}
-                                    </p>
+                                    {isEditingValue ? (
+                                        <div className="mt-1">
+                                            <div className="flex items-center gap-2">
+                                                <input
+                                                    ref={valueInputRef}
+                                                    type="text"
+                                                    className={`w-24 px-2 py-1 font-mono text-lg border rounded focus:ring-2 focus:ring-blue-500 focus:border-blue-500 ${
+                                                        valueError ? 'border-red-500' : 'border-gray-300'
+                                                    }`}
+                                                    value={editValue}
+                                                    onChange={(e) => setEditValue(e.target.value)}
+                                                    onKeyDown={(e) => {
+                                                        if (e.key === 'Enter') {
+                                                            e.preventDefault();
+                                                            handleSaveValue();
+                                                        } else if (e.key === 'Escape') {
+                                                            handleCancelEditValue();
+                                                        }
+                                                    }}
+                                                    disabled={savingValue}
+                                                    placeholder="0.0000"
+                                                />
+                                                <button
+                                                    onClick={handleSaveValue}
+                                                    disabled={savingValue}
+                                                    className="p-1 text-green-600 hover:text-green-800 disabled:opacity-50"
+                                                    title="Save"
+                                                >
+                                                    {savingValue ? (
+                                                        <svg className="w-5 h-5 animate-spin" viewBox="0 0 24 24">
+                                                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                                                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                                                        </svg>
+                                                    ) : (
+                                                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                                                        </svg>
+                                                    )}
+                                                </button>
+                                                <button
+                                                    onClick={handleCancelEditValue}
+                                                    disabled={savingValue}
+                                                    className="p-1 text-gray-500 hover:text-gray-700 disabled:opacity-50"
+                                                    title="Cancel"
+                                                >
+                                                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                                    </svg>
+                                                </button>
+                                            </div>
+                                            {valueError && (
+                                                <p className="text-red-600 text-xs mt-1">{valueError}</p>
+                                            )}
+                                        </div>
+                                    ) : (
+                                        <div className="flex items-center gap-2">
+                                            <p className="font-mono text-lg">
+                                                {metricInfo.numericValue !== null
+                                                    ? metricInfo.numericValue.toFixed(4)
+                                                    : '-'}
+                                            </p>
+                                            {onValueChange && (
+                                                <button
+                                                    onClick={handleStartEditValue}
+                                                    className="p-1 text-gray-400 hover:text-blue-600"
+                                                    title="Edit value"
+                                                >
+                                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                                                    </svg>
+                                                </button>
+                                            )}
+                                        </div>
+                                    )}
                                 </div>
                                 <div>
                                     <span className="text-xs text-gray-500">Outcome</span>

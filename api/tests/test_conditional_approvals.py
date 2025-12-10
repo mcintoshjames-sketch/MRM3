@@ -1291,7 +1291,7 @@ class TestApprovalWorkflowIntegration:
             assert response.status_code == 200
 
         # Create outcome (required before PENDING_APPROVAL)
-        # Need "Overall Rating" taxonomy value - use pass_with_findings as it's commonly used
+        # Need "Overall Rating" taxonomy value
         # The outcome needs: overall_rating_id, executive_summary, effective_date
         from app.models.taxonomy import Taxonomy, TaxonomyValue as TV
         overall_rating_tax = db_session.query(Taxonomy).filter(Taxonomy.name == "Overall Rating").first()

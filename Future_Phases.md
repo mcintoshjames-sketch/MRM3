@@ -114,7 +114,7 @@ model_use_conditions (
 - Model detail page shows active conditions/limitations
 
 ### Business Rules
-- Critical and High severity findings automatically flag validation as "Fit with Conditions" or "Not Fit"
+- Critical and High severity findings may result in "Not Fit for Purpose" rating
 - Findings must be addressed (remediated or risk accepted) before validation can be approved
 - Track finding aging for compliance reporting
 - Auto-generate finding numbers for traceability

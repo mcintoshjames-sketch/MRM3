@@ -1265,6 +1265,17 @@ export default function ValidationRequestDetailPage() {
                         </button>
                     )}
 
+                    {/* Admin Mark Submission Received Button (Admin only, when in Planning) */}
+                    {user?.role === 'Admin' && !isPrimaryValidator && request.current_status.code === 'PLANNING' && (
+                        <button
+                            onClick={handleOpenSubmissionModal}
+                            disabled={actionLoading}
+                            className="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700 disabled:opacity-50"
+                        >
+                            Mark Submission Received
+                        </button>
+                    )}
+
                     {/* Complete Work Button */}
                     {isPrimaryValidator && request.current_status.code === 'IN_PROGRESS' && (
                         <button
@@ -1615,7 +1626,6 @@ export default function ValidationRequestDetailPage() {
                                         <span className="text-gray-500">Rating:</span>{' '}
                                         <span className={`font-medium ${
                                             priorValidation.outcome?.overall_rating?.code === 'FIT_FOR_PURPOSE' ? 'text-green-700' :
-                                            priorValidation.outcome?.overall_rating?.code === 'FIT_WITH_CONDITIONS' ? 'text-amber-700' :
                                             priorValidation.outcome?.overall_rating?.code === 'NOT_FIT_FOR_PURPOSE' ? 'text-red-700' :
                                             'text-gray-500'
                                         }`}>

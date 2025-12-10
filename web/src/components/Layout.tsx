@@ -237,7 +237,7 @@ export default function Layout({ children }: LayoutProps) {
             {/* Side Panel */}
             <aside className="w-64 bg-white shadow-lg flex flex-col flex-shrink-0">
                 <div className="p-4 border-b">
-                    <h1 className="text-xl font-bold text-blue-600">MRM System v3</h1>
+                    <h1 className="text-xl font-bold text-blue-600">QMIS v0.1</h1>
                 </div>
                 <nav className="flex-1 p-4 overflow-y-auto">
                     <ul className="space-y-1">

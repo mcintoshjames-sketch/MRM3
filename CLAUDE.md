@@ -480,7 +480,7 @@ const { sortedData, requestSort, getSortIcon } = useTableSort<Validation>(valida
 - **Taxonomy Values**:
   - **Validation Priority**: Urgent, Standard
   - **Validation Request Status**: All 8 workflow states
-  - **Overall Rating**: Fit for Purpose, Fit with Conditions, Not Fit for Purpose
+  - **Overall Rating**: Fit for Purpose, Not Fit for Purpose
 
 - **API Endpoints** (prefix: `/validation-workflow`):
   - `POST /requests/` - Create new validation request (NO outcome required!)

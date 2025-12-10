@@ -60,6 +60,19 @@ export interface ResultSavePayload {
     result_id?: number | null; // For updates
 }
 
+// Context for grid navigation and state
+interface GridContextType {
+    activeCell: { row: number; col: number } | null;
+    setActiveCell: (cell: { row: number; col: number } | null) => void;
+    navigate: (fromRow: number, fromCol: number, direction: 'up' | 'down' | 'left' | 'right') => void;
+}
+
+const GridContext = React.createContext<GridContextType>({
+    activeCell: null,
+    setActiveCell: () => { },
+    navigate: () => { },
+});
+
 export interface MonitoringDataGridProps {
     cycleId: number;
     metrics: MetricSnapshot[];
@@ -73,14 +86,6 @@ export interface MonitoringDataGridProps {
 
 /**
  * Calculate outcome (GREEN, YELLOW, RED, UNCONFIGURED) from numeric value and thresholds.
- *
- * WARNING: This logic is duplicated in the backend at api/app/api/monitoring.py
- * in the `calculate_outcome()` function. Any changes here MUST be synchronized
- * with the backend to ensure consistent behavior. The backend is the source of
- * truth for persisted data; this frontend function provides immediate visual
- * feedback during data entry.
- *
- * Outcome codes must match api/app/core/monitoring_constants.py
  */
 const calculateOutcome = (
     value: number | null,
@@ -88,7 +93,6 @@ const calculateOutcome = (
 ): string | null => {
     if (value === null) return null;
 
-    // Check if any thresholds are configured
     const hasThresholds = (
         metric.red_min !== null ||
         metric.red_max !== null ||
@@ -97,11 +101,8 @@ const calculateOutcome = (
     );
     if (!hasThresholds) return 'UNCONFIGURED';
 
-    // Check RED thresholds first (highest severity)
     if (metric.red_min !== null && value < metric.red_min) return 'RED';
     if (metric.red_max !== null && value > metric.red_max) return 'RED';
-
-    // Check YELLOW thresholds
     if (metric.yellow_min !== null && value < metric.yellow_min) return 'YELLOW';
     if (metric.yellow_max !== null && value > metric.yellow_max) return 'YELLOW';
 
@@ -114,7 +115,7 @@ const getOutcomeBgColor = (outcome: string | null): string => {
         case 'GREEN': return 'bg-green-100';
         case 'YELLOW': return 'bg-yellow-100';
         case 'RED': return 'bg-red-100';
-        case 'UNCONFIGURED': return 'bg-gray-100';  // Gray indicates no thresholds configured
+        case 'UNCONFIGURED': return 'bg-gray-100';
         default: return 'bg-white';
     }
 };
@@ -122,7 +123,7 @@ const getOutcomeBgColor = (outcome: string | null): string => {
 // Row data type for the table
 interface GridRow {
     model: Model;
-    results: Record<number, MonitoringResult | undefined>; // metricId -> result
+    results: Record<number, MonitoringResult | undefined>;
 }
 
 // Editable cell component
@@ -134,9 +135,8 @@ const EditableCell: React.FC<{
     onSave: (payload: ResultSavePayload) => Promise<void>;
     onOpenBreachAnnotation: (cell: CellPosition, result: MonitoringResult | null) => void;
     readOnly: boolean;
-    isActive: boolean;
-    onActivate: () => void;
-    onNavigate: (direction: 'up' | 'down' | 'left' | 'right') => void;
+    rowIndex: number;
+    colIndex: number;
 }> = ({
     modelId,
     metric,
@@ -145,14 +145,20 @@ const EditableCell: React.FC<{
     onSave,
     onOpenBreachAnnotation,
     readOnly,
-    isActive,
-    onActivate,
-    onNavigate,
+    rowIndex,
+    colIndex,
 }) => {
+    const { activeCell, setActiveCell, navigate } = React.useContext(GridContext);
+    const isActive = activeCell?.row === rowIndex && activeCell?.col === colIndex;
+
+    const onActivate = () => setActiveCell({ row: rowIndex, col: colIndex });
+    const onNavigate = (direction: 'up' | 'down' | 'left' | 'right') => navigate(rowIndex, colIndex, direction);
+
     const [isEditing, setIsEditing] = useState(false);
     const [editValue, setEditValue] = useState('');
     const [saving, setSaving] = useState(false);
     const inputRef = useRef<HTMLInputElement | HTMLSelectElement>(null);
+    const cellRef = useRef<HTMLDivElement>(null);
 
     // Get current value/outcome
     const currentValue = result?.numeric_value;
@@ -184,13 +190,24 @@ const EditableCell: React.FC<{
         setIsEditing(true);
     }, [readOnly, metric.evaluation_type, currentValue, result?.outcome_value]);
 
+    // Focus cell when it becomes active (after re-render completes)
+    useEffect(() => {
+        if (isActive && !isEditing && cellRef.current) {
+            cellRef.current.focus();
+        }
+    }, [isActive, isEditing]);
+
     // Focus input when editing starts
     useEffect(() => {
         if (isEditing && inputRef.current) {
-            inputRef.current.focus();
-            if (inputRef.current instanceof HTMLInputElement) {
-                inputRef.current.select();
-            }
+            requestAnimationFrame(() => {
+                if (inputRef.current) {
+                    inputRef.current.focus();
+                    if (inputRef.current instanceof HTMLInputElement) {
+                        inputRef.current.select();
+                    }
+                }
+            });
         }
     }, [isEditing]);
 
@@ -203,7 +220,6 @@ const EditableCell: React.FC<{
                 return;
             }
 
-            // Only save if value changed
             const changed = numValue !== currentValue;
             if (changed) {
                 setSaving(true);
@@ -221,7 +237,6 @@ const EditableCell: React.FC<{
                 }
             }
         } else {
-            // Qualitative metric
             const valueId = editValue ? parseInt(editValue) : null;
             const changed = valueId !== result?.outcome_value?.value_id;
             if (changed) {
@@ -275,15 +290,14 @@ const EditableCell: React.FC<{
             } else if (e.key === 'Tab') {
                 e.preventDefault();
                 onNavigate(e.shiftKey ? 'left' : 'right');
-            } else if (/^[0-9\.\-]$/.test(e.key) && metric.evaluation_type === 'Quantitative') {
-                // Start editing on number input
+            } else if (/^[0-9.\-]$/.test(e.key) && metric.evaluation_type === 'Quantitative') {
                 setEditValue(e.key);
                 setIsEditing(true);
             }
         }
     };
 
-    // Handle click to open breach annotation
+    // Handle click - activate cell (focus is handled by useEffect when isActive changes)
     const handleClick = () => {
         if (!isEditing) {
             onActivate();
@@ -315,7 +329,6 @@ const EditableCell: React.FC<{
         if (!isNaN(numValue)) {
             setEditValue(numValue.toString());
             setIsEditing(true);
-            // Auto-save after paste
             setTimeout(() => saveAndExit(), 100);
         }
     };
@@ -324,9 +337,18 @@ const EditableCell: React.FC<{
     const borderColor = isActive ? 'ring-2 ring-blue-500' : '';
     const hasNarrative = result?.narrative && result.narrative.trim() !== '';
 
+    // Handle mouse down - focus the cell
+    const handleMouseDown = () => {
+        if (!isEditing && cellRef.current) {
+            cellRef.current.focus();
+        }
+    };
+
     return (
         <div
-            className={`relative h-10 ${bgColor} ${borderColor} cursor-pointer select-none`}
+            ref={cellRef}
+            className={`relative h-10 ${bgColor} ${borderColor} cursor-pointer select-none outline-none focus:ring-2 focus:ring-blue-500`}
+            onMouseDown={handleMouseDown}
             onClick={handleClick}
             onDoubleClick={handleDoubleClick}
             onKeyDown={handleKeyDown}
@@ -339,6 +361,7 @@ const EditableCell: React.FC<{
                     <input
                         ref={inputRef as React.RefObject<HTMLInputElement>}
                         type="text"
+                        autoFocus
                         className="w-full h-full px-2 text-sm border-none focus:outline-none bg-white"
                         value={editValue}
                         onChange={(e) => setEditValue(e.target.value)}
@@ -348,11 +371,10 @@ const EditableCell: React.FC<{
                 ) : (
                     <select
                         ref={inputRef as React.RefObject<HTMLSelectElement>}
+                        autoFocus
                         className="w-full h-full px-2 text-sm border-none focus:outline-none bg-white"
                         value={editValue}
-                        onChange={(e) => {
-                            setEditValue(e.target.value);
-                        }}
+                        onChange={(e) => setEditValue(e.target.value)}
                         onBlur={saveAndExit}
                         onKeyDown={handleKeyDown}
                     >
@@ -369,7 +391,6 @@ const EditableCell: React.FC<{
                     <span className="text-sm truncate flex-1">
                         {saving ? '...' : displayValue || '-'}
                     </span>
-                    {/* Indicator icons */}
                     <div className="flex items-center gap-1 ml-1">
                         {hasNarrative && (
                             <span className="text-xs text-gray-500" title="Has narrative">
@@ -390,7 +411,7 @@ const EditableCell: React.FC<{
 
 // Main Grid Component
 const MonitoringDataGrid: React.FC<MonitoringDataGridProps> = ({
-    cycleId: _cycleId, // Reserved for future API calls if needed
+    cycleId: _cycleId,
     metrics,
     models,
     existingResults,
@@ -399,25 +420,8 @@ const MonitoringDataGrid: React.FC<MonitoringDataGridProps> = ({
     onOpenBreachAnnotation,
     readOnly = false,
 }) => {
-    // Active cell for keyboard navigation
     const [activeCell, setActiveCell] = useState<{ row: number; col: number } | null>(null);
     const gridRef = useRef<HTMLDivElement>(null);
-
-    // Build row data: one row per model
-    const data = useMemo<GridRow[]>(() => {
-        return models.map((model) => {
-            const results: Record<number, MonitoringResult | undefined> = {};
-            metrics.forEach((metric) => {
-                const matchingResult = existingResults.find(
-                    (r) => r.model_id === model.model_id && r.plan_metric_id === metric.original_metric_id
-                );
-                if (metric.original_metric_id) {
-                    results[metric.original_metric_id] = matchingResult;
-                }
-            });
-            return { model, results };
-        });
-    }, [models, metrics, existingResults]);
 
     // Handle cell navigation
     const handleNavigate = useCallback((fromRow: number, fromCol: number, direction: 'up' | 'down' | 'left' | 'right') => {
@@ -441,6 +445,29 @@ const MonitoringDataGrid: React.FC<MonitoringDataGridProps> = ({
 
         setActiveCell({ row: newRow, col: newCol });
     }, [models.length, metrics.length]);
+
+    // Context value for cells
+    const contextValue = useMemo(() => ({
+        activeCell,
+        setActiveCell,
+        navigate: handleNavigate
+    }), [activeCell, handleNavigate]);
+
+    // Build row data: one row per model
+    const data = useMemo<GridRow[]>(() => {
+        return models.map((model) => {
+            const results: Record<number, MonitoringResult | undefined> = {};
+            metrics.forEach((metric) => {
+                const matchingResult = existingResults.find(
+                    (r) => r.model_id === model.model_id && r.plan_metric_id === metric.original_metric_id
+                );
+                if (metric.original_metric_id) {
+                    results[metric.original_metric_id] = matchingResult;
+                }
+            });
+            return { model, results };
+        });
+    }, [models, metrics, existingResults]);
 
     // Create column definitions using TanStack Table
     const columnHelper = createColumnHelper<GridRow>();
@@ -474,7 +501,6 @@ const MonitoringDataGrid: React.FC<MonitoringDataGridProps> = ({
                 ),
                 cell: ({ row }) => {
                     const rowIndex = row.index;
-                    const isActive = activeCell?.row === rowIndex && activeCell?.col === colIndex;
                     const result = row.original.results[metric.original_metric_id!];
 
                     return (
@@ -486,9 +512,8 @@ const MonitoringDataGrid: React.FC<MonitoringDataGridProps> = ({
                             onSave={onSaveResult}
                             onOpenBreachAnnotation={onOpenBreachAnnotation}
                             readOnly={readOnly}
-                            isActive={isActive}
-                            onActivate={() => setActiveCell({ row: rowIndex, col: colIndex })}
-                            onNavigate={(dir) => handleNavigate(rowIndex, colIndex, dir)}
+                            rowIndex={rowIndex}
+                            colIndex={colIndex}
                         />
                     );
                 },
@@ -497,7 +522,7 @@ const MonitoringDataGrid: React.FC<MonitoringDataGridProps> = ({
         );
 
         return [modelColumn, ...metricColumns];
-    }, [metrics, outcomeValues, onSaveResult, onOpenBreachAnnotation, readOnly, activeCell, handleNavigate, columnHelper]);
+    }, [metrics, outcomeValues, onSaveResult, onOpenBreachAnnotation, readOnly, columnHelper]);
 
     const table = useReactTable({
         data,
@@ -538,88 +563,90 @@ const MonitoringDataGrid: React.FC<MonitoringDataGridProps> = ({
     }
 
     return (
-        <div className="flex flex-col gap-4">
-            {/* Summary Stats */}
-            <div className="flex items-center gap-6 px-4 py-2 bg-gray-50 rounded-lg">
-                <span className="text-sm text-gray-600">
-                    Progress: {stats.total - stats.empty} / {stats.total}
-                </span>
-                <div className="flex items-center gap-4">
-                    <span className="inline-flex items-center gap-1 text-sm">
-                        <span className="w-3 h-3 rounded-full bg-green-500"></span>
-                        {stats.green} Green
+        <GridContext.Provider value={contextValue}>
+            <div className="flex flex-col gap-4">
+                {/* Summary Stats */}
+                <div className="flex items-center gap-6 px-4 py-2 bg-gray-50 rounded-lg">
+                    <span className="text-sm text-gray-600">
+                        Progress: {stats.total - stats.empty} / {stats.total}
                     </span>
-                    <span className="inline-flex items-center gap-1 text-sm">
-                        <span className="w-3 h-3 rounded-full bg-yellow-500"></span>
-                        {stats.yellow} Yellow
-                    </span>
-                    <span className="inline-flex items-center gap-1 text-sm">
-                        <span className="w-3 h-3 rounded-full bg-red-500"></span>
-                        {stats.red} Red
-                    </span>
-                    <span className="inline-flex items-center gap-1 text-sm text-gray-500">
-                        <span className="w-3 h-3 rounded-full bg-gray-300"></span>
-                        {stats.empty} Empty
-                    </span>
+                    <div className="flex items-center gap-4">
+                        <span className="inline-flex items-center gap-1 text-sm">
+                            <span className="w-3 h-3 rounded-full bg-green-500"></span>
+                            {stats.green} Green
+                        </span>
+                        <span className="inline-flex items-center gap-1 text-sm">
+                            <span className="w-3 h-3 rounded-full bg-yellow-500"></span>
+                            {stats.yellow} Yellow
+                        </span>
+                        <span className="inline-flex items-center gap-1 text-sm">
+                            <span className="w-3 h-3 rounded-full bg-red-500"></span>
+                            {stats.red} Red
+                        </span>
+                        <span className="inline-flex items-center gap-1 text-sm text-gray-500">
+                            <span className="w-3 h-3 rounded-full bg-gray-300"></span>
+                            {stats.empty} Empty
+                        </span>
+                    </div>
+                </div>
+
+                {/* Grid Instructions */}
+                <div className="text-xs text-gray-500 px-2">
+                    <strong>Keyboard:</strong> Arrow keys to navigate • Enter/F2 to edit • Tab to move right • Escape to cancel •
+                    <strong className="ml-2">Click RED cells</strong> to add breach explanations
+                </div>
+
+                {/* Data Grid */}
+                <div
+                    ref={gridRef}
+                    className="border rounded-lg overflow-auto max-h-[60vh]"
+                    role="grid"
+                >
+                    <table className="w-full border-collapse">
+                        <thead className="bg-gray-100 sticky top-0 z-10">
+                            {table.getHeaderGroups().map((headerGroup) => (
+                                <tr key={headerGroup.id}>
+                                    {headerGroup.headers.map((header, index) => (
+                                        <th
+                                            key={header.id}
+                                            className={`border-b border-r text-left ${
+                                                index === 0
+                                                    ? 'sticky left-0 bg-gray-100 z-20 min-w-[200px]'
+                                                    : 'min-w-[120px]'
+                                            }`}
+                                            style={{ width: header.getSize() }}
+                                        >
+                                            {header.isPlaceholder
+                                                ? null
+                                                : flexRender(header.column.columnDef.header, header.getContext())}
+                                        </th>
+                                    ))}
+                                </tr>
+                            ))}
+                        </thead>
+                        <tbody>
+                            {table.getRowModel().rows.map((row) => (
+                                <tr key={row.id} className="hover:bg-gray-50/50">
+                                    {row.getVisibleCells().map((cell, index) => (
+                                        <td
+                                            key={cell.id}
+                                            className={`border-b border-r p-0 ${
+                                                index === 0
+                                                    ? 'sticky left-0 bg-white z-10'
+                                                    : ''
+                                            }`}
+                                            style={{ width: cell.column.getSize() }}
+                                        >
+                                            {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                                        </td>
+                                    ))}
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
                 </div>
             </div>
-
-            {/* Grid Instructions */}
-            <div className="text-xs text-gray-500 px-2">
-                <strong>Keyboard:</strong> Arrow keys to navigate • Enter/F2 to edit • Tab to move right • Escape to cancel •
-                <strong className="ml-2">Click RED cells</strong> to add breach explanations
-            </div>
-
-            {/* Data Grid */}
-            <div
-                ref={gridRef}
-                className="border rounded-lg overflow-auto max-h-[60vh]"
-                role="grid"
-            >
-                <table className="w-full border-collapse">
-                    <thead className="bg-gray-100 sticky top-0 z-10">
-                        {table.getHeaderGroups().map((headerGroup) => (
-                            <tr key={headerGroup.id}>
-                                {headerGroup.headers.map((header, index) => (
-                                    <th
-                                        key={header.id}
-                                        className={`border-b border-r text-left ${
-                                            index === 0
-                                                ? 'sticky left-0 bg-gray-100 z-20 min-w-[200px]'
-                                                : 'min-w-[120px]'
-                                        }`}
-                                        style={{ width: header.getSize() }}
-                                    >
-                                        {header.isPlaceholder
-                                            ? null
-                                            : flexRender(header.column.columnDef.header, header.getContext())}
-                                    </th>
-                                ))}
-                            </tr>
-                        ))}
-                    </thead>
-                    <tbody>
-                        {table.getRowModel().rows.map((row) => (
-                            <tr key={row.id} className="hover:bg-gray-50/50">
-                                {row.getVisibleCells().map((cell, index) => (
-                                    <td
-                                        key={cell.id}
-                                        className={`border-b border-r p-0 ${
-                                            index === 0
-                                                ? 'sticky left-0 bg-white z-10'
-                                                : ''
-                                        }`}
-                                        style={{ width: cell.column.getSize() }}
-                                    >
-                                        {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                                    </td>
-                                ))}
-                            </tr>
-                        ))}
-                    </tbody>
-                </table>
-            </div>
-        </div>
+        </GridContext.Provider>
     );
 };
 

@@ -421,7 +421,7 @@ const MonitoringCycleDetailPage: React.FC = () => {
 
             let response;
             if (form.existingResultId) {
-                response = await api.patch(`/monitoring/cycles/${cycle.cycle_id}/results/${form.existingResultId}`, payload);
+                response = await api.patch(`/monitoring/results/${form.existingResultId}`, payload);
             } else {
                 response = await api.post(`/monitoring/cycles/${cycle.cycle_id}/results`, payload);
             }
@@ -463,7 +463,7 @@ const MonitoringCycleDetailPage: React.FC = () => {
         setResultsError(null);
 
         try {
-            await api.delete(`/monitoring/cycles/${cycle.cycle_id}/results/${form.existingResultId}`);
+            await api.delete(`/monitoring/results/${form.existingResultId}`);
 
             // Reset form
             setResultForms(prev => {
@@ -533,7 +533,8 @@ const MonitoringCycleDetailPage: React.FC = () => {
         }
 
         if (existingResult) {
-            await api.patch(`/monitoring/cycles/${cycle.cycle_id}/results/${existingResult.result_id}`, apiPayload);
+            // PATCH uses /monitoring/results/{result_id} without cycle_id
+            await api.patch(`/monitoring/results/${existingResult.result_id}`, apiPayload);
         } else {
             await api.post(`/monitoring/cycles/${cycle.cycle_id}/results`, apiPayload);
         }
@@ -577,13 +578,39 @@ const MonitoringCycleDetailPage: React.FC = () => {
         // The breach panel might not have a result yet - we need to find or create one
         // For now, assume a result exists if the panel was opened
         if (breachPanelResultId) {
-            await api.patch(`/monitoring/cycles/${cycle.cycle_id}/results/${breachPanelResultId}`, {
+            await api.patch(`/monitoring/results/${breachPanelResultId}`, {
                 narrative,
             });
 
             // Refresh results
             const resultsResp = await api.get(`/monitoring/cycles/${cycle.cycle_id}/results`);
             setAllCycleResults(resultsResp.data || []);
+        }
+    };
+
+    const handleBreachValueChange = async (newValue: number | null) => {
+        if (!cycle || !breachPanelResultId) return;
+
+        // Update the result with the new value
+        const response = await api.patch(`/monitoring/results/${breachPanelResultId}`, {
+            numeric_value: newValue,
+        });
+
+        // Refresh results
+        const resultsResp = await api.get(`/monitoring/cycles/${cycle.cycle_id}/results`);
+        setAllCycleResults(resultsResp.data || []);
+
+        // Refresh cycle counts (in case outcome color changed)
+        const cycleResp = await api.get(`/monitoring/cycles/${cycle.cycle_id}`);
+        setCycle(cycleResp.data);
+
+        // Update the breach panel with new value and outcome
+        if (breachPanelMetricInfo) {
+            setBreachPanelMetricInfo({
+                ...breachPanelMetricInfo,
+                numericValue: newValue,
+                outcome: response.data.calculated_outcome || null,
+            });
         }
     };
 
@@ -706,7 +733,7 @@ const MonitoringCycleDetailPage: React.FC = () => {
         try {
             // Save each narrative
             for (const resolution of resolutions) {
-                await api.patch(`/monitoring/cycles/${cycle.cycle_id}/results/${resolution.result_id}`, {
+                await api.patch(`/monitoring/results/${resolution.result_id}`, {
                     narrative: resolution.narrative,
                 });
             }
@@ -1191,6 +1218,7 @@ const MonitoringCycleDetailPage: React.FC = () => {
                 metricInfo={breachPanelMetricInfo}
                 existingNarrative={breachPanelNarrative}
                 onSave={handleBreachAnnotationSave}
+                onValueChange={handleBreachValueChange}
                 onClose={() => setBreachPanelOpen(false)}
             />
 

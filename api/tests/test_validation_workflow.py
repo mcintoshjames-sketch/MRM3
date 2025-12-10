@@ -83,8 +83,7 @@ def workflow_taxonomies(db_session):
     db_session.flush()
 
     fit_for_purpose = TaxonomyValue(taxonomy_id=rating_tax.taxonomy_id, code="FIT_FOR_PURPOSE", label="Fit for Purpose", sort_order=1)
-    fit_with_conditions = TaxonomyValue(taxonomy_id=rating_tax.taxonomy_id, code="FIT_WITH_CONDITIONS", label="Fit with Conditions", sort_order=2)
-    not_fit = TaxonomyValue(taxonomy_id=rating_tax.taxonomy_id, code="NOT_FIT", label="Not Fit for Purpose", sort_order=3)
+    not_fit = TaxonomyValue(taxonomy_id=rating_tax.taxonomy_id, code="NOT_FIT", label="Not Fit for Purpose", sort_order=2)
 
     db_session.add_all([
         urgent, medium, standard,
@@ -92,7 +91,7 @@ def workflow_taxonomies(db_session):
         initial_val, comprehensive_val,
         conceptual, data_quality, implementation, performance, documentation,
         not_started, comp_in_progress, completed,
-        fit_for_purpose, fit_with_conditions, not_fit
+        fit_for_purpose, not_fit
     ])
     db_session.commit()
 
@@ -112,7 +111,7 @@ def workflow_taxonomies(db_session):
             "not_started": not_started, "in_progress": comp_in_progress, "completed": completed
         },
         "rating": {
-            "fit_for_purpose": fit_for_purpose, "fit_with_conditions": fit_with_conditions, "not_fit": not_fit
+            "fit_for_purpose": fit_for_purpose, "not_fit": not_fit
         }
     }
 
@@ -975,15 +974,15 @@ class TestOutcomeCreation:
             f"/validation-workflow/requests/{request_id}/outcome",
             headers=admin_headers,
             json={
-                "overall_rating_id": workflow_taxonomies["rating"]["fit_with_conditions"].value_id,
-                "executive_summary": "Model performs well but requires monitoring",
+                "overall_rating_id": workflow_taxonomies["rating"]["fit_for_purpose"].value_id,
+                "executive_summary": "Model performs well with no material concerns",
                 "effective_date": effective_date
             }
         )
         assert response.status_code == 201
         data = response.json()
-        assert data["overall_rating"]["label"] == "Fit with Conditions"
-        assert data["executive_summary"] == "Model performs well but requires monitoring"
+        assert data["overall_rating"]["label"] == "Fit for Purpose"
+        assert data["executive_summary"] == "Model performs well with no material concerns"
 
     def test_cannot_create_duplicate_outcome(self, client, admin_headers, sample_model, validator_user, workflow_taxonomies, db_session, qualitative_factors):
         """Test that only one outcome can exist per request."""

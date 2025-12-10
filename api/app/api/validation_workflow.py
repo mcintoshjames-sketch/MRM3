@@ -76,6 +76,19 @@ def check_admin(user: User):
         )
 
 
+def create_audit_log(db: Session, entity_type: str, entity_id: int, action: str, user_id: int, changes: dict = None):
+    """Create an audit log entry."""
+    audit_log = AuditLog(
+        entity_type=entity_type,
+        entity_id=entity_id,
+        action=action,
+        user_id=user_id,
+        changes=changes
+    )
+    db.add(audit_log)
+    # Note: commit happens with the main transaction
+
+
 # Staleness threshold for overdue comments (matches overdue_commentary.py)
 COMMENT_STALENESS_DAYS = 45
 
@@ -831,7 +844,6 @@ def update_version_statuses_for_validation(
             version.status = new_version_status
 
             # Create audit log for version status change
-            from app.core.audit import create_audit_log
             create_audit_log(
                 db=db,
                 entity_type="ModelVersion",
