@@ -62,6 +62,8 @@ interface ValidationPlan {
     risk_tier?: string;
     validation_approach?: string;
     locked_at?: string | null;
+    is_scope_only?: boolean;
+    validation_type_code?: string;
 }
 
 interface TemplateSuggestion {
@@ -90,9 +92,13 @@ interface Props {
     riskTier?: string;
     onSave?: () => void;
     canEdit?: boolean;
+    validationTypeCode?: string;  // For determining scope-only vs full plan
 }
 
-const ValidationPlanForm = forwardRef<ValidationPlanFormHandle, Props>(({ requestId, modelId, modelName, riskTier, onSave, canEdit = true }, ref) => {
+// Validation types that only require scope summary (no components)
+const SCOPE_ONLY_VALIDATION_TYPES = ['TARGETED', 'INTERIM'];
+
+const ValidationPlanForm = forwardRef<ValidationPlanFormHandle, Props>(({ requestId, modelId, modelName, riskTier, onSave, canEdit = true, validationTypeCode }, ref) => {
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
     const [plan, setPlan] = useState<ValidationPlan | null>(null);
@@ -118,6 +124,12 @@ const ValidationPlanForm = forwardRef<ValidationPlanFormHandle, Props>(({ reques
         model_name: modelName,
         risk_tier: riskTier
     });
+
+    // Determine if this is a scope-only plan based on validation type
+    // Use prop first, fall back to API response value
+    const isScopeOnly = validationTypeCode
+        ? SCOPE_ONLY_VALIDATION_TYPES.includes(validationTypeCode)
+        : (plan?.is_scope_only ?? false);
 
     useEffect(() => {
         fetchValidationPlan();
@@ -445,8 +457,8 @@ const ValidationPlanForm = forwardRef<ValidationPlanFormHandle, Props>(({ reques
     if (!plan) {
         return (
             <>
-                {/* Template Selection Modal */}
-                {showTemplateModal && (
+                {/* Template Selection Modal - only for full plans */}
+                {!isScopeOnly && showTemplateModal && (
                     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
                         <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full mx-4 max-h-[90vh] overflow-y-auto">
                             <div className="p-6">
@@ -644,43 +656,63 @@ const ValidationPlanForm = forwardRef<ValidationPlanFormHandle, Props>(({ reques
                 />
             </div>
 
-            {/* Material Deviation */}
-            <div className="mb-6 p-4 border border-gray-300 rounded">
-                <label className="flex items-center mb-2">
-                    <input
-                        type="checkbox"
-                        checked={formData.material_deviation_from_standard}
-                        disabled={!canEdit}
-                        onChange={(e) => {
-                            setHasUnsavedChanges(true);
-                            setSaveSuccess(false);
-                            setFormData({ ...formData, material_deviation_from_standard: e.target.checked });
-                        }}
-                        className="mr-2"
-                    />
-                    <span className="font-medium">Material Deviation from Standard</span>
-                </label>
-                {formData.material_deviation_from_standard && (
-                    <div className="mt-2">
-                        <label className="block text-sm font-medium text-gray-700 mb-1">
-                            Overall Deviation Rationale <span className="text-red-500">*</span>
-                        </label>
-                        <textarea
-                            className={`w-full border border-gray-300 rounded p-2 h-20 ${!canEdit ? 'bg-gray-50' : ''}`}
-                            placeholder="Explain why this validation deviates materially from the standard approach..."
-                            value={formData.overall_deviation_rationale || ''}
+            {/* Scope-Only Plan Info Message */}
+            {isScopeOnly && (
+                <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded">
+                    <div className="flex items-start gap-3">
+                        <span className="text-blue-600 text-xl">ℹ️</span>
+                        <div>
+                            <div className="font-semibold text-blue-800 mb-1">Scope-Only Validation Plan</div>
+                            <div className="text-blue-700 text-sm">
+                                This is a {validationTypeCode || plan?.validation_type_code} validation.
+                                Component-level planning is not required. Only the Overall Scope Summary above
+                                is needed to define the validation scope for this type of validation.
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Material Deviation - only for full plans */}
+            {!isScopeOnly && (
+                <div className="mb-6 p-4 border border-gray-300 rounded">
+                    <label className="flex items-center mb-2">
+                        <input
+                            type="checkbox"
+                            checked={formData.material_deviation_from_standard}
                             disabled={!canEdit}
                             onChange={(e) => {
                                 setHasUnsavedChanges(true);
                                 setSaveSuccess(false);
-                                setFormData({ ...formData, overall_deviation_rationale: e.target.value });
+                                setFormData({ ...formData, material_deviation_from_standard: e.target.checked });
                             }}
+                            className="mr-2"
                         />
-                    </div>
-                )}
-            </div>
+                        <span className="font-medium">Material Deviation from Standard</span>
+                    </label>
+                    {formData.material_deviation_from_standard && (
+                        <div className="mt-2">
+                            <label className="block text-sm font-medium text-gray-700 mb-1">
+                                Overall Deviation Rationale <span className="text-red-500">*</span>
+                            </label>
+                            <textarea
+                                className={`w-full border border-gray-300 rounded p-2 h-20 ${!canEdit ? 'bg-gray-50' : ''}`}
+                                placeholder="Explain why this validation deviates materially from the standard approach..."
+                                value={formData.overall_deviation_rationale || ''}
+                                disabled={!canEdit}
+                                onChange={(e) => {
+                                    setHasUnsavedChanges(true);
+                                    setSaveSuccess(false);
+                                    setFormData({ ...formData, overall_deviation_rationale: e.target.value });
+                                }}
+                            />
+                        </div>
+                    )}
+                </div>
+            )}
 
-            {/* Components Table */}
+            {/* Components Table - only for full plans */}
+            {!isScopeOnly && (
             <div className="mb-6">
                 <h3 className="text-lg font-semibold mb-4">Validation Components</h3>
 
@@ -866,6 +898,7 @@ const ValidationPlanForm = forwardRef<ValidationPlanFormHandle, Props>(({ reques
                     );
                 })}
             </div>
+            )}
 
             {/* Action Buttons */}
             <div className="flex justify-between">

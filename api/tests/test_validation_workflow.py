@@ -56,6 +56,8 @@ def workflow_taxonomies(db_session):
 
     initial_val = TaxonomyValue(taxonomy_id=type_tax.taxonomy_id, code="INITIAL", label="Initial Validation", sort_order=1)
     comprehensive_val = TaxonomyValue(taxonomy_id=type_tax.taxonomy_id, code="COMPREHENSIVE", label="Comprehensive Review", sort_order=2)
+    targeted_val = TaxonomyValue(taxonomy_id=type_tax.taxonomy_id, code="TARGETED", label="Targeted Review", sort_order=3)
+    interim_val = TaxonomyValue(taxonomy_id=type_tax.taxonomy_id, code="INTERIM", label="Interim Review", sort_order=4)
 
     # Work Component Type
     component_tax = Taxonomy(name="Work Component Type", is_system=True)
@@ -88,7 +90,7 @@ def workflow_taxonomies(db_session):
     db_session.add_all([
         urgent, medium, standard,
         intake, planning, in_progress, review, pending_approval, revision, approved, on_hold, cancelled,
-        initial_val, comprehensive_val,
+        initial_val, comprehensive_val, targeted_val, interim_val,
         conceptual, data_quality, implementation, performance, documentation,
         not_started, comp_in_progress, completed,
         fit_for_purpose, not_fit
@@ -102,7 +104,7 @@ def workflow_taxonomies(db_session):
             "review": review, "pending_approval": pending_approval, "revision": revision, "approved": approved,
             "on_hold": on_hold, "cancelled": cancelled
         },
-        "type": {"initial": initial_val, "comprehensive": comprehensive_val},
+        "type": {"initial": initial_val, "comprehensive": comprehensive_val, "targeted": targeted_val, "interim": interim_val},
         "component_type": {
             "conceptual": conceptual, "data_quality": data_quality,
             "implementation": implementation, "performance": performance, "documentation": documentation
@@ -3262,3 +3264,254 @@ class TestSendBackWorkflow:
         db_session.refresh(approval)
         assert approval.approval_status == "Pending"
         assert approval.approved_at is None
+
+
+# ==================== SCOPE-ONLY VALIDATION PLAN TESTS ====================
+
+class TestScopeOnlyValidationPlans:
+    """Tests for scope-only validation plans (TARGETED, INTERIM types)."""
+
+    def test_create_plan_targeted_scope_only_no_components(
+        self, client, db_session, admin_user, admin_headers, workflow_taxonomies, risk_tier_taxonomy, usage_frequency
+    ):
+        """Test that TARGETED validation plans are created without components."""
+        # Create a model
+        model = Model(
+            model_name="Test Model for Targeted",
+            description="Test",
+            status="Active",
+            development_type="In-House",
+            owner_id=admin_user.user_id,
+            risk_tier_id=risk_tier_taxonomy["TIER_2"].value_id,
+            usage_frequency_id=usage_frequency["daily"].value_id
+        )
+        db_session.add(model)
+        db_session.commit()
+
+        # Create a validation request with TARGETED type
+        request_response = client.post(
+            "/validation-workflow/requests/",
+            headers=admin_headers,
+            json={
+                "model_ids": [model.model_id],
+                "validation_type_id": workflow_taxonomies["type"]["targeted"].value_id,
+                "priority_id": workflow_taxonomies["priority"]["standard"].value_id,
+                "target_completion_date": (date.today() + timedelta(days=30)).isoformat()
+            }
+        )
+        assert request_response.status_code == 201
+        request_id = request_response.json()["request_id"]
+
+        # Create validation plan
+        plan_response = client.post(
+            f"/validation-workflow/requests/{request_id}/plan",
+            headers=admin_headers,
+            json={}  # Empty body for scope-only plans
+        )
+        assert plan_response.status_code == 201
+        plan_data = plan_response.json()
+
+        # Verify scope-only plan has no components
+        assert plan_data["is_scope_only"] is True
+        assert plan_data["validation_type_code"] == "TARGETED"
+        assert len(plan_data["components"]) == 0
+        assert plan_data["material_deviation_from_standard"] is False
+
+    def test_create_plan_interim_scope_only_no_components(
+        self, client, db_session, admin_user, admin_headers, workflow_taxonomies, risk_tier_taxonomy, usage_frequency
+    ):
+        """Test that INTERIM validation plans are created without components."""
+        # Create a model
+        model = Model(
+            model_name="Test Model for Interim",
+            description="Test",
+            status="Active",
+            development_type="In-House",
+            owner_id=admin_user.user_id,
+            risk_tier_id=risk_tier_taxonomy["TIER_2"].value_id,
+            usage_frequency_id=usage_frequency["daily"].value_id
+        )
+        db_session.add(model)
+        db_session.commit()
+
+        # Create a validation request with INTERIM type
+        request_response = client.post(
+            "/validation-workflow/requests/",
+            headers=admin_headers,
+            json={
+                "model_ids": [model.model_id],
+                "validation_type_id": workflow_taxonomies["type"]["interim"].value_id,
+                "priority_id": workflow_taxonomies["priority"]["standard"].value_id,
+                "target_completion_date": (date.today() + timedelta(days=30)).isoformat()
+            }
+        )
+        assert request_response.status_code == 201
+        request_id = request_response.json()["request_id"]
+
+        # Create validation plan
+        plan_response = client.post(
+            f"/validation-workflow/requests/{request_id}/plan",
+            headers=admin_headers,
+            json={}
+        )
+        assert plan_response.status_code == 201
+        plan_data = plan_response.json()
+
+        # Verify scope-only plan has no components
+        assert plan_data["is_scope_only"] is True
+        assert plan_data["validation_type_code"] == "INTERIM"
+        assert len(plan_data["components"]) == 0
+        assert plan_data["material_deviation_from_standard"] is False
+
+    def test_create_plan_initial_full_plan_with_components(
+        self, client, db_session, admin_user, admin_headers, workflow_taxonomies, risk_tier_taxonomy, usage_frequency
+    ):
+        """Test that INITIAL validation plans are created with all components."""
+        # Create a model
+        model = Model(
+            model_name="Test Model for Initial",
+            description="Test",
+            status="Active",
+            development_type="In-House",
+            owner_id=admin_user.user_id,
+            risk_tier_id=risk_tier_taxonomy["TIER_2"].value_id,
+            usage_frequency_id=usage_frequency["daily"].value_id
+        )
+        db_session.add(model)
+        db_session.commit()
+
+        # Create a validation request with INITIAL type
+        request_response = client.post(
+            "/validation-workflow/requests/",
+            headers=admin_headers,
+            json={
+                "model_ids": [model.model_id],
+                "validation_type_id": workflow_taxonomies["type"]["initial"].value_id,
+                "priority_id": workflow_taxonomies["priority"]["standard"].value_id,
+                "target_completion_date": (date.today() + timedelta(days=30)).isoformat()
+            }
+        )
+        assert request_response.status_code == 201
+        request_id = request_response.json()["request_id"]
+
+        # Create validation plan
+        plan_response = client.post(
+            f"/validation-workflow/requests/{request_id}/plan",
+            headers=admin_headers,
+            json={}
+        )
+        assert plan_response.status_code == 201
+        plan_data = plan_response.json()
+
+        # Verify full plan is NOT scope-only (components would be created if definitions existed)
+        assert plan_data["is_scope_only"] is False
+        assert plan_data["validation_type_code"] == "INITIAL"
+        # Note: components list may be empty in test env without ValidationComponentDefinition records
+        # The key verification is that is_scope_only=False for full plan types
+
+    def test_get_plan_scope_only_returns_flag(
+        self, client, db_session, admin_user, admin_headers, workflow_taxonomies, risk_tier_taxonomy, usage_frequency
+    ):
+        """Test that GET validation plan returns is_scope_only flag correctly."""
+        # Create a model
+        model = Model(
+            model_name="Test Model for GET Scope Only",
+            description="Test",
+            status="Active",
+            development_type="In-House",
+            owner_id=admin_user.user_id,
+            risk_tier_id=risk_tier_taxonomy["TIER_2"].value_id,
+            usage_frequency_id=usage_frequency["daily"].value_id
+        )
+        db_session.add(model)
+        db_session.commit()
+
+        # Create a validation request with TARGETED type
+        request_response = client.post(
+            "/validation-workflow/requests/",
+            headers=admin_headers,
+            json={
+                "model_ids": [model.model_id],
+                "validation_type_id": workflow_taxonomies["type"]["targeted"].value_id,
+                "priority_id": workflow_taxonomies["priority"]["standard"].value_id,
+                "target_completion_date": (date.today() + timedelta(days=30)).isoformat()
+            }
+        )
+        assert request_response.status_code == 201
+        request_id = request_response.json()["request_id"]
+
+        # Create validation plan
+        plan_response = client.post(
+            f"/validation-workflow/requests/{request_id}/plan",
+            headers=admin_headers,
+            json={}
+        )
+        assert plan_response.status_code == 201
+
+        # GET the plan and verify is_scope_only flag
+        get_response = client.get(
+            f"/validation-workflow/requests/{request_id}/plan",
+            headers=admin_headers
+        )
+        assert get_response.status_code == 200
+        plan_data = get_response.json()
+
+        assert plan_data["is_scope_only"] is True
+        assert plan_data["validation_type_code"] == "TARGETED"
+
+    def test_update_scope_only_plan_only_scope_summary(
+        self, client, db_session, admin_user, admin_headers, workflow_taxonomies, risk_tier_taxonomy, usage_frequency
+    ):
+        """Test that updating a scope-only plan only updates the scope summary."""
+        # Create a model
+        model = Model(
+            model_name="Test Model for Update Scope Only",
+            description="Test",
+            status="Active",
+            development_type="In-House",
+            owner_id=admin_user.user_id,
+            risk_tier_id=risk_tier_taxonomy["TIER_2"].value_id,
+            usage_frequency_id=usage_frequency["daily"].value_id
+        )
+        db_session.add(model)
+        db_session.commit()
+
+        # Create a validation request with TARGETED type
+        request_response = client.post(
+            "/validation-workflow/requests/",
+            headers=admin_headers,
+            json={
+                "model_ids": [model.model_id],
+                "validation_type_id": workflow_taxonomies["type"]["targeted"].value_id,
+                "priority_id": workflow_taxonomies["priority"]["standard"].value_id,
+                "target_completion_date": (date.today() + timedelta(days=30)).isoformat()
+            }
+        )
+        assert request_response.status_code == 201
+        request_id = request_response.json()["request_id"]
+
+        # Create validation plan
+        plan_response = client.post(
+            f"/validation-workflow/requests/{request_id}/plan",
+            headers=admin_headers,
+            json={}
+        )
+        assert plan_response.status_code == 201
+
+        # Update the plan with scope summary and try to set material deviation
+        update_response = client.patch(
+            f"/validation-workflow/requests/{request_id}/plan",
+            headers=admin_headers,
+            json={
+                "overall_scope_summary": "This is a targeted review scope summary.",
+                "material_deviation_from_standard": True,  # Should be ignored
+                "overall_deviation_rationale": "Should be ignored"
+            }
+        )
+        assert update_response.status_code == 200
+        updated_plan = update_response.json()
+
+        # Verify scope summary was updated but material deviation was forced to false
+        assert updated_plan["overall_scope_summary"] == "This is a targeted review scope summary."
+        assert updated_plan["material_deviation_from_standard"] is False
+        assert updated_plan["is_scope_only"] is True

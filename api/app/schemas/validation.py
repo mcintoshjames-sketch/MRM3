@@ -698,6 +698,10 @@ class ValidationPlanResponse(ValidationPlanBase):
     risk_tier: Optional[str] = None
     validation_approach: Optional[str] = None
 
+    # Scope-only plan indicator (for TARGETED, INTERIM validation types)
+    is_scope_only: bool = False
+    validation_type_code: Optional[str] = None
+
     class Config:
         from_attributes = True
 

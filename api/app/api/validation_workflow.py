@@ -56,6 +56,15 @@ from app.schemas.conditional_approval import (
 router = APIRouter()
 
 
+# ==================== CONSTANTS ====================
+
+# Validation types that require full component-level planning
+FULL_PLAN_VALIDATION_TYPES = ["INITIAL", "COMPREHENSIVE"]
+
+# Validation types that only require scope summary (no components)
+SCOPE_ONLY_VALIDATION_TYPES = ["TARGETED", "INTERIM"]
+
+
 # ==================== HELPER FUNCTIONS ====================
 
 def check_validator_or_admin(user: User):
@@ -5788,13 +5797,17 @@ def create_validation_plan(
 
     The plan captures which validation components are planned or not planned,
     with rationale for deviations from bank standards.
+
+    For scope-only validation types (TARGETED, INTERIM), only the overall_scope_summary
+    is captured - no component-level planning is required.
     """
     check_validator_or_admin(current_user)
 
-    # Get validation request
+    # Get validation request with validation type
     request = db.query(ValidationRequest).options(
         joinedload(ValidationRequest.model_versions_assoc).joinedload(
-            ValidationRequestModelVersion.model).joinedload(Model.risk_tier)
+            ValidationRequestModelVersion.model).joinedload(Model.risk_tier),
+        joinedload(ValidationRequest.validation_type)
     ).filter(ValidationRequest.request_id == request_id).first()
 
     if not request:
@@ -5802,6 +5815,10 @@ def create_validation_plan(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Validation request {request_id} not found"
         )
+
+    # Determine if this is a scope-only plan based on validation type
+    validation_type_code = request.validation_type.code if request.validation_type else None
+    is_scope_only = validation_type_code in SCOPE_ONLY_VALIDATION_TYPES
 
     # Check if plan already exists
     existing_plan = db.query(ValidationPlan).filter(
@@ -5838,24 +5855,46 @@ def create_validation_plan(
     # Get first model for response metadata (model name, etc.)
     first_model = request.model_versions_assoc[0].model
 
-    # Validate material deviation rationale
-    if plan_data.material_deviation_from_standard and not plan_data.overall_deviation_rationale:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="overall_deviation_rationale is required when material_deviation_from_standard is true"
-        )
+    # For scope-only plans, force material deviation to false (no components to deviate from)
+    # For full plans, validate material deviation rationale
+    if is_scope_only:
+        material_deviation = False
+        deviation_rationale = None
+    else:
+        if plan_data.material_deviation_from_standard and not plan_data.overall_deviation_rationale:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="overall_deviation_rationale is required when material_deviation_from_standard is true"
+            )
+        material_deviation = plan_data.material_deviation_from_standard
+        deviation_rationale = plan_data.overall_deviation_rationale
 
     # Create validation plan
     new_plan = ValidationPlan(
         request_id=request_id,
         overall_scope_summary=plan_data.overall_scope_summary,
-        material_deviation_from_standard=plan_data.material_deviation_from_standard,
-        overall_deviation_rationale=plan_data.overall_deviation_rationale
+        material_deviation_from_standard=material_deviation,
+        overall_deviation_rationale=deviation_rationale
     )
     db.add(new_plan)
     db.flush()  # Get plan_id
 
-    # Get all component definitions
+    # For scope-only plans, skip component creation entirely
+    if is_scope_only:
+        db.commit()
+        db.refresh(new_plan)
+
+        # Build response for scope-only plan
+        response_data = ValidationPlanResponse.model_validate(new_plan)
+        response_data.is_scope_only = True
+        response_data.validation_type_code = validation_type_code
+        response_data.model_id = first_model.model_id
+        response_data.model_name = first_model.model_name
+        response_data.risk_tier = first_model.risk_tier.label if first_model.risk_tier else "Unknown"
+        response_data.validation_approach = "Scope-Only"
+        return response_data
+
+    # Get all component definitions (for full plans only)
     all_components = db.query(ValidationComponentDefinition).filter(
         ValidationComponentDefinition.is_active == True
     ).order_by(ValidationComponentDefinition.sort_order).all()
@@ -6013,6 +6052,10 @@ def create_validation_plan(
     response_data.validation_approach = tier_to_approach.get(
         risk_tier_code, "Standard")
 
+    # Set scope-only indicator for full plans
+    response_data.is_scope_only = False
+    response_data.validation_type_code = validation_type_code
+
     return response_data
 
 
@@ -6145,7 +6188,8 @@ def get_validation_plan(
     # Get validation request
     request = db.query(ValidationRequest).options(
         joinedload(ValidationRequest.model_versions_assoc).joinedload(
-            ValidationRequestModelVersion.model).joinedload(Model.risk_tier)
+            ValidationRequestModelVersion.model).joinedload(Model.risk_tier),
+        joinedload(ValidationRequest.validation_type)
     ).filter(ValidationRequest.request_id == request_id).first()
 
     if not request:
@@ -6166,9 +6210,17 @@ def get_validation_plan(
             detail=f"Validation plan not found for request {request_id}"
         )
 
+    # Determine if this is a scope-only plan based on validation type
+    validation_type_code = request.validation_type.code if request.validation_type else None
+    is_scope_only = validation_type_code in SCOPE_ONLY_VALIDATION_TYPES
+
     # Build response with derived fields
     model = request.model_versions_assoc[0].model if request.model_versions_assoc else None
     response_data = ValidationPlanResponse.model_validate(plan)
+
+    # Set scope-only indicator
+    response_data.is_scope_only = is_scope_only
+    response_data.validation_type_code = validation_type_code
 
     if model:
         response_data.model_id = model.model_id
@@ -6238,6 +6290,8 @@ def export_validation_plan_pdf(
     validation_approach = tier_to_approach.get(risk_tier_code, "Standard")
 
     validation_type = request.validation_type.label if request.validation_type else "Unknown"
+    validation_type_code = request.validation_type.code if request.validation_type else None
+    is_scope_only = validation_type_code in SCOPE_ONLY_VALIDATION_TYPES
 
     # Create PDF
     class ValidationPlanPDF(FPDF):
@@ -6291,119 +6345,128 @@ def export_validation_plan_pdf(
         pdf.multi_cell(0, 5, plan.overall_scope_summary or 'N/A')
         pdf.ln(3)
 
-    # Material Deviation Information
-    pdf.set_font('Arial', 'B', 12)
-    pdf.cell(0, 8, 'Material Deviation from Standard', 0, 1)
-    pdf.ln(2)
-    pdf.set_font('Arial', '', 10)
-    pdf.cell(0, 6, 'Yes' if plan.material_deviation_from_standard else 'No', 0, 1)
-
-    if plan.material_deviation_from_standard and plan.overall_deviation_rationale:
-        pdf.set_font('Arial', 'B', 10)
-        pdf.cell(0, 6, 'Rationale:', 0, 1)
+    # For scope-only plans, add note and skip component-level details
+    if is_scope_only:
+        pdf.set_font('Arial', 'B', 12)
+        pdf.cell(0, 8, 'Validation Plan Type', 0, 1)
+        pdf.ln(2)
+        pdf.set_font('Arial', 'I', 10)
+        pdf.multi_cell(0, 5, f'This is a {validation_type} validation. Component-level planning is not required for this validation type. Only the Overall Scope Summary above defines the validation scope.')
+        pdf.ln(5)
+    else:
+        # Material Deviation Information (full plans only)
+        pdf.set_font('Arial', 'B', 12)
+        pdf.cell(0, 8, 'Material Deviation from Standard', 0, 1)
+        pdf.ln(2)
         pdf.set_font('Arial', '', 10)
-        pdf.multi_cell(0, 5, plan.overall_deviation_rationale)
+        pdf.cell(0, 6, 'Yes' if plan.material_deviation_from_standard else 'No', 0, 1)
 
-    pdf.ln(5)
+        if plan.material_deviation_from_standard and plan.overall_deviation_rationale:
+            pdf.set_font('Arial', 'B', 10)
+            pdf.cell(0, 6, 'Rationale:', 0, 1)
+            pdf.set_font('Arial', '', 10)
+            pdf.multi_cell(0, 5, plan.overall_deviation_rationale)
 
-    # Validation Components by Section
-    pdf.set_font('Arial', 'B', 12)
-    pdf.cell(0, 8, 'Validation Components', 0, 1)
-    pdf.ln(3)
+        pdf.ln(5)
 
-    # Group components by section
-    components_by_section = {}
-    for comp in plan.components:
-        section = comp.component_definition.section_number
-        if section not in components_by_section:
-            components_by_section[section] = {
-                'title': comp.component_definition.section_title,
-                'components': []
-            }
-        components_by_section[section]['components'].append(comp)
-
-    # Render each section
-    for section_num in sorted(components_by_section.keys()):
-        section_data = components_by_section[section_num]
-
-        # Section header
-        pdf.set_font('Arial', 'B', 11)
-        pdf.cell(0, 7, f"Section {section_num}: {section_data['title']}", 0, 1)
-        pdf.ln(1)
-
-        # Table header
-        pdf.set_font('Arial', 'B', 9)
-        pdf.set_fill_color(200, 200, 200)
-        pdf.cell(30, 6, 'Code', 1, 0, 'C', True)
-        pdf.cell(50, 6, 'Component', 1, 0, 'C', True)
-        pdf.cell(30, 6, 'Expectation', 1, 0, 'C', True)
-        pdf.cell(30, 6, 'Treatment', 1, 0, 'C', True)
-        pdf.cell(50, 6, 'Deviation', 1, 1, 'C', True)
-
-        # Components
-        pdf.set_font('Arial', '', 8)
-        for comp in section_data['components']:
-            comp_def = comp.component_definition
-
-            # Component code
-            pdf.cell(30, 6, comp_def.component_code, 1, 0)
-
-            # Component title (truncate if too long)
-            title = comp_def.component_title[:30] + '...' if len(
-                comp_def.component_title) > 30 else comp_def.component_title
-            pdf.cell(50, 6, title, 1, 0)
-
-            # Default expectation
-            pdf.cell(30, 6, comp.default_expectation, 1, 0)
-
-            # Planned treatment
-            treatment_map = {
-                'Planned': 'Planned',
-                'NotPlanned': 'Not Planned',
-                'NotApplicable': 'N/A'
-            }
-            treatment = treatment_map.get(
-                comp.planned_treatment, comp.planned_treatment)
-            pdf.cell(30, 6, treatment, 1, 0)
-
-            # Deviation status
-            deviation_text = 'Yes' if comp.is_deviation else 'No'
-            if comp.is_deviation:
-                pdf.set_fill_color(255, 240, 200)
-                pdf.cell(50, 6, deviation_text, 1, 1, 'C', True)
-            else:
-                pdf.cell(50, 6, deviation_text, 1, 1, 'C')
-
-            # Add rationale if present
-            if comp.rationale and comp.rationale.strip():
-                pdf.set_font('Arial', 'I', 7)
-                pdf.set_x(40)
-                rationale_text = f"Rationale: {comp.rationale[:100]}..." if len(
-                    comp.rationale) > 100 else f"Rationale: {comp.rationale}"
-                pdf.multi_cell(150, 4, rationale_text)
-                pdf.set_font('Arial', '', 8)
-
+        # Validation Components by Section (full plans only)
+        pdf.set_font('Arial', 'B', 12)
+        pdf.cell(0, 8, 'Validation Components', 0, 1)
         pdf.ln(3)
 
-    # Summary statistics
-    total_components = len(plan.components)
-    planned_components = sum(
-        1 for c in plan.components if c.planned_treatment == 'Planned')
-    deviations = sum(1 for c in plan.components if c.is_deviation)
+        # Group components by section
+        components_by_section = {}
+        for comp in plan.components:
+            section = comp.component_definition.section_number
+            if section not in components_by_section:
+                components_by_section[section] = {
+                    'title': comp.component_definition.section_title,
+                    'components': []
+                }
+            components_by_section[section]['components'].append(comp)
 
-    pdf.ln(5)
-    pdf.set_font('Arial', 'B', 12)
-    pdf.cell(0, 8, 'Summary Statistics', 0, 1)
-    pdf.ln(2)
+        # Render each section
+        for section_num in sorted(components_by_section.keys()):
+            section_data = components_by_section[section_num]
 
-    pdf.set_font('Arial', '', 10)
-    pdf.cell(0, 6, f'Total Components: {total_components}', 0, 1)
-    pdf.cell(0, 6, f'Planned Components: {planned_components}', 0, 1)
-    pdf.cell(0, 6, f'Total Deviations: {deviations}', 0, 1)
+            # Section header
+            pdf.set_font('Arial', 'B', 11)
+            pdf.cell(0, 7, f"Section {section_num}: {section_data['title']}", 0, 1)
+            pdf.ln(1)
 
-    if total_components > 0:
-        deviation_rate = (deviations / total_components) * 100
-        pdf.cell(0, 6, f'Deviation Rate: {deviation_rate:.1f}%', 0, 1)
+            # Table header
+            pdf.set_font('Arial', 'B', 9)
+            pdf.set_fill_color(200, 200, 200)
+            pdf.cell(30, 6, 'Code', 1, 0, 'C', True)
+            pdf.cell(50, 6, 'Component', 1, 0, 'C', True)
+            pdf.cell(30, 6, 'Expectation', 1, 0, 'C', True)
+            pdf.cell(30, 6, 'Treatment', 1, 0, 'C', True)
+            pdf.cell(50, 6, 'Deviation', 1, 1, 'C', True)
+
+            # Components
+            pdf.set_font('Arial', '', 8)
+            for comp in section_data['components']:
+                comp_def = comp.component_definition
+
+                # Component code
+                pdf.cell(30, 6, comp_def.component_code, 1, 0)
+
+                # Component title (truncate if too long)
+                title = comp_def.component_title[:30] + '...' if len(
+                    comp_def.component_title) > 30 else comp_def.component_title
+                pdf.cell(50, 6, title, 1, 0)
+
+                # Default expectation
+                pdf.cell(30, 6, comp.default_expectation, 1, 0)
+
+                # Planned treatment
+                treatment_map = {
+                    'Planned': 'Planned',
+                    'NotPlanned': 'Not Planned',
+                    'NotApplicable': 'N/A'
+                }
+                treatment = treatment_map.get(
+                    comp.planned_treatment, comp.planned_treatment)
+                pdf.cell(30, 6, treatment, 1, 0)
+
+                # Deviation status
+                deviation_text = 'Yes' if comp.is_deviation else 'No'
+                if comp.is_deviation:
+                    pdf.set_fill_color(255, 240, 200)
+                    pdf.cell(50, 6, deviation_text, 1, 1, 'C', True)
+                else:
+                    pdf.cell(50, 6, deviation_text, 1, 1, 'C')
+
+                # Add rationale if present
+                if comp.rationale and comp.rationale.strip():
+                    pdf.set_font('Arial', 'I', 7)
+                    pdf.set_x(40)
+                    rationale_text = f"Rationale: {comp.rationale[:100]}..." if len(
+                        comp.rationale) > 100 else f"Rationale: {comp.rationale}"
+                    pdf.multi_cell(150, 4, rationale_text)
+                    pdf.set_font('Arial', '', 8)
+
+            pdf.ln(3)
+
+        # Summary statistics (full plans only)
+        total_components = len(plan.components)
+        planned_components = sum(
+            1 for c in plan.components if c.planned_treatment == 'Planned')
+        deviations = sum(1 for c in plan.components if c.is_deviation)
+
+        pdf.ln(5)
+        pdf.set_font('Arial', 'B', 12)
+        pdf.cell(0, 8, 'Summary Statistics', 0, 1)
+        pdf.ln(2)
+
+        pdf.set_font('Arial', '', 10)
+        pdf.cell(0, 6, f'Total Components: {total_components}', 0, 1)
+        pdf.cell(0, 6, f'Planned Components: {planned_components}', 0, 1)
+        pdf.cell(0, 6, f'Total Deviations: {deviations}', 0, 1)
+
+        if total_components > 0:
+            deviation_rate = (deviations / total_components) * 100
+            pdf.cell(0, 6, f'Deviation Rate: {deviation_rate:.1f}%', 0, 1)
 
     # Save PDF to temporary file
     temp_file = tempfile.NamedTemporaryFile(delete=False, suffix='.pdf')
@@ -6434,15 +6497,19 @@ def update_validation_plan(
 
     Allows updating:
     - Overall scope summary
-    - Material deviation flag and rationale
-    - Individual component planned treatments and rationales
+    - Material deviation flag and rationale (full plans only)
+    - Individual component planned treatments and rationales (full plans only)
+
+    For scope-only validation types (TARGETED, INTERIM), only overall_scope_summary
+    can be updated.
     """
     check_validator_or_admin(current_user)
 
-    # Get validation request
+    # Get validation request with validation type
     request = db.query(ValidationRequest).options(
         joinedload(ValidationRequest.model_versions_assoc).joinedload(
-            ValidationRequestModelVersion.model).joinedload(Model.risk_tier)
+            ValidationRequestModelVersion.model).joinedload(Model.risk_tier),
+        joinedload(ValidationRequest.validation_type)
     ).filter(ValidationRequest.request_id == request_id).first()
 
     if not request:
@@ -6450,6 +6517,10 @@ def update_validation_plan(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Validation request {request_id} not found"
         )
+
+    # Determine if this is a scope-only plan based on validation type
+    validation_type_code = request.validation_type.code if request.validation_type else None
+    is_scope_only = validation_type_code in SCOPE_ONLY_VALIDATION_TYPES
 
     # Get validation plan
     plan = db.query(ValidationPlan).options(
@@ -6467,6 +6538,28 @@ def update_validation_plan(
     if plan_updates.overall_scope_summary is not None:
         plan.overall_scope_summary = plan_updates.overall_scope_summary
 
+    # For scope-only plans, skip material deviation and component updates
+    if is_scope_only:
+        # Force material deviation to false for scope-only plans
+        plan.material_deviation_from_standard = False
+        plan.overall_deviation_rationale = None
+
+        db.commit()
+        db.refresh(plan)
+
+        # Build response for scope-only plan
+        model = request.model_versions_assoc[0].model if request.model_versions_assoc else None
+        response_data = ValidationPlanResponse.model_validate(plan)
+        response_data.is_scope_only = True
+        response_data.validation_type_code = validation_type_code
+        if model:
+            response_data.model_id = model.model_id
+            response_data.model_name = model.model_name
+            response_data.risk_tier = model.risk_tier.label if model.risk_tier else "Unknown"
+        response_data.validation_approach = "Scope-Only"
+        return response_data
+
+    # Full plan update logic below
     if plan_updates.material_deviation_from_standard is not None:
         plan.material_deviation_from_standard = plan_updates.material_deviation_from_standard
 
@@ -6569,6 +6662,10 @@ def update_validation_plan(
         }
         response_data.validation_approach = tier_to_approach.get(
             risk_tier_code, "Standard")
+
+    # Add scope-only indicator for full plans
+    response_data.is_scope_only = False
+    response_data.validation_type_code = validation_type_code
 
     return response_data
 
