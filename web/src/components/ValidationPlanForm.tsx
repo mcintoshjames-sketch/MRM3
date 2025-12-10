@@ -105,6 +105,7 @@ const ValidationPlanForm = forwardRef<ValidationPlanFormHandle, Props>(({ reques
     const [error, setError] = useState<string | null>(null);
     const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
     const [saveSuccess, setSaveSuccess] = useState(false);
+    const [isEditing, setIsEditing] = useState(false); // View mode by default when plan exists
 
     // Component 9b: Monitoring plans for this model
     const [monitoringPlans, setMonitoringPlans] = useState<ModelMonitoringPlan[]>([]);
@@ -237,6 +238,7 @@ const ValidationPlanForm = forwardRef<ValidationPlanFormHandle, Props>(({ reques
 
             setPlan(response.data);
             setFormData(response.data);
+            setIsEditing(true); // Start editing newly created plan
 
             if (onSave) onSave();
         } catch (err: any) {
@@ -330,45 +332,52 @@ const ValidationPlanForm = forwardRef<ValidationPlanFormHandle, Props>(({ reques
         setSaveSuccess(false);
 
         try {
-            // Validate deviations have rationale
-            for (const comp of formData.components) {
-                if (comp.is_deviation && !comp.rationale?.trim()) {
-                    const compDef = comp.component_definition;
-                    throw new Error(`Rationale required for ${compDef.component_code} (${compDef.component_title}) because it deviates from the bank standard`);
+            // Only validate components for full plans (not scope-only)
+            if (!isScopeOnly) {
+                // Validate deviations have rationale
+                for (const comp of formData.components) {
+                    if (comp.is_deviation && !comp.rationale?.trim()) {
+                        const compDef = comp.component_definition;
+                        throw new Error(`Rationale required for ${compDef.component_code} (${compDef.component_title}) because it deviates from the bank standard`);
+                    }
+                }
+
+                // Validate Component 9b: must have monitoring plan version selected when Planned
+                const comp9b = formData.components.find(c => c.component_definition.component_code === '9b');
+                if (comp9b && comp9b.planned_treatment === 'Planned' && !comp9b.monitoring_plan_version_id) {
+                    throw new Error('Component 9b (Performance Monitoring Plan Review) requires selecting a monitoring plan version when planned');
+                }
+
+                // Validate material deviation rationale
+                if (formData.material_deviation_from_standard && !formData.overall_deviation_rationale?.trim()) {
+                    throw new Error('Overall deviation rationale is required when there is a material deviation from standard');
                 }
             }
 
-            // Validate Component 9b: must have monitoring plan version selected when Planned
-            const comp9b = formData.components.find(c => c.component_definition.component_code === '9b');
-            if (comp9b && comp9b.planned_treatment === 'Planned' && !comp9b.monitoring_plan_version_id) {
-                throw new Error('Component 9b (Performance Monitoring Plan Review) requires selecting a monitoring plan version when planned');
-            }
-
-            // Validate material deviation rationale
-            if (formData.material_deviation_from_standard && !formData.overall_deviation_rationale?.trim()) {
-                throw new Error('Overall deviation rationale is required when there is a material deviation from standard');
-            }
-
-            const updatePayload = {
-                overall_scope_summary: formData.overall_scope_summary,
-                material_deviation_from_standard: formData.material_deviation_from_standard,
-                overall_deviation_rationale: formData.overall_deviation_rationale,
-                components: formData.components.map(comp => ({
-                    component_id: comp.component_id,
-                    planned_treatment: comp.planned_treatment,
-                    rationale: comp.rationale,
-                    additional_notes: comp.additional_notes,
-                    // Component 9b specific fields
-                    monitoring_plan_version_id: comp.monitoring_plan_version_id || null,
-                    monitoring_review_notes: comp.monitoring_review_notes || null
-                }))
-            };
+            // Build payload - scope-only plans only send overall_scope_summary
+            const updatePayload = isScopeOnly
+                ? { overall_scope_summary: formData.overall_scope_summary }
+                : {
+                    overall_scope_summary: formData.overall_scope_summary,
+                    material_deviation_from_standard: formData.material_deviation_from_standard,
+                    overall_deviation_rationale: formData.overall_deviation_rationale,
+                    components: formData.components.map(comp => ({
+                        component_id: comp.component_id,
+                        planned_treatment: comp.planned_treatment,
+                        rationale: comp.rationale,
+                        additional_notes: comp.additional_notes,
+                        // Component 9b specific fields
+                        monitoring_plan_version_id: comp.monitoring_plan_version_id || null,
+                        monitoring_review_notes: comp.monitoring_review_notes || null
+                    }))
+                };
 
             const response = await api.patch(`/validation-workflow/requests/${requestId}/plan`, updatePayload);
             setPlan(response.data);
             setFormData(response.data);
             setHasUnsavedChanges(false); // Clear dirty flag on successful save
             setSaveSuccess(true);
+            setIsEditing(false); // Switch to view mode after successful save
 
             // Clear success message after 3 seconds
             setTimeout(() => setSaveSuccess(false), 3000);
@@ -591,11 +600,24 @@ const ValidationPlanForm = forwardRef<ValidationPlanFormHandle, Props>(({ reques
     return (
         <div className="bg-white rounded-lg shadow-md p-6">
             <div className="flex items-center justify-between mb-6">
-                <h2 className="text-xl font-bold">
-                    Validation Plan
-                    {hasUnsavedChanges && <span className="text-orange-600 ml-2">*</span>}
-                </h2>
-                <div className="text-sm">
+                <div className="flex items-center gap-3">
+                    <h2 className="text-xl font-bold">
+                        Validation Plan
+                        {hasUnsavedChanges && <span className="text-orange-600 ml-2">*</span>}
+                    </h2>
+                    {!isEditing && canEdit && !plan?.locked_at && (
+                        <button
+                            onClick={() => setIsEditing(true)}
+                            className="px-3 py-1 text-sm border border-blue-600 text-blue-600 rounded hover:bg-blue-50"
+                        >
+                            Edit
+                        </button>
+                    )}
+                </div>
+                <div className="text-sm flex items-center gap-3">
+                    {isEditing && (
+                        <span className="text-blue-600 font-medium">Editing</span>
+                    )}
                     {hasUnsavedChanges && (
                         <span className="text-orange-600 font-medium">Unsaved changes</span>
                     )}
@@ -644,10 +666,10 @@ const ValidationPlanForm = forwardRef<ValidationPlanFormHandle, Props>(({ reques
                     Overall Scope Summary
                 </label>
                 <textarea
-                    className={`w-full border border-gray-300 rounded p-2 h-24 ${!canEdit ? 'bg-gray-50' : ''}`}
+                    className={`w-full border border-gray-300 rounded p-2 h-24 ${(!canEdit || !isEditing) ? 'bg-gray-50' : ''}`}
                     placeholder="Describe the high-level scope of this validation..."
                     value={formData.overall_scope_summary || ''}
-                    disabled={!canEdit}
+                    disabled={!canEdit || !isEditing}
                     onChange={(e) => {
                         setHasUnsavedChanges(true);
                         setSaveSuccess(false);
@@ -680,7 +702,7 @@ const ValidationPlanForm = forwardRef<ValidationPlanFormHandle, Props>(({ reques
                         <input
                             type="checkbox"
                             checked={formData.material_deviation_from_standard}
-                            disabled={!canEdit}
+                            disabled={!canEdit || !isEditing}
                             onChange={(e) => {
                                 setHasUnsavedChanges(true);
                                 setSaveSuccess(false);
@@ -696,10 +718,10 @@ const ValidationPlanForm = forwardRef<ValidationPlanFormHandle, Props>(({ reques
                                 Overall Deviation Rationale <span className="text-red-500">*</span>
                             </label>
                             <textarea
-                                className={`w-full border border-gray-300 rounded p-2 h-20 ${!canEdit ? 'bg-gray-50' : ''}`}
+                                className={`w-full border border-gray-300 rounded p-2 h-20 ${(!canEdit || !isEditing) ? 'bg-gray-50' : ''}`}
                                 placeholder="Explain why this validation deviates materially from the standard approach..."
                                 value={formData.overall_deviation_rationale || ''}
-                                disabled={!canEdit}
+                                disabled={!canEdit || !isEditing}
                                 onChange={(e) => {
                                     setHasUnsavedChanges(true);
                                     setSaveSuccess(false);
@@ -773,9 +795,9 @@ const ValidationPlanForm = forwardRef<ValidationPlanFormHandle, Props>(({ reques
                                             </td>
                                             <td className="border border-gray-300 px-3 py-2">
                                                 <select
-                                                    className={`border border-gray-300 rounded px-2 py-1 text-sm w-full ${!canEdit ? 'bg-gray-50' : ''}`}
+                                                    className={`border border-gray-300 rounded px-2 py-1 text-sm w-full ${(!canEdit || !isEditing) ? 'bg-gray-50' : ''}`}
                                                     value={comp.planned_treatment}
-                                                    disabled={!canEdit}
+                                                    disabled={!canEdit || !isEditing}
                                                     onChange={(e) => handleComponentChange(comp.component_id, 'planned_treatment', e.target.value)}
                                                 >
                                                     <option value="Planned">Planned</option>
@@ -802,9 +824,9 @@ const ValidationPlanForm = forwardRef<ValidationPlanFormHandle, Props>(({ reques
                                                                         <div>
                                                                             <label className="block text-xs text-gray-600 mb-1">Select Monitoring Plan Version:</label>
                                                                             <select
-                                                                                className={`border border-gray-300 rounded px-2 py-1 text-sm w-full ${!canEdit ? 'bg-gray-50' : ''}`}
+                                                                                className={`border border-gray-300 rounded px-2 py-1 text-sm w-full ${(!canEdit || !isEditing) ? 'bg-gray-50' : ''}`}
                                                                                 value={comp.monitoring_plan_version_id || ''}
-                                                                                disabled={!canEdit}
+                                                                                disabled={!canEdit || !isEditing}
                                                                                 onChange={(e) => handleComponentChange(
                                                                                     comp.component_id,
                                                                                     'monitoring_plan_version_id',
@@ -859,11 +881,11 @@ const ValidationPlanForm = forwardRef<ValidationPlanFormHandle, Props>(({ reques
 
                                                         {/* Review Notes */}
                                                         <textarea
-                                                            className={`w-full border border-gray-300 rounded px-2 py-1 text-sm ${!canEdit ? 'bg-gray-50' : ''}`}
+                                                            className={`w-full border border-gray-300 rounded px-2 py-1 text-sm ${(!canEdit || !isEditing) ? 'bg-gray-50' : ''}`}
                                                             placeholder={comp.planned_treatment === 'Planned' ? 'Review notes...' : comp.is_deviation ? 'Required: Explain deviation...' : 'Optional notes...'}
                                                             rows={2}
                                                             value={comp.rationale || ''}
-                                                            disabled={!canEdit}
+                                                            disabled={!canEdit || !isEditing}
                                                             onChange={(e) => handleComponentChange(comp.component_id, 'rationale', e.target.value)}
                                                         />
                                                     </div>
@@ -871,20 +893,20 @@ const ValidationPlanForm = forwardRef<ValidationPlanFormHandle, Props>(({ reques
                                                     /* Standard components */
                                                     comp.is_deviation ? (
                                                         <textarea
-                                                            className={`w-full border border-gray-300 rounded px-2 py-1 text-sm ${!canEdit ? 'bg-gray-50' : ''}`}
+                                                            className={`w-full border border-gray-300 rounded px-2 py-1 text-sm ${(!canEdit || !isEditing) ? 'bg-gray-50' : ''}`}
                                                             placeholder="Required: Explain deviation from standard..."
                                                             rows={2}
                                                             value={comp.rationale || ''}
-                                                            disabled={!canEdit}
+                                                            disabled={!canEdit || !isEditing}
                                                             onChange={(e) => handleComponentChange(comp.component_id, 'rationale', e.target.value)}
                                                         />
                                                     ) : (
                                                         <textarea
-                                                            className={`w-full border border-gray-300 rounded px-2 py-1 text-sm ${!canEdit ? 'bg-gray-50' : ''}`}
+                                                            className={`w-full border border-gray-300 rounded px-2 py-1 text-sm ${(!canEdit || !isEditing) ? 'bg-gray-50' : ''}`}
                                                             placeholder="Optional notes..."
                                                             rows={2}
                                                             value={comp.rationale || ''}
-                                                            disabled={!canEdit}
+                                                            disabled={!canEdit || !isEditing}
                                                             onChange={(e) => handleComponentChange(comp.component_id, 'rationale', e.target.value)}
                                                         />
                                                     )
@@ -903,7 +925,7 @@ const ValidationPlanForm = forwardRef<ValidationPlanFormHandle, Props>(({ reques
             {/* Action Buttons */}
             <div className="flex justify-between">
                 <div>
-                    {canEdit && plan && !plan.locked_at && (
+                    {canEdit && isEditing && plan && !plan.locked_at && (
                         <button
                             onClick={handleDeletePlan}
                             disabled={saving}
@@ -920,14 +942,31 @@ const ValidationPlanForm = forwardRef<ValidationPlanFormHandle, Props>(({ reques
                     >
                         Export PDF
                     </button>
-                    {canEdit && (
-                        <button
-                            onClick={handleSave}
-                            disabled={saving}
-                            className="btn-primary"
-                        >
-                            {saving ? 'Saving...' : 'Save Validation Plan'}
-                        </button>
+                    {canEdit && isEditing && (
+                        <>
+                            <button
+                                onClick={() => {
+                                    // Reset form data to saved plan state and exit edit mode
+                                    if (plan) {
+                                        setFormData(plan);
+                                    }
+                                    setHasUnsavedChanges(false);
+                                    setError(null);
+                                    setIsEditing(false);
+                                }}
+                                disabled={saving}
+                                className="px-4 py-2 border border-gray-300 rounded hover:bg-gray-50"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={handleSave}
+                                disabled={saving}
+                                className="btn-primary"
+                            >
+                                {saving ? 'Saving...' : 'Save Validation Plan'}
+                            </button>
+                        </>
                     )}
                 </div>
             </div>
