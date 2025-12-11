@@ -416,6 +416,39 @@ def seed_taxonomy_reference_data(db):
             },
         ],
     )
+    # Model Approval Status - computed status for model validation state
+    _upsert_taxonomy_with_values(
+        db,
+        name="Model Approval Status",
+        description="Computed status indicating whether a model is approved for use based on its validation history.",
+        values=[
+            {
+                "code": "NEVER_VALIDATED",
+                "label": "Never Validated",
+                "description": "No validation request has ever been approved for this model",
+            },
+            {
+                "code": "APPROVED",
+                "label": "Approved",
+                "description": "Most recent validation is APPROVED with all required approvals complete",
+            },
+            {
+                "code": "INTERIM_APPROVED",
+                "label": "Interim Approved",
+                "description": "Most recent completed validation was of INTERIM type (temporary/expedited approval)",
+            },
+            {
+                "code": "VALIDATION_IN_PROGRESS",
+                "label": "Validation In Progress",
+                "description": "Model is overdue but has an active validation request in planning stage or later",
+            },
+            {
+                "code": "EXPIRED",
+                "label": "Expired",
+                "description": "Model is overdue with no active validation or validation still in INTAKE stage",
+            },
+        ],
+    )
     # Limitation Category taxonomy for classifying model limitations
     _upsert_taxonomy_with_values(
         db,

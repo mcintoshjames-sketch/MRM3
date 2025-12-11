@@ -1689,6 +1689,19 @@ def create_validation_request(
         evaluate_and_create_conditional_approvals(
             db, validation_request, primary_model)
 
+    # ===== UPDATE MODEL APPROVAL STATUS =====
+    # When a validation request is created, models transition to VALIDATION_IN_PROGRESS
+    from app.core.model_approval_status import update_model_approval_status_if_changed
+    for model in models:
+        update_model_approval_status_if_changed(
+            model=model,
+            db=db,
+            trigger_type="VALIDATION_REQUEST_CREATED",
+            trigger_entity_type="ValidationRequest",
+            trigger_entity_id=validation_request.request_id,
+            notes=f"Validation request created with status: Intake"
+        )
+
     db.commit()
 
     # Reload with relationships (including approvals with their approver)
@@ -2239,11 +2252,14 @@ def update_validation_request_status(
                 )
 
         # Validate plan compliance (deviations must have rationale)
+        # Pass validation type code so scope-only types skip component checks
+        val_type_code = validation_request.validation_type.code if validation_request.validation_type else None
         is_valid, validation_errors = validate_plan_compliance(
             db,
             request_id,
             require_plan=requires_plan,
-            required_region_codes=plan_region_codes
+            required_region_codes=plan_region_codes,
+            validation_type_code=val_type_code
         )
         if not is_valid:
             error_message = "Validation plan compliance issues:\n" + \
@@ -2283,11 +2299,14 @@ def update_validation_request_status(
                 )
 
         # Validate plan compliance (deviations must have rationale)
+        # Pass validation type code so scope-only types skip component checks
+        val_type_code = validation_request.validation_type.code if validation_request.validation_type else None
         is_valid, validation_errors = validate_plan_compliance(
             db,
             request_id,
             require_plan=requires_plan,
-            required_region_codes=plan_region_codes
+            required_region_codes=plan_region_codes,
+            validation_type_code=val_type_code
         )
         if not is_valid:
             error_message = "Validation plan compliance issues:\n" + \
@@ -2599,6 +2618,20 @@ def update_validation_request_status(
     update_version_statuses_for_validation(
         db, validation_request, new_status_code, current_user
     )
+
+    # ===== UPDATE MODEL APPROVAL STATUS =====
+    # Recalculate approval status for all models in this validation request
+    # and record history if status changed
+    from app.core.model_approval_status import update_model_approval_status_if_changed
+    for model in validation_request.models:
+        update_model_approval_status_if_changed(
+            model=model,
+            db=db,
+            trigger_type="VALIDATION_STATUS_CHANGE",
+            trigger_entity_type="ValidationRequest",
+            trigger_entity_id=request_id,
+            notes=f"Validation request status changed from {old_status_code or 'None'} to {new_status_code}"
+        )
 
     db.commit()
     db.refresh(validation_request)
@@ -4078,6 +4111,9 @@ def submit_approval(
     ).first()
 
     if validation_request:
+        # Flush pending changes so the query below sees the updated approval status/date
+        db.flush()
+
         # Recalculate completion_date based on all approvals
         latest_approval_date = db.query(func.max(ValidationApproval.approved_at)).filter(
             ValidationApproval.request_id == approval.request_id,
@@ -4146,6 +4182,21 @@ def submit_approval(
                             timestamp=utc_now()
                         )
                         db.add(status_audit)
+
+    # ===== UPDATE MODEL APPROVAL STATUS =====
+    # Recalculate approval status for all models in this validation request
+    # and record history if status changed
+    if validation_request:
+        from app.core.model_approval_status import update_model_approval_status_if_changed
+        for model in validation_request.models:
+            update_model_approval_status_if_changed(
+                model=model,
+                db=db,
+                trigger_type="APPROVAL_SUBMITTED",
+                trigger_entity_type="ValidationApproval",
+                trigger_entity_id=approval_id,
+                notes=f"Approval submitted with status: {update_data.approval_status}"
+            )
 
     db.commit()
     db.refresh(approval)
@@ -5657,7 +5708,8 @@ def validate_plan_compliance(
     db: Session,
     request_id: int,
     require_plan: bool = False,
-    required_region_codes: Optional[List[str]] = None
+    required_region_codes: Optional[List[str]] = None,
+    validation_type_code: Optional[str] = None
 ) -> tuple[bool, List[str]]:
     """
     Validate that a validation plan meets compliance requirements before submission.
@@ -5666,6 +5718,10 @@ def validate_plan_compliance(
     1. All components marked as deviation must have rationale
     2. If material_deviation_from_standard is true, must have overall_deviation_rationale
     3. (Optional) Plan existence required when configured per-region
+    4. Component 9b (Monitoring Plan Review) validation - only for full plan types
+
+    Note: For scope-only validation types (TARGETED, INTERIM), component-level checks
+    are skipped since these types only have scope summaries, not component planning.
 
     Returns: (is_valid, list_of_error_messages)
     """
@@ -5694,16 +5750,24 @@ def validate_plan_compliance(
                 "Material deviation from standard is marked, but no overall deviation rationale provided"
             )
 
-    # Check all component deviations have rationale
-    for comp in plan.components:
-        if comp.is_deviation:
-            if not comp.rationale or not comp.rationale.strip():
-                errors.append(
-                    f"Component {comp.component_definition.component_code} ({comp.component_definition.component_title}) "
-                    f"is marked as deviation but has no rationale"
-                )
+    # For scope-only validation types (TARGETED, INTERIM), skip component-level checks
+    # These types only have scope summaries, not component-level planning
+    is_scope_only = validation_type_code in SCOPE_ONLY_VALIDATION_TYPES
+
+    if not is_scope_only:
+        # Check all component deviations have rationale
+        for comp in plan.components:
+            if comp.is_deviation:
+                if not comp.rationale or not comp.rationale.strip():
+                    errors.append(
+                        f"Component {comp.component_definition.component_code} ({comp.component_definition.component_title}) "
+                        f"is marked as deviation but has no rationale"
+                    )
 
     # ===== COMPONENT 9b VALIDATION (Performance Monitoring Plan Review) =====
+    # Skip for scope-only validation types
+    if is_scope_only:
+        return len(errors) == 0, errors
     # Find component 9b in the plan
     comp_9b = next(
         (c for c in plan.components if c.component_definition.component_code == "9b"),

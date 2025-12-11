@@ -13,6 +13,7 @@ from app.models.model_version_region import ModelVersionRegion
 from app.models.model_delegate import ModelDelegate
 from app.models.model_submission_comment import ModelSubmissionComment
 from app.models.model_name_history import ModelNameHistory
+from app.models.model_approval_status_history import ModelApprovalStatusHistory
 from app.models.model_change_taxonomy import ModelChangeCategory, ModelChangeType
 from app.models.model_type_taxonomy import ModelTypeCategory, ModelType
 from app.models.methodology import MethodologyCategory, Methodology
@@ -128,6 +129,7 @@ __all__ = [
     "ModelDelegate",
     "ModelSubmissionComment",
     "ModelNameHistory",
+    "ModelApprovalStatusHistory",
     "ModelChangeCategory",
     "ModelChangeType",
     "ModelTypeCategory",

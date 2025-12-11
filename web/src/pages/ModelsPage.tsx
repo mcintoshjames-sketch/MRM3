@@ -106,6 +106,14 @@ interface Model {
     methodology: Methodology | null;
     ownership_type: TaxonomyValue | null;
     regulatory_categories: TaxonomyValue[];
+    // Computed validation fields
+    scorecard_outcome: string | null;
+    residual_risk: string | null;
+    // Computed approval status fields
+    approval_status: string | null;
+    approval_status_label: string | null;
+    // Computed from model version history
+    model_last_updated: string | null;
 }
 
 export default function ModelsPage() {
@@ -249,12 +257,16 @@ export default function ModelsPage() {
         { key: 'ownership_type', label: 'Ownership Type', default: false },
         { key: 'model_type', label: 'Model Type', default: false },
         { key: 'regulatory_categories', label: 'Regulatory Categories', default: false },
+        { key: 'scorecard_outcome', label: 'Scorecard Outcome', default: false },
+        { key: 'residual_risk', label: 'Residual Risk', default: false },
+        { key: 'approval_status', label: 'Approval Status', default: false },
         { key: 'description', label: 'Description', default: false },
         { key: 'development_type', label: 'Development Type', default: false },
         { key: 'wholly_owned_region', label: 'Wholly Owned Region', default: false },
-        { key: 'row_approval_status', label: 'Approval Status', default: false },
+        { key: 'row_approval_status', label: 'Inventory Acceptance', default: false },
         { key: 'created_at', label: 'Created Date', default: false },
-        { key: 'updated_at', label: 'Updated Date', default: false }
+        { key: 'updated_at', label: 'Modified On', default: false },
+        { key: 'model_last_updated', label: 'Model Last Updated', default: true }
     ];
 
     // Define default preset views
@@ -793,6 +805,67 @@ export default function ModelsPage() {
                 : '-',
             csvValue: (model) => model.regulatory_categories?.map(rc => rc.label).join('; ') || ''
         },
+        scorecard_outcome: {
+            header: 'Scorecard Outcome',
+            sortKey: 'scorecard_outcome',
+            cell: (model) => model.scorecard_outcome ? (
+                <span className={`px-2 py-1 text-xs rounded font-medium ${
+                    model.scorecard_outcome === 'Green' ? 'bg-green-100 text-green-800' :
+                    model.scorecard_outcome === 'Green-' ? 'bg-green-100 text-green-700' :
+                    model.scorecard_outcome === 'Yellow+' ? 'bg-yellow-100 text-yellow-800' :
+                    model.scorecard_outcome === 'Yellow' ? 'bg-yellow-100 text-yellow-700' :
+                    model.scorecard_outcome === 'Yellow-' ? 'bg-orange-100 text-orange-800' :
+                    model.scorecard_outcome === 'Red' ? 'bg-red-100 text-red-800' :
+                    'bg-gray-100 text-gray-700'
+                }`}>
+                    {model.scorecard_outcome}
+                </span>
+            ) : (
+                <span className="text-gray-400">-</span>
+            ),
+            csvValue: (model) => model.scorecard_outcome || ''
+        },
+        residual_risk: {
+            header: 'Residual Risk',
+            sortKey: 'residual_risk',
+            cell: (model) => model.residual_risk ? (
+                <span className={`px-2 py-1 text-xs rounded font-medium ${
+                    model.residual_risk === 'High' ? 'bg-red-100 text-red-800' :
+                    model.residual_risk === 'Medium' ? 'bg-yellow-100 text-yellow-800' :
+                    model.residual_risk === 'Low' ? 'bg-green-100 text-green-800' :
+                    'bg-gray-100 text-gray-700'
+                }`}>
+                    {model.residual_risk}
+                </span>
+            ) : (
+                <span className="text-gray-400">-</span>
+            ),
+            csvValue: (model) => model.residual_risk || ''
+        },
+        approval_status: {
+            header: 'Approval Status',
+            sortKey: 'approval_status',
+            cell: (model) => {
+                if (!model.approval_status) {
+                    return <span className="text-gray-400">-</span>;
+                }
+                // Badge colors based on status
+                const badgeClasses = {
+                    'NEVER_VALIDATED': 'bg-gray-100 text-gray-800',
+                    'APPROVED': 'bg-green-100 text-green-800',
+                    'INTERIM_APPROVED': 'bg-yellow-100 text-yellow-800',
+                    'VALIDATION_IN_PROGRESS': 'bg-blue-100 text-blue-800',
+                    'EXPIRED': 'bg-red-100 text-red-800'
+                };
+                const className = badgeClasses[model.approval_status as keyof typeof badgeClasses] || 'bg-gray-100 text-gray-700';
+                return (
+                    <span className={`px-2 py-1 text-xs rounded font-medium ${className}`}>
+                        {model.approval_status_label || model.approval_status}
+                    </span>
+                );
+            },
+            csvValue: (model) => model.approval_status_label || model.approval_status || ''
+        },
         description: {
             header: 'Description',
             cell: (model) => model.description ? (
@@ -819,10 +892,24 @@ export default function ModelsPage() {
                 : ''
         },
         row_approval_status: {
-            header: 'Approval Status',
+            header: 'Inventory Acceptance',
             sortKey: 'row_approval_status',
-            cell: (model) => model.row_approval_status || 'Approved',
-            csvValue: (model) => model.row_approval_status || 'Approved'
+            cell: (model) => {
+                const status = model.row_approval_status;
+                if (!status) return 'Accepted';
+                if (status === 'pending') return 'Pending';
+                if (status === 'needs_revision') return 'Needs Revision';
+                if (status === 'rejected') return 'Rejected';
+                return status;
+            },
+            csvValue: (model) => {
+                const status = model.row_approval_status;
+                if (!status) return 'Accepted';
+                if (status === 'pending') return 'Pending';
+                if (status === 'needs_revision') return 'Needs Revision';
+                if (status === 'rejected') return 'Rejected';
+                return status;
+            }
         },
         created_at: {
             header: 'Created Date',
@@ -831,10 +918,16 @@ export default function ModelsPage() {
             csvValue: (model) => model.created_at.split('T')[0]
         },
         updated_at: {
-            header: 'Updated Date',
+            header: 'Modified On',
             sortKey: 'updated_at',
             cell: (model) => model.updated_at.split('T')[0],
             csvValue: (model) => model.updated_at.split('T')[0]
+        },
+        model_last_updated: {
+            header: 'Model Last Updated',
+            sortKey: 'model_last_updated',
+            cell: (model) => model.model_last_updated ? model.model_last_updated.split('T')[0] : '',
+            csvValue: (model) => model.model_last_updated ? model.model_last_updated.split('T')[0] : ''
         }
     };
 

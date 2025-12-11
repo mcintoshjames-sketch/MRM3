@@ -28,7 +28,9 @@ from app.models.risk_assessment import ModelRiskAssessment
 from app.schemas.model import (
     ModelCreate, ModelUpdate, ModelDetailResponse, ValidationGroupingSuggestion, ModelCreateResponse,
     ModelNameHistoryItem, ModelNameHistoryResponse, NameChangeStatistics,
-    ModelRolesWithLOB, UserWithLOBRollup
+    ModelRolesWithLOB, UserWithLOBRollup,
+    ModelApprovalStatusResponse, ModelApprovalStatusHistoryItem, ModelApprovalStatusHistoryResponse,
+    BulkApprovalStatusRequest, BulkApprovalStatusItem, BulkApprovalStatusResponse
 )
 from app.core.lob_utils import get_user_lob_rollup_name
 from app.schemas.submission_action import SubmissionAction, SubmissionFeedback, SubmissionCommentCreate
@@ -50,6 +52,26 @@ def create_audit_log(db: Session, entity_type: str, entity_id: int, action: str,
     )
     db.add(audit_log)
     # Note: commit happens with the main transaction
+
+
+def get_model_last_updated(model: Model) -> Optional[date]:
+    """Get actual production date from model's latest ACTIVE version.
+
+    Returns the actual_production_date of the latest ACTIVE version.
+    Returns None if no ACTIVE version exists or if actual_production_date is not set.
+
+    Note: Only uses actual_production_date (not planned_production_date or legacy
+    production_date) to ensure we display when the model was actually deployed,
+    not future planned dates.
+    """
+    # versions relationship is ordered by created_at DESC
+    active_version = next(
+        (v for v in model.versions if v.status == "ACTIVE"),
+        None
+    )
+    if active_version:
+        return active_version.actual_production_date
+    return None
 
 
 def _format_audit_changes(changes: dict, db: Session) -> Optional[str]:
@@ -284,7 +306,9 @@ def list_models(
         joinedload(Model.submitted_by_user),
         joinedload(Model.wholly_owned_region),  # For regional ownership models
         # For ownership taxonomy classification
-        joinedload(Model.ownership_type)
+        joinedload(Model.ownership_type),
+        # For model_last_updated computation (production date of latest ACTIVE version)
+        joinedload(Model.versions)
         # Note: submission_comments intentionally excluded from list view for performance
         # They are only loaded in the detail endpoint where they're actually displayed
     )
@@ -307,7 +331,35 @@ def list_models(
         # Filter out sub-models from results
         models = [m for m in models if m.model_id not in sub_model_ids]
 
-    return models
+    # Compute scorecard_outcome, residual_risk, and approval_status for each model
+    from app.core.final_rating import compute_final_model_risk_ranking
+    from app.core.model_approval_status import compute_model_approval_status, get_status_label
+
+    results = []
+    for model in models:
+        # Convert model to dict for response with computed fields
+        model_dict = ModelDetailResponse.model_validate(model).model_dump()
+
+        # Compute final risk ranking
+        risk_ranking = compute_final_model_risk_ranking(db, model.model_id)
+        if risk_ranking:
+            model_dict['scorecard_outcome'] = risk_ranking.get('original_scorecard')
+            model_dict['residual_risk'] = risk_ranking.get('final_rating')
+        else:
+            model_dict['scorecard_outcome'] = None
+            model_dict['residual_risk'] = None
+
+        # Compute model approval status
+        status_code, context = compute_model_approval_status(model, db)
+        model_dict['approval_status'] = status_code
+        model_dict['approval_status_label'] = get_status_label(status_code)
+
+        # Compute model last updated from latest ACTIVE version
+        model_dict['model_last_updated'] = get_model_last_updated(model)
+
+        results.append(model_dict)
+
+    return results
 
 
 @router.post("/", response_model=ModelCreateResponse, status_code=status.HTTP_201_CREATED)
@@ -672,7 +724,8 @@ def create_model(
             ModelSubmissionComment.user),
         joinedload(Model.shared_owner),
         joinedload(Model.shared_developer),
-        joinedload(Model.monitoring_manager)
+        joinedload(Model.monitoring_manager),
+        joinedload(Model.versions)  # For model_last_updated computation
     ).filter(Model.model_id == model.model_id).first()
 
     # Return model with warnings if any
@@ -850,6 +903,104 @@ def get_my_submissions(
     return models
 
 
+@router.post("/approval-status/bulk", response_model=BulkApprovalStatusResponse)
+def bulk_compute_approval_status(
+    request: BulkApprovalStatusRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Compute approval status for multiple models in a single request.
+
+    This endpoint is useful for dashboard displays and batch operations where
+    you need to know the approval status of many models at once without making
+    individual API calls.
+
+    Returns status information including:
+    - Current approval status (NEVER_VALIDATED, APPROVED, INTERIM_APPROVED, VALIDATION_IN_PROGRESS, EXPIRED)
+    - Whether the model is overdue for revalidation
+    - Days until next validation due
+    """
+    from app.core.model_approval_status import compute_model_approval_status, get_status_label
+
+    results = []
+    found_count = 0
+
+    for model_id in request.model_ids:
+        model = db.query(Model).filter(Model.model_id == model_id).first()
+
+        if not model:
+            results.append(BulkApprovalStatusItem(
+                model_id=model_id,
+                error=f"Model {model_id} not found"
+            ))
+            continue
+
+        found_count += 1
+
+        try:
+            status_code, context = compute_model_approval_status(model, db)
+            results.append(BulkApprovalStatusItem(
+                model_id=model_id,
+                model_name=model.model_name,
+                approval_status=status_code,
+                approval_status_label=get_status_label(status_code),
+                is_overdue=context.get("is_overdue", False),
+                next_validation_due=context.get("next_validation_due"),
+                days_until_due=context.get("days_until_due")
+            ))
+        except Exception as e:
+            results.append(BulkApprovalStatusItem(
+                model_id=model_id,
+                model_name=model.model_name,
+                error=str(e)
+            ))
+
+    return BulkApprovalStatusResponse(
+        total_requested=len(request.model_ids),
+        total_found=found_count,
+        results=results
+    )
+
+
+@router.post("/approval-status/backfill")
+def backfill_approval_status(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Backfill initial approval status history records for all models.
+
+    This is an admin-only endpoint that creates initial ModelApprovalStatusHistory
+    records for any models that don't already have them. This should typically be
+    run once after the feature is deployed to populate history for existing models.
+
+    Returns:
+    - records_created: Number of new history records created
+    - message: Summary of the operation
+    """
+    # Admin only
+    if current_user.role != "Admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only administrators can run the backfill"
+        )
+
+    from app.core.model_approval_status import backfill_model_approval_status
+
+    try:
+        count = backfill_model_approval_status(db)
+        return {
+            "records_created": count,
+            "message": f"Successfully created {count} initial approval status history records"
+        }
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Backfill failed: {str(e)}"
+        )
+
+
 @router.get("/{model_id}", response_model=ModelDetailResponse)
 def get_model(
     model_id: int,
@@ -887,7 +1038,8 @@ def get_model(
         joinedload(Model.model_type),
         joinedload(Model.methodology).joinedload(Methodology.category),
         joinedload(Model.wholly_owned_region),
-        joinedload(Model.regulatory_categories)
+        joinedload(Model.regulatory_categories),
+        joinedload(Model.versions)  # For model_last_updated computation
     ).filter(Model.model_id == model_id).first()
 
     if not model:
@@ -895,7 +1047,30 @@ def get_model(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Model not found"
         )
-    return model
+
+    # Convert model to dict and add computed fields
+    model_dict = ModelDetailResponse.model_validate(model).model_dump()
+
+    # Compute final risk ranking (scorecard_outcome and residual_risk)
+    from app.core.final_rating import compute_final_model_risk_ranking
+    risk_ranking = compute_final_model_risk_ranking(db, model.model_id)
+    if risk_ranking:
+        model_dict['scorecard_outcome'] = risk_ranking.get('original_scorecard')
+        model_dict['residual_risk'] = risk_ranking.get('final_rating')
+    else:
+        model_dict['scorecard_outcome'] = None
+        model_dict['residual_risk'] = None
+
+    # Compute approval status
+    from app.core.model_approval_status import compute_model_approval_status, get_status_label
+    approval_status_code, _ = compute_model_approval_status(model, db)
+    model_dict['approval_status'] = approval_status_code
+    model_dict['approval_status_label'] = get_status_label(approval_status_code)
+
+    # Compute model last updated from latest ACTIVE version
+    model_dict['model_last_updated'] = get_model_last_updated(model)
+
+    return model_dict
 
 
 @router.get("/{model_id}/roles-with-lob", response_model=ModelRolesWithLOB)
@@ -2821,3 +2996,120 @@ def get_final_risk_ranking(
         )
 
     return FinalRiskRankingResponse(**result)
+
+
+# =============================================================================
+# Model Approval Status
+# =============================================================================
+
+@router.get("/{model_id}/approval-status", response_model=ModelApprovalStatusResponse)
+def get_model_approval_status(
+    model_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Get the current approval status for a model.
+
+    The approval status answers: "Is this model currently approved for use
+    based on its validation history?"
+
+    Status values:
+    - NEVER_VALIDATED: No validation has ever been approved for this model
+    - APPROVED: Most recent validation is APPROVED with all required approvals complete
+    - INTERIM_APPROVED: Most recent completed validation was of INTERIM type
+    - VALIDATION_IN_PROGRESS: Model is overdue but has active validation in substantive stage
+    - EXPIRED: Model is overdue with no active validation or validation still in INTAKE
+    """
+    from app.core.model_approval_status import (
+        compute_model_approval_status,
+        get_status_label
+    )
+
+    model = db.query(Model).filter(Model.model_id == model_id).first()
+    if not model:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Model not found"
+        )
+
+    # Compute current status
+    status_code, context = compute_model_approval_status(model, db)
+
+    return ModelApprovalStatusResponse(
+        model_id=model.model_id,
+        model_name=model.model_name,
+        is_model=getattr(model, 'is_model', True),
+        approval_status=status_code,
+        approval_status_label=get_status_label(status_code),
+        status_determined_at=context.get("computed_at"),
+        latest_approved_validation_id=context.get("latest_approved_validation_id"),
+        latest_approved_validation_date=context.get("latest_approved_date"),
+        latest_approved_validation_type=context.get("validation_type_label"),
+        active_validation_id=context.get("active_validation_id"),
+        active_validation_status=context.get("active_validation_status"),
+        all_approvals_complete=context.get("approvals_complete", True),
+        pending_approval_count=context.get("pending_approval_count", 0),
+        next_validation_due_date=context.get("next_validation_due"),
+        days_until_due=context.get("days_until_due"),
+        is_overdue=context.get("is_overdue", False),
+    )
+
+
+@router.get("/{model_id}/approval-status/history", response_model=ModelApprovalStatusHistoryResponse)
+def get_model_approval_status_history(
+    model_id: int,
+    limit: int = 50,
+    offset: int = 0,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Get the approval status history for a specific model.
+
+    Returns all status changes in reverse chronological order.
+    """
+    from app.models.model_approval_status_history import ModelApprovalStatusHistory
+    from app.core.model_approval_status import get_status_label
+
+    model = db.query(Model).filter(Model.model_id == model_id).first()
+    if not model:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Model not found"
+        )
+
+    # Get total count
+    total_count = db.query(ModelApprovalStatusHistory).filter(
+        ModelApprovalStatusHistory.model_id == model_id
+    ).count()
+
+    # Get paginated history
+    history_records = db.query(ModelApprovalStatusHistory).filter(
+        ModelApprovalStatusHistory.model_id == model_id
+    ).order_by(
+        ModelApprovalStatusHistory.changed_at.desc()
+    ).offset(offset).limit(limit).all()
+
+    history_items = [
+        ModelApprovalStatusHistoryItem(
+            history_id=record.history_id,
+            old_status=record.old_status,
+            old_status_label=get_status_label(record.old_status),
+            new_status=record.new_status,
+            new_status_label=get_status_label(record.new_status),
+            changed_at=record.changed_at,
+            trigger_type=record.trigger_type,
+            trigger_entity_type=record.trigger_entity_type,
+            trigger_entity_id=record.trigger_entity_id,
+            notes=record.notes,
+        )
+        for record in history_records
+    ]
+
+    return ModelApprovalStatusHistoryResponse(
+        model_id=model.model_id,
+        model_name=model.model_name,
+        total_count=total_count,
+        history=history_items,
+    )

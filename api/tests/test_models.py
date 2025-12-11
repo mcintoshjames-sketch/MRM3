@@ -394,3 +394,195 @@ class TestBusinessLineName:
         assert "business_line_name" in data
         # test_user's LOB is Retail Banking (level 1)
         assert data["business_line_name"] == "Retail Banking"
+
+
+class TestModelLastUpdated:
+    """Test model_last_updated computed field (production date of latest ACTIVE version)."""
+
+    def test_model_last_updated_no_versions(self, client, auth_headers, sample_model):
+        """Test model_last_updated is null when model has no versions."""
+        response = client.get(f"/models/{sample_model.model_id}", headers=auth_headers)
+        assert response.status_code == 200
+        data = response.json()
+        assert "model_last_updated" in data
+        assert data["model_last_updated"] is None
+
+    def test_model_last_updated_no_active_version(
+        self, client, auth_headers, db_session, sample_model, test_user
+    ):
+        """Test model_last_updated is null when no ACTIVE version exists."""
+        from datetime import date
+        from app.models.model_version import ModelVersion
+
+        # Create a DRAFT version (not ACTIVE)
+        version = ModelVersion(
+            model_id=sample_model.model_id,
+            version_number="1.0",
+            change_type="MAJOR",
+            change_description="Initial version",
+            created_by_id=test_user.user_id,
+            status="DRAFT",
+            actual_production_date=date(2025, 1, 15)
+        )
+        db_session.add(version)
+        db_session.commit()
+
+        response = client.get(f"/models/{sample_model.model_id}", headers=auth_headers)
+        assert response.status_code == 200
+        data = response.json()
+        assert data["model_last_updated"] is None
+
+    def test_model_last_updated_with_active_version(
+        self, client, auth_headers, db_session, sample_model, test_user
+    ):
+        """Test model_last_updated returns actual_production_date of ACTIVE version."""
+        from datetime import date
+        from app.models.model_version import ModelVersion
+
+        # Create an ACTIVE version with actual_production_date
+        version = ModelVersion(
+            model_id=sample_model.model_id,
+            version_number="1.0",
+            change_type="MAJOR",
+            change_description="Production version",
+            created_by_id=test_user.user_id,
+            status="ACTIVE",
+            actual_production_date=date(2025, 6, 15)
+        )
+        db_session.add(version)
+        db_session.commit()
+
+        response = client.get(f"/models/{sample_model.model_id}", headers=auth_headers)
+        assert response.status_code == 200
+        data = response.json()
+        assert data["model_last_updated"] == "2025-06-15"
+
+    def test_model_last_updated_ignores_planned_production_date(
+        self, client, auth_headers, db_session, sample_model, test_user
+    ):
+        """Test model_last_updated does NOT fall back to planned_production_date."""
+        from datetime import date
+        from app.models.model_version import ModelVersion
+
+        # Create ACTIVE version with only planned_production_date (no actual)
+        version = ModelVersion(
+            model_id=sample_model.model_id,
+            version_number="1.0",
+            change_type="MAJOR",
+            change_description="Planned version",
+            created_by_id=test_user.user_id,
+            status="ACTIVE",
+            planned_production_date=date(2025, 12, 25),  # Future date
+            actual_production_date=None  # Not yet deployed
+        )
+        db_session.add(version)
+        db_session.commit()
+
+        response = client.get(f"/models/{sample_model.model_id}", headers=auth_headers)
+        assert response.status_code == 200
+        data = response.json()
+        # Should be null - NOT the planned_production_date
+        assert data["model_last_updated"] is None
+
+    def test_model_last_updated_ignores_legacy_production_date(
+        self, client, auth_headers, db_session, sample_model, test_user
+    ):
+        """Test model_last_updated does NOT fall back to legacy production_date field."""
+        from datetime import date
+        from app.models.model_version import ModelVersion
+
+        # Create ACTIVE version with only legacy production_date (no actual)
+        version = ModelVersion(
+            model_id=sample_model.model_id,
+            version_number="1.0",
+            change_type="MAJOR",
+            change_description="Legacy version",
+            created_by_id=test_user.user_id,
+            status="ACTIVE",
+            production_date=date(2024, 1, 1),  # Legacy field
+            actual_production_date=None  # Not using actual field
+        )
+        db_session.add(version)
+        db_session.commit()
+
+        response = client.get(f"/models/{sample_model.model_id}", headers=auth_headers)
+        assert response.status_code == 200
+        data = response.json()
+        # Should be null - NOT the legacy production_date
+        assert data["model_last_updated"] is None
+
+    def test_model_last_updated_in_list_endpoint(
+        self, client, auth_headers, db_session, sample_model, test_user
+    ):
+        """Test model_last_updated is included in list endpoint."""
+        from datetime import date
+        from app.models.model_version import ModelVersion
+
+        # Create ACTIVE version
+        version = ModelVersion(
+            model_id=sample_model.model_id,
+            version_number="1.0",
+            change_type="MAJOR",
+            change_description="Production version",
+            created_by_id=test_user.user_id,
+            status="ACTIVE",
+            actual_production_date=date(2025, 3, 20)
+        )
+        db_session.add(version)
+        db_session.commit()
+
+        response = client.get("/models/", headers=auth_headers)
+        assert response.status_code == 200
+        data = response.json()
+        assert len(data) == 1
+        assert data[0]["model_last_updated"] == "2025-03-20"
+
+    def test_model_last_updated_multiple_versions_returns_active(
+        self, client, auth_headers, db_session, sample_model, test_user
+    ):
+        """Test model_last_updated returns date from ACTIVE version when multiple exist."""
+        from datetime import date
+        from app.models.model_version import ModelVersion
+
+        # Create SUPERSEDED version (older)
+        old_version = ModelVersion(
+            model_id=sample_model.model_id,
+            version_number="1.0",
+            change_type="MAJOR",
+            change_description="Old version",
+            created_by_id=test_user.user_id,
+            status="SUPERSEDED",
+            actual_production_date=date(2024, 1, 1)
+        )
+        db_session.add(old_version)
+
+        # Create ACTIVE version (current)
+        active_version = ModelVersion(
+            model_id=sample_model.model_id,
+            version_number="2.0",
+            change_type="MAJOR",
+            change_description="Current version",
+            created_by_id=test_user.user_id,
+            status="ACTIVE",
+            actual_production_date=date(2025, 6, 1)
+        )
+        db_session.add(active_version)
+
+        # Create DRAFT version (future)
+        draft_version = ModelVersion(
+            model_id=sample_model.model_id,
+            version_number="3.0",
+            change_type="MINOR",
+            change_description="Future version",
+            created_by_id=test_user.user_id,
+            status="DRAFT",
+            planned_production_date=date(2025, 12, 1)
+        )
+        db_session.add(draft_version)
+        db_session.commit()
+
+        response = client.get(f"/models/{sample_model.model_id}", headers=auth_headers)
+        assert response.status_code == 200
+        data = response.json()
+        # Should return the ACTIVE version's date, not SUPERSEDED or DRAFT
+        assert data["model_last_updated"] == "2025-06-01"

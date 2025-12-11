@@ -203,6 +203,10 @@ class Model(Base):
     name_history: Mapped[List["ModelNameHistory"]] = relationship(
         "ModelNameHistory", back_populates="model", cascade="all, delete-orphan", order_by="ModelNameHistory.changed_at.desc()"
     )
+    # Model approval status history
+    approval_status_history: Mapped[List["ModelApprovalStatusHistory"]] = relationship(
+        "ModelApprovalStatusHistory", back_populates="model", cascade="all, delete-orphan", order_by="ModelApprovalStatusHistory.changed_at.desc()"
+    )
 
     # Model hierarchy relationships
     child_relationships: Mapped[List["ModelHierarchy"]] = relationship(

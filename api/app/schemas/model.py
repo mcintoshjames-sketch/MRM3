@@ -130,6 +130,8 @@ class ModelResponse(ModelBase):
     submitted_at: Optional[datetime] = None
     # Computed field: Owner's LOB rolled up to LOB4 level
     business_line_name: Optional[str] = None
+    # Computed field: Production date of latest ACTIVE version
+    model_last_updated: Optional[date] = None
 
     class Config:
         from_attributes = True
@@ -166,6 +168,12 @@ class ModelDetailResponse(ModelResponse):
     regulatory_categories: List[TaxonomyValueResponse] = []
     regions: List[ModelRegionListItem] = []
     submission_comments: List[ModelSubmissionCommentResponse] = []
+    # Computed validation fields (populated from final_risk_ranking computation)
+    scorecard_outcome: Optional[str] = None
+    residual_risk: Optional[str] = None
+    # Computed approval status fields (populated from model_approval_status computation)
+    approval_status: Optional[str] = None  # NEVER_VALIDATED, APPROVED, INTERIM_APPROVED, VALIDATION_IN_PROGRESS, EXPIRED
+    approval_status_label: Optional[str] = None  # Human-readable label
 
     class Config:
         from_attributes = True
@@ -316,3 +324,82 @@ class ModelUpdateWithPendingResponse(BaseModel):
     status: str
     proposed_changes: dict
     model_id: int
+
+
+# Model Approval Status Schemas
+class ModelApprovalStatusResponse(BaseModel):
+    """Response schema for a model's current approval status."""
+    model_id: int
+    model_name: str
+    is_model: bool = True
+
+    # Current status
+    approval_status: Optional[str] = None  # NULL for non-models
+    approval_status_label: Optional[str] = None
+    status_determined_at: datetime
+
+    # Validation context
+    latest_approved_validation_id: Optional[int] = None
+    latest_approved_validation_date: Optional[datetime] = None
+    latest_approved_validation_type: Optional[str] = None  # INITIAL, COMPREHENSIVE, INTERIM, etc.
+
+    active_validation_id: Optional[int] = None
+    active_validation_status: Optional[str] = None
+
+    # Approval details
+    all_approvals_complete: bool = True
+    pending_approval_count: int = 0
+
+    # Expiration context
+    next_validation_due_date: Optional[date] = None
+    days_until_due: Optional[int] = None  # Negative if overdue
+    is_overdue: bool = False
+
+
+class ModelApprovalStatusHistoryItem(BaseModel):
+    """Response schema for a single approval status change record."""
+    history_id: int
+    old_status: Optional[str] = None
+    old_status_label: Optional[str] = None
+    new_status: str
+    new_status_label: str
+    changed_at: datetime
+    trigger_type: str
+    trigger_entity_type: Optional[str] = None
+    trigger_entity_id: Optional[int] = None
+    notes: Optional[str] = None
+
+    class Config:
+        from_attributes = True
+
+
+class ModelApprovalStatusHistoryResponse(BaseModel):
+    """Response schema for approval status history of a model."""
+    model_id: int
+    model_name: str
+    total_count: int
+    history: List[ModelApprovalStatusHistoryItem]
+
+
+class BulkApprovalStatusRequest(BaseModel):
+    """Request schema for bulk approval status computation."""
+    model_ids: List[int]
+
+
+class BulkApprovalStatusItem(BaseModel):
+    """Response schema for a single model in bulk approval status computation."""
+    model_id: int
+    model_name: Optional[str] = None
+    approval_status: Optional[str] = None
+    approval_status_label: Optional[str] = None
+    is_overdue: bool = False
+    next_validation_due: Optional[date] = None
+    days_until_due: Optional[int] = None
+    error: Optional[str] = None  # Set if model not found or error occurred
+
+
+class BulkApprovalStatusResponse(BaseModel):
+    """Response schema for bulk approval status computation."""
+    total_requested: int
+    total_found: int
+    results: List[BulkApprovalStatusItem]

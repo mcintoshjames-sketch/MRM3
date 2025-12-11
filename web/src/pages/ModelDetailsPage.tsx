@@ -132,6 +132,9 @@ interface Model {
     is_model: boolean;
     is_aiml: boolean | null;
     business_line_name: string | null;
+    // Computed approval status fields
+    approval_status: string | null;
+    approval_status_label: string | null;
     owner: User;
     developer: User | null;
     shared_owner: User | null;
@@ -2520,6 +2523,23 @@ export default function ModelDetailsPage() {
                                 <p className="text-lg text-gray-400">-</p>
                             )}
                         </div>
+                        <div>
+                            <h4 className="text-sm font-medium text-gray-500 mb-1">Approval Status</h4>
+                            {model.approval_status ? (
+                                <span className={`px-2 py-1 text-sm rounded font-medium ${
+                                    model.approval_status === 'APPROVED' ? 'bg-green-100 text-green-800' :
+                                    model.approval_status === 'INTERIM_APPROVED' ? 'bg-yellow-100 text-yellow-800' :
+                                    model.approval_status === 'VALIDATION_IN_PROGRESS' ? 'bg-blue-100 text-blue-800' :
+                                    model.approval_status === 'EXPIRED' ? 'bg-red-100 text-red-800' :
+                                    model.approval_status === 'NEVER_VALIDATED' ? 'bg-gray-100 text-gray-800' :
+                                    'bg-gray-100 text-gray-700'
+                                }`}>
+                                    {model.approval_status_label || model.approval_status}
+                                </span>
+                            ) : (
+                                <p className="text-lg text-gray-400">-</p>
+                            )}
+                        </div>
                         {/* Model Roles Section */}
                         <div className="col-span-2">
                             <h4 className="text-sm font-medium text-gray-500 mb-3 flex items-center gap-2">
@@ -2728,6 +2748,10 @@ export default function ModelDetailsPage() {
                                         {hasPenalty && finalRiskRanking?.residual_risk_without_penalty ? (
                                             <span className={getResidualRiskBadgeClass(finalRiskRanking.residual_risk_without_penalty)}>
                                                 {finalRiskRanking.residual_risk_without_penalty}
+                                            </span>
+                                        ) : finalRiskRanking?.final_rating ? (
+                                            <span className={getResidualRiskBadgeClass(finalRiskRanking.final_rating)}>
+                                                {finalRiskRanking.final_rating}
                                             </span>
                                         ) : latestApproved?.residual_risk ? (
                                             <span className={getResidualRiskBadgeClass(latestApproved.residual_risk)}>

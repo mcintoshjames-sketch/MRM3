@@ -556,6 +556,41 @@ Model Risk Management inventory system with a FastAPI backend, React/TypeScript 
   - `calculate_model_days_overdue()` - Days overdue calculation
   - `compute_final_model_risk_ranking()` - Main orchestration function
 
+## Model Approval Status
+- **Purpose**: Compute and track the validation approval status of models, answering "Is this model currently approved for use based on its validation history?"
+- **Status Codes**:
+  - **NEVER_VALIDATED**: No validation request has ever been approved for this model
+  - **APPROVED**: Most recent validation is APPROVED with all required approvals complete
+  - **INTERIM_APPROVED**: Most recent completed validation was of INTERIM type
+  - **VALIDATION_IN_PROGRESS**: Model is overdue but has active validation in substantive stage (PLANNING or later)
+  - **EXPIRED**: Model is overdue with no active validation or validation still in INTAKE
+- **Key Logic**:
+  - Models remain APPROVED throughout the revalidation window
+  - Status only changes to VALIDATION_IN_PROGRESS or EXPIRED after the model becomes OVERDUE
+  - INTAKE status does NOT count as substantive validation work
+  - Substantive stages: PLANNING, ASSIGNED, IN_PROGRESS, REVIEW, PENDING_APPROVAL
+- **Data Model**:
+  - **ModelApprovalStatusHistory**: Audit trail for status changes. Fields: history_id, model_id, old_status, new_status, changed_at, trigger_type, trigger_entity_type, trigger_entity_id, notes.
+  - Trigger types: VALIDATION_REQUEST_CREATED, VALIDATION_STATUS_CHANGE, APPROVAL_SUBMITTED, EXPIRATION_CHECK, BACKFILL, MANUAL
+- **Integration Hooks** (in validation_workflow.py):
+  - create_validation_request: Triggers status recalculation on new request
+  - update_validation_request_status: Triggers on status transitions (especially APPROVED)
+  - submit_approval: Triggers when approvals are submitted
+- **Computed Fields** (on ModelDetailResponse):
+  - `approval_status`: Status code (NEVER_VALIDATED, APPROVED, INTERIM_APPROVED, VALIDATION_IN_PROGRESS, EXPIRED)
+  - `approval_status_label`: Human-readable label
+- **API Endpoints**:
+  - `GET /models/{id}/approval-status` - Get detailed approval status with context
+  - `GET /models/{id}/approval-status/history` - Get status change history
+  - `POST /models/approval-status/bulk` - Bulk compute status for multiple models (useful for dashboards)
+  - `POST /models/approval-status/backfill` - Admin-only: Create initial history records for all models without existing records
+- **Core Module**: `app/core/model_approval_status.py` with functions:
+  - `compute_model_approval_status()` - Main computation function
+  - `record_status_change()` - Record changes to history
+  - `update_model_approval_status_if_changed()` - Check and record if status changed
+  - `backfill_model_approval_status()` - Create initial records for existing models
+- **Testing**: 29 tests in `tests/test_model_approval_status.py` covering status computation, helper functions, history recording, integration hooks, backfill utilities, and API endpoints.
+
 ## Model Risk Assessment System
 - **Purpose**: Derive model inherent risk tier from qualitative and quantitative factors using a standardized matrix approach with optional overrides at three levels.
 - **Data Model**:

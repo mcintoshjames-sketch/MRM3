@@ -205,7 +205,7 @@ def calculate_model_days_overdue(db: Session, model_id: int) -> int:
         ValidationRequest.request_id == ValidationRequestModelVersion.request_id
     ).filter(
         ValidationRequestModelVersion.model_id == model_id,
-        ValidationRequest.status.has(code="APPROVED"),
+        ValidationRequest.current_status.has(code="APPROVED"),
         ValidationRequest.completion_date.isnot(None)
     ).order_by(ValidationRequest.completion_date.desc()).first()
 

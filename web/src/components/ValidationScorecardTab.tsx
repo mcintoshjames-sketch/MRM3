@@ -162,6 +162,16 @@ export default function ValidationScorecardTab({ requestId, canEdit, onScorecard
         // Capture scroll position before any state changes
         const scrollTop = window.scrollY;
 
+        // Function to restore scroll after React render and browser paint
+        const restoreScroll = () => {
+            // Double requestAnimationFrame ensures we run after React's render AND browser paint
+            requestAnimationFrame(() => {
+                requestAnimationFrame(() => {
+                    window.scrollTo(0, scrollTop);
+                });
+            });
+        };
+
         try {
             setSavingCriterion(criterionCode);
 
@@ -179,11 +189,7 @@ export default function ValidationScorecardTab({ requestId, canEdit, onScorecard
             setError(err instanceof Error ? err.message : 'Failed to save rating');
         } finally {
             setSavingCriterion(null);
-            // Restore scroll position after ALL state updates (including finally block)
-            // Use setTimeout to ensure we run after React's render cycle completes
-            setTimeout(() => {
-                window.scrollTo({ top: scrollTop, behavior: 'instant' });
-            }, 0);
+            restoreScroll();
         }
     }, [requestId, canEdit, criterionFields, onScorecardChange]);
 
