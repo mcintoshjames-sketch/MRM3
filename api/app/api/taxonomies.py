@@ -2,7 +2,7 @@
 import csv
 import io
 from typing import List, Optional, Tuple
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session, joinedload
 from app.core.database import get_db
@@ -170,6 +170,23 @@ def list_taxonomies(
 ):
     """List all taxonomies."""
     taxonomies = db.query(Taxonomy).order_by(Taxonomy.name).all()
+    return taxonomies
+
+
+@router.get("/by-names/", response_model=List[TaxonomyResponse])
+def get_taxonomies_by_names(
+    names: List[str] = Query(..., description="List of taxonomy names to fetch"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Fetch multiple taxonomies by name with their values in a single call.
+
+    This endpoint is optimized for fetching specific taxonomies needed for
+    dropdowns/filters, reducing N+1 queries to a single request.
+    """
+    taxonomies = db.query(Taxonomy).options(
+        joinedload(Taxonomy.values)
+    ).filter(Taxonomy.name.in_(names)).order_by(Taxonomy.name).all()
     return taxonomies
 
 

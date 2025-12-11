@@ -187,27 +187,23 @@ export default function RecommendationsPage() {
             setLoading(true);
             setError(null);
 
-            // Fetch recommendations
-            const recs = await recommendationsApi.list();
+            // Fetch all data in parallel for better performance
+            // Build taxonomy query string manually (axios serializes arrays as names[] but FastAPI expects names=v1&names=v2)
+            const taxonomyNames = ['Recommendation Priority', 'Recommendation Status', 'Recommendation Category'];
+            const taxonomyQueryString = taxonomyNames.map(n => `names=${encodeURIComponent(n)}`).join('&');
+
+            const [recs, modelsRes, usersRes, taxonomiesRes] = await Promise.all([
+                recommendationsApi.list(),
+                api.get('/models/'),
+                api.get('/auth/users'),
+                api.get(`/taxonomies/by-names/?${taxonomyQueryString}`)
+            ]);
+
             setRecommendations(recs);
-
-            // Fetch models for filter
-            const modelsRes = await api.get('/models/');
             setModels(modelsRes.data);
-
-            // Fetch users for filter
-            const usersRes = await api.get('/auth/users');
             setUsers(usersRes.data);
 
-            // Fetch taxonomies
-            const taxonomiesRes = await api.get('/taxonomies/');
-            const taxonomyList = taxonomiesRes.data;
-
-            const taxDetails = await Promise.all(
-                taxonomyList.map((t: any) => api.get(`/taxonomies/${t.taxonomy_id}`))
-            );
-            const taxonomies = taxDetails.map((r: any) => r.data);
-
+            const taxonomies = taxonomiesRes.data;
             const priorityTax = taxonomies.find((t: any) => t.name === 'Recommendation Priority');
             const statusTax = taxonomies.find((t: any) => t.name === 'Recommendation Status');
             const categoryTax = taxonomies.find((t: any) => t.name === 'Recommendation Category');

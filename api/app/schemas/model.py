@@ -147,6 +147,111 @@ class ModelRegionListItem(BaseModel):
         from_attributes = True
 
 
+# Lightweight schemas for list view performance
+class LOBListItem(BaseModel):
+    """Minimal LOB info for list views."""
+    lob_id: int
+    name: str
+
+    class Config:
+        from_attributes = True
+
+
+class UserListItem(BaseModel):
+    """Minimal user info for list views."""
+    user_id: int
+    full_name: str
+    email: str
+    lob: Optional[LOBListItem] = None  # Nested for frontend compatibility
+
+    class Config:
+        from_attributes = True
+
+
+class VendorListItem(BaseModel):
+    """Minimal vendor info for list views."""
+    vendor_id: int
+    name: str
+
+    class Config:
+        from_attributes = True
+
+
+class TaxonomyListItem(BaseModel):
+    """Minimal taxonomy value for list views."""
+    value_id: int
+    label: str
+    code: Optional[str] = None
+
+    class Config:
+        from_attributes = True
+
+
+class MethodologyListItem(BaseModel):
+    """Minimal methodology info for list views."""
+    methodology_id: int
+    name: str
+
+    class Config:
+        from_attributes = True
+
+
+class ModelTypeListItem(BaseModel):
+    """Minimal model type info for list views."""
+    type_id: int
+    name: str
+
+    class Config:
+        from_attributes = True
+
+
+class ModelListResponse(BaseModel):
+    """Lightweight model response for list views - optimized for performance."""
+    model_id: int
+    model_name: str
+    description: Optional[str] = None
+    development_type: str
+    status: str
+    is_model: bool = True
+    is_aiml: Optional[bool] = None
+    row_approval_status: Optional[str] = None
+    business_line_name: Optional[str] = None
+    model_last_updated: Optional[date] = None
+
+    # IDs for filtering
+    owner_id: int
+    developer_id: Optional[int] = None
+    vendor_id: Optional[int] = None
+    risk_tier_id: Optional[int] = None
+
+    # Lightweight nested objects (pre-computed)
+    owner: Optional[UserListItem] = None
+    developer: Optional[UserListItem] = None
+    shared_owner: Optional[UserListItem] = None
+    shared_developer: Optional[UserListItem] = None
+    monitoring_manager: Optional[UserListItem] = None
+    vendor: Optional[VendorListItem] = None
+    risk_tier: Optional[TaxonomyListItem] = None
+    methodology: Optional[MethodologyListItem] = None
+    ownership_type: Optional[TaxonomyListItem] = None
+    model_type: Optional[ModelTypeListItem] = None
+    wholly_owned_region: Optional[ModelRegionListItem] = None
+
+    # Collections (simplified)
+    regions: List[ModelRegionListItem] = []
+    users: List[UserListItem] = []
+    regulatory_categories: List[TaxonomyListItem] = []
+
+    # Computed fields (optional, expensive)
+    scorecard_outcome: Optional[str] = None
+    residual_risk: Optional[str] = None
+    approval_status: Optional[str] = None
+    approval_status_label: Optional[str] = None
+
+    class Config:
+        from_attributes = True
+
+
 class ModelDetailResponse(ModelResponse):
     """Model response with nested user and vendor details."""
     owner: UserResponse

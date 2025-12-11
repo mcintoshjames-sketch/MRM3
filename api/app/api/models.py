@@ -7,7 +7,7 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from pydantic import BaseModel
 from fastapi.responses import StreamingResponse
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.orm import Session, joinedload, selectinload
 from app.core.database import get_db
 from app.core.time import utc_now
 from app.core.deps import get_current_user
@@ -30,7 +30,9 @@ from app.schemas.model import (
     ModelNameHistoryItem, ModelNameHistoryResponse, NameChangeStatistics,
     ModelRolesWithLOB, UserWithLOBRollup,
     ModelApprovalStatusResponse, ModelApprovalStatusHistoryItem, ModelApprovalStatusHistoryResponse,
-    BulkApprovalStatusRequest, BulkApprovalStatusItem, BulkApprovalStatusResponse
+    BulkApprovalStatusRequest, BulkApprovalStatusItem, BulkApprovalStatusResponse,
+    ModelListResponse, UserListItem, VendorListItem, TaxonomyListItem, MethodologyListItem,
+    ModelTypeListItem, ModelRegionListItem
 )
 from app.core.lob_utils import get_user_lob_rollup_name
 from app.schemas.submission_action import SubmissionAction, SubmissionFeedback, SubmissionCommentCreate
@@ -269,9 +271,141 @@ def _format_risk_assessment_changes(changes: dict, action: str, db: Session) -> 
     return ", ".join(parts)
 
 
-@router.get("/", response_model=List[ModelDetailResponse])
+def _build_user_list_item(user: User) -> dict:
+    """Build lightweight user dict for list views."""
+    if not user:
+        return None
+    lob_dict = None
+    if user.lob:
+        lob_dict = {"lob_id": user.lob.lob_id, "name": user.lob.name}
+    return {
+        "user_id": user.user_id,
+        "full_name": user.full_name,
+        "email": user.email,
+        "lob": lob_dict
+    }
+
+
+def _build_model_list_response(model: Model, include_computed_fields: bool, db: Session) -> dict:
+    """Build lightweight model response dict without Pydantic validation overhead."""
+    # Build lightweight nested objects directly
+    owner_dict = _build_user_list_item(model.owner)
+    developer_dict = _build_user_list_item(model.developer)
+    shared_owner_dict = _build_user_list_item(model.shared_owner)
+    shared_developer_dict = _build_user_list_item(model.shared_developer)
+    monitoring_manager_dict = _build_user_list_item(model.monitoring_manager)
+
+    vendor_dict = None
+    if model.vendor:
+        vendor_dict = {"vendor_id": model.vendor.vendor_id, "name": model.vendor.name}
+
+    risk_tier_dict = None
+    if model.risk_tier:
+        risk_tier_dict = {"value_id": model.risk_tier.value_id, "label": model.risk_tier.label, "code": model.risk_tier.code}
+
+    methodology_dict = None
+    if model.methodology:
+        methodology_dict = {"methodology_id": model.methodology.methodology_id, "name": model.methodology.name}
+
+    ownership_type_dict = None
+    if model.ownership_type:
+        ownership_type_dict = {"value_id": model.ownership_type.value_id, "label": model.ownership_type.label, "code": model.ownership_type.code}
+
+    model_type_dict = None
+    if model.model_type:
+        model_type_dict = {"type_id": model.model_type.type_id, "name": model.model_type.name}
+
+    wholly_owned_region_dict = None
+    if model.wholly_owned_region:
+        wholly_owned_region_dict = {
+            "region_id": model.wholly_owned_region.region_id,
+            "region_code": model.wholly_owned_region.code,
+            "region_name": model.wholly_owned_region.name
+        }
+
+    # Build regions list from model_regions relationship
+    regions_list = []
+    for mr in model.model_regions:
+        if mr.region:
+            regions_list.append({
+                "region_id": mr.region.region_id,
+                "region_code": mr.region.code,
+                "region_name": mr.region.name
+            })
+
+    # Build users list
+    users_list = [_build_user_list_item(u) for u in model.users] if model.users else []
+
+    # Build regulatory categories list
+    reg_cats_list = []
+    for rc in model.regulatory_categories:
+        reg_cats_list.append({"value_id": rc.value_id, "label": rc.label, "code": rc.code})
+
+    # Compute business_line_name from owner's LOB chain
+    business_line = None
+    if model.owner:
+        business_line = get_user_lob_rollup_name(model.owner)
+
+    # Compute is_aiml from methodology category
+    is_aiml = None
+    if model.methodology and model.methodology.category:
+        is_aiml = model.methodology.category.name == "AI/ML"
+
+    result = {
+        "model_id": model.model_id,
+        "model_name": model.model_name,
+        "description": model.description,
+        "development_type": model.development_type,
+        "status": model.status,
+        "is_model": model.is_model,
+        "is_aiml": is_aiml,
+        "row_approval_status": model.row_approval_status,
+        "business_line_name": business_line,
+        "model_last_updated": get_model_last_updated(model),
+        "owner_id": model.owner_id,
+        "developer_id": model.developer_id,
+        "vendor_id": model.vendor_id,
+        "risk_tier_id": model.risk_tier_id,
+        "owner": owner_dict,
+        "developer": developer_dict,
+        "shared_owner": shared_owner_dict,
+        "shared_developer": shared_developer_dict,
+        "monitoring_manager": monitoring_manager_dict,
+        "vendor": vendor_dict,
+        "risk_tier": risk_tier_dict,
+        "methodology": methodology_dict,
+        "ownership_type": ownership_type_dict,
+        "model_type": model_type_dict,
+        "wholly_owned_region": wholly_owned_region_dict,
+        "regions": regions_list,
+        "users": users_list,
+        "regulatory_categories": reg_cats_list,
+        "scorecard_outcome": None,
+        "residual_risk": None,
+        "approval_status": None,
+        "approval_status_label": None,
+    }
+
+    if include_computed_fields:
+        from app.core.final_rating import compute_final_model_risk_ranking
+        from app.core.model_approval_status import compute_model_approval_status, get_status_label
+
+        risk_ranking = compute_final_model_risk_ranking(db, model.model_id)
+        if risk_ranking:
+            result['scorecard_outcome'] = risk_ranking.get('original_scorecard')
+            result['residual_risk'] = risk_ranking.get('final_rating')
+
+        status_code, context = compute_model_approval_status(model, db)
+        result['approval_status'] = status_code
+        result['approval_status_label'] = get_status_label(status_code)
+
+    return result
+
+
+@router.get("/", response_model=List[ModelListResponse])
 def list_models(
     exclude_sub_models: bool = False,
+    include_computed_fields: bool = False,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
@@ -284,33 +418,30 @@ def list_models(
 
     Query Parameters:
     - exclude_sub_models: If True, exclude models that are sub-models (children) in hierarchy
+    - include_computed_fields: If True, include expensive computed fields (scorecard_outcome,
+      residual_risk, approval_status). Default False for better performance.
     """
     from app.core.rls import apply_model_rls
     from app.models.lob import LOBUnit
 
     query = db.query(Model).options(
-        # Owner with LOB chain for business_line_name computation
+        # Single-value relationships: use joinedload (efficient for 1:1/N:1)
         joinedload(Model.owner).joinedload(User.lob).joinedload(LOBUnit.parent).joinedload(LOBUnit.parent).joinedload(LOBUnit.parent),
-        joinedload(Model.developer),
-        joinedload(Model.shared_owner),
-        joinedload(Model.shared_developer),
-        joinedload(Model.monitoring_manager),
+        joinedload(Model.developer).joinedload(User.lob),
+        joinedload(Model.shared_owner).joinedload(User.lob),
+        joinedload(Model.shared_developer).joinedload(User.lob),
+        joinedload(Model.monitoring_manager).joinedload(User.lob),
         joinedload(Model.vendor),
-        joinedload(Model.users),
         joinedload(Model.risk_tier),
-        joinedload(Model.validation_type),
         joinedload(Model.model_type),
         joinedload(Model.methodology).joinedload(Methodology.category),
-        joinedload(Model.regulatory_categories),
-        joinedload(Model.model_regions).joinedload(ModelRegion.region),
-        joinedload(Model.submitted_by_user),
-        joinedload(Model.wholly_owned_region),  # For regional ownership models
-        # For ownership taxonomy classification
+        joinedload(Model.wholly_owned_region),
         joinedload(Model.ownership_type),
-        # For model_last_updated computation (production date of latest ACTIVE version)
-        joinedload(Model.versions)
-        # Note: submission_comments intentionally excluded from list view for performance
-        # They are only loaded in the detail endpoint where they're actually displayed
+        # Collections: use selectinload to avoid Cartesian product explosion
+        selectinload(Model.users).joinedload(User.lob),
+        selectinload(Model.regulatory_categories),
+        selectinload(Model.model_regions).joinedload(ModelRegion.region),
+        selectinload(Model.versions)
     )
 
     # Apply row-level security filtering
@@ -320,44 +451,16 @@ def list_models(
 
     # Filter out sub-models if requested
     if exclude_sub_models:
-        # Get all model IDs that are children in active hierarchy relationships
         from sqlalchemy import func
         sub_model_ids = db.query(ModelHierarchy.child_model_id).filter(
             (ModelHierarchy.end_date == None) | (
                 ModelHierarchy.end_date >= func.current_date())
         ).distinct().all()
         sub_model_ids = [row[0] for row in sub_model_ids]
-
-        # Filter out sub-models from results
         models = [m for m in models if m.model_id not in sub_model_ids]
 
-    # Compute scorecard_outcome, residual_risk, and approval_status for each model
-    from app.core.final_rating import compute_final_model_risk_ranking
-    from app.core.model_approval_status import compute_model_approval_status, get_status_label
-
-    results = []
-    for model in models:
-        # Convert model to dict for response with computed fields
-        model_dict = ModelDetailResponse.model_validate(model).model_dump()
-
-        # Compute final risk ranking
-        risk_ranking = compute_final_model_risk_ranking(db, model.model_id)
-        if risk_ranking:
-            model_dict['scorecard_outcome'] = risk_ranking.get('original_scorecard')
-            model_dict['residual_risk'] = risk_ranking.get('final_rating')
-        else:
-            model_dict['scorecard_outcome'] = None
-            model_dict['residual_risk'] = None
-
-        # Compute model approval status
-        status_code, context = compute_model_approval_status(model, db)
-        model_dict['approval_status'] = status_code
-        model_dict['approval_status_label'] = get_status_label(status_code)
-
-        # Compute model last updated from latest ACTIVE version
-        model_dict['model_last_updated'] = get_model_last_updated(model)
-
-        results.append(model_dict)
+    # Build lightweight responses without Pydantic validation overhead
+    results = [_build_model_list_response(m, include_computed_fields, db) for m in models]
 
     return results
 

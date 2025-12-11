@@ -428,13 +428,19 @@ export default function ModelsPage() {
             if (!filters.include_sub_models) {
                 params.append('exclude_sub_models', 'true');
             }
+            // Include computed fields (scorecard_outcome, residual_risk, approval_status)
+            params.append('include_computed_fields', 'true');
+
+            // Build taxonomy query string (axios serializes arrays as names[] but FastAPI expects names=v1&names=v2)
+            const taxonomyNames = ['Validation Type', 'Validation Priority', 'Model Usage Frequency'];
+            const taxonomyQueryString = taxonomyNames.map(n => `names=${encodeURIComponent(n)}`).join('&');
 
             const [modelsRes, usersRes, vendorsRes, regionsRes, taxonomiesRes, modelTypesRes] = await Promise.all([
                 api.get(`/models/?${params.toString()}`),
                 api.get('/auth/users'),
                 api.get('/vendors/'),
                 api.get('/regions/'),
-                api.get('/taxonomies/'),
+                api.get(`/taxonomies/by-names/?${taxonomyQueryString}`),
                 api.get('/model-types/categories')
             ]);
             setModels(modelsRes.data);
@@ -443,13 +449,8 @@ export default function ModelsPage() {
             setRegions(regionsRes.data);
             setModelTypes(modelTypesRes.data);
 
-            // Fetch taxonomy values for validation types and priorities
-            const taxonomyList = taxonomiesRes.data;
-            const taxDetails = await Promise.all(
-                taxonomyList.map((t: any) => api.get(`/taxonomies/${t.taxonomy_id}`))
-            );
-            const taxonomies = taxDetails.map((r: any) => r.data);
-
+            // Extract taxonomy values from batch response
+            const taxonomies = taxonomiesRes.data;
             const valType = taxonomies.find((t: any) => t.name === 'Validation Type');
             const valPriority = taxonomies.find((t: any) => t.name === 'Validation Priority');
             const usageFreq = taxonomies.find((t: any) => t.name === 'Model Usage Frequency');
@@ -461,10 +462,7 @@ export default function ModelsPage() {
                 setValidationPriorities(valPriority.values || []);
             }
             if (usageFreq) {
-                console.log('DEBUG: Loaded usage frequencies:', usageFreq.values);
                 setUsageFrequencies(usageFreq.values || []);
-            } else {
-                console.warn('DEBUG: Could not find Model Usage Frequency taxonomy');
             }
         } catch (error) {
             console.error('Failed to fetch data:', error);
