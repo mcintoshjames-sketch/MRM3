@@ -52,13 +52,18 @@ export interface KPIReportResponse {
     as_of_date: string;
     metrics: KPIMetric[];
     total_active_models: number;
+    // Region filter context
+    region_id: number | null;
+    region_name: string;
 }
 
 /**
  * Fetch the KPI Report with all metrics.
+ * @param regionId - Optional region ID to filter metrics by models deployed to that region
  */
-export const getKPIReport = async (): Promise<KPIReportResponse> => {
-    const response = await client.get<KPIReportResponse>('/kpi-report/');
+export const getKPIReport = async (regionId?: number): Promise<KPIReportResponse> => {
+    const params = regionId !== undefined ? `?region_id=${regionId}` : '';
+    const response = await client.get<KPIReportResponse>(`/kpi-report/${params}`);
     return response.data;
 };
 
@@ -109,7 +114,13 @@ export const getDisplayValue = (metric: KPIMetric): string => {
 export const exportKPIReportToCSV = (report: KPIReportResponse): string => {
     const lines: string[] = [];
 
-    // Header
+    // Report metadata header
+    lines.push(`# KPI Report - ${report.region_name}`);
+    lines.push(`# As of: ${report.as_of_date}`);
+    lines.push(`# Total Active Models: ${report.total_active_models}`);
+    lines.push('');
+
+    // Column header
     lines.push('Metric ID,Metric Name,Category,Type,Value,Numerator,Denominator,Is KRI,Definition');
 
     for (const metric of report.metrics) {

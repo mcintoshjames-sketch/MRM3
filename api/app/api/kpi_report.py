@@ -1,7 +1,7 @@
 """KPI Report API endpoint - computes model risk management metrics."""
 from datetime import date, datetime, timedelta
 from typing import Optional, List, Dict, Any
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, HTTPException
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import func, and_, or_, case
 
@@ -17,6 +17,8 @@ from app.models import (
     Recommendation,
     DecommissioningRequest,
 )
+from app.models.region import Region
+from app.models.model_region import ModelRegion
 from app.models.monitoring import (
     MonitoringCycle,
     MonitoringResult,
@@ -683,26 +685,53 @@ def _compute_metric_4_27(db: Session, active_models: List[Model]) -> KPIMetric:
 def get_kpi_report(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    region_id: Optional[int] = Query(None, description="Filter metrics by region (models deployed to this region)"),
 ):
     """
     Generate the KPI Report with all model risk management metrics.
 
-    This endpoint computes 19 metrics from METRICS.json, providing:
+    This endpoint computes 21 metrics from METRICS.json, providing:
     - Count metrics (simple integer counts)
     - Ratio metrics (with numerator/denominator decomposition)
     - Duration metrics (average days)
     - Breakdown metrics (distribution by category)
 
     Two metrics are flagged as Key Risk Indicators (KRI): 4.7 and 4.27.
+
+    Optionally filter by region_id to scope metrics to models deployed in that region.
     """
+    # Handle region filtering
+    region_name = "All Regions"
+    region_model_subquery = None
+
+    if region_id is not None:
+        # Validate region exists
+        region = db.query(Region).filter(Region.region_id == region_id).first()
+        if not region:
+            raise HTTPException(status_code=404, detail="Region not found")
+        region_name = region.name
+
+        # Create subquery for model IDs deployed to this region
+        region_model_subquery = db.query(ModelRegion.model_id).filter(
+            ModelRegion.region_id == region_id
+        ).distinct().scalar_subquery()
+
     # Get all active models with necessary relationships
-    active_models = db.query(Model).options(
+    active_models_query = db.query(Model).options(
         joinedload(Model.risk_tier),
         joinedload(Model.methodology).joinedload(Methodology.category),
         joinedload(Model.owner),
     ).filter(
         Model.status == "Active"
-    ).all()
+    )
+
+    # Apply region filter if specified
+    if region_model_subquery is not None:
+        active_models_query = active_models_query.filter(
+            Model.model_id.in_(region_model_subquery)
+        )
+
+    active_models = active_models_query.all()
 
     metrics: List[KPIMetric] = []
 
@@ -760,4 +789,6 @@ def get_kpi_report(
         as_of_date=date.today(),
         metrics=metrics,
         total_active_models=len(active_models),
+        region_id=region_id,
+        region_name=region_name,
     )

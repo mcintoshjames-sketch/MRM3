@@ -46,4 +46,8 @@ class KPIReportResponse(BaseModel):
     metrics: List[KPIMetric] = Field(..., description="List of all KPI metrics")
     total_active_models: int = Field(..., description="Total count of active models (reference value)")
 
+    # Region filter context
+    region_id: Optional[int] = Field(None, description="Region ID if filtering by region, None for all regions")
+    region_name: str = Field("All Regions", description="Region name or 'All Regions' if no filter")
+
     model_config = {"from_attributes": True}

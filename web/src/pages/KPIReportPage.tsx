@@ -12,6 +12,7 @@ import {
     KPIReportResponse,
     KPIMetric,
 } from '../api/kpiReport';
+import { regionsApi, Region } from '../api/regions';
 
 const KPIReportPage: React.FC = () => {
     const [report, setReport] = useState<KPIReportResponse | null>(null);
@@ -19,12 +20,15 @@ const KPIReportPage: React.FC = () => {
     const [error, setError] = useState<string | null>(null);
     const [selectedMetric, setSelectedMetric] = useState<KPIMetric | null>(null);
     const [isModalOpen, setIsModalOpen] = useState(false);
+    const [regions, setRegions] = useState<Region[]>([]);
+    const [selectedRegion, setSelectedRegion] = useState<string>('');
 
     const fetchReport = async () => {
         setLoading(true);
         setError(null);
         try {
-            const data = await getKPIReport();
+            const regionId = selectedRegion ? parseInt(selectedRegion) : undefined;
+            const data = await getKPIReport(regionId);
             setReport(data);
         } catch (err) {
             console.error('Failed to fetch KPI report:', err);
@@ -34,9 +38,15 @@ const KPIReportPage: React.FC = () => {
         }
     };
 
+    // Fetch regions on mount
+    useEffect(() => {
+        regionsApi.getRegions().then(setRegions).catch(console.error);
+    }, []);
+
+    // Re-fetch report when region changes
     useEffect(() => {
         fetchReport();
-    }, []);
+    }, [selectedRegion]);
 
     const handleInfoClick = (metric: KPIMetric) => {
         setSelectedMetric(metric);
@@ -51,7 +61,11 @@ const KPIReportPage: React.FC = () => {
         const url = URL.createObjectURL(blob);
         const link = document.createElement('a');
         link.href = url;
-        link.download = `kpi_report_${report.as_of_date}.csv`;
+        // Include region in filename if filtered
+        const regionSuffix = report.region_name !== 'All Regions'
+            ? `_${report.region_name.replace(/\s+/g, '_')}`
+            : '';
+        link.download = `kpi_report${regionSuffix}_${report.as_of_date}.csv`;
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
@@ -109,14 +123,39 @@ const KPIReportPage: React.FC = () => {
                 {/* Header */}
                 <div className="flex items-center justify-between">
                     <div>
-                        <h1 className="text-2xl font-semibold text-gray-900">KPI Report</h1>
+                        <h1 className="text-2xl font-semibold text-gray-900">
+                            KPI Report
+                            {report && report.region_name !== 'All Regions' && (
+                                <span className="ml-2 text-lg text-blue-600">
+                                    ({report.region_name})
+                                </span>
+                            )}
+                        </h1>
                         {report && (
                             <p className="text-sm text-gray-500 mt-1">
                                 As of {report.as_of_date} | Generated at {new Date(report.report_generated_at).toLocaleString()}
                             </p>
                         )}
                     </div>
-                    <div className="flex gap-3">
+                    <div className="flex items-center gap-3">
+                        <div className="flex items-center gap-2">
+                            <label htmlFor="region-filter" className="text-sm font-medium text-gray-700">
+                                Region:
+                            </label>
+                            <select
+                                id="region-filter"
+                                value={selectedRegion}
+                                onChange={(e) => setSelectedRegion(e.target.value)}
+                                className="border border-gray-300 rounded-md px-3 py-2 text-sm focus:ring-blue-500 focus:border-blue-500"
+                            >
+                                <option value="">All Regions</option>
+                                {regions.map((region) => (
+                                    <option key={region.region_id} value={region.region_id}>
+                                        {region.name}
+                                    </option>
+                                ))}
+                            </select>
+                        </div>
                         <button
                             onClick={handleExportCSV}
                             disabled={loading || !report}
