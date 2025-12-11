@@ -61,6 +61,11 @@ class TaxonomyValue(Base):
         Integer, nullable=True,
         comment="Number of scorecard notches to downgrade for this past-due bucket (0-5)"
     )
+    # MRSA Risk Level flag - indicates if IRP coverage is required for this risk level
+    requires_irp: Mapped[Optional[bool]] = mapped_column(
+        Boolean, nullable=True,
+        comment="For MRSA Risk Level taxonomy: True if this risk level requires IRP coverage"
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
 
     # Relationship back to taxonomy

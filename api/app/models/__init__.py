@@ -94,6 +94,7 @@ from app.models.scorecard import (
 )
 from app.models.residual_risk_map import ResidualRiskMapConfig
 from app.models.limitation import ModelLimitation
+from app.models.irp import IRP, IRPReview, IRPCertification, mrsa_irp
 from app.models.attestation import (
     AttestationCycleStatus,
     AttestationFrequency,
@@ -225,6 +226,11 @@ __all__ = [
     "ResidualRiskMapConfig",
     # Model Limitations
     "ModelLimitation",
+    # IRP (Independent Review Process) for MRSAs
+    "IRP",
+    "IRPReview",
+    "IRPCertification",
+    "mrsa_irp",
     # Attestations
     "AttestationCycleStatus",
     "AttestationFrequency",

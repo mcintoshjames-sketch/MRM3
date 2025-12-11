@@ -408,3 +408,115 @@ def methodology_category(db_session):
         "methodology2": methodology2,
         "inactive_methodology": methodology3
     }
+
+
+@pytest.fixture
+def mrsa_risk_level_taxonomy(db_session):
+    """Create MRSA Risk Level taxonomy for IRP testing."""
+    from app.models.taxonomy import Taxonomy, TaxonomyValue
+
+    taxonomy = Taxonomy(name="MRSA Risk Level", is_system=True)
+    db_session.add(taxonomy)
+    db_session.flush()
+
+    high_risk = TaxonomyValue(
+        taxonomy_id=taxonomy.taxonomy_id,
+        code="HIGH_RISK",
+        label="High-Risk",
+        description="High-risk MRSA requiring IRP coverage",
+        sort_order=1,
+        requires_irp=True
+    )
+    low_risk = TaxonomyValue(
+        taxonomy_id=taxonomy.taxonomy_id,
+        code="LOW_RISK",
+        label="Low-Risk",
+        description="Low-risk MRSA not requiring IRP coverage",
+        sort_order=2,
+        requires_irp=False
+    )
+    db_session.add_all([high_risk, low_risk])
+    db_session.commit()
+
+    return {
+        "taxonomy": taxonomy,
+        "high_risk": high_risk,
+        "low_risk": low_risk
+    }
+
+
+@pytest.fixture
+def irp_outcome_taxonomy(db_session):
+    """Create IRP Review Outcome taxonomy for IRP testing."""
+    from app.models.taxonomy import Taxonomy, TaxonomyValue
+
+    taxonomy = Taxonomy(name="IRP Review Outcome", is_system=True)
+    db_session.add(taxonomy)
+    db_session.flush()
+
+    satisfactory = TaxonomyValue(
+        taxonomy_id=taxonomy.taxonomy_id,
+        code="SATISFACTORY",
+        label="Satisfactory",
+        sort_order=1
+    )
+    conditional = TaxonomyValue(
+        taxonomy_id=taxonomy.taxonomy_id,
+        code="CONDITIONALLY_SATISFACTORY",
+        label="Conditionally Satisfactory",
+        sort_order=2
+    )
+    not_satisfactory = TaxonomyValue(
+        taxonomy_id=taxonomy.taxonomy_id,
+        code="NOT_SATISFACTORY",
+        label="Not Satisfactory",
+        sort_order=3
+    )
+    db_session.add_all([satisfactory, conditional, not_satisfactory])
+    db_session.commit()
+
+    return {
+        "taxonomy": taxonomy,
+        "satisfactory": satisfactory,
+        "conditional": conditional,
+        "not_satisfactory": not_satisfactory
+    }
+
+
+@pytest.fixture
+def sample_mrsa(db_session, admin_user, usage_frequency, mrsa_risk_level_taxonomy):
+    """Create a sample MRSA (Model Risk-Sensitive Application)."""
+    mrsa = Model(
+        model_name="Test MRSA",
+        description="A test MRSA for IRP testing",
+        development_type="In-House",
+        status="In Development",
+        owner_id=admin_user.user_id,
+        is_model=False,
+        is_mrsa=True,
+        mrsa_risk_level_id=mrsa_risk_level_taxonomy["high_risk"].value_id,
+        mrsa_risk_rationale="High business impact requiring IRP oversight",
+        usage_frequency_id=usage_frequency["daily"].value_id
+    )
+    db_session.add(mrsa)
+    db_session.commit()
+    db_session.refresh(mrsa)
+    return mrsa
+
+
+@pytest.fixture
+def sample_irp(db_session, admin_user, sample_mrsa):
+    """Create a sample IRP covering the sample MRSA."""
+    from app.models.irp import IRP
+
+    irp = IRP(
+        process_name="Test IRP",
+        description="Test Independent Review Process",
+        contact_user_id=admin_user.user_id,
+        is_active=True
+    )
+    irp.covered_mrsas = [sample_mrsa]
+    db_session.add(irp)
+    db_session.commit()
+    db_session.refresh(irp)
+    return irp

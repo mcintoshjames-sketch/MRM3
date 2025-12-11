@@ -30,6 +30,7 @@ QMIS (Quantitative Methods Information System) is a comprehensive **Model Risk M
 - **Risk Attestation** — Periodic compliance attestation for model owners
 - **Compliance Reporting** — KPI dashboards, overdue tracking, regulatory reports
 - **Decommissioning** — Controlled retirement process with approval gates
+- **MRSA & IRP Governance** — Independent Review Process coverage for Model Risk-Sensitive Applications
 
 ---
 
@@ -438,7 +439,72 @@ PENDING → VALIDATOR_REVIEW → [OWNER_REVIEW if applicable] → APPROVED/REJEC
 
 ---
 
-## 8. User Roles & Dashboards
+## 8. MRSA Classification & IRP Governance
+
+### Overview
+
+QMIS supports governance for **Model Risk-Sensitive Applications (MRSAs)**—applications that consume model outputs but don't qualify as full models themselves. High-risk MRSAs require coverage under an **Independent Review Process (IRP)** to ensure appropriate oversight.
+
+### What is an MRSA?
+
+MRSAs are technology applications that are not models but have model-like risk.
+
+### MRSA Classification
+
+| Risk Level | Description | IRP Required |
+|------------|-------------|--------------|
+| **High-Risk** | Critical business impact, regulatory sensitivity | Yes |
+| **Low-Risk** | Limited business impact, operational use | No |
+
+Classification stored on the Model entity with:
+- `is_mrsa` flag distinguishing MRSAs from traditional models
+- `mrsa_risk_level_id` taxonomy reference
+- `mrsa_risk_rationale` text field for classification justification
+
+### Independent Review Processes (IRPs)
+
+IRPs provide structured governance coverage for high-risk MRSAs:
+
+**IRP Properties**:
+- Process name and description
+- Contact user (single point of contact)
+- Active/inactive status
+- Many-to-many coverage (one IRP can cover multiple MRSAs)
+
+**IRP Reviews**:
+| Outcome | Description |
+|---------|-------------|
+| **Satisfactory** | MRSAs adequately managed |
+| **Conditionally Satisfactory** | Minor issues requiring attention |
+| **Not Satisfactory** | Significant deficiencies identified |
+
+**IRP Certifications** (Admin only):
+- MRM sign-off on IRP design adequacy
+- Certification date and conclusion summary
+- Certified by user tracking
+
+### Coverage Compliance
+
+The system tracks IRP coverage status for each MRSA:
+
+| Status | Condition |
+|--------|-----------|
+| **Compliant** | High-risk MRSA has active IRP coverage |
+| **Non-Compliant** | High-risk MRSA lacks IRP coverage |
+| **Not Required** | Low-risk MRSA (IRP optional) |
+
+**Coverage Check API**: Endpoint for verifying MRSA coverage compliance across the inventory.
+
+### Navigation
+
+- **Models Page**: Filter view to show MRSAs only, with risk level column
+- **IRPs Page**: Manage IRPs with CRUD operations, CSV export
+- **IRP Detail**: Tabs for overview, covered MRSAs, review history, certification history
+- **Model Detail**: MRSA classification section when applicable
+
+---
+
+## 9. User Roles & Dashboards
 
 ### User Roles
 
@@ -487,7 +553,7 @@ Navigation includes real-time badge indicators for pending tasks across:
 
 ---
 
-## 9. Key System Features
+## 10. Key System Features
 
 ### Configurable Taxonomies
 
@@ -537,7 +603,7 @@ Complete audit logging captures:
 
 ---
 
-## 10. Technical Architecture
+## 11. Technical Architecture
 
 ### Technology Stack
 
@@ -600,7 +666,7 @@ Complete audit logging captures:
 
 ---
 
-## 11. Getting Started
+## 12. Getting Started
 
 ### Quick Navigation Guide
 
@@ -609,19 +675,21 @@ Complete audit logging captures:
 3. **Validation Workflow** — View and manage validation requests
 4. **Monitoring Plans** — Ongoing performance monitoring
 5. **Recommendations** — Track findings and issues
-6. **Reports** — Access KPI reports and compliance reports
-7. **Taxonomy** — View configurable system values (Admin)
+6. **IRPs** — Manage Independent Review Processes for MRSAs
+7. **Reports** — Access KPI reports and compliance reports
+8. **Taxonomy** — View configurable system values (Admin)
 
 ### Key Workflows to Explore
 
 1. **View a Model**: Navigate to Models → Click any model → Explore tabs
 2. **Validation Request**: Validation Workflow → View request → See workflow stages
-3. **KPI Report**: Reports → KPI Report → View metrics with drill-down
-4. **Audit Trail**: Audit Logs → Filter by entity type or action
+3. **IRP Coverage**: IRPs → View IRP → See covered MRSAs and review history
+4. **KPI Report**: Reports → KPI Report → View metrics with drill-down
+5. **Audit Trail**: Audit Logs → Filter by entity type or action
 
 ---
 
-## 12. Summary
+## 13. Summary
 
 QMIS provides a comprehensive Model Risk Management solution addressing:
 
@@ -630,6 +698,7 @@ QMIS provides a comprehensive Model Risk Management solution addressing:
 - **Ongoing Monitoring**: Performance tracking with configurable thresholds
 - **Issue Management**: Full recommendations lifecycle with action plans
 - **Compliance Assurance**: Attestation process and KPI reporting
+- **MRSA Governance**: IRP coverage for model risk-sensitive applications
 - **Audit & Governance**: Complete audit trail and multi-stakeholder approvals
 - **Flexibility**: Configurable taxonomies, policies, and workflows
 

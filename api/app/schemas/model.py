@@ -11,7 +11,7 @@ from app.schemas.model_type_taxonomy import ModelTypeResponse
 from app.schemas.methodology import MethodologyResponse
 
 if TYPE_CHECKING:
-    pass
+    from app.schemas.irp import IRPResponse
 
 
 class UserWithLOBRollup(BaseModel):
@@ -65,6 +65,11 @@ class ModelCreate(ModelBase):
     initial_version_number: Optional[str] = None
     initial_implementation_date: Optional[date] = None
     is_model: bool = True  # True for models, False for non-models
+    # MRSA (Model Risk-Sensitive Application) fields
+    is_mrsa: bool = False  # True for MRSAs requiring IRP oversight
+    mrsa_risk_level_id: Optional[int] = None  # MRSA Risk Level taxonomy value
+    mrsa_risk_rationale: Optional[str] = None  # Narrative explaining risk classification
+    irp_ids: Optional[List[int]] = None  # IRPs covering this MRSA
     # Auto-create validation request fields
     auto_create_validation: bool = False
     validation_request_type_id: Optional[int] = None
@@ -102,6 +107,11 @@ class ModelUpdate(BaseModel):
     user_ids: Optional[List[int]] = None
     regulatory_category_ids: Optional[List[int]] = None
     is_model: Optional[bool] = None  # True for models, False for non-models
+    # MRSA (Model Risk-Sensitive Application) fields
+    is_mrsa: Optional[bool] = None  # True for MRSAs requiring IRP oversight
+    mrsa_risk_level_id: Optional[int] = None  # MRSA Risk Level taxonomy value
+    mrsa_risk_rationale: Optional[str] = None  # Narrative explaining risk classification
+    irp_ids: Optional[List[int]] = None  # IRPs covering this MRSA
 
 
 class ModelResponse(ModelBase):
@@ -124,6 +134,10 @@ class ModelResponse(ModelBase):
     updated_at: datetime
     is_model: bool = True  # True for models, False for non-models
     is_aiml: Optional[bool] = None  # Computed from methodology category
+    # MRSA (Model Risk-Sensitive Application) fields
+    is_mrsa: bool = False  # True for MRSAs requiring IRP oversight
+    mrsa_risk_level_id: Optional[int] = None
+    mrsa_risk_rationale: Optional[str] = None
     # Row approval workflow fields
     row_approval_status: Optional[str] = None
     submitted_by_user_id: Optional[int] = None
@@ -212,11 +226,16 @@ class ModelListResponse(BaseModel):
     description: Optional[str] = None
     development_type: str
     status: str
+    created_at: datetime
+    updated_at: datetime
     is_model: bool = True
     is_aiml: Optional[bool] = None
     row_approval_status: Optional[str] = None
     business_line_name: Optional[str] = None
     model_last_updated: Optional[date] = None
+    # MRSA fields
+    is_mrsa: bool = False
+    mrsa_risk_level_id: Optional[int] = None
 
     # IDs for filtering
     owner_id: int
@@ -236,6 +255,7 @@ class ModelListResponse(BaseModel):
     ownership_type: Optional[TaxonomyListItem] = None
     model_type: Optional[ModelTypeListItem] = None
     wholly_owned_region: Optional[ModelRegionListItem] = None
+    mrsa_risk_level: Optional[TaxonomyListItem] = None  # MRSA risk level
 
     # Collections (simplified)
     regions: List[ModelRegionListItem] = []
@@ -273,6 +293,9 @@ class ModelDetailResponse(ModelResponse):
     regulatory_categories: List[TaxonomyValueResponse] = []
     regions: List[ModelRegionListItem] = []
     submission_comments: List[ModelSubmissionCommentResponse] = []
+    # MRSA nested relationships
+    mrsa_risk_level: Optional[TaxonomyValueResponse] = None  # MRSA risk classification
+    irps: List[Any] = []  # IRPs covering this MRSA (use Any to avoid circular import)
     # Computed validation fields (populated from final_risk_ranking computation)
     scorecard_outcome: Optional[str] = None
     residual_risk: Optional[str] = None
@@ -326,6 +349,10 @@ class ModelCreateResponse(BaseModel):
     updated_at: datetime
     is_model: bool = True  # True for models, False for non-models
     is_aiml: Optional[bool] = None  # Computed from methodology category
+    # MRSA (Model Risk-Sensitive Application) fields
+    is_mrsa: bool = False  # True for MRSAs requiring IRP oversight
+    mrsa_risk_level_id: Optional[int] = None
+    mrsa_risk_rationale: Optional[str] = None
     # Row approval workflow fields
     row_approval_status: Optional[str] = None
     submitted_by_user_id: Optional[int] = None
@@ -348,9 +375,11 @@ class ModelCreateResponse(BaseModel):
     ownership_type: Optional[TaxonomyValueResponse] = None
     status_value: Optional[TaxonomyValueResponse] = None
     wholly_owned_region: Optional[Region] = None
+    mrsa_risk_level: Optional[TaxonomyValueResponse] = None  # MRSA risk classification
     users: List[UserResponse] = []
     regulatory_categories: List[TaxonomyValueResponse] = []
     regions: List[ModelRegionListItem] = []
+    irps: List[Any] = []  # IRPs covering this MRSA
     warnings: Optional[List[ModelCreateWarning]] = None
 
     class Config:

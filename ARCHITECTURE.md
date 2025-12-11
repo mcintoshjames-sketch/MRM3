@@ -1,6 +1,6 @@
 ## Overview
 
-Model Risk Management inventory system with a FastAPI backend, React/TypeScript frontend, and PostgreSQL database. Supports model cataloging, validation workflow, recommendations tracking, performance monitoring, regional deployment tracking, configurable taxonomies, and compliance reporting. Primary user roles: Admin (full control), Validator (workflow execution), Model Owner/Contributor (submit and track models), Regional/Global approvers (deployment approvals).
+Model Risk Management inventory system with a FastAPI backend, React/TypeScript frontend, and PostgreSQL database. Supports model cataloging, validation workflow, recommendations tracking, performance monitoring, regional deployment tracking, configurable taxonomies, compliance reporting, and MRSA (Model Risk-Sensitive Application) classification with IRP (Independent Review Process) governance. Primary user roles: Admin (full control), Validator (workflow execution), Model Owner/Contributor (submit and track models), Regional/Global approvers (deployment approvals).
 
 ## Tech Stack
 - Backend: FastAPI, SQLAlchemy 2.x ORM, Pydantic v2 schemas, Alembic migrations, JWT auth via python-jose, passlib/bcrypt for hashing.
@@ -57,6 +57,7 @@ Model Risk Management inventory system with a FastAPI backend, React/TypeScript 
   - `validation_policies.py`: Validation policy configuration (frequency, grace period, lead time) per risk tier with admin CRUD.
   - `overdue_revalidation_report.py`: Overdue revalidation report with bucket classification and commentary status filtering.
   - `lob_units.py`: LOB (Line of Business) hierarchy CRUD, tree retrieval, CSV import/export with dry-run preview.
+  - `irp.py`: IRP (Independent Review Process) management - CRUD for IRPs, MRSA coverage relationships, review and certification tracking, coverage compliance checks.
 - Core services:
   - DB session management (`core/database.py`), auth dependency (`core/deps.py`), security utilities (`core/security.py`), row-level security filters (`core/rls.py`).
   - PDF/report helpers in `validation_workflow.py` (FPDF) for generated artifacts.
@@ -76,6 +77,7 @@ Model Risk Management inventory system with a FastAPI backend, React/TypeScript 
   - Scorecard: `scorecard.py` (ScorecardSection, ScorecardCriterion, ValidationScorecardRating, ValidationScorecardResult, ScorecardConfigVersion, ScorecardSectionSnapshot, ScorecardCriterionSnapshot) - validation scorecard with configuration versioning.
   - Model Limitations: `limitation.py` (ModelLimitation) - inherent model constraints with significance classification, conclusion tracking, and retirement workflow.
   - Compliance/analytics: `audit_log.py`, `export_view.py`, `saved_query.py`, `version_deployment_task.py`, `validation_grouping.py`.
+  - IRP (Independent Review Process): `irp.py` (IRP, IRPReview, IRPCertification, mrsa_irp association table for many-to-many MRSA coverage).
 - Schemas: mirrored Pydantic models in `app/schemas/` for requests/responses.
 - Authn/z: HTTP Bearer JWT tokens; `get_current_user` dependency enforces auth; role checks per endpoint; RLS utilities narrow visibility for non-privileged users.
 - Audit logging: `AuditLog` persisted on key workflows (model changes, approvals, component config publishes, etc.).
@@ -99,6 +101,7 @@ Model Risk Management inventory system with a FastAPI backend, React/TypeScript 
   - **Approvals**: `ApproverRolesPage.tsx`, `ConditionalApprovalRulesPage.tsx`
   - **Reports**: `ReportsPage.tsx`, `RegionalComplianceReportPage.tsx`, `DeviationTrendsReportPage.tsx`, `OverdueRevalidationReportPage.tsx`, `CriticalLimitationsReportPage.tsx`, `NameChangesReportPage.tsx`, `KPIReportPage.tsx`
   - **Dashboards**: `AdminDashboardPage.tsx`, `ValidatorDashboardPage.tsx`, `ModelOwnerDashboardPage.tsx`, `ApproverDashboardPage.tsx`
+  - **IRP Management**: `IRPsPage.tsx` (list with CRUD, table sorting, filtering, CSV export), `IRPDetailPage.tsx` (detail view with covered MRSAs, review history, certification history tabs)
   - **Other**: `ModelChangeRecordPage.tsx`, `BatchDelegatesPage.tsx`, `RegionsPage.tsx`, `MyDeploymentTasksPage.tsx`, `MyPendingSubmissionsPage.tsx`, `AnalyticsPage.tsx`, `ReferenceDataPage.tsx`, `FryConfigPage.tsx`
   - **DecommissioningRequestPage**: Includes downstream dependency warning (fetches outbound dependencies from model relationships API and displays amber warning banner listing consumer models before submission).
   - **ModelDetailsPage**: Decommissioning tab always visible with "Initiate Decommissioning" button (shown when model not retired and no active request exists).
@@ -107,7 +110,8 @@ Model Risk Management inventory system with a FastAPI backend, React/TypeScript 
 
 ## Data Model (conceptual)
 - User & EntraUser directory entries; roles drive permissions.
-- Model with vendor, owner/developer, **shared_owner** (co-owner), **shared_developer** (co-developer), **monitoring_manager** (responsible for ongoing monitoring), taxonomy links (risk tier, model type, etc.), regulatory categories, delegates, and region assignments via ModelRegion. **Required fields**: `usage_frequency_id` (taxonomy reference). **Validation rules**: shared_owner ≠ owner, shared_developer ≠ developer. **Note**: Validation Type is associated with ValidationRequest, not Model (deprecated from Model UI).
+- Model with vendor, owner/developer, **shared_owner** (co-owner), **shared_developer** (co-developer), **monitoring_manager** (responsible for ongoing monitoring), taxonomy links (risk tier, model type, etc.), regulatory categories, delegates, and region assignments via ModelRegion. **Required fields**: `usage_frequency_id` (taxonomy reference). **Validation rules**: shared_owner ≠ owner, shared_developer ≠ developer. **Note**: Validation Type is associated with ValidationRequest, not Model (deprecated from Model UI). **MRSA fields**: `is_mrsa` (bool), `mrsa_risk_level_id` (taxonomy FK), `mrsa_risk_rationale` (text) - for Model Risk-Sensitive Application classification.
+- **IRP (Independent Review Process)**: Governance mechanism covering high-risk MRSAs. Fields: irp_id, process_name, description, contact_user_id, is_active. Relationships: covered_mrsas (many-to-many via mrsa_irp), reviews (one-to-many), certifications (one-to-many). **IRPReview**: Periodic assessment with review_date, outcome_id (taxonomy), notes, reviewed_by_user_id. **IRPCertification**: MRM sign-off with certification_date, certified_by_user_id, conclusion_summary.
 - **ModelPendingEdit**: Edit approval workflow for approved models. When non-admin users edit an already-approved model, a pending edit record is created with `proposed_changes` and `original_values` (JSON). Admin reviews the changes via dashboard widget or model details page and can approve (applies changes) or reject (with comment). Includes `requested_by_id`, `reviewed_by_id`, `status` (pending/approved/rejected), `review_comment`, and timestamps.
 - **Model Types**: Hierarchical classification with Categories (e.g., "Financial", "Operational") and Types (e.g., "Credit Risk", "Fraud Detection").
 - **Methodology Library**: Categories (e.g., "AI/ML Tabular", "Statistical") and Methodologies (e.g., "Random Forest", "Linear Regression") assigned to models. **AI/ML Classification**: `is_aiml` boolean on MethodologyCategory flags whether models using that category's methodologies are AI/ML models. Models with no methodology show "Undefined". Admin-editable via Taxonomy UI; displayed in Models list (with filter) and Model Details page.
@@ -802,6 +806,39 @@ Model Risk Management inventory system with a FastAPI backend, React/TypeScript 
   - **Entra Import Modal**: LOB selection required before provisioning SSO users
 - **Pre-seeded Data**: Default "Enterprise" hierarchy with 9 units across 3 levels (synthetic S#### org_units)
 - **Testing**: Tests cover CRUD operations, tree retrieval, CSV import/export, parent resolution, user assignment, and org_unit validation.
+
+## MRSA Classification & IRP Governance
+- **Purpose**: Track Model Risk-Sensitive Applications (MRSAs) that aren't full models but require governance oversight, with Independent Review Processes (IRPs) providing coverage for high-risk MRSAs.
+- **MRSA (Model Risk-Sensitive Application)**:
+  - Applications/systems that use model outputs or have model-like characteristics but don't qualify as full models
+  - Stored in Model table with `is_model=false`, `is_mrsa=true` flags
+  - Classification via `mrsa_risk_level_id` (taxonomy reference: High-Risk, Low-Risk)
+  - `mrsa_risk_rationale` captures reasoning for classification
+  - High-Risk MRSAs require IRP coverage (enforced via `requires_irp` flag on taxonomy values)
+- **IRP (Independent Review Process)**:
+  - Governance mechanism providing periodic review coverage for one or more MRSAs
+  - **Core fields**: irp_id, process_name, description, contact_user_id, is_active
+  - **Many-to-many relationship**: One IRP can cover multiple MRSAs via `mrsa_irp` junction table
+  - **Reviews**: Periodic assessments with taxonomy-based outcomes (Satisfactory, Conditionally Satisfactory, Not Satisfactory)
+  - **Certifications**: MRM sign-off on IRP design adequacy (Admin only)
+- **Taxonomies** (seeded):
+  - **MRSA Risk Level**: High-Risk (requires_irp=true), Low-Risk (requires_irp=false)
+  - **IRP Review Outcome**: Satisfactory, Conditionally Satisfactory, Not Satisfactory
+- **API Endpoints** (prefix: `/irps`):
+  - CRUD: `GET /`, `POST /` (Admin), `GET /{id}`, `PATCH /{id}` (Admin), `DELETE /{id}` (Admin)
+  - Reviews: `GET /{id}/reviews`, `POST /{id}/reviews`
+  - Certifications: `GET /{id}/certifications`, `POST /{id}/certifications` (Admin)
+  - Coverage: `GET /coverage/check` - Check IRP coverage compliance for MRSAs
+- **Frontend**:
+  - **IRPsPage** (`/irps`): Admin-only list with CRUD, filtering (active only toggle), table sorting, CSV export
+  - **IRPDetailPage** (`/irps/{id}`): Detail view with tabs for Overview, Covered MRSAs, Review History, Certification History
+  - **ModelsPage**: View mode toggle for Models Only / MRSAs Only / All
+  - Navigation: "IRP Management" link in Admin section
+- **Business Rules**:
+  - High-risk MRSAs (mrsa_risk_level with requires_irp=true) must have IRP coverage
+  - IRP coverage compliance reported via `/coverage/check` endpoint
+  - Reviews can be created by any authenticated user; certifications require Admin role
+- **Testing**: IRP tests in `tests/test_irp.py` covering CRUD, reviews, certifications, coverage check, and permissions.
 
 ## Security, Error Handling, Logging
 - JWT auth with token expiry; passwords hashed with bcrypt.

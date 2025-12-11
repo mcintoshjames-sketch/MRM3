@@ -14,6 +14,7 @@ class TaxonomyValueBase(BaseModel):
     min_days: int | None = None
     max_days: int | None = None
     downgrade_notches: int | None = None  # Scorecard penalty for Final Risk Ranking
+    requires_irp: bool | None = None  # For MRSA Risk Level: True if IRP coverage required
 
 
 class TaxonomyValueCreate(TaxonomyValueBase):
@@ -31,6 +32,7 @@ class TaxonomyValueUpdate(BaseModel):
     min_days: int | None = None
     max_days: int | None = None
     downgrade_notches: int | None = None  # Scorecard penalty for Final Risk Ranking
+    requires_irp: bool | None = None  # For MRSA Risk Level: True if IRP coverage required
 
 
 class TaxonomyValueResponse(TaxonomyValueBase):

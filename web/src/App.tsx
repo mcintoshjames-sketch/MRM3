@@ -47,6 +47,8 @@ import AttestationDetailPage from './pages/AttestationDetailPage';
 import BulkAttestationPage from './pages/BulkAttestationPage';
 import ReferenceDataPage from './pages/ReferenceDataPage';
 import ApproverDashboardPage from './pages/ApproverDashboardPage';
+import IRPsPage from './pages/IRPsPage';
+import IRPDetailPage from './pages/IRPDetailPage';
 
 function App() {
     const { user, loading } = useAuth();
@@ -114,6 +116,8 @@ function App() {
             <Route path="/my-attestations" element={user ? <MyAttestationsPage /> : <Navigate to="/login" />} />
             <Route path="/attestations/:id" element={user ? <AttestationDetailPage /> : <Navigate to="/login" />} />
             <Route path="/attestations/bulk/:cycleId" element={user ? <BulkAttestationPage /> : <Navigate to="/login" />} />
+            <Route path="/irps" element={user?.role === 'Admin' ? <IRPsPage /> : <Navigate to="/models" />} />
+            <Route path="/irps/:id" element={user?.role === 'Admin' ? <IRPDetailPage /> : <Navigate to="/models" />} />
             <Route path="/" element={<Navigate to={getDefaultRoute()} />} />
         </Routes>
     );

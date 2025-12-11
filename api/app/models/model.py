@@ -110,6 +110,17 @@ class Model(Base):
         Boolean, nullable=False, default=True,
         comment="True for actual models, False for non-model tools/applications")
 
+    # MRSA (Model Risk-Sensitive Application) classification
+    is_mrsa: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False,
+        comment="True for Model Risk-Sensitive Applications (non-models requiring oversight)")
+    mrsa_risk_level_id: Mapped[Optional[int]] = mapped_column(
+        Integer, ForeignKey("taxonomy_values.value_id", ondelete="SET NULL"), nullable=True,
+        comment="MRSA risk classification (High-Risk or Low-Risk)")
+    mrsa_risk_rationale: Mapped[Optional[str]] = mapped_column(
+        Text, nullable=True,
+        comment="Narrative explaining the MRSA risk level assignment")
+
     # Relationships
     owner: Mapped["User"] = relationship("User", foreign_keys=[owner_id])
     developer: Mapped[Optional["User"]] = relationship(
@@ -143,6 +154,12 @@ class Model(Base):
         "Region", foreign_keys=[wholly_owned_region_id])
     regulatory_categories: Mapped[List["TaxonomyValue"]] = relationship(
         "TaxonomyValue", secondary=model_regulatory_categories)
+    # MRSA classification relationship
+    mrsa_risk_level: Mapped[Optional["TaxonomyValue"]] = relationship(
+        "TaxonomyValue", foreign_keys=[mrsa_risk_level_id])
+    # IRP relationships (for MRSAs) - imported from irp.py
+    irps: Mapped[List["IRP"]] = relationship(
+        "IRP", secondary="mrsa_irp", back_populates="covered_mrsas")
     # Regional metadata links
     model_regions: Mapped[List["ModelRegion"]] = relationship(
         "ModelRegion", back_populates="model", cascade="all, delete-orphan"

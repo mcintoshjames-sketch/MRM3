@@ -262,6 +262,9 @@ export default function Layout({ children }: LayoutProps) {
                         {user?.role === 'Admin' && (
                             <NavItem to="/attestations">Attestation Management</NavItem>
                         )}
+                        {user?.role === 'Admin' && (
+                            <NavItem to="/irps">IRP Management</NavItem>
+                        )}
 
                         {/* ══════════════════════════════════════════════════════════
                             MY TASKS SECTION - Personal action items with badges

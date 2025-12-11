@@ -279,6 +279,7 @@ def _upsert_taxonomy_with_values(
     """Create or update a taxonomy and its managed values.
 
     For bucket-type taxonomies, values should include 'min_days' and 'max_days' keys.
+    For MRSA Risk Level taxonomy, values should include 'requires_irp' key.
     """
     taxonomy = db.query(Taxonomy).filter(Taxonomy.name == name).first()
     created = False
@@ -316,6 +317,9 @@ def _upsert_taxonomy_with_values(
                 record.min_days = entry.get("min_days")
                 record.max_days = entry.get("max_days")
                 record.downgrade_notches = entry.get("downgrade_notches")
+            # Update MRSA-related fields if present
+            if "requires_irp" in entry:
+                record.requires_irp = entry.get("requires_irp")
         else:
             db.add(
                 TaxonomyValue(
@@ -331,6 +335,7 @@ def _upsert_taxonomy_with_values(
                         "max_days") if taxonomy_type == "bucket" else None,
                     downgrade_notches=entry.get(
                         "downgrade_notches") if taxonomy_type == "bucket" else None,
+                    requires_irp=entry.get("requires_irp"),
                     created_at=utc_now(),
                 )
             )
@@ -479,6 +484,50 @@ def seed_taxonomy_reference_data(db):
                 "code": "OTHER",
                 "label": "Other",
                 "description": "Other limitations not covered by above categories",
+            },
+        ],
+    )
+    # MRSA (Model Risk-Sensitive Application) Risk Level taxonomy
+    # requires_irp flag controls whether IRP coverage is mandatory
+    _upsert_taxonomy_with_values(
+        db,
+        name="MRSA Risk Level",
+        description="Classification of MRSA (Model Risk-Sensitive Application) risk levels determining Independent Review Process (IRP) requirements.",
+        values=[
+            {
+                "code": "HIGH_RISK",
+                "label": "High-Risk",
+                "description": "High-risk MRSA requiring Independent Review Process (IRP) coverage for oversight and governance",
+                "requires_irp": True,
+            },
+            {
+                "code": "LOW_RISK",
+                "label": "Low-Risk",
+                "description": "Low-risk MRSA not requiring formal IRP coverage but still subject to standard governance",
+                "requires_irp": False,
+            },
+        ],
+    )
+    # IRP (Independent Review Process) Review Outcome taxonomy
+    _upsert_taxonomy_with_values(
+        db,
+        name="IRP Review Outcome",
+        description="Outcomes for Independent Review Process (IRP) periodic assessments of MRSAs.",
+        values=[
+            {
+                "code": "SATISFACTORY",
+                "label": "Satisfactory",
+                "description": "IRP review found MRSAs are adequately managed and controlled",
+            },
+            {
+                "code": "CONDITIONALLY_SATISFACTORY",
+                "label": "Conditionally Satisfactory",
+                "description": "IRP review found minor issues requiring attention within defined timeframe",
+            },
+            {
+                "code": "NOT_SATISFACTORY",
+                "label": "Not Satisfactory",
+                "description": "IRP review found significant deficiencies requiring immediate remediation",
             },
         ],
     )

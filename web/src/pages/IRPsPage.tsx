@@ -1,0 +1,426 @@
+import { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
+import Layout from '../components/Layout';
+import { useTableSort } from '../hooks/useTableSort';
+import { useAuth } from '../contexts/AuthContext';
+import { irpApi, IRP, IRPCreate, IRPUpdate } from '../api/irp';
+import api from '../api/client';
+
+interface User {
+    user_id: number;
+    email: string;
+    full_name: string;
+}
+
+export default function IRPsPage() {
+    const { user } = useAuth();
+    const isAdmin = user?.role === 'Admin';
+
+    const [irps, setIrps] = useState<IRP[]>([]);
+    const [users, setUsers] = useState<User[]>([]);
+    const [loading, setLoading] = useState(true);
+    const [showForm, setShowForm] = useState(false);
+    const [editingIrp, setEditingIrp] = useState<IRP | null>(null);
+    const [formData, setFormData] = useState<IRPCreate>({
+        process_name: '',
+        description: '',
+        contact_user_id: 0,
+        is_active: true,
+        mrsa_ids: []
+    });
+
+    // Filter state
+    const [showActiveOnly, setShowActiveOnly] = useState(true);
+
+    // Table sorting
+    const filteredIrps = showActiveOnly ? irps.filter(irp => irp.is_active) : irps;
+    const { sortedData, requestSort, getSortIcon } = useTableSort<IRP>(filteredIrps, 'process_name');
+
+    useEffect(() => {
+        fetchData();
+    }, []);
+
+    const fetchData = async () => {
+        try {
+            const [irpsData, usersResponse] = await Promise.all([
+                irpApi.list(),
+                api.get('/auth/users')
+            ]);
+            setIrps(irpsData);
+            setUsers(usersResponse.data);
+        } catch (error) {
+            console.error('Failed to fetch data:', error);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const resetForm = () => {
+        setFormData({
+            process_name: '',
+            description: '',
+            contact_user_id: 0,
+            is_active: true,
+            mrsa_ids: []
+        });
+        setEditingIrp(null);
+        setShowForm(false);
+    };
+
+    const handleSubmit = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!formData.contact_user_id) {
+            alert('Please select a contact user');
+            return;
+        }
+        try {
+            if (editingIrp) {
+                const updateData: IRPUpdate = {
+                    process_name: formData.process_name,
+                    description: formData.description || undefined,
+                    contact_user_id: formData.contact_user_id,
+                    is_active: formData.is_active
+                };
+                await irpApi.update(editingIrp.irp_id, updateData);
+            } else {
+                await irpApi.create(formData);
+            }
+            resetForm();
+            fetchData();
+        } catch (error: any) {
+            console.error('Failed to save IRP:', error);
+            alert(error.response?.data?.detail || 'Failed to save IRP');
+        }
+    };
+
+    const handleEdit = (irp: IRP) => {
+        setEditingIrp(irp);
+        setFormData({
+            process_name: irp.process_name,
+            description: irp.description || '',
+            contact_user_id: irp.contact_user_id,
+            is_active: irp.is_active,
+            mrsa_ids: []
+        });
+        setShowForm(true);
+    };
+
+    const handleDelete = async (irpId: number) => {
+        if (!confirm('Are you sure you want to delete this IRP? This action cannot be undone.')) return;
+
+        try {
+            await irpApi.delete(irpId);
+            fetchData();
+        } catch (error: any) {
+            console.error('Failed to delete IRP:', error);
+            alert(error.response?.data?.detail || 'Failed to delete IRP');
+        }
+    };
+
+    const exportToCsv = () => {
+        const headers = ['IRP ID', 'Process Name', 'Contact', 'Status', 'Covered MRSAs', 'Latest Review', 'Latest Certification', 'Created'];
+        const csvData = sortedData.map(irp => [
+            irp.irp_id,
+            irp.process_name,
+            irp.contact_user?.full_name || '',
+            irp.is_active ? 'Active' : 'Inactive',
+            irp.covered_mrsa_count,
+            irp.latest_review_date || '',
+            irp.latest_certification_date || '',
+            irp.created_at.split('T')[0]
+        ]);
+
+        const csvContent = [headers, ...csvData]
+            .map(row => row.map(cell => `"${cell}"`).join(','))
+            .join('\n');
+
+        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(blob);
+        link.download = `irps_${new Date().toISOString().split('T')[0]}.csv`;
+        link.click();
+    };
+
+    if (loading) {
+        return (
+            <Layout>
+                <div className="flex items-center justify-center h-64">Loading...</div>
+            </Layout>
+        );
+    }
+
+    return (
+        <Layout>
+            <div className="p-6">
+                <div className="flex justify-between items-center mb-6">
+                    <div>
+                        <h1 className="text-2xl font-bold text-gray-900">Independent Review Processes (IRPs)</h1>
+                        <p className="text-sm text-gray-600 mt-1">
+                            Manage IRPs that provide governance coverage for high-risk MRSAs
+                        </p>
+                    </div>
+                    <div className="flex gap-2">
+                        <button onClick={exportToCsv} className="btn-secondary">
+                            Export CSV
+                        </button>
+                        {isAdmin && (
+                            <button onClick={() => setShowForm(true)} className="btn-primary">
+                                + Add IRP
+                            </button>
+                        )}
+                    </div>
+                </div>
+
+                {/* Filters */}
+                <div className="bg-white p-4 rounded-lg shadow-md mb-6">
+                    <div className="flex items-center gap-4">
+                        <label className="flex items-center gap-2">
+                            <input
+                                type="checkbox"
+                                checked={showActiveOnly}
+                                onChange={(e) => setShowActiveOnly(e.target.checked)}
+                                className="h-4 w-4 text-blue-600 rounded"
+                            />
+                            <span className="text-sm font-medium text-gray-700">Show Active Only</span>
+                        </label>
+                        <div className="text-sm text-gray-500">
+                            Showing {sortedData.length} of {irps.length} IRPs
+                        </div>
+                    </div>
+                </div>
+
+                {/* Form */}
+                {showForm && (
+                    <div className="bg-white p-6 rounded-lg shadow-md mb-6">
+                        <h3 className="text-lg font-bold mb-4">
+                            {editingIrp ? 'Edit IRP' : 'Create New IRP'}
+                        </h3>
+                        <form onSubmit={handleSubmit}>
+                            <div className="grid grid-cols-2 gap-4">
+                                <div className="mb-4">
+                                    <label htmlFor="process_name" className="block text-sm font-medium mb-2">
+                                        Process Name *
+                                    </label>
+                                    <input
+                                        id="process_name"
+                                        type="text"
+                                        className="input-field"
+                                        value={formData.process_name}
+                                        onChange={(e) => setFormData({ ...formData, process_name: e.target.value })}
+                                        required
+                                    />
+                                </div>
+                                <div className="mb-4">
+                                    <label htmlFor="contact_user_id" className="block text-sm font-medium mb-2">
+                                        Contact User *
+                                    </label>
+                                    <select
+                                        id="contact_user_id"
+                                        className="input-field"
+                                        value={formData.contact_user_id}
+                                        onChange={(e) => setFormData({ ...formData, contact_user_id: parseInt(e.target.value) })}
+                                        required
+                                    >
+                                        <option value={0}>Select a contact...</option>
+                                        {users.map(u => (
+                                            <option key={u.user_id} value={u.user_id}>{u.full_name}</option>
+                                        ))}
+                                    </select>
+                                </div>
+                                <div className="mb-4 col-span-2">
+                                    <label htmlFor="description" className="block text-sm font-medium mb-2">
+                                        Description
+                                    </label>
+                                    <textarea
+                                        id="description"
+                                        className="input-field"
+                                        rows={3}
+                                        value={formData.description}
+                                        onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                                        placeholder="Describe the IRP scope and purpose..."
+                                    />
+                                </div>
+                                <div className="mb-4">
+                                    <label className="flex items-center gap-2">
+                                        <input
+                                            type="checkbox"
+                                            checked={formData.is_active}
+                                            onChange={(e) => setFormData({ ...formData, is_active: e.target.checked })}
+                                            className="h-4 w-4 text-blue-600 rounded"
+                                        />
+                                        <span className="text-sm font-medium text-gray-700">Active</span>
+                                    </label>
+                                </div>
+                            </div>
+                            <div className="flex gap-2">
+                                <button type="submit" className="btn-primary">
+                                    {editingIrp ? 'Update' : 'Create'}
+                                </button>
+                                <button type="button" onClick={resetForm} className="btn-secondary">
+                                    Cancel
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                )}
+
+                {/* Table */}
+                <div className="bg-white rounded-lg shadow-md overflow-hidden">
+                    <table className="min-w-full divide-y divide-gray-200">
+                        <thead className="bg-gray-50">
+                            <tr>
+                                <th
+                                    className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100"
+                                    onClick={() => requestSort('irp_id')}
+                                >
+                                    <div className="flex items-center gap-2">
+                                        ID
+                                        {getSortIcon('irp_id')}
+                                    </div>
+                                </th>
+                                <th
+                                    className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100"
+                                    onClick={() => requestSort('process_name')}
+                                >
+                                    <div className="flex items-center gap-2">
+                                        Process Name
+                                        {getSortIcon('process_name')}
+                                    </div>
+                                </th>
+                                <th
+                                    className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100"
+                                    onClick={() => requestSort('contact_user.full_name')}
+                                >
+                                    <div className="flex items-center gap-2">
+                                        Contact
+                                        {getSortIcon('contact_user.full_name')}
+                                    </div>
+                                </th>
+                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                                    Status
+                                </th>
+                                <th
+                                    className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100"
+                                    onClick={() => requestSort('covered_mrsa_count')}
+                                >
+                                    <div className="flex items-center gap-2">
+                                        MRSAs
+                                        {getSortIcon('covered_mrsa_count')}
+                                    </div>
+                                </th>
+                                <th
+                                    className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100"
+                                    onClick={() => requestSort('latest_review_date')}
+                                >
+                                    <div className="flex items-center gap-2">
+                                        Latest Review
+                                        {getSortIcon('latest_review_date')}
+                                    </div>
+                                </th>
+                                <th
+                                    className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100"
+                                    onClick={() => requestSort('latest_certification_date')}
+                                >
+                                    <div className="flex items-center gap-2">
+                                        Certification
+                                        {getSortIcon('latest_certification_date')}
+                                    </div>
+                                </th>
+                                {isAdmin && (
+                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                                        Actions
+                                    </th>
+                                )}
+                            </tr>
+                        </thead>
+                        <tbody className="bg-white divide-y divide-gray-200">
+                            {sortedData.length === 0 ? (
+                                <tr>
+                                    <td colSpan={isAdmin ? 8 : 7} className="px-6 py-4 text-center text-gray-500">
+                                        No IRPs found. {isAdmin && 'Click "Add IRP" to create one.'}
+                                    </td>
+                                </tr>
+                            ) : (
+                                sortedData.map((irp) => (
+                                    <tr key={irp.irp_id} className="hover:bg-gray-50">
+                                        <td className="px-6 py-4 whitespace-nowrap text-sm">
+                                            {irp.irp_id}
+                                        </td>
+                                        <td className="px-6 py-4 whitespace-nowrap text-sm">
+                                            <Link
+                                                to={`/irps/${irp.irp_id}`}
+                                                className="font-medium text-blue-600 hover:text-blue-800"
+                                            >
+                                                {irp.process_name}
+                                            </Link>
+                                        </td>
+                                        <td className="px-6 py-4 whitespace-nowrap text-sm">
+                                            {irp.contact_user?.full_name || '-'}
+                                        </td>
+                                        <td className="px-6 py-4 whitespace-nowrap text-sm">
+                                            <span className={`px-2 py-1 text-xs rounded font-medium ${
+                                                irp.is_active
+                                                    ? 'bg-green-100 text-green-800'
+                                                    : 'bg-gray-100 text-gray-700'
+                                            }`}>
+                                                {irp.is_active ? 'Active' : 'Inactive'}
+                                            </span>
+                                        </td>
+                                        <td className="px-6 py-4 whitespace-nowrap text-sm">
+                                            <span className="px-2 py-1 bg-amber-100 text-amber-800 rounded text-xs font-medium">
+                                                {irp.covered_mrsa_count}
+                                            </span>
+                                        </td>
+                                        <td className="px-6 py-4 whitespace-nowrap text-sm">
+                                            {irp.latest_review_date ? (
+                                                <div className="flex flex-col">
+                                                    <span>{irp.latest_review_date}</span>
+                                                    {irp.latest_review_outcome && (
+                                                        <span className={`text-xs px-1.5 py-0.5 rounded mt-0.5 inline-block w-fit ${
+                                                            irp.latest_review_outcome === 'Satisfactory'
+                                                                ? 'bg-green-100 text-green-700'
+                                                                : irp.latest_review_outcome === 'Conditionally Satisfactory'
+                                                                    ? 'bg-yellow-100 text-yellow-700'
+                                                                    : 'bg-red-100 text-red-700'
+                                                        }`}>
+                                                            {irp.latest_review_outcome}
+                                                        </span>
+                                                    )}
+                                                </div>
+                                            ) : (
+                                                <span className="text-gray-400">No reviews</span>
+                                            )}
+                                        </td>
+                                        <td className="px-6 py-4 whitespace-nowrap text-sm">
+                                            {irp.latest_certification_date || (
+                                                <span className="text-gray-400">Not certified</span>
+                                            )}
+                                        </td>
+                                        {isAdmin && (
+                                            <td className="px-6 py-4 whitespace-nowrap text-sm">
+                                                <div className="flex gap-2">
+                                                    <button
+                                                        onClick={() => handleEdit(irp)}
+                                                        className="text-blue-600 hover:text-blue-800"
+                                                    >
+                                                        Edit
+                                                    </button>
+                                                    <button
+                                                        onClick={() => handleDelete(irp.irp_id)}
+                                                        className="text-red-600 hover:text-red-800"
+                                                    >
+                                                        Delete
+                                                    </button>
+                                                </div>
+                                            </td>
+                                        )}
+                                    </tr>
+                                ))
+                            )}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </Layout>
+    );
+}

@@ -341,6 +341,16 @@ def _build_model_list_response(model: Model, include_computed_fields: bool, db: 
     for rc in model.regulatory_categories:
         reg_cats_list.append({"value_id": rc.value_id, "label": rc.label, "code": rc.code})
 
+    # Build MRSA risk level dict
+    mrsa_risk_level_dict = None
+    if model.mrsa_risk_level:
+        mrsa_risk_level_dict = {
+            "value_id": model.mrsa_risk_level.value_id,
+            "label": model.mrsa_risk_level.label,
+            "code": model.mrsa_risk_level.code,
+            "requires_irp": model.mrsa_risk_level.requires_irp
+        }
+
     # Compute business_line_name from owner's LOB chain
     business_line = None
     if model.owner:
@@ -357,8 +367,14 @@ def _build_model_list_response(model: Model, include_computed_fields: bool, db: 
         "description": model.description,
         "development_type": model.development_type,
         "status": model.status,
+        "created_at": model.created_at,
+        "updated_at": model.updated_at,
         "is_model": model.is_model,
         "is_aiml": is_aiml,
+        "is_mrsa": model.is_mrsa,
+        "mrsa_risk_level_id": model.mrsa_risk_level_id,
+        "mrsa_risk_level": mrsa_risk_level_dict,
+        "mrsa_risk_rationale": model.mrsa_risk_rationale,
         "row_approval_status": model.row_approval_status,
         "business_line_name": business_line,
         "model_last_updated": get_model_last_updated(model),
@@ -407,6 +423,7 @@ def list_models(
     exclude_sub_models: bool = False,
     include_computed_fields: bool = False,
     model_ids: Optional[str] = Query(None, description="Comma-separated model IDs to filter (for KPI drill-down)"),
+    is_mrsa: Optional[bool] = Query(None, description="Filter by MRSA status: True=MRSAs only, False=Models only, None=All"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
@@ -422,6 +439,7 @@ def list_models(
     - include_computed_fields: If True, include expensive computed fields (scorecard_outcome,
       residual_risk, approval_status). Default False for better performance.
     - model_ids: Comma-separated model IDs to filter (for KPI drill-down links)
+    - is_mrsa: Filter by MRSA status - True shows only MRSAs, False shows only models, None shows all
     """
     from app.core.rls import apply_model_rls
     from app.models.lob import LOBUnit
@@ -435,6 +453,7 @@ def list_models(
         joinedload(Model.monitoring_manager).joinedload(User.lob),
         joinedload(Model.vendor),
         joinedload(Model.risk_tier),
+        joinedload(Model.mrsa_risk_level),
         joinedload(Model.model_type),
         joinedload(Model.methodology).joinedload(Methodology.category),
         joinedload(Model.wholly_owned_region),
@@ -454,6 +473,10 @@ def list_models(
         ids = [int(id.strip()) for id in model_ids.split(',') if id.strip().isdigit()]
         if ids:
             query = query.filter(Model.model_id.in_(ids))
+
+    # Filter by is_mrsa if provided
+    if is_mrsa is not None:
+        query = query.filter(Model.is_mrsa == is_mrsa)
 
     models = query.all()
 
@@ -571,10 +594,11 @@ def create_model(
                 detail="Monitoring manager user not found"
             )
 
-    # Extract user_ids, regulatory_category_ids, region_ids, initial_version_number, initial_implementation_date, and validation request fields before creating model
+    # Extract user_ids, regulatory_category_ids, region_ids, irp_ids, initial_version_number, initial_implementation_date, and validation request fields before creating model
     user_ids = model_data.user_ids or []
     regulatory_category_ids = model_data.regulatory_category_ids or []
     region_ids = model_data.region_ids or []
+    irp_ids = model_data.irp_ids or []
     initial_version_number = model_data.initial_version_number or "1.0"
     initial_implementation_date = model_data.initial_implementation_date
     auto_create_validation = model_data.auto_create_validation
@@ -585,7 +609,7 @@ def create_model(
         'trigger_reason': model_data.validation_request_trigger_reason
     }
     model_dict = model_data.model_dump(exclude={
-        'user_ids', 'regulatory_category_ids', 'region_ids',
+        'user_ids', 'regulatory_category_ids', 'region_ids', 'irp_ids',
         'initial_version_number', 'initial_implementation_date',
         'auto_create_validation', 'validation_request_type_id',
         'validation_request_priority_id', 'validation_request_target_date',
@@ -620,6 +644,17 @@ def create_model(
                 detail="One or more regulatory categories not found"
             )
         model.regulatory_categories = categories
+
+    # Add IRP coverage for MRSAs
+    if irp_ids:
+        from app.models.irp import IRP
+        irps = db.query(IRP).filter(IRP.irp_id.in_(irp_ids)).all()
+        if len(irps) != len(irp_ids):
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="One or more IRPs not found"
+            )
+        model.irps = irps
 
     db.add(model)
     db.commit()
@@ -1583,6 +1618,21 @@ def update_model(
             model.regulatory_categories = categories
             regulatory_categories_changed = True
 
+    # Handle irp_ids separately (IRP coverage for MRSAs)
+    irps_changed = False
+    if 'irp_ids' in update_data:
+        irp_ids = update_data.pop('irp_ids')
+        if irp_ids is not None:
+            from app.models.irp import IRP
+            irps = db.query(IRP).filter(IRP.irp_id.in_(irp_ids)).all()
+            if len(irps) != len(irp_ids):
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="One or more IRPs not found"
+                )
+            model.irps = irps
+            irps_changed = True
+
     # Track changes for audit log
     changes_made = {}
     risk_tier_changed = False
@@ -1607,6 +1657,9 @@ def update_model(
 
     if regulatory_categories_changed:
         changes_made["regulatory_category_ids"] = "modified"
+
+    if irps_changed:
+        changes_made["irp_ids"] = "modified"
 
     # Auto-sync deployment regions when wholly_owned_region_id changes
     if 'wholly_owned_region_id' in update_data and update_data['wholly_owned_region_id'] is not None:

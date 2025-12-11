@@ -92,6 +92,11 @@ interface Model {
     submitted_at: string | null;
     is_model: boolean;
     is_aiml: boolean | null;
+    // MRSA fields
+    is_mrsa: boolean;
+    mrsa_risk_level_id: number | null;
+    mrsa_risk_level: TaxonomyValue | null;
+    mrsa_risk_rationale: string | null;
     owner: UserWithLOB;
     developer: UserWithLOB | null;
     vendor: Vendor | null;
@@ -179,6 +184,8 @@ export default function ModelsPage() {
         validation_request_trigger_reason: '' as string
     });
     const [includeNonModels, setIncludeNonModels] = useState(false);
+    // View mode: 'models' = Models only, 'mrsas' = MRSAs only, 'all' = All entities
+    const [viewMode, setViewMode] = useState<'models' | 'mrsas' | 'all'>('models');
     const [userSearchTerm, setUserSearchTerm] = useState('');
     const [validationTypes, setValidationTypes] = useState<any[]>([]);
     const [validationPriorities, setValidationPriorities] = useState<any[]>([]);
@@ -260,6 +267,8 @@ export default function ModelsPage() {
         { key: 'model_id', label: 'Model ID', default: false },
         { key: 'model_name', label: 'Model Name', default: true },
         { key: 'is_aiml', label: 'AI/ML', default: true },
+        { key: 'is_mrsa', label: 'MRSA', default: false },
+        { key: 'mrsa_risk_level', label: 'MRSA Risk Level', default: false },
         { key: 'owner', label: 'Owner', default: true },
         { key: 'owner_lob', label: 'Owner LOB', default: false },
         { key: 'developer', label: 'Developer', default: true },
@@ -399,6 +408,14 @@ export default function ModelsPage() {
 
         // Model/Non-Model classification filter - exclude non-models unless checkbox is checked
         if (!includeNonModels && model.is_model === false) {
+            return false;
+        }
+
+        // View mode filter: 'models' = only is_model=true, 'mrsas' = only is_mrsa=true, 'all' = all
+        if (viewMode === 'models' && !model.is_model) {
+            return false;
+        }
+        if (viewMode === 'mrsas' && !model.is_mrsa) {
             return false;
         }
 
@@ -753,6 +770,32 @@ export default function ModelsPage() {
             ),
             csvValue: (model) => model.is_aiml === true ? 'AI/ML' : model.is_aiml === false ? 'Non-AI/ML' : 'Undefined'
         },
+        is_mrsa: {
+            header: 'MRSA',
+            sortKey: 'is_mrsa',
+            cell: (model) => model.is_mrsa ? (
+                <span className="px-2 py-1 text-xs rounded bg-amber-100 text-amber-800 font-medium">MRSA</span>
+            ) : (
+                <span className="text-sm text-gray-400">-</span>
+            ),
+            csvValue: (model) => model.is_mrsa ? 'Yes' : 'No'
+        },
+        mrsa_risk_level: {
+            header: 'MRSA Risk Level',
+            sortKey: 'mrsa_risk_level.label',
+            cell: (model) => model.mrsa_risk_level ? (
+                <span className={`px-2 py-1 text-xs rounded font-medium ${
+                    model.mrsa_risk_level.code === 'HIGH_RISK' ? 'bg-red-100 text-red-800' :
+                    model.mrsa_risk_level.code === 'LOW_RISK' ? 'bg-green-100 text-green-800' :
+                    'bg-gray-100 text-gray-700'
+                }`}>
+                    {model.mrsa_risk_level.label}
+                </span>
+            ) : (
+                <span className="text-sm text-gray-400">-</span>
+            ),
+            csvValue: (model) => model.mrsa_risk_level?.label || ''
+        },
         owner: {
             header: 'Owner',
             sortKey: 'owner.full_name',
@@ -975,14 +1018,14 @@ export default function ModelsPage() {
         created_at: {
             header: 'Created Date',
             sortKey: 'created_at',
-            cell: (model) => model.created_at.split('T')[0],
-            csvValue: (model) => model.created_at.split('T')[0]
+            cell: (model) => model.created_at?.split('T')[0] || '-',
+            csvValue: (model) => model.created_at?.split('T')[0] || ''
         },
         updated_at: {
             header: 'Modified On',
             sortKey: 'updated_at',
-            cell: (model) => model.updated_at.split('T')[0],
-            csvValue: (model) => model.updated_at.split('T')[0]
+            cell: (model) => model.updated_at?.split('T')[0] || '-',
+            csvValue: (model) => model.updated_at?.split('T')[0] || ''
         },
         model_last_updated: {
             header: 'Model Last Updated',
@@ -2056,6 +2099,46 @@ export default function ModelsPage() {
                             </select>
                         </div>
 
+                        {/* View Mode Toggle */}
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">View Mode</label>
+                            <div className="flex rounded-md shadow-sm">
+                                <button
+                                    type="button"
+                                    onClick={() => setViewMode('models')}
+                                    className={`px-3 py-2 text-xs font-medium rounded-l-md border ${
+                                        viewMode === 'models'
+                                            ? 'bg-blue-600 text-white border-blue-600'
+                                            : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+                                    }`}
+                                >
+                                    Models
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => setViewMode('mrsas')}
+                                    className={`px-3 py-2 text-xs font-medium border-t border-b ${
+                                        viewMode === 'mrsas'
+                                            ? 'bg-amber-600 text-white border-amber-600'
+                                            : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+                                    }`}
+                                >
+                                    MRSAs
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => setViewMode('all')}
+                                    className={`px-3 py-2 text-xs font-medium rounded-r-md border ${
+                                        viewMode === 'all'
+                                            ? 'bg-gray-600 text-white border-gray-600'
+                                            : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+                                    }`}
+                                >
+                                    All
+                                </button>
+                            </div>
+                        </div>
+
                         {/* Include Non-Models Toggle */}
                         <div className="flex items-center space-x-2 pt-5">
                             <input
@@ -2089,7 +2172,8 @@ export default function ModelsPage() {
                     <div className="flex items-center justify-between mt-3 pt-3 border-t">
                         <div className="text-sm text-gray-600">
                             Showing <span className="font-semibold">{sortedData.length}</span> of{' '}
-                            <span className="font-semibold">{models.length}</span> models
+                            <span className="font-semibold">{models.length}</span>{' '}
+                            {viewMode === 'mrsas' ? 'MRSAs' : viewMode === 'all' ? 'entities' : 'models'}
                         </div>
                         <button
                             onClick={() => {
@@ -2104,6 +2188,7 @@ export default function ModelsPage() {
                                     is_aiml: ''
                                 });
                                 setIncludeNonModels(false);
+                                setViewMode('models');
                             }}
                             className="text-sm text-blue-600 hover:text-blue-800"
                         >
