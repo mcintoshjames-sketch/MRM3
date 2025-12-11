@@ -1,4 +1,4 @@
-# Azure Hardening & Deployment Plan
+# Azure Hardening & Deployment Illustrative Plan
 
 ## Overview
 This document outlines the comprehensive work plan to transform the current local Docker Compose-based MRM solution into a bank-grade, secure Azure PaaS deployment. This plan prioritizes Zero Trust security, operational resilience, and strict compliance with banking standards.
