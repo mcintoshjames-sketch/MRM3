@@ -728,7 +728,7 @@ export default function RecommendationDetailPage() {
                                                     </span>
                                                 </td>
                                                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                                                    {limitation.category_label || '-'}
+                                                    {limitation.category?.label || '-'}
                                                 </td>
                                                 <td className="px-6 py-4 text-sm text-gray-900 max-w-xs truncate" title={limitation.description}>
                                                     {limitation.description.length > 80

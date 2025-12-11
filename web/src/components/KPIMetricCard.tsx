@@ -2,6 +2,7 @@
  * KPIMetricCard - displays a single KPI metric with value and optional decomposition.
  */
 import React from 'react';
+import { Link } from 'react-router-dom';
 import { KPIMetric, KPIBreakdown } from '../api/kpiReport';
 
 interface KPIMetricCardProps {
@@ -24,14 +25,30 @@ const KPIMetricCard: React.FC<KPIMetricCardProps> = ({ metric, onInfoClick }) =>
 
             case 'ratio':
                 if (metric.ratio_value) {
-                    const { numerator, denominator, percentage, numerator_label, denominator_label } = metric.ratio_value;
+                    const { numerator, denominator, percentage, numerator_label, denominator_label, numerator_model_ids } = metric.ratio_value;
+
+                    // Build drill-down URL if model IDs are provided
+                    const drillDownUrl = numerator_model_ids && numerator_model_ids.length > 0
+                        ? `/models?ids=${numerator_model_ids.join(',')}`
+                        : null;
+
                     return (
                         <>
                             <div className="text-3xl font-bold text-gray-900">
                                 {percentage.toFixed(1)}%
                             </div>
                             <div className="text-sm text-gray-500 mt-1">
-                                <span className="text-blue-600 font-medium">{numerator.toLocaleString()}</span>
+                                {drillDownUrl ? (
+                                    <Link
+                                        to={drillDownUrl}
+                                        className="text-blue-600 font-medium hover:underline cursor-pointer"
+                                        title="Click to view these models"
+                                    >
+                                        {numerator.toLocaleString()}
+                                    </Link>
+                                ) : (
+                                    <span className="text-blue-600 font-medium">{numerator.toLocaleString()}</span>
+                                )}
                                 {' '}{numerator_label} /{' '}
                                 <span className="text-gray-700 font-medium">{denominator.toLocaleString()}</span>
                                 {' '}{denominator_label}
@@ -118,9 +135,21 @@ interface BreakdownChartProps {
 }
 
 const BreakdownChart: React.FC<BreakdownChartProps> = ({ data }) => {
-    // Sort by count descending
-    const sortedData = [...data].sort((a, b) => b.count - a.count);
-    const maxCount = Math.max(...sortedData.map(d => d.count), 1);
+    // Check if this is a duration breakdown (has avg_days)
+    const hasDuration = data.some(d => d.avg_days !== undefined && d.avg_days !== null);
+
+    // Sort by avg_days descending for duration breakdowns, by count descending otherwise
+    const sortedData = [...data].sort((a, b) => {
+        if (hasDuration && a.avg_days !== undefined && b.avg_days !== undefined) {
+            return b.avg_days - a.avg_days;
+        }
+        return b.count - a.count;
+    });
+
+    // For bar width: use avg_days for duration breakdowns, count otherwise
+    const maxValue = hasDuration
+        ? Math.max(...sortedData.map(d => d.avg_days ?? 0), 1)
+        : Math.max(...sortedData.map(d => d.count), 1);
 
     // Colors for different categories
     const colors = [
@@ -136,22 +165,27 @@ const BreakdownChart: React.FC<BreakdownChartProps> = ({ data }) => {
 
     return (
         <div className="space-y-2">
-            {sortedData.slice(0, 5).map((item, index) => (
-                <div key={item.category} className="flex items-center gap-2">
-                    <div className="w-24 text-xs text-gray-600 truncate" title={item.category}>
-                        {item.category}
+            {sortedData.slice(0, 5).map((item, index) => {
+                const barValue = hasDuration ? (item.avg_days ?? 0) : item.count;
+                return (
+                    <div key={item.category} className="flex items-center gap-2">
+                        <div className="w-24 text-xs text-gray-600 truncate" title={item.category}>
+                            {item.category}
+                        </div>
+                        <div className="flex-1 h-4 bg-gray-100 rounded overflow-hidden">
+                            <div
+                                className={`h-full ${colors[index % colors.length]} transition-all`}
+                                style={{ width: `${(barValue / maxValue) * 100}%` }}
+                            />
+                        </div>
+                        <div className="w-20 text-xs text-gray-600 text-right">
+                            {hasDuration && item.avg_days !== undefined
+                                ? `${item.avg_days.toFixed(1)} days`
+                                : `${item.count} (${item.percentage.toFixed(0)}%)`}
+                        </div>
                     </div>
-                    <div className="flex-1 h-4 bg-gray-100 rounded overflow-hidden">
-                        <div
-                            className={`h-full ${colors[index % colors.length]} transition-all`}
-                            style={{ width: `${(item.count / maxCount) * 100}%` }}
-                        />
-                    </div>
-                    <div className="w-16 text-xs text-gray-600 text-right">
-                        {item.count} ({item.percentage.toFixed(0)}%)
-                    </div>
-                </div>
-            ))}
+                );
+            })}
             {sortedData.length > 5 && (
                 <div className="text-xs text-gray-400 text-center">
                     +{sortedData.length - 5} more categories

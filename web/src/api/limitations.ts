@@ -16,9 +16,10 @@ export interface LimitationListItem {
     model_id: number;
     significance: 'Critical' | 'Non-Critical';
     category_id: number;
-    category_label?: string;
+    category?: LimitationCategory;  // Nested object from API
     description: string;
     conclusion: 'Mitigate' | 'Accept';
+    validation_request_id?: number;
     is_retired: boolean;
     created_at: string;
 }

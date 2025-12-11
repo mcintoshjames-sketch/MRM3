@@ -279,7 +279,7 @@ export default function TaxonomyPage() {
     // Timeframe Config state
     const [timeframeConfigs, setTimeframeConfigs] = useState<any[]>([]);
     const [timeframeConfigsLoading, setTimeframeConfigsLoading] = useState(false);
-    const [showTimeframeSection, setShowTimeframeSection] = useState(false);
+    const [showTimeframeSection, setShowTimeframeSection] = useState(true);
     const [editingTimeframeConfig, setEditingTimeframeConfig] = useState<any | null>(null);
 
     // Regional Override state
@@ -499,6 +499,7 @@ export default function TaxonomyPage() {
             fetchFryReports();
         } else if (activeTab === 'recommendation-priority') {
             fetchPriorityConfigs();
+            fetchTimeframeConfigs(); // Timeframe section is expanded by default
         } else if (activeTab === 'risk-factors') {
             fetchRiskFactors();
         } else if (activeTab === 'scorecard') {
@@ -1970,7 +1971,7 @@ export default function TaxonomyPage() {
                         <option value="methodology-library">Methodology Library</option>
                         <option value="kpm">KPM Library</option>
                         <option value="fry">FRY 14 Config</option>
-                        <option value="recommendation-priority">Recommendation Priority</option>
+                        <option value="recommendation-priority">Priority Workflow Config</option>
                         <option value="risk-factors">Risk Factors</option>
                         <option value="scorecard">Scorecard Config</option>
                         <option value="residual-risk-map">Residual Risk Map</option>

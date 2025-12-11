@@ -42,6 +42,7 @@ Model Risk Management inventory system with a FastAPI backend, React/TypeScript 
   - `dashboard.py`: aging and workload summaries.
   - `export_views.py`: CSV/export-friendly endpoints.
   - `regional_compliance_report.py`: region-wise deployment & approval report.
+  - `kpi_report.py`: KPI Report computing 21 model risk management metrics across categories (inventory, validation, monitoring, recommendations, governance, lifecycle, KRIs).
   - `analytics.py`, `saved_queries.py`: analytics aggregations and saved-query storage.
   - `kpm.py`: KPM (Key Performance Metrics) library management - categories and individual metrics for ongoing model monitoring.
   - `monitoring.py`: Performance monitoring teams, plans, and plan metrics configuration with scheduling logic for submission/report due dates.
@@ -50,6 +51,11 @@ Model Risk Management inventory system with a FastAPI backend, React/TypeScript 
   - `qualitative_factors.py`: Admin-configurable qualitative risk factor management (CRUD for factors and rating guidance with weighted scoring).
   - `scorecard.py`: Validation scorecard configuration (sections, criteria, weights), ratings per validation request, computed results, and configuration versioning with publish workflow.
   - `limitations.py`: Model limitations CRUD, retirement workflow, and critical limitations report with region filtering.
+  - `attestations.py`: Full attestation workflow - cycles (create/open/close), scheduling rules (frequency, date windows), coverage targets, model-level records with submit/review/reject flow, bulk attestation submission, evidence attachments, and question configuration.
+  - `residual_risk_map.py`: Residual risk map configuration - admin-configurable matrix mapping (Inherent Risk Tier × Scorecard Outcome) → Residual Risk level.
+  - `fry.py`: FR Y-14 regulatory reporting structure - reports, schedules, metric groups, and line items CRUD for regulatory compliance mapping.
+  - `validation_policies.py`: Validation policy configuration (frequency, grace period, lead time) per risk tier with admin CRUD.
+  - `overdue_revalidation_report.py`: Overdue revalidation report with bucket classification and commentary status filtering.
   - `lob_units.py`: LOB (Line of Business) hierarchy CRUD, tree retrieval, CSV import/export with dry-run preview.
 - Core services:
   - DB session management (`core/database.py`), auth dependency (`core/deps.py`), security utilities (`core/security.py`), row-level security filters (`core/rls.py`).
@@ -77,13 +83,23 @@ Model Risk Management inventory system with a FastAPI backend, React/TypeScript 
 
 ## Frontend Architecture
 - Entry: `src/main.tsx` mounts App within `AuthProvider` and `BrowserRouter`.
-- Routing (`src/App.tsx`): guarded routes for login, dashboards (`/dashboard`, `/validator-dashboard`, `/my-dashboard`), models (list/detail/change records/decommissioning), validation workflow (list/detail/new), vendors (list/detail), users (list/detail), taxonomy (with KPM Library tab), audit logs, workflow configuration, batch delegates, regions, validation policies, component definitions, configuration history, approver roles, additional approval rules, monitoring plans (Admin only), reports hub (`/reports`), report detail pages (regional compliance, deviation trends), analytics, deployment tasks, pending submissions.
+- Routing (`src/App.tsx`): guarded routes for login, role-specific dashboards (`/dashboard` Admin, `/validator-dashboard`, `/my-dashboard` Model Owner, `/approver-dashboard`), models (list/detail/change records/decommissioning), validation workflow (list/detail/new), recommendations (list/detail), monitoring (plans/cycles/my-tasks), attestation (cycles/my-attestations/bulk), vendors (list/detail), users (list/detail), taxonomy (with KPM Library tab), audit logs, workflow configuration, batch delegates, regions, validation policies, component definitions, configuration history, approver roles, additional approval rules, reports hub (`/reports`), report detail pages (regional compliance, deviation trends, overdue revalidation, critical limitations, name changes, KPI report), analytics, deployment tasks, pending submissions, reference data, FR Y-14 config.
 - Shared pieces:
   - Auth context (`src/contexts/AuthContext.tsx`) manages token/user; Axios client (`src/api/client.ts`) injects Bearer tokens and redirects on 401.
   - Layout (`src/components/Layout.tsx`) provides navigation shell.
   - Hooks/utilities: table sorting (`src/hooks/useTableSort.tsx`), CSV export helpers on pages, column customization.
 - **Column Customization**: ModelsPage supports dynamic column show/hide with persistence via ExportViews API. Users can select which columns to display from 26 available columns (including shared_owner, monitoring_manager, business_line_name, risk_tier, methodology, etc.), save custom views, and export CSV with selected columns. Pattern uses `columnRenderers` object mapping column keys to header/cell/csvValue functions, enabling unified rendering for both table display and CSV export.
-- Pages (`src/pages/`): feature-specific UIs aligned to backend modules (e.g., `ModelsPage.tsx`, `ModelDetailsPage.tsx`, `DecommissioningRequestPage.tsx`, `PendingDecommissioningPage.tsx`, `ValidationWorkflowPage.tsx`, `ValidationRequestDetailPage.tsx`, `VendorsPage.tsx`, `TaxonomyPage.tsx` (with KPM Library tab), `AuditPage.tsx`, `WorkflowConfigurationPage.tsx`, `ApproverRolesPage.tsx`, `ConditionalApprovalRulesPage.tsx`, `MonitoringPlansPage.tsx`, `RegionalComplianceReportPage.tsx`, `DeviationTrendsReportPage.tsx`, `OverdueRevalidationReportPage.tsx`, `AnalyticsPage.tsx`, dashboards). Tables generally support sorting and CSV export; dates rendered via ISO splitting.
+- Pages (`src/pages/`): feature-specific UIs aligned to backend modules. Tables generally support sorting and CSV export; dates rendered via ISO splitting.
+  - **Core**: `ModelsPage.tsx`, `ModelDetailsPage.tsx`, `VendorsPage.tsx`, `VendorDetailsPage.tsx`, `UsersPage.tsx`, `UserDetailsPage.tsx`, `TaxonomyPage.tsx` (with KPM Library tab), `AuditPage.tsx`
+  - **Validation Workflow**: `ValidationWorkflowPage.tsx`, `ValidationRequestDetailPage.tsx`, `ValidationPoliciesPage.tsx`, `WorkflowConfigurationPage.tsx`, `ComponentDefinitionsPage.tsx`, `ConfigurationHistoryPage.tsx`
+  - **Monitoring**: `MonitoringPlansPage.tsx`, `MonitoringPlanDetailPage.tsx`, `MonitoringCycleDetailPage.tsx`, `MyMonitoringPage.tsx`, `MyMonitoringTasksPage.tsx`
+  - **Attestation**: `AttestationCyclesPage.tsx`, `AttestationDetailPage.tsx`, `MyAttestationsPage.tsx`, `BulkAttestationPage.tsx`, `AttestationReviewQueuePage.tsx`
+  - **Recommendations**: `RecommendationsPage.tsx`, `RecommendationDetailPage.tsx`
+  - **Decommissioning**: `DecommissioningRequestPage.tsx`, `PendingDecommissioningPage.tsx`
+  - **Approvals**: `ApproverRolesPage.tsx`, `ConditionalApprovalRulesPage.tsx`
+  - **Reports**: `ReportsPage.tsx`, `RegionalComplianceReportPage.tsx`, `DeviationTrendsReportPage.tsx`, `OverdueRevalidationReportPage.tsx`, `CriticalLimitationsReportPage.tsx`, `NameChangesReportPage.tsx`, `KPIReportPage.tsx`
+  - **Dashboards**: `AdminDashboardPage.tsx`, `ValidatorDashboardPage.tsx`, `ModelOwnerDashboardPage.tsx`, `ApproverDashboardPage.tsx`
+  - **Other**: `ModelChangeRecordPage.tsx`, `BatchDelegatesPage.tsx`, `RegionsPage.tsx`, `MyDeploymentTasksPage.tsx`, `MyPendingSubmissionsPage.tsx`, `AnalyticsPage.tsx`, `ReferenceDataPage.tsx`, `FryConfigPage.tsx`
   - **DecommissioningRequestPage**: Includes downstream dependency warning (fetches outbound dependencies from model relationships API and displays amber warning banner listing consumer models before submission).
   - **ModelDetailsPage**: Decommissioning tab always visible with "Initiate Decommissioning" button (shown when model not retired and no active request exists).
   - **PendingDecommissioningPage**: Accessible by all authenticated users; shows role-specific pending requests (validators see pending reviews, model owners see requests awaiting their approval).
@@ -120,14 +136,41 @@ Model Risk Management inventory system with a FastAPI backend, React/TypeScript 
 4. Responses serialized via Pydantic schemas; frontend renders tables/cards with sorting/export.
 
 ## Reporting & Analytics
-- Reports hub (`/reports`) lists available reports; detail pages for Regional Compliance, Deviation Trends, Overdue Revalidation, Name Changes, and Critical Limitations (CSV export, refresh).
+- Reports hub (`/reports`) lists available reports; detail pages for Regional Compliance, Deviation Trends, Overdue Revalidation, Name Changes, Critical Limitations, and KPI Report (CSV export, refresh).
 - Backend report endpoints:
   - `GET /regional-compliance-report/` - Regional deployment and compliance
   - `GET /validation-workflow/compliance-report/deviation-trends` - Deviation trends
   - `GET /overdue-revalidation-report/` - Overdue items with commentary status (supports filters: overdue_type, comment_status, risk_tier, days_overdue_min, needs_update_only)
   - `GET /reports/critical-limitations` - Critical model limitations report with region filtering
+  - `GET /kpi-report/` - KPI Report with 21 model risk management metrics (optional region_id filter)
   - Dashboard reports (`/validation-workflow/dashboard/*`) and analytics aggregations (`/analytics`, saved queries)
 - Export views in `export_views.py` provide CSV-friendly datasets.
+
+## KPI Report
+- **Purpose**: Centralized KPI reporting for model risk management metrics, providing executive-level visibility into inventory, validation, monitoring, recommendations, and risk indicators.
+- **Metrics** (21 total, organized by category):
+  - **Model Inventory** (4.1-4.5): Total active models, breakdown by risk tier, breakdown by business line, % vendor models, % AI/ML models
+  - **Validation** (4.6, 4.8, 4.9): % validated on time, average time to complete by risk tier, models with interim approval
+  - **Key Risk Indicators** (4.7, 4.27): % overdue for validation (KRI), % high residual risk (KRI) - flagged with `is_kri: true`
+  - **Monitoring** (4.10-4.12): % timely monitoring submissions, % breaching thresholds (RED), % with open performance issues
+  - **Model Risk** (4.14): % models with critical limitations
+  - **Recommendations** (4.18-4.21): Total open, % past due, average close time, % with high-priority open recs
+  - **Governance** (4.22): % attestations received on time
+  - **Model Lifecycle** (4.23-4.24): Models flagged for decommissioning, decommissioned in last 12 months
+- **Metric Types**:
+  - **count**: Simple integer (e.g., total models)
+  - **ratio**: Numerator/denominator with percentage and drill-down model IDs
+  - **duration**: Average time in days
+  - **breakdown**: Distribution across categories with counts and percentages
+- **Drill-Down Support**: Ratio metrics include `numerator_model_ids` array enabling click-through to filtered models list
+- **Region Filtering**: Optional `region_id` query parameter scopes all metrics to models deployed in that region
+- **API Endpoint**: `GET /kpi-report/?region_id={optional}`
+- **Frontend**: `/reports/kpi` page with:
+  - Region filter dropdown
+  - Metrics grouped by category in expandable cards
+  - KRI metrics highlighted with badge
+  - Drill-down links for ratio metrics (navigates to `/models?model_ids=...`)
+  - CSV export with all metrics and metadata
 
 ## Conditional Model Use Approvals
 - **Purpose**: Configurable additional approvals required for model use based on validation context and model attributes

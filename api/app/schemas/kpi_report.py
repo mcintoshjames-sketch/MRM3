@@ -11,6 +11,7 @@ class KPIDecomposition(BaseModel):
     percentage: float = Field(..., description="Calculated percentage (numerator/denominator * 100)")
     numerator_label: str = Field(..., description="Human-readable label for numerator (e.g., 'on time')")
     denominator_label: str = Field(..., description="Human-readable label for denominator (e.g., 'total')")
+    numerator_model_ids: Optional[List[int]] = Field(None, description="Model IDs comprising the numerator for drill-down")
 
 
 class KPIBreakdown(BaseModel):
@@ -18,6 +19,7 @@ class KPIBreakdown(BaseModel):
     category: str = Field(..., description="Category name (e.g., 'Tier 1 (High)')")
     count: int = Field(..., description="Count of items in this category")
     percentage: float = Field(..., description="Percentage of total")
+    avg_days: Optional[float] = Field(None, description="Average duration in days (for duration breakdown metrics)")
 
 
 class KPIMetric(BaseModel):

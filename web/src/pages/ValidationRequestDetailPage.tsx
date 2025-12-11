@@ -2339,7 +2339,7 @@ export default function ValidationRequestDetailPage() {
                                                     </span>
                                                 </td>
                                                 <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">
-                                                    {lim.category_label || '-'}
+                                                    {lim.category?.label || '-'}
                                                 </td>
                                                 <td className="px-4 py-3 text-sm text-gray-900 max-w-xs">
                                                     <div className="truncate" title={lim.description}>

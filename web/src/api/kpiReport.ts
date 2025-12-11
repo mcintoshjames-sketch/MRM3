@@ -12,6 +12,7 @@ export interface KPIDecomposition {
     percentage: number;
     numerator_label: string;
     denominator_label: string;
+    numerator_model_ids?: number[];  // Model IDs comprising the numerator for drill-down
 }
 
 /**
@@ -21,6 +22,7 @@ export interface KPIBreakdown {
     category: string;
     count: number;
     percentage: number;
+    avg_days?: number;  // Average duration in days (for duration breakdown metrics like 4.8)
 }
 
 /**

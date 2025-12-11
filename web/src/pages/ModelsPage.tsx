@@ -128,12 +128,32 @@ export default function ModelsPage() {
     const [loading, setLoading] = useState(true);
     const [showForm, setShowForm] = useState(false);
 
+    // KPI drill-down filter state
+    const [kpiDrillDownIds, setKpiDrillDownIds] = useState<number[] | null>(null);
+    const [kpiDrillDownActive, setKpiDrillDownActive] = useState(false);
+
     // Handle ?create=true query param to auto-open create form
+    // Handle ?ids=1,2,3 query param for KPI drill-down
     useEffect(() => {
         if (searchParams.get('create') === 'true') {
             setShowForm(true);
             // Clear the query param so it doesn't persist on refresh
             setSearchParams({}, { replace: true });
+        }
+
+        // Handle KPI drill-down IDs parameter
+        const idsParam = searchParams.get('ids');
+        if (idsParam) {
+            const modelIds = idsParam.split(',')
+                .map(id => parseInt(id.trim(), 10))
+                .filter(id => !isNaN(id));
+            if (modelIds.length > 0) {
+                setKpiDrillDownIds(modelIds);
+                setKpiDrillDownActive(true);
+            }
+        } else {
+            setKpiDrillDownIds(null);
+            setKpiDrillDownActive(false);
         }
     }, [searchParams, setSearchParams]);
     const [formData, setFormData] = useState({
@@ -402,16 +422,54 @@ export default function ModelsPage() {
     const { sortedData, requestSort, getSortIcon } = useTableSort<Model>(filteredModels, 'model_name');
 
     useEffect(() => {
-        fetchData();
+        // On initial mount, check URL directly to avoid race condition with URL parsing effect
+        // On subsequent renders, use the kpiDrillDownIds state
+        let modelIdsToFetch = kpiDrillDownIds;
+
+        // If kpiDrillDownIds is null but URL has ids param, parse it directly
+        // This handles the initial mount before URL parsing effect runs
+        if (!modelIdsToFetch) {
+            const idsParam = searchParams.get('ids');
+            if (idsParam) {
+                modelIdsToFetch = idsParam.split(',')
+                    .map(id => parseInt(id.trim(), 10))
+                    .filter(id => !isNaN(id));
+                if (modelIdsToFetch.length === 0) {
+                    modelIdsToFetch = null;
+                }
+            }
+        }
+
+        fetchData(modelIdsToFetch);
         loadExportViews();
-    }, []);
+    }, [kpiDrillDownIds, searchParams]);
 
     // Refetch models when include_sub_models filter changes
     useEffect(() => {
         if (!loading) { // Only refetch if initial load is complete
-            fetchData();
+            // Get model IDs from URL or state
+            let modelIdsToFetch = kpiDrillDownIds;
+            if (!modelIdsToFetch) {
+                const idsParam = searchParams.get('ids');
+                if (idsParam) {
+                    modelIdsToFetch = idsParam.split(',')
+                        .map(id => parseInt(id.trim(), 10))
+                        .filter(id => !isNaN(id));
+                    if (modelIdsToFetch.length === 0) {
+                        modelIdsToFetch = null;
+                    }
+                }
+            }
+            fetchData(modelIdsToFetch);
         }
-    }, [filters.include_sub_models]);
+    }, [filters.include_sub_models, kpiDrillDownIds, searchParams]);
+
+    // Clear KPI drill-down filter
+    const clearKpiDrillDown = () => {
+        setSearchParams({}, { replace: true });
+        setKpiDrillDownIds(null);
+        setKpiDrillDownActive(false);
+    };
 
     const loadExportViews = async () => {
         try {
@@ -422,7 +480,7 @@ export default function ModelsPage() {
         }
     };
 
-    const fetchData = async () => {
+    const fetchData = async (modelIds?: number[] | null) => {
         try {
             const params = new URLSearchParams();
             if (!filters.include_sub_models) {
@@ -430,6 +488,11 @@ export default function ModelsPage() {
             }
             // Include computed fields (scorecard_outcome, residual_risk, approval_status)
             params.append('include_computed_fields', 'true');
+
+            // Add model IDs filter for KPI drill-down
+            if (modelIds && modelIds.length > 0) {
+                params.append('model_ids', modelIds.join(','));
+            }
 
             // Build taxonomy query string (axios serializes arrays as names[] but FastAPI expects names=v1&names=v2)
             const taxonomyNames = ['Validation Type', 'Validation Priority', 'Model Usage Frequency'];
@@ -1100,6 +1163,29 @@ export default function ModelsPage() {
                         </button>
                     </div>
                 </div>
+
+                {/* KPI Drill-Down Banner */}
+                {kpiDrillDownActive && kpiDrillDownIds && (
+                    <div className="mb-4 p-4 bg-blue-50 border border-blue-200 rounded-lg flex items-center justify-between">
+                        <div className="flex items-center gap-3">
+                            <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                            </svg>
+                            <div>
+                                <span className="font-medium text-blue-800">KPI Drill-Down View</span>
+                                <span className="text-blue-600 ml-2">
+                                    Showing {kpiDrillDownIds.length} model{kpiDrillDownIds.length !== 1 ? 's' : ''} from KPI report
+                                </span>
+                            </div>
+                        </div>
+                        <button
+                            onClick={clearKpiDrillDown}
+                            className="px-3 py-1 text-sm bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
+                        >
+                            Clear Filter
+                        </button>
+                    </div>
+                )}
 
                 {showForm && (
                     <div className="bg-white p-6 rounded-lg shadow-md mb-6">

@@ -406,6 +406,7 @@ def _build_model_list_response(model: Model, include_computed_fields: bool, db: 
 def list_models(
     exclude_sub_models: bool = False,
     include_computed_fields: bool = False,
+    model_ids: Optional[str] = Query(None, description="Comma-separated model IDs to filter (for KPI drill-down)"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
@@ -420,6 +421,7 @@ def list_models(
     - exclude_sub_models: If True, exclude models that are sub-models (children) in hierarchy
     - include_computed_fields: If True, include expensive computed fields (scorecard_outcome,
       residual_risk, approval_status). Default False for better performance.
+    - model_ids: Comma-separated model IDs to filter (for KPI drill-down links)
     """
     from app.core.rls import apply_model_rls
     from app.models.lob import LOBUnit
@@ -446,6 +448,12 @@ def list_models(
 
     # Apply row-level security filtering
     query = apply_model_rls(query, current_user, db)
+
+    # Filter by model_ids if provided (for KPI drill-down)
+    if model_ids:
+        ids = [int(id.strip()) for id in model_ids.split(',') if id.strip().isdigit()]
+        if ids:
+            query = query.filter(Model.model_id.in_(ids))
 
     models = query.all()
 

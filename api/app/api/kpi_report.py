@@ -93,11 +93,11 @@ METRIC_DEFINITIONS = {
         "is_kri": True,
     },
     "4.8": {
-        "name": "Average Time to Complete Model Validation",
-        "definition": "Mean time from model submission to validation approval; tracks process efficiency.",
-        "calculation": "Avg. (Validation approval date – Submission date)",
+        "name": "Average Time to Complete Model Validation by Risk Tier",
+        "definition": "Mean time from model submission to validation approval, broken down by inherent risk tier; tracks process efficiency by risk level.",
+        "calculation": "Avg. (Validation approval date – Submission date) per risk tier",
         "category": "Validation",
-        "type": "duration",
+        "type": "breakdown",
     },
     "4.9": {
         "name": "Number of Models with Interim Approval",
@@ -277,28 +277,32 @@ def _compute_metric_4_3(db: Session, active_models: List[Model]) -> KPIMetric:
 def _compute_metric_4_4(db: Session, active_models: List[Model]) -> KPIMetric:
     """4.4 - % of Vendor/Third-Party Models"""
     total = len(active_models)
-    third_party = sum(1 for m in active_models if m.development_type == "Third-Party")
+    third_party_models = [m for m in active_models if m.development_type == "Third-Party"]
+    third_party_ids = [m.model_id for m in third_party_models]
 
     return _create_metric("4.4", ratio_value=KPIDecomposition(
-        numerator=third_party,
+        numerator=len(third_party_models),
         denominator=total,
-        percentage=_safe_percentage(third_party, total),
+        percentage=_safe_percentage(len(third_party_models), total),
         numerator_label="third-party",
-        denominator_label="total active models"
+        denominator_label="total active models",
+        numerator_model_ids=third_party_ids if third_party_ids else None
     ))
 
 
 def _compute_metric_4_5(db: Session, active_models: List[Model]) -> KPIMetric:
     """4.5 - % of AI/ML Models"""
     total = len(active_models)
-    aiml_count = sum(1 for m in active_models if m.is_aiml is True)
+    aiml_models = [m for m in active_models if m.is_aiml is True]
+    aiml_ids = [m.model_id for m in aiml_models]
 
     return _create_metric("4.5", ratio_value=KPIDecomposition(
-        numerator=aiml_count,
+        numerator=len(aiml_models),
         denominator=total,
-        percentage=_safe_percentage(aiml_count, total),
+        percentage=_safe_percentage(len(aiml_models), total),
         numerator_label="AI/ML",
-        denominator_label="total active models"
+        denominator_label="total active models",
+        numerator_model_ids=aiml_ids if aiml_ids else None
     ))
 
 
@@ -314,6 +318,8 @@ def _compute_validation_metrics(
     on_time_count = 0
     overdue_count = 0
     interim_count = 0
+    on_time_model_ids: List[int] = []
+    overdue_model_ids: List[int] = []
 
     for model in active_models:
         # Revalidation status for 4.6 and 4.7
@@ -330,32 +336,47 @@ def _compute_validation_metrics(
 
         if any(s in status_str for s in overdue_statuses):
             overdue_count += 1
+            overdue_model_ids.append(model.model_id)
         elif "On Track" in status_str or status_str == "Approved":
             on_time_count += 1
+            on_time_model_ids.append(model.model_id)
 
         # Approval status for 4.9
         approval_status, _ = compute_model_approval_status(model, db)
         if approval_status == ApprovalStatus.INTERIM_APPROVED:
             interim_count += 1
 
-    # Metric 4.8 - Average time to complete validation (completed validations only)
-    completed_validations = db.query(ValidationRequest).filter(
+    # Metric 4.8 - Average time to complete validation BY RISK TIER
+    completed_validations = db.query(ValidationRequest).options(
+        joinedload(ValidationRequest.validated_risk_tier)
+    ).filter(
         ValidationRequest.current_status.has(TaxonomyValue.code == "APPROVED"),
         ValidationRequest.completion_date.isnot(None),
         ValidationRequest.created_at.isnot(None),
     ).all()
 
-    avg_days = None
-    if completed_validations:
-        total_days = 0
-        count = 0
-        for vr in completed_validations:
-            if vr.completion_date and vr.created_at:
-                delta = vr.completion_date.date() - vr.created_at.date()
-                total_days += delta.days
-                count += 1
-        if count > 0:
-            avg_days = round(total_days / count, 1)
+    # Group by risk tier
+    tier_data: Dict[str, List[int]] = {}  # tier label -> list of days
+    for vr in completed_validations:
+        if vr.completion_date and vr.created_at:
+            tier_name = "Unassigned"
+            if vr.validated_risk_tier:
+                tier_name = vr.validated_risk_tier.label or vr.validated_risk_tier.code or "Unassigned"
+            if tier_name not in tier_data:
+                tier_data[tier_name] = []
+            delta = (vr.completion_date.date() - vr.created_at.date()).days
+            tier_data[tier_name].append(delta)
+
+    total_count = sum(len(days) for days in tier_data.values())
+    breakdown_4_8 = [
+        KPIBreakdown(
+            category=tier,
+            count=len(days),
+            percentage=_safe_percentage(len(days), total_count),
+            avg_days=round(sum(days) / len(days), 1) if days else None
+        )
+        for tier, days in sorted(tier_data.items())
+    ]
 
     return {
         "4.6": _create_metric("4.6", ratio_value=KPIDecomposition(
@@ -363,16 +384,18 @@ def _compute_validation_metrics(
             denominator=total_models,
             percentage=_safe_percentage(on_time_count, total_models),
             numerator_label="on time",
-            denominator_label="total active models"
+            denominator_label="total active models",
+            numerator_model_ids=on_time_model_ids if on_time_model_ids else None
         )),
         "4.7": _create_metric("4.7", ratio_value=KPIDecomposition(
             numerator=overdue_count,
             denominator=total_models,
             percentage=_safe_percentage(overdue_count, total_models),
             numerator_label="overdue",
-            denominator_label="total active models"
+            denominator_label="total active models",
+            numerator_model_ids=overdue_model_ids if overdue_model_ids else None
         )),
-        "4.8": _create_metric("4.8", duration_value=avg_days),
+        "4.8": _create_metric("4.8", breakdown_value=breakdown_4_8 if breakdown_4_8 else None),
         "4.9": _create_metric("4.9", count_value=interim_count),
     }
 
@@ -429,12 +452,13 @@ def _compute_monitoring_metrics(
         if latest_result and latest_result.calculated_outcome == "RED":
             models_with_red.add(model_id)
 
-    # For open performance issues (4.12), count models with open recs from monitoring
-    models_with_monitoring_recs = db.query(Recommendation.model_id).filter(
+    # For open performance issues (4.12), get models with open recs from monitoring
+    models_with_monitoring_recs_query = db.query(Recommendation.model_id).filter(
         Recommendation.model_id.in_(model_ids),
         Recommendation.monitoring_cycle_id.isnot(None),
         Recommendation.closed_at.is_(None)
-    ).distinct().count()
+    ).distinct().all()
+    models_with_monitoring_recs_ids = [m[0] for m in models_with_monitoring_recs_query]
 
     return {
         "4.10": _create_metric("4.10", ratio_value=KPIDecomposition(
@@ -449,14 +473,16 @@ def _compute_monitoring_metrics(
             denominator=len(models_monitored),
             percentage=_safe_percentage(len(models_with_red), len(models_monitored)),
             numerator_label="with RED breaches",
-            denominator_label="monitored models"
+            denominator_label="monitored models",
+            numerator_model_ids=list(models_with_red) if models_with_red else None
         )),
         "4.12": _create_metric("4.12", ratio_value=KPIDecomposition(
-            numerator=models_with_monitoring_recs,
+            numerator=len(models_with_monitoring_recs_ids),
             denominator=total_models,
-            percentage=_safe_percentage(models_with_monitoring_recs, total_models),
+            percentage=_safe_percentage(len(models_with_monitoring_recs_ids), total_models),
             numerator_label="with open monitoring issues",
-            denominator_label="total active models"
+            denominator_label="total active models",
+            numerator_model_ids=models_with_monitoring_recs_ids if models_with_monitoring_recs_ids else None
         )),
     }
 
@@ -466,18 +492,20 @@ def _compute_metric_4_14(db: Session, active_models: List[Model]) -> KPIMetric:
     total = len(active_models)
     model_ids = [m.model_id for m in active_models]
 
-    models_with_critical = db.query(ModelLimitation.model_id).filter(
+    models_with_critical_query = db.query(ModelLimitation.model_id).filter(
         ModelLimitation.model_id.in_(model_ids),
         ModelLimitation.significance == "Critical",
         ModelLimitation.is_retired == False
-    ).distinct().count()
+    ).distinct().all()
+    models_with_critical_ids = [m[0] for m in models_with_critical_query]
 
     return _create_metric("4.14", ratio_value=KPIDecomposition(
-        numerator=models_with_critical,
+        numerator=len(models_with_critical_ids),
         denominator=total,
-        percentage=_safe_percentage(models_with_critical, total),
+        percentage=_safe_percentage(len(models_with_critical_ids), total),
         numerator_label="with critical limitations",
-        denominator_label="total active models"
+        denominator_label="total active models",
+        numerator_model_ids=models_with_critical_ids if models_with_critical_ids else None
     ))
 
 
@@ -525,13 +553,14 @@ def _compute_recommendation_metrics(
         TaxonomyValue.code == "HIGH"
     ).first()
 
-    models_with_high_priority = 0
+    models_with_high_priority_ids: List[int] = []
     if high_priority:
-        models_with_high_priority = db.query(Recommendation.model_id).filter(
+        models_with_high_priority_query = db.query(Recommendation.model_id).filter(
             Recommendation.model_id.in_(model_ids),
             Recommendation.closed_at.is_(None),
             Recommendation.priority_id == high_priority.value_id
-        ).distinct().count()
+        ).distinct().all()
+        models_with_high_priority_ids = [m[0] for m in models_with_high_priority_query]
 
     return {
         "4.18": _create_metric("4.18", count_value=open_recs_count),
@@ -544,11 +573,12 @@ def _compute_recommendation_metrics(
         )),
         "4.20": _create_metric("4.20", duration_value=avg_close_days),
         "4.21": _create_metric("4.21", ratio_value=KPIDecomposition(
-            numerator=models_with_high_priority,
+            numerator=len(models_with_high_priority_ids),
             denominator=total_models,
-            percentage=_safe_percentage(models_with_high_priority, total_models),
+            percentage=_safe_percentage(len(models_with_high_priority_ids), total_models),
             numerator_label="with open high-priority recs",
-            denominator_label="total active models"
+            denominator_label="total active models",
+            numerator_model_ids=models_with_high_priority_ids if models_with_high_priority_ids else None
         )),
     }
 
@@ -645,6 +675,7 @@ def _compute_metric_4_27(db: Session, active_models: List[Model]) -> KPIMetric:
 
     models_with_residual = 0
     high_residual_count = 0
+    high_residual_model_ids: List[int] = []
 
     for model in active_models:
         # Get the model's latest approved validation
@@ -671,13 +702,15 @@ def _compute_metric_4_27(db: Session, active_models: List[Model]) -> KPIMetric:
                     models_with_residual += 1
                     if residual_risk == "High":
                         high_residual_count += 1
+                        high_residual_model_ids.append(model.model_id)
 
     return _create_metric("4.27", ratio_value=KPIDecomposition(
         numerator=high_residual_count,
         denominator=models_with_residual,
         percentage=_safe_percentage(high_residual_count, models_with_residual),
         numerator_label="high residual risk",
-        denominator_label="models with residual risk assessed"
+        denominator_label="models with residual risk assessed",
+        numerator_model_ids=high_residual_model_ids if high_residual_model_ids else None
     ))
 
 

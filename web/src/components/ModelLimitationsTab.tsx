@@ -237,7 +237,7 @@ const ModelLimitationsTab: React.FC<ModelLimitationsTabProps> = ({ modelId }) =>
                                         {getSignificanceBadge(lim.significance)}
                                     </td>
                                     <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-900">
-                                        {lim.category_label || categories.find(c => c.value_id === lim.category_id)?.label || 'Unknown'}
+                                        {lim.category?.label || categories.find(c => c.value_id === lim.category_id)?.label || 'Unknown'}
                                     </td>
                                     <td className="px-4 py-4 text-sm text-gray-900 max-w-md">
                                         <div className="truncate" title={lim.description}>
