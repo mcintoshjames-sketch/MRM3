@@ -52,6 +52,14 @@ const availableReports: Report[] = [
         icon: '⚠️',
         category: 'Risk'
     },
+    {
+        id: 'kpi',
+        name: 'KPI Report',
+        description: 'Key Performance Indicators for model risk management including validation compliance, monitoring status, recommendations, and risk indicators. Shows decomposition of percentage metrics.',
+        path: '/reports/kpi',
+        icon: '📈',
+        category: 'Risk'
+    },
 ];
 
 const ReportsPage: React.FC = () => {

@@ -31,6 +31,7 @@ import ConditionalApprovalRulesPage from './pages/ConditionalApprovalRulesPage';
 import OverdueRevalidationReportPage from './pages/OverdueRevalidationReportPage';
 import NameChangesReportPage from './pages/NameChangesReportPage';
 import CriticalLimitationsReportPage from './pages/CriticalLimitationsReportPage';
+import KPIReportPage from './pages/KPIReportPage';
 import DecommissioningRequestPage from './pages/DecommissioningRequestPage';
 import PendingDecommissioningPage from './pages/PendingDecommissioningPage';
 import MonitoringPlansPage from './pages/MonitoringPlansPage';
@@ -107,6 +108,7 @@ function App() {
             <Route path="/reports/overdue-revalidation" element={user ? <OverdueRevalidationReportPage /> : <Navigate to="/login" />} />
             <Route path="/reports/name-changes" element={user ? <NameChangesReportPage /> : <Navigate to="/login" />} />
             <Route path="/reports/critical-limitations" element={user ? <CriticalLimitationsReportPage /> : <Navigate to="/login" />} />
+            <Route path="/reports/kpi" element={user ? <KPIReportPage /> : <Navigate to="/login" />} />
             <Route path="/analytics" element={user ? <AnalyticsPage /> : <Navigate to="/login" />} />
             <Route path="/attestations" element={user?.role === 'Admin' ? <AttestationCyclesPage /> : <Navigate to="/models" />} />
             <Route path="/my-attestations" element={user ? <MyAttestationsPage /> : <Navigate to="/login" />} />
