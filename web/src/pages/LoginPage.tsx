@@ -59,17 +59,6 @@ export default function LoginPage() {
                     </button>
                 </form>
 
-                <div className="mt-4 text-sm text-gray-600 text-center">
-                    <div className="font-semibold mb-1">Test Accounts</div>
-                    <div>Admin: admin@example.com / admin123</div>
-                    <div>Validator: validator@example.com / validator123</div>
-                    <div>Validator: david.brown@contoso.com / validator123</div>
-                    <div>Model Developer: john.smith@contoso.com / john123</div>
-                    <div>Model Owner: emily.davis@contoso.com / emily123</div>
-                    <div>Global Approver: globalapprover@example.com / approver123</div>
-                    <div>US Approver: usapprover@example.com / approver123</div>
-                    <div>EU Approver: euapprover@example.com / approver123</div>
-                </div>
             </div>
         </div>
     );
