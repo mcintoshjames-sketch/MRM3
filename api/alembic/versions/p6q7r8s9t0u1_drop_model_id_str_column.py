@@ -18,7 +18,8 @@ depends_on = None
 
 def upgrade():
     # Drop the model_id_str column (Model class doesn't have this attribute)
-    op.drop_column('monitoring_plan_model_snapshots', 'model_id_str')
+    # Use raw SQL with IF EXISTS to handle fresh databases where column may not exist
+    op.execute('ALTER TABLE monitoring_plan_model_snapshots DROP COLUMN IF EXISTS model_id_str')
 
 
 def downgrade():

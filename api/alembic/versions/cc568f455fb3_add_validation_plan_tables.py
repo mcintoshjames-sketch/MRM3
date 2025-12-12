@@ -64,13 +64,14 @@ def upgrade() -> None:
     sa.ForeignKeyConstraint(['plan_id'], ['validation_plans.plan_id'], ondelete='CASCADE'),
     sa.PrimaryKeyConstraint('plan_component_id')
     )
-    op.drop_index('ix_validations_region_id', table_name='validations')
-    op.drop_table('validations')
-    op.drop_index('ix_version_deployment_tasks_assigned_to_id', table_name='version_deployment_tasks')
-    op.drop_index('ix_version_deployment_tasks_planned_date', table_name='version_deployment_tasks')
-    op.drop_index('ix_version_deployment_tasks_status', table_name='version_deployment_tasks')
-    op.drop_table('version_deployment_tasks')
-    op.drop_table('saved_queries')
+    # Use raw SQL with IF EXISTS to handle fresh databases where these tables may not exist
+    op.execute('DROP INDEX IF EXISTS ix_validations_region_id')
+    op.execute('DROP TABLE IF EXISTS validations')
+    op.execute('DROP INDEX IF EXISTS ix_version_deployment_tasks_assigned_to_id')
+    op.execute('DROP INDEX IF EXISTS ix_version_deployment_tasks_planned_date')
+    op.execute('DROP INDEX IF EXISTS ix_version_deployment_tasks_status')
+    op.execute('DROP TABLE IF EXISTS version_deployment_tasks')
+    op.execute('DROP TABLE IF EXISTS saved_queries')
     # ### end Alembic commands ###
 
 
