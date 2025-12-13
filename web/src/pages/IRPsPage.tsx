@@ -32,6 +32,10 @@ export default function IRPsPage() {
     // Filter state
     const [showActiveOnly, setShowActiveOnly] = useState(true);
 
+    // Contact user searchable dropdown state
+    const [contactUserSearch, setContactUserSearch] = useState('');
+    const [showContactUserDropdown, setShowContactUserDropdown] = useState(false);
+
     // Table sorting
     const filteredIrps = showActiveOnly ? irps.filter(irp => irp.is_active) : irps;
     const { sortedData, requestSort, getSortIcon } = useTableSort<IRP>(filteredIrps, 'process_name');
@@ -63,6 +67,8 @@ export default function IRPsPage() {
             is_active: true,
             mrsa_ids: []
         });
+        setContactUserSearch('');
+        setShowContactUserDropdown(false);
         setEditingIrp(null);
         setShowForm(false);
     };
@@ -102,6 +108,7 @@ export default function IRPsPage() {
             is_active: irp.is_active,
             mrsa_ids: []
         });
+        setContactUserSearch(irp.contact_user?.full_name || '');
         setShowForm(true);
     };
 
@@ -214,18 +221,58 @@ export default function IRPsPage() {
                                     <label htmlFor="contact_user_id" className="block text-sm font-medium mb-2">
                                         Contact User *
                                     </label>
-                                    <select
-                                        id="contact_user_id"
-                                        className="input-field"
-                                        value={formData.contact_user_id}
-                                        onChange={(e) => setFormData({ ...formData, contact_user_id: parseInt(e.target.value) })}
-                                        required
-                                    >
-                                        <option value={0}>Select a contact...</option>
-                                        {users.map(u => (
-                                            <option key={u.user_id} value={u.user_id}>{u.full_name}</option>
-                                        ))}
-                                    </select>
+                                    <div className="relative">
+                                        <input
+                                            type="text"
+                                            placeholder="Type to search users..."
+                                            value={contactUserSearch}
+                                            onChange={(e) => {
+                                                setContactUserSearch(e.target.value);
+                                                setShowContactUserDropdown(true);
+                                                // Clear selection if user is typing new text
+                                                if (formData.contact_user_id && e.target.value !== users.find(u => u.user_id === formData.contact_user_id)?.full_name) {
+                                                    setFormData({ ...formData, contact_user_id: 0 });
+                                                }
+                                            }}
+                                            onFocus={() => setShowContactUserDropdown(true)}
+                                            className="input-field"
+                                        />
+                                        {showContactUserDropdown && contactUserSearch.length > 0 && (
+                                            <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg max-h-60 overflow-y-auto">
+                                                {users
+                                                    .filter((u) =>
+                                                        u.full_name.toLowerCase().includes(contactUserSearch.toLowerCase()) ||
+                                                        u.email.toLowerCase().includes(contactUserSearch.toLowerCase())
+                                                    )
+                                                    .slice(0, 50)
+                                                    .map((u) => (
+                                                        <div
+                                                            key={u.user_id}
+                                                            className="px-4 py-2 hover:bg-gray-100 cursor-pointer text-sm"
+                                                            onClick={() => {
+                                                                setFormData({ ...formData, contact_user_id: u.user_id });
+                                                                setContactUserSearch(u.full_name);
+                                                                setShowContactUserDropdown(false);
+                                                            }}
+                                                        >
+                                                            <div className="font-medium">{u.full_name}</div>
+                                                            <div className="text-xs text-gray-500">{u.email}</div>
+                                                        </div>
+                                                    ))}
+                                                {users.filter((u) =>
+                                                    u.full_name.toLowerCase().includes(contactUserSearch.toLowerCase()) ||
+                                                    u.email.toLowerCase().includes(contactUserSearch.toLowerCase())
+                                                ).length === 0 && (
+                                                    <div className="px-4 py-2 text-sm text-gray-500">No users found</div>
+                                                )}
+                                            </div>
+                                        )}
+                                    </div>
+                                    {formData.contact_user_id > 0 && (
+                                        <p className="mt-1 text-sm text-green-600">
+                                            Selected: {users.find(u => u.user_id === formData.contact_user_id)?.full_name}
+                                        </p>
+                                    )}
                                 </div>
                                 <div className="mb-4 col-span-2">
                                     <label htmlFor="description" className="block text-sm font-medium mb-2">

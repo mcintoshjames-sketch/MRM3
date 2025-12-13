@@ -49,6 +49,10 @@ import ReferenceDataPage from './pages/ReferenceDataPage';
 import ApproverDashboardPage from './pages/ApproverDashboardPage';
 import IRPsPage from './pages/IRPsPage';
 import IRPDetailPage from './pages/IRPDetailPage';
+import PublicLandingPage from './pages/PublicLandingPage';
+import PublicOverviewPage from './pages/PublicOverviewPage';
+import PublicGuidesIndexPage from './pages/PublicGuidesIndexPage';
+import PublicGuidePage from './pages/PublicGuidePage';
 
 function App() {
     const { user, loading } = useAuth();
@@ -66,6 +70,10 @@ function App() {
 
     return (
         <Routes>
+            <Route path="/" element={user ? <Navigate to={getDefaultRoute()} /> : <PublicLandingPage />} />
+            <Route path="/overview" element={<PublicOverviewPage />} />
+            <Route path="/guides" element={<PublicGuidesIndexPage />} />
+            <Route path="/guides/:slug" element={<PublicGuidePage />} />
             <Route path="/login" element={!user ? <LoginPage /> : <Navigate to={getDefaultRoute()} />} />
             <Route path="/dashboard" element={user?.role === 'Admin' ? <AdminDashboardPage /> : <Navigate to="/models" />} />
             <Route path="/validator-dashboard" element={user?.role === 'Validator' ? <ValidatorDashboardPage /> : <Navigate to="/models" />} />
@@ -118,7 +126,7 @@ function App() {
             <Route path="/attestations/bulk/:cycleId" element={user ? <BulkAttestationPage /> : <Navigate to="/login" />} />
             <Route path="/irps" element={user?.role === 'Admin' ? <IRPsPage /> : <Navigate to="/models" />} />
             <Route path="/irps/:id" element={user?.role === 'Admin' ? <IRPDetailPage /> : <Navigate to="/models" />} />
-            <Route path="/" element={<Navigate to={getDefaultRoute()} />} />
+            <Route path="*" element={<Navigate to={user ? getDefaultRoute() : '/'} />} />
         </Routes>
     );
 }

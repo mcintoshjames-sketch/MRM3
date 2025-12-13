@@ -56,6 +56,22 @@ interface TaxonomyValue {
     value_id: number;
     label: string;
     code?: string;
+    requires_irp?: boolean;  // For MRSA Risk Level taxonomy
+}
+
+interface IRPContactUser {
+    user_id: number;
+    email: string;
+    full_name: string;
+}
+
+interface IRPItem {
+    irp_id: number;
+    process_name: string;
+    description?: string;
+    is_active: boolean;
+    contact_user_id: number;
+    contact_user?: IRPContactUser;
 }
 
 interface Methodology {
@@ -111,6 +127,8 @@ interface Model {
     methodology: Methodology | null;
     ownership_type: TaxonomyValue | null;
     regulatory_categories: TaxonomyValue[];
+    // IRPs covering this MRSA
+    irps: IRPItem[];
     // Computed validation fields
     scorecard_outcome: string | null;
     residual_risk: string | null;
@@ -177,6 +195,10 @@ export default function ModelsPage() {
         initial_version_number: '' as string,
         initial_implementation_date: '' as string,
         is_model: true,
+        // MRSA fields (only applicable when is_model=false)
+        is_mrsa: false,
+        mrsa_risk_level_id: null as number | null,
+        mrsa_risk_rationale: '' as string,
         auto_create_validation: false,
         validation_request_type_id: 0,
         validation_request_priority_id: 0,
@@ -184,6 +206,7 @@ export default function ModelsPage() {
         validation_request_trigger_reason: '' as string
     });
     const [includeNonModels, setIncludeNonModels] = useState(false);
+    const [mrsaRiskLevels, setMrsaRiskLevels] = useState<TaxonomyValue[]>([]);
     // View mode: 'models' = Models only, 'mrsas' = MRSAs only, 'all' = All entities
     const [viewMode, setViewMode] = useState<'models' | 'mrsas' | 'all'>('models');
     const [userSearchTerm, setUserSearchTerm] = useState('');
@@ -245,6 +268,9 @@ export default function ModelsPage() {
             initial_version_number: '',
             initial_implementation_date: '',
             is_model: true,
+            is_mrsa: false,
+            mrsa_risk_level_id: null,
+            mrsa_risk_rationale: '',
             auto_create_validation: false,
             validation_request_type_id: 0,
             validation_request_priority_id: 0,
@@ -269,6 +295,8 @@ export default function ModelsPage() {
         { key: 'is_aiml', label: 'AI/ML', default: true },
         { key: 'is_mrsa', label: 'MRSA', default: false },
         { key: 'mrsa_risk_level', label: 'MRSA Risk Level', default: false },
+        { key: 'irp_coverage', label: 'IRP (MRSA Only)', default: false },
+        { key: 'irp_contact', label: 'IRP Contact (MRSA Only)', default: false },
         { key: 'owner', label: 'Owner', default: true },
         { key: 'owner_lob', label: 'Owner LOB', default: false },
         { key: 'developer', label: 'Developer', default: true },
@@ -406,18 +434,19 @@ export default function ModelsPage() {
             }
         }
 
-        // Model/Non-Model classification filter - exclude non-models unless checkbox is checked
-        if (!includeNonModels && model.is_model === false) {
-            return false;
-        }
-
         // View mode filter: 'models' = only is_model=true, 'mrsas' = only is_mrsa=true, 'all' = all
-        if (viewMode === 'models' && !model.is_model) {
-            return false;
+        if (viewMode === 'models') {
+            // In 'models' view, show only is_model=true (exclude non-models unless checkbox is checked)
+            if (!model.is_model && !includeNonModels) {
+                return false;
+            }
+        } else if (viewMode === 'mrsas') {
+            // In 'mrsas' view, show only is_mrsa=true
+            if (!model.is_mrsa) {
+                return false;
+            }
         }
-        if (viewMode === 'mrsas' && !model.is_mrsa) {
-            return false;
-        }
+        // 'all' view shows everything (no filter)
 
         // AI/ML classification filter
         if (filters.is_aiml !== '') {
@@ -512,7 +541,7 @@ export default function ModelsPage() {
             }
 
             // Build taxonomy query string (axios serializes arrays as names[] but FastAPI expects names=v1&names=v2)
-            const taxonomyNames = ['Validation Type', 'Validation Priority', 'Model Usage Frequency'];
+            const taxonomyNames = ['Validation Type', 'Validation Priority', 'Model Usage Frequency', 'MRSA Risk Level'];
             const taxonomyQueryString = taxonomyNames.map(n => `names=${encodeURIComponent(n)}`).join('&');
 
             const [modelsRes, usersRes, vendorsRes, regionsRes, taxonomiesRes, modelTypesRes] = await Promise.all([
@@ -534,6 +563,7 @@ export default function ModelsPage() {
             const valType = taxonomies.find((t: any) => t.name === 'Validation Type');
             const valPriority = taxonomies.find((t: any) => t.name === 'Validation Priority');
             const usageFreq = taxonomies.find((t: any) => t.name === 'Model Usage Frequency');
+            const mrsaRiskLevel = taxonomies.find((t: any) => t.name === 'MRSA Risk Level');
 
             if (valType) {
                 setValidationTypes(valType.values || []);
@@ -543,6 +573,9 @@ export default function ModelsPage() {
             }
             if (usageFreq) {
                 setUsageFrequencies(usageFreq.values || []);
+            }
+            if (mrsaRiskLevel) {
+                setMrsaRiskLevels(mrsaRiskLevel.values || []);
             }
         } catch (error) {
             console.error('Failed to fetch data:', error);
@@ -558,6 +591,18 @@ export default function ModelsPage() {
         if (!formData.usage_frequency_id || formData.usage_frequency_id === 0) {
             alert('Please select a Usage Frequency.');
             return;
+        }
+
+        // Validate MRSA fields if is_mrsa is checked
+        if (formData.is_mrsa) {
+            if (!formData.mrsa_risk_level_id) {
+                alert('Please select an MRSA Risk Level.');
+                return;
+            }
+            if (!formData.mrsa_risk_rationale || formData.mrsa_risk_rationale.trim() === '') {
+                alert('Please provide an MRSA Risk Rationale.');
+                return;
+            }
         }
 
         // Validate auto-create validation fields if checkbox is checked
@@ -587,7 +632,11 @@ export default function ModelsPage() {
                 validation_request_type_id: formData.validation_request_type_id || null,
                 validation_request_priority_id: formData.validation_request_priority_id || null,
                 validation_request_target_date: formData.validation_request_target_date || null,
-                validation_request_trigger_reason: formData.validation_request_trigger_reason || null
+                validation_request_trigger_reason: formData.validation_request_trigger_reason || null,
+                // MRSA fields - only include if is_mrsa is true
+                is_mrsa: formData.is_mrsa,
+                mrsa_risk_level_id: formData.is_mrsa ? formData.mrsa_risk_level_id : null,
+                mrsa_risk_rationale: formData.is_mrsa ? (formData.mrsa_risk_rationale || null) : null
             };
             console.log('DEBUG: Creating model with payload:', JSON.stringify(payload, null, 2));
             console.log('DEBUG: usage_frequency_id value:', formData.usage_frequency_id, 'type:', typeof formData.usage_frequency_id);
@@ -629,6 +678,9 @@ export default function ModelsPage() {
                 initial_version_number: '',
                 initial_implementation_date: '',
                 is_model: true,
+                is_mrsa: false,
+                mrsa_risk_level_id: null,
+                mrsa_risk_rationale: '',
                 auto_create_validation: false,
                 validation_request_type_id: 0,
                 validation_request_priority_id: 0,
@@ -795,6 +847,60 @@ export default function ModelsPage() {
                 <span className="text-sm text-gray-400">-</span>
             ),
             csvValue: (model) => model.mrsa_risk_level?.label || ''
+        },
+        irp_coverage: {
+            header: 'IRP (MRSA Only)',
+            cell: (model) => {
+                if (!model.is_mrsa) return <span className="text-gray-400">-</span>;
+                if (!model.irps || model.irps.length === 0) {
+                    return <span className="text-red-500 font-medium">No IRP</span>;
+                }
+                return (
+                    <div className="flex flex-wrap gap-1">
+                        {model.irps.map(irp => (
+                            <span
+                                key={irp.irp_id}
+                                className="px-2 py-0.5 bg-green-100 text-green-800 rounded text-xs font-medium"
+                                title={irp.description || irp.process_name}
+                            >
+                                {irp.process_name}
+                            </span>
+                        ))}
+                    </div>
+                );
+            },
+            csvValue: (model) => {
+                if (!model.is_mrsa) return '';
+                if (!model.irps || model.irps.length === 0) return 'No IRP';
+                return model.irps.map(irp => irp.process_name).join('; ');
+            }
+        },
+        irp_contact: {
+            header: 'IRP Contact (MRSA Only)',
+            cell: (model) => {
+                if (!model.is_mrsa) return <span className="text-gray-400">-</span>;
+                if (!model.irps || model.irps.length === 0) {
+                    return <span className="text-gray-400">-</span>;
+                }
+                // Get unique contacts across all IRPs
+                const contacts = model.irps
+                    .filter(irp => irp.contact_user)
+                    .map(irp => irp.contact_user!.full_name);
+                const uniqueContacts = [...new Set(contacts)];
+                if (uniqueContacts.length === 0) {
+                    return <span className="text-gray-400">-</span>;
+                }
+                return uniqueContacts.join(', ');
+            },
+            csvValue: (model) => {
+                if (!model.is_mrsa) return '';
+                if (!model.irps || model.irps.length === 0) return '';
+                const contacts = model.irps
+                    .filter(irp => irp.contact_user)
+                    .map(irp => irp.contact_user!.full_name);
+                const uniqueContacts = [...new Set(contacts)];
+                return uniqueContacts.join('; ');
+            }
         },
         owner: {
             header: 'Owner',
@@ -1290,6 +1396,95 @@ export default function ModelsPage() {
                                     </div>
                                     <p className="text-xs text-gray-500 mt-1">Non-models are tools/applications that use quantitative methods but don't meet the regulatory definition of a model</p>
                                 </div>
+
+                                {/* MRSA Classification - only shown when is_model=false */}
+                                {formData.is_model === false && (
+                                    <div className="mb-4 p-4 bg-purple-50 border border-purple-200 rounded-lg">
+                                        <h4 className="text-sm font-medium text-purple-800 mb-3">MRSA Classification</h4>
+
+                                        <div className="mb-3">
+                                            <label className="flex items-center gap-2 cursor-pointer">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={formData.is_mrsa}
+                                                    onChange={(e) => setFormData({
+                                                        ...formData,
+                                                        is_mrsa: e.target.checked,
+                                                        // Clear MRSA fields when unchecked
+                                                        mrsa_risk_level_id: e.target.checked ? formData.mrsa_risk_level_id : null,
+                                                        mrsa_risk_rationale: e.target.checked ? formData.mrsa_risk_rationale : ''
+                                                    })}
+                                                    className="w-4 h-4 text-purple-600 rounded"
+                                                />
+                                                <span className="text-sm font-medium">Mark as MRSA (Model Risk-Sensitive Application)</span>
+                                            </label>
+                                            <p className="text-xs text-gray-500 mt-1 ml-6">
+                                                MRSAs are non-model applications that exhibit model-like risk characteristics and require governance oversight
+                                            </p>
+                                        </div>
+
+                                        {formData.is_mrsa && (
+                                            <>
+                                                <div className="mb-3">
+                                                    <label htmlFor="mrsa_risk_level_id" className="block text-sm font-medium mb-1">
+                                                        MRSA Risk Level <span className="text-red-500">*</span>
+                                                    </label>
+                                                    <select
+                                                        id="mrsa_risk_level_id"
+                                                        className="input-field"
+                                                        value={formData.mrsa_risk_level_id || ''}
+                                                        onChange={(e) => setFormData({
+                                                            ...formData,
+                                                            mrsa_risk_level_id: e.target.value ? parseInt(e.target.value) : null
+                                                        })}
+                                                        required
+                                                    >
+                                                        <option value="">Select Risk Level</option>
+                                                        {mrsaRiskLevels.map(level => (
+                                                            <option key={level.value_id} value={level.value_id}>
+                                                                {level.label}
+                                                            </option>
+                                                        ))}
+                                                    </select>
+                                                </div>
+
+                                                {/* IRP Warning for High-Risk MRSAs */}
+                                                {formData.mrsa_risk_level_id && mrsaRiskLevels.find(
+                                                    l => l.value_id === formData.mrsa_risk_level_id && l.requires_irp
+                                                ) && (
+                                                    <div className="mb-3 p-2 bg-amber-50 border border-amber-200 rounded flex items-start gap-2">
+                                                        <span className="text-amber-600">⚠️</span>
+                                                        <p className="text-xs text-amber-800">
+                                                            High-Risk MRSAs require Independent Review Process (IRP) coverage.
+                                                            After creation, assign this MRSA to an IRP via the IRPs management page.
+                                                        </p>
+                                                    </div>
+                                                )}
+
+                                                <div className="mb-3">
+                                                    <label htmlFor="mrsa_risk_rationale" className="block text-sm font-medium mb-1">
+                                                        Risk Rationale <span className="text-red-500">*</span>
+                                                    </label>
+                                                    <textarea
+                                                        id="mrsa_risk_rationale"
+                                                        className="input-field"
+                                                        rows={3}
+                                                        value={formData.mrsa_risk_rationale}
+                                                        onChange={(e) => setFormData({
+                                                            ...formData,
+                                                            mrsa_risk_rationale: e.target.value
+                                                        })}
+                                                        placeholder="Provide justification for the MRSA risk classification..."
+                                                        required
+                                                    />
+                                                    <p className="text-xs text-gray-500 mt-1">
+                                                        Explain why this application is classified at this risk level
+                                                    </p>
+                                                </div>
+                                            </>
+                                        )}
+                                    </div>
+                                )}
 
                                 <div className="mb-4">
                                     <label htmlFor="owner_id" className="block text-sm font-medium mb-2">Owner (Required)</label>
@@ -2139,19 +2334,21 @@ export default function ModelsPage() {
                             </div>
                         </div>
 
-                        {/* Include Non-Models Toggle */}
-                        <div className="flex items-center space-x-2 pt-5">
-                            <input
-                                type="checkbox"
-                                id="include-non-models"
-                                checked={includeNonModels}
-                                onChange={(e) => setIncludeNonModels(e.target.checked)}
-                                className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                            />
-                            <label htmlFor="include-non-models" className="text-sm font-medium text-gray-700 whitespace-nowrap">
-                                Include Non-Models
-                            </label>
-                        </div>
+                        {/* Include Non-Models Toggle - only show in 'models' view */}
+                        {viewMode === 'models' && (
+                            <div className="flex items-center space-x-2 pt-5">
+                                <input
+                                    type="checkbox"
+                                    id="include-non-models"
+                                    checked={includeNonModels}
+                                    onChange={(e) => setIncludeNonModels(e.target.checked)}
+                                    className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                                />
+                                <label htmlFor="include-non-models" className="text-sm font-medium text-gray-700 whitespace-nowrap">
+                                    Include Non-Models
+                                </label>
+                            </div>
+                        )}
 
                         {/* Include Sub-Models Toggle */}
                         <div className="flex items-center space-x-2 pt-5">

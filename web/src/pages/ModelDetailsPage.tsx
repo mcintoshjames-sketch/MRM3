@@ -21,6 +21,7 @@ import { ModelVersion } from '../api/versions';
 import { overdueCommentaryApi, CurrentOverdueCommentaryResponse } from '../api/overdueCommentary';
 import { getResidualRiskBadgeClass } from '../api/residualRiskMap';
 import { linkChangeToAttestationIfPresent } from '../api/attestation';
+import { irpApi, IRP, IRPCoverageStatus } from '../api/irp';
 
 interface User {
     user_id: number;
@@ -78,6 +79,7 @@ interface TaxonomyValue {
     description: string | null;
     sort_order: number;
     is_active: boolean;
+    requires_irp?: boolean;
 }
 
 interface Taxonomy {
@@ -131,6 +133,10 @@ interface Model {
     submitted_at: string | null;
     is_model: boolean;
     is_aiml: boolean | null;
+    is_mrsa: boolean | null;
+    mrsa_risk_level_id: number | null;
+    mrsa_risk_rationale: string | null;
+    mrsa_risk_level: TaxonomyValue | null;
     business_line_name: string | null;
     // Computed approval status fields
     approval_status: string | null;
@@ -341,6 +347,12 @@ export default function ModelDetailsPage() {
     const [submittingPendingEdit, setSubmittingPendingEdit] = useState(false);
     const [recommendations, setRecommendations] = useState<RecommendationListItem[]>([]);
     const [recommendationsLoading, setRecommendationsLoading] = useState(false);
+    // IRP state for MRSAs
+    const [allIrps, setAllIrps] = useState<IRP[]>([]);
+    const [irpCoverage, setIrpCoverage] = useState<IRPCoverageStatus | null>(null);
+    const [showIrpLinkModal, setShowIrpLinkModal] = useState(false);
+    const [selectedIrpId, setSelectedIrpId] = useState<number | null>(null);
+    const [linkingIrp, setLinkingIrp] = useState(false);
     const [finalRiskRanking, setFinalRiskRanking] = useState<FinalRiskRanking | null>(null);
     // Track whether the model has a global risk assessment (disables direct risk tier editing)
     const [hasGlobalAssessment, setHasGlobalAssessment] = useState(false);
@@ -365,8 +377,12 @@ export default function ModelDetailsPage() {
         status_id: null as number | null,
         user_ids: [] as number[],
         regulatory_category_ids: [] as number[],
-        is_model: true
+        is_model: true,
+        is_mrsa: false,
+        mrsa_risk_level_id: null as number | null,
+        mrsa_risk_rationale: ''
     });
+    const [mrsaRiskLevels, setMrsaRiskLevels] = useState<TaxonomyValue[]>([]);
 
     useEffect(() => {
         fetchData();
@@ -479,7 +495,14 @@ export default function ModelDetailsPage() {
             const taxDetails = await Promise.all(
                 taxonomiesRes.data.map((t: Taxonomy) => api.get(`/taxonomies/${t.taxonomy_id}`))
             );
-            setTaxonomies(taxDetails.map((r) => r.data));
+            const allTaxonomies = taxDetails.map((r) => r.data);
+            setTaxonomies(allTaxonomies);
+
+            // Extract MRSA Risk Level taxonomy values
+            const mrsaTax = allTaxonomies.find((t: Taxonomy) => t.name === 'MRSA Risk Level');
+            if (mrsaTax) {
+                setMrsaRiskLevels(mrsaTax.values.filter((v: TaxonomyValue) => v.is_active));
+            }
 
             const initialFormData = {
                 model_name: modelData.model_name,
@@ -500,7 +523,10 @@ export default function ModelDetailsPage() {
                 status_id: modelData.status_id,
                 user_ids: modelData.users.map((u: User) => u.user_id),
                 regulatory_category_ids: modelData.regulatory_categories.map((c: TaxonomyValue) => c.value_id),
-                is_model: modelData.is_model ?? true
+                is_model: modelData.is_model ?? true,
+                is_mrsa: modelData.is_mrsa ?? false,
+                mrsa_risk_level_id: modelData.mrsa_risk_level_id,
+                mrsa_risk_rationale: modelData.mrsa_risk_rationale || ''
             };
             setFormData(initialFormData);
             setOriginalFormData(initialFormData);
@@ -585,6 +611,73 @@ export default function ModelDetailsPage() {
         }
     };
 
+    // Fetch IRP data when model is an MRSA
+    const fetchIrpData = async () => {
+        if (!model?.is_mrsa) return;
+        try {
+            // Fetch all active IRPs for linking
+            const irps = await irpApi.list({ is_active: true });
+            setAllIrps(irps);
+            // Fetch coverage status for this MRSA
+            const coverage = await irpApi.getMRSACoverage(model.model_id);
+            setIrpCoverage(coverage || null);
+        } catch (error) {
+            console.error('Failed to fetch IRP data:', error);
+        }
+    };
+
+    // Fetch IRP data when model loads and is an MRSA
+    useEffect(() => {
+        if (model?.is_mrsa) {
+            fetchIrpData();
+        }
+    }, [model?.model_id, model?.is_mrsa]);
+
+    // Handle linking MRSA to an IRP
+    const handleLinkIrp = async () => {
+        if (!selectedIrpId || !model) return;
+        setLinkingIrp(true);
+        try {
+            // Get the current IRP details to get its current MRSA list
+            const irpDetail = await irpApi.get(selectedIrpId);
+            const currentMrsaIds = irpDetail.covered_mrsas.map(m => m.model_id);
+            // Add this MRSA to the list
+            if (!currentMrsaIds.includes(model.model_id)) {
+                await irpApi.update(selectedIrpId, {
+                    mrsa_ids: [...currentMrsaIds, model.model_id]
+                });
+            }
+            // Refresh IRP data
+            await fetchIrpData();
+            setShowIrpLinkModal(false);
+            setSelectedIrpId(null);
+        } catch (error) {
+            console.error('Failed to link IRP:', error);
+            alert('Failed to link IRP. Please try again.');
+        } finally {
+            setLinkingIrp(false);
+        }
+    };
+
+    // Handle unlinking MRSA from an IRP
+    const handleUnlinkIrp = async (irpId: number) => {
+        if (!model) return;
+        if (!confirm('Are you sure you want to remove this MRSA from this IRP?')) return;
+        try {
+            // Get the current IRP details
+            const irpDetail = await irpApi.get(irpId);
+            const currentMrsaIds = irpDetail.covered_mrsas.map(m => m.model_id);
+            // Remove this MRSA from the list
+            const newMrsaIds = currentMrsaIds.filter(id => id !== model.model_id);
+            await irpApi.update(irpId, { mrsa_ids: newMrsaIds });
+            // Refresh IRP data
+            await fetchIrpData();
+        } catch (error) {
+            console.error('Failed to unlink IRP:', error);
+            alert('Failed to unlink IRP. Please try again.');
+        }
+    };
+
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         setEditError(null);
@@ -657,6 +750,15 @@ export default function ModelDetailsPage() {
                 if (formData.is_model !== originalFormData.is_model) {
                     payload.is_model = formData.is_model;
                 }
+                if (formData.is_mrsa !== originalFormData.is_mrsa) {
+                    payload.is_mrsa = formData.is_mrsa;
+                }
+                if (formData.mrsa_risk_level_id !== originalFormData.mrsa_risk_level_id) {
+                    payload.mrsa_risk_level_id = formData.mrsa_risk_level_id || null;
+                }
+                if (formData.mrsa_risk_rationale !== originalFormData.mrsa_risk_rationale) {
+                    payload.mrsa_risk_rationale = formData.mrsa_risk_rationale || null;
+                }
             } else {
                 // Fallback: send all fields if original data not available (shouldn't happen)
                 const { status, ...formDataWithoutStatus } = formData;
@@ -670,6 +772,18 @@ export default function ModelDetailsPage() {
                     user_ids: formData.user_ids.length > 0 ? formData.user_ids : [],
                     regulatory_category_ids: formData.regulatory_category_ids.length > 0 ? formData.regulatory_category_ids : []
                 });
+            }
+
+            // Validate MRSA fields if is_mrsa is true
+            if (formData.is_mrsa && !formData.is_model) {
+                if (!formData.mrsa_risk_level_id) {
+                    setEditError('MRSA Risk Level is required when marking as MRSA.');
+                    return;
+                }
+                if (!formData.mrsa_risk_rationale?.trim()) {
+                    setEditError('MRSA Risk Rationale is required when marking as MRSA.');
+                    return;
+                }
             }
 
             // Check if there are any changes
@@ -1982,6 +2096,81 @@ export default function ModelDetailsPage() {
                                 <p className="text-xs text-gray-500 mt-1">Non-models are tools/applications that use quantitative methods but don't meet the regulatory definition of a model</p>
                             </div>
 
+                            {/* MRSA Classification - only shown when is_model=false */}
+                            {formData.is_model === false && (
+                                <div className="mb-4 p-4 bg-purple-50 border border-purple-200 rounded-lg">
+                                    <h4 className="text-sm font-medium text-purple-800 mb-3">MRSA Classification</h4>
+                                    <div className="mb-3">
+                                        <label className="flex items-center gap-2 cursor-pointer">
+                                            <input
+                                                type="checkbox"
+                                                checked={formData.is_mrsa}
+                                                onChange={(e) => setFormData({
+                                                    ...formData,
+                                                    is_mrsa: e.target.checked,
+                                                    mrsa_risk_level_id: e.target.checked ? formData.mrsa_risk_level_id : null,
+                                                    mrsa_risk_rationale: e.target.checked ? formData.mrsa_risk_rationale : ''
+                                                })}
+                                                className="w-4 h-4 text-purple-600 rounded"
+                                            />
+                                            <span className="text-sm font-medium text-gray-700">Mark as MRSA (Model Risk-Sensitive Application)</span>
+                                        </label>
+                                        <p className="text-xs text-gray-500 mt-1 ml-6">MRSAs are non-model applications with characteristics similar to models that require oversight</p>
+                                    </div>
+
+                                    {formData.is_mrsa && (
+                                        <>
+                                            <div className="mb-3">
+                                                <label htmlFor="mrsa_risk_level_id" className="block text-sm font-medium text-gray-700 mb-1">
+                                                    MRSA Risk Level <span className="text-red-500">*</span>
+                                                </label>
+                                                <select
+                                                    id="mrsa_risk_level_id"
+                                                    className="input-field"
+                                                    value={formData.mrsa_risk_level_id || ''}
+                                                    onChange={(e) => setFormData({
+                                                        ...formData,
+                                                        mrsa_risk_level_id: e.target.value ? parseInt(e.target.value) : null
+                                                    })}
+                                                    required
+                                                >
+                                                    <option value="">Select Risk Level</option>
+                                                    {mrsaRiskLevels
+                                                        .sort((a, b) => a.sort_order - b.sort_order)
+                                                        .map(v => (
+                                                            <option key={v.value_id} value={v.value_id}>{v.label}</option>
+                                                        ))}
+                                                </select>
+                                            </div>
+
+                                            {/* Show IRP warning if High-Risk is selected */}
+                                            {formData.mrsa_risk_level_id && mrsaRiskLevels.find(v => v.value_id === formData.mrsa_risk_level_id)?.requires_irp && (
+                                                <div className="mb-3 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
+                                                    <p className="text-sm text-yellow-800">
+                                                        <span className="font-medium">⚠️ High-Risk MRSA:</span> This MRSA will require IRP (Independent Review Process) coverage
+                                                    </p>
+                                                </div>
+                                            )}
+
+                                            <div className="mb-3">
+                                                <label htmlFor="mrsa_risk_rationale" className="block text-sm font-medium text-gray-700 mb-1">
+                                                    Risk Rationale <span className="text-red-500">*</span>
+                                                </label>
+                                                <textarea
+                                                    id="mrsa_risk_rationale"
+                                                    className="input-field"
+                                                    rows={3}
+                                                    value={formData.mrsa_risk_rationale}
+                                                    onChange={(e) => setFormData({ ...formData, mrsa_risk_rationale: e.target.value })}
+                                                    placeholder="Provide justification for MRSA classification and risk level..."
+                                                    required
+                                                />
+                                            </div>
+                                        </>
+                                    )}
+                                </div>
+                            )}
+
                             <div className="mb-4">
                                 <label htmlFor="owner_id" className="block text-sm font-medium mb-2">
                                     Owner
@@ -2425,6 +2614,72 @@ export default function ModelDetailsPage() {
                                 {model.is_model ? 'Model' : 'Non-Model'}
                             </span>
                         </div>
+                        {!model.is_model && model.is_mrsa && (
+                            <div>
+                                <h4 className="text-sm font-medium text-gray-500 mb-1">MRSA Status</h4>
+                                <span className={`px-2 py-1 text-sm rounded ${
+                                    model.mrsa_risk_level?.code === 'HIGH_RISK'
+                                        ? 'bg-red-100 text-red-800'
+                                        : 'bg-purple-100 text-purple-800'
+                                }`}>
+                                    {model.mrsa_risk_level?.label || 'MRSA'}
+                                </span>
+                            </div>
+                        )}
+                        {/* IRP Coverage for MRSAs */}
+                        {!model.is_model && model.is_mrsa && (
+                            <div className="col-span-2">
+                                <h4 className="text-sm font-medium text-gray-500 mb-2">IRP Coverage</h4>
+                                {irpCoverage?.requires_irp && !irpCoverage?.has_irp_coverage ? (
+                                    <div className="bg-red-50 border border-red-200 rounded-lg p-3 mb-2">
+                                        <p className="text-sm text-red-700 font-medium">
+                                            ⚠️ High-Risk MRSA requires IRP coverage
+                                        </p>
+                                    </div>
+                                ) : irpCoverage?.has_irp_coverage ? (
+                                    <div className="bg-green-50 border border-green-200 rounded-lg p-3 mb-2">
+                                        <p className="text-sm text-green-700 font-medium">
+                                            ✓ IRP coverage in place
+                                        </p>
+                                    </div>
+                                ) : null}
+                                {/* List of linked IRPs */}
+                                {irpCoverage && irpCoverage.irp_ids.length > 0 ? (
+                                    <div className="space-y-2">
+                                        {irpCoverage.irp_ids.map((irpId, index) => (
+                                            <div key={irpId} className="flex items-center justify-between bg-gray-50 rounded px-3 py-2">
+                                                <Link
+                                                    to={`/irps/${irpId}`}
+                                                    className="text-blue-600 hover:text-blue-800 hover:underline"
+                                                >
+                                                    {irpCoverage.irp_names[index] || `IRP #${irpId}`}
+                                                </Link>
+                                                {user?.role === 'Admin' && (
+                                                    <button
+                                                        onClick={() => handleUnlinkIrp(irpId)}
+                                                        className="text-red-600 hover:text-red-800 text-sm"
+                                                        title="Remove from IRP"
+                                                    >
+                                                        ✕
+                                                    </button>
+                                                )}
+                                            </div>
+                                        ))}
+                                    </div>
+                                ) : (
+                                    <p className="text-sm text-gray-500 italic">No IRP coverage assigned</p>
+                                )}
+                                {/* Link to IRP button - Admin only */}
+                                {user?.role === 'Admin' && (
+                                    <button
+                                        onClick={() => setShowIrpLinkModal(true)}
+                                        className="mt-2 text-sm text-blue-600 hover:text-blue-800"
+                                    >
+                                        + Link to IRP
+                                    </button>
+                                )}
+                            </div>
+                        )}
                         <div>
                             <h4 className="text-sm font-medium text-gray-500 mb-1">Vendor</h4>
                             {model.vendor ? (
@@ -3614,6 +3869,91 @@ export default function ModelDetailsPage() {
                     onClose={() => setShowCommentaryModal(false)}
                     onSuccess={handleCommentarySuccess}
                 />
+            )}
+
+            {/* IRP Link Modal */}
+            {showIrpLinkModal && model?.is_mrsa && (
+                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+                    <div className="bg-white rounded-lg shadow-xl max-w-lg w-full mx-4">
+                        <div className="px-6 py-4 border-b border-gray-200">
+                            <h3 className="text-lg font-semibold text-gray-900">Link MRSA to IRP</h3>
+                            <p className="text-sm text-gray-500 mt-1">
+                                Select an Independent Review Process to cover this MRSA
+                            </p>
+                        </div>
+                        <div className="px-6 py-4">
+                            {allIrps.length === 0 ? (
+                                <div className="text-center py-4">
+                                    <p className="text-gray-500">No active IRPs available.</p>
+                                    <p className="text-sm text-gray-400 mt-2">
+                                        Create an IRP first from the IRP management page.
+                                    </p>
+                                </div>
+                            ) : (
+                                <div className="space-y-3 max-h-96 overflow-y-auto">
+                                    {allIrps
+                                        .filter(irp => !irpCoverage?.irp_ids.includes(irp.irp_id))
+                                        .map((irp) => (
+                                            <label
+                                                key={irp.irp_id}
+                                                className={`flex items-start p-3 border rounded-lg cursor-pointer transition-colors ${
+                                                    selectedIrpId === irp.irp_id
+                                                        ? 'border-blue-500 bg-blue-50'
+                                                        : 'border-gray-200 hover:border-gray-300'
+                                                }`}
+                                            >
+                                                <input
+                                                    type="radio"
+                                                    name="irp"
+                                                    value={irp.irp_id}
+                                                    checked={selectedIrpId === irp.irp_id}
+                                                    onChange={() => setSelectedIrpId(irp.irp_id)}
+                                                    className="mt-1 mr-3"
+                                                />
+                                                <div className="flex-1">
+                                                    <div className="font-medium text-gray-900">
+                                                        {irp.process_name}
+                                                    </div>
+                                                    {irp.description && (
+                                                        <p className="text-sm text-gray-500 mt-0.5">
+                                                            {irp.description}
+                                                        </p>
+                                                    )}
+                                                    <div className="text-xs text-gray-400 mt-1">
+                                                        Contact: {irp.contact_user?.full_name || 'Unknown'} •
+                                                        {irp.covered_mrsa_count} MRSA{irp.covered_mrsa_count !== 1 ? 's' : ''} covered
+                                                    </div>
+                                                </div>
+                                            </label>
+                                        ))}
+                                    {allIrps.filter(irp => !irpCoverage?.irp_ids.includes(irp.irp_id)).length === 0 && (
+                                        <p className="text-center text-gray-500 py-4">
+                                            This MRSA is already linked to all available IRPs.
+                                        </p>
+                                    )}
+                                </div>
+                            )}
+                        </div>
+                        <div className="px-6 py-4 border-t border-gray-200 flex justify-end gap-3">
+                            <button
+                                onClick={() => {
+                                    setShowIrpLinkModal(false);
+                                    setSelectedIrpId(null);
+                                }}
+                                className="px-4 py-2 text-gray-700 bg-gray-100 rounded-md hover:bg-gray-200"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={handleLinkIrp}
+                                disabled={!selectedIrpId || linkingIrp}
+                                className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                                {linkingIrp ? 'Linking...' : 'Link to IRP'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
             )}
         </Layout>
     );

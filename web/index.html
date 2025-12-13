@@ -4,11 +4,33 @@
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>QMIS v0.1</title>
+    <title>QMIS — Quality Model Inventory System</title>
+    <meta name="description"
+        content="QMIS supports model inventory management and governance workflows. Sign in to access the application." />
+    <link rel="canonical" href="https://app.mrmqmistest.org/" />
+    <meta name="robots" content="index,follow" />
 </head>
 
 <body>
-    <div id="root"></div>
+    <div id="root">
+        <main
+            style="max-width: 52rem; margin: 2rem auto; font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; padding: 0 1rem;">
+            <h1 style="font-size: 1.5rem; margin: 0 0 0.75rem 0;">QMIS — Quality Model Inventory System</h1>
+            <p style="margin: 0 0 1rem 0; color: #444;">
+                Public overview and user guides. Operational data requires authentication.
+            </p>
+            <ul style="margin: 0; padding-left: 1.25rem;">
+                <li><a href="/login">Login</a></li>
+                <li><a href="/overview">System Overview</a></li>
+                <li><a href="/guides">User Guides</a></li>
+            </ul>
+            <noscript>
+                <p style="margin-top: 1rem; color: #444;">
+                    This site works best with JavaScript enabled.
+                </p>
+            </noscript>
+        </main>
+    </div>
     <script type="module" src="/src/main.tsx"></script>
 </body>
 

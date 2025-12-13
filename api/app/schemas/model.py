@@ -14,6 +14,29 @@ if TYPE_CHECKING:
     from app.schemas.irp import IRPResponse
 
 
+class IRPContactUser(BaseModel):
+    """Minimal user info for IRP contact user in model responses."""
+    user_id: int
+    email: str
+    full_name: str
+
+    class Config:
+        from_attributes = True
+
+
+class IRPSummary(BaseModel):
+    """Lightweight IRP info for model responses (avoids circular import)."""
+    irp_id: int
+    process_name: str
+    description: Optional[str] = None
+    is_active: bool = True
+    contact_user_id: int
+    contact_user: Optional[IRPContactUser] = None
+
+    class Config:
+        from_attributes = True
+
+
 class UserWithLOBRollup(BaseModel):
     """User info with LOB rolled up to LOB4 level for display."""
     user_id: int
@@ -219,6 +242,29 @@ class ModelTypeListItem(BaseModel):
         from_attributes = True
 
 
+class IRPContactUserListItem(BaseModel):
+    """Minimal user info for IRP contact in list views."""
+    user_id: int
+    email: str
+    full_name: str
+
+    class Config:
+        from_attributes = True
+
+
+class IRPListItem(BaseModel):
+    """Minimal IRP info for model list views."""
+    irp_id: int
+    process_name: str
+    description: Optional[str] = None
+    is_active: bool = True
+    contact_user_id: int
+    contact_user: Optional[IRPContactUserListItem] = None
+
+    class Config:
+        from_attributes = True
+
+
 class ModelListResponse(BaseModel):
     """Lightweight model response for list views - optimized for performance."""
     model_id: int
@@ -261,6 +307,7 @@ class ModelListResponse(BaseModel):
     regions: List[ModelRegionListItem] = []
     users: List[UserListItem] = []
     regulatory_categories: List[TaxonomyListItem] = []
+    irps: List[IRPListItem] = []  # IRPs covering this MRSA
 
     # Computed fields (optional, expensive)
     scorecard_outcome: Optional[str] = None
@@ -295,7 +342,7 @@ class ModelDetailResponse(ModelResponse):
     submission_comments: List[ModelSubmissionCommentResponse] = []
     # MRSA nested relationships
     mrsa_risk_level: Optional[TaxonomyValueResponse] = None  # MRSA risk classification
-    irps: List[Any] = []  # IRPs covering this MRSA (use Any to avoid circular import)
+    irps: List[IRPSummary] = []  # IRPs covering this MRSA
     # Computed validation fields (populated from final_risk_ranking computation)
     scorecard_outcome: Optional[str] = None
     residual_risk: Optional[str] = None
@@ -379,7 +426,7 @@ class ModelCreateResponse(BaseModel):
     users: List[UserResponse] = []
     regulatory_categories: List[TaxonomyValueResponse] = []
     regions: List[ModelRegionListItem] = []
-    irps: List[Any] = []  # IRPs covering this MRSA
+    irps: List[IRPSummary] = []  # IRPs covering this MRSA
     warnings: Optional[List[ModelCreateWarning]] = None
 
     class Config:

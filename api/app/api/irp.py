@@ -8,6 +8,7 @@ from app.models.user import User
 from app.models.model import Model
 from app.models.irp import IRP, IRPReview, IRPCertification
 from app.models.taxonomy import TaxonomyValue
+from app.models.audit_log import AuditLog
 from app.schemas.irp import (
     IRPCreate, IRPUpdate, IRPResponse, IRPDetailResponse,
     IRPReviewCreate, IRPReviewResponse,
@@ -16,6 +17,19 @@ from app.schemas.irp import (
 )
 
 router = APIRouter()
+
+
+def create_audit_log(db: Session, entity_type: str, entity_id: int, action: str, user_id: int, changes: dict = None):
+    """Create an audit log entry for IRP operations."""
+    audit_log = AuditLog(
+        entity_type=entity_type,
+        entity_id=entity_id,
+        action=action,
+        user_id=user_id,
+        changes=changes
+    )
+    db.add(audit_log)
+    db.flush()
 
 
 def _build_irp_response(irp: IRP) -> dict:
@@ -160,6 +174,38 @@ def create_irp(
 
         irp.covered_mrsas = mrsas
 
+    db.flush()
+
+    # Create audit log for IRP creation
+    create_audit_log(
+        db=db,
+        entity_type="IRP",
+        entity_id=irp.irp_id,
+        action="CREATE",
+        user_id=current_user.user_id,
+        changes={
+            "process_name": irp.process_name,
+            "description": irp.description,
+            "contact_user_id": irp.contact_user_id,
+            "mrsa_ids": irp_data.mrsa_ids if irp_data.mrsa_ids else []
+        }
+    )
+
+    # Create audit logs for each linked MRSA
+    if irp_data.mrsa_ids:
+        for mrsa_id in irp_data.mrsa_ids:
+            create_audit_log(
+                db=db,
+                entity_type="Model",
+                entity_id=mrsa_id,
+                action="IRP_LINKED",
+                user_id=current_user.user_id,
+                changes={
+                    "irp_id": irp.irp_id,
+                    "irp_name": irp.process_name
+                }
+            )
+
     db.commit()
 
     # Reload with relationships
@@ -214,12 +260,17 @@ def update_irp(
             detail="Admin access required"
         )
 
-    irp = db.query(IRP).filter(IRP.irp_id == irp_id).first()
+    irp = db.query(IRP).options(
+        joinedload(IRP.covered_mrsas)
+    ).filter(IRP.irp_id == irp_id).first()
     if not irp:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="IRP not found"
         )
+
+    # Track current MRSA IDs before changes
+    old_mrsa_ids = set(m.model_id for m in irp.covered_mrsas)
 
     update_data = irp_data.model_dump(exclude_unset=True)
 
@@ -244,26 +295,86 @@ def update_irp(
     # Handle MRSA linkages separately
     mrsa_ids = update_data.pop("mrsa_ids", None)
 
-    # Update scalar fields
+    # Track changes for audit log
+    changes = {}
     for field, value in update_data.items():
+        old_value = getattr(irp, field)
+        if old_value != value:
+            changes[field] = {"old": old_value, "new": value}
         setattr(irp, field, value)
 
     # Update MRSA linkages if provided
+    added_mrsa_ids = []
+    removed_mrsa_ids = []
     if mrsa_ids is not None:
-        mrsas = db.query(Model).filter(
-            Model.model_id.in_(mrsa_ids),
-            Model.is_mrsa == True
-        ).all()
+        new_mrsa_ids = set(mrsa_ids)
+        added_mrsa_ids = list(new_mrsa_ids - old_mrsa_ids)
+        removed_mrsa_ids = list(old_mrsa_ids - new_mrsa_ids)
 
-        if len(mrsas) != len(mrsa_ids):
-            found_ids = {m.model_id for m in mrsas}
-            missing_ids = set(mrsa_ids) - found_ids
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Some MRSA IDs not found or not MRSAs: {missing_ids}"
-            )
+        if mrsa_ids:
+            mrsas = db.query(Model).filter(
+                Model.model_id.in_(mrsa_ids),
+                Model.is_mrsa == True
+            ).all()
 
-        irp.covered_mrsas = mrsas
+            if len(mrsas) != len(mrsa_ids):
+                found_ids = {m.model_id for m in mrsas}
+                missing_ids = set(mrsa_ids) - found_ids
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Some MRSA IDs not found or not MRSAs: {missing_ids}"
+                )
+
+            irp.covered_mrsas = mrsas
+        else:
+            irp.covered_mrsas = []
+
+        if added_mrsa_ids or removed_mrsa_ids:
+            changes["mrsa_ids"] = {
+                "added": added_mrsa_ids,
+                "removed": removed_mrsa_ids
+            }
+
+    db.flush()
+
+    # Create audit log for IRP update (if any changes)
+    if changes:
+        create_audit_log(
+            db=db,
+            entity_type="IRP",
+            entity_id=irp.irp_id,
+            action="UPDATE",
+            user_id=current_user.user_id,
+            changes=changes
+        )
+
+    # Create audit logs for linked MRSAs
+    for mrsa_id in added_mrsa_ids:
+        create_audit_log(
+            db=db,
+            entity_type="Model",
+            entity_id=mrsa_id,
+            action="IRP_LINKED",
+            user_id=current_user.user_id,
+            changes={
+                "irp_id": irp.irp_id,
+                "irp_name": irp.process_name
+            }
+        )
+
+    # Create audit logs for unlinked MRSAs
+    for mrsa_id in removed_mrsa_ids:
+        create_audit_log(
+            db=db,
+            entity_type="Model",
+            entity_id=mrsa_id,
+            action="IRP_UNLINKED",
+            user_id=current_user.user_id,
+            changes={
+                "irp_id": irp.irp_id,
+                "irp_name": irp.process_name
+            }
+        )
 
     db.commit()
 
@@ -293,11 +404,45 @@ def delete_irp(
             detail="Admin access required"
         )
 
-    irp = db.query(IRP).filter(IRP.irp_id == irp_id).first()
+    irp = db.query(IRP).options(
+        joinedload(IRP.covered_mrsas)
+    ).filter(IRP.irp_id == irp_id).first()
     if not irp:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="IRP not found"
+        )
+
+    # Store IRP info for audit log before deletion
+    irp_name = irp.process_name
+    covered_mrsa_ids = [m.model_id for m in irp.covered_mrsas]
+
+    # Create audit log for IRP deletion
+    create_audit_log(
+        db=db,
+        entity_type="IRP",
+        entity_id=irp_id,
+        action="DELETE",
+        user_id=current_user.user_id,
+        changes={
+            "process_name": irp_name,
+            "covered_mrsa_ids": covered_mrsa_ids
+        }
+    )
+
+    # Create audit logs for unlinked MRSAs
+    for mrsa_id in covered_mrsa_ids:
+        create_audit_log(
+            db=db,
+            entity_type="Model",
+            entity_id=mrsa_id,
+            action="IRP_UNLINKED",
+            user_id=current_user.user_id,
+            changes={
+                "irp_id": irp_id,
+                "irp_name": irp_name,
+                "reason": "IRP deleted"
+            }
         )
 
     db.delete(irp)
@@ -362,6 +507,24 @@ def create_irp_review(
         reviewed_by_user_id=current_user.user_id,
     )
     db.add(review)
+    db.flush()
+
+    # Create audit log for IRP review
+    create_audit_log(
+        db=db,
+        entity_type="IRP",
+        entity_id=irp_id,
+        action="REVIEW_ADDED",
+        user_id=current_user.user_id,
+        changes={
+            "review_id": review.review_id,
+            "review_date": str(review_data.review_date),
+            "outcome_id": review_data.outcome_id,
+            "outcome_label": outcome.label,
+            "notes": review_data.notes
+        }
+    )
+
     db.commit()
 
     # Reload with relationships
@@ -426,6 +589,22 @@ def create_irp_certification(
         certified_by_user_id=current_user.user_id,
     )
     db.add(certification)
+    db.flush()
+
+    # Create audit log for IRP certification
+    create_audit_log(
+        db=db,
+        entity_type="IRP",
+        entity_id=irp_id,
+        action="CERTIFICATION_ADDED",
+        user_id=current_user.user_id,
+        changes={
+            "certification_id": certification.certification_id,
+            "certification_date": str(certification_data.certification_date),
+            "conclusion_summary": certification_data.conclusion_summary
+        }
+    )
+
     db.commit()
 
     # Reload with relationships

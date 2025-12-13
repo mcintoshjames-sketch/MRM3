@@ -455,6 +455,48 @@ class TestAttestationReview:
         assert response.status_code == 200
         assert response.json()["status"] == "REJECTED"
 
+    def test_resubmit_after_rejection(self, client, auth_headers, admin_headers, attestation_cycle, sample_model, attestation_taxonomy, db_session):
+        """User can resubmit attestation after admin rejection."""
+        attestation_cycle.status = AttestationCycleStatus.OPEN.value
+        db_session.commit()
+
+        # Create a record in REJECTED status (simulating already rejected attestation)
+        record = AttestationRecord(
+            cycle_id=attestation_cycle.cycle_id,
+            model_id=sample_model.model_id,
+            attesting_user_id=sample_model.owner_id,
+            due_date=attestation_cycle.submission_due_date,
+            status=AttestationRecordStatus.REJECTED.value,
+            review_comment="Please provide more detail"
+        )
+        db_session.add(record)
+        db_session.commit()
+        db_session.refresh(record)
+
+        # Get questions for submission
+        q1 = attestation_taxonomy["q1"]
+        q2 = attestation_taxonomy["q2"]
+
+        # Resubmit with updated response
+        submission = {
+            "decision": "I_ATTEST",
+            "decision_comment": "I Attest",
+            "responses": [
+                {"question_id": q1.value_id, "answer": True, "comment": None},
+                {"question_id": q2.value_id, "answer": True, "comment": None}
+            ],
+            "evidence": []
+        }
+
+        response = client.post(
+            f"/attestations/records/{record.attestation_id}/submit",
+            json=submission,
+            headers=auth_headers
+        )
+        assert response.status_code == 200
+        # Resubmission should succeed - may go to SUBMITTED or ACCEPTED depending on auto-accept logic
+        assert response.json()["status"] in ["SUBMITTED", "ACCEPTED"]
+
     def test_only_admin_can_review(self, client, auth_headers, admin_headers, attestation_cycle, sample_model, db_session):
         """Only admin can accept/reject attestations."""
         attestation_cycle.status = AttestationCycleStatus.OPEN.value

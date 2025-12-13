@@ -883,8 +883,8 @@ def submit_attestation(
             detail="Cycle is not open for submissions"
         )
 
-    # Check record status
-    if record.status != AttestationRecordStatus.PENDING.value:
+    # Check record status - allow PENDING or REJECTED (for resubmission after rejection)
+    if record.status not in [AttestationRecordStatus.PENDING.value, AttestationRecordStatus.REJECTED.value]:
         raise HTTPException(
             status_code=400,
             detail=f"Cannot submit attestation in status {record.status}"

@@ -25,6 +25,7 @@ from app.models.model_hierarchy import ModelHierarchy
 from app.models.monitoring import MonitoringCycle, MonitoringCycleApproval, MonitoringPlan, monitoring_plan_models
 from app.models.methodology import Methodology
 from app.models.risk_assessment import ModelRiskAssessment
+from app.models.irp import IRP
 from app.schemas.model import (
     ModelCreate, ModelUpdate, ModelDetailResponse, ValidationGroupingSuggestion, ModelCreateResponse,
     ModelNameHistoryItem, ModelNameHistoryResponse, NameChangeStatistics,
@@ -351,6 +352,25 @@ def _build_model_list_response(model: Model, include_computed_fields: bool, db: 
             "requires_irp": model.mrsa_risk_level.requires_irp
         }
 
+    # Build IRPs list for MRSAs
+    irps_list = []
+    for irp in model.irps:
+        irp_dict = {
+            "irp_id": irp.irp_id,
+            "process_name": irp.process_name,
+            "description": irp.description,
+            "is_active": irp.is_active,
+            "contact_user_id": irp.contact_user_id,
+            "contact_user": None
+        }
+        if irp.contact_user:
+            irp_dict["contact_user"] = {
+                "user_id": irp.contact_user.user_id,
+                "email": irp.contact_user.email,
+                "full_name": irp.contact_user.full_name
+            }
+        irps_list.append(irp_dict)
+
     # Compute business_line_name from owner's LOB chain
     business_line = None
     if model.owner:
@@ -396,6 +416,7 @@ def _build_model_list_response(model: Model, include_computed_fields: bool, db: 
         "regions": regions_list,
         "users": users_list,
         "regulatory_categories": reg_cats_list,
+        "irps": irps_list,
         "scorecard_outcome": None,
         "residual_risk": None,
         "approval_status": None,
@@ -462,7 +483,9 @@ def list_models(
         selectinload(Model.users).joinedload(User.lob),
         selectinload(Model.regulatory_categories),
         selectinload(Model.model_regions).joinedload(ModelRegion.region),
-        selectinload(Model.versions)
+        selectinload(Model.versions),
+        # IRPs for MRSAs - load contact user for display
+        selectinload(Model.irps).joinedload(IRP.contact_user)
     )
 
     # Apply row-level security filtering

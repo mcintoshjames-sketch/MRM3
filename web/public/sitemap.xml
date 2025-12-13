@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url><loc>https://app.mrmqmistest.org/</loc></url>
+  <url><loc>https://app.mrmqmistest.org/overview</loc></url>
+  <url><loc>https://app.mrmqmistest.org/guides</loc></url>
+  <url><loc>https://app.mrmqmistest.org/guides/getting-started</loc></url>
+  <url><loc>https://app.mrmqmistest.org/guides/model-owners</loc></url>
+  <url><loc>https://app.mrmqmistest.org/guides/validators</loc></url>
+  <url><loc>https://app.mrmqmistest.org/guides/approvers</loc></url>
+  <url><loc>https://app.mrmqmistest.org/guides/admins</loc></url>
+</urlset>

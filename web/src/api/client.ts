@@ -22,10 +22,17 @@ api.interceptors.response.use(
         // If we get a 401 Unauthorized, the token is invalid or expired
         if (error.response?.status === 401) {
             const currentPath = window.location.pathname;
+            const isPublicPath =
+                currentPath === '/' ||
+                currentPath === '/overview' ||
+                currentPath === '/guides' ||
+                currentPath.startsWith('/guides/');
             // Only redirect if we're not already on the login page
-            if (currentPath !== '/login') {
+            if (currentPath !== '/login' && !isPublicPath) {
                 localStorage.removeItem('token');
                 window.location.href = '/login';
+            } else {
+                localStorage.removeItem('token');
             }
         }
         return Promise.reject(error);

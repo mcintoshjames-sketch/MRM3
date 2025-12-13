@@ -571,6 +571,20 @@ const { sortedData, requestSort, getSortIcon } = useTableSort<Validation>(valida
 - Connection string provided via DATABASE_URL environment variable
 - Volume-persisted data via `postgres_data` volume
 
+### Screenshots
+
+**Save to NAS** (for documentation/testing):
+```bash
+node scripts/screenshot.js <url> [filename] [width] [height]
+node scripts/screenshot.js http://localhost:5174 login.png
+node scripts/screenshot.js http://localhost:5174/dashboard --full-page
+```
+- Output: `/Volumes/Content/MCPScreenShots` (fallback: `./screenshots/`)
+
+**MCP Puppeteer** (inline display):
+- `mcp__puppeteer__puppeteer_navigate`, `_fill`, `_click`, `_screenshot`
+- Screenshots display in conversation; Claude can read/understand them
+
 ### Time Utilities (Backend)
 
 **IMPORTANT**: Never use `datetime.utcnow()` - it is deprecated in Python 3.12+.

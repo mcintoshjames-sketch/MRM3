@@ -1,0 +1,15 @@
+===== BASIC SYSTEM =====
+Fri Dec 12 05:28:14 AM UTC 2025
+Linux MRM 6.8.0-90-generic #91-Ubuntu SMP PREEMPT_DYNAMIC Tue Nov 18 13:53:54 UTC 2025 aarch64 aarch64 aarch64 GNU/Linux
+Distributor ID:	Ubuntu
+Description:	Ubuntu 24.04.3 LTS
+Release:	24.04
+Codename:	noble
+ 05:28:14 up 2 min,  1 user,  load average: 0.06, 0.02, 0.00
+mrm-admin
+uid=1001(mrm-admin) gid=1001(mrm-admin) groups=1001(mrm-admin),27(sudo),100(users),987(docker)
+
+===== USERS / SUDO =====
+awk: cmd. line:1: {print \,\,\}
+awk: cmd. line:1:        ^ backslash not last character on line
+Connection to 192.168.0.67 closed.
