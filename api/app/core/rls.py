@@ -40,12 +40,14 @@ def apply_model_rls(query: Query, user: User, db: Session) -> Query:
     # 2. Their own submissions regardless of approval status
     return query.filter(
         or_(
-            # Approved models where user is owner/developer/delegate
+            # Approved models where user is owner/developer/shared owner/shared developer/delegate
             (
                 (Model.row_approval_status == None) &
                 or_(
                     Model.owner_id == user.user_id,
                     Model.developer_id == user.user_id,
+                    Model.shared_owner_id == user.user_id,
+                    Model.shared_developer_id == user.user_id,
                     Model.delegates.any(
                         (ModelDelegate.user_id == user.user_id) &
                         (ModelDelegate.revoked_at == None)
@@ -80,6 +82,8 @@ def apply_validation_request_rls(query: Query, user: User, db: Session) -> Query
         or_(
             Model.owner_id == user.user_id,
             Model.developer_id == user.user_id,
+            Model.shared_owner_id == user.user_id,
+            Model.shared_developer_id == user.user_id,
             Model.delegates.any(
                 (ModelDelegate.user_id == user.user_id) &
                 (ModelDelegate.revoked_at == None)
@@ -113,8 +117,10 @@ def can_access_model(model_id: int, user: User, db: Session) -> bool:
         # Model is pending/needs_revision/rejected - only submitter can see
         return False
 
-    # Check if user is owner or developer
+    # Check if user is owner, developer, shared owner, or shared developer
     if model.owner_id == user.user_id or model.developer_id == user.user_id:
+        return True
+    if model.shared_owner_id == user.user_id or model.shared_developer_id == user.user_id:
         return True
 
     # Check if user is an active delegate
@@ -172,8 +178,10 @@ def can_modify_model(model_id: int, user: User, db: Session) -> bool:
 
     # For approved models (row_approval_status IS NULL), check standard permissions
     if model.row_approval_status is None:
-        # Check if user is owner or developer
+        # Check if user is owner, developer, shared owner, or shared developer
         if model.owner_id == user.user_id or model.developer_id == user.user_id:
+            return True
+        if model.shared_owner_id == user.user_id or model.shared_developer_id == user.user_id:
             return True
 
         # Check if user is an active delegate with can_submit_changes permission

@@ -19,7 +19,7 @@ from app.models import (
     User, Model, TaxonomyValue, Taxonomy, AuditLog, Region,
     ValidationRequest, ValidationRequestModelVersion, ValidationStatusHistory, ValidationAssignment,
     ValidationOutcome, ValidationReviewOutcome, ValidationApproval, ValidationGroupingMemory,
-    ValidationPolicy, ModelRegion, Region,
+    ValidationPolicy, ValidationWorkflowSLA, ModelRegion, Region,
     ValidationComponentDefinition, ValidationPlan, ValidationPlanComponent,
     ComponentDefinitionConfiguration, ComponentDefinitionConfigItem,
     OverdueRevalidationComment
@@ -1294,13 +1294,15 @@ def calculate_model_revalidation_status(model: Model, db: Session) -> Dict:
     if not policy:
         # Even without a policy, if we have interim_expiration, use it as the hard deadline
         today = date.today()
+        # Use completion_date (approval date) for cycle calculation, fallback to updated_at
+        approval_date = last_validation.completion_date.date() if last_validation.completion_date else last_validation.updated_at.date()
         return {
             "model_id": model.model_id,
             "model_name": model.model_name,
             "model_owner": model.owner.full_name if model.owner else "Unknown",
             "risk_tier": model.risk_tier.label if model.risk_tier else None,
             "status": "No Policy Configured",
-            "last_validation_date": last_validation.updated_at.date(),
+            "last_validation_date": approval_date,
             "next_submission_due": None,
             "grace_period_end": None,
             "next_validation_due": interim_expiration,  # Use interim expiration as deadline
@@ -1314,6 +1316,9 @@ def calculate_model_revalidation_status(model: Model, db: Session) -> Dict:
         }
 
     # Calculate dates
+    # Use completion_date (approval date) for cycle calculation, fallback to updated_at
+    approval_date = last_validation.completion_date.date() if last_validation.completion_date else last_validation.updated_at.date()
+
     # If we have an INTERIM expiration but no full validation, use INTERIM dates instead
     if interim_expiration and not most_recent_full:
         # INTERIM expiration is the hard deadline
@@ -1321,11 +1326,11 @@ def calculate_model_revalidation_status(model: Model, db: Session) -> Dict:
         submission_due = interim_expiration - timedelta(days=lead_time_days)
         grace_period_end = None  # No grace period for INTERIM - expiration is absolute
         validation_due = interim_expiration
-        last_completed = last_validation.updated_at.date()
+        last_completed = approval_date
         active_request = None  # Don't look for COMPREHENSIVE request linked to INTERIM
     else:
         # Standard calculation from last full validation
-        last_completed = last_validation.updated_at.date()
+        last_completed = approval_date
         submission_due = last_completed + \
             relativedelta(months=policy.frequency_months)
         grace_period_end = submission_due + relativedelta(months=policy.grace_period_months)
@@ -1343,14 +1348,27 @@ def calculate_model_revalidation_status(model: Model, db: Session) -> Dict:
         ).first()
 
         # Calculate validation_due:
+        # Total lead time = completion_lead_time + workflow SLA periods (assignment + begin_work + approval)
         # - If active_request exists (potentially multi-model), use request's applicable_lead_time_days
         #   which is MAX across all models' policies (most conservative)
         # - If no active_request, use this model's policy (for calculating when request should be created)
         if active_request:
-            lead_time_days = active_request.applicable_lead_time_days
+            completion_lead_time = active_request.applicable_lead_time_days
         else:
-            lead_time_days = policy.model_change_lead_time_days
-        validation_due = grace_period_end + timedelta(days=lead_time_days)
+            completion_lead_time = policy.model_change_lead_time_days
+
+        # Add workflow SLA periods (assignment, begin_work, approval)
+        workflow_sla = db.query(ValidationWorkflowSLA).filter(
+            ValidationWorkflowSLA.workflow_type == "Validation"
+        ).first()
+        sla_days = 0
+        if workflow_sla:
+            sla_days = (workflow_sla.assignment_days or 0) + \
+                       (workflow_sla.begin_work_days or 0) + \
+                       (workflow_sla.approval_days or 0)
+
+        total_lead_time = completion_lead_time + sla_days
+        validation_due = grace_period_end + timedelta(days=total_lead_time)
 
     today = date.today()
 

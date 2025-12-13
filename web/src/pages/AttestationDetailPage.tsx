@@ -3,6 +3,7 @@ import { useParams, Link } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import api from '../api/client';
 import Layout from '../components/Layout';
+import SubmitChangeModal from '../components/SubmitChangeModal';
 
 // Interfaces
 interface AttestationQuestion {
@@ -35,7 +36,7 @@ interface AttestationEvidence {
 interface LinkedChange {
     link_id: number;
     attestation_id: number;
-    change_type: 'MODEL_EDIT' | 'NEW_MODEL' | 'DECOMMISSION';
+    change_type: 'MODEL_EDIT' | 'MODEL_VERSION' | 'NEW_MODEL' | 'DECOMMISSION';
     pending_edit_id: number | null;
     model_id: number | null;
     decommissioning_request_id: number | null;
@@ -96,6 +97,9 @@ export default function AttestationDetailPage() {
 
     // Prompt modal for I_ATTEST_WITH_UPDATES without linked changes
     const [showUpdatePrompt, setShowUpdatePrompt] = useState(false);
+
+    // Submit Change modal state
+    const [showSubmitChangeModal, setShowSubmitChangeModal] = useState(false);
 
     useEffect(() => {
         fetchData();
@@ -526,7 +530,16 @@ export default function AttestationDetailPage() {
                             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
                             </svg>
-                            Edit Model
+                            Edit Model Details
+                        </button>
+                        <button
+                            onClick={() => setShowSubmitChangeModal(true)}
+                            className="flex items-center gap-2 px-4 py-2 bg-green-50 text-green-700 rounded-lg hover:bg-green-100 border border-green-200"
+                        >
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                            </svg>
+                            Submit Model Change
                         </button>
                         <button
                             onClick={handleDecommission}
@@ -557,10 +570,12 @@ export default function AttestationDetailPage() {
                                         <div className="flex items-center gap-2">
                                             <span className={`px-2 py-0.5 text-xs font-medium rounded ${
                                                 link.change_type === 'MODEL_EDIT' ? 'bg-blue-100 text-blue-700' :
+                                                link.change_type === 'MODEL_VERSION' ? 'bg-purple-100 text-purple-700' :
                                                 link.change_type === 'NEW_MODEL' ? 'bg-green-100 text-green-700' :
                                                 'bg-red-100 text-red-700'
                                             }`}>
                                                 {link.change_type === 'MODEL_EDIT' ? 'Model Edit' :
+                                                 link.change_type === 'MODEL_VERSION' ? 'Model Version' :
                                                  link.change_type === 'NEW_MODEL' ? 'New Model' :
                                                  'Decommission'}
                                             </span>
@@ -723,6 +738,19 @@ export default function AttestationDetailPage() {
                         </button>
                     </div>
                 </div>
+            )}
+
+            {/* Submit Model Change Modal */}
+            {showSubmitChangeModal && attestation && (
+                <SubmitChangeModal
+                    modelId={attestation.model.model_id}
+                    attestationId={attestation.attestation_id}
+                    onClose={() => setShowSubmitChangeModal(false)}
+                    onSuccess={() => {
+                        setShowSubmitChangeModal(false);
+                        fetchData(); // Refresh to show linked change
+                    }}
+                />
             )}
         </Layout>
     );

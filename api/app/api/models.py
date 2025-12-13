@@ -352,6 +352,15 @@ def _build_model_list_response(model: Model, include_computed_fields: bool, db: 
             "requires_irp": model.mrsa_risk_level.requires_irp
         }
 
+    # Build usage frequency dict
+    usage_frequency_dict = None
+    if model.usage_frequency:
+        usage_frequency_dict = {
+            "value_id": model.usage_frequency.value_id,
+            "label": model.usage_frequency.label,
+            "code": model.usage_frequency.code
+        }
+
     # Build IRPs list for MRSAs
     irps_list = []
     for irp in model.irps:
@@ -402,6 +411,7 @@ def _build_model_list_response(model: Model, include_computed_fields: bool, db: 
         "developer_id": model.developer_id,
         "vendor_id": model.vendor_id,
         "risk_tier_id": model.risk_tier_id,
+        "usage_frequency_id": model.usage_frequency_id,
         "owner": owner_dict,
         "developer": developer_dict,
         "shared_owner": shared_owner_dict,
@@ -413,6 +423,7 @@ def _build_model_list_response(model: Model, include_computed_fields: bool, db: 
         "ownership_type": ownership_type_dict,
         "model_type": model_type_dict,
         "wholly_owned_region": wholly_owned_region_dict,
+        "usage_frequency": usage_frequency_dict,
         "regions": regions_list,
         "users": users_list,
         "regulatory_categories": reg_cats_list,
@@ -421,6 +432,14 @@ def _build_model_list_response(model: Model, include_computed_fields: bool, db: 
         "residual_risk": None,
         "approval_status": None,
         "approval_status_label": None,
+        # Revalidation fields (populated by batch computation)
+        "validation_status": None,
+        "next_validation_due_date": None,
+        "days_until_validation_due": None,
+        "last_validation_date": None,
+        "days_overdue": 0,
+        "penalty_notches": 0,
+        "adjusted_scorecard_outcome": None,
     }
 
     if include_computed_fields:
@@ -515,6 +534,11 @@ def list_models(
 
     # Build lightweight responses without Pydantic validation overhead
     results = [_build_model_list_response(m, include_computed_fields, db) for m in models]
+
+    # Batch compute revalidation fields (only when include_computed_fields is True)
+    if include_computed_fields and models:
+        from app.core.batch_revalidation import compute_batch_revalidation_fields
+        compute_batch_revalidation_fields(db, models, results)
 
     return results
 

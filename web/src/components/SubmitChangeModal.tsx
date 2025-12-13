@@ -7,6 +7,7 @@ interface SubmitChangeModalProps {
     modelId: number;
     onClose: () => void;
     onSuccess: () => void;
+    attestationId?: number;  // Optional - if provided, the change will be linked to this attestation
 }
 
 interface Region {
@@ -15,7 +16,7 @@ interface Region {
     name: string;
 }
 
-const SubmitChangeModal: React.FC<SubmitChangeModalProps> = ({ modelId, onClose, onSuccess }) => {
+const SubmitChangeModal: React.FC<SubmitChangeModalProps> = ({ modelId, onClose, onSuccess, attestationId }) => {
     const [versioningMode, setVersioningMode] = useState<'auto' | 'manual'>('auto');
     const [deploymentOption, setDeploymentOption] = useState<'global-all' | 'global-selective' | 'regional'>('global-all');
     const [formData, setFormData] = useState({
@@ -148,6 +149,19 @@ const SubmitChangeModal: React.FC<SubmitChangeModalProps> = ({ modelId, onClose,
                 scope: scope,
                 affected_region_ids: affectedRegionIds,
             });
+
+            // Link the change to the attestation if attestationId is provided
+            if (attestationId) {
+                try {
+                    await api.post(`/attestations/records/${attestationId}/link-change`, {
+                        change_type: 'MODEL_VERSION',
+                        model_id: modelId
+                    });
+                } catch (linkErr) {
+                    console.error('Failed to link change to attestation:', linkErr);
+                    // Don't fail the whole operation, the version was created successfully
+                }
+            }
 
             // Check if validation project was created
             if (response.validation_request_created) {

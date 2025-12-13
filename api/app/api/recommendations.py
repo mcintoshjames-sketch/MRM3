@@ -8,16 +8,17 @@ from datetime import datetime, date, timedelta
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session, joinedload
-from sqlalchemy import desc, func
+from sqlalchemy import desc, func, or_, exists
 
 from app.core.database import get_db
 from app.core.time import utc_now
 from app.core.deps import get_current_user
+from app.core.rls import can_see_all_data
 from app.models import (
     User, Model, TaxonomyValue, Taxonomy, AuditLog, Region, ModelRegion,
     Recommendation, ActionPlanTask, RecommendationRebuttal,
     ClosureEvidence, RecommendationStatusHistory, RecommendationApproval,
-    RecommendationPriorityConfig, ModelLimitation
+    RecommendationPriorityConfig, ModelLimitation, ModelDelegate
 )
 from app.models.recommendation import RecommendationPriorityRegionalOverride, RecommendationTimeframeConfig
 from app.schemas.recommendation import (
@@ -1068,7 +1069,14 @@ def list_recommendations(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """List recommendations with optional filters."""
+    """
+    List recommendations with optional filters.
+
+    Row-Level Security:
+    - Admin, Validator, Global Approver, Regional Approver: See all recommendations
+    - User: Only see recommendations for models where they are owner, developer,
+      shared owner, shared developer, or an active delegate
+    """
     query = db.query(Recommendation).options(
         joinedload(Recommendation.model),
         joinedload(Recommendation.priority),
@@ -1076,6 +1084,26 @@ def list_recommendations(
         joinedload(Recommendation.current_status),
         joinedload(Recommendation.assigned_to)
     )
+
+    # Apply Row-Level Security for basic users
+    if not can_see_all_data(current_user):
+        # Subquery to check if user is an active delegate for the model
+        is_active_delegate = exists().where(
+            ModelDelegate.model_id == Model.model_id,
+            ModelDelegate.user_id == current_user.user_id,
+            ModelDelegate.revoked_at.is_(None)  # NULL means active
+        )
+
+        # Filter to models where user is owner, developer, shared owner, shared developer, or active delegate
+        query = query.join(Model, Recommendation.model_id == Model.model_id).filter(
+            or_(
+                Model.owner_id == current_user.user_id,
+                Model.developer_id == current_user.user_id,
+                Model.shared_owner_id == current_user.user_id,
+                Model.shared_developer_id == current_user.user_id,
+                is_active_delegate
+            )
+        )
 
     if model_id:
         query = query.filter(Recommendation.model_id == model_id)

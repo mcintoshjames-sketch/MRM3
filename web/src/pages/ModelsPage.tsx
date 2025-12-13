@@ -113,6 +113,9 @@ interface Model {
     mrsa_risk_level_id: number | null;
     mrsa_risk_level: TaxonomyValue | null;
     mrsa_risk_rationale: string | null;
+    // Usage frequency taxonomy
+    usage_frequency_id: number | null;
+    usage_frequency: TaxonomyValue | null;
     owner: UserWithLOB;
     developer: UserWithLOB | null;
     vendor: Vendor | null;
@@ -137,6 +140,14 @@ interface Model {
     approval_status_label: string | null;
     // Computed from model version history
     model_last_updated: string | null;
+    // Computed revalidation fields
+    validation_status: 'current' | 'due_soon' | 'overdue' | null;
+    next_validation_due_date: string | null;
+    days_until_validation_due: number | null;
+    last_validation_date: string | null;
+    days_overdue: number | null;
+    penalty_notches: number | null;
+    adjusted_scorecard_outcome: string | null;
 }
 
 export default function ModelsPage() {
@@ -295,6 +306,7 @@ export default function ModelsPage() {
         { key: 'is_aiml', label: 'AI/ML', default: true },
         { key: 'is_mrsa', label: 'MRSA', default: false },
         { key: 'mrsa_risk_level', label: 'MRSA Risk Level', default: false },
+        { key: 'mrsa_risk_rationale', label: 'MRSA Risk Rationale', default: false },
         { key: 'irp_coverage', label: 'IRP (MRSA Only)', default: false },
         { key: 'irp_contact', label: 'IRP Contact (MRSA Only)', default: false },
         { key: 'owner', label: 'Owner', default: true },
@@ -310,6 +322,7 @@ export default function ModelsPage() {
         { key: 'users', label: 'Users', default: true },
         { key: 'status', label: 'Status', default: true },
         { key: 'risk_tier', label: 'Risk Tier', default: false },
+        { key: 'usage_frequency', label: 'Usage Frequency', default: false },
         { key: 'methodology', label: 'Methodology', default: false },
         { key: 'ownership_type', label: 'Ownership Type', default: false },
         { key: 'model_type', label: 'Model Type', default: false },
@@ -323,7 +336,15 @@ export default function ModelsPage() {
         { key: 'row_approval_status', label: 'Inventory Acceptance', default: false },
         { key: 'created_at', label: 'Created Date', default: false },
         { key: 'updated_at', label: 'Modified On', default: false },
-        { key: 'model_last_updated', label: 'Model Last Updated', default: true }
+        { key: 'model_last_updated', label: 'Model Last Updated', default: true },
+        // Revalidation computed fields
+        { key: 'validation_status', label: 'Validation Status', default: false },
+        { key: 'next_validation_due_date', label: 'Next Validation Due', default: false },
+        { key: 'days_until_validation_due', label: 'Days Until Due', default: false },
+        { key: 'last_validation_date', label: 'Last Validation', default: false },
+        { key: 'days_overdue', label: 'Days Overdue', default: false },
+        { key: 'penalty_notches', label: 'Penalty Notches', default: false },
+        { key: 'adjusted_scorecard_outcome', label: 'Adjusted Outcome', default: false }
     ];
 
     // Define default preset views
@@ -848,6 +869,19 @@ export default function ModelsPage() {
             ),
             csvValue: (model) => model.mrsa_risk_level?.label || ''
         },
+        mrsa_risk_rationale: {
+            header: 'MRSA Risk Rationale',
+            cell: (model) => model.is_mrsa && model.mrsa_risk_rationale ? (
+                <span className="truncate max-w-xs block" title={model.mrsa_risk_rationale}>
+                    {model.mrsa_risk_rationale.length > 50
+                        ? model.mrsa_risk_rationale.slice(0, 50) + '...'
+                        : model.mrsa_risk_rationale}
+                </span>
+            ) : (
+                <span className="text-sm text-gray-400">-</span>
+            ),
+            csvValue: (model) => model.is_mrsa ? (model.mrsa_risk_rationale || '') : ''
+        },
         irp_coverage: {
             header: 'IRP (MRSA Only)',
             cell: (model) => {
@@ -987,8 +1021,40 @@ export default function ModelsPage() {
         risk_tier: {
             header: 'Risk Tier',
             sortKey: 'risk_tier.label',
-            cell: (model) => model.risk_tier?.label || '-',
+            cell: (model) => {
+                if (!model.risk_tier) return <span className="text-gray-400">-</span>;
+                const code = model.risk_tier.code;
+                const label = model.risk_tier.label;
+                let shortLabel = label;
+                let colorClass = 'bg-gray-100 text-gray-700';
+
+                if (code === 'TIER_1' || label.toLowerCase().includes('high')) {
+                    shortLabel = 'High';
+                    colorClass = 'bg-red-100 text-red-800';
+                } else if (code === 'TIER_2' || label.toLowerCase().includes('medium')) {
+                    shortLabel = 'Medium';
+                    colorClass = 'bg-yellow-100 text-yellow-800';
+                } else if (code === 'TIER_3' || (label.toLowerCase().includes('low') && !label.toLowerCase().includes('very'))) {
+                    shortLabel = 'Low';
+                    colorClass = 'bg-green-100 text-green-800';
+                } else if (code === 'TIER_4' || label.toLowerCase().includes('very low') || label.toLowerCase().includes('minimal')) {
+                    shortLabel = 'Very Low';
+                    colorClass = 'bg-blue-100 text-blue-800';
+                }
+
+                return (
+                    <span className={`px-2 py-1 text-xs rounded font-medium ${colorClass}`}>
+                        {shortLabel}
+                    </span>
+                );
+            },
             csvValue: (model) => model.risk_tier?.label || ''
+        },
+        usage_frequency: {
+            header: 'Usage Frequency',
+            sortKey: 'usage_frequency.label',
+            cell: (model) => model.usage_frequency?.label || '-',
+            csvValue: (model) => model.usage_frequency?.label || ''
         },
         methodology: {
             header: 'Methodology',
@@ -1138,6 +1204,88 @@ export default function ModelsPage() {
             sortKey: 'model_last_updated',
             cell: (model) => model.model_last_updated ? model.model_last_updated.split('T')[0] : '',
             csvValue: (model) => model.model_last_updated ? model.model_last_updated.split('T')[0] : ''
+        },
+        // Revalidation computed fields
+        validation_status: {
+            header: 'Validation Status',
+            sortKey: 'validation_status',
+            cell: (model) => {
+                if (!model.validation_status) return <span className="text-gray-400">-</span>;
+                const colors: Record<string, string> = {
+                    current: 'bg-green-100 text-green-800',
+                    due_soon: 'bg-yellow-100 text-yellow-800',
+                    overdue: 'bg-red-100 text-red-800'
+                };
+                return (
+                    <span className={`px-2 py-1 rounded text-xs font-medium ${colors[model.validation_status] || ''}`}>
+                        {model.validation_status.replace('_', ' ')}
+                    </span>
+                );
+            },
+            csvValue: (model) => model.validation_status || ''
+        },
+        next_validation_due_date: {
+            header: 'Next Validation Due',
+            sortKey: 'next_validation_due_date',
+            cell: (model) => model.next_validation_due_date || <span className="text-gray-400">-</span>,
+            csvValue: (model) => model.next_validation_due_date || ''
+        },
+        days_until_validation_due: {
+            header: 'Days Until Due',
+            sortKey: 'days_until_validation_due',
+            cell: (model) => model.days_until_validation_due !== null
+                ? model.days_until_validation_due.toString()
+                : <span className="text-gray-400">-</span>,
+            csvValue: (model) => model.days_until_validation_due?.toString() || ''
+        },
+        last_validation_date: {
+            header: 'Last Validation',
+            sortKey: 'last_validation_date',
+            cell: (model) => model.last_validation_date || <span className="text-gray-400">-</span>,
+            csvValue: (model) => model.last_validation_date || ''
+        },
+        days_overdue: {
+            header: 'Days Overdue',
+            sortKey: 'days_overdue',
+            cell: (model) => {
+                if (!model.days_overdue || model.days_overdue === 0) return <span className="text-gray-400">-</span>;
+                return (
+                    <span className="text-red-600 font-medium">{model.days_overdue}</span>
+                );
+            },
+            csvValue: (model) => model.days_overdue?.toString() || '0'
+        },
+        penalty_notches: {
+            header: 'Penalty Notches',
+            sortKey: 'penalty_notches',
+            cell: (model) => {
+                if (!model.penalty_notches || model.penalty_notches === 0) return <span className="text-gray-400">-</span>;
+                return (
+                    <span className="text-orange-600 font-medium">+{model.penalty_notches}</span>
+                );
+            },
+            csvValue: (model) => model.penalty_notches?.toString() || '0'
+        },
+        adjusted_scorecard_outcome: {
+            header: 'Adjusted Outcome',
+            sortKey: 'adjusted_scorecard_outcome',
+            cell: (model) => {
+                if (!model.adjusted_scorecard_outcome) return <span className="text-gray-400">-</span>;
+                const colors: Record<string, string> = {
+                    'Green': 'bg-green-100 text-green-800',
+                    'Green-': 'bg-green-100 text-green-700',
+                    'Yellow+': 'bg-yellow-100 text-yellow-800',
+                    'Yellow': 'bg-yellow-100 text-yellow-700',
+                    'Yellow-': 'bg-orange-100 text-orange-800',
+                    'Red': 'bg-red-100 text-red-800'
+                };
+                return (
+                    <span className={`px-2 py-1 text-xs rounded font-medium ${colors[model.adjusted_scorecard_outcome] || 'bg-gray-100 text-gray-700'}`}>
+                        {model.adjusted_scorecard_outcome}
+                    </span>
+                );
+            },
+            csvValue: (model) => model.adjusted_scorecard_outcome || ''
         }
     };
 

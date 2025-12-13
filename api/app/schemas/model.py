@@ -282,12 +282,14 @@ class ModelListResponse(BaseModel):
     # MRSA fields
     is_mrsa: bool = False
     mrsa_risk_level_id: Optional[int] = None
+    mrsa_risk_rationale: Optional[str] = None
 
     # IDs for filtering
     owner_id: int
     developer_id: Optional[int] = None
     vendor_id: Optional[int] = None
     risk_tier_id: Optional[int] = None
+    usage_frequency_id: Optional[int] = None
 
     # Lightweight nested objects (pre-computed)
     owner: Optional[UserListItem] = None
@@ -302,6 +304,7 @@ class ModelListResponse(BaseModel):
     model_type: Optional[ModelTypeListItem] = None
     wholly_owned_region: Optional[ModelRegionListItem] = None
     mrsa_risk_level: Optional[TaxonomyListItem] = None  # MRSA risk level
+    usage_frequency: Optional[TaxonomyListItem] = None
 
     # Collections (simplified)
     regions: List[ModelRegionListItem] = []
@@ -314,6 +317,15 @@ class ModelListResponse(BaseModel):
     residual_risk: Optional[str] = None
     approval_status: Optional[str] = None
     approval_status_label: Optional[str] = None
+
+    # Computed revalidation fields (when include_computed_fields=True)
+    validation_status: Optional[str] = None  # 'current', 'due_soon', 'overdue'
+    next_validation_due_date: Optional[str] = None  # ISO date string
+    days_until_validation_due: Optional[int] = None
+    last_validation_date: Optional[str] = None  # ISO date string
+    days_overdue: Optional[int] = None
+    penalty_notches: Optional[int] = None
+    adjusted_scorecard_outcome: Optional[str] = None
 
     class Config:
         from_attributes = True

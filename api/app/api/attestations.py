@@ -702,9 +702,11 @@ def get_my_upcoming_attestations(
         elif att.due_date <= cutoff_date:
             upcoming.append(att)
 
-    # Find current cycle info from user's pending attestations
+    # Find current cycle info from user's actionable attestations
+    # Include both PENDING and REJECTED (rejected need to be fixed and resubmitted)
     current_cycle_info = None
-    pending_attestations = [a for a in all_attestations if a.status == "PENDING"]
+    actionable_statuses = [AttestationRecordStatusEnum.PENDING, AttestationRecordStatusEnum.REJECTED]
+    pending_attestations = [a for a in all_attestations if a.status in actionable_statuses]
     overdue_attestations = [a for a in pending_attestations if a.is_overdue]
 
     if pending_attestations:
@@ -2197,6 +2199,7 @@ def link_change_to_attestation(
 
     Change types:
     - MODEL_EDIT: Link to an existing ModelPendingEdit (user edited model via /models/{id})
+    - MODEL_VERSION: Link to a model version/change submission (user submitted via Submit Model Change)
     - NEW_MODEL: Link to a newly created model (user created via /models/new)
     - DECOMMISSION: Link to a DecommissioningRequest (user initiated via decommission page)
 
@@ -2252,6 +2255,17 @@ def link_change_to_attestation(
                     detail="Pending edit does not belong to the specified model"
                 )
 
+    elif link_in.change_type == AttestationChangeType.MODEL_VERSION.value:
+        # MODEL_VERSION: A new version was created for the model (via Submit Model Change)
+        if not link_in.model_id:
+            raise HTTPException(
+                status_code=400,
+                detail="MODEL_VERSION links require model_id"
+            )
+        version_model = db.query(Model).filter(Model.model_id == link_in.model_id).first()
+        if not version_model:
+            raise HTTPException(status_code=404, detail="Model not found")
+
     elif link_in.change_type == AttestationChangeType.NEW_MODEL.value:
         # Must have model_id (the newly created model)
         if not link_in.model_id:
@@ -2293,7 +2307,10 @@ def link_change_to_attestation(
         existing_link = existing_link.filter(
             AttestationChangeLink.decommissioning_request_id == link_in.decommissioning_request_id
         )
-    if link_in.model_id and link_in.change_type == AttestationChangeType.NEW_MODEL.value:
+    if link_in.model_id and link_in.change_type in [
+        AttestationChangeType.NEW_MODEL.value,
+        AttestationChangeType.MODEL_VERSION.value
+    ]:
         existing_link = existing_link.filter(
             AttestationChangeLink.model_id == link_in.model_id
         )

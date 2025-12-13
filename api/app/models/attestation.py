@@ -56,6 +56,7 @@ class AttestationSchedulingRuleType(str, enum.Enum):
 class AttestationChangeType(str, enum.Enum):
     """Types of inventory changes linked to attestation."""
     MODEL_EDIT = "MODEL_EDIT"
+    MODEL_VERSION = "MODEL_VERSION"  # New version of a model (via Submit Model Change)
     NEW_MODEL = "NEW_MODEL"
     DECOMMISSION = "DECOMMISSION"
 
