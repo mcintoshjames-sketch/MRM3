@@ -21,7 +21,7 @@ export default function PublicLayout({ children }: { children: ReactNode }) {
                 <div className="max-w-5xl mx-auto px-4 py-4 flex items-center justify-between">
                     <Link to="/" className="flex items-baseline gap-2">
                         <span className="text-lg font-bold text-gray-900">QMIS</span>
-                        <span className="text-sm text-gray-500">Quality Model Inventory System</span>
+                        <span className="text-sm text-gray-500">Quantitative Methods Information System</span>
                     </Link>
 
                     <nav className="hidden sm:flex items-center gap-6">

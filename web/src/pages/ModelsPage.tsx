@@ -808,13 +808,13 @@ export default function ModelsPage() {
                         </span>
                     )}
                     {model.row_approval_status && (
-                        <span className={`px-2 py-0.5 rounded text-xs font-medium ${model.row_approval_status === 'pending'
+                        <span className={`px-2 py-0.5 rounded text-xs font-medium ${model.row_approval_status === 'Draft'
                             ? 'bg-blue-100 text-blue-800'
                             : model.row_approval_status === 'needs_revision'
                                 ? 'bg-orange-100 text-orange-800'
                                 : 'bg-gray-100 text-gray-800'
                             }`}>
-                            {model.row_approval_status === 'pending' ? 'Draft' :
+                            {model.row_approval_status === 'Draft' ? 'Draft' :
                                 model.row_approval_status === 'needs_revision' ? 'Needs Revision' :
                                     model.row_approval_status}
                         </span>
@@ -1173,7 +1173,7 @@ export default function ModelsPage() {
             cell: (model) => {
                 const status = model.row_approval_status;
                 if (!status) return 'Accepted';
-                if (status === 'pending') return 'Pending';
+                if (status === 'Draft') return 'Draft';
                 if (status === 'needs_revision') return 'Needs Revision';
                 if (status === 'rejected') return 'Rejected';
                 return status;
@@ -1181,7 +1181,7 @@ export default function ModelsPage() {
             csvValue: (model) => {
                 const status = model.row_approval_status;
                 if (!status) return 'Accepted';
-                if (status === 'pending') return 'Pending';
+                if (status === 'Draft') return 'Draft';
                 if (status === 'needs_revision') return 'Needs Revision';
                 if (status === 'rejected') return 'Rejected';
                 return status;

@@ -92,7 +92,7 @@ class Model(Base):
     # Row-level approval workflow fields
     row_approval_status: Mapped[Optional[str]] = mapped_column(
         String(20), nullable=True,
-        comment="Status of this record in the approval workflow: pending, needs_revision, rejected, or NULL (approved)")
+        comment="Status of this record in the approval workflow: Draft, needs_revision, rejected, or NULL (approved)")
     submitted_by_user_id: Mapped[Optional[int]] = mapped_column(
         Integer, ForeignKey("users.user_id", ondelete="SET NULL"), nullable=True,
         comment="User who submitted this model for approval")

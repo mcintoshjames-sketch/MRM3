@@ -1,6 +1,7 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import Layout from '../components/Layout';
+import { useAuth } from '../contexts/AuthContext';
 
 interface Report {
     id: string;
@@ -11,7 +12,8 @@ interface Report {
     category: string;
 }
 
-const availableReports: Report[] = [
+// Admin/Validator reports - full analytics and compliance
+const adminReports: Report[] = [
     {
         id: 'regional-compliance',
         name: 'Regional Deployment & Compliance Report',
@@ -62,7 +64,34 @@ const availableReports: Report[] = [
     },
 ];
 
+// User reports - personal portfolio view
+const userReports: Report[] = [
+    {
+        id: 'my-portfolio',
+        name: 'My Model Portfolio',
+        description: 'Consolidated view of all models you own or have been delegated. Shows pending action items, monitoring alerts, and upcoming deadlines in one place.',
+        path: '/reports/my-portfolio',
+        icon: '📊',
+        category: 'My Reports'
+    },
+];
+
 const ReportsPage: React.FC = () => {
+    const { user } = useAuth();
+
+    // Role-based report filtering
+    // Admins and Validators see all reports
+    // Basic Users only see their personal portfolio report
+    const availableReports = useMemo(() => {
+        const isAdminOrValidator = user?.role === 'Admin' || user?.role === 'Validator';
+        if (isAdminOrValidator) {
+            // Admins/Validators see all reports including My Portfolio
+            return [...adminReports, ...userReports];
+        }
+        // Basic users only see their portfolio report
+        return userReports;
+    }, [user?.role]);
+
     // Group reports by category
     const reportsByCategory = availableReports.reduce((acc, report) => {
         if (!acc[report.category]) {

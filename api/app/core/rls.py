@@ -28,7 +28,7 @@ def apply_model_rls(query: Query, user: User, db: Session) -> Query:
 
     Users with "User" role can only see models where they are:
     - Owner/Developer/Delegate AND model is approved (row_approval_status IS NULL), OR
-    - Submitter of pending/needs_revision models (submitted_by_user_id == user_id)
+    - Submitter of Draft/needs_revision models (submitted_by_user_id == user_id)
 
     All other roles (Admin, Validator, Global Approver, Regional Approver) see all models.
     """
@@ -54,7 +54,7 @@ def apply_model_rls(query: Query, user: User, db: Session) -> Query:
                     )
                 )
             ),
-            # User's own submissions (pending, needs_revision, rejected)
+            # User's own submissions (Draft, needs_revision, rejected)
             Model.submitted_by_user_id == user.user_id
         )
     )
@@ -114,7 +114,7 @@ def can_access_model(model_id: int, user: User, db: Session) -> bool:
 
     # For approved models only, check ownership/developer/delegate
     if model.row_approval_status is not None:
-        # Model is pending/needs_revision/rejected - only submitter can see
+        # Model is Draft/needs_revision/rejected - only submitter can see
         return False
 
     # Check if user is owner, developer, shared owner, or shared developer
@@ -162,7 +162,7 @@ def can_modify_model(model_id: int, user: User, db: Session) -> bool:
     Modification is allowed if:
     - User is an Admin, OR
     - Model is approved (row_approval_status IS NULL) AND user is owner/developer/delegate, OR
-    - Model is pending/needs_revision AND user is the submitter
+    - Model is Draft/needs_revision AND user is the submitter
     """
     # Admin can always modify
     if user.role == "Admin":
@@ -172,8 +172,8 @@ def can_modify_model(model_id: int, user: User, db: Session) -> bool:
     if not model:
         return False
 
-    # Submitter can edit pending/needs_revision models
-    if model.row_approval_status in ('pending', 'needs_revision'):
+    # Submitter can edit Draft/needs_revision models
+    if model.row_approval_status in ('Draft', 'needs_revision'):
         return model.submitted_by_user_id == user.user_id
 
     # For approved models (row_approval_status IS NULL), check standard permissions
@@ -196,3 +196,33 @@ def can_modify_model(model_id: int, user: User, db: Session) -> bool:
 
     # Rejected models cannot be edited (must be deleted and recreated)
     return False
+
+
+def can_see_recommendation(user: User, recommendation, db: Session) -> bool:
+    """
+    Check if a user can see a specific recommendation.
+
+    Visibility rules:
+    - Validation team (Admin, Validator, Global Approver, Regional Approver) can see all
+    - DRAFT recommendations are hidden from non-validation team users
+    - Other status: user must have access to the associated model OR be the assigned_to user
+    """
+    # Validation team can see everything
+    if can_see_all_data(user):
+        return True
+
+    # Get the recommendation's status code
+    from app.models import TaxonomyValue
+    status = db.query(TaxonomyValue).filter(
+        TaxonomyValue.value_id == recommendation.current_status_id
+    ).first()
+
+    # DRAFT recommendations are not visible to non-validation team users
+    if status and status.code == "REC_DRAFT":
+        return False
+
+    # For other statuses, check if user is assigned_to OR has model access
+    if recommendation.assigned_to_id == user.user_id:
+        return True
+
+    return can_access_model(recommendation.model_id, user, db)

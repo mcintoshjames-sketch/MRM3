@@ -45,7 +45,7 @@ def test_create_model_as_user_pending_approval(client, auth_headers, test_user, 
     )
     assert response.status_code == 201
     data = response.json()
-    assert data["row_approval_status"] == "pending"
+    assert data["row_approval_status"] == "Draft"
     assert data["submitted_by_user_id"] == test_user.user_id
     assert data["submitted_at"] is not None
 
@@ -59,7 +59,7 @@ def test_user_can_edit_pending_model(client, auth_headers, test_user, usage_freq
         development_type="In-House",
         owner_id=test_user.user_id,
         status="In Development",
-        row_approval_status="pending",
+        row_approval_status="Draft",
         submitted_by_user_id=test_user.user_id,
         submitted_at=utc_now(),
         usage_frequency_id=usage_frequency["daily"].value_id
@@ -77,7 +77,7 @@ def test_user_can_edit_pending_model(client, auth_headers, test_user, usage_freq
     assert response.status_code == 200
     data = response.json()
     assert data["description"] == "Updated description"
-    assert data["row_approval_status"] == "pending"
+    assert data["row_approval_status"] == "Draft"
 
 
 def test_user_edit_approved_model_creates_pending_edit(client, auth_headers, test_user, usage_frequency, db_session):
@@ -211,7 +211,7 @@ def test_admin_approve_model(client, admin_headers, test_user, usage_frequency, 
     model = Model(
         model_name="Pending Model",
         owner_id=test_user.user_id,
-        row_approval_status="pending",
+        row_approval_status="Draft",
         submitted_by_user_id=test_user.user_id,
         usage_frequency_id=usage_frequency["daily"].value_id
     )
@@ -233,7 +233,7 @@ def test_admin_send_back_model(client, admin_headers, test_user, usage_frequency
     model = Model(
         model_name="Pending Model",
         owner_id=test_user.user_id,
-        row_approval_status="pending",
+        row_approval_status="Draft",
         submitted_by_user_id=test_user.user_id,
         usage_frequency_id=usage_frequency["daily"].value_id
     )
@@ -269,7 +269,7 @@ def test_user_resubmit_model(client, auth_headers, test_user, usage_frequency, d
     )
     assert response.status_code == 200
     data = response.json()
-    assert data["row_approval_status"] == "pending"
+    assert data["row_approval_status"] == "Draft"
 
 
 def test_rls_user_sees_own_pending_submissions(client, auth_headers, test_user, second_user, usage_frequency, db_session):
@@ -278,7 +278,7 @@ def test_rls_user_sees_own_pending_submissions(client, auth_headers, test_user, 
     model1 = Model(
         model_name="My Pending Model",
         owner_id=test_user.user_id,
-        row_approval_status="pending",
+        row_approval_status="Draft",
         submitted_by_user_id=test_user.user_id,
         created_at=utc_now(),
         updated_at=utc_now(),
@@ -288,7 +288,7 @@ def test_rls_user_sees_own_pending_submissions(client, auth_headers, test_user, 
     model2 = Model(
         model_name="Other Pending Model",
         owner_id=second_user.user_id,
-        row_approval_status="pending",
+        row_approval_status="Draft",
         submitted_by_user_id=second_user.user_id,
         created_at=utc_now(),
         updated_at=utc_now(),
@@ -311,7 +311,7 @@ def test_submission_thread_retrieval(client, auth_headers, test_user, usage_freq
     model = Model(
         model_name="Thread Model",
         owner_id=test_user.user_id,
-        row_approval_status="pending",
+        row_approval_status="Draft",
         submitted_by_user_id=test_user.user_id,
         usage_frequency_id=usage_frequency["daily"].value_id
     )
@@ -356,7 +356,7 @@ def test_full_submission_workflow_integration(client, auth_headers, admin_header
     )
     assert create_resp.status_code == 201
     model_id = create_resp.json()["model_id"]
-    assert create_resp.json()["row_approval_status"] == "pending"
+    assert create_resp.json()["row_approval_status"] == "Draft"
 
     # 2. Admin reviews and sends back
     send_back_resp = client.post(
@@ -384,7 +384,7 @@ def test_full_submission_workflow_integration(client, auth_headers, admin_header
         json={"comment": "Updated as requested"}
     )
     assert resubmit_resp.status_code == 200
-    assert resubmit_resp.json()["row_approval_status"] == "pending"
+    assert resubmit_resp.json()["row_approval_status"] == "Draft"
 
     # 5. Admin approves
     approve_resp = client.post(
@@ -406,7 +406,7 @@ def test_user_cannot_approve_own_model(client, auth_headers, test_user, usage_fr
     model = Model(
         model_name="My Pending Model",
         owner_id=test_user.user_id,
-        row_approval_status="pending",
+        row_approval_status="Draft",
         submitted_by_user_id=test_user.user_id,
         usage_frequency_id=usage_frequency["daily"].value_id
     )
@@ -427,7 +427,7 @@ def test_dashboard_news_feed(client, auth_headers, test_user, usage_frequency, d
     model = Model(
         model_name="Feed Model",
         owner_id=test_user.user_id,
-        row_approval_status="pending",
+        row_approval_status="Draft",
         submitted_by_user_id=test_user.user_id,
         usage_frequency_id=usage_frequency["daily"].value_id
     )

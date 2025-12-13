@@ -44,7 +44,7 @@ def model_a(db_session, test_user, usage_frequency):
         development_type="In-House",
         status="In Development",
         owner_id=test_user.user_id,
-        row_approval_status="pending",
+        row_approval_status="Draft",
         submitted_by_user_id=test_user.user_id,
         usage_frequency_id=usage_frequency["daily"].value_id
     )
@@ -63,7 +63,7 @@ def model_b(db_session, test_user, usage_frequency):
         development_type="In-House",
         status="In Development",
         owner_id=test_user.user_id,
-        row_approval_status="pending",
+        row_approval_status="Draft",
         submitted_by_user_id=test_user.user_id,
         usage_frequency_id=usage_frequency["daily"].value_id
     )
@@ -82,7 +82,7 @@ def model_c(db_session, test_user, usage_frequency):
         development_type="In-House",
         status="In Development",
         owner_id=test_user.user_id,
-        row_approval_status="pending",
+        row_approval_status="Draft",
         submitted_by_user_id=test_user.user_id,
         usage_frequency_id=usage_frequency["daily"].value_id
     )
@@ -101,7 +101,7 @@ def model_d(db_session, test_user, usage_frequency):
         development_type="In-House",
         status="In Development",
         owner_id=test_user.user_id,
-        row_approval_status="pending",
+        row_approval_status="Draft",
         submitted_by_user_id=test_user.user_id,
         usage_frequency_id=usage_frequency["daily"].value_id
     )

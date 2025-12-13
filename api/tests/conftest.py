@@ -211,7 +211,7 @@ def sample_model(db_session, test_user, usage_frequency):
         development_type="In-House",
         status="In Development",
         owner_id=test_user.user_id,
-        row_approval_status="pending",  # Pending models are editable by submitter
+        row_approval_status="Draft",  # Draft models are editable by submitter
         submitted_by_user_id=test_user.user_id,  # test_user is the submitter
         usage_frequency_id=usage_frequency["daily"].value_id  # Required field
     )

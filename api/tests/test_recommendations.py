@@ -3821,3 +3821,302 @@ class TestCanSkipActionPlanWithRegionalOverride:
         )
         assert response.status_code == 400
         assert "requires an action plan" in response.json()["detail"]
+
+
+# ============================================================================
+# DRAFT Visibility Tests - Recommendations in DRAFT status should not be
+# visible to the assigned owner (validation team is still deciding)
+# ============================================================================
+
+class TestDraftVisibilityRestriction:
+    """Test that DRAFT recommendations are hidden from non-validation team users."""
+
+    def test_validator_can_see_draft_recommendation_in_list(
+        self, client, validator_headers, sample_model, developer_user, recommendation_taxonomies
+    ):
+        """Validators can see DRAFT recommendations in the list."""
+        target_date = (date.today() + timedelta(days=30)).isoformat()
+
+        # Create draft recommendation
+        create_resp = client.post(
+            "/recommendations/",
+            headers=validator_headers,
+            json={
+                "model_id": sample_model.model_id,
+                "title": "Draft Test",
+                "description": "Draft recommendation for visibility test",
+                "priority_id": recommendation_taxonomies["priority"]["medium"].value_id,
+                "category_id": recommendation_taxonomies["category"]["data"].value_id,
+                "assigned_to_id": developer_user.user_id,
+                "original_target_date": target_date
+            }
+        )
+        assert create_resp.status_code == 201
+        rec_id = create_resp.json()["recommendation_id"]
+
+        # Validator should see DRAFT in list
+        list_resp = client.get("/recommendations/", headers=validator_headers)
+        assert list_resp.status_code == 200
+        rec_ids = [r["recommendation_id"] for r in list_resp.json()]
+        assert rec_id in rec_ids
+
+    def test_validator_can_access_draft_recommendation_by_id(
+        self, client, validator_headers, sample_model, developer_user, recommendation_taxonomies
+    ):
+        """Validators can access DRAFT recommendations by ID."""
+        target_date = (date.today() + timedelta(days=30)).isoformat()
+
+        # Create draft recommendation
+        create_resp = client.post(
+            "/recommendations/",
+            headers=validator_headers,
+            json={
+                "model_id": sample_model.model_id,
+                "title": "Draft Test",
+                "description": "Draft recommendation for visibility test",
+                "priority_id": recommendation_taxonomies["priority"]["medium"].value_id,
+                "category_id": recommendation_taxonomies["category"]["data"].value_id,
+                "assigned_to_id": developer_user.user_id,
+                "original_target_date": target_date
+            }
+        )
+        rec_id = create_resp.json()["recommendation_id"]
+
+        # Validator should access DRAFT by ID
+        get_resp = client.get(f"/recommendations/{rec_id}", headers=validator_headers)
+        assert get_resp.status_code == 200
+        assert get_resp.json()["current_status"]["code"] == "REC_DRAFT"
+
+    def test_admin_can_see_draft_recommendation(
+        self, client, admin_headers, validator_headers, sample_model,
+        developer_user, recommendation_taxonomies
+    ):
+        """Admins can see DRAFT recommendations."""
+        target_date = (date.today() + timedelta(days=30)).isoformat()
+
+        # Create draft recommendation
+        create_resp = client.post(
+            "/recommendations/",
+            headers=validator_headers,
+            json={
+                "model_id": sample_model.model_id,
+                "title": "Draft Test",
+                "description": "Draft recommendation for visibility test",
+                "priority_id": recommendation_taxonomies["priority"]["medium"].value_id,
+                "category_id": recommendation_taxonomies["category"]["data"].value_id,
+                "assigned_to_id": developer_user.user_id,
+                "original_target_date": target_date
+            }
+        )
+        rec_id = create_resp.json()["recommendation_id"]
+
+        # Admin should see DRAFT in list
+        list_resp = client.get("/recommendations/", headers=admin_headers)
+        assert list_resp.status_code == 200
+        rec_ids = [r["recommendation_id"] for r in list_resp.json()]
+        assert rec_id in rec_ids
+
+        # Admin should access DRAFT by ID
+        get_resp = client.get(f"/recommendations/{rec_id}", headers=admin_headers)
+        assert get_resp.status_code == 200
+
+    def test_developer_cannot_see_draft_recommendation_in_list(
+        self, client, validator_headers, developer_headers, sample_model,
+        developer_user, recommendation_taxonomies
+    ):
+        """Developers (assigned owners) cannot see DRAFT recommendations in list."""
+        target_date = (date.today() + timedelta(days=30)).isoformat()
+
+        # Create draft recommendation assigned to developer
+        create_resp = client.post(
+            "/recommendations/",
+            headers=validator_headers,
+            json={
+                "model_id": sample_model.model_id,
+                "title": "Draft Test",
+                "description": "Draft recommendation for visibility test",
+                "priority_id": recommendation_taxonomies["priority"]["medium"].value_id,
+                "category_id": recommendation_taxonomies["category"]["data"].value_id,
+                "assigned_to_id": developer_user.user_id,
+                "original_target_date": target_date
+            }
+        )
+        rec_id = create_resp.json()["recommendation_id"]
+
+        # Developer should NOT see DRAFT in list
+        list_resp = client.get("/recommendations/", headers=developer_headers)
+        assert list_resp.status_code == 200
+        rec_ids = [r["recommendation_id"] for r in list_resp.json()]
+        assert rec_id not in rec_ids
+
+    def test_developer_cannot_access_draft_recommendation_by_id(
+        self, client, validator_headers, developer_headers, sample_model,
+        developer_user, recommendation_taxonomies
+    ):
+        """Developers cannot access DRAFT recommendations by ID."""
+        target_date = (date.today() + timedelta(days=30)).isoformat()
+
+        # Create draft recommendation
+        create_resp = client.post(
+            "/recommendations/",
+            headers=validator_headers,
+            json={
+                "model_id": sample_model.model_id,
+                "title": "Draft Test",
+                "description": "Draft recommendation for visibility test",
+                "priority_id": recommendation_taxonomies["priority"]["medium"].value_id,
+                "category_id": recommendation_taxonomies["category"]["data"].value_id,
+                "assigned_to_id": developer_user.user_id,
+                "original_target_date": target_date
+            }
+        )
+        rec_id = create_resp.json()["recommendation_id"]
+
+        # Developer should get 404 for DRAFT recommendation
+        get_resp = client.get(f"/recommendations/{rec_id}", headers=developer_headers)
+        assert get_resp.status_code == 404
+
+    def test_developer_can_see_recommendation_after_finalization(
+        self, client, validator_headers, developer_headers, sample_model,
+        developer_user, recommendation_taxonomies
+    ):
+        """Developers can see recommendations once finalized (not DRAFT)."""
+        target_date = (date.today() + timedelta(days=30)).isoformat()
+
+        # Create draft recommendation
+        create_resp = client.post(
+            "/recommendations/",
+            headers=validator_headers,
+            json={
+                "model_id": sample_model.model_id,
+                "title": "Draft Test",
+                "description": "Draft recommendation for visibility test",
+                "priority_id": recommendation_taxonomies["priority"]["medium"].value_id,
+                "category_id": recommendation_taxonomies["category"]["data"].value_id,
+                "assigned_to_id": developer_user.user_id,
+                "original_target_date": target_date
+            }
+        )
+        rec_id = create_resp.json()["recommendation_id"]
+
+        # Before finalization, developer cannot see
+        list_resp = client.get("/recommendations/", headers=developer_headers)
+        rec_ids = [r["recommendation_id"] for r in list_resp.json()]
+        assert rec_id not in rec_ids
+
+        # Submit the recommendation (DRAFT -> PENDING_RESPONSE)
+        submit_resp = client.post(
+            f"/recommendations/{rec_id}/submit",
+            headers=validator_headers
+        )
+        assert submit_resp.status_code == 200
+
+        # After submission, developer should see in list
+        list_resp = client.get("/recommendations/", headers=developer_headers)
+        rec_ids = [r["recommendation_id"] for r in list_resp.json()]
+        assert rec_id in rec_ids
+
+        # Developer should access by ID
+        get_resp = client.get(f"/recommendations/{rec_id}", headers=developer_headers)
+        assert get_resp.status_code == 200
+        assert get_resp.json()["current_status"]["code"] == "REC_PENDING_RESPONSE"
+
+    def test_model_owner_cannot_see_draft_recommendations_for_their_model(
+        self, client, validator_headers, sample_model, test_user, auth_headers,
+        developer_user, recommendation_taxonomies
+    ):
+        """Model owner (who is not the assigned_to) also cannot see DRAFT recommendations."""
+        target_date = (date.today() + timedelta(days=30)).isoformat()
+
+        # test_user is the model owner, developer_user is assigned_to
+        # Create draft recommendation
+        create_resp = client.post(
+            "/recommendations/",
+            headers=validator_headers,
+            json={
+                "model_id": sample_model.model_id,
+                "title": "Draft Test",
+                "description": "Draft recommendation for visibility test",
+                "priority_id": recommendation_taxonomies["priority"]["medium"].value_id,
+                "category_id": recommendation_taxonomies["category"]["data"].value_id,
+                "assigned_to_id": developer_user.user_id,
+                "original_target_date": target_date
+            }
+        )
+        rec_id = create_resp.json()["recommendation_id"]
+
+        # Model owner should NOT see DRAFT in list (auth_headers is for test_user)
+        list_resp = client.get("/recommendations/", headers=auth_headers)
+        assert list_resp.status_code == 200
+        rec_ids = [r["recommendation_id"] for r in list_resp.json()]
+        assert rec_id not in rec_ids
+
+        # Model owner should get 404 for DRAFT recommendation
+        get_resp = client.get(f"/recommendations/{rec_id}", headers=auth_headers)
+        assert get_resp.status_code == 404
+
+    def test_global_approver_can_see_draft_recommendation(
+        self, client, validator_headers, global_approver_headers, sample_model,
+        developer_user, recommendation_taxonomies
+    ):
+        """Global Approvers can see DRAFT recommendations."""
+        target_date = (date.today() + timedelta(days=30)).isoformat()
+
+        # Create draft recommendation
+        create_resp = client.post(
+            "/recommendations/",
+            headers=validator_headers,
+            json={
+                "model_id": sample_model.model_id,
+                "title": "Draft Test",
+                "description": "Draft recommendation for visibility test",
+                "priority_id": recommendation_taxonomies["priority"]["medium"].value_id,
+                "category_id": recommendation_taxonomies["category"]["data"].value_id,
+                "assigned_to_id": developer_user.user_id,
+                "original_target_date": target_date
+            }
+        )
+        rec_id = create_resp.json()["recommendation_id"]
+
+        # Global approver should see DRAFT in list
+        list_resp = client.get("/recommendations/", headers=global_approver_headers)
+        assert list_resp.status_code == 200
+        rec_ids = [r["recommendation_id"] for r in list_resp.json()]
+        assert rec_id in rec_ids
+
+        # Global approver should access DRAFT by ID
+        get_resp = client.get(f"/recommendations/{rec_id}", headers=global_approver_headers)
+        assert get_resp.status_code == 200
+
+    def test_regional_approver_can_see_draft_recommendation(
+        self, client, validator_headers, regional_approver_headers, sample_model,
+        developer_user, recommendation_taxonomies
+    ):
+        """Regional Approvers can see DRAFT recommendations."""
+        target_date = (date.today() + timedelta(days=30)).isoformat()
+
+        # Create draft recommendation
+        create_resp = client.post(
+            "/recommendations/",
+            headers=validator_headers,
+            json={
+                "model_id": sample_model.model_id,
+                "title": "Draft Test",
+                "description": "Draft recommendation for visibility test",
+                "priority_id": recommendation_taxonomies["priority"]["medium"].value_id,
+                "category_id": recommendation_taxonomies["category"]["data"].value_id,
+                "assigned_to_id": developer_user.user_id,
+                "original_target_date": target_date
+            }
+        )
+        rec_id = create_resp.json()["recommendation_id"]
+
+        # Regional approver should see DRAFT in list
+        list_resp = client.get("/recommendations/", headers=regional_approver_headers)
+        assert list_resp.status_code == 200
+        rec_ids = [r["recommendation_id"] for r in list_resp.json()]
+        assert rec_id in rec_ids
+
+        # Regional approver should access DRAFT by ID
+        get_resp = client.get(f"/recommendations/{rec_id}", headers=regional_approver_headers)
+        assert get_resp.status_code == 200

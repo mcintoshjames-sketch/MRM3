@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { useParams, Link, useSearchParams } from 'react-router-dom';
 import Layout from '../components/Layout';
 import TrendChartModal from '../components/TrendChartModal';
 import BreachResolutionWizard, { BreachItem, BreachResolution } from '../components/BreachResolutionWizard';
@@ -197,11 +197,17 @@ const CycleSparkline: React.FC<{ cycles: MonitoringCycle[] }> = ({ cycles }) => 
 
 const MonitoringPlanDetailPage: React.FC = () => {
     const { id } = useParams<{ id: string }>();
+    const [searchParams] = useSearchParams();
     const { user } = useAuth();
     const planId = id ? parseInt(id, 10) : null;
 
+    // Read initial tab from URL query param if valid
+    const validTabs: TabType[] = ['dashboard', 'models', 'metrics', 'versions', 'cycles'];
+    const initialTab = searchParams.get('tab') as TabType | null;
+    const defaultTab: TabType = initialTab && validTabs.includes(initialTab) ? initialTab : 'dashboard';
+
     // Page-specific state (not in hooks)
-    const [activeTab, setActiveTab] = useState<TabType>('dashboard');
+    const [activeTab, setActiveTab] = useState<TabType>(defaultTab);
     const [trendModalMetric, setTrendModalMetric] = useState<{
         metric_id: number;
         metric_name: string;

@@ -13,7 +13,7 @@ from sqlalchemy import desc, func, or_, exists
 from app.core.database import get_db
 from app.core.time import utc_now
 from app.core.deps import get_current_user
-from app.core.rls import can_see_all_data
+from app.core.rls import can_see_all_data, can_see_recommendation
 from app.models import (
     User, Model, TaxonomyValue, Taxonomy, AuditLog, Region, ModelRegion,
     Recommendation, ActionPlanTask, RecommendationRebuttal,
@@ -1087,6 +1087,12 @@ def list_recommendations(
 
     # Apply Row-Level Security for basic users
     if not can_see_all_data(current_user):
+        # Get DRAFT status to filter it out
+        draft_status = db.query(TaxonomyValue).join(Taxonomy).filter(
+            Taxonomy.name == "Recommendation Status",
+            TaxonomyValue.code == "REC_DRAFT"
+        ).first()
+
         # Subquery to check if user is an active delegate for the model
         is_active_delegate = exists().where(
             ModelDelegate.model_id == Model.model_id,
@@ -1094,9 +1100,14 @@ def list_recommendations(
             ModelDelegate.revoked_at.is_(None)  # NULL means active
         )
 
-        # Filter to models where user is owner, developer, shared owner, shared developer, or active delegate
-        query = query.join(Model, Recommendation.model_id == Model.model_id).filter(
+        # Build the visibility filter:
+        # 1. assigned_to user can see their non-DRAFT recommendations
+        # 2. model owners/developers/delegates can see non-DRAFT recommendations
+        query = query.outerjoin(Model, Recommendation.model_id == Model.model_id).filter(
             or_(
+                # assigned_to user can see non-DRAFT recommendations
+                Recommendation.assigned_to_id == current_user.user_id,
+                # model access via ownership/developer/delegate
                 Model.owner_id == current_user.user_id,
                 Model.developer_id == current_user.user_id,
                 Model.shared_owner_id == current_user.user_id,
@@ -1104,6 +1115,11 @@ def list_recommendations(
                 is_active_delegate
             )
         )
+
+        # DRAFT recommendations are hidden from non-validation team users
+        # (validation team is still deciding if the recommendation is worthy)
+        if draft_status:
+            query = query.filter(Recommendation.current_status_id != draft_status.value_id)
 
     if model_id:
         query = query.filter(Recommendation.model_id == model_id)
@@ -1489,7 +1505,13 @@ def get_recommendation(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Get a recommendation by ID with all nested relationships."""
+    """Get a recommendation by ID with all nested relationships.
+
+    Row-Level Security:
+    - Validation team (Admin, Validator, Global Approver, Regional Approver): See all
+    - DRAFT recommendations are hidden from non-validation team users
+    - Other status: user must have access to the associated model
+    """
     recommendation = db.query(Recommendation).options(
         joinedload(Recommendation.model),
         joinedload(Recommendation.validation_request),
@@ -1515,6 +1537,13 @@ def get_recommendation(
     ).filter(Recommendation.recommendation_id == recommendation_id).first()
 
     if not recommendation:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Recommendation not found"
+        )
+
+    # Apply row-level security
+    if not can_see_recommendation(current_user, recommendation, db):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Recommendation not found"

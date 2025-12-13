@@ -584,6 +584,14 @@ node scripts/screenshot.js http://localhost:5174/dashboard --full-page
 **MCP Puppeteer** (inline display):
 - `mcp__puppeteer__puppeteer_navigate`, `_fill`, `_click`, `_screenshot`
 - Screenshots display in conversation; Claude can read/understand them
+- **IMPORTANT**: Always run in headless mode. When navigating, use:
+  ```typescript
+  mcp__puppeteer__puppeteer_navigate({
+    url: "http://localhost:5174",
+    launchOptions: { headless: true }
+  })
+  ```
+- This prevents browser windows from opening on the user's desktop
 
 ### Time Utilities (Backend)
 

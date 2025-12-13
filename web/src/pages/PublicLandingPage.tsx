@@ -27,7 +27,7 @@ export default function PublicLandingPage() {
                             <p className="text-lg text-gray-700 max-w-3xl">
                                 QMIS supports model inventory management, workflow-based validation tracking, attestations,
                                 approvals, and reporting. This public landing page provides a high-level overview and
-                                role-based user guides. All operational data is available only after login.
+                                role-based user guides.
                             </p>
                         </div>
 
@@ -58,13 +58,6 @@ export default function PublicLandingPage() {
                             />
                         </div>
 
-                        <div className="mt-6 bg-gray-50 border border-gray-200 rounded-lg p-5">
-                            <div className="text-sm font-semibold text-gray-900">Privacy note</div>
-                            <div className="mt-2 text-sm text-gray-700">
-                                This page intentionally avoids sensitive or proprietary details. If you have access,
-                                use the Login button to sign in and view internal content.
-                            </div>
-                        </div>
                     </div>
                 </div>
             </div>

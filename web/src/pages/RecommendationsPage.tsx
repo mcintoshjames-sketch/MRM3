@@ -37,6 +37,7 @@ export default function RecommendationsPage() {
     // Read URL params for pre-filtering
     const urlModelId = searchParams.get('model_id');
     const urlValidationRequestId = searchParams.get('validation_request_id');
+    const urlMyTasks = searchParams.get('my_tasks') === 'true';
 
     // Filters
     const [filters, setFilters] = useState({
@@ -47,8 +48,13 @@ export default function RecommendationsPage() {
         model_id: urlModelId ? parseInt(urlModelId) : null as number | null,
         validation_request_id: urlValidationRequestId ? parseInt(urlValidationRequestId) : null as number | null,
         assigned_to_id: null as number | null,
-        overdue_only: false
+        overdue_only: false,
+        my_tasks_only: urlMyTasks
     });
+
+    // My Tasks IDs - fetched from /recommendations/my-tasks endpoint
+    // This correctly identifies tasks by workflow status + role, not just assigned_to
+    const [myTaskIds, setMyTaskIds] = useState<Set<number>>(new Set());
 
     // Terminal statuses
     const terminalStatusCodes = ['REC_DROPPED', 'REC_CLOSED'];
@@ -168,6 +174,14 @@ export default function RecommendationsPage() {
             }
         }
 
+        // My Tasks filter - uses IDs from /recommendations/my-tasks endpoint
+        // This correctly identifies tasks by workflow status + role
+        if (filters.my_tasks_only) {
+            if (!myTaskIds.has(rec.recommendation_id)) {
+                return false;
+            }
+        }
+
         return true;
     });
 
@@ -192,16 +206,24 @@ export default function RecommendationsPage() {
             const taxonomyNames = ['Recommendation Priority', 'Recommendation Status', 'Recommendation Category'];
             const taxonomyQueryString = taxonomyNames.map(n => `names=${encodeURIComponent(n)}`).join('&');
 
-            const [recs, modelsRes, usersRes, taxonomiesRes] = await Promise.all([
+            const [recs, modelsRes, usersRes, taxonomiesRes, myTasksRes] = await Promise.all([
                 recommendationsApi.list(),
                 api.get('/models/'),
                 api.get('/auth/users'),
-                api.get(`/taxonomies/by-names/?${taxonomyQueryString}`)
+                api.get(`/taxonomies/by-names/?${taxonomyQueryString}`),
+                api.get('/recommendations/my-tasks').catch(() => ({ data: { tasks: [] } }))
             ]);
 
             setRecommendations(recs);
             setModels(modelsRes.data);
             setUsers(usersRes.data);
+
+            // Extract task IDs for "My Tasks" filter
+            // These are recommendations where the current user needs to take action based on workflow status
+            const taskIds = new Set<number>(
+                (myTasksRes.data.tasks || []).map((t: any) => t.recommendation_id)
+            );
+            setMyTaskIds(taskIds);
 
             const taxonomies = taxonomiesRes.data;
             const priorityTax = taxonomies.find((t: any) => t.name === 'Recommendation Priority');
@@ -571,8 +593,27 @@ export default function RecommendationsPage() {
                     </div>
                 </div>
 
-                {/* Overdue Filter */}
-                <div className="mt-3 flex items-center">
+                {/* Quick Filters */}
+                <div className="mt-3 flex items-center gap-6">
+                    {/* My Tasks Toggle */}
+                    <label className="flex items-center cursor-pointer">
+                        <input
+                            type="checkbox"
+                            className="h-4 w-4 text-purple-600 focus:ring-purple-500 border-gray-300 rounded"
+                            checked={filters.my_tasks_only}
+                            onChange={(e) => setFilters(prev => ({ ...prev, my_tasks_only: e.target.checked }))}
+                        />
+                        <span className="ml-2 text-sm font-medium text-gray-700">
+                            My Tasks Only
+                        </span>
+                        {filters.my_tasks_only && (
+                            <span className="ml-2 px-1.5 py-0.5 text-xs font-medium rounded bg-purple-600 text-white">
+                                FILTERED
+                            </span>
+                        )}
+                    </label>
+
+                    {/* Overdue Filter */}
                     <label className="flex items-center cursor-pointer">
                         <input
                             type="checkbox"
@@ -606,7 +647,8 @@ export default function RecommendationsPage() {
                             model_id: null,
                             validation_request_id: null,
                             assigned_to_id: null,
-                            overdue_only: false
+                            overdue_only: false,
+                            my_tasks_only: false
                         })}
                         className="text-sm text-blue-600 hover:text-blue-800"
                     >

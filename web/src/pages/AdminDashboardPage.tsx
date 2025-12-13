@@ -1710,8 +1710,9 @@ export default function AdminDashboardPage() {
                 />
             )}
 
-            {/* UAT Tools Section - TEMPORARY */}
+            {/* UAT Tools Section - HIDDEN (uncomment when needed for UAT)
             <UATToolsSection onRefresh={fetchDashboardData} />
+            */}
         </Layout>
     );
 }

@@ -36,7 +36,8 @@ export default function Layout({ children }: LayoutProps) {
         decommissioning: 0,
         monitoring: 0,
         attestations: 0,
-        approvals: 0
+        approvals: 0,
+        recommendations: 0
     });
 
     // Load collapsed state from localStorage
@@ -123,13 +124,23 @@ export default function Layout({ children }: LayoutProps) {
                     // Silently fail - user may not be an approver
                 }
 
+                // Fetch recommendation tasks count
+                let pendingRecommendations = 0;
+                try {
+                    const recRes = await api.get('/recommendations/my-tasks');
+                    pendingRecommendations = recRes.data.total_tasks || 0;
+                } catch {
+                    // Silently fail
+                }
+
                 setPendingCounts({
                     submissions: urgentSubmissions,
                     deployments: pendingDeployments,
                     decommissioning: pendingDecommissioning,
                     monitoring: pendingMonitoring,
                     attestations: pendingAttestations,
-                    approvals: pendingApprovals
+                    approvals: pendingApprovals,
+                    recommendations: pendingRecommendations
                 });
             } catch (error) {
                 console.error('Failed to fetch pending counts:', error);
@@ -151,7 +162,7 @@ export default function Layout({ children }: LayoutProps) {
     // Calculate total tasks badge
     const totalTasksBadge = pendingCounts.submissions + pendingCounts.deployments +
         pendingCounts.decommissioning + (user?.role !== 'Admin' ? pendingCounts.attestations : 0) +
-        pendingCounts.approvals;
+        pendingCounts.approvals + pendingCounts.recommendations;
 
     // Reusable nav link component
     const NavItem = ({ to, children, badge, badgeColor = 'red' }: {
@@ -256,9 +267,9 @@ export default function Layout({ children }: LayoutProps) {
                         )}
 
                         {/* Core entity views */}
+                        <NavItem to={pendingCounts.recommendations > 0 ? "/recommendations?my_tasks=true" : "/recommendations"} badge={pendingCounts.recommendations} badgeColor="purple">Recommendations</NavItem>
                         <NavItem to="/models">Models</NavItem>
                         <NavItem to="/validation-workflow">Validations</NavItem>
-                        <NavItem to="/recommendations">Recommendations</NavItem>
                         {user?.role === 'Admin' && (
                             <NavItem to="/attestations">Attestation Management</NavItem>
                         )}

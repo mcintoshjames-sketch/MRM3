@@ -24,10 +24,23 @@ export default function ActionPlanModal({ recommendation, users, onClose, onSucc
     const currentStatus = recommendation.current_status?.code || '';
     const isReviewMode = currentStatus === 'REC_PENDING_VALIDATOR_REVIEW';
 
+    // Get initial owner name for the default assigned user
+    const getInitialOwnerName = () => {
+        if (recommendation.assigned_to_id) {
+            const user = users.find(u => u.user_id === recommendation.assigned_to_id);
+            return user?.full_name || '';
+        }
+        return '';
+    };
+
     // For submitting new action plan
     const [tasks, setTasks] = useState<TaskForm[]>([
         { description: '', owner_id: recommendation.assigned_to_id, target_date: recommendation.current_target_date }
     ]);
+
+    // Owner search state per task
+    const [ownerSearchQueries, setOwnerSearchQueries] = useState<string[]>([getInitialOwnerName()]);
+    const [showOwnerDropdowns, setShowOwnerDropdowns] = useState<boolean[]>([false]);
 
     // For reviewing action plan
     const [reviewDecision, setReviewDecision] = useState<'APPROVE' | 'REQUEST_CHANGES'>('APPROVE');
@@ -42,12 +55,34 @@ export default function ActionPlanModal({ recommendation, users, onClose, onSucc
             owner_id: recommendation.assigned_to_id,
             target_date: recommendation.current_target_date
         }]);
+        setOwnerSearchQueries([...ownerSearchQueries, getInitialOwnerName()]);
+        setShowOwnerDropdowns([...showOwnerDropdowns, false]);
     };
 
     const removeTask = (index: number) => {
         if (tasks.length > 1) {
             setTasks(tasks.filter((_, i) => i !== index));
+            setOwnerSearchQueries(ownerSearchQueries.filter((_, i) => i !== index));
+            setShowOwnerDropdowns(showOwnerDropdowns.filter((_, i) => i !== index));
         }
+    };
+
+    const updateOwnerSearch = (index: number, query: string) => {
+        const updated = [...ownerSearchQueries];
+        updated[index] = query;
+        setOwnerSearchQueries(updated);
+    };
+
+    const setOwnerDropdownVisible = (index: number, visible: boolean) => {
+        const updated = [...showOwnerDropdowns];
+        updated[index] = visible;
+        setShowOwnerDropdowns(updated);
+    };
+
+    const selectOwner = (index: number, user: User) => {
+        updateTask(index, 'owner_id', user.user_id);
+        updateOwnerSearch(index, user.full_name);
+        setOwnerDropdownVisible(index, false);
     };
 
     const updateTask = (index: number, field: keyof TaskForm, value: any) => {
@@ -268,17 +303,59 @@ export default function ActionPlanModal({ recommendation, users, onClose, onSucc
                                                     <label className="block text-sm font-medium text-gray-700 mb-1">
                                                         Owner <span className="text-red-500">*</span>
                                                     </label>
-                                                    <select
-                                                        value={task.owner_id || ''}
-                                                        onChange={(e) => updateTask(index, 'owner_id', parseInt(e.target.value) || null)}
-                                                        className="input-field"
-                                                        required
-                                                    >
-                                                        <option value="">Select owner...</option>
-                                                        {users.map(u => (
-                                                            <option key={u.user_id} value={u.user_id}>{u.full_name}</option>
-                                                        ))}
-                                                    </select>
+                                                    <div className="relative">
+                                                        <input
+                                                            type="text"
+                                                            placeholder="Type to search users..."
+                                                            value={ownerSearchQueries[index] || ''}
+                                                            onChange={(e) => {
+                                                                updateOwnerSearch(index, e.target.value);
+                                                                setOwnerDropdownVisible(index, true);
+                                                                // Clear selection if user modifies text
+                                                                if (task.owner_id) {
+                                                                    const selectedUser = users.find(u => u.user_id === task.owner_id);
+                                                                    if (selectedUser && e.target.value !== selectedUser.full_name) {
+                                                                        updateTask(index, 'owner_id', null);
+                                                                    }
+                                                                }
+                                                            }}
+                                                            onFocus={() => setOwnerDropdownVisible(index, true)}
+                                                            onBlur={() => {
+                                                                // Delay to allow click to register
+                                                                setTimeout(() => setOwnerDropdownVisible(index, false), 200);
+                                                            }}
+                                                            className="input-field"
+                                                        />
+                                                        {showOwnerDropdowns[index] && ownerSearchQueries[index]?.length > 0 && (
+                                                            <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg max-h-48 overflow-y-auto">
+                                                                {users
+                                                                    .filter((u) =>
+                                                                        u.full_name.toLowerCase().includes((ownerSearchQueries[index] || '').toLowerCase()) ||
+                                                                        u.email.toLowerCase().includes((ownerSearchQueries[index] || '').toLowerCase())
+                                                                    )
+                                                                    .slice(0, 50)
+                                                                    .map((u) => (
+                                                                        <div
+                                                                            key={u.user_id}
+                                                                            className="px-3 py-2 hover:bg-gray-100 cursor-pointer text-sm"
+                                                                            onMouseDown={() => selectOwner(index, u)}
+                                                                        >
+                                                                            <div className="font-medium">{u.full_name}</div>
+                                                                            <div className="text-gray-500 text-xs">{u.email}</div>
+                                                                        </div>
+                                                                    ))}
+                                                                {users.filter((u) =>
+                                                                    u.full_name.toLowerCase().includes((ownerSearchQueries[index] || '').toLowerCase()) ||
+                                                                    u.email.toLowerCase().includes((ownerSearchQueries[index] || '').toLowerCase())
+                                                                ).length === 0 && (
+                                                                    <div className="px-3 py-2 text-sm text-gray-500">No users found</div>
+                                                                )}
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                    {task.owner_id && (
+                                                        <p className="mt-1 text-xs text-green-600">✓ Owner selected</p>
+                                                    )}
                                                 </div>
 
                                                 <div>

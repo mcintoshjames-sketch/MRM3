@@ -9,7 +9,14 @@ from app.models.model import Model
 from app.models.model_submission_comment import ModelSubmissionComment
 from app.models.decommissioning import DecommissioningStatusHistory, DecommissioningRequest
 from app.models.monitoring import MonitoringCycle, MonitoringCycleApproval, MonitoringPlan, monitoring_plan_models
-from app.models.validation import ValidationApproval, ValidationRequest, validation_request_models
+from app.models.validation import (
+    ValidationApproval, ValidationRequest, validation_request_models,
+    ValidationStatusHistory
+)
+from app.models.recommendation import Recommendation, RecommendationStatusHistory
+from app.models.model_approval_status_history import ModelApprovalStatusHistory
+from app.models.attestation import AttestationRecord
+from app.models.model_version import ModelVersion
 from app.core.rls import apply_model_rls
 
 router = APIRouter()
@@ -174,6 +181,153 @@ def get_news_feed(
             "model_name": model_context,
             "model_id": first_model_id,
             "created_at": approval.approved_at
+        })
+
+    # =========================================================================
+    # RECOMMENDATION STATUS CHANGES (P1 - Critical)
+    # =========================================================================
+    recommendation_events = db.query(RecommendationStatusHistory).options(
+        joinedload(RecommendationStatusHistory.recommendation).joinedload(Recommendation.model),
+        joinedload(RecommendationStatusHistory.changed_by),
+        joinedload(RecommendationStatusHistory.old_status),
+        joinedload(RecommendationStatusHistory.new_status)
+    ).join(Recommendation).filter(
+        Recommendation.model_id.in_(accessible_model_ids)
+    ).order_by(RecommendationStatusHistory.changed_at.desc()).limit(50).all()
+
+    for event in recommendation_events:
+        rec = event.recommendation
+        old_status_label = event.old_status.label if event.old_status else "Created"
+        new_status_label = event.new_status.label if event.new_status else "Unknown"
+        feed.append({
+            "id": f"recommendation_{event.history_id}",
+            "type": "recommendation",
+            "action": new_status_label.lower().replace(" ", "_"),
+            "text": f"Recommendation {rec.recommendation_code}: {old_status_label} → {new_status_label}",
+            "user_name": event.changed_by.full_name if event.changed_by else None,
+            "model_name": rec.model.model_name,
+            "model_id": rec.model_id,
+            "created_at": event.changed_at
+        })
+
+    # =========================================================================
+    # VALIDATION STATUS CHANGES (P2 - High)
+    # Note: This captures workflow progress, not just final approvals
+    # =========================================================================
+    validation_status_events = db.query(ValidationStatusHistory).options(
+        joinedload(ValidationStatusHistory.request).joinedload(ValidationRequest.models),
+        joinedload(ValidationStatusHistory.changed_by),
+        joinedload(ValidationStatusHistory.old_status),
+        joinedload(ValidationStatusHistory.new_status)
+    ).join(ValidationRequest).join(
+        validation_request_models,
+        ValidationRequest.request_id == validation_request_models.c.request_id
+    ).filter(
+        validation_request_models.c.model_id.in_(accessible_model_ids)
+    ).order_by(ValidationStatusHistory.changed_at.desc()).limit(50).all()
+
+    for event in validation_status_events:
+        model_names = [m.model_name for m in event.request.models if m.model_id in accessible_model_ids]
+        model_context = model_names[0] if len(model_names) == 1 else f"{len(model_names)} models"
+        first_model_id = next((m.model_id for m in event.request.models if m.model_id in accessible_model_ids), None)
+
+        old_status_label = event.old_status.label if event.old_status else "Created"
+        new_status_label = event.new_status.label if event.new_status else "Unknown"
+
+        feed.append({
+            "id": f"validation_status_{event.history_id}",
+            "type": "validation_status",
+            "action": new_status_label.lower().replace(" ", "_"),
+            "text": f"Validation status: {old_status_label} → {new_status_label}",
+            "user_name": event.changed_by.full_name if event.changed_by else None,
+            "model_name": model_context,
+            "model_id": first_model_id,
+            "created_at": event.changed_at
+        })
+
+    # =========================================================================
+    # MODEL APPROVAL STATUS CHANGES (P3 - Medium)
+    # =========================================================================
+    approval_status_events = db.query(ModelApprovalStatusHistory).options(
+        joinedload(ModelApprovalStatusHistory.model)
+    ).filter(
+        ModelApprovalStatusHistory.model_id.in_(accessible_model_ids)
+    ).order_by(ModelApprovalStatusHistory.changed_at.desc()).limit(50).all()
+
+    for event in approval_status_events:
+        old_status = event.old_status or "Initial"
+        new_status = event.new_status
+        feed.append({
+            "id": f"approval_status_{event.history_id}",
+            "type": "approval_status",
+            "action": new_status.lower(),
+            "text": f"Model approval status: {old_status} → {new_status}",
+            "user_name": None,  # System-triggered
+            "model_name": event.model.model_name,
+            "model_id": event.model_id,
+            "created_at": event.changed_at
+        })
+
+    # =========================================================================
+    # ATTESTATION EVENTS (P4 - Medium)
+    # =========================================================================
+    attestation_events = db.query(AttestationRecord).options(
+        joinedload(AttestationRecord.model),
+        joinedload(AttestationRecord.attesting_user),
+        joinedload(AttestationRecord.reviewed_by),
+        joinedload(AttestationRecord.cycle)
+    ).filter(
+        AttestationRecord.model_id.in_(accessible_model_ids)
+    ).order_by(AttestationRecord.updated_at.desc()).limit(50).all()
+
+    for record in attestation_events:
+        cycle_name = record.cycle.cycle_name if record.cycle else "Unknown Cycle"
+        # Submission event
+        if record.attested_at:
+            feed.append({
+                "id": f"attestation_submit_{record.attestation_id}",
+                "type": "attestation",
+                "action": "submitted",
+                "text": f"Attestation submitted for {cycle_name}",
+                "user_name": record.attesting_user.full_name if record.attesting_user else None,
+                "model_name": record.model.model_name,
+                "model_id": record.model_id,
+                "created_at": record.attested_at
+            })
+        # Admin review event
+        if record.reviewed_at:
+            review_action = "accepted" if record.status == "ACCEPTED" else "reviewed"
+            feed.append({
+                "id": f"attestation_review_{record.attestation_id}",
+                "type": "attestation",
+                "action": review_action,
+                "text": f"Attestation {review_action} for {cycle_name}",
+                "user_name": record.reviewed_by.full_name if record.reviewed_by else None,
+                "model_name": record.model.model_name,
+                "model_id": record.model_id,
+                "created_at": record.reviewed_at
+            })
+
+    # =========================================================================
+    # MODEL VERSION EVENTS (P5 - Lower)
+    # =========================================================================
+    version_events = db.query(ModelVersion).options(
+        joinedload(ModelVersion.model),
+        joinedload(ModelVersion.created_by)
+    ).filter(
+        ModelVersion.model_id.in_(accessible_model_ids)
+    ).order_by(ModelVersion.created_at.desc()).limit(50).all()
+
+    for version in version_events:
+        feed.append({
+            "id": f"version_{version.version_id}",
+            "type": "version",
+            "action": "created",
+            "text": f"Version {version.version_number} created: {version.change_type}",
+            "user_name": version.created_by.full_name if version.created_by else None,
+            "model_name": version.model.model_name,
+            "model_id": version.model_id,
+            "created_at": version.created_at
         })
 
     # Sort combined feed by created_at descending and limit to 50

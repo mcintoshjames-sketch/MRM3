@@ -34,9 +34,15 @@ def create_audit_log(db: Session, entity_type: str, entity_id: int, action: str,
     db.add(audit_log)
 
 
-def check_model_owner(model: Model, user: User) -> bool:
-    """Check if user is the model owner or admin."""
-    if user.role == "Admin":
+def can_manage_delegates(model: Model, user: User) -> bool:
+    """Check if user can manage delegates for this model.
+
+    Allowed:
+    - Admins (any model)
+    - Validators (any model)
+    - Model owners (their own models)
+    """
+    if user.role in ("Admin", "Validator"):
         return True
     if model.owner_id == user.user_id:
         return True
@@ -59,11 +65,11 @@ def create_delegate(
             detail="Model not found"
         )
 
-    # Only owner or admin can create delegations
-    if not check_model_owner(model, current_user):
+    # Only owner, admin, or validator can create delegations
+    if not can_manage_delegates(model, current_user):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only model owner or administrators can create delegations"
+            detail="Only model owners, validators, or administrators can create delegations"
         )
 
     # Check if user exists
@@ -206,12 +212,12 @@ def update_delegate(
             detail="Delegation not found"
         )
 
-    # Get model to check ownership
+    # Get model to check permissions
     model = db.query(Model).filter(Model.model_id == delegate.model_id).first()
-    if not check_model_owner(model, current_user):
+    if not can_manage_delegates(model, current_user):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only model owner or administrators can update delegations"
+            detail="Only model owners, validators, or administrators can update delegations"
         )
 
     # Cannot update revoked delegations
@@ -263,12 +269,12 @@ def revoke_delegate(
             detail="Delegation not found"
         )
 
-    # Get model to check ownership
+    # Get model to check permissions
     model = db.query(Model).filter(Model.model_id == delegate.model_id).first()
-    if not check_model_owner(model, current_user):
+    if not can_manage_delegates(model, current_user):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only model owner or administrators can revoke delegations"
+            detail="Only model owners, validators, or administrators can revoke delegations"
         )
 
     # Already revoked

@@ -948,6 +948,11 @@ def submit_attestation(
     # Clear excluded flag since record is now submitted
     record.is_excluded = False
 
+    # Delete existing responses if re-submitting (after rejection)
+    db.query(AttestationResponseModel).filter(
+        AttestationResponseModel.attestation_id == attestation_id
+    ).delete()
+
     # Save responses
     for response_data in submission.responses:
         response = AttestationResponseModel(

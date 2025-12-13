@@ -24,8 +24,8 @@ const DelegatesSection: React.FC<DelegatesSectionProps> = ({ modelId, modelOwner
     const [userSearch, setUserSearch] = useState('');
     const [selectedUser, setSelectedUser] = useState<User | null>(null);
 
-    // Admins and model owners can manage delegates
-    const canManageDelegates = currentUserId === modelOwnerId || user?.role === 'Admin';
+    // Admins, validators, and model owners can manage delegates
+    const canManageDelegates = currentUserId === modelOwnerId || user?.role === 'Admin' || user?.role === 'Validator';
 
     const loadDelegates = async () => {
         try {
@@ -116,7 +116,7 @@ const DelegatesSection: React.FC<DelegatesSectionProps> = ({ modelId, modelOwner
             </div>
 
             {!canManageDelegates && (
-                <p className="text-sm text-gray-500 mb-4">Only the model owner or administrators can manage delegates</p>
+                <p className="text-sm text-gray-500 mb-4">Only the model owner, validators, or administrators can manage delegates</p>
             )}
 
             {showAddForm && (

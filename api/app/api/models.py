@@ -667,7 +667,7 @@ def create_model(
 
     # Set row approval status for non-Admin users
     if not is_admin:
-        model.row_approval_status = "pending"
+        model.row_approval_status = "Draft"
         model.submitted_by_user_id = current_user.user_id
         model.submitted_at = utc_now()
 
@@ -1035,7 +1035,7 @@ def get_pending_submissions(
     """
     Get all models pending admin approval.
 
-    Admin only. Returns models with row_approval_status IN ('pending', 'needs_revision').
+    Admin only. Returns models with row_approval_status IN ('Draft', 'needs_revision').
     """
     if current_user.role != "Admin":
         raise HTTPException(
@@ -1058,7 +1058,7 @@ def get_pending_submissions(
         joinedload(Model.submission_comments).joinedload(
             ModelSubmissionComment.user)
     ).filter(
-        Model.row_approval_status.in_(['pending', 'needs_revision'])
+        Model.row_approval_status.in_(['Draft', 'needs_revision'])
     ).order_by(Model.submitted_at.desc()).all()
 
     return models
@@ -1986,11 +1986,11 @@ def add_submission_comment(
 
     model = db.query(Model).filter(Model.model_id == model_id).first()
 
-    # Only allow comments on pending/needs_revision models
-    if model.row_approval_status not in ('pending', 'needs_revision'):
+    # Only allow comments on Draft/needs_revision models
+    if model.row_approval_status not in ('Draft', 'needs_revision'):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Can only comment on pending or needs_revision models"
+            detail="Can only comment on Draft or needs_revision models"
         )
 
     comment = ModelSubmissionComment(
@@ -2049,7 +2049,7 @@ def approve_model_submission(
             detail="Model not found"
         )
 
-    if model.row_approval_status not in ('pending', 'needs_revision'):
+    if model.row_approval_status not in ('Draft', 'needs_revision'):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Model is not pending approval"
@@ -2173,10 +2173,10 @@ def send_back_model_submission(
             detail="Model not found"
         )
 
-    if model.row_approval_status != 'pending':
+    if model.row_approval_status != 'Draft':
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Can only send back pending models"
+            detail="Can only send back Draft models"
         )
 
     # Change status to needs_revision
@@ -2249,8 +2249,8 @@ def resubmit_model(
             detail="Can only resubmit models that need revision"
         )
 
-    # Change status back to pending
-    model.row_approval_status = 'pending'
+    # Change status back to Draft
+    model.row_approval_status = 'Draft'
 
     # Add resubmission comment
     from app.models import ModelSubmissionComment
@@ -2271,7 +2271,7 @@ def resubmit_model(
         entity_id=model_id,
         action="RESUBMIT",
         user_id=current_user.user_id,
-        changes={"row_approval_status": "pending"}
+        changes={"row_approval_status": "Draft"}
     )
 
     db.commit()

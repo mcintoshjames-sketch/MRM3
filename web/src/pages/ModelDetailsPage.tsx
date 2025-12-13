@@ -1282,7 +1282,7 @@ export default function ModelDetailsPage() {
             </div>
 
             {/* Approval Status Banner */}
-            {model.row_approval_status && (model.row_approval_status === 'pending' || model.row_approval_status === 'needs_revision') && (
+            {model.row_approval_status && (model.row_approval_status === 'Draft' || model.row_approval_status === 'needs_revision') && (
                 <div className={`mb-6 p-4 rounded-lg border-l-4 ${model.row_approval_status === 'needs_revision'
                     ? 'bg-orange-50 border-orange-500'
                     : 'bg-blue-50 border-blue-500'
@@ -1300,14 +1300,14 @@ export default function ModelDetailsPage() {
                                     ? 'text-orange-900'
                                     : 'text-blue-900'
                                     }`}>
-                                    {model.row_approval_status === 'pending' && 'New Model Record Awaiting Approval'}
+                                    {model.row_approval_status === 'Draft' && 'New Model Record Awaiting Approval'}
                                     {model.row_approval_status === 'needs_revision' && 'Revisions Requested'}
                                 </h3>
                                 <p className={`text-sm ${model.row_approval_status === 'needs_revision'
                                     ? 'text-orange-800'
                                     : 'text-blue-800'
                                     }`}>
-                                    {model.row_approval_status === 'pending' && 'This record is pending admin approval to be added to the inventory.'}
+                                    {model.row_approval_status === 'Draft' && 'This record is awaiting admin approval to be added to the inventory.'}
                                     {model.row_approval_status === 'needs_revision' && 'This record has been sent back for revisions. Please review the feedback below and resubmit when ready.'}
                                 </p>
                                 {model.submitted_by_user && (
@@ -1319,7 +1319,7 @@ export default function ModelDetailsPage() {
                         </div>
 
                         {/* Admin Actions */}
-                        {user?.role === 'Admin' && model.row_approval_status === 'pending' && (
+                        {user?.role === 'Admin' && model.row_approval_status === 'Draft' && (
                             <div className="flex gap-2 flex-shrink-0">
                                 <button
                                     onClick={() => setShowApprovalActions(!showApprovalActions)}

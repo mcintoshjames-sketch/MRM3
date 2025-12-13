@@ -518,7 +518,7 @@ class TestGetAssessment:
             development_type="In-House",
             status="In Development",
             owner_id=test_user.user_id,
-            row_approval_status="pending",
+            row_approval_status="Draft",
             submitted_by_user_id=test_user.user_id,
             usage_frequency_id=usage_frequency["daily"].value_id
         )
@@ -1114,7 +1114,7 @@ class TestScoreCalculation:
                 development_type="In-House",
                 status="In Development",
                 owner_id=test_user.user_id,
-                row_approval_status="pending",
+                row_approval_status="Draft",
                 submitted_by_user_id=test_user.user_id,
                 usage_frequency_id=usage_frequency["daily"].value_id
             )
@@ -1243,7 +1243,7 @@ class TestResponseSchema:
             development_type="In-House",
             status="In Development",
             owner_id=test_user.user_id,
-            row_approval_status="pending",
+            row_approval_status="Draft",
             submitted_by_user_id=test_user.user_id,
             usage_frequency_id=usage_frequency["daily"].value_id
         )

@@ -36,7 +36,7 @@ def parent_model(db_session, test_user, usage_frequency):
         development_type="In-House",
         status="In Development",
         owner_id=test_user.user_id,
-        row_approval_status="pending",
+        row_approval_status="Draft",
         submitted_by_user_id=test_user.user_id,
         usage_frequency_id=usage_frequency["daily"].value_id
     )
@@ -55,7 +55,7 @@ def child_model(db_session, test_user, usage_frequency):
         development_type="In-House",
         status="In Development",
         owner_id=test_user.user_id,
-        row_approval_status="pending",
+        row_approval_status="Draft",
         submitted_by_user_id=test_user.user_id,
         usage_frequency_id=usage_frequency["daily"].value_id
     )
@@ -74,7 +74,7 @@ def another_child_model(db_session, test_user, usage_frequency):
         development_type="In-House",
         status="In Development",
         owner_id=test_user.user_id,
-        row_approval_status="pending",
+        row_approval_status="Draft",
         submitted_by_user_id=test_user.user_id,
         usage_frequency_id=usage_frequency["daily"].value_id
     )
