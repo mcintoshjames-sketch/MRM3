@@ -31,6 +31,7 @@ interface NewsFeedItem {
     user_name: string;
     model_name: string;
     model_id: number;
+    entity_link?: string;
     created_at: string;
 }
 
@@ -823,7 +824,7 @@ export default function ModelOwnerDashboardPage() {
                                             </span>
                                         )}
                                         {' '}
-                                        <Link to={`/models/${item.model_id}`} className="font-medium text-blue-600 hover:text-blue-800">
+                                        <Link to={item.entity_link || `/models/${item.model_id}`} className="font-medium text-blue-600 hover:text-blue-800">
                                             {item.model_name}
                                         </Link>
                                     </p>

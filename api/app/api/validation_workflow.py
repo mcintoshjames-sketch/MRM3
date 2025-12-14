@@ -4479,7 +4479,7 @@ def get_sla_violations(
                 "current_status": req.current_status.label if req.current_status else "Unknown",
                 "priority": req.priority.label if req.priority else "Unknown",
                 "severity": severity,
-                "timestamp": req.submission_received_date.isoformat()
+                "timestamp": f"{req.submission_received_date.isoformat()}T00:00:00"
             })
 
     # Sort by days overdue (most overdue first)

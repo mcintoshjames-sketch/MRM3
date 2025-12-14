@@ -68,6 +68,7 @@ def get_news_feed(
             "user_name": comment.user.full_name,
             "model_name": comment.model.model_name,
             "model_id": comment.model_id,
+            "entity_link": f"/models/{comment.model_id}",
             "created_at": comment.created_at
         })
 
@@ -82,6 +83,7 @@ def get_news_feed(
             "user_name": history.changed_by.full_name,
             "model_name": history.request.model.model_name,
             "model_id": history.request.model_id,
+            "entity_link": "/pending-decommissioning",
             "created_at": history.changed_at
         })
 
@@ -122,6 +124,7 @@ def get_news_feed(
                 "user_name": cycle.completed_by.full_name if cycle.completed_by else None,
                 "model_name": model_context,
                 "model_id": first_model_id,
+                "entity_link": f"/monitoring/cycles/{cycle.cycle_id}",
                 "created_at": cycle.completed_at
             })
 
@@ -138,6 +141,7 @@ def get_news_feed(
                     "user_name": approval.approver.full_name if approval.approver else None,
                     "model_name": model_context,
                     "model_id": first_model_id,
+                    "entity_link": f"/monitoring/cycles/{cycle.cycle_id}",
                     "created_at": approval.approved_at
                 })
 
@@ -180,6 +184,7 @@ def get_news_feed(
             "user_name": approval.approver.full_name if approval.approver else None,
             "model_name": model_context,
             "model_id": first_model_id,
+            "entity_link": f"/validation-workflow/{approval.request_id}",
             "created_at": approval.approved_at
         })
 
@@ -207,6 +212,7 @@ def get_news_feed(
             "user_name": event.changed_by.full_name if event.changed_by else None,
             "model_name": rec.model.model_name,
             "model_id": rec.model_id,
+            "entity_link": f"/recommendations/{rec.recommendation_id}",
             "created_at": event.changed_at
         })
 
@@ -242,6 +248,7 @@ def get_news_feed(
             "user_name": event.changed_by.full_name if event.changed_by else None,
             "model_name": model_context,
             "model_id": first_model_id,
+            "entity_link": f"/validation-workflow/{event.request.request_id}",
             "created_at": event.changed_at
         })
 
@@ -255,16 +262,22 @@ def get_news_feed(
     ).order_by(ModelApprovalStatusHistory.changed_at.desc()).limit(50).all()
 
     for event in approval_status_events:
-        old_status = event.old_status or "Initial"
+        old_status = event.old_status
         new_status = event.new_status
+        # Format status text - if no old status, just show "set to X"
+        if old_status:
+            status_text = f"Model approval status: {old_status} → {new_status}"
+        else:
+            status_text = f"Model approval status set to {new_status}"
         feed.append({
             "id": f"approval_status_{event.history_id}",
             "type": "approval_status",
             "action": new_status.lower(),
-            "text": f"Model approval status: {old_status} → {new_status}",
-            "user_name": None,  # System-triggered
+            "text": status_text,
+            "user_name": "System",  # System-triggered events
             "model_name": event.model.model_name,
             "model_id": event.model_id,
+            "entity_link": f"/models/{event.model_id}",
             "created_at": event.changed_at
         })
 
@@ -292,6 +305,7 @@ def get_news_feed(
                 "user_name": record.attesting_user.full_name if record.attesting_user else None,
                 "model_name": record.model.model_name,
                 "model_id": record.model_id,
+                "entity_link": f"/attestations/{record.attestation_id}",
                 "created_at": record.attested_at
             })
         # Admin review event
@@ -305,6 +319,7 @@ def get_news_feed(
                 "user_name": record.reviewed_by.full_name if record.reviewed_by else None,
                 "model_name": record.model.model_name,
                 "model_id": record.model_id,
+                "entity_link": f"/attestations/{record.attestation_id}",
                 "created_at": record.reviewed_at
             })
 
@@ -327,6 +342,7 @@ def get_news_feed(
             "user_name": version.created_by.full_name if version.created_by else None,
             "model_name": version.model.model_name,
             "model_id": version.model_id,
+            "entity_link": f"/models/{version.model_id}/versions/{version.version_id}",
             "created_at": version.created_at
         })
 
