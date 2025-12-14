@@ -107,7 +107,7 @@ Attestation questions are stored in the existing taxonomy system, allowing Admin
 | `ROLES_COMPLIANCE` | I comply with the related Roles and Responsibilities for my team within the Policy (Section 8.0). | ANNUAL | No |
 | `EXCEPTIONS_REPORTED` | I have made Model Validation aware of any additional comments and/or any exceptions to the Policy. | BOTH | Yes (if No) |
 | `LIMITATIONS_NOTIFIED` | I will notify model users of critical model limitations to support appropriate and informed model usage. | BOTH | No |
-| `RESTRICTIONS_IMPLEMENTED` | I confirm any restrictions on model use have been implemented. | BOTH | Yes (if No) |
+| `RESTRICTIONS_IMPLEMENTED` | I confirm any restrictions on model use have been implemented, and the model remains in use in accordance with its approved intended use(s). | BOTH | Yes (if No) |
 
 See [Appendix C](#appendix-c-attestation-questions-from-policy) for full question text.
 
@@ -1358,7 +1358,7 @@ These questions are seeded into the "Attestation Questions" taxonomy and can be 
    > I will notify model users of critical model limitations to support appropriate and informed model usage.
 
 7. **RESTRICTIONS_IMPLEMENTED** (requires comment if No)
-   > I confirm any restrictions on model use have been implemented.
+   > I confirm any restrictions on model use have been implemented, and the model remains in use in accordance with its approved intended use(s).
 
 ### Questions for ANNUAL Cycles Only
 

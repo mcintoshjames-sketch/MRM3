@@ -21,4 +21,4 @@ I have made Model Validation aware of any additional comments and/or any excepti
 
 I will notify model users of critical model limitations to support appropriate and informed model usage.
 
-I confirm any restrictions on model use have been implemented.
+I confirm any restrictions on model use have been implemented, and the model remains in use in accordance with its approved intended use(s).

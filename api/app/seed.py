@@ -409,7 +409,8 @@ def seed_taxonomy_reference_data(db):
                 "description": "Model is 1096-1825 days (3-5 years) past due",
                 "min_days": 1096,
                 "max_days": 1825,
-                "downgrade_notches": 3,  # 3 notch penalty (max) for 3-5 years overdue
+                # 3 notch penalty (max) for 3-5 years overdue
+                "downgrade_notches": 3,
             },
             {
                 "code": "OBSOLETE",
@@ -417,7 +418,8 @@ def seed_taxonomy_reference_data(db):
                 "description": "Model is more than 1825 days (5+ years) past due",
                 "min_days": 1826,
                 "max_days": None,
-                "downgrade_notches": 3,  # 3 notch penalty (max) for 5+ years overdue
+                # 3 notch penalty (max) for 5+ years overdue
+                "downgrade_notches": 3,
             },
         ],
     )
@@ -941,11 +943,13 @@ def seed_lob_units(db) -> int:
         return existing_mrm.lob_id
 
     # Check if S0001 already exists (from imported data)
-    existing_s0001 = db.query(LOBUnit).filter(LOBUnit.org_unit == "S0001").first()
+    existing_s0001 = db.query(LOBUnit).filter(
+        LOBUnit.org_unit == "S0001").first()
     if existing_s0001:
         print("✓ LOB units already imported (found S0001), skipping seed")
         # Return placeholder LOB if it exists, otherwise first LOB
-        placeholder = db.query(LOBUnit).filter(LOBUnit.org_unit == "S9999").first()
+        placeholder = db.query(LOBUnit).filter(
+            LOBUnit.org_unit == "S9999").first()
         if placeholder:
             return placeholder.lob_id
         return existing_s0001.lob_id
@@ -2556,7 +2560,8 @@ def seed_database():
                         current_status_id=approved_status.value_id,
                         created_at=prior_val_date - timedelta(days=60),
                         updated_at=prior_val_date,
-                        completion_date=datetime.combine(prior_val_date, datetime.min.time())
+                        completion_date=datetime.combine(
+                            prior_val_date, datetime.min.time())
                     )
                     db.add(prior_req_f)
                     db.flush()
@@ -2582,12 +2587,14 @@ def seed_database():
                         requestor_id=admin.user_id,
                         validation_type_id=comprehensive_val_type.value_id,
                         priority_id=standard_priority.value_id,
-                        target_completion_date=today + timedelta(days=60),  # optimistic target
+                        target_completion_date=today +
+                        timedelta(days=60),  # optimistic target
                         current_status_id=planning_status.value_id,
                         prior_validation_request_id=prior_req_f.request_id,
                         submission_due_date=submission_due_f,
                         submission_received_date=None,  # NOT YET SUBMITTED - this is why it's overdue
-                        created_at=submission_due_f - timedelta(days=30),  # Created before due date
+                        created_at=submission_due_f -
+                        timedelta(days=30),  # Created before due date
                         updated_at=utc_now()
                     )
                     db.add(current_req_f)
@@ -2606,7 +2613,8 @@ def seed_database():
                         independence_attestation=True
                     ))
 
-                    print("✓ Created 'Demo: Awaiting Submission' (PRE_SUBMISSION overdue - MODERATE - ~420 days overdue)")
+                    print(
+                        "✓ Created 'Demo: Awaiting Submission' (PRE_SUBMISSION overdue - MODERATE - ~420 days overdue)")
 
                 # ============================================================
                 # Model G: VALIDATION_IN_PROGRESS Overdue (Validation Behind Schedule)
@@ -2645,7 +2653,8 @@ def seed_database():
                         current_status_id=approved_status.value_id,
                         created_at=prior_val_date_g - timedelta(days=60),
                         updated_at=prior_val_date_g,
-                        completion_date=datetime.combine(prior_val_date_g, datetime.min.time())
+                        completion_date=datetime.combine(
+                            prior_val_date_g, datetime.min.time())
                     )
                     db.add(prior_req_g)
                     db.flush()
@@ -2666,15 +2675,18 @@ def seed_database():
 
                     # Step 2: Create CURRENT revalidation request (IN_PROGRESS, behind schedule)
                     # submission_due_date = prior_val_date_g + 12 months = 6 months ago
-                    submission_due_g = prior_val_date_g + timedelta(days=12 * 30)
+                    submission_due_g = prior_val_date_g + \
+                        timedelta(days=12 * 30)
                     # Model owner submitted during grace period (about 2 weeks after due date)
-                    submission_received_g = submission_due_g + timedelta(days=14)
+                    submission_received_g = submission_due_g + \
+                        timedelta(days=14)
 
                     current_req_g = ValidationRequest(
                         requestor_id=admin.user_id,
                         validation_type_id=comprehensive_val_type.value_id,
                         priority_id=standard_priority.value_id,
-                        target_completion_date=today + timedelta(days=30),  # revised target
+                        target_completion_date=today +
+                        timedelta(days=30),  # revised target
                         current_status_id=in_progress_status.value_id,
                         prior_validation_request_id=prior_req_g.request_id,
                         submission_due_date=submission_due_g,
@@ -2694,7 +2706,8 @@ def seed_database():
                         request_id=current_req_g.request_id,
                         validator_id=validator.user_id,
                         is_primary=True,
-                        assignment_date=submission_received_g + timedelta(days=7),
+                        assignment_date=submission_received_g +
+                        timedelta(days=7),
                         independence_attestation=True,
                         estimated_hours=80.0,
                         actual_hours=40.0  # Only halfway done
@@ -2718,10 +2731,12 @@ def seed_database():
                         changed_at=submission_received_g + timedelta(days=14)
                     ))
 
-                    print("✓ Created 'Demo: Validation Behind Schedule' (VALIDATION_IN_PROGRESS overdue - work behind schedule)")
+                    print(
+                        "✓ Created 'Demo: Validation Behind Schedule' (VALIDATION_IN_PROGRESS overdue - work behind schedule)")
 
             else:
-                print("⚠ Missing Tier 1 or status taxonomy values - skipping overdue report demo data")
+                print(
+                    "⚠ Missing Tier 1 or status taxonomy values - skipping overdue report demo data")
 
             db.commit()
             print("✓ Demo data creation completed\n")
@@ -3811,7 +3826,7 @@ ATTESTATION_QUESTIONS = [
     {
         "code": "ATT_Q10_USE_RESTRICTIONS",
         "label": "Use Restrictions Implemented",
-        "description": "I confirm any restrictions on model use have been implemented.",
+        "description": "I confirm any restrictions on model use have been implemented, and the model remains in use in accordance with its approved intended use(s).",
         "sort_order": 10
     },
 ]
@@ -3904,7 +3919,8 @@ def seed_attestation_questions(db):
                     db.add(config)
                     print(f"✓ Created attestation question config: {code}")
                 else:
-                    print(f"✓ Attestation question config already exists: {code}")
+                    print(
+                        f"✓ Attestation question config already exists: {code}")
 
         db.commit()
 
@@ -3985,7 +4001,8 @@ def seed_attestation_defaults(db):
                 created_by_user_id=admin.user_id
             )
             db.add(model_override_rule)
-            print(f"✓ Created MODEL_OVERRIDE rule for {first_model.model_name}")
+            print(
+                f"✓ Created MODEL_OVERRIDE rule for {first_model.model_name}")
         else:
             print("✓ MODEL_OVERRIDE rule already exists")
     else:
@@ -4052,7 +4069,8 @@ def seed_attestation_defaults(db):
                         created_by_user_id=admin.user_id
                     )
                     db.add(target)
-                    print(f"✓ Created coverage target for {tier_code}: {target_config['target_percentage']}%")
+                    print(
+                        f"✓ Created coverage target for {tier_code}: {target_config['target_percentage']}%")
                 else:
                     print(f"✓ Coverage target already exists for {tier_code}")
 
@@ -4067,30 +4085,51 @@ def seed_methodology_library(db):
 
     # Define categories with their codes
     categories_data = [
-        {"code": "CR_WHOLESALE", "name": "Credit Risk (Wholesale)", "sort_order": 1, "is_aiml": False},
-        {"code": "CR_PORTFOLIO", "name": "Credit Risk (Portfolio)", "sort_order": 2, "is_aiml": False},
-        {"code": "CR_ACCOUNTING", "name": "Credit Risk (Accounting)", "sort_order": 3, "is_aiml": False},
-        {"code": "MR_RATES", "name": "Market Risk (Rates)", "sort_order": 4, "is_aiml": False},
-        {"code": "MR_VOLATILITY", "name": "Market Risk (Volatility)", "sort_order": 5, "is_aiml": False},
-        {"code": "MR_VAR", "name": "Market Risk (VaR)", "sort_order": 6, "is_aiml": False},
-        {"code": "NUM_INTEGRATION", "name": "Numerical Methods (Integration)", "sort_order": 7, "is_aiml": False},
-        {"code": "NUM_PRICING", "name": "Numerical Methods (Pricing)", "sort_order": 8, "is_aiml": False},
-        {"code": "NUM_ROOTS", "name": "Numerical Methods (Roots)", "sort_order": 9, "is_aiml": False},
-        {"code": "NUM_PDE", "name": "Numerical Methods (PDE)", "sort_order": 10, "is_aiml": False},
-        {"code": "OPTIMIZATION", "name": "Optimization", "sort_order": 11, "is_aiml": False},
-        {"code": "ALM_BEHAVIORAL", "name": "ALM (Behavioral)", "sort_order": 12, "is_aiml": False},
-        {"code": "ALM_PREPAYMENT", "name": "ALM (Prepayment)", "sort_order": 13, "is_aiml": False},
-        {"code": "ALM_LIQUIDITY", "name": "ALM (Liquidity)", "sort_order": 14, "is_aiml": False},
-        {"code": "OP_RISK", "name": "Operational Risk", "sort_order": 15, "is_aiml": False},
-        {"code": "FRAUD", "name": "Fraud Detection", "sort_order": 16, "is_aiml": False},
-        {"code": "AIML_TABULAR", "name": "AI/ML (Tabular)", "sort_order": 17, "is_aiml": True},
-        {"code": "AIML_TIMESERIES", "name": "AI/ML (Time Series)", "sort_order": 18, "is_aiml": True},
-        {"code": "AIML_NLP", "name": "AI/ML (NLP)", "sort_order": 19, "is_aiml": True},
-        {"code": "AIML_RL", "name": "AI/ML (RL)", "sort_order": 20, "is_aiml": True},
+        {"code": "CR_WHOLESALE",
+            "name": "Credit Risk (Wholesale)", "sort_order": 1, "is_aiml": False},
+        {"code": "CR_PORTFOLIO",
+            "name": "Credit Risk (Portfolio)", "sort_order": 2, "is_aiml": False},
+        {"code": "CR_ACCOUNTING",
+            "name": "Credit Risk (Accounting)", "sort_order": 3, "is_aiml": False},
+        {"code": "MR_RATES",
+            "name": "Market Risk (Rates)", "sort_order": 4, "is_aiml": False},
+        {"code": "MR_VOLATILITY",
+            "name": "Market Risk (Volatility)", "sort_order": 5, "is_aiml": False},
+        {"code": "MR_VAR",
+            "name": "Market Risk (VaR)", "sort_order": 6, "is_aiml": False},
+        {"code": "NUM_INTEGRATION",
+            "name": "Numerical Methods (Integration)", "sort_order": 7, "is_aiml": False},
+        {"code": "NUM_PRICING",
+            "name": "Numerical Methods (Pricing)", "sort_order": 8, "is_aiml": False},
+        {"code": "NUM_ROOTS",
+            "name": "Numerical Methods (Roots)", "sort_order": 9, "is_aiml": False},
+        {"code": "NUM_PDE",
+            "name": "Numerical Methods (PDE)", "sort_order": 10, "is_aiml": False},
+        {"code": "OPTIMIZATION", "name": "Optimization",
+            "sort_order": 11, "is_aiml": False},
+        {"code": "ALM_BEHAVIORAL",
+            "name": "ALM (Behavioral)", "sort_order": 12, "is_aiml": False},
+        {"code": "ALM_PREPAYMENT",
+            "name": "ALM (Prepayment)", "sort_order": 13, "is_aiml": False},
+        {"code": "ALM_LIQUIDITY",
+            "name": "ALM (Liquidity)", "sort_order": 14, "is_aiml": False},
+        {"code": "OP_RISK", "name": "Operational Risk",
+            "sort_order": 15, "is_aiml": False},
+        {"code": "FRAUD", "name": "Fraud Detection",
+            "sort_order": 16, "is_aiml": False},
+        {"code": "AIML_TABULAR",
+            "name": "AI/ML (Tabular)", "sort_order": 17, "is_aiml": True},
+        {"code": "AIML_TIMESERIES",
+            "name": "AI/ML (Time Series)", "sort_order": 18, "is_aiml": True},
+        {"code": "AIML_NLP",
+            "name": "AI/ML (NLP)", "sort_order": 19, "is_aiml": True},
+        {"code": "AIML_RL",
+            "name": "AI/ML (RL)", "sort_order": 20, "is_aiml": True},
     ]
 
     # Create a mapping of category name to code for lookups
-    category_name_to_code = {cat["name"]: cat["code"] for cat in categories_data}
+    category_name_to_code = {cat["name"]: cat["code"]
+                             for cat in categories_data}
 
     # Define all methodologies
     methodologies_data = [
@@ -4333,7 +4372,8 @@ def seed_methodology_library(db):
             existing.sort_order = sort_order
 
     db.commit()
-    print(f"✓ Methodology Library seeded: {len(categories_data)} categories, {method_count} new methodologies")
+    print(
+        f"✓ Methodology Library seeded: {len(categories_data)} categories, {method_count} new methodologies")
 
 
 if __name__ == "__main__":

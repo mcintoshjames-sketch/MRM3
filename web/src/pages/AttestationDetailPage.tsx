@@ -301,7 +301,7 @@ export default function AttestationDetailPage() {
     const canReview = (user?.role === 'Admin' || user?.role === 'Validator') && attestation?.status === 'SUBMITTED';
     // User is owner if they are the attesting user OR the model owner
     const isOwner = attestation?.attesting_user.user_id === user?.user_id ||
-                    attestation?.model.owner_id === user?.user_id;
+        attestation?.model.owner_id === user?.user_id;
 
     if (loading) {
         return (
@@ -417,11 +417,10 @@ export default function AttestationDetailPage() {
 
                                     {/* Answer Selection */}
                                     <div className="flex gap-4 mb-3">
-                                        <label className={`flex items-center gap-2 px-4 py-2 rounded-lg border cursor-pointer transition-colors ${
-                                            answers[q.value_id]?.answer === true
+                                        <label className={`flex items-center gap-2 px-4 py-2 rounded-lg border cursor-pointer transition-colors ${answers[q.value_id]?.answer === true
                                                 ? 'border-green-500 bg-green-50 text-green-700'
                                                 : 'border-gray-200 hover:border-gray-300'
-                                        } ${!canEdit ? 'cursor-default' : ''}`}>
+                                            } ${!canEdit ? 'cursor-default' : ''}`}>
                                             <input
                                                 type="radio"
                                                 name={`question-${q.value_id}`}
@@ -430,11 +429,10 @@ export default function AttestationDetailPage() {
                                                 disabled={!canEdit}
                                                 className="hidden"
                                             />
-                                            <span className={`w-4 h-4 rounded-full border-2 flex items-center justify-center ${
-                                                answers[q.value_id]?.answer === true
+                                            <span className={`w-4 h-4 rounded-full border-2 flex items-center justify-center ${answers[q.value_id]?.answer === true
                                                     ? 'border-green-500 bg-green-500'
                                                     : 'border-gray-300'
-                                            }`}>
+                                                }`}>
                                                 {answers[q.value_id]?.answer === true && (
                                                     <svg className="w-2.5 h-2.5 text-white" fill="currentColor" viewBox="0 0 20 20">
                                                         <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
@@ -443,11 +441,10 @@ export default function AttestationDetailPage() {
                                             </span>
                                             Yes
                                         </label>
-                                        <label className={`flex items-center gap-2 px-4 py-2 rounded-lg border cursor-pointer transition-colors ${
-                                            answers[q.value_id]?.answer === false
+                                        <label className={`flex items-center gap-2 px-4 py-2 rounded-lg border cursor-pointer transition-colors ${answers[q.value_id]?.answer === false
                                                 ? 'border-red-500 bg-red-50 text-red-700'
                                                 : 'border-gray-200 hover:border-gray-300'
-                                        } ${!canEdit ? 'cursor-default' : ''}`}>
+                                            } ${!canEdit ? 'cursor-default' : ''}`}>
                                             <input
                                                 type="radio"
                                                 name={`question-${q.value_id}`}
@@ -456,11 +453,10 @@ export default function AttestationDetailPage() {
                                                 disabled={!canEdit}
                                                 className="hidden"
                                             />
-                                            <span className={`w-4 h-4 rounded-full border-2 flex items-center justify-center ${
-                                                answers[q.value_id]?.answer === false
+                                            <span className={`w-4 h-4 rounded-full border-2 flex items-center justify-center ${answers[q.value_id]?.answer === false
                                                     ? 'border-red-500 bg-red-500'
                                                     : 'border-gray-300'
-                                            }`}>
+                                                }`}>
                                                 {answers[q.value_id]?.answer === false && (
                                                     <svg className="w-2.5 h-2.5 text-white" fill="currentColor" viewBox="0 0 20 20">
                                                         <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
@@ -568,16 +564,15 @@ export default function AttestationDetailPage() {
                                 <div className="flex items-start justify-between">
                                     <div>
                                         <div className="flex items-center gap-2">
-                                            <span className={`px-2 py-0.5 text-xs font-medium rounded ${
-                                                link.change_type === 'MODEL_EDIT' ? 'bg-blue-100 text-blue-700' :
-                                                link.change_type === 'MODEL_VERSION' ? 'bg-purple-100 text-purple-700' :
-                                                link.change_type === 'NEW_MODEL' ? 'bg-green-100 text-green-700' :
-                                                'bg-red-100 text-red-700'
-                                            }`}>
+                                            <span className={`px-2 py-0.5 text-xs font-medium rounded ${link.change_type === 'MODEL_EDIT' ? 'bg-blue-100 text-blue-700' :
+                                                    link.change_type === 'MODEL_VERSION' ? 'bg-purple-100 text-purple-700' :
+                                                        link.change_type === 'NEW_MODEL' ? 'bg-green-100 text-green-700' :
+                                                            'bg-red-100 text-red-700'
+                                                }`}>
                                                 {link.change_type === 'MODEL_EDIT' ? 'Model Edit' :
-                                                 link.change_type === 'MODEL_VERSION' ? 'Model Version' :
-                                                 link.change_type === 'NEW_MODEL' ? 'New Model' :
-                                                 'Decommission'}
+                                                    link.change_type === 'MODEL_VERSION' ? 'Model Version' :
+                                                        link.change_type === 'NEW_MODEL' ? 'New Model' :
+                                                            'Decommission'}
                                             </span>
                                             <span className="text-xs text-gray-500">
                                                 {link.created_at.split('T')[0]}
@@ -691,7 +686,7 @@ export default function AttestationDetailPage() {
                     <div className="flex items-center justify-between">
                         <div>
                             <p className="text-sm text-gray-600">
-                                By submitting, you confirm that you have reviewed and answered all questions truthfully.
+                                By submitting, you confirm that you confirm model inventory data is correct and up-to-date and you have reviewed and answered all questions truthfully.
                             </p>
                         </div>
                         <button
