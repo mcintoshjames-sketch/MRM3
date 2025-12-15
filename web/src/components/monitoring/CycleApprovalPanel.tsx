@@ -1,19 +1,36 @@
 import React from 'react';
 
 // Types
+interface RegionRef {
+    region_id: number;
+    region_name: string;
+    region_code: string;
+}
+
+interface UserRef {
+    user_id: number;
+    email: string;
+    full_name: string;
+}
+
 export interface CycleApproval {
     approval_id: number;
+    cycle_id: number;
     approval_type: string;
-    region_id: number | null;
-    region_name?: string | null;
-    approval_status: string;
-    approver_name?: string | null;
-    approved_at?: string | null;
-    comments?: string | null;
+    region?: RegionRef | null;
+    approver?: UserRef | null;
+    represented_region?: RegionRef | null;
     is_required: boolean;
-    voided_at?: string | null;
+    approval_status: string;
+    comments?: string | null;
+    approved_at?: string | null;
+    approval_evidence?: string | null;
+    voided_by?: UserRef | null;
     void_reason?: string | null;
+    voided_at?: string | null;
+    created_at: string;
     can_approve: boolean;
+    is_proxy_approval: boolean;
 }
 
 export interface CycleApprovalPanelProps {
@@ -117,7 +134,7 @@ const CycleApprovalPanel: React.FC<CycleApprovalPanelProps> = ({
                             <div className="flex-1">
                                 <div className="flex items-center gap-2">
                                     <span className="font-medium">
-                                        {approval.approval_type === 'Global' ? 'Global Approval' : `${approval.region_name || 'Regional'} Approval`}
+                                        {approval.approval_type === 'Global' ? 'Global Approval' : `${approval.region?.region_name || 'Regional'} Approval`}
                                     </span>
                                     <span className={`px-2 py-0.5 rounded text-xs ${
                                         approval.approval_status === 'Approved' ? 'bg-green-100 text-green-800' :
@@ -129,9 +146,9 @@ const CycleApprovalPanel: React.FC<CycleApprovalPanelProps> = ({
                                     </span>
                                 </div>
                                 {/* Approval details */}
-                                {approval.approver_name && (
+                                {approval.approver && (
                                     <p className="text-sm text-gray-600 mt-1">
-                                        {approval.approval_status === 'Approved' ? 'Approved' : 'Processed'} by {approval.approver_name}
+                                        {approval.approval_status === 'Approved' ? 'Approved' : 'Processed'} by {approval.approver.full_name}
                                         {approval.approved_at && ` on ${approval.approved_at.split('T')[0]}`}
                                     </p>
                                 )}

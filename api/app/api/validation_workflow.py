@@ -15,6 +15,7 @@ from app.core.database import get_db
 from app.core.time import utc_now
 from app.core.deps import get_current_user
 from app.core.rule_evaluation import get_required_approver_roles
+from app.core.exception_detection import autoclose_type3_on_full_validation_approved
 from app.models import (
     User, Model, TaxonomyValue, Taxonomy, AuditLog, Region,
     ValidationRequest, ValidationRequestModelVersion, ValidationStatusHistory, ValidationAssignment,
@@ -4200,6 +4201,10 @@ def submit_approval(
                             timestamp=utc_now()
                         )
                         db.add(status_audit)
+
+                        # Auto-close Type 3 exceptions for models in this validation
+                        # (only for full validations, not interim)
+                        autoclose_type3_on_full_validation_approved(db, validation_request)
 
     # ===== UPDATE MODEL APPROVAL STATUS =====
     # Recalculate approval status for all models in this validation request

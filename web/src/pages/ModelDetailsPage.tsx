@@ -15,6 +15,7 @@ import LineageViewer from '../components/LineageViewer';
 import ModelRiskAssessmentTab from '../components/ModelRiskAssessmentTab';
 import ModelMonitoringTab from '../components/ModelMonitoringTab';
 import ModelLimitationsTab from '../components/ModelLimitationsTab';
+import ModelExceptionsTab from '../components/ModelExceptionsTab';
 import OverdueCommentaryModal, { OverdueType } from '../components/OverdueCommentaryModal';
 import { useAuth } from '../contexts/AuthContext';
 import { ModelVersion } from '../api/versions';
@@ -141,6 +142,8 @@ interface Model {
     // Computed approval status fields
     approval_status: string | null;
     approval_status_label: string | null;
+    // Computed exception count for UI badge
+    open_exception_count: number;
     owner: User;
     developer: User | null;
     shared_owner: User | null;
@@ -316,7 +319,7 @@ export default function ModelDetailsPage() {
     const [decommissioningRequests, setDecommissioningRequests] = useState<DecommissioningRequestListItem[]>([]);
     const [loading, setLoading] = useState(true);
     const [editing, setEditing] = useState(false);
-    const [activeTab, setActiveTab] = useState<'details' | 'versions' | 'validations' | 'relationships' | 'activity' | 'recommendations' | 'limitations' | 'monitoring' | 'decommissioning' | 'risk-assessment'>('details');
+    const [activeTab, setActiveTab] = useState<'details' | 'versions' | 'validations' | 'relationships' | 'activity' | 'recommendations' | 'limitations' | 'monitoring' | 'decommissioning' | 'risk-assessment' | 'exceptions'>('details');
     const [relationshipSubTab, setRelationshipSubTab] = useState<'hierarchy' | 'dependencies' | 'applications' | 'lineage'>('hierarchy');
     const [showDelegates, setShowDelegates] = useState(false);
     const [showSubmitChangeModal, setShowSubmitChangeModal] = useState(false);
@@ -1770,6 +1773,20 @@ export default function ModelDetailsPage() {
                                 {decommissioningRequests.length > 0 && decommissioningRequests[0].status !== 'APPROVED' && decommissioningRequests[0].status !== 'REJECTED' && decommissioningRequests[0].status !== 'WITHDRAWN' && (
                                     <span className="ml-1 px-1.5 py-0.5 text-xs bg-orange-100 text-orange-800 rounded-full">
                                         {decommissioningRequests[0].status}
+                                    </span>
+                                )}
+                            </button>
+                            <button
+                                onClick={() => setActiveTab('exceptions')}
+                                className={`py-2 px-1 border-b-2 font-medium text-sm ${activeTab === 'exceptions'
+                                    ? 'border-blue-500 text-blue-600'
+                                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                                    }`}
+                            >
+                                Exceptions
+                                {model.open_exception_count > 0 && (
+                                    <span className="ml-2 px-2 py-0.5 text-xs font-medium rounded-full bg-red-100 text-red-800">
+                                        {model.open_exception_count}
                                     </span>
                                 )}
                             </button>
@@ -3833,6 +3850,10 @@ export default function ModelDetailsPage() {
                             ))}
                         </div>
                     )}
+                </div>
+            ) : activeTab === 'exceptions' ? (
+                <div className="bg-white p-6 rounded-lg shadow-md">
+                    <ModelExceptionsTab modelId={model.model_id} />
                 </div>
             ) : null}
 

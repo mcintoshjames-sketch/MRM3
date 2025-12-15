@@ -320,6 +320,9 @@ def _upsert_taxonomy_with_values(
             # Update MRSA-related fields if present
             if "requires_irp" in entry:
                 record.requires_irp = entry.get("requires_irp")
+            # Update system protection flag if present
+            if "is_system_protected" in entry:
+                record.is_system_protected = entry.get("is_system_protected")
         else:
             db.add(
                 TaxonomyValue(
@@ -336,6 +339,7 @@ def _upsert_taxonomy_with_values(
                     downgrade_notches=entry.get(
                         "downgrade_notches") if taxonomy_type == "bucket" else None,
                     requires_irp=entry.get("requires_irp"),
+                    is_system_protected=entry.get("is_system_protected", False),
                     created_at=utc_now(),
                 )
             )
@@ -2013,6 +2017,31 @@ def seed_database():
                         "label": "Annually",
                         "description": "Model runs annually",
                         "sort_order": 4
+                    },
+                ]
+            },
+            {
+                "name": "Exception Closure Reason",
+                "description": "Reasons for closing model exceptions",
+                "is_system": True,
+                "values": [
+                    {
+                        "code": "NO_LONGER_EXCEPTION",
+                        "label": "No longer an exception",
+                        "description": "The underlying condition that triggered the exception has been resolved",
+                        "sort_order": 1
+                    },
+                    {
+                        "code": "EXCEPTION_OVERRIDDEN",
+                        "label": "Exception overridden",
+                        "description": "Management has approved an override for this exception",
+                        "sort_order": 2
+                    },
+                    {
+                        "code": "OTHER",
+                        "label": "Other",
+                        "description": "Other closure reason - see narrative for details",
+                        "sort_order": 3
                     },
                 ]
             }
@@ -3827,7 +3856,8 @@ ATTESTATION_QUESTIONS = [
         "code": "ATT_Q10_USE_RESTRICTIONS",
         "label": "Use Restrictions Implemented",
         "description": "I confirm any restrictions on model use have been implemented, and the model remains in use in accordance with its approved intended use(s).",
-        "sort_order": 10
+        "sort_order": 10,
+        "is_system_protected": True,  # Used for Type 2 exception detection - cannot be deleted/deactivated
     },
 ]
 

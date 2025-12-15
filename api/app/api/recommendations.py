@@ -1022,6 +1022,7 @@ def create_recommendation(
         model_id=rec_data.model_id,
         validation_request_id=rec_data.validation_request_id,
         monitoring_cycle_id=rec_data.monitoring_cycle_id,
+        plan_metric_id=rec_data.plan_metric_id,
         title=rec_data.title,
         description=rec_data.description,
         root_cause_analysis=rec_data.root_cause_analysis,
@@ -1695,6 +1696,10 @@ def update_recommendation(
         old_values["assigned_to_id"] = recommendation.assigned_to_id
         new_values["assigned_to_id"] = rec_update.assigned_to_id
         recommendation.assigned_to_id = rec_update.assigned_to_id
+    if rec_update.plan_metric_id is not None and rec_update.plan_metric_id != recommendation.plan_metric_id:
+        old_values["plan_metric_id"] = recommendation.plan_metric_id
+        new_values["plan_metric_id"] = rec_update.plan_metric_id
+        recommendation.plan_metric_id = rec_update.plan_metric_id
     if rec_update.current_target_date is not None:
         old_date = str(recommendation.current_target_date) if recommendation.current_target_date else None
         new_date = str(rec_update.current_target_date)

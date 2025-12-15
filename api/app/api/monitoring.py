@@ -94,6 +94,11 @@ from app.schemas.monitoring import (
     CSVImportPreviewResponse,
     CSVImportResultResponse,
 )
+from app.core.exception_detection import (
+    detect_type1_unmitigated_performance,
+    detect_type1_persistent_red_for_model,
+    autoclose_type1_on_improved_result,
+)
 
 router = APIRouter()
 
@@ -2546,7 +2551,10 @@ def get_monitoring_cycle(
         joinedload(MonitoringCycle.submitted_by),
         joinedload(MonitoringCycle.completed_by),
         joinedload(MonitoringCycle.results),
-        joinedload(MonitoringCycle.approvals),
+        joinedload(MonitoringCycle.approvals).joinedload(MonitoringCycleApproval.approver),
+        joinedload(MonitoringCycle.approvals).joinedload(MonitoringCycleApproval.region),
+        joinedload(MonitoringCycle.approvals).joinedload(MonitoringCycleApproval.represented_region),
+        joinedload(MonitoringCycle.approvals).joinedload(MonitoringCycleApproval.voided_by),
         joinedload(MonitoringCycle.plan_version),
         joinedload(MonitoringCycle.version_locked_by)
     ).filter(MonitoringCycle.cycle_id == cycle_id).first()
@@ -2577,6 +2585,35 @@ def get_monitoring_cycle(
             "email": cycle.version_locked_by.email,
             "full_name": cycle.version_locked_by.full_name
         }
+
+    # Build approvals list with can_approve permissions
+    approvals_list = []
+    if cycle.approvals:
+        # Only calculate can_approve if cycle is in PENDING_APPROVAL status
+        if cycle.status != MonitoringCycleStatus.PENDING_APPROVAL.value:
+            approvals_list = [_build_approval_response(a, can_approve=False) for a in cycle.approvals]
+        else:
+            # Get team member IDs for Global approval permission check
+            plan = db.query(MonitoringPlan).options(
+                joinedload(MonitoringPlan.team).joinedload(MonitoringTeam.members)
+            ).filter(MonitoringPlan.plan_id == cycle.plan_id).first()
+
+            team_member_ids = []
+            if plan and plan.team:
+                team_member_ids = [m.user_id for m in plan.team.members]
+
+            # Get current user's region IDs for Regional approval permission check
+            user_region_ids = [r.region_id for r in current_user.regions]
+
+            # Build responses with can_approve calculated for each approval
+            approvals_list = [
+                _build_approval_response(
+                    a,
+                    can_approve=_can_user_approve_approval(
+                        a, current_user, team_member_ids, user_region_ids)
+                )
+                for a in cycle.approvals
+            ]
 
     return {
         "cycle_id": cycle.cycle_id,
@@ -2613,7 +2650,8 @@ def get_monitoring_cycle(
         "updated_at": cycle.updated_at,
         "result_count": len(cycle.results),
         "approval_count": len([a for a in cycle.approvals if a.is_required and not a.voided_at]),
-        "pending_approval_count": pending_approvals
+        "pending_approval_count": pending_approvals,
+        "approvals": approvals_list
     }
 
 
@@ -2836,6 +2874,11 @@ def create_monitoring_result(
     db.commit()
     db.refresh(result)
 
+    # Auto-close Type 1 exceptions if result improved to GREEN or YELLOW
+    if result.model_id and result.calculated_outcome in [OUTCOME_GREEN, OUTCOME_YELLOW]:
+        autoclose_type1_on_improved_result(db, result)
+        db.commit()  # Persist auto-closed exceptions
+
     # Load relationships
     result = db.query(MonitoringResult).options(
         joinedload(MonitoringResult.model),
@@ -3016,6 +3059,11 @@ def update_monitoring_result(
         )
 
     db.commit()
+
+    # Auto-close Type 1 exceptions if result improved to GREEN or YELLOW
+    if result.model_id and result.calculated_outcome in [OUTCOME_GREEN, OUTCOME_YELLOW]:
+        autoclose_type1_on_improved_result(db, result)
+        db.commit()  # Persist auto-closed exceptions
 
     # Reload with relationships
     result = db.query(MonitoringResult).options(
@@ -3905,6 +3953,15 @@ def _check_and_complete_cycle(db: Session, cycle: MonitoringCycle, current_user:
             }
         )
 
+        # Detect Type 1 exceptions (unmitigated performance) for models in this cycle
+        # Two triggers for Type 1:
+        # 1. RED results without active recommendations for that metric
+        # 2. RED results persisting across consecutive cycles
+        if cycle.plan and cycle.plan.models:
+            for model in cycle.plan.models:
+                detect_type1_unmitigated_performance(db, model.model_id)
+                detect_type1_persistent_red_for_model(db, model.model_id)
+
 
 @router.post("/monitoring/cycles/{cycle_id}/approvals/{approval_id}/approve", response_model=MonitoringCycleApprovalResponse)
 def approve_cycle(
@@ -3924,7 +3981,9 @@ def approve_cycle(
     approval_evidence (description of meeting minutes, email confirmation, etc.).
     """
     approval = db.query(MonitoringCycleApproval).options(
-        joinedload(MonitoringCycleApproval.cycle),
+        joinedload(MonitoringCycleApproval.cycle)
+            .joinedload(MonitoringCycle.plan)
+            .joinedload(MonitoringPlan.models),
         joinedload(MonitoringCycleApproval.region)
     ).filter(
         MonitoringCycleApproval.approval_id == approval_id,
@@ -4294,7 +4353,8 @@ def get_metric_trend(
             numeric_value=result.numeric_value,
             calculated_outcome=result.calculated_outcome,
             model_id=result.model_id,
-            model_name=result.model.model_name if result.model else None
+            model_name=result.model.model_name if result.model else None,
+            narrative=result.narrative
         ))
 
     return MetricTrendResponse(

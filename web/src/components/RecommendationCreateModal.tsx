@@ -48,6 +48,10 @@ interface RecommendationCreateModalProps {
     categories: TaxonomyValue[];
     preselectedModelId?: number;
     preselectedValidationRequestId?: number;
+    preselectedMonitoringCycleId?: number;
+    preselectedPlanMetricId?: number;
+    preselectedTitle?: string;
+    preselectedDescription?: string;
 }
 
 export default function RecommendationCreateModal({
@@ -58,14 +62,19 @@ export default function RecommendationCreateModal({
     priorities,
     categories,
     preselectedModelId,
-    preselectedValidationRequestId
+    preselectedValidationRequestId,
+    preselectedMonitoringCycleId,
+    preselectedPlanMetricId,
+    preselectedTitle,
+    preselectedDescription
 }: RecommendationCreateModalProps) {
     const [formData, setFormData] = useState({
         model_id: preselectedModelId || 0,
         validation_request_id: preselectedValidationRequestId || null as number | null,
-        monitoring_cycle_id: null as number | null,
-        title: '',
-        description: '',
+        monitoring_cycle_id: preselectedMonitoringCycleId || null as number | null,
+        plan_metric_id: preselectedPlanMetricId || null as number | null,
+        title: preselectedTitle || '',
+        description: preselectedDescription || '',
         priority_id: 0,
         category_id: null as number | null,
         assigned_to_id: 0,
@@ -222,6 +231,7 @@ export default function RecommendationCreateModal({
                 model_id: formData.model_id,
                 validation_request_id: formData.validation_request_id || undefined,
                 monitoring_cycle_id: formData.monitoring_cycle_id || undefined,
+                plan_metric_id: formData.plan_metric_id || undefined,
                 title: formData.title.trim(),
                 description: formData.description.trim(),
                 priority_id: formData.priority_id,

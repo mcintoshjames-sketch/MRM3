@@ -14,6 +14,7 @@ import MonitoringDataGrid, {
 } from '../components/MonitoringDataGrid';
 import BreachAnnotationPanel from '../components/BreachAnnotationPanel';
 import MonitoringCSVImport from '../components/MonitoringCSVImport';
+import RecommendationCreateModal from '../components/RecommendationCreateModal';
 
 // Types
 interface UserRef {
@@ -169,6 +170,7 @@ const MonitoringCycleDetailPage: React.FC = () => {
     const [approvalModalType, setApprovalModalType] = useState<'approve' | 'reject' | 'void' | null>(null);
     const [selectedApproval, setSelectedApproval] = useState<CycleApproval | null>(null);
     const [approvalComments, setApprovalComments] = useState('');
+    const [approvalEvidence, setApprovalEvidence] = useState('');
     const [approvalLoading, setApprovalLoading] = useState(false);
     const [approvalError, setApprovalError] = useState<string | null>(null);
 
@@ -182,6 +184,10 @@ const MonitoringCycleDetailPage: React.FC = () => {
     const [reportUrl, setReportUrl] = useState('');
     const [requestingApproval, setRequestingApproval] = useState(false);
     const [requestApprovalError, setRequestApprovalError] = useState<string | null>(null);
+
+    // Submit cycle state
+    const [submittingCycle, setSubmittingCycle] = useState(false);
+    const [submitCycleError, setSubmitCycleError] = useState<string | null>(null);
 
     // View mode and data grid state
     const [viewMode, setViewMode] = useState<'grid' | 'card'>('card');
@@ -203,6 +209,15 @@ const MonitoringCycleDetailPage: React.FC = () => {
         };
     } | null>(null);
     const [breachPanelNarrative, setBreachPanelNarrative] = useState('');
+    const [breachPanelCellIds, setBreachPanelCellIds] = useState<{ modelId: number; metricId: number } | null>(null);
+
+    // Recommendation create modal state (triggered from breach panel)
+    const [showRecModal, setShowRecModal] = useState(false);
+    const [recModalData, setRecModalData] = useState<{
+        users: { user_id: number; email: string; full_name: string }[];
+        priorities: { value_id: number; code: string; label: string }[];
+        categories: { value_id: number; code: string; label: string }[];
+    } | null>(null);
 
     // Computed values
     const existingResultsMode = useMemo<'none' | 'plan-level' | 'model-specific'>(() => {
@@ -556,6 +571,7 @@ const MonitoringCycleDetailPage: React.FC = () => {
         const model = plan?.models?.find(m => m.model_id === cell.modelId);
 
         setBreachPanelResultId(result?.result_id || null);
+        setBreachPanelCellIds({ modelId: cell.modelId, metricId: cell.metricId });
         setBreachPanelMetricInfo({
             metricName: metric?.kpm_name || 'Unknown Metric',
             modelName: model?.model_name || 'Unknown Model',
@@ -614,6 +630,52 @@ const MonitoringCycleDetailPage: React.FC = () => {
         }
     };
 
+    // Handler for creating recommendation from breach panel
+    const handleCreateRecommendation = async () => {
+        // Close the breach panel first
+        setBreachPanelOpen(false);
+
+        try {
+            // Fetch required data for the modal in parallel
+            const [usersResp, taxonomiesResp] = await Promise.all([
+                api.get('/auth/users'),
+                api.get('/taxonomies/')
+            ]);
+
+            // Find priority and category taxonomies
+            const priorityTaxonomy = taxonomiesResp.data.find((t: any) => t.name === 'Recommendation Priority');
+            const categoryTaxonomy = taxonomiesResp.data.find((t: any) => t.name === 'Recommendation Category');
+
+            // Fetch values for each taxonomy
+            const [prioritiesResp, categoriesResp] = await Promise.all([
+                priorityTaxonomy ? api.get(`/taxonomies/${priorityTaxonomy.taxonomy_id}`) : Promise.resolve({ data: { values: [] } }),
+                categoryTaxonomy ? api.get(`/taxonomies/${categoryTaxonomy.taxonomy_id}`) : Promise.resolve({ data: { values: [] } })
+            ]);
+
+            setRecModalData({
+                users: usersResp.data.filter((u: any) => u.is_active !== false),
+                priorities: (prioritiesResp.data.values || []).filter((v: any) => v.is_active),
+                categories: (categoriesResp.data.values || []).filter((v: any) => v.is_active)
+            });
+            setShowRecModal(true);
+        } catch (err) {
+            console.error('Failed to load recommendation modal data:', err);
+        }
+    };
+
+    // Handler for recommendation modal close
+    const handleRecModalClose = () => {
+        setShowRecModal(false);
+        setRecModalData(null);
+    };
+
+    // Handler for successful recommendation creation
+    const handleRecCreated = () => {
+        setShowRecModal(false);
+        setRecModalData(null);
+        // Optionally refresh cycle data to reflect any changes
+    };
+
     const handleCSVImportComplete = async () => {
         if (!cycle) return;
 
@@ -643,6 +705,7 @@ const MonitoringCycleDetailPage: React.FC = () => {
         setSelectedApproval(approval);
         setApprovalModalType(type);
         setApprovalComments('');
+        setApprovalEvidence('');
         setApprovalError(null);
     };
 
@@ -650,6 +713,7 @@ const MonitoringCycleDetailPage: React.FC = () => {
         setApprovalModalType(null);
         setSelectedApproval(null);
         setApprovalComments('');
+        setApprovalEvidence('');
         setApprovalError(null);
     };
 
@@ -668,7 +732,10 @@ const MonitoringCycleDetailPage: React.FC = () => {
             const endpoint = `/monitoring/cycles/${cycle.cycle_id}/approvals/${selectedApproval.approval_id}/${approvalModalType}`;
             const payload = approvalModalType === 'void'
                 ? { void_reason: approvalComments }
-                : { comments: approvalComments || null };
+                : {
+                    comments: approvalComments || null,
+                    approval_evidence: approvalEvidence || null
+                };
 
             await api.post(endpoint, payload);
 
@@ -681,6 +748,26 @@ const MonitoringCycleDetailPage: React.FC = () => {
             setApprovalError(err.response?.data?.detail || `Failed to ${approvalModalType} approval`);
         } finally {
             setApprovalLoading(false);
+        }
+    };
+
+    // Submit cycle handler (DATA_COLLECTION -> UNDER_REVIEW)
+    const handleSubmitCycle = async () => {
+        if (!cycle) return;
+
+        setSubmittingCycle(true);
+        setSubmitCycleError(null);
+
+        try {
+            await api.post(`/monitoring/cycles/${cycle.cycle_id}/submit`);
+
+            // Refresh cycle
+            const cycleResp = await api.get(`/monitoring/cycles/${cycle.cycle_id}`);
+            setCycle(cycleResp.data);
+        } catch (err: any) {
+            setSubmitCycleError(err.response?.data?.detail || 'Failed to submit cycle');
+        } finally {
+            setSubmittingCycle(false);
         }
     };
 
@@ -860,6 +947,32 @@ const MonitoringCycleDetailPage: React.FC = () => {
                             </div>
                         </div>
 
+                        {/* Submit Cycle Button - only when DATA_COLLECTION */}
+                        {cycle.status === 'DATA_COLLECTION' && (
+                            <button
+                                onClick={handleSubmitCycle}
+                                disabled={submittingCycle}
+                                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 flex items-center gap-2"
+                            >
+                                {submittingCycle ? (
+                                    <>
+                                        <svg className="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24">
+                                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                        </svg>
+                                        Submitting...
+                                    </>
+                                ) : (
+                                    <>
+                                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                        </svg>
+                                        Submit Cycle
+                                    </>
+                                )}
+                            </button>
+                        )}
+
                         {/* Request Approval Button - only when UNDER_REVIEW */}
                         {cycle.status === 'UNDER_REVIEW' && (
                             <button
@@ -874,6 +987,13 @@ const MonitoringCycleDetailPage: React.FC = () => {
                         )}
                     </div>
                 </div>
+
+                {/* Submit Cycle Error Display */}
+                {submitCycleError && (
+                    <div className="mt-4 p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
+                        {submitCycleError}
+                    </div>
+                )}
 
                 {/* Key dates */}
                 <div className="grid grid-cols-4 gap-4 mt-4 pt-4 border-t">
@@ -1047,7 +1167,7 @@ const MonitoringCycleDetailPage: React.FC = () => {
                             <h3 className="text-lg font-bold">
                                 {approvalModalType === 'approve' ? 'Approve' :
                                  approvalModalType === 'reject' ? 'Reject' :
-                                 'Void'} {selectedApproval.approval_type === 'Global' ? 'Global Approval' : `${selectedApproval.region_name || 'Regional'} Approval`}
+                                 'Void'} {selectedApproval.approval_type === 'Global' ? 'Global Approval' : `${selectedApproval.region?.region_name || 'Regional'} Approval`}
                             </h3>
                         </div>
 
@@ -1100,6 +1220,25 @@ const MonitoringCycleDetailPage: React.FC = () => {
                                     }
                                 />
                             </div>
+
+                            {/* Approval Evidence - Required for Admin proxy approvals */}
+                            {approvalModalType === 'approve' && (
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                                        Approval Evidence *
+                                    </label>
+                                    <textarea
+                                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                                        rows={2}
+                                        value={approvalEvidence}
+                                        onChange={(e) => setApprovalEvidence(e.target.value)}
+                                        placeholder="e.g., Meeting minutes from 2025-03-15, email confirmation from approver..."
+                                    />
+                                    <p className="text-xs text-gray-500 mt-1">
+                                        Required when approving on behalf of designated approvers (e.g., meeting minutes, email confirmation)
+                                    </p>
+                                </div>
+                            )}
                         </div>
 
                         <div className="p-4 border-t bg-gray-50 flex justify-end gap-2">
@@ -1219,8 +1358,32 @@ const MonitoringCycleDetailPage: React.FC = () => {
                 existingNarrative={breachPanelNarrative}
                 onSave={handleBreachAnnotationSave}
                 onValueChange={handleBreachValueChange}
+                onCreateRecommendation={handleCreateRecommendation}
                 onClose={() => setBreachPanelOpen(false)}
             />
+
+            {/* Recommendation Create Modal (from breach panel) */}
+            {showRecModal && breachPanelCellIds && cycle && recModalData && plan?.models && (
+                <RecommendationCreateModal
+                    onClose={handleRecModalClose}
+                    onCreated={handleRecCreated}
+                    models={plan.models}
+                    users={recModalData.users}
+                    priorities={recModalData.priorities}
+                    categories={recModalData.categories}
+                    preselectedModelId={breachPanelCellIds.modelId}
+                    preselectedMonitoringCycleId={cycle.cycle_id}
+                    preselectedPlanMetricId={breachPanelCellIds.metricId}
+                    preselectedTitle={`Address RED monitoring result for ${breachPanelMetricInfo?.metricName || 'metric'}`}
+                    preselectedDescription={
+                        `This recommendation was created to track remediation of a RED monitoring result.\n\n` +
+                        `Model: ${breachPanelMetricInfo?.modelName || 'Unknown'}\n` +
+                        `Metric: ${breachPanelMetricInfo?.metricName || 'Unknown'}\n` +
+                        `Value: ${breachPanelMetricInfo?.numericValue?.toFixed(4) || 'N/A'}\n` +
+                        `Period: ${formatPeriod(cycle.period_start_date, cycle.period_end_date)}`
+                    }
+                />
+            )}
 
             {/* CSV Import Modal */}
             {showCSVImport && versionDetail && (

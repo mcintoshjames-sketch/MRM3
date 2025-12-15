@@ -62,6 +62,14 @@ const adminReports: Report[] = [
         icon: '📈',
         category: 'Risk'
     },
+    {
+        id: 'exceptions',
+        name: 'Model Exceptions Report',
+        description: 'Track and manage model exceptions including unmitigated performance issues, out-of-scope usage, and pre-validation deployments. Monitor open, acknowledged, and closed exceptions.',
+        path: '/reports/exceptions',
+        icon: '🚨',
+        category: 'Risk'
+    },
 ];
 
 // User reports - personal portfolio view

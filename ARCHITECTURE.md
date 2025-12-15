@@ -840,6 +840,43 @@ Model Risk Management inventory system with a FastAPI backend, React/TypeScript 
   - Reviews can be created by any authenticated user; certifications require Admin role
 - **Testing**: IRP tests in `tests/test_irp.py` covering CRUD, reviews, certifications, coverage check, and permissions.
 
+## Model Exceptions System
+- **Purpose**: Track and manage regulatory exception conditions requiring acknowledgment and resolution. Exceptions represent compliance gaps that must be formally documented and remediated.
+- **Data Model**:
+  - **ModelException**: Core entity tracking exception instances. Fields: exception_id, exception_code (auto-generated "EXC-YYYY-NNNNN"), model_id, exception_type, status (OPEN/ACKNOWLEDGED/CLOSED), description, detected_at, auto_closed, monitoring_result_id (optional), attestation_response_id (optional), deployment_task_id (optional), acknowledged_by_id, acknowledged_at, acknowledgment_notes, closed_at, closed_by_id, closure_narrative, closure_reason_id (taxonomy reference), created_at, updated_at.
+  - **ModelExceptionStatusHistory**: Audit trail of status transitions. Fields: history_id, exception_id, old_status, new_status, changed_by_id, changed_at, notes.
+- **Exception Types** (3 regulatory categories):
+  - **UNMITIGATED_PERFORMANCE**: RED monitoring result without active recommendation addressing the issue
+  - **OUTSIDE_INTENDED_PURPOSE**: Attestation indicates model used beyond original scope
+  - **USE_PRIOR_TO_VALIDATION**: Deployment task completed before validation request approved
+- **Exception Lifecycle**:
+  ```
+  OPEN → ACKNOWLEDGED → CLOSED
+  ```
+  - **OPEN**: Exception detected/created, awaiting acknowledgment
+  - **ACKNOWLEDGED**: Responsible party has reviewed and accepted, mitigation in progress
+  - **CLOSED**: Condition resolved; requires closure_narrative and closure_reason_id
+- **Detection Logic** (`app/core/exception_detection.py`):
+  - **Type 1 (Unmitigated Performance)**: Scan MonitoringResult for RED outcomes without linked open/in-progress recommendations
+  - **Type 2 (Outside Intended Purpose)**: Scan AttestationResponse for models used beyond intended purpose
+  - **Type 3 (Pre-Validation Use)**: Scan VersionDeploymentTask for completions before associated validation approval
+  - Duplicate prevention: Source entity IDs (monitoring_result_id, etc.) ensure no duplicate exceptions for same trigger
+- **Auto-Closure**: Exceptions may auto-close when triggering condition resolves (auto_closed=true, notes="Auto-closed by system")
+- **API Endpoints** (prefix: `/exceptions`):
+  - CRUD: `POST /` (Admin, manual create), `GET /`, `GET /{id}`, `GET /model/{model_id}` (list for model)
+  - Workflow: `POST /{id}/acknowledge` (Admin), `POST /{id}/close` (Admin - requires closure_narrative, closure_reason_id)
+  - Detection: `POST /detect/{model_id}` (Admin, single model), `POST /detect-all` (Admin, all models)
+  - Summary: `GET /summary` (stats by type and status)
+  - Reference: `GET /closure-reasons` (taxonomy values for closure)
+- **Authorization**: Detection, create, acknowledge, close operations require Admin role. List and detail views accessible to all authenticated users.
+- **Frontend**:
+  - **ExceptionsReportPage** (`/reports/exceptions`): List view with filters (model, type, status), summary statistics, CSV export, "Run Detection" button, "Create Exception" modal (Admin)
+  - **ModelExceptionsTab**: "Exceptions" tab on Model Details page with model-scoped list and filter by status
+  - **My Portfolio Integration**: Open exception count displayed in My Portfolio dashboard
+- **Taxonomies**:
+  - **Exception Closure Reason**: Configurable closure reason values (e.g., "Recommendation Implemented", "Validation Completed", "Scope Clarified")
+- **Testing**: 56 tests in `tests/test_exceptions.py` covering detection logic, CRUD, workflow transitions, authorization, and edge cases.
+
 ## Security, Error Handling, Logging
 - JWT auth with token expiry; passwords hashed with bcrypt.
 - 401 handling: frontend interceptor removes token and redirects to `/login`.

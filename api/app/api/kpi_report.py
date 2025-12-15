@@ -17,6 +17,7 @@ from app.models import (
     Recommendation,
     DecommissioningRequest,
 )
+from app.models.model_exception import ModelException
 from app.models.region import Region
 from app.models.model_region import ModelRegion
 from app.models.monitoring import (
@@ -187,6 +188,14 @@ METRIC_DEFINITIONS = {
         "name": "KRI: % of Models with High Residual Risk",
         "definition": "Key risk indicator: proportion of models flagged as high residual risk.",
         "calculation": "(# models with high residual risk) / (Total models with residual risk) × 100%",
+        "category": "Key Risk Indicators",
+        "type": "ratio",
+        "is_kri": True,
+    },
+    "4.28": {
+        "name": "KRI: % of Models with Open Exceptions",
+        "definition": "Key risk indicator: proportion of active models with at least one open exception (unmitigated performance, out-of-scope usage, or pre-validation deployment).",
+        "calculation": "(# models with open exceptions) / (Total active models) × 100%",
         "category": "Key Risk Indicators",
         "type": "ratio",
         "is_kri": True,
@@ -714,6 +723,28 @@ def _compute_metric_4_27(db: Session, active_models: List[Model]) -> KPIMetric:
     ))
 
 
+def _compute_metric_4_28(db: Session, active_models: List[Model]) -> KPIMetric:
+    """4.28 - KRI: % of Models with Open Exceptions"""
+    total = len(active_models)
+    model_ids = [m.model_id for m in active_models]
+
+    # Get distinct model_ids that have open exceptions (status = OPEN or ACKNOWLEDGED)
+    models_with_open_exceptions_query = db.query(ModelException.model_id).filter(
+        ModelException.model_id.in_(model_ids),
+        ModelException.status.in_(["OPEN", "ACKNOWLEDGED"])
+    ).distinct().all()
+    models_with_open_exceptions_ids = [m[0] for m in models_with_open_exceptions_query]
+
+    return _create_metric("4.28", ratio_value=KPIDecomposition(
+        numerator=len(models_with_open_exceptions_ids),
+        denominator=total,
+        percentage=_safe_percentage(len(models_with_open_exceptions_ids), total),
+        numerator_label="with open exceptions",
+        denominator_label="total active models",
+        numerator_model_ids=models_with_open_exceptions_ids if models_with_open_exceptions_ids else None
+    ))
+
+
 @router.get("/", response_model=KPIReportResponse)
 def get_kpi_report(
     db: Session = Depends(get_db),
@@ -816,6 +847,9 @@ def get_kpi_report(
 
     # Key Risk Indicator (4.27)
     metrics.append(_compute_metric_4_27(db, active_models))
+
+    # Key Risk Indicator (4.28) - Models with Open Exceptions
+    metrics.append(_compute_metric_4_28(db, active_models))
 
     return KPIReportResponse(
         report_generated_at=utc_now(),

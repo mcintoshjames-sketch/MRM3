@@ -12,6 +12,7 @@ import {
     ReferenceLine,
 } from 'recharts';
 import api from '../api/client';
+import QualitativeStatusTimeline from './monitoring/QualitativeStatusTimeline';
 
 interface TrendDataPoint {
     cycle_id: number;
@@ -147,6 +148,24 @@ const TrendChartModal: React.FC<TrendChartModalProps> = ({
     };
 
     if (!isOpen) return null;
+
+    // Check if this is a qualitative/outcome-only metric (case-insensitive)
+    const evalType = trendData?.evaluation_type?.toLowerCase();
+    const isQualitative = evalType === 'qualitative' || evalType === 'outcome only';
+
+    // For qualitative metrics, render the specialized status timeline instead of line chart
+    // Wait until data is loaded before making this decision
+    if (!loading && trendData && isQualitative) {
+        return (
+            <QualitativeStatusTimeline
+                data={trendData}
+                onClose={onClose}
+                modelFilter={modelFilter}
+                availableModels={availableModels}
+                onModelFilterChange={handleModelFilterChange}
+            />
+        );
+    }
 
     // Effective thresholds: prefer API data, fallback to props
     const effectiveThresholds: ThresholdConfig = {

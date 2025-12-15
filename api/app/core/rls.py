@@ -5,6 +5,7 @@ from app.models.user import User
 from app.models.model import Model
 from app.models.model_delegate import ModelDelegate
 from app.models.validation import ValidationRequest, ValidationRequestModelVersion
+from app.models.model_exception import ModelException
 
 
 def can_see_all_data(user: User) -> bool:
@@ -226,3 +227,58 @@ def can_see_recommendation(user: User, recommendation, db: Session) -> bool:
         return True
 
     return can_access_model(recommendation.model_id, user, db)
+
+
+def apply_exception_rls(query: Query, user: User, db: Session) -> Query:
+    """
+    Apply Row-Level Security to model exception queries.
+
+    Users with "User" role can only see exceptions for models they have access to.
+    All other roles (Admin, Validator, Global Approver, Regional Approver) see all exceptions.
+    """
+    if can_see_all_data(user):
+        return query
+
+    # For "User" role, filter to only exceptions for models they have access to
+    return query.join(
+        Model,
+        ModelException.model_id == Model.model_id
+    ).filter(
+        or_(
+            # Approved models where user is owner/developer/shared owner/shared developer/delegate
+            (
+                (Model.row_approval_status == None) &
+                or_(
+                    Model.owner_id == user.user_id,
+                    Model.developer_id == user.user_id,
+                    Model.shared_owner_id == user.user_id,
+                    Model.shared_developer_id == user.user_id,
+                    Model.delegates.any(
+                        (ModelDelegate.user_id == user.user_id) &
+                        (ModelDelegate.revoked_at == None)
+                    )
+                )
+            ),
+            # User's own submissions (Draft, needs_revision, rejected)
+            Model.submitted_by_user_id == user.user_id
+        )
+    )
+
+
+def can_access_exception(exception_id: int, user: User, db: Session) -> bool:
+    """
+    Check if a user can access a specific model exception.
+
+    Access is granted if user can access the exception's associated model.
+    """
+    if can_see_all_data(user):
+        return True
+
+    exception = db.query(ModelException).filter(
+        ModelException.exception_id == exception_id
+    ).first()
+
+    if not exception:
+        return False
+
+    return can_access_model(exception.model_id, user, db)

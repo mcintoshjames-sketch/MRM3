@@ -26,6 +26,8 @@ from app.models.monitoring import MonitoringCycle, MonitoringCycleApproval, Moni
 from app.models.methodology import Methodology
 from app.models.risk_assessment import ModelRiskAssessment
 from app.models.irp import IRP
+from app.models.model_exception import ModelException, ModelExceptionStatusHistory
+from app.schemas.model_exception import ModelExceptionListResponse
 from app.schemas.model import (
     ModelCreate, ModelUpdate, ModelDetailResponse, ValidationGroupingSuggestion, ModelCreateResponse,
     ModelNameHistoryItem, ModelNameHistoryResponse, NameChangeStatistics,
@@ -1263,6 +1265,14 @@ def get_model(
     # Compute model last updated from latest ACTIVE version
     model_dict['model_last_updated'] = get_model_last_updated(model)
 
+    # Compute open exception count for UI badge
+    from sqlalchemy import func
+    open_exception_count = db.query(func.count(ModelException.exception_id)).filter(
+        ModelException.model_id == model_id,
+        ModelException.status == 'OPEN'
+    ).scalar() or 0
+    model_dict['open_exception_count'] = open_exception_count
+
     return model_dict
 
 
@@ -1436,6 +1446,125 @@ def get_validation_grouping_suggestions(
         last_validation_request_id=grouping_memory.last_validation_request_id,
         last_grouped_at=grouping_memory.updated_at
     )
+
+
+@router.get("/{model_id}/exceptions", response_model=List[ModelExceptionListResponse])
+def get_model_exceptions(
+    model_id: int,
+    status_filter: Optional[str] = Query(None, alias="status", description="Filter by status: OPEN, ACKNOWLEDGED, CLOSED"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Get exceptions for a model (convenience endpoint).
+
+    Row-Level Security:
+    - Admin, Validator, Global Approver, Regional Approver: Can access any model
+    - User: Can only access models where they are owner, developer, or delegate
+    """
+    from app.core.rls import can_access_model
+    from app.schemas.model_exception import EXCEPTION_STATUSES, ModelBrief
+
+    # Check RLS access
+    if not can_access_model(model_id, current_user, db):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Model not found"
+        )
+
+    # Verify model exists
+    model = db.query(Model).filter(Model.model_id == model_id).first()
+    if not model:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Model not found"
+        )
+
+    query = db.query(ModelException).options(
+        joinedload(ModelException.model)
+    ).filter(ModelException.model_id == model_id)
+
+    # Apply status filter if provided
+    if status_filter:
+        if status_filter not in EXCEPTION_STATUSES:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid status. Must be one of: {EXCEPTION_STATUSES}",
+            )
+        query = query.filter(ModelException.status == status_filter)
+
+    exceptions = query.order_by(ModelException.detected_at.desc()).all()
+
+    # Build response with proper model nested object
+    result = []
+    for exc in exceptions:
+        result.append(ModelExceptionListResponse(
+            exception_id=exc.exception_id,
+            exception_code=exc.exception_code,
+            model_id=exc.model_id,
+            model=ModelBrief(
+                model_id=exc.model.model_id,
+                model_name=exc.model.model_name,
+                model_code=None
+            ),
+            exception_type=exc.exception_type,
+            status=exc.status,
+            description=exc.description,
+            detected_at=exc.detected_at,
+            auto_closed=exc.auto_closed,
+            acknowledged_at=exc.acknowledged_at,
+            closed_at=exc.closed_at,
+            created_at=exc.created_at,
+            updated_at=exc.updated_at
+        ))
+    return result
+
+
+@router.get("/{model_id}/exceptions/count")
+def get_model_exception_count(
+    model_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Get exception counts for a model by status.
+
+    Row-Level Security:
+    - Admin, Validator, Global Approver, Regional Approver: Can access any model
+    - User: Can only access models where they are owner, developer, or delegate
+    """
+    from app.core.rls import can_access_model
+    from sqlalchemy import func
+
+    # Check RLS access
+    if not can_access_model(model_id, current_user, db):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Model not found"
+        )
+
+    # Verify model exists
+    model = db.query(Model).filter(Model.model_id == model_id).first()
+    if not model:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Model not found"
+        )
+
+    # Query counts by status
+    counts = db.query(
+        ModelException.status,
+        func.count(ModelException.exception_id)
+    ).filter(
+        ModelException.model_id == model_id
+    ).group_by(ModelException.status).all()
+
+    return {
+        "model_id": model_id,
+        "open": next((c for s, c in counts if s == 'OPEN'), 0),
+        "acknowledged": next((c for s, c in counts if s == 'ACKNOWLEDGED'), 0),
+        "closed": next((c for s, c in counts if s == 'CLOSED'), 0),
+    }
 
 
 @router.patch("/{model_id}")
@@ -2299,6 +2428,8 @@ def get_model_activity_timeline(
     - Deployment tasks confirmed
     - Decommissioning requests/reviews/approvals
     - Monitoring cycles (created/submitted/completed/approvals)
+    - Risk assessment changes
+    - Model exceptions (detected/acknowledged/closed)
     """
     from app.core.rls import can_access_model
     from app.models.model_delegate import ModelDelegate
@@ -2777,6 +2908,66 @@ def get_model_activity_timeline(
                 entity_type="ModelRiskAssessment",
                 entity_id=audit.entity_id,
                 icon=icon
+            ))
+
+    # 11. Model exceptions (opened, acknowledged, closed)
+    exceptions = db.query(ModelException).options(
+        joinedload(ModelException.acknowledged_by),
+        joinedload(ModelException.closed_by),
+        joinedload(ModelException.status_history).joinedload(ModelExceptionStatusHistory.changed_by)
+    ).filter(
+        ModelException.model_id == model_id
+    ).all()
+
+    exception_type_labels = {
+        "UNMITIGATED_PERFORMANCE": "Unmitigated Performance Problem",
+        "OUTSIDE_INTENDED_PURPOSE": "Model Used Outside Intended Purpose",
+        "USE_PRIOR_TO_VALIDATION": "Model In Use Prior to Full Validation"
+    }
+
+    for exc in exceptions:
+        type_label = exception_type_labels.get(exc.exception_type, exc.exception_type)
+
+        # Exception created (detected)
+        activities.append(ActivityTimelineItem(
+            timestamp=exc.detected_at,
+            activity_type="exception_detected",
+            title=f"Exception detected: {type_label}",
+            description=exc.description,
+            user_name=None,  # System-detected
+            user_id=None,
+            entity_type="ModelException",
+            entity_id=exc.exception_id,
+            icon="🚨"
+        ))
+
+        # Exception acknowledged (if acknowledged)
+        if exc.acknowledged_at:
+            activities.append(ActivityTimelineItem(
+                timestamp=exc.acknowledged_at,
+                activity_type="exception_acknowledged",
+                title=f"Exception #{exc.exception_code} acknowledged",
+                description=exc.acknowledgment_notes,
+                user_name=exc.acknowledged_by.full_name if exc.acknowledged_by else None,
+                user_id=exc.acknowledged_by_id,
+                entity_type="ModelException",
+                entity_id=exc.exception_id,
+                icon="👁️"
+            ))
+
+        # Exception closed (if closed)
+        if exc.closed_at:
+            close_method = "Auto-closed" if exc.auto_closed else "Closed"
+            activities.append(ActivityTimelineItem(
+                timestamp=exc.closed_at,
+                activity_type="exception_closed",
+                title=f"Exception #{exc.exception_code} {close_method.lower()}",
+                description=exc.closure_narrative,
+                user_name=exc.closed_by.full_name if exc.closed_by else "System",
+                user_id=exc.closed_by_id,
+                entity_type="ModelException",
+                entity_id=exc.exception_id,
+                icon="✅"
             ))
 
     # Sort all activities by timestamp (newest first)

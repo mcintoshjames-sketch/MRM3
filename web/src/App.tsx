@@ -50,6 +50,7 @@ import ApproverDashboardPage from './pages/ApproverDashboardPage';
 import IRPsPage from './pages/IRPsPage';
 import IRPDetailPage from './pages/IRPDetailPage';
 import MyPortfolioReportPage from './pages/MyPortfolioReportPage';
+import ExceptionsReportPage from './pages/ExceptionsReportPage';
 import PublicLandingPage from './pages/PublicLandingPage';
 import PublicOverviewPage from './pages/PublicOverviewPage';
 import PublicGuidesIndexPage from './pages/PublicGuidesIndexPage';
@@ -121,6 +122,7 @@ function App() {
             <Route path="/reports/critical-limitations" element={user ? <CriticalLimitationsReportPage /> : <Navigate to="/login" />} />
             <Route path="/reports/kpi" element={user ? <KPIReportPage /> : <Navigate to="/login" />} />
             <Route path="/reports/my-portfolio" element={user ? <MyPortfolioReportPage /> : <Navigate to="/login" />} />
+            <Route path="/reports/exceptions" element={user ? <ExceptionsReportPage /> : <Navigate to="/login" />} />
             <Route path="/analytics" element={user ? <AnalyticsPage /> : <Navigate to="/login" />} />
             <Route path="/attestations" element={user?.role === 'Admin' ? <AttestationCyclesPage /> : <Navigate to="/models" />} />
             <Route path="/my-attestations" element={user ? <MyAttestationsPage /> : <Navigate to="/login" />} />

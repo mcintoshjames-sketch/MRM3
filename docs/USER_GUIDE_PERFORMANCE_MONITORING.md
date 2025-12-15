@@ -9,12 +9,15 @@
 5. [The Monitoring Cycle Workflow](#5-the-monitoring-cycle-workflow)
 6. [Entering Monitoring Results](#6-entering-monitoring-results)
 7. [Understanding Metrics and Thresholds](#7-understanding-metrics-and-thresholds)
+   - [Creating Recommendations from Breaches](#creating-recommendations-from-breaches)
+   - [Exception Automation (Type 1)](#exception-automation-type-1-unmitigated-performance)
 8. [Approvals Process](#8-approvals-process)
 9. [Plan Versioning](#9-plan-versioning)
 10. [Role-Based Workflows](#10-role-based-workflows)
 11. [My Monitoring Tasks](#11-my-monitoring-tasks)
-12. [Dashboards & Reporting](#12-dashboards--reporting)
-13. [Frequently Asked Questions](#13-frequently-asked-questions)
+12. [Trend Analysis & Historical Views](#12-trend-analysis--historical-views)
+13. [Dashboards & Reporting](#13-dashboards--reporting)
+14. [Frequently Asked Questions](#14-frequently-asked-questions)
 
 ---
 
@@ -507,6 +510,103 @@ When a metric shows RED:
    - Model use restrictions
    - Revalidation trigger
 
+### Creating Recommendations from Breaches
+
+When a metric shows RED, you can create a recommendation directly from the breach panel to document remediation actions:
+
+1. **Navigate to the Result**: Click on a RED result cell in the monitoring grid
+2. **Open Breach Panel**: The annotation panel shows breach details
+3. **Click "Create Recommendation"**: Opens the recommendation creation modal
+4. **Pre-populated Fields**: The system automatically sets:
+   - **Model**: The model with the breach
+   - **Monitoring Cycle**: The current cycle
+   - **Linked Metric**: The specific metric that breached (`plan_metric_id`)
+   - **Context**: Pre-filled description referencing the breach
+
+**Why This Matters**: Linking recommendations to specific metrics ensures that when the system evaluates whether a RED result needs escalation, it can correctly determine whether a remediation plan exists for that particular metric (see [Exception Automation](#exception-automation-type-1-unmitigated-performance) below).
+
+### Exception Automation (Type 1: Unmitigated Performance)
+
+The system automatically detects and creates exceptions for RED monitoring results that lack remediation plans. This occurs **only after a monitoring cycle is approved**, giving teams time to create recommendations during the review phase.
+
+#### When Exceptions Are Triggered
+
+Type 1 (Unmitigated Performance) exceptions are created when:
+
+| Trigger Condition | Description |
+|-------------------|-------------|
+| **No Recommendation** | RED result with no active recommendation linked to that specific metric |
+| **Persistent RED** | Same metric shows RED in two consecutive APPROVED cycles |
+
+#### What "Active Recommendation" Means
+
+A recommendation is considered "active" if:
+- It is linked to the **same metric** (`plan_metric_id`) as the RED result
+- It is linked to the **same monitoring cycle**
+- Its status is NOT `CLOSED`, `CANCELLED`, or `COMPLETED`
+
+**Example Scenarios**:
+
+| Scenario | Exception Created? | Why |
+|----------|-------------------|-----|
+| RED result, no recommendation | ✅ Yes | No remediation plan exists |
+| RED result + Open recommendation for **that metric** | ❌ No | Active remediation in progress |
+| RED result + Open recommendation for **different metric** | ✅ Yes | Recommendation doesn't address this breach |
+| RED result + Closed recommendation | ✅ Yes | Remediation complete but breach persists |
+| Two consecutive RED cycles for same metric | ✅ Yes | Persistent performance issue |
+
+#### Timing: Why Only on Approved Cycles
+
+Exception detection only runs on **APPROVED** cycles, not cycles still in progress:
+
+```
+┌─────────────────┐     ┌──────────────────┐     ┌──────────────────┐
+│ DATA_COLLECTION │────►│  UNDER_REVIEW    │────►│ PENDING_APPROVAL │
+└─────────────────┘     └──────────────────┘     └──────────────────┘
+        │                       │                        │
+        │                       │                        │
+   No exception            No exception            No exception
+   detection               detection               detection
+        │                       │                        │
+        │                       │                        ▼
+        │                       │               ┌──────────────────┐
+        │                       └──────────────►│    APPROVED      │
+        │                                       └──────────────────┘
+        │                                               │
+        │                                               ▼
+        └─────────────────────────────────────  Exception Detection
+                                                     Runs Here
+```
+
+**Rationale**: During DATA_COLLECTION and UNDER_REVIEW phases, teams are still working on results and creating recommendations. Running exception detection prematurely would create false positives.
+
+#### Workflow for Handling RED Results
+
+**Best Practice**: Create recommendations for RED results **before** requesting cycle approval.
+
+1. **During Data Collection**: Enter all metric results
+2. **Identify RED Outcomes**: Review any metrics showing RED
+3. **Create Recommendations**: For each RED result:
+   - Click the RED cell
+   - Use "Create Recommendation" button
+   - Document the remediation plan
+4. **Request Approval**: When all RED results have recommendations
+5. **Cycle Approved**: Exception detection runs
+   - RED results WITH linked recommendations → No exception
+   - RED results WITHOUT recommendations → Exception created
+
+#### Viewing Exceptions
+
+Once exceptions are created:
+- Navigate to **Model Details** → **Exceptions** tab
+- Badge shows count of open exceptions
+- Filter by status: OPEN, ACKNOWLEDGED, CLOSED
+- Each exception shows:
+  - Exception type (e.g., UNMITIGATED_PERFORMANCE)
+  - Source metric and result
+  - Detection date
+  - Status history
+
 ---
 
 ## 8. Approvals Process
@@ -768,7 +868,138 @@ Tasks are sorted by priority:
 
 ---
 
-## 12. Dashboards & Reporting
+## 12. Trend Analysis & Historical Views
+
+### Overview
+
+Trend analysis helps you understand how model performance changes over time by visualizing metric results across multiple monitoring cycles. The system provides two different visualization types depending on the metric's evaluation method:
+
+- **Line Charts**: For quantitative metrics with numeric values and thresholds
+- **Status Timelines**: For qualitative/outcome-only metrics that rely on human judgment
+
+### Accessing Trend Charts
+
+From the **Monitoring Plan** page:
+
+1. Navigate to the **Metrics** tab
+2. Find the metric you want to analyze
+3. Click the **📊 Trend** button in the "Results by Metric (Last 10 Cycles)" column
+4. The system opens the appropriate visualization based on the metric type
+
+### Quantitative Metric Trends (Line Charts)
+
+For metrics with numeric values (e.g., KS Statistic, PSI, Gini):
+
+**Chart Features**:
+- **Multi-line display**: When multiple models are in the plan, each model appears as a separate colored line
+- **Threshold zones**: Background shading shows GREEN, YELLOW, and RED performance zones
+- **Threshold lines**: Dashed lines mark the yellow and red boundaries
+- **Interactive tooltips**: Hover over data points to see exact values
+- **Summary statistics**: Latest value, threshold levels, and data point count
+
+**Model Filter**:
+- **All Results (Multi-Line)**: Show all models on one chart (default)
+- **Plan Level (All Models)**: Show only plan-level aggregated results
+- **Individual Model**: Show a single model's trend line
+
+**Example Use Cases**:
+- Compare PSI stability across multiple credit models
+- Track if a model's KS is trending toward threshold breach
+- Identify seasonal patterns in model performance
+
+### Qualitative Metric Trends (Status Timelines)
+
+For metrics evaluated by human judgment (e.g., Documentation Quality, Governance Compliance):
+
+**Timeline Features**:
+- **Status boxes**: Each cycle is represented by a colored box showing the outcome (GREEN/YELLOW/RED/N/A)
+- **Date labels**: ISO-formatted dates below each box (e.g., "Dec '24")
+- **Interactive tooltips**: Hover over any status box to see:
+  - **Cycle period**: The monitoring period dates
+  - **Outcome**: The assessed outcome (GREEN/YELLOW/RED/N/A)
+  - **Narrative excerpt**: First 200 characters of the explanation
+  - **Action prompt**: "Click for full details" reminder
+- **Click for details**: Click any box to open the full breach annotation panel with complete narrative
+- **Chronological order**: Timeline flows left to right, oldest to newest
+- **Cycle limit**: Displays the **last 10 cycles** to keep the view manageable
+  - If more than 10 cycles exist, a truncation indicator shows: "(showing last 10 of 25)"
+
+**Status Box Color Coding**:
+
+| Outcome | Color | Text Color | Meaning |
+|---------|-------|------------|---------|
+| **GREEN** | Green background | White text | Acceptable performance |
+| **YELLOW** | Yellow background | Dark gray text | Warning zone (accessible contrast) |
+| **RED** | Red background | White text | Critical issue |
+| **N/A** | Gray background | Dark gray text | No assessment provided |
+
+**Model Filter** (when multiple models in plan):
+- **All Results**: Show outcomes from all models in chronological order
+- **Plan Level (All Models)**: Show only plan-level qualitative assessments
+- **Individual Model**: Filter to one specific model's outcomes
+
+**Example Scenario**:
+
+```
+Documentation Quality - Last 10 Cycles
+
+[GREEN] [GREEN] [YELLOW] [GREEN] [GREEN] [RED] [YELLOW] [GREEN] [GREEN] [GREEN]
+Dec '24  Jan '25  Feb '25  Mar '25  Apr '25 May '25 Jun '25  Jul '25  Aug '25 Sep '25
+
+Hover over the RED box in May '25:
+┌─────────────────────────────────────────┐
+│ Q2 2025 (Apr 1 - Jun 30)                │
+│ Outcome: RED                            │
+│                                         │
+│ Documentation review found significant  │
+│ gaps in model assumptions section.      │
+│ Risk management sign-off missing for... │
+│                                         │
+│ Click for full details                  │
+└─────────────────────────────────────────┘
+```
+
+### Why Different Visualizations?
+
+**Quantitative metrics** (line charts):
+- Show continuous numeric trends
+- Reveal gradual degradation or improvement
+- Allow threshold-based automatic evaluation
+- Example: PSI trending from 0.08 → 0.12 → 0.18 shows gradual data drift
+
+**Qualitative metrics** (status timelines):
+- Show discrete judgment-based outcomes
+- No meaningful "trend line" since values aren't comparable numbers
+- Focus on outcome patterns and narrative context
+- Example: Documentation quality may be GREEN for months, then RED due to missing approvals
+
+### Using Trends for Decision Making
+
+**Early Warning Detection**:
+- **Quantitative**: Line approaching yellow threshold → Investigate before breach
+- **Qualitative**: Pattern of YELLOW outcomes → Systemic issue may need attention
+
+**Remediation Validation**:
+- After creating a recommendation for a RED result, check next cycle
+- Did the outcome improve to YELLOW or GREEN?
+- If still RED, consider escalating to model use restrictions or revalidation
+
+**Regulatory Documentation**:
+- Export trend charts (screenshot or CSV) for validation reports
+- Demonstrate ongoing oversight and responsiveness to issues
+- Show effectiveness of remediation actions over time
+
+### Best Practices
+
+1. **Review trends quarterly**: Even if current cycle is GREEN, trends may show degradation
+2. **Compare models**: Use multi-line view to identify underperforming models
+3. **Document narrative patterns**: For qualitative metrics, consistent YELLOW outcomes may indicate threshold miscalibration
+4. **Consider seasonality**: Some metrics (e.g., usage patterns) may have expected seasonal variation
+5. **Create recommendations proactively**: Don't wait for RED—address YELLOW trends before they escalate
+
+---
+
+## 13. Dashboards & Reporting
 
 ### Admin Monitoring Overview
 
@@ -918,6 +1149,28 @@ A: Rejection is an approver saying "I don't approve this." Voiding (admin only) 
 
 ---
 
+### Exception and Recommendation Questions
+
+**Q: Why did an exception get created for my RED result even though I have a recommendation?**
+A: The system checks that the recommendation is linked to the **same metric** that has the RED result. If you created a general recommendation for the model but didn't link it to the specific metric (`plan_metric_id`), an exception will still be created. Use the "Create Recommendation" button from the breach panel to ensure proper linkage.
+
+**Q: When does exception detection run?**
+A: Exception detection runs only when a monitoring cycle moves to APPROVED status. This gives teams time during DATA_COLLECTION and UNDER_REVIEW to create recommendations before exceptions are triggered. If you approve a cycle with RED results and no linked recommendations, exceptions will be created automatically.
+
+**Q: Can I prevent exceptions by creating recommendations after the cycle is approved?**
+A: No. Exception detection runs at the moment of cycle approval. However, you can:
+1. **Acknowledge** the exception to indicate you're aware of it
+2. **Close** the exception with a resolution narrative once remediation is complete
+3. For future cycles, create recommendations during the review phase before approval
+
+**Q: What happens if the same metric is RED in two consecutive cycles?**
+A: A "Persistent RED" exception is created, even if a recommendation exists. This escalates performance issues that persist despite remediation efforts. The previous cycle must also be APPROVED for this comparison to occur.
+
+**Q: How do I see all exceptions for a model?**
+A: Navigate to **Model Details** → **Exceptions** tab. A red badge shows the count of open exceptions. You can filter by status (OPEN, ACKNOWLEDGED, CLOSED) and see the source of each exception (which monitoring result triggered it).
+
+---
+
 ## Appendix: Status Reference
 
 ### Cycle Statuses
@@ -952,4 +1205,4 @@ A: Rejection is an approver saying "I don't approve this." Voiding (admin only) 
 
 ---
 
-*Last Updated: December 2025*
+*Last Updated: December 2025 (Added Exception Automation and Metric-Specific Recommendations)*

@@ -361,6 +361,8 @@ class ModelDetailResponse(ModelResponse):
     # Computed approval status fields (populated from model_approval_status computation)
     approval_status: Optional[str] = None  # NEVER_VALIDATED, APPROVED, INTERIM_APPROVED, VALIDATION_IN_PROGRESS, EXPIRED
     approval_status_label: Optional[str] = None  # Human-readable label
+    # Computed exception count for UI badge
+    open_exception_count: int = 0
 
     class Config:
         from_attributes = True

@@ -7,6 +7,7 @@ from sqlalchemy import func, or_, and_
 from app.core.database import get_db
 from app.core.time import utc_now
 from app.core.deps import get_current_user
+from app.core.exception_detection import detect_type2_for_response
 from app.models.user import User, UserRole
 from app.models.model import Model
 from app.models.region import Region
@@ -954,6 +955,7 @@ def submit_attestation(
     ).delete()
 
     # Save responses
+    saved_responses = []
     for response_data in submission.responses:
         response = AttestationResponseModel(
             attestation_id=attestation_id,
@@ -962,6 +964,14 @@ def submit_attestation(
             comment=response_data.comment
         )
         db.add(response)
+        saved_responses.append(response)
+
+    # Flush to get response IDs for exception detection
+    db.flush()
+
+    # Check for Type 2 exceptions (model used outside intended purpose)
+    for response in saved_responses:
+        detect_type2_for_response(db, response)
 
     # Save evidence (optional)
     for evidence_data in submission.evidence:
@@ -2916,6 +2926,7 @@ def submit_bulk_attestation(
 
     # Submit each selected record
     attestation_ids = []
+    all_saved_responses = []  # Collect responses for Type 2 exception detection
     for model_id in submit_in.selected_model_ids:
         record = records_by_model[model_id]
 
@@ -2942,8 +2953,16 @@ def submit_bulk_attestation(
                 comment=response_data.comment
             )
             db.add(response)
+            all_saved_responses.append(response)
 
         attestation_ids.append(record.attestation_id)
+
+    # Flush to get response IDs for exception detection
+    db.flush()
+
+    # Check for Type 2 exceptions (model used outside intended purpose)
+    for response in all_saved_responses:
+        detect_type2_for_response(db, response)
 
     # Mark excluded records
     excluded_count = 0

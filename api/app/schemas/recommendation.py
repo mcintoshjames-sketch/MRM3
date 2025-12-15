@@ -78,8 +78,8 @@ class MonitoringCycleSummary(BaseModel):
                 plan_name = getattr(data.plan, 'plan_name', None)
             return {
                 'cycle_id': data.cycle_id,
-                'period_start': data.period_start,
-                'period_end': data.period_end,
+                'period_start': data.period_start_date,
+                'period_end': data.period_end_date,
                 'plan_name': plan_name
             }
         return data
@@ -376,6 +376,7 @@ class RecommendationBase(BaseModel):
     model_id: int
     validation_request_id: Optional[int] = None
     monitoring_cycle_id: Optional[int] = None
+    plan_metric_id: Optional[int] = None
     title: str
     description: str
     root_cause_analysis: Optional[str] = None
@@ -406,6 +407,7 @@ class RecommendationUpdate(BaseModel):
     assigned_to_id: Optional[int] = None
     current_target_date: Optional[date] = None
     target_date_change_reason: Optional[str] = None
+    plan_metric_id: Optional[int] = None
 
 
 class RecommendationResponse(BaseModel):
@@ -418,6 +420,7 @@ class RecommendationResponse(BaseModel):
     validation_request: Optional[ValidationRequestSummary] = None
     monitoring_cycle_id: Optional[int] = None
     monitoring_cycle: Optional[MonitoringCycleSummary] = None
+    plan_metric_id: Optional[int] = None
     title: str
     description: str
     root_cause_analysis: Optional[str] = None
@@ -458,6 +461,7 @@ class RecommendationListResponse(BaseModel):
     # Source linkage info
     validation_request_id: Optional[int] = None
     monitoring_cycle_id: Optional[int] = None
+    plan_metric_id: Optional[int] = None
     source_type: Optional[str] = None  # "validation" or "monitoring" or None
     priority: TaxonomyValueResponse
     category: Optional[TaxonomyValueResponse] = None

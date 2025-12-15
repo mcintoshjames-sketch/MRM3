@@ -14,6 +14,7 @@ class PortfolioSummary(BaseModel):
     models_non_compliant: int = Field(..., description="Number of non-compliant models")
     yellow_alerts: int = Field(..., description="Number of yellow monitoring alerts")
     red_alerts: int = Field(..., description="Number of red monitoring alerts")
+    open_exceptions_count: int = Field(0, description="Number of open model exceptions")
 
 
 class ActionItem(BaseModel):
@@ -45,6 +46,21 @@ class MonitoringAlert(BaseModel):
     result_date: date = Field(..., description="Date the result was recorded")
 
 
+class ExceptionItem(BaseModel):
+    """An open model exception requiring attention."""
+    exception_id: int = Field(..., description="Exception ID")
+    exception_code: str = Field(..., description="Exception code (e.g., EXC-2025-00001)")
+    exception_type: str = Field(..., description="Type: UNMITIGATED_PERFORMANCE, OUTSIDE_INTENDED_PURPOSE, USE_PRIOR_TO_VALIDATION")
+    exception_type_label: str = Field(..., description="Human-readable exception type")
+    model_id: int = Field(..., description="ID of the model")
+    model_name: str = Field(..., description="Name of the model")
+    status: str = Field(..., description="Status: OPEN or ACKNOWLEDGED")
+    description: str = Field(..., description="Exception description")
+    detected_at: datetime = Field(..., description="When the exception was detected")
+    acknowledged_at: Optional[datetime] = Field(None, description="When acknowledged (if applicable)")
+    link: str = Field(..., description="Navigation path to the model")
+
+
 class CalendarItem(BaseModel):
     """A deadline item for calendar view."""
     due_date: date = Field(..., description="Due date")
@@ -74,6 +90,7 @@ class PortfolioModel(BaseModel):
     attestation_status: Optional[str] = Field(None, description="Current attestation status")
     yellow_alerts: int = Field(0, description="Count of yellow monitoring alerts")
     red_alerts: int = Field(0, description="Count of red monitoring alerts")
+    open_exceptions: int = Field(0, description="Count of open model exceptions")
     has_overdue_items: bool = Field(False, description="Whether model has any overdue items")
     ownership_type: str = Field(..., description="How user owns: primary, shared, delegate")
 
@@ -86,6 +103,7 @@ class MyPortfolioResponse(BaseModel):
     summary: PortfolioSummary = Field(..., description="Summary statistics")
     action_items: List[ActionItem] = Field(..., description="Items requiring action, sorted by urgency")
     monitoring_alerts: List[MonitoringAlert] = Field(..., description="Yellow/red monitoring results")
+    open_exceptions: List[ExceptionItem] = Field(..., description="Open model exceptions requiring attention")
     calendar_items: List[CalendarItem] = Field(..., description="All deadlines for calendar view")
     models: List[PortfolioModel] = Field(..., description="All models in portfolio")
 

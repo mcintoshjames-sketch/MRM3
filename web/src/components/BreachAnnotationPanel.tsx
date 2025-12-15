@@ -20,6 +20,7 @@ interface BreachAnnotationPanelProps {
     existingNarrative: string;
     onSave: (narrative: string) => Promise<void>;
     onValueChange?: (newValue: number | null) => Promise<void>;
+    onCreateRecommendation?: () => void;
     onClose: () => void;
 }
 
@@ -30,6 +31,7 @@ const BreachAnnotationPanel: React.FC<BreachAnnotationPanelProps> = ({
     existingNarrative,
     onSave,
     onValueChange,
+    onCreateRecommendation,
     onClose,
 }) => {
     const [narrative, setNarrative] = useState(existingNarrative);
@@ -346,27 +348,45 @@ const BreachAnnotationPanel: React.FC<BreachAnnotationPanelProps> = ({
                 </div>
 
                 {/* Footer */}
-                <div className="p-4 border-t bg-gray-50 flex justify-end gap-2">
-                    <button
-                        onClick={onClose}
-                        disabled={saving}
-                        className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-100 text-sm disabled:opacity-50"
-                    >
-                        Cancel
-                    </button>
-                    <button
-                        onClick={handleSave}
-                        disabled={saving || !narrative.trim()}
-                        className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 text-sm disabled:opacity-50 flex items-center gap-2"
-                    >
-                        {saving && (
-                            <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
-                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
-                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                            </svg>
+                <div className="p-4 border-t bg-gray-50 flex justify-between">
+                    {/* Create Recommendation button - only for RED outcomes */}
+                    <div>
+                        {onCreateRecommendation && metricInfo?.outcome === 'RED' && (
+                            <button
+                                onClick={onCreateRecommendation}
+                                disabled={saving}
+                                className="px-4 py-2 border border-blue-600 text-blue-600 rounded-lg hover:bg-blue-50 text-sm disabled:opacity-50 flex items-center gap-2"
+                                title="Create a recommendation to track remediation of this breach"
+                            >
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                                </svg>
+                                Create Recommendation
+                            </button>
                         )}
-                        {saving ? 'Saving...' : 'Save Explanation'}
-                    </button>
+                    </div>
+                    <div className="flex gap-2">
+                        <button
+                            onClick={onClose}
+                            disabled={saving}
+                            className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-100 text-sm disabled:opacity-50"
+                        >
+                            Cancel
+                        </button>
+                        <button
+                            onClick={handleSave}
+                            disabled={saving || !narrative.trim()}
+                            className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 text-sm disabled:opacity-50 flex items-center gap-2"
+                        >
+                            {saving && (
+                                <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
+                                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                                </svg>
+                            )}
+                            {saving ? 'Saving...' : 'Save Explanation'}
+                        </button>
+                    </div>
                 </div>
             </div>
         </>

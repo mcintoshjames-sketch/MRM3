@@ -7,6 +7,7 @@ from sqlalchemy import or_
 from app.core.database import get_db
 from app.core.time import utc_now
 from app.core.deps import get_current_user
+from app.core.exception_detection import detect_type3_for_deployment_task
 from app.models.user import User
 from app.models.version_deployment_task import VersionDeploymentTask
 from app.models.model_version import ModelVersion
@@ -337,6 +338,11 @@ def confirm_deployment(
 
     db.commit()
     db.refresh(task)
+
+    # Detect Type 3 exception if deployed before validation was approved
+    if task.deployed_before_validation_approved:
+        detect_type3_for_deployment_task(db, task)
+        db.commit()  # Persist Type 3 exception
 
     # Return updated task
     return get_deployment_task(task_id, db, current_user)

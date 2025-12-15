@@ -297,7 +297,84 @@ Example: A High-priority recommendation for a Tier 1 model with Daily usage migh
 
 ---
 
-## 5. Risk Attestation Process
+## 5. Model Exceptions Management
+
+### Overview
+
+Model Exceptions provide formal tracking of regulatory exception conditions that require acknowledgment and resolution. The system supports both automated detection and manual creation of exceptions, with a complete audit trail for governance and compliance.
+
+### Exception Types
+
+| Type | Description | Detection Trigger |
+|------|-------------|-------------------|
+| **Unmitigated Performance Problem** | RED monitoring result without active recommendation | Monitoring cycle with RED outcome but no linked open/in-progress recommendation |
+| **Model Used Outside Intended Purpose** | Attestation indicates use beyond original scope | Attestation response where model is used for unintended purposes |
+| **Model In Use Prior to Full Validation** | Deployed version before validation completion | Deployment task completed prior to associated validation request approval |
+
+### Exception Lifecycle
+
+```
+OPEN → ACKNOWLEDGED → CLOSED
+```
+
+| Status | Description |
+|--------|-------------|
+| **OPEN** | Exception detected/created but not yet acknowledged by responsible party |
+| **ACKNOWLEDGED** | Exception has been reviewed and accepted with mitigation plan |
+| **CLOSED** | Exception condition resolved or mitigated; requires closure narrative and reason |
+
+### Exception Detection
+
+**Automated Detection** (Admin only):
+- "Detect All Exceptions" scans all models for exception conditions
+- Creates new exceptions for conditions not already tracked
+- Can be run on-demand or scheduled
+- Model-specific detection also available
+
+**Manual Creation** (Admin only):
+- Create exceptions directly for situations not auto-detected
+- Select model, exception type, and provide description
+- Option to create as "Acknowledged" with initial notes
+
+### Exception Workflow
+
+1. **Detection/Creation**: Exception identified (auto or manual)
+2. **Acknowledgment**: Administrator acknowledges awareness and documents initial response
+3. **Resolution**: Exception condition is resolved through:
+   - Completing validation (Type 3)
+   - Implementing monitoring recommendations (Type 1)
+   - Addressing scope violations (Type 2)
+4. **Closure**: Administrator closes with narrative and selects closure reason
+
+### Auto-Closure
+
+Exceptions may auto-close when their triggering condition is resolved:
+- Type 1 (Performance): Monitoring result improves or recommendation is implemented
+- Type 2 (Intended Purpose): Subsequent attestation confirms compliant use
+- Type 3 (Pre-Validation): Validation request is approved
+
+### Administration
+
+**Exception Closure Reasons** (Admin: Taxonomy → Exception Closure Reason):
+- Configurable closure reason values
+- Required when manually closing exceptions
+
+**Reports**:
+- Exception summary by type and status
+- Model-level exception history
+- Export to CSV for compliance reporting
+- Integration with My Portfolio dashboard
+
+### Key Features
+
+- **Complete Audit Trail**: Status history with timestamps, actors, and notes
+- **Cross-Reference Navigation**: Direct links to source monitoring results, attestations, or deployment tasks
+- **Model Integration**: Exceptions tab on Model Details page shows model-specific exceptions
+- **Dashboard Integration**: Open exception count shown in My Portfolio report
+
+---
+
+## 6. Risk Attestation Process
 
 ### Overview
 
@@ -346,7 +423,7 @@ Ten policy-based questions covering:
 
 ---
 
-## 6. Compliance Reporting & KPIs
+## 7. Compliance Reporting & KPIs
 
 ### Reports Hub
 
@@ -404,7 +481,7 @@ KPI metrics include model IDs enabling click-through to filtered model lists for
 
 ---
 
-## 7. Model Decommissioning
+## 8. Model Decommissioning
 
 ### Overview
 
@@ -439,7 +516,7 @@ PENDING → VALIDATOR_REVIEW → [OWNER_REVIEW if applicable] → APPROVED/REJEC
 
 ---
 
-## 8. MRSA Classification & IRP Governance
+## 9. MRSA Classification & IRP Governance
 
 ### Overview
 
@@ -504,7 +581,7 @@ The system tracks IRP coverage status for each MRSA:
 
 ---
 
-## 9. User Roles & Dashboards
+## 10. User Roles & Dashboards
 
 ### User Roles
 
@@ -553,7 +630,7 @@ Navigation includes real-time badge indicators for pending tasks across:
 
 ---
 
-## 10. Key System Features
+## 11. Key System Features
 
 ### Configurable Taxonomies
 
@@ -603,7 +680,7 @@ Complete audit logging captures:
 
 ---
 
-## 11. Technical Architecture
+## 12. Technical Architecture
 
 ### Technology Stack
 
@@ -666,7 +743,7 @@ Complete audit logging captures:
 
 ---
 
-## 12. Getting Started
+## 13. Getting Started
 
 ### Quick Navigation Guide
 
@@ -689,7 +766,7 @@ Complete audit logging captures:
 
 ---
 
-## 13. Summary
+## 14. Summary
 
 QMIS provides a comprehensive Model Risk Management solution addressing:
 

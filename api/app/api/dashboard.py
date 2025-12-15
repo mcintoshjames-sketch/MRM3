@@ -17,6 +17,7 @@ from app.models.recommendation import Recommendation, RecommendationStatusHistor
 from app.models.model_approval_status_history import ModelApprovalStatusHistory
 from app.models.attestation import AttestationRecord
 from app.models.model_version import ModelVersion
+from app.models.model_exception import ModelException, ModelExceptionStatusHistory
 from app.core.rls import apply_model_rls
 
 router = APIRouter()
@@ -30,7 +31,16 @@ def get_news_feed(
     """
     Get news feed for the dashboard.
 
-    Returns recent activity (comments, status changes, monitoring cycles) for models the user has access to.
+    Returns recent activity for models the user has access to, including:
+    - Comments and actions
+    - Decommissioning status changes
+    - Monitoring cycle completions and approvals
+    - Validation workflow approvals and status changes
+    - Recommendation status changes
+    - Model approval status changes
+    - Attestation submissions and reviews
+    - Model version creations
+    - Model exceptions (detected, acknowledged, closed)
     """
     # Get models user has access to
     models_query = db.query(Model)
@@ -345,6 +355,68 @@ def get_news_feed(
             "entity_link": f"/models/{version.model_id}/versions/{version.version_id}",
             "created_at": version.created_at
         })
+
+    # =========================================================================
+    # MODEL EXCEPTION EVENTS (P6 - Risk Alerts)
+    # =========================================================================
+    exception_events = db.query(ModelException).options(
+        joinedload(ModelException.model),
+        joinedload(ModelException.acknowledged_by),
+        joinedload(ModelException.closed_by)
+    ).filter(
+        ModelException.model_id.in_(accessible_model_ids)
+    ).order_by(ModelException.detected_at.desc()).limit(50).all()
+
+    exception_type_labels = {
+        "UNMITIGATED_PERFORMANCE": "Unmitigated Performance Problem",
+        "OUTSIDE_INTENDED_PURPOSE": "Model Used Outside Intended Purpose",
+        "USE_PRIOR_TO_VALIDATION": "Model In Use Prior to Full Validation"
+    }
+
+    for exc in exception_events:
+        type_label = exception_type_labels.get(exc.exception_type, exc.exception_type)
+
+        # Exception detected event
+        feed.append({
+            "id": f"exception_detected_{exc.exception_id}",
+            "type": "exception",
+            "action": "detected",
+            "text": f"Exception detected: {type_label}",
+            "user_name": "System",  # Auto-detected
+            "model_name": exc.model.model_name,
+            "model_id": exc.model_id,
+            "entity_link": f"/models/{exc.model_id}",
+            "created_at": exc.detected_at
+        })
+
+        # Exception acknowledged event
+        if exc.acknowledged_at:
+            feed.append({
+                "id": f"exception_acknowledged_{exc.exception_id}",
+                "type": "exception",
+                "action": "acknowledged",
+                "text": f"Exception {exc.exception_code} acknowledged",
+                "user_name": exc.acknowledged_by.full_name if exc.acknowledged_by else None,
+                "model_name": exc.model.model_name,
+                "model_id": exc.model_id,
+                "entity_link": f"/models/{exc.model_id}",
+                "created_at": exc.acknowledged_at
+            })
+
+        # Exception closed event
+        if exc.closed_at:
+            close_method = "auto-closed" if exc.auto_closed else "closed"
+            feed.append({
+                "id": f"exception_closed_{exc.exception_id}",
+                "type": "exception",
+                "action": close_method,
+                "text": f"Exception {exc.exception_code} {close_method}",
+                "user_name": exc.closed_by.full_name if exc.closed_by else "System",
+                "model_name": exc.model.model_name,
+                "model_id": exc.model_id,
+                "entity_link": f"/models/{exc.model_id}",
+                "created_at": exc.closed_at
+            })
 
     # Sort combined feed by created_at descending and limit to 50
     feed.sort(key=lambda x: x["created_at"], reverse=True)

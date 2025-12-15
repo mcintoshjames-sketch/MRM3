@@ -66,6 +66,11 @@ class TaxonomyValue(Base):
         Boolean, nullable=True,
         comment="For MRSA Risk Level taxonomy: True if this risk level requires IRP coverage"
     )
+    # System-protected flag - prevents deletion/deactivation of system-critical values
+    is_system_protected: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False,
+        comment="If True, this value cannot be deleted or deactivated (used for exception detection questions)"
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
 
     # Relationship back to taxonomy

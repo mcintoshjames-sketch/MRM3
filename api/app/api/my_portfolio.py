@@ -27,11 +27,13 @@ from app.models.monitoring import (
     MonitoringPlanMetric,
     monitoring_plan_models,
 )
+from app.models.model_exception import ModelException
 from app.schemas.my_portfolio import (
     MyPortfolioResponse,
     PortfolioSummary,
     ActionItem,
     MonitoringAlert,
+    ExceptionItem,
     CalendarItem,
     PortfolioModel,
 )
@@ -142,9 +144,11 @@ def get_my_portfolio(
                 models_non_compliant=0,
                 yellow_alerts=0,
                 red_alerts=0,
+                open_exceptions_count=0,
             ),
             action_items=[],
             monitoring_alerts=[],
+            open_exceptions=[],
             calendar_items=[],
             models=[],
         )
@@ -388,6 +392,45 @@ def get_my_portfolio(
             result_date=cycle.period_end_date,
         ))
 
+    # --- OPEN MODEL EXCEPTIONS ---
+    open_exception_items: List[ExceptionItem] = []
+
+    # Get exception type labels
+    exception_type_labels = {
+        "UNMITIGATED_PERFORMANCE": "Unmitigated Performance Problem",
+        "OUTSIDE_INTENDED_PURPOSE": "Model Used Outside Intended Purpose",
+        "USE_PRIOR_TO_VALIDATION": "Model In Use Prior to Full Validation",
+    }
+
+    # Query open exceptions for owned models
+    open_exceptions = db.query(ModelException).options(
+        joinedload(ModelException.model),
+    ).filter(
+        ModelException.model_id.in_(owned_model_ids),
+        ModelException.status.in_(["OPEN", "ACKNOWLEDGED"]),
+    ).order_by(
+        ModelException.detected_at.desc()
+    ).all()
+
+    for exc in open_exceptions:
+        model = exc.model
+        if not model:
+            continue
+
+        open_exception_items.append(ExceptionItem(
+            exception_id=exc.exception_id,
+            exception_code=exc.exception_code,
+            exception_type=exc.exception_type,
+            exception_type_label=exception_type_labels.get(exc.exception_type, exc.exception_type),
+            model_id=model.model_id,
+            model_name=model.model_name,
+            status=exc.status,
+            description=exc.description or "",
+            detected_at=exc.detected_at,
+            acknowledged_at=exc.acknowledged_at,
+            link=f"/models/{model.model_id}",
+        ))
+
     # --- COMBINE AND SORT ACTION ITEMS ---
     all_action_items = attestation_items + recommendation_items + validation_items
 
@@ -414,6 +457,11 @@ def get_my_portfolio(
             model_yellow_map[alert.model_id] = model_yellow_map.get(alert.model_id, 0) + 1
         elif alert.outcome == OUTCOME_RED:
             model_red_map[alert.model_id] = model_red_map.get(alert.model_id, 0) + 1
+
+    # Count open exceptions per model
+    model_exceptions_map = {}
+    for exc in open_exception_items:
+        model_exceptions_map[exc.model_id] = model_exceptions_map.get(exc.model_id, 0) + 1
 
     # Track overdue items per model
     for item in all_action_items:
@@ -478,6 +526,7 @@ def get_my_portfolio(
             attestation_status=attestation_status,
             yellow_alerts=model_yellow_map.get(model.model_id, 0),
             red_alerts=model_red_map.get(model.model_id, 0),
+            open_exceptions=model_exceptions_map.get(model.model_id, 0),
             has_overdue_items=model_overdue_map.get(model.model_id, False),
             ownership_type=get_ownership_type(model, current_user, db),
         ))
@@ -510,6 +559,7 @@ def get_my_portfolio(
         models_non_compliant=non_compliant_count,
         yellow_alerts=yellow_count,
         red_alerts=red_count,
+        open_exceptions_count=len(open_exception_items),
     )
 
     return MyPortfolioResponse(
@@ -518,6 +568,7 @@ def get_my_portfolio(
         summary=summary,
         action_items=all_action_items,
         monitoring_alerts=monitoring_alerts,
+        open_exceptions=open_exception_items,
         calendar_items=all_calendar_items,
         models=model_portfolio,
     )

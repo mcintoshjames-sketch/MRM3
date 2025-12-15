@@ -432,6 +432,8 @@ class MonitoringCycleResponse(BaseModel):
     result_count: int = 0
     approval_count: int = 0
     pending_approval_count: int = 0
+    # Embedded approvals (with can_approve computed for current user)
+    approvals: Optional[List["MonitoringCycleApprovalResponse"]] = None
 
     class Config:
         from_attributes = True
@@ -653,6 +655,7 @@ class MetricTrendPoint(BaseModel):
     calculated_outcome: Optional[str] = None
     model_id: Optional[int] = None
     model_name: Optional[str] = None
+    narrative: Optional[str] = None  # Qualitative assessment narrative
 
 
 class MetricTrendResponse(BaseModel):
@@ -806,3 +809,10 @@ class CSVImportResultResponse(BaseModel):
     skipped: int
     errors: int
     error_messages: List[str] = []
+
+
+# ============================================================================
+# FORWARD REFERENCE RESOLUTION
+# ============================================================================
+# Rebuild models that have forward references to resolve them
+MonitoringCycleResponse.model_rebuild()

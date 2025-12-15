@@ -108,6 +108,7 @@ export interface RecommendationCreate {
     model_id: number;
     validation_request_id?: number | null;
     monitoring_cycle_id?: number | null;
+    plan_metric_id?: number | null;
     title: string;
     description: string;
     priority_id: number;

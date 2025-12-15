@@ -113,6 +113,7 @@ from app.models.attestation import (
     CoverageTarget,
     AttestationQuestionConfig,
 )
+from app.models.model_exception import ModelException, ModelExceptionStatusHistory
 
 __all__ = [
     # LOB (Line of Business) hierarchy
@@ -248,4 +249,7 @@ __all__ = [
     "AttestationChangeLink",
     "CoverageTarget",
     "AttestationQuestionConfig",
+    # Model Exceptions
+    "ModelException",
+    "ModelExceptionStatusHistory",
 ]
