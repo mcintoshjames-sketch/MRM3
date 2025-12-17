@@ -120,6 +120,7 @@ class VersionDeploymentTaskSummary(BaseModel):
     assigned_to_name: str
     deployed_before_validation_approved: bool
     validation_status: Optional[str] = None
+    requires_regional_approval: bool = False  # Lock icon indicator
 
     class Config:
         from_attributes = True

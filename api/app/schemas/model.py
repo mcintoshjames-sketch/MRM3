@@ -129,6 +129,7 @@ class ModelUpdate(BaseModel):
     status: Optional[str] = None  # Deprecated, use status_id
     user_ids: Optional[List[int]] = None
     regulatory_category_ids: Optional[List[int]] = None
+    region_ids: Optional[List[int]] = None  # Deployment regions for the model
     is_model: Optional[bool] = None  # True for models, False for non-models
     # MRSA (Model Risk-Sensitive Application) fields
     is_mrsa: Optional[bool] = None  # True for MRSAs requiring IRP oversight

@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import api from '../api/client';
 import Layout from '../components/Layout';
+import VersionDeploymentStatus from '../components/VersionDeploymentStatus';
 
 interface ModelVersion {
   version_id: number;
@@ -263,6 +264,20 @@ const ModelChangeRecordPage = () => {
             </div>
           </div>
         </div>
+
+        {/* Regional Deployment Status */}
+        {(version.status === 'APPROVED' || version.status === 'ACTIVE') && (
+          <div className="bg-white shadow rounded-lg p-6">
+            <h3 className="text-lg font-semibold mb-2">Regional Deployment Status</h3>
+            <p className="text-sm text-gray-500 mb-4">
+              Track deployment progress across all regions for this version.
+            </p>
+            <VersionDeploymentStatus
+              versionId={version.version_id}
+              versionNumber={version.version_number}
+            />
+          </div>
+        )}
 
         {/* Validation Request */}
         {version.validation_request_id && (

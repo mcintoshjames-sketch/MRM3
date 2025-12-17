@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { versionsApi, ModelVersion, VersionStatus } from '../api/versions';
 import { useAuth } from '../contexts/AuthContext';
 import { Link } from 'react-router-dom';
+import DeployModal from './DeployModal';
 
 interface VersionsListProps {
     modelId: number;
@@ -16,6 +17,7 @@ const VersionsList: React.FC<VersionsListProps> = ({ modelId, refreshTrigger, on
     const [error, setError] = useState<string | null>(null);
     const [exportingCSV, setExportingCSV] = useState(false);
     const [exportingPDF, setExportingPDF] = useState(false);
+    const [deployModalVersion, setDeployModalVersion] = useState<ModelVersion | null>(null);
 
     const loadVersions = async () => {
         try {
@@ -73,6 +75,16 @@ const VersionsList: React.FC<VersionsListProps> = ({ modelId, refreshTrigger, on
         } catch (err: any) {
             alert(err.response?.data?.detail || 'Failed to delete version');
         }
+    };
+
+    const handleDeploy = (e: React.MouseEvent, version: ModelVersion) => {
+        e.stopPropagation(); // Prevent row click
+        setDeployModalVersion(version);
+    };
+
+    const handleDeploySuccess = () => {
+        setDeployModalVersion(null);
+        loadVersions(); // Refresh to show updated deployment status
     };
 
     const getStatusBadge = (status: VersionStatus) => {
@@ -235,12 +247,20 @@ const VersionsList: React.FC<VersionsListProps> = ({ modelId, refreshTrigger, on
                                             </button>
                                         )}
                                         {version.status === 'APPROVED' && (
-                                            <button
-                                                onClick={(e) => handleActivate(e, version.version_id)}
-                                                className="text-blue-600 hover:text-blue-800 font-medium"
-                                            >
-                                                Activate
-                                            </button>
+                                            <>
+                                                <button
+                                                    onClick={(e) => handleActivate(e, version.version_id)}
+                                                    className="text-blue-600 hover:text-blue-800 font-medium"
+                                                >
+                                                    Activate
+                                                </button>
+                                                <button
+                                                    onClick={(e) => handleDeploy(e, version)}
+                                                    className="text-purple-600 hover:text-purple-800 font-medium"
+                                                >
+                                                    Deploy
+                                                </button>
+                                            </>
                                         )}
                                         {version.status === 'DRAFT' && (
                                             <button
@@ -251,7 +271,15 @@ const VersionsList: React.FC<VersionsListProps> = ({ modelId, refreshTrigger, on
                                             </button>
                                         )}
                                         {version.status === 'ACTIVE' && (
-                                            <span className="text-xs text-gray-500 italic">Current</span>
+                                            <>
+                                                <span className="text-xs text-gray-500 italic">Current</span>
+                                                <button
+                                                    onClick={(e) => handleDeploy(e, version)}
+                                                    className="text-purple-600 hover:text-purple-800 font-medium"
+                                                >
+                                                    Deploy
+                                                </button>
+                                            </>
                                         )}
                                     </div>
                                 </td>
@@ -260,6 +288,15 @@ const VersionsList: React.FC<VersionsListProps> = ({ modelId, refreshTrigger, on
                     </tbody>
                 </table>
             </div>
+
+            {/* Deploy Modal */}
+            {deployModalVersion && (
+                <DeployModal
+                    versionId={deployModalVersion.version_id}
+                    onClose={() => setDeployModalVersion(null)}
+                    onSuccess={handleDeploySuccess}
+                />
+            )}
         </div>
     );
 };

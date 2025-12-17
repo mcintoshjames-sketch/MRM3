@@ -1809,6 +1809,29 @@ def update_model(
             model.irps = irps
             irps_changed = True
 
+    # Handle region_ids separately (deployment regions)
+    regions_changed = False
+    if 'region_ids' in update_data:
+        region_ids = update_data.pop('region_ids')
+        if region_ids is not None:
+            from app.models.region import Region
+            regions = db.query(Region).filter(Region.region_id.in_(region_ids)).all()
+            if len(regions) != len(region_ids):
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="One or more regions not found"
+                )
+            # Clear existing model regions and add new ones
+            db.query(ModelRegion).filter(ModelRegion.model_id == model_id).delete()
+            for region_id in region_ids:
+                new_model_region = ModelRegion(
+                    model_id=model_id,
+                    region_id=region_id,
+                    created_at=utc_now()
+                )
+                db.add(new_model_region)
+            regions_changed = True
+
     # Track changes for audit log
     changes_made = {}
     risk_tier_changed = False
@@ -1836,6 +1859,9 @@ def update_model(
 
     if irps_changed:
         changes_made["irp_ids"] = "modified"
+
+    if regions_changed:
+        changes_made["region_ids"] = "modified"
 
     # Auto-sync deployment regions when wholly_owned_region_id changes
     if 'wholly_owned_region_id' in update_data and update_data['wholly_owned_region_id'] is not None:

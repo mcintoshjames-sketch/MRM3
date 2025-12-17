@@ -11,6 +11,7 @@ import { recommendationsApi, RecommendationListItem, TaxonomyValue as RecTaxonom
 import { listValidationRequestLimitations, LimitationListItem } from '../api/limitations';
 import RecommendationCreateModal from '../components/RecommendationCreateModal';
 import ValidationScorecardTab from '../components/ValidationScorecardTab';
+import DeployModal from '../components/DeployModal';
 
 interface TaxonomyValue {
     value_id: number;
@@ -192,6 +193,10 @@ export default function ValidationRequestDetailPage() {
     const [holdReason, setHoldReason] = useState('');
     const [cancelReason, setCancelReason] = useState('');
     const [resumeNotes, setResumeNotes] = useState('');
+
+    // Deploy modal state (Issue 5: Deploy Approved Version CTA)
+    const [showDeployModal, setShowDeployModal] = useState(false);
+    const [deployVersion, setDeployVersion] = useState<ModelVersion | null>(null);
 
     const [statusOptions, setStatusOptions] = useState<TaxonomyValue[]>([]);
     const [ratingOptions, setRatingOptions] = useState<TaxonomyValue[]>([]);
@@ -1320,6 +1325,22 @@ export default function ValidationRequestDetailPage() {
                         </button>
                     )}
 
+                    {/* Deploy Approved Version Button (Issue 5: when validation is APPROVED) */}
+                    {request.current_status.code === 'APPROVED' && relatedVersions.length > 0 && (
+                        <button
+                            onClick={() => {
+                                const approvedVersion = relatedVersions.find(v => v.status === 'APPROVED' || v.status === 'ACTIVE');
+                                if (approvedVersion) {
+                                    setDeployVersion(approvedVersion);
+                                    setShowDeployModal(true);
+                                }
+                            }}
+                            className="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700"
+                        >
+                            Deploy Approved Version
+                        </button>
+                    )}
+
                     {/* Hold/Cancel/Resume Buttons - replaces generic Update Status for cleaner workflow */}
                     {canEditRequest && !['APPROVED', 'CANCELLED', 'ON_HOLD'].includes(request.current_status.code) && (
                         <>
@@ -1804,8 +1825,18 @@ export default function ValidationRequestDetailPage() {
                                                     )}
                                                 </div>
                                                 <p className="text-sm text-gray-700 mb-1">{version.change_description}</p>
-                                                <div className="text-xs text-gray-500">
-                                                    Created by {version.created_by_name} on {version.created_at.split('T')[0]}
+                                                <div className="flex justify-between items-center">
+                                                    <div className="text-xs text-gray-500">
+                                                        Created by {version.created_by_name} on {version.created_at.split('T')[0]}
+                                                    </div>
+                                                    {(version.status === 'APPROVED' || version.status === 'ACTIVE') && request.models[0] && (
+                                                        <Link
+                                                            to={`/models/${request.models[0].model_id}/versions/${version.version_id}`}
+                                                            className="inline-flex items-center gap-1 px-3 py-1 text-xs font-medium text-purple-700 bg-purple-100 rounded-full hover:bg-purple-200 transition-colors"
+                                                        >
+                                                            <span>🚀</span> Deploy
+                                                        </Link>
+                                                    )}
                                                 </div>
                                             </div>
                                         ))}
@@ -3641,6 +3672,22 @@ export default function ValidationRequestDetailPage() {
                         </div>
                     </div>
                 </div>
+            )}
+
+            {/* Deploy Modal (Issue 5: Deploy Approved Version) */}
+            {showDeployModal && deployVersion && (
+                <DeployModal
+                    versionId={deployVersion.version_id}
+                    onClose={() => {
+                        setShowDeployModal(false);
+                        setDeployVersion(null);
+                    }}
+                    onSuccess={() => {
+                        setShowDeployModal(false);
+                        setDeployVersion(null);
+                        fetchData();
+                    }}
+                />
             )}
         </Layout>
     );

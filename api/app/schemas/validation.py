@@ -388,7 +388,9 @@ class ValidationApprovalResponse(BaseModel):
     comments: Optional[str] = None
     approved_at: Optional[datetime] = None
     created_at: datetime
-    # Historical context field
+    # Region this approval is for (used for regional approvals)
+    region_id: Optional[int] = None
+    # Historical context field (deprecated, use region_id instead)
     represented_region_id: Optional[int] = None
     # Voided status (approvals may be voided due to model risk tier changes)
     voided_at: Optional[datetime] = None

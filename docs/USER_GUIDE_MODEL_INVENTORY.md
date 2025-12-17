@@ -23,18 +23,24 @@ This guide explains how to work with the Model Inventory in the Quantitative Met
    - [Version Lifecycle](#version-lifecycle)
    - [Creating a New Version](#creating-a-new-version)
    - [Change Types](#change-types)
-6. [Model Relationships](#model-relationships)
+6. [Version Deployment](#version-deployment)
+   - [Deploy Modal](#deploy-modal)
+   - [Deploy Now vs Schedule for Later](#deploy-now-vs-schedule-for-later)
+   - [Regional Approval Lock Icon](#regional-approval-lock-icon)
+   - [My Deployment Tasks](#my-deployment-tasks)
+   - [Bulk Operations](#bulk-operations)
+7. [Model Relationships](#model-relationships)
    - [Model Hierarchy (Parent-Child)](#model-hierarchy-parent-child)
    - [Data Dependencies](#data-dependencies)
-7. [Model Limitations](#model-limitations)
+8. [Model Limitations](#model-limitations)
    - [Recording a Limitation](#recording-a-limitation)
    - [Significance Levels](#significance-levels)
    - [Managing User Awareness](#managing-user-awareness)
-8. [Model Decommissioning](#model-decommissioning)
+9. [Model Decommissioning](#model-decommissioning)
    - [Initiating Decommissioning](#initiating-decommissioning)
    - [Approval Workflow](#approval-workflow)
    - [Decommissioning Reasons](#decommissioning-reasons)
-9. [Exporting Data](#exporting-data)
+10. [Exporting Data](#exporting-data)
 
 ---
 
@@ -287,6 +293,114 @@ The change taxonomy ⚙ provides additional categorization:
 - Data/Input Changes
 - Parameter Changes
 - Output/Reporting Changes
+
+---
+
+## Version Deployment
+
+After a model version is validated and approved, it must be deployed to production across the appropriate geographic regions. The deployment feature provides tools to manage this rollout process.
+
+### Deploy Modal
+
+The Deploy Modal is accessed from two locations:
+
+1. **Versions Tab**: Click the **Deploy** button next to any APPROVED or ACTIVE version
+2. **Validation Detail Page**: After a validation is approved, click **Deploy Approved Version**
+
+The modal displays:
+
+| Section | Information |
+|---------|-------------|
+| **Version Info** | Version number and change description |
+| **Validation Status** | Whether the version's validation is approved |
+| **Region Checklist** | All regions where the model can be deployed |
+| **Current Deployment** | For each region: current version and deployment date |
+| **Lock Icon 🔒** | Indicates regions requiring separate regional approval |
+
+### Deploy Now vs Schedule for Later
+
+**Deploy Now**
+- Creates a confirmed deployment task
+- Immediately updates the model's regional deployment status
+- Records the actual production date
+- If validation is not approved, requires a **Validation Override Reason** explaining why immediate deployment is necessary
+
+**Schedule for Later**
+- Creates a pending deployment task
+- Allows you to set a future planned production date
+- Task appears in My Deployment Tasks for later confirmation
+- No validation override required (approval may be obtained before the planned date)
+
+**Apply Same Date to All**: When scheduling multiple regions, use this button to set the same planned date for all selected regions.
+
+### Regional Approval Lock Icon
+
+The lock icon 🔒 appears next to regions that require separate regional approval. This occurs when:
+
+1. The region has **requires_regional_approval = true** configured, AND
+2. The region is **NOT** included in the validation request's scope
+
+**What This Means:**
+- If a model's validation covered US and EU regions, but the model is now being deployed to UK (which requires regional approval), the UK region will show a lock icon
+- Deploying to a locked region triggers an automatic regional approval request
+- The regional approval must be granted separately from the main validation
+
+**Footer Note**: The Deploy Modal always displays an explanation of the lock icon at the bottom, along with a count of how many selected regions will require regional approval.
+
+### My Deployment Tasks
+
+Navigate to **My Deployment Tasks** in the sidebar to see all pending deployment tasks assigned to you.
+
+**Task Status Icons:**
+
+| Icon | Status | Meaning |
+|------|--------|---------|
+| 🟢 | Confirmed | Deployment has been completed |
+| 🟡 | Pending | Awaiting confirmation |
+| 🔴 | Overdue | Past the planned production date |
+| ⚫ | Cancelled | Deployment was cancelled |
+
+**Filters Available:**
+
+| Filter | Description |
+|--------|-------------|
+| **All** | Show all tasks |
+| **Overdue** | Tasks past their planned date |
+| **Due Today** | Tasks planned for today |
+| **This Week** | Tasks planned within the current week |
+| **Due Soon** | Tasks due within the next 7 days |
+| **Upcoming** | Tasks with future planned dates |
+
+**Additional Filters:**
+- **Search Box**: Filter by model name, version number, or region code
+- **Date Range**: Select start and end dates to filter by planned production date
+
+### Bulk Operations
+
+Select multiple tasks using the checkboxes to perform bulk operations:
+
+**Confirm Selected**
+- Opens the Bulk Confirmation Modal
+- Shows all selected deployments with lock icons 🔒 where applicable
+- Enter the **Actual Production Date** (single date applies to all)
+- Add optional **Confirmation Notes**
+- If any tasks require validation override, provide the reason
+- Footer note warns which regions will trigger regional approval requests
+
+**Adjust Dates**
+- Change the planned production date for multiple tasks
+- Enter the **New Planned Date**
+- Provide an **Adjustment Reason** (optional)
+
+**Cancel Selected**
+- Cancel multiple pending deployment tasks
+- Provide a **Cancellation Reason** (optional)
+- Cancelled tasks remain in history but cannot be confirmed
+
+**Important Notes:**
+- Only **Pending** tasks can be confirmed, adjusted, or cancelled
+- Confirmed and cancelled tasks are locked from further changes
+- All bulk operations are logged in the audit trail
 
 ---
 
