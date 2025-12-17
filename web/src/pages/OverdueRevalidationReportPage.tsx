@@ -105,9 +105,6 @@ const OverdueRevalidationReportPage: React.FC = () => {
     const [needsUpdateOnly, setNeedsUpdateOnly] = useState(false);
     const [daysOverdueMin, setDaysOverdueMin] = useState<string>('');
 
-    // UI State
-    const [showDataLimitations, setShowDataLimitations] = useState(false);
-
     // Commentary modal
     const [showCommentaryModal, setShowCommentaryModal] = useState(false);
     const [commentaryModalRequestId, setCommentaryModalRequestId] = useState<number | null>(null);
@@ -692,47 +689,6 @@ const OverdueRevalidationReportPage: React.FC = () => {
                         <p className="text-sm text-gray-500">
                             All models are up to date with their revalidation schedules.
                         </p>
-                    </div>
-                )}
-
-                {/* Data Limitations Section */}
-                {reportData && reportData.data_limitations && reportData.data_limitations.length > 0 && (
-                    <div className="mt-6">
-                        <button
-                            onClick={() => setShowDataLimitations(!showDataLimitations)}
-                            className="flex items-center gap-2 text-sm text-gray-600 hover:text-gray-800"
-                        >
-                            <svg
-                                className={`w-4 h-4 transform transition-transform ${showDataLimitations ? 'rotate-90' : ''}`}
-                                fill="none"
-                                stroke="currentColor"
-                                viewBox="0 0 24 24"
-                            >
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                            </svg>
-                            Data Limitations & Recommended Improvements ({reportData.data_limitations.length})
-                        </button>
-
-                        {showDataLimitations && (
-                            <div className="mt-3 bg-amber-50 border border-amber-200 rounded-lg p-4">
-                                <p className="text-sm text-amber-800 mb-3">
-                                    The following metrics would be valuable for regulatory reporting but cannot currently be calculated due to data limitations:
-                                </p>
-                                <div className="space-y-3">
-                                    {reportData.data_limitations.map((limitation, index) => (
-                                        <div key={index} className="bg-white p-3 rounded border border-amber-100">
-                                            <h4 className="font-medium text-gray-900 text-sm">{limitation.metric_name}</h4>
-                                            <p className="text-xs text-gray-600 mt-1">
-                                                <strong>Current Limitation:</strong> {limitation.reason}
-                                            </p>
-                                            <p className="text-xs text-green-700 mt-1">
-                                                <strong>Recommended Remediation:</strong> {limitation.remediation}
-                                            </p>
-                                        </div>
-                                    ))}
-                                </div>
-                            </div>
-                        )}
                     </div>
                 )}
 

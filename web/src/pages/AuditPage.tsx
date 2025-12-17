@@ -21,6 +21,11 @@ interface AuditLog {
     user: User;
 }
 
+interface EntityOption {
+    entity_id: number;
+    label: string;
+}
+
 export default function AuditPage() {
     const [logs, setLogs] = useState<AuditLog[]>([]);
     const [users, setUsers] = useState<User[]>([]);
@@ -35,6 +40,12 @@ export default function AuditPage() {
     const [filterAction, setFilterAction] = useState('');
     const [filterUserId, setFilterUserId] = useState('');
 
+    // Entity dropdown state
+    const [entityOptions, setEntityOptions] = useState<EntityOption[]>([]);
+    const [entitySearchQuery, setEntitySearchQuery] = useState('');
+    const [showEntityDropdown, setShowEntityDropdown] = useState(false);
+    const [loadingEntities, setLoadingEntities] = useState(false);
+
     useEffect(() => {
         fetchInitialData();
     }, []);
@@ -42,6 +53,30 @@ export default function AuditPage() {
     useEffect(() => {
         fetchLogs();
     }, [filterEntityType, filterEntityId, filterAction, filterUserId]);
+
+    // Fetch entity options when entity type changes
+    useEffect(() => {
+        if (filterEntityType) {
+            fetchEntityOptions(filterEntityType);
+        } else {
+            setEntityOptions([]);
+            setEntitySearchQuery('');
+            setFilterEntityId('');
+        }
+    }, [filterEntityType]);
+
+    const fetchEntityOptions = async (entityType: string) => {
+        setLoadingEntities(true);
+        try {
+            const response = await api.get(`/audit-logs/entities?entity_type=${encodeURIComponent(entityType)}`);
+            setEntityOptions(response.data);
+        } catch (error) {
+            console.error('Failed to fetch entity options:', error);
+            setEntityOptions([]);
+        } finally {
+            setLoadingEntities(false);
+        }
+    };
 
     const fetchInitialData = async () => {
         try {
@@ -81,6 +116,9 @@ export default function AuditPage() {
         setFilterEntityId('');
         setFilterAction('');
         setFilterUserId('');
+        setEntitySearchQuery('');
+        setEntityOptions([]);
+        setShowEntityDropdown(false);
     };
 
     const getActionBadgeColor = (action: string) => {
@@ -221,25 +259,94 @@ export default function AuditPage() {
                             onChange={(e) => setFilterEntityType(e.target.value)}
                         >
                             <option value="">All Types</option>
-                            {entityTypes.map((type) => (
+                            {[...entityTypes].sort().map((type) => (
                                 <option key={type} value={type}>
                                     {type}
                                 </option>
                             ))}
                         </select>
                     </div>
-                    <div>
-                        <label htmlFor="entity_id" className="block text-sm font-medium mb-1">
-                            Entity ID
+                    <div className="relative">
+                        <label htmlFor="entity_search" className="block text-sm font-medium mb-1">
+                            Entity
                         </label>
-                        <input
-                            id="entity_id"
-                            type="number"
-                            className="input-field"
-                            value={filterEntityId}
-                            onChange={(e) => setFilterEntityId(e.target.value)}
-                            placeholder="Any ID"
-                        />
+                        {!filterEntityType ? (
+                            <input
+                                id="entity_search"
+                                type="text"
+                                className="input-field bg-gray-100 cursor-not-allowed"
+                                placeholder="Select entity type first"
+                                disabled
+                            />
+                        ) : loadingEntities ? (
+                            <input
+                                id="entity_search"
+                                type="text"
+                                className="input-field bg-gray-100"
+                                placeholder="Loading entities..."
+                                disabled
+                            />
+                        ) : (
+                            <>
+                                <input
+                                    id="entity_search"
+                                    type="text"
+                                    className="input-field"
+                                    value={entitySearchQuery}
+                                    onChange={(e) => {
+                                        setEntitySearchQuery(e.target.value);
+                                        setShowEntityDropdown(true);
+                                        if (e.target.value === '') {
+                                            setFilterEntityId('');
+                                        }
+                                    }}
+                                    onFocus={() => setShowEntityDropdown(true)}
+                                    placeholder="Type to search..."
+                                />
+                                {showEntityDropdown && entityOptions.length > 0 && (
+                                    <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg max-h-60 overflow-y-auto">
+                                        {entityOptions
+                                            .filter((opt) =>
+                                                opt.label.toLowerCase().includes(entitySearchQuery.toLowerCase())
+                                            )
+                                            .slice(0, 50)
+                                            .map((opt) => (
+                                                <div
+                                                    key={opt.entity_id}
+                                                    className={`px-4 py-2 hover:bg-gray-100 cursor-pointer text-sm ${
+                                                        filterEntityId === String(opt.entity_id) ? 'bg-blue-50' : ''
+                                                    }`}
+                                                    onClick={() => {
+                                                        setFilterEntityId(String(opt.entity_id));
+                                                        setEntitySearchQuery(opt.label);
+                                                        setShowEntityDropdown(false);
+                                                    }}
+                                                >
+                                                    <span className="text-gray-500 mr-2">#{opt.entity_id}</span>
+                                                    {opt.label}
+                                                </div>
+                                            ))}
+                                        {entityOptions.filter((opt) =>
+                                            opt.label.toLowerCase().includes(entitySearchQuery.toLowerCase())
+                                        ).length === 0 && (
+                                            <div className="px-4 py-2 text-sm text-gray-500">No matches found</div>
+                                        )}
+                                    </div>
+                                )}
+                            </>
+                        )}
+                        {filterEntityId && (
+                            <button
+                                type="button"
+                                className="absolute right-2 top-7 text-gray-400 hover:text-gray-600"
+                                onClick={() => {
+                                    setFilterEntityId('');
+                                    setEntitySearchQuery('');
+                                }}
+                            >
+                                ✕
+                            </button>
+                        )}
                     </div>
                     <div>
                         <label htmlFor="action" className="block text-sm font-medium mb-1">
