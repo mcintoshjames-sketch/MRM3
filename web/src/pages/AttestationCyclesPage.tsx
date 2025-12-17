@@ -11,7 +11,7 @@ interface AttestationCycle {
     period_start_date: string;
     period_end_date: string;
     submission_due_date: string;
-    status: 'PENDING' | 'OPEN' | 'CLOSED';
+    status: 'PENDING' | 'OPEN' | 'UNDER_REVIEW' | 'CLOSED';
     opened_at: string | null;
     opened_by: { user_id: number; full_name: string } | null;
     closed_at: string | null;
@@ -264,6 +264,12 @@ export default function AttestationCyclesPage() {
     // Error/success messages
     const [error, setError] = useState<string | null>(null);
     const [success, setSuccess] = useState<string | null>(null);
+
+    // Force Close modal state
+    const [showForceCloseModal, setShowForceCloseModal] = useState(false);
+    const [forceCloseCycleId, setForceCloseCycleId] = useState<number | null>(null);
+    const [forceCloseReason, setForceCloseReason] = useState('');
+    const [forceCloseBlockingGaps, setForceCloseBlockingGaps] = useState<string[]>([]);
 
     // Fetch data based on active tab
     useEffect(() => {
@@ -654,8 +660,52 @@ export default function AttestationCyclesPage() {
             fetchCycles();
             fetchStats();
         } catch (err: any) {
-            setError(err.response?.data?.detail || 'Failed to close cycle');
+            const detail = err.response?.data?.detail || 'Failed to close cycle';
+            // Check if error is due to blocking gaps (coverage targets not met)
+            if (detail.toLowerCase().includes('blocking') || detail.toLowerCase().includes('cannot close')) {
+                // Parse blocking gaps from the error message
+                // Format: "Cannot close cycle: High Risk: X models missing (Y% < Z% target); ..."
+                const gapMatches = detail.match(/([^:;]+: \d+ models? missing \([^)]+\))/g);
+                const parsedGaps = gapMatches || ['Coverage targets not met - see details above'];
+
+                // Show Force Close modal - no error banner needed since modal explains everything
+                setForceCloseCycleId(cycleId);
+                setForceCloseBlockingGaps(parsedGaps);
+                setForceCloseReason('');
+                setShowForceCloseModal(true);
+            } else {
+                setError(detail);
+            }
         }
+    };
+
+    const handleForceCloseCycle = async () => {
+        if (!forceCloseCycleId || !forceCloseReason.trim()) {
+            setError('A reason is required to force close a cycle');
+            return;
+        }
+        setError(null);
+        try {
+            await api.post(`/attestations/cycles/${forceCloseCycleId}/close?force=true`, {
+                notes: `FORCE CLOSED: ${forceCloseReason}`
+            });
+            setSuccess('Cycle force closed successfully');
+            setShowForceCloseModal(false);
+            setForceCloseCycleId(null);
+            setForceCloseReason('');
+            setForceCloseBlockingGaps([]);
+            fetchCycles();
+            fetchStats();
+        } catch (err: any) {
+            setError(err.response?.data?.detail || 'Failed to force close cycle');
+        }
+    };
+
+    const cancelForceClose = () => {
+        setShowForceCloseModal(false);
+        setForceCloseCycleId(null);
+        setForceCloseReason('');
+        setForceCloseBlockingGaps([]);
     };
 
     const handleUpdateTarget = async (tierId: number, targetPercentage: number, isBlocking: boolean) => {
@@ -789,6 +839,8 @@ export default function AttestationCyclesPage() {
         switch (status) {
             case 'OPEN':
                 return <span className="px-2 py-1 text-xs font-medium rounded-full bg-green-100 text-green-800">Open</span>;
+            case 'UNDER_REVIEW':
+                return <span className="px-2 py-1 text-xs font-medium rounded-full bg-purple-100 text-purple-800">Under Review</span>;
             case 'CLOSED':
                 return <span className="px-2 py-1 text-xs font-medium rounded-full bg-gray-100 text-gray-800">Closed</span>;
             default:
@@ -2544,6 +2596,79 @@ export default function AttestationCyclesPage() {
                             </table>
                         </div>
                     )}
+                </div>
+            )}
+
+            {/* Force Close Confirmation Modal */}
+            {showForceCloseModal && (
+                <div className="fixed inset-0 z-50 overflow-y-auto">
+                    <div className="flex items-center justify-center min-h-screen px-4 pt-4 pb-20 text-center sm:p-0">
+                        <div className="fixed inset-0 transition-opacity bg-gray-500 bg-opacity-75" onClick={cancelForceClose}></div>
+                        <div className="relative inline-block w-full max-w-lg px-4 pt-5 pb-4 overflow-hidden text-left align-bottom transition-all transform bg-white rounded-lg shadow-xl sm:my-8 sm:align-middle sm:p-6">
+                            <div className="sm:flex sm:items-start">
+                                <div className="flex items-center justify-center flex-shrink-0 w-12 h-12 mx-auto bg-red-100 rounded-full sm:mx-0 sm:h-10 sm:w-10">
+                                    <svg className="w-6 h-6 text-red-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                                    </svg>
+                                </div>
+                                <div className="mt-3 text-center sm:mt-0 sm:ml-4 sm:text-left flex-1">
+                                    <h3 className="text-lg font-medium leading-6 text-gray-900">
+                                        Force Close Cycle
+                                    </h3>
+                                    <div className="mt-2">
+                                        <p className="text-sm text-gray-500">
+                                            This cycle has unmet coverage targets. Force closing will bypass these requirements.
+                                        </p>
+
+                                        {forceCloseBlockingGaps.length > 0 && (
+                                            <div className="mt-3 p-3 bg-red-50 border border-red-200 rounded-md">
+                                                <p className="text-sm font-medium text-red-800 mb-2">Blocking Gaps:</p>
+                                                <ul className="list-disc list-inside text-sm text-red-700 space-y-1">
+                                                    {forceCloseBlockingGaps.map((gap, index) => (
+                                                        <li key={index}>{gap}</li>
+                                                    ))}
+                                                </ul>
+                                            </div>
+                                        )}
+
+                                        <div className="mt-4">
+                                            <label className="block text-sm font-medium text-gray-700">
+                                                Reason for Force Close <span className="text-red-600">*</span>
+                                            </label>
+                                            <textarea
+                                                value={forceCloseReason}
+                                                onChange={(e) => setForceCloseReason(e.target.value)}
+                                                rows={3}
+                                                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-red-500 focus:ring-red-500 sm:text-sm"
+                                                placeholder="Provide justification for overriding coverage targets..."
+                                                required
+                                            />
+                                            <p className="mt-1 text-xs text-gray-500">
+                                                This reason will be recorded in the audit trail.
+                                            </p>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div className="mt-5 sm:mt-4 sm:flex sm:flex-row-reverse gap-3">
+                                <button
+                                    type="button"
+                                    onClick={handleForceCloseCycle}
+                                    disabled={!forceCloseReason.trim()}
+                                    className="inline-flex justify-center w-full px-4 py-2 text-base font-medium text-white bg-red-600 border border-transparent rounded-md shadow-sm hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 sm:w-auto sm:text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                                >
+                                    Force Close
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={cancelForceClose}
+                                    className="inline-flex justify-center w-full px-4 py-2 mt-3 text-base font-medium text-gray-700 bg-white border border-gray-300 rounded-md shadow-sm hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 sm:mt-0 sm:w-auto sm:text-sm"
+                                >
+                                    Cancel
+                                </button>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             )}
         </Layout>

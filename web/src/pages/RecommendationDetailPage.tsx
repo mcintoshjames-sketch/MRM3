@@ -134,7 +134,7 @@ export default function RecommendationDetailPage() {
         (currentStatus === 'REC_OPEN' || currentStatus === 'REC_REWORK_REQUIRED');
     const canReviewClosure = (isValidator || isAdmin) && currentStatus === 'REC_PENDING_CLOSURE_REVIEW';
     const canUploadEvidence = (isAssignedDeveloper || isAdmin) &&
-        ['REC_OPEN', 'REC_REWORK_REQUIRED', 'REC_PENDING_CLOSURE_REVIEW'].includes(currentStatus);
+        ['REC_OPEN', 'REC_REWORK_REQUIRED'].includes(currentStatus);
     // Skip action plan - must be assigned dev/admin and backend must confirm skip is allowed
     const canSkipActionPlan = (isAssignedDeveloper || isAdmin) && canSkipActionPlanState;
     // Edit recommendation - validators/admins can edit in certain statuses
@@ -176,10 +176,11 @@ export default function RecommendationDetailPage() {
     const handleFinalize = async () => {
         if (!recommendation) return;
         try {
-            await recommendationsApi.finalize(recommendation.recommendation_id);
+            // Submit draft to developer (DRAFT -> PENDING_RESPONSE)
+            await recommendationsApi.submitToDeveloper(recommendation.recommendation_id);
             fetchRecommendation();
         } catch (err: any) {
-            alert(err.response?.data?.detail || 'Failed to finalize recommendation');
+            alert(err.response?.data?.detail || 'Failed to submit recommendation to developer');
         }
     };
 

@@ -8,7 +8,7 @@ interface ClosureReviewModalProps {
 }
 
 export default function ClosureReviewModal({ recommendation, onClose, onSuccess }: ClosureReviewModalProps) {
-    const [decision, setDecision] = useState<'APPROVE' | 'REQUEST_REWORK'>('APPROVE');
+    const [decision, setDecision] = useState<'APPROVE' | 'RETURN'>('APPROVE');
     const [reviewComments, setReviewComments] = useState('');
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
@@ -17,7 +17,7 @@ export default function ClosureReviewModal({ recommendation, onClose, onSuccess 
         e.preventDefault();
         setError(null);
 
-        if (decision === 'REQUEST_REWORK' && !reviewComments.trim()) {
+        if (decision === 'RETURN' && !reviewComments.trim()) {
             setError('Please provide feedback explaining what rework is needed');
             return;
         }
@@ -146,12 +146,12 @@ export default function ClosureReviewModal({ recommendation, onClose, onSuccess 
                                     <label className="flex items-center">
                                         <input
                                             type="radio"
-                                            value="REQUEST_REWORK"
-                                            checked={decision === 'REQUEST_REWORK'}
-                                            onChange={() => setDecision('REQUEST_REWORK')}
+                                            value="RETURN"
+                                            checked={decision === 'RETURN'}
+                                            onChange={() => setDecision('RETURN')}
                                             className="mr-2"
                                         />
-                                        <span className="text-orange-700 font-medium">Request Rework</span>
+                                        <span className="text-orange-700 font-medium">Return for Rework</span>
                                         <span className="text-sm text-gray-500 ml-2">
                                             (Developer must address feedback)
                                         </span>
@@ -162,17 +162,17 @@ export default function ClosureReviewModal({ recommendation, onClose, onSuccess 
                             <div>
                                 <label className="block text-sm font-medium text-gray-700 mb-1">
                                     Review Comments
-                                    {decision === 'REQUEST_REWORK' && <span className="text-red-500"> *</span>}
+                                    {decision === 'RETURN' && <span className="text-red-500"> *</span>}
                                 </label>
                                 <textarea
                                     value={reviewComments}
                                     onChange={(e) => setReviewComments(e.target.value)}
                                     rows={3}
                                     className="input-field"
-                                    placeholder={decision === 'REQUEST_REWORK'
+                                    placeholder={decision === 'RETURN'
                                         ? "Explain what additional work or changes are required..."
                                         : "Optional comments on closure approval..."}
-                                    required={decision === 'REQUEST_REWORK'}
+                                    required={decision === 'RETURN'}
                                 />
                             </div>
                         </div>
@@ -195,7 +195,7 @@ export default function ClosureReviewModal({ recommendation, onClose, onSuccess 
                                 }`}
                                 disabled={loading}
                             >
-                                {loading ? 'Submitting...' : decision === 'APPROVE' ? 'Approve Closure' : 'Request Rework'}
+                                {loading ? 'Submitting...' : decision === 'APPROVE' ? 'Approve Closure' : 'Return for Rework'}
                             </button>
                         </div>
                     </form>

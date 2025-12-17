@@ -165,11 +165,12 @@ export default function Layout({ children }: LayoutProps) {
         pendingCounts.approvals + pendingCounts.recommendations;
 
     // Reusable nav link component
-    const NavItem = ({ to, children, badge, badgeColor = 'red' }: {
+    const NavItem = ({ to, children, badge, badgeColor = 'red', end = false }: {
         to: string;
         children: React.ReactNode;
         badge?: number;
         badgeColor?: 'red' | 'purple' | 'green' | 'orange';
+        end?: boolean;
     }) => {
         const colorClasses = {
             red: 'bg-red-500',
@@ -182,6 +183,7 @@ export default function Layout({ children }: LayoutProps) {
             <li>
                 <NavLink
                     to={to}
+                    end={end}
                     className={({ isActive }) =>
                         `block px-4 py-2 rounded transition-colors ${isActive
                             ? 'bg-blue-600 text-white'
@@ -276,6 +278,9 @@ export default function Layout({ children }: LayoutProps) {
                         {user?.role === 'Admin' && (
                             <NavItem to="/irps">IRP Management</NavItem>
                         )}
+                        {(user?.role === 'Admin' || user?.role === 'Validator') && (
+                            <NavItem to="/reports/exceptions">Model Exceptions</NavItem>
+                        )}
 
                         {/* ══════════════════════════════════════════════════════════
                             MY TASKS SECTION - Personal action items with badges
@@ -298,7 +303,7 @@ export default function Layout({ children }: LayoutProps) {
                                 <NavItem to="/pending-decommissioning" badge={pendingCounts.decommissioning} badgeColor="purple">
                                     Pending Decommissioning
                                 </NavItem>
-                                {(user?.role === 'Admin' || user?.role === 'Global Approver' || user?.role === 'Regional Approver') && pendingCounts.approvals > 0 && (
+                                {(user?.role === 'Admin' || user?.role === 'Global Approver' || user?.role === 'Regional Approver') && (
                                     <NavItem to="/approver-dashboard" badge={pendingCounts.approvals} badgeColor="orange">
                                         Pending Approvals
                                     </NavItem>
@@ -345,7 +350,7 @@ export default function Layout({ children }: LayoutProps) {
 
                         {!collapsed.reportsAudit && (
                             <>
-                                <NavItem to="/reports">Reports</NavItem>
+                                <NavItem to="/reports" end>Reports</NavItem>
                                 {user?.role === 'Admin' && (
                                     <NavItem to="/analytics">Advanced Analytics</NavItem>
                                 )}

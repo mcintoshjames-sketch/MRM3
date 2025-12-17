@@ -52,17 +52,17 @@ export default function ClosureSubmitModal({ recommendation, onClose, onSuccess 
                         </button>
                     </div>
 
-                    {/* Warning if not all tasks complete */}
+                    {/* Error if not all tasks complete - blocking message */}
                     {!allTasksCompleted && recommendation.action_plan_tasks && recommendation.action_plan_tasks.length > 0 && (
-                        <div className="bg-yellow-50 border border-yellow-300 text-yellow-800 px-4 py-3 rounded mb-4">
+                        <div className="bg-red-50 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
                             <div className="flex items-center gap-2">
                                 <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
                                 </svg>
-                                <span className="font-medium">Not all action plan tasks are completed</span>
+                                <span className="font-medium">Cannot submit - incomplete tasks</span>
                             </div>
                             <p className="text-sm mt-1">
-                                You can still submit for closure, but please explain why incomplete tasks are acceptable.
+                                All action plan tasks must be completed before submitting for closure review.
                             </p>
                         </div>
                     )}
@@ -129,8 +129,8 @@ export default function ClosureSubmitModal({ recommendation, onClose, onSuccess 
                             </button>
                             <button
                                 type="submit"
-                                className="px-4 py-2 bg-cyan-600 text-white rounded hover:bg-cyan-700"
-                                disabled={loading}
+                                className="px-4 py-2 bg-cyan-600 text-white rounded hover:bg-cyan-700 disabled:bg-gray-400 disabled:cursor-not-allowed"
+                                disabled={loading || !allTasksCompleted}
                             >
                                 {loading ? 'Submitting...' : 'Submit for Closure Review'}
                             </button>

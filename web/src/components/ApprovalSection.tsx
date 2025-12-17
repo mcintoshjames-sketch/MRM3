@@ -21,7 +21,7 @@ export default function ApprovalSection({ recommendation, currentUser, onRefresh
     // Check if user can approve/reject
     const canApprove = (approval: any) => {
         if (currentStatus !== 'REC_PENDING_APPROVAL') return false;
-        if (approval.decision) return false; // Already decided
+        if (approval.approval_status !== 'PENDING') return false; // Already decided
 
         // Check if user is the approver or an admin
         const isApprover = approval.approver_id === currentUser?.user_id;
@@ -35,7 +35,7 @@ export default function ApprovalSection({ recommendation, currentUser, onRefresh
         // Only admins can void
         if (currentUser?.role !== 'Admin') return false;
         // Can only void approvals that have a decision and are not already voided
-        if (!approval.decision) return false;
+        if (approval.approval_status === 'PENDING') return false;
         if (approval.approval_status === 'VOIDED') return false;
         // Can only void when in pending approval status
         if (currentStatus !== 'REC_PENDING_APPROVAL') return false;
@@ -66,9 +66,8 @@ export default function ApprovalSection({ recommendation, currentUser, onRefresh
 
         try {
             setLoading(true);
-            await recommendationsApi.submitApproval(recommendation.recommendation_id, approvalId, {
-                decision: 'REJECT',
-                comments: rejectionComments.trim()
+            await recommendationsApi.rejectApproval(recommendation.recommendation_id, approvalId, {
+                rejection_reason: rejectionComments.trim()
             });
             setRejectionComments('');
             setShowRejectionForm(null);
@@ -99,20 +98,22 @@ export default function ApprovalSection({ recommendation, currentUser, onRefresh
         }
     };
 
-    const getDecisionColor = (decision: string | null, status?: string) => {
-        if (status === 'VOIDED') return 'bg-purple-100 text-purple-800';
-        switch (decision) {
-            case 'APPROVE': return 'bg-green-100 text-green-800';
-            case 'REJECT': return 'bg-red-100 text-red-800';
+    const getDecisionColor = (approvalStatus: string) => {
+        switch (approvalStatus) {
+            case 'APPROVED': return 'bg-green-100 text-green-800';
+            case 'REJECTED': return 'bg-red-100 text-red-800';
+            case 'VOIDED': return 'bg-purple-100 text-purple-800';
+            case 'PENDING': return 'bg-gray-100 text-gray-600';
             default: return 'bg-gray-100 text-gray-600';
         }
     };
 
-    const getDecisionLabel = (decision: string | null, status?: string) => {
-        if (status === 'VOIDED') return 'Voided';
-        switch (decision) {
-            case 'APPROVE': return 'Approved';
-            case 'REJECT': return 'Rejected';
+    const getDecisionLabel = (approvalStatus: string) => {
+        switch (approvalStatus) {
+            case 'APPROVED': return 'Approved';
+            case 'REJECTED': return 'Rejected';
+            case 'VOIDED': return 'Voided';
+            case 'PENDING': return 'Pending';
             default: return 'Pending';
         }
     };
@@ -132,14 +133,14 @@ export default function ApprovalSection({ recommendation, currentUser, onRefresh
                 <div className="flex items-center justify-between">
                     <span className="text-sm font-medium text-gray-700">Approval Progress</span>
                     <span className="text-sm text-gray-500">
-                        {approvals.filter(a => a.decision === 'APPROVE').length} of {approvals.length} approved
+                        {approvals.filter(a => a.approval_status === 'APPROVED').length} of {approvals.length} approved
                     </span>
                 </div>
                 <div className="mt-2 w-full bg-gray-200 rounded-full h-2">
                     <div
                         className="bg-green-500 h-2 rounded-full"
                         style={{
-                            width: `${(approvals.filter(a => a.decision === 'APPROVE').length / approvals.length) * 100}%`
+                            width: `${(approvals.filter(a => a.approval_status === 'APPROVED').length / approvals.length) * 100}%`
                         }}
                     />
                 </div>
@@ -154,15 +155,15 @@ export default function ApprovalSection({ recommendation, currentUser, onRefresh
                                 <span className={`font-medium ${approval.approval_status === 'VOIDED' ? 'text-gray-500' : ''}`}>
                                     {approval.approver?.full_name}
                                 </span>
-                                <span className={`px-2 py-0.5 text-xs rounded ${getDecisionColor(approval.decision, approval.approval_status)}`}>
-                                    {getDecisionLabel(approval.decision, approval.approval_status)}
+                                <span className={`px-2 py-0.5 text-xs rounded ${getDecisionColor(approval.approval_status)}`}>
+                                    {getDecisionLabel(approval.approval_status)}
                                 </span>
                             </div>
                             <p className="text-sm text-gray-500">{approval.approver_role?.label}</p>
                         </div>
-                        {approval.decided_at && (
+                        {approval.approved_at && (
                             <span className="text-sm text-gray-500">
-                                {approval.decided_at.split('T')[0]}
+                                {approval.approved_at.split('T')[0]}
                             </span>
                         )}
                     </div>

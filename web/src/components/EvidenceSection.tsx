@@ -10,7 +10,7 @@ interface EvidenceSectionProps {
 export default function EvidenceSection({ recommendation, canUpload, onRefresh }: EvidenceSectionProps) {
     const [showUploadForm, setShowUploadForm] = useState(false);
     const [description, setDescription] = useState('');
-    const [evidenceUrl, setEvidenceUrl] = useState('');  // Optional URL field
+    const [selectedFile, setSelectedFile] = useState<File | null>(null);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
@@ -18,19 +18,29 @@ export default function EvidenceSection({ recommendation, canUpload, onRefresh }
         e.preventDefault();
         setError(null);
 
-        if (!description.trim()) {
-            setError('Please provide a description of the evidence');
+        if (!selectedFile) {
+            setError('Please select a file to upload');
             return;
         }
 
         try {
             setLoading(true);
-            await recommendationsApi.uploadEvidence(recommendation.recommendation_id, {
-                description: description.trim(),
-                evidence_url: evidenceUrl.trim() || undefined  // Only include if provided
-            });
+            // Extract file metadata
+            const fileMetadata = {
+                file_name: selectedFile.name,
+                file_path: selectedFile.name,  // TODO: Backend should set this after upload to storage
+                file_type: selectedFile.type || undefined,
+                file_size_bytes: selectedFile.size,
+                description: description.trim() || undefined
+            };
+
+            // Note: This sends metadata only. Full implementation requires:
+            // 1. Backend multipart/form-data endpoint
+            // 2. File storage (S3/local)
+            // 3. FormData upload on frontend
+            await recommendationsApi.uploadEvidence(recommendation.recommendation_id, fileMetadata);
             setDescription('');
-            setEvidenceUrl('');
+            setSelectedFile(null);
             setShowUploadForm(false);
             onRefresh();
         } catch (err: any) {
@@ -71,7 +81,29 @@ export default function EvidenceSection({ recommendation, canUpload, onRefresh }
                             <div className="space-y-3">
                                 <div>
                                     <label className="block text-sm font-medium text-gray-700 mb-1">
-                                        Description <span className="text-red-500">*</span>
+                                        Select File <span className="text-red-500">*</span>
+                                    </label>
+                                    <input
+                                        type="file"
+                                        onChange={(e) => setSelectedFile(e.target.files?.[0] || null)}
+                                        className="block w-full text-sm text-gray-500
+                                            file:mr-4 file:py-2 file:px-4
+                                            file:rounded file:border-0
+                                            file:text-sm file:font-medium
+                                            file:bg-blue-50 file:text-blue-700
+                                            hover:file:bg-blue-100"
+                                        required
+                                    />
+                                    {selectedFile && (
+                                        <p className="text-xs text-gray-600 mt-1">
+                                            Selected: {selectedFile.name} ({(selectedFile.size / 1024).toFixed(1)} KB)
+                                        </p>
+                                    )}
+                                </div>
+
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                                        Description <span className="text-gray-400">(Optional)</span>
                                     </label>
                                     <textarea
                                         value={description}
@@ -79,24 +111,7 @@ export default function EvidenceSection({ recommendation, canUpload, onRefresh }
                                         rows={3}
                                         className="input-field"
                                         placeholder="Describe the evidence being uploaded..."
-                                        required
                                     />
-                                </div>
-
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                                        Evidence URL <span className="text-gray-400">(Optional)</span>
-                                    </label>
-                                    <input
-                                        type="url"
-                                        value={evidenceUrl}
-                                        onChange={(e) => setEvidenceUrl(e.target.value)}
-                                        className="input-field"
-                                        placeholder="https://... (link to document, SharePoint, etc.)"
-                                    />
-                                    <p className="text-xs text-gray-500 mt-1">
-                                        Optional: Link to supporting documents, SharePoint files, or external systems
-                                    </p>
                                 </div>
                             </div>
 
@@ -106,7 +121,7 @@ export default function EvidenceSection({ recommendation, canUpload, onRefresh }
                                     onClick={() => {
                                         setShowUploadForm(false);
                                         setDescription('');
-                                        setEvidenceUrl('');
+                                        setSelectedFile(null);
                                         setError(null);
                                     }}
                                     className="px-3 py-1.5 text-sm bg-gray-200 text-gray-700 rounded hover:bg-gray-300"
@@ -141,20 +156,23 @@ export default function EvidenceSection({ recommendation, canUpload, onRefresh }
                         <div key={item.evidence_id} className="border rounded-lg p-4">
                             <div className="flex justify-between items-start">
                                 <div className="flex-1">
-                                    <p className="text-gray-900">{item.description}</p>
-                                    {item.evidence_url && (
-                                        <a
-                                            href={item.evidence_url}
-                                            target="_blank"
-                                            rel="noopener noreferrer"
-                                            className="text-blue-600 hover:text-blue-800 hover:underline text-sm mt-1 inline-flex items-center gap-1"
-                                        >
-                                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-                                            </svg>
-                                            View Document
-                                        </a>
+                                    <div className="flex items-center gap-2 mb-1">
+                                        <svg className="w-5 h-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                        </svg>
+                                        <p className="text-gray-900 font-medium">{item.file_name}</p>
+                                    </div>
+                                    {item.description && (
+                                        <p className="text-gray-700 text-sm mt-1">{item.description}</p>
                                     )}
+                                    <div className="flex items-center gap-3 mt-2 text-xs text-gray-500">
+                                        {item.file_size_bytes && (
+                                            <span>{(item.file_size_bytes / 1024).toFixed(1)} KB</span>
+                                        )}
+                                        {item.file_type && (
+                                            <span>{item.file_type}</span>
+                                        )}
+                                    </div>
                                     <div className="mt-2 text-sm text-gray-500">
                                         <span>Uploaded by {item.uploaded_by?.full_name}</span>
                                         <span className="mx-2">•</span>

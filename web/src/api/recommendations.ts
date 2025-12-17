@@ -194,16 +194,22 @@ export interface RebuttalReview {
 export interface ClosureEvidence {
     evidence_id: number;
     recommendation_id: number;
-    description: string;
-    evidence_url: string | null;
+    file_name: string;
+    file_path: string;
+    file_type: string | null;
+    file_size_bytes: number | null;
+    description: string | null;
     uploaded_by_id: number;
     uploaded_at: string;
     uploaded_by?: UserSummary;
 }
 
 export interface ClosureEvidenceCreate {
-    description: string;
-    evidence_url?: string;
+    file_name: string;
+    file_path: string;
+    file_type?: string;
+    file_size_bytes?: number;
+    description?: string;
 }
 
 // Status History
@@ -227,21 +233,25 @@ export interface Approval {
     approval_id: number;
     recommendation_id: number;
     approval_type: 'GLOBAL' | 'REGIONAL';
+    role_id: number;
+    role_name?: string;
     region_id: number | null;
-    represented_region_id: number | null;
-    approver_id: number | null;
-    approved_at: string | null;
+    region_name?: string;
     is_required: boolean;
     approval_status: 'PENDING' | 'APPROVED' | 'REJECTED' | 'VOIDED';
-    decision: 'APPROVE' | 'REJECT' | null;  // For UI compatibility
-    decided_at: string | null;  // For UI compatibility
+    approver?: {  // UserSummary object
+        user_id: number;
+        email: string;
+        full_name: string;
+    };
+    approved_at: string | null;
     comments: string | null;
     approval_evidence: string | null;
     voided_by_id: number | null;
     void_reason: string | null;
     voided_at: string | null;
     created_at: string;
-    approver?: UserSummary;
+    updated_at: string;
     approver_role?: TaxonomyValue;
     voided_by?: UserSummary;
     region?: { region_id: number; code: string; name: string };
@@ -362,7 +372,13 @@ export const recommendationsApi = {
 
     // ==================== WORKFLOW ACTIONS ====================
 
-    // Finalize recommendation (transition from DRAFT to PENDING_RESPONSE)
+    // Submit recommendation to developer (transition from DRAFT to PENDING_RESPONSE)
+    submitToDeveloper: async (id: number): Promise<Recommendation> => {
+        const response = await api.post(`/recommendations/${id}/submit`);
+        return response.data;
+    },
+
+    // Validator finalize action plan (transition from PENDING_VALIDATOR_REVIEW to PENDING_ACKNOWLEDGEMENT)
     finalize: async (id: number): Promise<Recommendation> => {
         const response = await api.post(`/recommendations/${id}/finalize`);
         return response.data;
@@ -386,15 +402,9 @@ export const recommendationsApi = {
         return response.data;
     },
 
-    // Validator approves closure
-    approveClosureReview: async (id: number, comments?: string): Promise<Recommendation> => {
-        const response = await api.post(`/recommendations/${id}/approve-closure-review`, { comments });
-        return response.data;
-    },
-
-    // Validator rejects closure (request rework)
-    rejectClosureReview: async (id: number, feedback: string): Promise<Recommendation> => {
-        const response = await api.post(`/recommendations/${id}/reject-closure-review`, { feedback });
+    // Review closure (validator) - unified endpoint with decision: APPROVE or RETURN
+    submitClosureReview: async (id: number, data: { decision: 'APPROVE' | 'RETURN'; comments?: string }): Promise<Recommendation> => {
+        const response = await api.post(`/recommendations/${id}/closure-review`, data);
         return response.data;
     },
 
@@ -422,15 +432,13 @@ export const recommendationsApi = {
         return response.data;
     },
 
-    approveActionPlan: async (id: number, comments?: string): Promise<Recommendation> => {
-        const response = await api.post(`/recommendations/${id}/action-plan/approve`, { comments });
+    // Request revisions to action plan (validator sends back to developer)
+    requestActionPlanRevisions: async (id: number, feedback: string): Promise<Recommendation> => {
+        const response = await api.post(`/recommendations/${id}/action-plan/request-revisions`, { feedback });
         return response.data;
     },
 
-    rejectActionPlan: async (id: number, feedback: string): Promise<Recommendation> => {
-        const response = await api.post(`/recommendations/${id}/action-plan/reject`, { feedback });
-        return response.data;
-    },
+    // Note: To approve action plan, use finalize() method which sends to PENDING_ACKNOWLEDGEMENT
 
     updateTask: async (recommendationId: number, taskId: number, data: ActionPlanTaskUpdate): Promise<ActionPlanTask> => {
         const response = await api.patch(`/recommendations/${recommendationId}/tasks/${taskId}`, data);
@@ -440,12 +448,12 @@ export const recommendationsApi = {
     // ==================== REBUTTAL ====================
 
     submitRebuttal: async (id: number, data: RebuttalCreate): Promise<{ rebuttal_id: number; recommendation: Recommendation }> => {
-        const response = await api.post(`/recommendations/${id}/rebuttals`, data);
+        const response = await api.post(`/recommendations/${id}/rebuttal`, data);
         return response.data;
     },
 
     reviewRebuttal: async (recommendationId: number, rebuttalId: number, data: RebuttalReview): Promise<Rebuttal> => {
-        const response = await api.post(`/recommendations/${recommendationId}/rebuttals/${rebuttalId}/review`, data);
+        const response = await api.post(`/recommendations/${recommendationId}/rebuttal/${rebuttalId}/review`, data);
         return response.data;
     },
 
@@ -520,26 +528,14 @@ export const recommendationsApi = {
 
     // ==================== CONVENIENCE METHODS ====================
 
-    // Review action plan (approve or request changes)
-    reviewActionPlan: async (id: number, data: { decision: 'APPROVE' | 'REQUEST_CHANGES'; comments?: string }): Promise<Recommendation> => {
-        if (data.decision === 'APPROVE') {
-            const response = await api.post(`/recommendations/${id}/action-plan/approve`, { comments: data.comments });
-            return response.data;
-        } else {
-            const response = await api.post(`/recommendations/${id}/action-plan/reject`, { feedback: data.comments || '' });
-            return response.data;
-        }
-    },
+    // Note: To review action plan, use finalize() to approve or requestActionPlanRevisions() to request changes
 
-    // Review closure (approve or request rework)
-    reviewClosure: async (id: number, data: { decision: 'APPROVE' | 'REQUEST_REWORK'; review_comments?: string }): Promise<Recommendation> => {
-        if (data.decision === 'APPROVE') {
-            const response = await api.post(`/recommendations/${id}/approve-closure-review`, { comments: data.review_comments });
-            return response.data;
-        } else {
-            const response = await api.post(`/recommendations/${id}/reject-closure-review`, { feedback: data.review_comments || '' });
-            return response.data;
-        }
+    // Review closure (approve or return for rework)
+    reviewClosure: async (id: number, data: { decision: 'APPROVE' | 'RETURN'; review_comments?: string }): Promise<Recommendation> => {
+        return recommendationsApi.submitClosureReview(id, {
+            decision: data.decision,
+            comments: data.review_comments
+        });
     },
 
     // Submit for closure (alias)
@@ -549,9 +545,8 @@ export const recommendationsApi = {
     },
 
     // Upload evidence (convenience method)
-    uploadEvidence: async (id: number, data: { description: string; evidence_url?: string }): Promise<ClosureEvidence> => {
-        const response = await api.post(`/recommendations/${id}/evidence`, data);
-        return response.data;
+    uploadEvidence: async (id: number, data: ClosureEvidenceCreate): Promise<ClosureEvidence> => {
+        return recommendationsApi.addClosureEvidence(id, data);
     },
 
     // Delete evidence (alias)

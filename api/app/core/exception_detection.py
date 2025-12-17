@@ -675,8 +675,9 @@ def detect_type3_for_deployment_task(
     return exception
 
 
-# Interim validation types that do NOT auto-close Type 3 exceptions
-INTERIM_VALIDATION_TYPES = {"Interim"}
+# Interim validation type codes that do NOT auto-close Type 3 exceptions
+# Uses immutable 'code' field (not 'label') for reliable matching
+INTERIM_VALIDATION_TYPES = {"INTERIM"}
 
 
 def autoclose_type3_on_full_validation_approved(
@@ -699,12 +700,12 @@ def autoclose_type3_on_full_validation_approved(
     """
     # Check if this is an interim validation - if so, do NOT auto-close
     if validation_request.validation_type:
-        # Get the validation type label from taxonomy
+        # Get the validation type code from taxonomy
         if validation_request.validation_type_id:
             type_value = db.query(TaxonomyValue).filter(
                 TaxonomyValue.value_id == validation_request.validation_type_id
             ).first()
-            if type_value and type_value.label in INTERIM_VALIDATION_TYPES:
+            if type_value and type_value.code in INTERIM_VALIDATION_TYPES:
                 # Interim validation - do not auto-close
                 return []
 

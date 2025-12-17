@@ -20,7 +20,7 @@ This system ensures that all model weaknesses are documented, assigned clear own
 
 ## The Recommendation Lifecycle
 
-The lifecycle follows a strict "negotiation" phase followed by a "remediation" phase.
+The lifecycle follows a negotiation phase (validator ↔ developer) followed by remediation and closure.
 
 ### 1. Creating a Recommendation (Validator)
 1. Navigate to the **Recommendations** page or the **Recommendations** tab on a specific Model.
@@ -32,7 +32,8 @@ The lifecycle follows a strict "negotiation" phase followed by a "remediation" p
    - **Assigned To**: The developer responsible for fixing it.
    - **Target Date**: When remediation should be complete.
 4. Click **Create**. The recommendation starts in **Draft** status.
-5. When ready, click **Finalize & Send** to notify the developer.
+   - Draft recommendations are visible to the validation team while the recommendation is being prepared.
+5. When ready, click **Finalize & Send** to notify the developer. The recommendation moves to **Pending Response**.
 
 ### 2. Developer Response (Developer)
 Once a recommendation is sent, the assigned developer has two options:
@@ -50,22 +51,30 @@ If you accept the finding and plan to fix it:
 1. Open the recommendation.
 2. Click **Submit Action Plan**.
 3. Add specific **Tasks**, assigning an owner and due date for each.
-4. Submit. The Validator will review the plan.
+4. Submit. The recommendation moves to **Pending Validator Review**.
+5. The Validator reviews the action plan and either:
+   - Approves it (recommendation moves to **Pending Acknowledgement**), or
+   - Requests changes (recommendation returns to **Pending Response**).
+
+*Some low-priority recommendations may allow skipping the action plan step (when configured by Admin). In that case, the recommendation still moves through **Pending Validator Review** and **Pending Acknowledgement** before becoming **Open**.*
 
 ### 3. Remediation (Developer)
-Once the Action Plan is approved by the Validator:
-1. The recommendation moves to **Open** status.
+Once the action plan has been approved by the Validator:
+1. The recommendation moves to **Pending Acknowledgement**.
+2. The assigned developer **Acknowledges** it.
+3. The recommendation moves to **Open**.
 2. Work through your assigned tasks.
 3. As tasks are finished, update their status to **Completed** in the **Action Plan** tab.
 
 ### 4. Closing a Recommendation (Developer & Validator)
 When all work is done:
-1. **Developer**: Click **Submit for Closure**.
-   - Upload **Evidence** (documents, screenshots) in the Evidence tab.
-   - Provide a **Closure Summary** explaining what was done.
+1. **Developer**: Upload **Evidence** in the Evidence tab.
+2. **Developer**: Click **Submit for Closure**.
+   - The system requires all action plan tasks to be completed.
+   - The system requires at least one piece of evidence before submission.
 2. **Validator**: Review the submission.
    - If satisfactory, click **Approve Closure**.
-   - If evidence is missing, click **Request Rework** to send it back to the developer.
+   - If changes are needed, click **Request Rework** to send it back to the developer (recommendation moves to **Rework Required**).
 
 ### 5. Final Approvals (Approvers)
 For **Medium** and **High** priority items, Validator approval is not enough. The system will automatically request final sign-off:
@@ -79,23 +88,26 @@ Once all required approvals are collected, the recommendation status automatical
 ## Dashboards & Tracking
 
 ### My Tasks
-Navigate to **Recommendations > My Tasks** to see items requiring your immediate attention:
+On the **Recommendations** page, use the **My Tasks Only** toggle to see items requiring your immediate attention:
 - **Action Required**: Recommendations assigned to you that need a response or closure submission.
 - **Review Pending**: Items waiting for your review (as a Validator).
 - **Approval Pending**: Closures waiting for your final sign-off (as an Approver).
 
 ### Overdue Reports
-The **Overdue Report** highlights recommendations that have passed their target date without being closed. This helps management identify at-risk remediation efforts.
+Use the **Show overdue only** toggle to highlight recommendations that have passed their target date without being closed. This helps management identify at-risk remediation efforts.
 
 ---
 
 ## Frequently Asked Questions
 
 **Q: Can I edit a recommendation after sending it?**
-A: No. Once sent to the developer, the recommendation is locked to preserve the audit trail. If critical changes are needed, the Validator may need to drop it and create a new one.
+A: Partially. Validators/Admins can edit recommendations in **Draft**, **Pending Response**, and **Pending Validator Review**. In **Pending Acknowledgement**, **Open**, and **Rework Required**, editing is limited (typically reassignment and/or target date updates only). Some statuses (e.g., pending closure review, pending approvals, or closed/dropped) do not allow edits.
 
 **Q: What happens if my rebuttal is rejected?**
 A: You must submit an Action Plan. The system enforces a "one-strike" rule for rebuttals to prevent indefinite arguments.
 
 **Q: Who can close a Low priority recommendation?**
 A: Low priority items are closed immediately after the Validator approves the closure evidence. They do not require Global or Regional sign-off.
+
+**Q: Why do I need to provide a reason when changing the target date?**
+A: Target dates are validated against configured timeframes and require an explanation when changed, to preserve an audit trail.

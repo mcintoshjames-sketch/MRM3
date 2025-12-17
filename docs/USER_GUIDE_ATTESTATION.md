@@ -29,7 +29,7 @@ This guide explains how to use the attestation features from each user role's pe
 A time-bound period during which model owners must review and attest to their models. Each cycle has:
 - **Period dates**: The timeframe being attested (e.g., Q4 2025)
 - **Submission due date**: Deadline for model owners to submit attestations
-- **Status**: Pending (not yet started), Open (active), or Closed (complete)
+- **Status**: PENDING (not yet started), OPEN (active), UNDER_REVIEW (admin review gating), or CLOSED (complete)
 
 ### Attestation Record
 An individual attestation for a specific model within a cycle. Each record tracks:
@@ -55,7 +55,7 @@ Rules that determine how frequently different model owners must attest. Some own
 2. You'll see a list of models requiring your attestation
 3. Each model shows:
    - Model name and risk tier
-   - Current status (Pending, Submitted, Accepted, Rejected)
+   - Current status (Pending, Submitted, Accepted, Rejected, or Admin Review)
    - Due date with urgency indicator
 4. Above the model list, you'll find the **"Register New Model"** button to add new models to the inventory
 
@@ -66,12 +66,10 @@ Rules that determine how frequently different model owners must attest. Some own
    - "Yes" confirms the statement is accurate
    - "No" indicates an issue or change is needed
    - If you answer "No", you must provide an explanation
-3. **Add supporting evidence** (optional but recommended):
-   - Click "Add Evidence"
-   - Enter a URL to supporting documentation
-   - Provide a brief description
+3. **Supporting evidence**: Evidence capture is not currently available in the attestation form UI. Document any supporting materials in your attestation comments if needed.
 4. **Make inventory changes** if needed using the navigation buttons:
-   - **Edit Model**: Opens the model edit form to update model information
+   - **Edit Model Details**: Opens the model edit form to update model information
+   - **Submit Model Change**: Opens the model change submission form to create a versioned change record
    - **Decommission Model**: Opens the decommissioning request form
    - Changes made through these forms are automatically linked to your attestation
    - **Note**: To register a new model, use the "Register New Model" button on the My Attestations page
@@ -81,18 +79,18 @@ Rules that determine how frequently different model owners must attest. Some own
 
 ### Understanding Urgency Indicators
 
-| Indicator | Meaning |
-|-----------|---------|
-| Green | On track - due date is more than 7 days away |
-| Yellow | Due soon - within 7 days of deadline |
-| Red | Overdue - past the submission deadline |
+| Badge | Meaning |
+|-------|---------|
+| **Due Soon** (orange) | Within 7 days of the submission deadline |
+| **Overdue** (red) | Past the submission deadline |
+| *No badge* | Due date is more than 7 days away |
 
 ### If Your Attestation is Rejected
 
 If an administrator rejects your attestation:
 1. You'll see the rejection reason in the attestation details
-2. The attestation returns to "Pending" status
-3. Address the feedback and resubmit
+2. Status becomes **Rejected** (the attestation remains editable)
+3. You can edit your responses and resubmit
 
 ### Dashboard Attestation Alert
 
@@ -161,7 +159,8 @@ If a model needs different answers than the rest:
 #### Draft Mode
 
 Bulk attestation supports auto-save drafts:
-- Your selections and answers are saved automatically
+- Your selections and answers auto-save approximately 5 seconds after changes
+- "Save Draft" is available for immediate persistence if needed
 - If you leave the page, your progress is preserved
 - Return to "My Attestations" > "Bulk Attest" to resume
 - Drafts are cleared when you submit or the cycle closes
@@ -179,7 +178,7 @@ Bulk attestation supports auto-save drafts:
 
 ### Managing Attestation Cycles
 
-Navigate to **"Attestations"** in the Admin section. This page has seven tabs: **Cycles**, **Scheduling Rules**, **Coverage Targets**, **Review Queue**, **High Fluctuation Owners**, **All Records**, and **Questions**.
+Navigate to **"Attestations"** in the Admin section. This page has eight tabs: **Cycles**, **Scheduling Rules**, **Coverage Targets**, **Review Queue**, **High Fluctuation Owners**, **All Records**, **Linked Changes**, and **Questions**.
 
 #### Creating a New Cycle
 
@@ -333,10 +332,11 @@ Coverage targets ensure adequate attestation completion across the model invento
 
 If a cycle has blocking coverage gaps:
 - A warning banner appears on the Cycles tab
-- The cycle cannot be closed until gaps are resolved
+- The cycle cannot be closed normally until gaps are resolved
 - Options:
   - Follow up with model owners to complete attestations
   - Adjust targets if business circumstances warrant
+  - **Force Close** (Admin only): Administrators can force-close a cycle with blocking gaps by clicking "Force Close", providing a required justification reason for audit purposes
 
 ---
 
@@ -578,7 +578,7 @@ A: Navigate to "My Attestations" - all models requiring your attestation are lis
 A: Contact your administrator to update the model ownership. Do not submit an attestation for a model you don't own.
 
 **Q: Can I save my attestation and finish later?**
-A: Yes, your responses are saved as you go. The attestation remains in "Pending" status until you click Submit.
+A: Your responses are retained in the page while you're working, but they are not persisted to the server until you submit. If you refresh the page, you may lose in-progress changes. For bulk attestation, drafts auto-save after a few seconds.
 
 **Q: What evidence should I provide?**
 A: Relevant documentation such as model validation reports, performance monitoring results, or change control records. Links to internal systems or document repositories are acceptable.

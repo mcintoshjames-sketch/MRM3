@@ -88,7 +88,8 @@ def check_developer_or_admin(user: User, recommendation: Recommendation):
 
 def get_status_by_code(db: Session, code: str) -> TaxonomyValue:
     """Get recommendation status taxonomy value by code."""
-    taxonomy = db.query(Taxonomy).filter(Taxonomy.name == "Recommendation Status").first()
+    taxonomy = db.query(Taxonomy).filter(
+        Taxonomy.name == "Recommendation Status").first()
     if not taxonomy:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -108,7 +109,8 @@ def get_status_by_code(db: Session, code: str) -> TaxonomyValue:
 
 def get_task_status_by_code(db: Session, code: str) -> TaxonomyValue:
     """Get task status taxonomy value by code."""
-    taxonomy = db.query(Taxonomy).filter(Taxonomy.name == "Action Plan Task Status").first()
+    taxonomy = db.query(Taxonomy).filter(
+        Taxonomy.name == "Action Plan Task Status").first()
     if not taxonomy:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -322,7 +324,8 @@ def is_timeframe_enforced(db: Session, recommendation: Recommendation) -> bool:
 
     # Check if ALL overrides explicitly say no enforcement
     # (NULL values inherit from base, so don't count them)
-    explicit_false_count = sum(1 for o in overrides if o.enforce_timeframes is False)
+    explicit_false_count = sum(
+        1 for o in overrides if o.enforce_timeframes is False)
     if explicit_false_count == len(overrides):
         # All overrides explicitly say no enforcement
         return False
@@ -378,7 +381,8 @@ def _check_timeframe_enforced_for_model(
         if override.enforce_timeframes is True:
             return True
 
-    explicit_false_count = sum(1 for o in overrides if o.enforce_timeframes is False)
+    explicit_false_count = sum(
+        1 for o in overrides if o.enforce_timeframes is False)
     if explicit_false_count == len(overrides):
         return False
 
@@ -456,7 +460,8 @@ def validate_target_date(
         )
 
     # Check if enforcement applies
-    is_enforced = _check_timeframe_enforced_for_model(db, priority_id, model_id)
+    is_enforced = _check_timeframe_enforced_for_model(
+        db, priority_id, model_id)
 
     # Calculate days from creation to max and to proposed
     # Check if proposed date exceeds max
@@ -554,7 +559,8 @@ def check_requires_action_plan(db: Session, recommendation: Recommendation) -> b
 
     # Check if ALL overrides explicitly say no action plan required
     # (NULL values inherit from base, so don't count them)
-    explicit_false_count = sum(1 for o in overrides if o.requires_action_plan is False)
+    explicit_false_count = sum(
+        1 for o in overrides if o.requires_action_plan is False)
     if explicit_false_count == len(overrides):
         # All overrides explicitly say no action plan required
         return False
@@ -585,7 +591,8 @@ def create_final_approvals(
     ).all()
 
     for mr in model_regions:
-        region = db.query(Region).filter(Region.region_id == mr.region_id).first()
+        region = db.query(Region).filter(
+            Region.region_id == mr.region_id).first()
         if region and region.requires_regional_approval:
             regional_approval = RecommendationApproval(
                 recommendation_id=recommendation.recommendation_id,
@@ -721,14 +728,16 @@ def calculate_timeframe(
     )
 
     # Check enforcement
-    enforce = _check_timeframe_enforced_for_model(db, request.priority_id, request.model_id)
+    enforce = _check_timeframe_enforced_for_model(
+        db, request.priority_id, request.model_id)
 
     return TimeframeCalculationResponse(
         priority_code=priority.code if priority else "UNKNOWN",
         risk_tier_code=risk_tier.code if risk_tier else "UNKNOWN",
         usage_frequency_code=usage_freq.code if usage_freq else "UNKNOWN",
         max_days=max_days if max_days is not None else 365,
-        calculated_max_date=max_target if max_target else today + timedelta(days=365),
+        calculated_max_date=max_target if max_target else today +
+        timedelta(days=365),
         enforce_timeframes=enforce,
         enforced_by_region=None  # Could enhance to return region name
     )
@@ -975,7 +984,8 @@ def create_recommendation(
             )
 
     # Validate assigned user
-    assigned_to = db.query(User).filter(User.user_id == rec_data.assigned_to_id).first()
+    assigned_to = db.query(User).filter(
+        User.user_id == rec_data.assigned_to_id).first()
     if not assigned_to:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -1120,7 +1130,8 @@ def list_recommendations(
         # DRAFT recommendations are hidden from non-validation team users
         # (validation team is still deciding if the recommendation is worthy)
         if draft_status:
-            query = query.filter(Recommendation.current_status_id != draft_status.value_id)
+            query = query.filter(
+                Recommendation.current_status_id != draft_status.value_id)
 
     if model_id:
         query = query.filter(Recommendation.model_id == model_id)
@@ -1131,7 +1142,8 @@ def list_recommendations(
     if assigned_to_id:
         query = query.filter(Recommendation.assigned_to_id == assigned_to_id)
 
-    recommendations = query.order_by(desc(Recommendation.created_at)).offset(offset).limit(limit).all()
+    recommendations = query.order_by(
+        desc(Recommendation.created_at)).offset(offset).limit(limit).all()
     return recommendations
 
 
@@ -1159,13 +1171,14 @@ def get_my_tasks(
     tasks = []
 
     # Get all non-terminal status codes
-    status_taxonomy = db.query(Taxonomy).filter(Taxonomy.name == "Recommendation Status").first()
+    status_taxonomy = db.query(Taxonomy).filter(
+        Taxonomy.name == "Recommendation Status").first()
     if not status_taxonomy:
         return MyTasksResponse(total_tasks=0, overdue_count=0, tasks=[])
 
     # 1. Developer tasks: recommendations assigned to current user needing action
     developer_action_statuses = ["REC_PENDING_RESPONSE", "REC_PENDING_ACKNOWLEDGEMENT",
-                                  "REC_OPEN", "REC_REWORK_REQUIRED", "REC_PENDING_ACTION_PLAN"]
+                                 "REC_OPEN", "REC_REWORK_REQUIRED", "REC_PENDING_ACTION_PLAN"]
 
     developer_recs = db.query(Recommendation).options(
         joinedload(Recommendation.model),
@@ -1200,8 +1213,10 @@ def get_my_tasks(
             recommendation_code=rec.recommendation_code,
             title=rec.title,
             model=ModelSummary.model_validate(rec.model, from_attributes=True),
-            priority=TaxonomyValueResponse.model_validate(rec.priority, from_attributes=True),
-            current_status=TaxonomyValueResponse.model_validate(rec.current_status, from_attributes=True),
+            priority=TaxonomyValueResponse.model_validate(
+                rec.priority, from_attributes=True),
+            current_status=TaxonomyValueResponse.model_validate(
+                rec.current_status, from_attributes=True),
             current_target_date=rec.current_target_date,
             action_description=action,
             days_until_due=days_until,
@@ -1210,7 +1225,7 @@ def get_my_tasks(
 
     # 2. Validator tasks: recommendations created by current user awaiting review
     validator_review_statuses = ["REC_IN_REBUTTAL", "REC_PENDING_VALIDATOR_REVIEW",
-                                  "REC_PENDING_CLOSURE_REVIEW"]
+                                 "REC_PENDING_CLOSURE_REVIEW"]
 
     validator_recs = db.query(Recommendation).options(
         joinedload(Recommendation.model),
@@ -1241,8 +1256,10 @@ def get_my_tasks(
             recommendation_code=rec.recommendation_code,
             title=rec.title,
             model=ModelSummary.model_validate(rec.model, from_attributes=True),
-            priority=TaxonomyValueResponse.model_validate(rec.priority, from_attributes=True),
-            current_status=TaxonomyValueResponse.model_validate(rec.current_status, from_attributes=True),
+            priority=TaxonomyValueResponse.model_validate(
+                rec.priority, from_attributes=True),
+            current_status=TaxonomyValueResponse.model_validate(
+                rec.current_status, from_attributes=True),
             current_target_date=rec.current_target_date,
             action_description=action,
             days_until_due=days_until,
@@ -1255,9 +1272,12 @@ def get_my_tasks(
 
     # Build approval query
     approval_query = db.query(RecommendationApproval).options(
-        joinedload(RecommendationApproval.recommendation).joinedload(Recommendation.model),
-        joinedload(RecommendationApproval.recommendation).joinedload(Recommendation.priority),
-        joinedload(RecommendationApproval.recommendation).joinedload(Recommendation.current_status)
+        joinedload(RecommendationApproval.recommendation).joinedload(
+            Recommendation.model),
+        joinedload(RecommendationApproval.recommendation).joinedload(
+            Recommendation.priority),
+        joinedload(RecommendationApproval.recommendation).joinedload(
+            Recommendation.current_status)
     ).filter(
         RecommendationApproval.approval_status == "PENDING",
         RecommendationApproval.is_required == True
@@ -1295,8 +1315,10 @@ def get_my_tasks(
             recommendation_code=rec.recommendation_code,
             title=rec.title,
             model=ModelSummary.model_validate(rec.model, from_attributes=True),
-            priority=TaxonomyValueResponse.model_validate(rec.priority, from_attributes=True),
-            current_status=TaxonomyValueResponse.model_validate(rec.current_status, from_attributes=True),
+            priority=TaxonomyValueResponse.model_validate(
+                rec.priority, from_attributes=True),
+            current_status=TaxonomyValueResponse.model_validate(
+                rec.current_status, from_attributes=True),
             current_target_date=rec.current_target_date,
             action_description=action,
             days_until_due=days_until,
@@ -1326,7 +1348,8 @@ def get_open_recommendations_summary(
     Returns counts by status and priority.
     """
     # Get status taxonomy
-    status_taxonomy = db.query(Taxonomy).filter(Taxonomy.name == "Recommendation Status").first()
+    status_taxonomy = db.query(Taxonomy).filter(
+        Taxonomy.name == "Recommendation Status").first()
     if not status_taxonomy:
         return OpenRecommendationsSummary(total_open=0, by_status=[], by_priority=[])
 
@@ -1369,7 +1392,8 @@ def get_open_recommendations_summary(
     ).all()
 
     by_priority = [
-        PrioritySummary(priority_code=p.code, priority_label=p.label, count=p.count)
+        PrioritySummary(priority_code=p.code,
+                        priority_label=p.label, count=p.count)
         for p in priority_counts
     ]
 
@@ -1395,7 +1419,8 @@ def get_overdue_recommendations(
     today = date.today()
 
     # Get status taxonomy
-    status_taxonomy = db.query(Taxonomy).filter(Taxonomy.name == "Recommendation Status").first()
+    status_taxonomy = db.query(Taxonomy).filter(
+        Taxonomy.name == "Recommendation Status").first()
     if not status_taxonomy:
         return OverdueRecommendationsReport(total_overdue=0, by_priority=[], recommendations=[])
 
@@ -1455,7 +1480,8 @@ def get_overdue_recommendations(
 @router.get("/dashboard/by-model/{model_id}", response_model=List[RecommendationListResponse])
 def get_recommendations_by_model(
     model_id: int,
-    include_closed: bool = Query(False, description="Include closed/dropped recommendations"),
+    include_closed: bool = Query(
+        False, description="Include closed/dropped recommendations"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
@@ -1484,14 +1510,17 @@ def get_recommendations_by_model(
 
     if not include_closed:
         # Get non-terminal status IDs
-        status_taxonomy = db.query(Taxonomy).filter(Taxonomy.name == "Recommendation Status").first()
+        status_taxonomy = db.query(Taxonomy).filter(
+            Taxonomy.name == "Recommendation Status").first()
         if status_taxonomy:
             non_terminal_statuses = db.query(TaxonomyValue).filter(
                 TaxonomyValue.taxonomy_id == status_taxonomy.taxonomy_id,
                 ~TaxonomyValue.code.in_(TERMINAL_STATUS_CODES)
             ).all()
-            non_terminal_status_ids = [s.value_id for s in non_terminal_statuses]
-            query = query.filter(Recommendation.current_status_id.in_(non_terminal_status_ids))
+            non_terminal_status_ids = [
+                s.value_id for s in non_terminal_statuses]
+            query = query.filter(
+                Recommendation.current_status_id.in_(non_terminal_status_ids))
 
     recommendations = query.order_by(desc(Recommendation.created_at)).all()
 
@@ -1525,16 +1554,26 @@ def get_recommendation(
         joinedload(Recommendation.finalized_by),
         joinedload(Recommendation.acknowledged_by),
         joinedload(Recommendation.closed_by),
-        joinedload(Recommendation.action_plan_tasks).joinedload(ActionPlanTask.owner),
-        joinedload(Recommendation.action_plan_tasks).joinedload(ActionPlanTask.completion_status),
-        joinedload(Recommendation.rebuttals).joinedload(RecommendationRebuttal.submitted_by),
-        joinedload(Recommendation.rebuttals).joinedload(RecommendationRebuttal.reviewed_by),
-        joinedload(Recommendation.closure_evidence).joinedload(ClosureEvidence.uploaded_by),
-        joinedload(Recommendation.status_history).joinedload(RecommendationStatusHistory.old_status),
-        joinedload(Recommendation.status_history).joinedload(RecommendationStatusHistory.new_status),
-        joinedload(Recommendation.status_history).joinedload(RecommendationStatusHistory.changed_by),
-        joinedload(Recommendation.approvals).joinedload(RecommendationApproval.approver),
-        joinedload(Recommendation.approvals).joinedload(RecommendationApproval.region),
+        joinedload(Recommendation.action_plan_tasks).joinedload(
+            ActionPlanTask.owner),
+        joinedload(Recommendation.action_plan_tasks).joinedload(
+            ActionPlanTask.completion_status),
+        joinedload(Recommendation.rebuttals).joinedload(
+            RecommendationRebuttal.submitted_by),
+        joinedload(Recommendation.rebuttals).joinedload(
+            RecommendationRebuttal.reviewed_by),
+        joinedload(Recommendation.closure_evidence).joinedload(
+            ClosureEvidence.uploaded_by),
+        joinedload(Recommendation.status_history).joinedload(
+            RecommendationStatusHistory.old_status),
+        joinedload(Recommendation.status_history).joinedload(
+            RecommendationStatusHistory.new_status),
+        joinedload(Recommendation.status_history).joinedload(
+            RecommendationStatusHistory.changed_by),
+        joinedload(Recommendation.approvals).joinedload(
+            RecommendationApproval.approver),
+        joinedload(Recommendation.approvals).joinedload(
+            RecommendationApproval.region),
     ).filter(Recommendation.recommendation_id == recommendation_id).first()
 
     if not recommendation:
@@ -1556,7 +1595,8 @@ def get_recommendation(
 @router.get("/{recommendation_id}/limitations", response_model=List[LimitationListResponse])
 def get_recommendation_limitations(
     recommendation_id: int,
-    include_retired: bool = Query(False, description="Include retired limitations"),
+    include_retired: bool = Query(
+        False, description="Include retired limitations"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
@@ -1622,13 +1662,16 @@ def update_recommendation(
     ).first()
 
     # Statuses that allow full editing
-    full_edit_statuses = ["REC_DRAFT", "REC_PENDING_RESPONSE", "REC_PENDING_VALIDATOR_REVIEW"]
+    full_edit_statuses = [
+        "REC_DRAFT", "REC_PENDING_RESPONSE", "REC_PENDING_VALIDATOR_REVIEW"]
 
     # Statuses that allow limited editing (assigned_to, target_date only)
-    limited_edit_statuses = ["REC_PENDING_ACKNOWLEDGEMENT", "REC_OPEN", "REC_REWORK_REQUIRED"]
+    limited_edit_statuses = [
+        "REC_PENDING_ACKNOWLEDGEMENT", "REC_OPEN", "REC_REWORK_REQUIRED"]
 
     # Statuses that don't allow editing
-    no_edit_statuses = ["REC_PENDING_CLOSURE", "REC_PENDING_APPROVAL", "REC_CLOSED", "REC_WITHDRAWN"]
+    no_edit_statuses = ["REC_PENDING_CLOSURE",
+                        "REC_PENDING_APPROVAL", "REC_CLOSED", "REC_WITHDRAWN"]
 
     if current_status.code in no_edit_statuses:
         raise HTTPException(
@@ -1687,7 +1730,8 @@ def update_recommendation(
         recommendation.category_id = rec_update.category_id
     if rec_update.assigned_to_id is not None and rec_update.assigned_to_id != recommendation.assigned_to_id:
         # Validate user exists
-        assignee = db.query(User).filter(User.user_id == rec_update.assigned_to_id).first()
+        assignee = db.query(User).filter(
+            User.user_id == rec_update.assigned_to_id).first()
         if not assignee:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -1701,7 +1745,8 @@ def update_recommendation(
         new_values["plan_metric_id"] = rec_update.plan_metric_id
         recommendation.plan_metric_id = rec_update.plan_metric_id
     if rec_update.current_target_date is not None:
-        old_date = str(recommendation.current_target_date) if recommendation.current_target_date else None
+        old_date = str(
+            recommendation.current_target_date) if recommendation.current_target_date else None
         new_date = str(rec_update.current_target_date)
         if old_date != new_date:
             # Validate the new target date against timeframe configuration
@@ -1710,7 +1755,8 @@ def update_recommendation(
                 priority_id=recommendation.priority_id,
                 model_id=recommendation.model_id,
                 proposed_target_date=rec_update.current_target_date,
-                creation_date=recommendation.original_target_date  # Use original date as creation date
+                # Use original date as creation date
+                creation_date=recommendation.original_target_date
             )
 
             if not validation_result.is_valid:
@@ -1783,7 +1829,8 @@ def submit_to_developer(
 
     # Transition to PENDING_RESPONSE
     new_status = get_status_by_code(db, "REC_PENDING_RESPONSE")
-    create_status_history(db, recommendation, new_status, current_user, "Submitted to developer")
+    create_status_history(db, recommendation, new_status,
+                          current_user, "Submitted to developer")
 
     db.commit()
     db.refresh(recommendation)
@@ -2000,7 +2047,7 @@ def submit_action_plan(
         )
 
     # Get NOT_STARTED status for tasks
-    not_started_status = get_task_status_by_code(db, "TASK_NOT_STARTED")
+    not_started_status = get_task_status_by_code(db, "NOT_STARTED")
 
     # Clear existing tasks (in case of resubmission)
     db.query(ActionPlanTask).filter(
@@ -2207,7 +2254,8 @@ def finalize_recommendation(
 
     # Transition to PENDING_ACKNOWLEDGEMENT
     new_status = get_status_by_code(db, "REC_PENDING_ACKNOWLEDGEMENT")
-    create_status_history(db, recommendation, new_status, current_user, "Recommendation finalized")
+    create_status_history(db, recommendation, new_status,
+                          current_user, "Recommendation finalized")
 
     db.commit()
     db.refresh(recommendation)
@@ -2249,7 +2297,8 @@ def acknowledge_recommendation(
 
     # Transition to OPEN
     new_status = get_status_by_code(db, "REC_OPEN")
-    create_status_history(db, recommendation, new_status, current_user, "Recommendation acknowledged")
+    create_status_history(db, recommendation, new_status,
+                          current_user, "Recommendation acknowledged")
 
     db.commit()
     db.refresh(recommendation)
@@ -2334,7 +2383,7 @@ def update_task(
     # Check permission - task owner, assigned developer, or admin
     if (current_user.role != "Admin" and
         current_user.user_id != task.owner_id and
-        current_user.user_id != recommendation.assigned_to_id):
+            current_user.user_id != recommendation.assigned_to_id):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only task owner, assigned developer, or Admin can update task"
@@ -2450,7 +2499,7 @@ def submit_for_closure(
     # Check all tasks are completed
     incomplete_tasks = db.query(ActionPlanTask).join(TaxonomyValue).filter(
         ActionPlanTask.recommendation_id == recommendation_id,
-        TaxonomyValue.code != "TASK_COMPLETED"
+        TaxonomyValue.code != "COMPLETED"
     ).count()
 
     if incomplete_tasks > 0:
@@ -2472,7 +2521,8 @@ def submit_for_closure(
 
     # Transition to PENDING_CLOSURE_REVIEW
     new_status = get_status_by_code(db, "REC_PENDING_CLOSURE_REVIEW")
-    create_status_history(db, recommendation, new_status, current_user, "Submitted for closure review")
+    create_status_history(db, recommendation, new_status,
+                          current_user, "Submitted for closure review")
 
     db.commit()
     db.refresh(recommendation)
@@ -2532,9 +2582,9 @@ def review_closure(
         ).first()
 
         if priority_config and priority_config.requires_final_approval:
-            # Create approvals and transition to PENDING_FINAL_APPROVAL
+            # Create approvals and transition to PENDING_APPROVAL
             create_final_approvals(db, recommendation)
-            new_status = get_status_by_code(db, "REC_PENDING_FINAL_APPROVAL")
+            new_status = get_status_by_code(db, "REC_PENDING_APPROVAL")
             recommendation.closure_summary = review_data.closure_summary
             create_status_history(
                 db, recommendation, new_status, current_user,

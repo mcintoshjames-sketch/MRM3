@@ -13,7 +13,7 @@ interface MyAttestation {
     model_risk_tier: string | null;
     risk_tier_code: string | null;
     due_date: string;
-    status: 'PENDING' | 'SUBMITTED' | 'ACCEPTED' | 'REJECTED';
+    status: 'PENDING' | 'SUBMITTED' | 'ADMIN_REVIEW' | 'ACCEPTED' | 'REJECTED';
     attested_at: string | null;
     decision: string | null;
     rejection_reason: string | null;
@@ -36,7 +36,7 @@ interface UpcomingWidget {
     days_until_due: number | null;
 }
 
-type FilterStatus = 'all' | 'PENDING' | 'SUBMITTED' | 'ACCEPTED' | 'REJECTED' | 'INDIVIDUAL';
+type FilterStatus = 'all' | 'PENDING' | 'SUBMITTED' | 'ADMIN_REVIEW' | 'ACCEPTED' | 'REJECTED' | 'INDIVIDUAL';
 
 export default function MyAttestationsPage() {
     const navigate = useNavigate();
@@ -87,6 +87,8 @@ export default function MyAttestationsPage() {
         switch (status) {
             case 'SUBMITTED':
                 return <span className="px-2 py-1 text-xs font-medium rounded-full bg-blue-100 text-blue-800">Submitted</span>;
+            case 'ADMIN_REVIEW':
+                return <span className="px-2 py-1 text-xs font-medium rounded-full bg-purple-100 text-purple-800">Admin Review</span>;
             case 'ACCEPTED':
                 return <span className="px-2 py-1 text-xs font-medium rounded-full bg-green-100 text-green-800">Accepted</span>;
             case 'REJECTED':
