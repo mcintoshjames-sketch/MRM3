@@ -41,7 +41,8 @@ from app.models.validation import (
     ValidationPlan,
     ValidationPlanComponent,
     ComponentDefinitionConfiguration,
-    ComponentDefinitionConfigItem
+    ComponentDefinitionConfigItem,
+    ValidationFinding,
 )
 from app.models.validation_grouping import ValidationGroupingMemory
 from app.models.export_view import ExportView
@@ -174,6 +175,7 @@ __all__ = [
     "ValidationPlanComponent",
     "ComponentDefinitionConfiguration",
     "ComponentDefinitionConfigItem",
+    "ValidationFinding",
     "ValidationGroupingMemory",
     "ExportView",
     "VersionDeploymentTask",

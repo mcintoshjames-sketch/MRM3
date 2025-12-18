@@ -85,6 +85,27 @@ Once all required approvals are collected, the recommendation status automatical
 
 ---
 
+## Understanding Source Icons
+
+Recommendations can originate from different sources. Visual indicators help you quickly identify where a recommendation came from:
+
+| Icon | Source | Description |
+|------|--------|-------------|
+| 🔵 (Blue checkmark badge) | **From Validation** | This recommendation was raised during a model validation. Click to view the linked validation request. |
+| 🟣 (Purple chart badge) | **From Monitoring** | This recommendation was raised during ongoing model monitoring. Click to view the linked monitoring cycle. |
+| *(No icon)* | **Standalone** | This recommendation was created independently, not tied to a validation or monitoring cycle. |
+
+### Where Source Icons Appear
+
+- **Recommendations List**: A small colored badge appears next to the recommendation code (e.g., `REC-2025-00001 🔵`).
+- **Recommendation Detail Page**: The "Source" row displays a clickable link to the originating validation request or monitoring cycle, including additional context like validation type or monitoring period dates.
+
+### Filtering by Source
+
+You can add the **Validation ID** or **Monitoring Cycle** columns to your view using the column picker to see and sort by source information. These columns are hidden by default but can be enabled for traceability reporting.
+
+---
+
 ## Dashboards & Tracking
 
 ### My Tasks

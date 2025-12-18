@@ -124,3 +124,89 @@ class VersionDeploymentTaskSummary(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+# =============================================================================
+# Ready-to-Deploy Schemas (Per-Region Granularity)
+# =============================================================================
+
+class VersionSourceEnum(str):
+    """How the version was linked to the validation request."""
+    EXPLICIT = "explicit"  # User explicitly linked this version
+    INFERRED = "inferred"  # System auto-suggested the version
+
+
+class ReadyToDeployItem(BaseModel):
+    """
+    Schema for a single (version, region) combination ready for deployment.
+
+    Key design: Returns ONE ROW per (version, region) pair, not aggregated.
+    This allows the frontend to show granular deployment status per region.
+    """
+    # Version identification
+    version_id: int
+    version_number: str
+    model_id: int
+    model_name: str
+
+    # Region details (per-region granularity)
+    region_id: int
+    region_code: str
+    region_name: str
+
+    # Version source tracking (explicit vs inferred)
+    version_source: str = Field(
+        ...,
+        description="'explicit' if user linked version to validation, 'inferred' if system auto-suggested"
+    )
+
+    # Validation info
+    validation_request_id: Optional[int] = None
+    validation_status: str
+    validation_approved_date: Optional[date] = None
+
+    # Timing
+    days_since_approval: int = Field(
+        0,
+        description="Days since validation was approved (0 if not approved)"
+    )
+
+    # Owner info
+    owner_id: int
+    owner_name: str
+
+    # Deployment task tracking (for this specific region)
+    has_pending_task: bool = Field(
+        False,
+        description="True if a deployment task already exists for this region"
+    )
+    pending_task_id: Optional[int] = Field(
+        None,
+        description="ID of pending deployment task for this region, if exists"
+    )
+
+    class Config:
+        from_attributes = True
+
+
+class ReadyToDeployResponse(BaseModel):
+    """Response schema for ready-to-deploy endpoint with summary stats."""
+    items: list[ReadyToDeployItem]
+
+    # Summary statistics
+    total_items: int = Field(
+        ...,
+        description="Total count of (version, region) combinations"
+    )
+    unique_versions_count: int = Field(
+        ...,
+        description="Count of unique versions ready to deploy"
+    )
+    unique_models_count: int = Field(
+        ...,
+        description="Count of unique models with versions ready to deploy"
+    )
+    with_pending_tasks_count: int = Field(
+        ...,
+        description="Count of items that already have deployment tasks scheduled"
+    )

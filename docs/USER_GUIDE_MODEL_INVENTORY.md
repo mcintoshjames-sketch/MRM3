@@ -29,6 +29,7 @@ This guide explains how to work with the Model Inventory in the Quantitative Met
    - [Regional Approval Lock Icon](#regional-approval-lock-icon)
    - [My Deployment Tasks](#my-deployment-tasks)
    - [Bulk Operations](#bulk-operations)
+   - [Ready to Deploy Report](#ready-to-deploy-report)
 7. [Model Relationships](#model-relationships)
    - [Model Hierarchy (Parent-Child)](#model-hierarchy-parent-child)
    - [Data Dependencies](#data-dependencies)
@@ -255,13 +256,15 @@ Model versions track all changes to the model over time, maintaining a complete 
 
 Each version progresses through defined states:
 
-| Status | Description |
-|--------|-------------|
-| **DRAFT** | Version is being prepared, not yet submitted |
-| **IN_VALIDATION** | Version is under review by the validation team |
-| **APPROVED** | Version has passed validation review |
-| **ACTIVE** | Version is currently deployed in production |
-| **SUPERSEDED** | Version was previously active but replaced by a newer version |
+| Status | Description | Editable |
+|--------|-------------|----------|
+| **DRAFT** | Version is being prepared, not yet submitted | ✓ Yes |
+| **IN_VALIDATION** | Version is under review by the validation team | ✓ Conditional* |
+| **APPROVED** | Version has passed validation review | ✗ No |
+| **ACTIVE** | Version is currently deployed in production | ✗ No |
+| **SUPERSEDED** | Version was previously active but replaced by a newer version | ✗ No |
+
+*\*Validators and Admins can edit IN_VALIDATION versions while the linked validation request is in Intake, Planning, or In Progress stages. Once validation reaches Review or later, the version is locked.*
 
 ```
 DRAFT → IN_VALIDATION → APPROVED → ACTIVE → SUPERSEDED
@@ -279,6 +282,28 @@ To record a model change:
    - **Change Category** ⚙ - Category from the change taxonomy
    - **Change Description** - Detailed explanation of what changed
    - **Production Date** - When the change goes/went into production
+
+#### Version Creation Blockers
+
+The system enforces rules to ensure only one model version progresses through the validation pipeline at a time. When you attempt to create a new version, you may encounter one of these blockers:
+
+| Blocker | Condition | Resolution |
+|---------|-----------|------------|
+| **B1: Undeployed Version Exists** | A previous version (DRAFT, IN_VALIDATION, or APPROVED) has not yet been deployed to production | Deploy or cancel the existing version before creating a new one |
+| **B2: Version in Active Validation** | A version is currently linked to an active (non-approved) validation request | Wait for the validation to complete, or cancel the validation if the change is no longer needed |
+
+**What You'll See:**
+
+When blocked, the system displays an error message explaining:
+- Which version is blocking new version creation
+- For B2 blockers: A link to the active validation request
+
+**Why These Blockers Exist:**
+
+These constraints ensure:
+- Clear audit trail—each model change is properly validated before the next begins
+- No orphaned versions—changes don't get lost in the pipeline
+- Sequential governance—validation decisions apply to a known version state
 
 ### Change Types
 
@@ -401,6 +426,46 @@ Select multiple tasks using the checkboxes to perform bulk operations:
 - Only **Pending** tasks can be confirmed, adjusted, or cancelled
 - Confirmed and cancelled tasks are locked from further changes
 - All bulk operations are logged in the audit trail
+
+### Ready to Deploy Report
+
+The **Ready to Deploy** page provides a centralized view of all model versions that are ready for production deployment across different regions. Access it from the Reports section or via the "Ready to Deploy" navigation link.
+
+**Report Structure:**
+
+The report displays one row per (version, region) combination, showing:
+
+| Column | Description |
+|--------|-------------|
+| **Model Name** | Name of the model |
+| **Version** | Version number ready for deployment |
+| **Region** | Geographic region for deployment |
+| **Validation Status** | Current validation state (Approved, In Progress, etc.) |
+| **Version Source** | How the version was determined (see below) |
+| **Last Updated** | When the version information was last modified |
+
+**Understanding Version Source:**
+
+The `Version Source` column indicates how the system determined which version to display:
+
+| Source | Meaning |
+|--------|---------|
+| **Explicit** | The version was explicitly selected or linked to a validation request—this is the exact version that was validated |
+| **Inferred** | The system inferred the relevant version based on model state—typically the most recent approved version without an explicit validation link |
+
+**Why Version Source Matters:**
+
+- **Explicit** versions have a direct audit trail linking the validation decision to a specific version
+- **Inferred** versions require verification that the deployed version matches validation scope
+- Regulatory reviewers may ask about version traceability—the source field provides documentation
+
+**Filters Available:**
+
+| Filter | Description |
+|--------|-------------|
+| **My Models Only** | Show only models where you are the owner or developer |
+| **Region** | Filter by specific geographic region |
+| **Validation Status** | Filter by validation completion state |
 
 ---
 

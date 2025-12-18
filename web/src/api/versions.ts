@@ -30,6 +30,8 @@ export interface ModelVersion {
     validation_request_created?: boolean;
     validation_type?: string;  // "TARGETED" or "INTERIM"
     validation_warning?: string;
+    // Validation workflow status (for edit permission checks)
+    validation_request_status?: string;  // e.g., "INTAKE", "PLANNING", "IN_PROGRESS", "REVIEW", "PENDING_APPROVAL", "APPROVED"
 }
 
 export interface ModelVersionCreate {
@@ -134,5 +136,94 @@ export const versionsApi = {
         document.body.appendChild(link);
         link.click();
         link.remove();
+    },
+};
+
+// Ready to Deploy types and API - Per-Region Granularity
+export type VersionSource = 'explicit' | 'inferred';
+
+export interface ReadyToDeployItem {
+    // Version identification
+    version_id: number;
+    version_number: string;
+    model_id: number;
+    model_name: string;
+
+    // Region details (per-region granularity)
+    region_id: number;
+    region_code: string;
+    region_name: string;
+
+    // Version source tracking
+    version_source: VersionSource;
+
+    // Validation info
+    validation_request_id: number | null;
+    validation_status: string;
+    validation_approved_date: string | null;
+
+    // Timing
+    days_since_approval: number;
+
+    // Owner info
+    owner_id: number;
+    owner_name: string;
+
+    // Deployment task tracking (for this specific region)
+    has_pending_task: boolean;
+    pending_task_id: number | null;
+}
+
+export interface ReadyToDeployFilters {
+    model_id?: number;
+    my_models_only?: boolean;
+}
+
+// Legacy types for backwards compatibility
+export interface ReadyToDeployVersion {
+    version_id: number;
+    version_number: string;
+    model_id: number;
+    model_name: string;
+    validation_status: string;
+    validation_approved_date: string | null;
+    total_regions_count: number;
+    deployed_regions_count: number;
+    pending_regions: string[];
+    pending_tasks_count: number;
+    has_pending_tasks: boolean;
+    owner_name: string;
+    days_since_approval: number;
+}
+
+export interface ReadyToDeploySummary {
+    ready_count: number;
+    partially_deployed_count: number;
+    with_pending_tasks_count: number;
+}
+
+export const readyToDeployApi = {
+    // Get list of versions ready to deploy (per-region granularity)
+    getReadyToDeploy: async (filters?: ReadyToDeployFilters): Promise<ReadyToDeployItem[]> => {
+        const params = new URLSearchParams();
+        if (filters?.model_id) params.append('model_id', filters.model_id.toString());
+        if (filters?.my_models_only) params.append('my_models_only', 'true');
+        const queryString = params.toString();
+        const url = queryString ? `/deployment-tasks/ready-to-deploy?${queryString}` : '/deployment-tasks/ready-to-deploy';
+        const response = await api.get(url);
+        return response.data;
+    },
+
+    // Compute summary from items (no separate endpoint needed)
+    computeSummary: (items: ReadyToDeployItem[]): ReadyToDeploySummary => {
+        const uniqueVersions = new Set(items.map(i => i.version_id));
+        const versionsWithPendingTasks = new Set(
+            items.filter(i => i.has_pending_task).map(i => i.version_id)
+        );
+        return {
+            ready_count: uniqueVersions.size,
+            partially_deployed_count: 0, // Can be computed if needed
+            with_pending_tasks_count: versionsWithPendingTasks.size,
+        };
     },
 };

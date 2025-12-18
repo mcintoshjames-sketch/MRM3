@@ -41,6 +41,19 @@ const SubmitChangeModal: React.FC<SubmitChangeModalProps> = ({ modelId, onClose,
         warning?: string;
         request_id?: number;
     } | null>(null);
+    // Warning-only state for when no validation is created but there's still a warning
+    const [warningOnly, setWarningOnly] = useState<{
+        warning: string;
+        versionNumber: string;
+    } | null>(null);
+    const [versionBlocker, setVersionBlocker] = useState<{
+        error: string;
+        reason: string;
+        blocking_version_number?: string;
+        blocking_validation_id?: number;
+        blocking_status?: string;
+        message: string;
+    } | null>(null);
 
     // Fetch taxonomy data and regions on mount
     useEffect(() => {
@@ -115,6 +128,7 @@ const SubmitChangeModal: React.FC<SubmitChangeModalProps> = ({ modelId, onClose,
         e.preventDefault();
         setError(null);
         setValidationAcknowledgment(null);
+        setWarningOnly(null);
 
         // Validate regional scope and selective deployment
         if ((deploymentOption === 'regional' || deploymentOption === 'global-selective') && formData.affected_region_ids.length === 0) {
@@ -171,13 +185,27 @@ const SubmitChangeModal: React.FC<SubmitChangeModalProps> = ({ modelId, onClose,
                     warning: response.validation_warning || undefined,
                     request_id: response.validation_request_id || undefined
                 });
+            } else if (response.validation_warning) {
+                // No validation required, but there's a warning to display
+                setWarningOnly({
+                    warning: response.validation_warning,
+                    versionNumber: response.version_number
+                });
             } else {
-                // No validation required, close immediately
+                // No validation required and no warning, close immediately
                 onSuccess();
                 onClose();
             }
         } catch (err: any) {
-            setError(err.response?.data?.detail || 'Failed to submit change');
+            // Check for 409 Conflict with version_creation_blocked error
+            // Backend returns HTTPException with detail dict: {detail: {error: "version_creation_blocked", ...}}
+            if (err.response?.status === 409 && err.response?.data?.detail?.error === 'version_creation_blocked') {
+                setVersionBlocker(err.response.data.detail);
+                setError(null); // Clear generic error since we have specific blocker info
+            } else {
+                setError(err.response?.data?.detail || 'Failed to submit change');
+                setVersionBlocker(null);
+            }
         } finally {
             setLoading(false);
         }
@@ -199,6 +227,83 @@ const SubmitChangeModal: React.FC<SubmitChangeModalProps> = ({ modelId, onClose,
                 {error && (
                     <div className="mb-4 p-3 bg-red-100 border border-red-400 text-red-700 rounded">
                         {error}
+                    </div>
+                )}
+
+                {versionBlocker && (
+                    <div className="mb-4 p-4 bg-amber-50 border border-amber-400 text-amber-900 rounded">
+                        <h3 className="font-bold text-lg mb-2 flex items-center">
+                            <span className="mr-2">⚠</span>
+                            Version Creation Blocked
+                        </h3>
+                        <p className="mb-3">{versionBlocker.message}</p>
+
+                        {versionBlocker.reason === 'undeployed_version_exists' && (
+                            <div className="bg-white p-3 rounded border border-amber-200 mb-3">
+                                <div className="text-sm space-y-2">
+                                    <div>
+                                        <span className="font-medium">Blocking Version:</span>{' '}
+                                        <span className="font-mono bg-gray-100 px-1 rounded">{versionBlocker.blocking_version_number}</span>
+                                        {versionBlocker.blocking_status && (
+                                            <span className="ml-2 text-xs px-2 py-0.5 rounded bg-gray-200">
+                                                {versionBlocker.blocking_status}
+                                            </span>
+                                        )}
+                                    </div>
+                                    <p className="text-amber-800">
+                                        <strong>Action Required:</strong> Deploy or delete the existing version before creating a new one.
+                                    </p>
+                                </div>
+                            </div>
+                        )}
+
+                        {versionBlocker.reason === 'version_in_active_validation' && (
+                            <div className="bg-white p-3 rounded border border-amber-200 mb-3">
+                                <div className="text-sm space-y-2">
+                                    <div>
+                                        <span className="font-medium">Blocking Version:</span>{' '}
+                                        <span className="font-mono bg-gray-100 px-1 rounded">{versionBlocker.blocking_version_number}</span>
+                                    </div>
+                                    {versionBlocker.blocking_validation_id && (
+                                        <div>
+                                            <span className="font-medium">Validation Project:</span>{' '}
+                                            <a
+                                                href={`/validation-workflow/${versionBlocker.blocking_validation_id}`}
+                                                className="text-blue-600 hover:text-blue-800 hover:underline"
+                                                onClick={(e) => {
+                                                    e.preventDefault();
+                                                    window.location.href = `/validation-workflow/${versionBlocker.blocking_validation_id}`;
+                                                }}
+                                            >
+                                                #{versionBlocker.blocking_validation_id}
+                                            </a>
+                                        </div>
+                                    )}
+                                    <p className="text-amber-800">
+                                        <strong>Action Required:</strong> Wait for the validation to complete before creating a new version.
+                                    </p>
+                                </div>
+                            </div>
+                        )}
+
+                        <div className="flex gap-2">
+                            <a
+                                href={`/models/${modelId}?tab=versions`}
+                                className="px-3 py-1.5 text-sm bg-amber-600 text-white rounded hover:bg-amber-700"
+                                onClick={(e) => {
+                                    e.preventDefault();
+                                    window.location.href = `/models/${modelId}?tab=versions`;
+                                }}
+                            >
+                                View Model Versions
+                            </a>
+                            <button
+                                onClick={() => setVersionBlocker(null)}
+                                className="px-3 py-1.5 text-sm border border-amber-600 text-amber-700 rounded hover:bg-amber-100"
+                            >
+                                Dismiss
+                            </button>
+                        </div>
                     </div>
                 )}
 
@@ -240,7 +345,28 @@ const SubmitChangeModal: React.FC<SubmitChangeModalProps> = ({ modelId, onClose,
                     </div>
                 )}
 
-                <form onSubmit={handleSubmit} style={{ display: validationAcknowledgment ? 'none' : 'block' }}>
+                {warningOnly && (
+                    <div className="mb-4 p-4 bg-green-100 border border-green-400 text-green-900 rounded">
+                        <h3 className="font-bold text-lg mb-2">✓ Model Change Submitted Successfully</h3>
+                        <p className="mb-3">
+                            Version <span className="font-mono bg-green-200 px-1 rounded">{warningOnly.versionNumber}</span> has been created.
+                        </p>
+                        <div className="p-3 bg-yellow-50 border border-yellow-300 rounded text-yellow-900 text-sm mb-3">
+                            <strong>⚠ Note:</strong> {warningOnly.warning}
+                        </div>
+                        <button
+                            onClick={() => {
+                                onSuccess();
+                                onClose();
+                            }}
+                            className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 w-full"
+                        >
+                            Close
+                        </button>
+                    </div>
+                )}
+
+                <form onSubmit={handleSubmit} style={{ display: (validationAcknowledgment || warningOnly) ? 'none' : 'block' }}>
                     {/* Version Numbering Mode */}
                     <div className="mb-6 p-4 bg-gray-50 rounded-lg border border-gray-200">
                         <label className="block text-sm font-medium text-gray-700 mb-3">

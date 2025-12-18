@@ -188,7 +188,7 @@ For periodic revalidations, the model owner must submit documentation. When rece
 - → **Planning**: If scope changes require replanning
 
 **Model Version Integration**:
-When a request moves to In Progress, linked model versions automatically transition from **DRAFT** to **IN_VALIDATION** status, preventing edits during active validation.
+When a request moves to In Progress, linked model versions automatically transition from **DRAFT** to **IN_VALIDATION** status. During the early validation stages (Intake, Planning, In Progress), Validators and Admins can still edit the version details if corrections are needed. Once validation reaches **Review** or later stages, the version becomes locked to preserve the record of what was validated.
 
 ---
 
@@ -235,6 +235,44 @@ When a request moves to In Progress, linked model versions automatically transit
 - → **Approved**: When all required approvals are granted
 - → **In Progress** or **Review**: If sent back for additional work
 - → **Revision**: If specific changes are required before re-approval
+
+#### Pre-Transition Warnings
+
+When attempting to advance a validation request to **PENDING_APPROVAL** status, the system checks for conditions that may require attention. These warnings do not block the transition but alert you to outstanding items that should be addressed.
+
+**How Warnings Appear:**
+
+1. Click the button to advance to Pending Approval
+2. If any warnings exist, a modal displays with warning details
+3. You can choose to **Proceed Anyway** or **Cancel** to address issues first
+
+**Warning Types:**
+
+| Warning | Condition | Recommended Action |
+|---------|-----------|-------------------|
+| **OPEN_FINDINGS** | Prior validations have unresolved findings still marked as open | Review open findings and update their status or document why they remain open |
+| **PENDING_RECOMMENDATIONS** | The model has active recommendations that haven't been addressed | Verify recommendations are being tracked and have appropriate response plans |
+| **UNADDRESSED_ATTESTATIONS** | Pending attestation items exist that haven't been completed | Complete required attestations or document why they're pending |
+
+**Example Warning Display:**
+
+```
+⚠ Pre-Transition Warnings
+
+The following items should be reviewed before requesting approval:
+
+• OPEN_FINDINGS: There are 3 unresolved findings from prior validations
+• PENDING_RECOMMENDATIONS: 2 active recommendations require response
+
+You may proceed, but approvers will see these outstanding items.
+
+[Proceed Anyway]  [Cancel]
+```
+
+**Best Practice:** Address warnings before requesting approval. While the system allows you to proceed with warnings, resolving them first:
+- Reduces questions from approvers
+- Demonstrates thorough completion of validation work
+- Ensures compliance documentation is complete
 
 ---
 
@@ -586,10 +624,12 @@ After approval, the model owner can activate the approved version:
 | Status | Meaning | Editable |
 |--------|---------|----------|
 | **DRAFT** | Initial state, not yet validated | ✓ Yes |
-| **IN_VALIDATION** | Validation in progress | ✗ No |
+| **IN_VALIDATION** | Validation in progress | ✓ Conditional* |
 | **APPROVED** | Validation complete | ✗ No |
 | **ACTIVE** | Currently deployed | ✗ No |
 | **SUPERSEDED** | Replaced by newer version | ✗ No |
+
+*\*IN_VALIDATION versions can be edited by Validators/Admins while the validation request is in Intake, Planning, or In Progress stages. Once validation reaches Review or later, the version is locked and shows "Locked" in the Actions column.*
 
 ---
 
@@ -752,7 +792,7 @@ A: The system supports proxy approvals with appropriate documentation. However, 
 ### Technical Questions
 
 **Q: What happens to model versions during validation?**
-A: When validation moves to In Progress, linked versions transition to IN_VALIDATION status and cannot be edited. When approved, they become APPROVED status and can be activated.
+A: When validation moves to In Progress, linked versions transition to IN_VALIDATION status. During early validation stages (Intake, Planning, In Progress), Validators and Admins can still edit the version if corrections are needed—look for the **Edit** link in the Actions column. Once validation reaches Review or later stages, the version is locked to preserve the validation record (shown as "Locked" in the UI). When approved, versions become APPROVED status and can be activated.
 
 **Q: How are validation policies configured?**
 A: Administrators configure policies through the Taxonomy and Validation Policy admin pages. Each risk tier can have different frequencies, grace periods, and lead times.

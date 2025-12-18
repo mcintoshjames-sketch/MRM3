@@ -28,7 +28,10 @@ from app.schemas.version_deployment_task import (
     VersionInfo,
     RegionInfo,
     UserInfo,
-    ValidationRequestInfo
+    ValidationRequestInfo,
+    ReadyToDeployItem,
+    ReadyToDeployResponse,
+    VersionSourceEnum
 )
 from app.schemas.deploy_modal import (
     DeployModalDataResponse,
@@ -172,6 +175,180 @@ def get_my_deployment_tasks(
         ))
 
     return result
+
+
+@router.get("/ready-to-deploy", response_model=list[ReadyToDeployItem])
+def get_ready_to_deploy(
+    model_id: int = None,
+    my_models_only: bool = False,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Get versions ready to deploy with per-region granularity.
+
+    Returns one row per (version, region) combination where:
+    - Version has an APPROVED validation
+    - Region does not have a CONFIRMED deployment task for this version
+
+    Each row includes:
+    - Version and model info
+    - Region details (region_id, code, name)
+    - version_source: "explicit" (user linked) or "inferred" (system auto-suggested)
+    - Validation info and approval date
+    - Pending deployment task info for this specific region
+
+    Filters:
+    - model_id: Filter to specific model
+    - my_models_only: Filter to models owned by or delegated to current user
+
+    Access Control:
+    - Admin: Sees all ready-to-deploy items
+    - Non-admin: Only sees items for models they own or are delegated for
+    """
+    # Get the APPROVED status taxonomy value
+    approved_status = db.query(TaxonomyValue).filter(
+        TaxonomyValue.code == "APPROVED"
+    ).first()
+
+    if not approved_status:
+        # No approved status configured - return empty list
+        return []
+
+    # Build base query for versions with APPROVED validation
+    query = db.query(ModelVersion).options(
+        joinedload(ModelVersion.model),
+        joinedload(ModelVersion.validation_request)
+    ).join(
+        ValidationRequest,
+        ModelVersion.validation_request_id == ValidationRequest.request_id
+    ).filter(
+        ValidationRequest.current_status_id == approved_status.value_id
+    )
+
+    # Get models user can access for filtering
+    accessible_model_ids = None
+    if current_user.role != 'Admin' or my_models_only:
+        # Non-admin: Only owned + delegated models
+        # my_models_only: Same filter for admins who want to see only their models
+        owned_model_ids = db.query(Model.model_id).filter(
+            Model.owner_id == current_user.user_id
+        ).subquery()
+
+        delegate_model_ids = db.query(ModelDelegate.model_id).filter(
+            ModelDelegate.user_id == current_user.user_id,
+            ModelDelegate.revoked_at == None
+        ).subquery()
+
+        accessible_model_ids = db.query(Model.model_id).filter(
+            or_(
+                Model.model_id.in_(owned_model_ids),
+                Model.model_id.in_(delegate_model_ids)
+            )
+        ).subquery()
+
+        query = query.filter(ModelVersion.model_id.in_(accessible_model_ids))
+
+    # Filter by specific model_id if provided
+    if model_id:
+        query = query.filter(ModelVersion.model_id == model_id)
+
+    # Execute query to get versions
+    versions = query.all()
+
+    # For each version, get model regions and check deployment status
+    items = []
+    unique_versions = set()
+    unique_models = set()
+    pending_tasks_count = 0
+    today = date.today()
+
+    for version in versions:
+        model = version.model
+        val_request = version.validation_request
+
+        # Get model regions
+        model_regions = db.query(ModelRegion).options(
+            joinedload(ModelRegion.region)
+        ).filter(
+            ModelRegion.model_id == model.model_id
+        ).all()
+
+        # Get CONFIRMED deployment tasks for this version (to exclude those regions)
+        confirmed_region_ids = set(
+            db.query(VersionDeploymentTask.region_id).filter(
+                VersionDeploymentTask.version_id == version.version_id,
+                VersionDeploymentTask.status == "CONFIRMED"
+            ).all()
+        )
+        confirmed_region_ids = {r[0] for r in confirmed_region_ids if r[0] is not None}
+
+        # Get PENDING/ADJUSTED deployment tasks for this version (to show pending info)
+        pending_tasks = db.query(VersionDeploymentTask).filter(
+            VersionDeploymentTask.version_id == version.version_id,
+            VersionDeploymentTask.status.in_(["PENDING", "ADJUSTED"])
+        ).all()
+        pending_tasks_by_region = {t.region_id: t for t in pending_tasks}
+
+        # Get version source from validation request (default to "explicit")
+        version_source = val_request.version_source if val_request.version_source else "explicit"
+
+        # Get owner info
+        owner = db.query(User).get(model.owner_id)
+        owner_name = owner.full_name if owner else "Unknown"
+
+        # Calculate days since approval
+        days_since_approval = 0
+        validation_approved_date = None
+        if val_request.completion_date:
+            validation_approved_date = val_request.completion_date
+            days_since_approval = (today - val_request.completion_date).days
+
+        # Get validation status label
+        status_value = db.query(TaxonomyValue).get(val_request.current_status_id)
+        validation_status = status_value.label if status_value else "Unknown"
+
+        # Create a row for each region that is NOT fully deployed
+        for mr in model_regions:
+            region = mr.region
+            if region.region_id in confirmed_region_ids:
+                # This region already has a CONFIRMED deployment - skip
+                continue
+
+            # Check for pending task in this region
+            pending_task = pending_tasks_by_region.get(region.region_id)
+            has_pending_task = pending_task is not None
+            pending_task_id = pending_task.task_id if pending_task else None
+
+            if has_pending_task:
+                pending_tasks_count += 1
+
+            unique_versions.add(version.version_id)
+            unique_models.add(model.model_id)
+
+            items.append(ReadyToDeployItem(
+                version_id=version.version_id,
+                version_number=version.version_number,
+                model_id=model.model_id,
+                model_name=model.model_name,
+                region_id=region.region_id,
+                region_code=region.code,
+                region_name=region.name,
+                version_source=version_source,
+                validation_request_id=val_request.request_id,
+                validation_status=validation_status,
+                validation_approved_date=validation_approved_date,
+                days_since_approval=days_since_approval,
+                owner_id=model.owner_id,
+                owner_name=owner_name,
+                has_pending_task=has_pending_task,
+                pending_task_id=pending_task_id
+            ))
+
+    # Sort by days_since_approval descending (oldest first)
+    items.sort(key=lambda x: x.days_since_approval, reverse=True)
+
+    return items
 
 
 @router.get("/{task_id}", response_model=VersionDeploymentTaskResponse)

@@ -86,6 +86,7 @@ class ValidationRequestCreate(ValidationRequestBase):
     """Schema for creating a validation request."""
     model_versions: Optional[Dict[int, Optional[int]]] = None  # {model_id: version_id or None}
     check_warnings: bool = False  # If True, return warnings without creating request
+    force_create: bool = False  # If True, proceed despite warnings (but not errors)
 
 
 class ValidationWarning(BaseModel):
@@ -858,3 +859,64 @@ class RiskMismatchReportResponse(BaseModel):
     models_with_mismatch: int
     items: List[RiskMismatchItem]
     generated_at: datetime
+
+
+# ==================== PRE-TRANSITION WARNING SCHEMAS ====================
+
+class PreTransitionWarning(BaseModel):
+    """
+    Individual pre-transition warning.
+
+    Returned when checking if a validation request can safely transition
+    to a new status (e.g., PENDING_APPROVAL). Warnings alert users to
+    incomplete work that should be addressed before proceeding.
+    """
+    warning_type: str = Field(
+        ...,
+        description="Type of warning: 'OPEN_FINDINGS', 'PENDING_RECOMMENDATIONS', 'UNADDRESSED_ATTESTATIONS'"
+    )
+    severity: str = Field(
+        ...,
+        description="Severity level: 'ERROR' (blocking), 'WARNING' (proceed with caution), 'INFO'"
+    )
+    message: str = Field(
+        ...,
+        description="Human-readable warning message"
+    )
+    model_id: int = Field(
+        ...,
+        description="ID of the model this warning relates to"
+    )
+    model_name: str = Field(
+        ...,
+        description="Name of the model this warning relates to"
+    )
+    details: Dict = Field(
+        default_factory=dict,
+        description="Additional contextual details (e.g., finding_ids, recommendation_ids, counts)"
+    )
+
+
+class PreTransitionWarningsResponse(BaseModel):
+    """
+    Response for pre-transition warnings check.
+
+    Called before transitioning a validation request to a new status
+    to identify any blocking issues or warnings that users should be aware of.
+    """
+    request_id: int = Field(
+        ...,
+        description="ID of the validation request being checked"
+    )
+    target_status: str = Field(
+        ...,
+        description="The status the request would transition to (e.g., 'PENDING_APPROVAL')"
+    )
+    warnings: List[PreTransitionWarning] = Field(
+        default_factory=list,
+        description="List of warnings/errors found"
+    )
+    can_proceed: bool = Field(
+        ...,
+        description="False if there are ERROR-severity warnings (blocking), True otherwise"
+    )

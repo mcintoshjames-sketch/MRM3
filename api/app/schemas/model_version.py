@@ -93,5 +93,46 @@ class ModelVersionResponse(ModelVersionBase):
     validation_type: Optional[str] = None  # "TARGETED" or "INTERIM"
     validation_warning: Optional[str] = None  # Warning message if interim or out of order
 
+    # Validation workflow status (for determining if version can be edited)
+    validation_request_status: Optional[str] = Field(
+        None,
+        description="Current status code of linked validation request (e.g., INTAKE, PLANNING, IN_PROGRESS, REVIEW)"
+    )
+
     class Config:
         from_attributes = True
+
+
+class ReadyToDeployVersion(BaseModel):
+    """Schema for versions that are validated but not yet deployed to all regions."""
+    version_id: int
+    version_number: str
+    model_id: int
+    model_name: str
+
+    # Validation status
+    validation_status: str
+    validation_approved_date: Optional[date] = None
+
+    # Region deployment tracking
+    total_regions_count: int
+    deployed_regions_count: int
+    pending_regions: List[str]  # List of region codes not yet deployed
+
+    # Deployment task tracking
+    pending_tasks_count: int
+    has_pending_tasks: bool
+
+    # Additional info
+    owner_name: str
+    days_since_approval: int
+
+    class Config:
+        from_attributes = True
+
+
+class ReadyToDeploySummary(BaseModel):
+    """Summary statistics for ready-to-deploy versions."""
+    ready_count: int  # Total versions ready to deploy
+    partially_deployed_count: int  # Deployed to some but not all regions
+    with_pending_tasks_count: int  # Have scheduled deployment tasks

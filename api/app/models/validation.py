@@ -185,6 +185,14 @@ class ValidationRequest(Base):
         comment="External ID or reference for the model documentation (e.g., document management system ID)"
     )
 
+    # Version source tracking (for ready-to-deploy surfacing)
+    version_source: Mapped[Optional[str]] = mapped_column(
+        String(20),
+        nullable=True,
+        default="explicit",
+        comment="How version was linked: 'explicit' (user selected) or 'inferred' (system auto-suggested)"
+    )
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime, nullable=False, default=utc_now
     )
@@ -1135,3 +1143,50 @@ class ComponentDefinitionConfigItem(Base):
     # Relationships
     configuration = relationship("ComponentDefinitionConfiguration", back_populates="config_items")
     component_definition = relationship("ValidationComponentDefinition")
+
+
+class ValidationFinding(Base):
+    """
+    Findings identified during a validation.
+    Findings track specific issues discovered during validation work and must be
+    resolved before transitioning to certain workflow states.
+    """
+    __tablename__ = "validation_findings"
+
+    finding_id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    request_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("validation_requests.request_id", ondelete="CASCADE"), nullable=False
+    )
+    finding_type: Mapped[str] = mapped_column(
+        String(50), nullable=False,
+        comment="Category of finding: DATA_QUALITY, METHODOLOGY, IMPLEMENTATION, etc."
+    )
+    severity: Mapped[str] = mapped_column(
+        String(20), nullable=False,
+        comment="Severity level: HIGH, MEDIUM, LOW"
+    )
+    title: Mapped[str] = mapped_column(String(500), nullable=False)
+    description: Mapped[str] = mapped_column(Text, nullable=False)
+    status: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="OPEN",
+        comment="Finding status: OPEN or RESOLVED"
+    )
+    identified_by_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("users.user_id"), nullable=False
+    )
+    resolved_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    resolved_by_id: Mapped[Optional[int]] = mapped_column(
+        Integer, ForeignKey("users.user_id"), nullable=True
+    )
+    resolution_notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, default=utc_now
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, default=utc_now, onupdate=utc_now
+    )
+
+    # Relationships
+    request = relationship("ValidationRequest", backref="findings")
+    identified_by = relationship("User", foreign_keys=[identified_by_id])
+    resolved_by = relationship("User", foreign_keys=[resolved_by_id])

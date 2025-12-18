@@ -23,8 +23,10 @@ from app.models import (
     ValidationPolicy, ValidationWorkflowSLA, ModelRegion, Region,
     ValidationComponentDefinition, ValidationPlan, ValidationPlanComponent,
     ComponentDefinitionConfiguration, ComponentDefinitionConfigItem,
-    OverdueRevalidationComment
+    OverdueRevalidationComment, ValidationFinding
 )
+from app.models.recommendation import Recommendation
+from app.models.attestation import AttestationRecord
 from app.models.model_delegate import ModelDelegate
 from app.schemas.validation import (
     ValidationRequestCreate, ValidationRequestUpdate, ValidationRequestStatusUpdate,
@@ -43,7 +45,8 @@ from app.schemas.validation import (
     PlanTemplateSuggestion, PlanTemplateSuggestionsResponse,
     ConfigurationResponse, ConfigurationDetailResponse, ConfigurationItemResponse, ConfigurationPublishRequest,
     OpenValidationSummary, OpenValidationsCheckResponse, ForceResetRequest, ForceResetResponse,
-    RiskMismatchItem, RiskMismatchReportResponse
+    RiskMismatchItem, RiskMismatchReportResponse,
+    PreTransitionWarning, PreTransitionWarningsResponse
 )
 from app.schemas.conditional_approval import (
     ConditionalApprovalsEvaluationResponse,
@@ -553,6 +556,32 @@ def check_target_completion_date_warnings(
         if version_id:
             version = db.query(ModelVersion).filter(
                 ModelVersion.version_id == version_id).first()
+
+        # Check 1: Lead time violation
+        # If validation completes before production but with insufficient lead time
+        if version and version.production_date and target_date <= version.production_date:
+            # Get policy for this model's risk tier
+            if model.risk_tier_id:
+                policy = db.query(ValidationPolicy).filter(
+                    ValidationPolicy.risk_tier_id == model.risk_tier_id
+                ).first()
+                if policy and policy.model_change_lead_time_days:
+                    days_before_production = (version.production_date - target_date).days
+                    if days_before_production < policy.model_change_lead_time_days:
+                        warnings.append(ValidationWarning(
+                            warning_type="LEAD_TIME",
+                            severity="WARNING",
+                            model_id=model.model_id,
+                            model_name=model.model_name,
+                            version_number=version.version_number,
+                            message=f"Target completion date ({target_date.isoformat()}) provides only {days_before_production} days lead time before implementation ({version.production_date.isoformat()}). Policy requires {policy.model_change_lead_time_days} days.",
+                            details={
+                                "implementation_date": version.production_date.isoformat(),
+                                "target_completion_date": target_date.isoformat(),
+                                "actual_lead_time_days": days_before_production,
+                                "required_lead_time_days": policy.model_change_lead_time_days
+                            }
+                        ))
 
         # Check 2: Implementation date already passed
         if version and version.production_date and target_date > version.production_date:
@@ -1572,6 +1601,32 @@ def create_validation_request(
             request_data=request_data
         )
 
+    # Check for warnings even when not explicitly requested
+    # This enforces business rules about lead times and implementation dates
+    warnings = check_target_completion_date_warnings(db, request_data)
+    if warnings:
+        has_errors = any(w.severity == "ERROR" for w in warnings)
+
+        # If there are ERRORs, block creation regardless of force_create
+        if has_errors:
+            return ValidationRequestWarningsResponse(
+                has_warnings=True,
+                can_proceed=False,
+                warnings=warnings,
+                request_data=request_data
+            )
+
+        # If only WARNINGs exist and force_create is False, return warnings for user decision
+        if not request_data.force_create:
+            return ValidationRequestWarningsResponse(
+                has_warnings=True,
+                can_proceed=True,
+                warnings=warnings,
+                request_data=request_data
+            )
+
+        # If force_create is True and only warnings, proceed with creation
+
     # Verify validation type exists
     validation_type = db.query(TaxonomyValue).filter(
         TaxonomyValue.value_id == request_data.validation_type_id
@@ -2138,6 +2193,138 @@ def mark_submission_received(
     db.commit()
     db.refresh(validation_request)
     return validation_request
+
+
+@router.get("/requests/{request_id}/pre-transition-warnings", response_model=PreTransitionWarningsResponse)
+def get_pre_transition_warnings(
+    request_id: int,
+    target_status: str = Query(..., description="Target status to transition to (e.g., PENDING_APPROVAL)"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Get pre-transition warnings for a validation request.
+
+    Returns advisory warnings about conditions that should be reviewed before
+    transitioning to the target status (e.g., open findings, pending recommendations,
+    unaddressed attestations).
+
+    Warning Types:
+    - OPEN_FINDINGS: Prior validations have unresolved findings
+    - PENDING_RECOMMENDATIONS: Model has open recommendations not yet addressed
+    - UNADDRESSED_ATTESTATIONS: Model owner has pending attestation items
+    """
+    # Get the validation request
+    validation_request = db.query(ValidationRequest).options(
+        joinedload(ValidationRequest.models)
+    ).filter(ValidationRequest.request_id == request_id).first()
+
+    if not validation_request:
+        raise HTTPException(status_code=404, detail="Validation request not found")
+
+    warnings = []
+
+    # Get models linked to this request
+    model_ids = [link.model_id for link in validation_request.models]
+
+    if not model_ids:
+        # No models linked, no warnings to check
+        return PreTransitionWarningsResponse(
+            request_id=request_id,
+            target_status=target_status,
+            warnings=[],
+            can_proceed=True
+        )
+
+    # Get model details for warnings
+    models = db.query(Model).filter(Model.model_id.in_(model_ids)).all()
+    model_map = {m.model_id: m for m in models}
+
+    # Get CLOSED status for recommendations
+    rec_closed_status = db.query(TaxonomyValue).join(Taxonomy).filter(
+        Taxonomy.name == "Recommendation Status",
+        TaxonomyValue.code == "CLOSED"
+    ).first()
+    closed_status_id = rec_closed_status.value_id if rec_closed_status else None
+
+    for model_id in model_ids:
+        model = model_map.get(model_id)
+        if not model:
+            continue
+
+        model_name = model.model_name
+
+        # 1. Check for OPEN_FINDINGS from prior validations
+        # Find prior validation requests for this model (not the current one)
+        prior_request_ids = db.query(ValidationRequestModelVersion.request_id).filter(
+            ValidationRequestModelVersion.model_id == model_id,
+            ValidationRequestModelVersion.request_id != request_id
+        ).subquery()
+
+        open_findings_count = db.query(func.count(ValidationFinding.finding_id)).filter(
+            ValidationFinding.request_id.in_(prior_request_ids),
+            ValidationFinding.status == "OPEN"
+        ).scalar()
+
+        if open_findings_count and open_findings_count > 0:
+            warnings.append(PreTransitionWarning(
+                warning_type="OPEN_FINDINGS",
+                severity="WARNING",
+                message=f"Model has {open_findings_count} open finding(s) from prior validations that should be reviewed.",
+                model_id=model_id,
+                model_name=model_name,
+                details={"finding_count": open_findings_count}
+            ))
+
+        # 2. Check for PENDING_RECOMMENDATIONS (not CLOSED)
+        rec_query = db.query(func.count(Recommendation.recommendation_id)).filter(
+            Recommendation.model_id == model_id
+        )
+        if closed_status_id:
+            rec_query = rec_query.filter(Recommendation.current_status_id != closed_status_id)
+        else:
+            # If no CLOSED status found, count all recommendations (shouldn't happen in practice)
+            pass
+
+        pending_rec_count = rec_query.scalar()
+
+        if pending_rec_count and pending_rec_count > 0:
+            warnings.append(PreTransitionWarning(
+                warning_type="PENDING_RECOMMENDATIONS",
+                severity="WARNING",
+                message=f"Model has {pending_rec_count} open recommendation(s) that should be addressed.",
+                model_id=model_id,
+                model_name=model_name,
+                details={"recommendation_count": pending_rec_count}
+            ))
+
+        # 3. Check for UNADDRESSED_ATTESTATIONS (status="PENDING" for this model)
+        pending_attest_count = db.query(func.count(AttestationRecord.attestation_id)).filter(
+            AttestationRecord.model_id == model_id,
+            AttestationRecord.status == "PENDING"
+        ).scalar()
+
+        if pending_attest_count and pending_attest_count > 0:
+            warnings.append(PreTransitionWarning(
+                warning_type="UNADDRESSED_ATTESTATIONS",
+                severity="WARNING",
+                message=f"Model has {pending_attest_count} pending attestation(s) that should be completed.",
+                model_id=model_id,
+                model_name=model_name,
+                details={"attestation_count": pending_attest_count}
+            ))
+
+    # Determine can_proceed: True unless ERROR severity warnings exist
+    # (Currently all warnings are WARNING severity, so can_proceed is True)
+    has_error = any(w.severity == "ERROR" for w in warnings)
+    can_proceed = not has_error
+
+    return PreTransitionWarningsResponse(
+        request_id=request_id,
+        target_status=target_status,
+        warnings=warnings,
+        can_proceed=can_proceed
+    )
 
 
 @router.patch("/requests/{request_id}/status", response_model=ValidationRequestResponse)

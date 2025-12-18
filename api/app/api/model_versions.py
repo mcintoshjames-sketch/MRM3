@@ -15,13 +15,18 @@ from app.models.model_version import ModelVersion
 from app.models.model_delegate import ModelDelegate
 from app.models.audit_log import AuditLog
 from app.models.model_change_taxonomy import ModelChangeType, ModelChangeCategory
-from app.models.validation import ValidationRequest, ValidationWorkflowSLA
-from app.models.taxonomy import TaxonomyValue
+from app.models.validation import ValidationRequest, ValidationWorkflowSLA, ValidationRequestModelVersion
+from app.models.taxonomy import Taxonomy, TaxonomyValue
+from app.models.model_region import ModelRegion
+from app.models.region import Region
+from app.models.version_deployment_task import VersionDeploymentTask
 from app.schemas.model_version import (
     ModelVersionCreate,
     ModelVersionUpdate,
     ModelVersionResponse,
     VersionStatus,
+    ReadyToDeployVersion,
+    ReadyToDeploySummary,
 )
 from fpdf import FPDF
 
@@ -108,6 +113,124 @@ def check_version_permission(db: Session, model: Model, user: User) -> bool:
     return False
 
 
+def check_version_creation_blockers(db: Session, model_id: int) -> dict | None:
+    """Check for blockers that prevent creating a new version.
+
+    Returns:
+        None if no blockers, otherwise a dict with blocking information.
+
+    Blocking conditions:
+    B1: Undeployed version exists (DRAFT or APPROVED without actual_production_date)
+        that is NOT in an active validation
+    B2: Version is in active validation (status NOT in: APPROVED, CANCELLED, ON_HOLD)
+    """
+    # Get all versions for this model
+    versions = db.query(ModelVersion).filter(
+        ModelVersion.model_id == model_id
+    ).all()
+
+    # Find non-terminal status codes (active validation statuses)
+    # Active = NOT in: APPROVED, CANCELLED, ON_HOLD
+    terminal_status_codes = {"APPROVED", "CANCELLED", "ON_HOLD"}
+
+    # Get the Validation Request Status taxonomy to find status IDs
+    status_taxonomy = db.query(Taxonomy).filter(
+        Taxonomy.name == "Validation Request Status"
+    ).first()
+
+    terminal_status_ids = set()
+    if status_taxonomy:
+        terminal_statuses = db.query(TaxonomyValue).filter(
+            TaxonomyValue.taxonomy_id == status_taxonomy.taxonomy_id,
+            TaxonomyValue.code.in_(terminal_status_codes)
+        ).all()
+        terminal_status_ids = {s.value_id for s in terminal_statuses}
+
+    for version in versions:
+        # B2: Check if version is in active validation
+        # Look for ValidationRequest linked to this version via ValidationRequestModelVersion
+        active_validation = db.query(ValidationRequest).join(
+            ValidationRequestModelVersion,
+            ValidationRequest.request_id == ValidationRequestModelVersion.request_id
+        ).filter(
+            ValidationRequestModelVersion.version_id == version.version_id,
+            ~ValidationRequest.current_status_id.in_(terminal_status_ids) if terminal_status_ids else True
+        ).first()
+
+        if active_validation:
+            return {
+                "error": "version_creation_blocked",
+                "reason": "version_in_active_validation",
+                "blocking_version_number": version.version_number,
+                "blocking_validation_id": active_validation.request_id,
+                "message": f"Cannot create new version: version {version.version_number} is in active validation (request #{active_validation.request_id})"
+            }
+
+        # B1: Check for undeployed versions not in active validation
+        # Undeployed = DRAFT or APPROVED status without actual_production_date
+        is_undeployed = (
+            version.status in ("DRAFT", "IN_VALIDATION", "APPROVED") and
+            version.actual_production_date is None
+        )
+
+        if is_undeployed:
+            # Skip if this version is linked to a cancelled validation (resolved case)
+            cancelled_validation_link = db.query(ValidationRequest).join(
+                ValidationRequestModelVersion,
+                ValidationRequest.request_id == ValidationRequestModelVersion.request_id
+            ).join(
+                TaxonomyValue,
+                ValidationRequest.current_status_id == TaxonomyValue.value_id
+            ).filter(
+                ValidationRequestModelVersion.version_id == version.version_id,
+                TaxonomyValue.code == "CANCELLED"
+            ).first()
+
+            if cancelled_validation_link:
+                # This version's validation was cancelled, skip it
+                continue
+
+            return {
+                "error": "version_creation_blocked",
+                "reason": "undeployed_version_exists",
+                "blocking_version_number": version.version_number,
+                "message": f"Cannot create new version: version {version.version_number} ({version.status}) has not been deployed yet"
+            }
+
+    return None
+
+
+def check_version_deletion_blockers(db: Session, version: ModelVersion) -> dict | None:
+    """Check for blockers that prevent deleting a version.
+
+    Returns:
+        None if no blockers, otherwise a dict with blocking information.
+
+    Blocking conditions:
+    B3: Version is linked to any validation request
+    """
+    # Check if version is linked to any validation via ValidationRequestModelVersion
+    validation_link = db.query(ValidationRequest).join(
+        ValidationRequestModelVersion,
+        ValidationRequest.request_id == ValidationRequestModelVersion.request_id
+    ).filter(
+        ValidationRequestModelVersion.version_id == version.version_id
+    ).first()
+
+    if validation_link:
+        # Get the validation number for the error message
+        validation_number = f"VAL-{validation_link.request_id:03d}"
+        return {
+            "error": "version_deletion_blocked",
+            "reason": "linked_to_validation",
+            "validation_number": validation_number,
+            "validation_id": validation_link.request_id,
+            "message": f"Cannot delete version: it is linked to validation request {validation_number}"
+        }
+
+    return None
+
+
 @router.get("/models/{model_id}/versions/next-version")
 def get_next_version_preview(
     model_id: int,
@@ -167,6 +290,14 @@ def create_model_version(
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only model owner, developer, or delegates can submit changes"
+        )
+
+    # Check for blockers (undeployed versions or versions in active validation)
+    blocker = check_version_creation_blockers(db, model_id)
+    if blocker:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=blocker
         )
 
     # Auto-generate version number if not provided
@@ -475,6 +606,22 @@ def list_model_versions(
         ModelVersion.model_id == model_id
     ).order_by(desc(ModelVersion.created_at)).all()
 
+    # Pre-fetch validation request statuses for versions that have validation_request_id
+    validation_request_ids = [v.validation_request_id for v in versions if v.validation_request_id]
+    validation_status_map = {}
+    if validation_request_ids:
+        # Get validation requests with their current status codes
+        validation_requests = db.query(
+            ValidationRequest.request_id,
+            TaxonomyValue.code
+        ).join(
+            TaxonomyValue,
+            ValidationRequest.current_status_id == TaxonomyValue.value_id
+        ).filter(
+            ValidationRequest.request_id.in_(validation_request_ids)
+        ).all()
+        validation_status_map = {req.request_id: req.code for req in validation_requests}
+
     # Populate taxonomy names in response
     result = []
     for version in versions:
@@ -497,6 +644,8 @@ def list_model_versions(
             "affected_region_ids": version.affected_region_ids,
             # Validation
             "validation_request_id": version.validation_request_id,
+            # Validation workflow status (for edit permission checks)
+            "validation_request_status": validation_status_map.get(version.validation_request_id) if version.validation_request_id else None,
             # Point-in-time compliance snapshot
             "change_requires_mv_approval": version.change_requires_mv_approval,
             # Nested/populated fields
@@ -733,6 +882,14 @@ def delete_version(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Cannot delete version with status {version.status}. Only DRAFT versions can be deleted."
+        )
+
+    # Check for blockers (version linked to validation)
+    blocker = check_version_deletion_blockers(db, version)
+    if blocker:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=blocker
         )
 
     create_audit_log(
@@ -1015,6 +1172,217 @@ def export_model_versions_pdf(
         )
 
 
+# ============================================================================
+# READY TO DEPLOY - Must come before generic /versions/{version_id} routes
+# ============================================================================
+@router.get("/versions/ready-to-deploy", response_model=List[ReadyToDeployVersion])
+def get_ready_to_deploy_versions(
+    model_id: int = None,
+    my_models_only: bool = False,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Get versions that are validated (APPROVED) but not yet fully deployed.
+
+    This helps model owners identify what needs to be deployed to production.
+
+    A version appears here if:
+    - Its linked ValidationRequest has current_status_id = APPROVED
+    - It hasn't been deployed to ALL model regions yet
+
+    Query params:
+    - model_id: Filter to specific model
+    - my_models_only: Only show versions for models user owns/develops/delegates
+    """
+    from app.core.rls import can_access_model
+
+    # Find the APPROVED status value_id
+    status_taxonomy = db.query(Taxonomy).filter(
+        Taxonomy.name == "Validation Request Status"
+    ).first()
+
+    if not status_taxonomy:
+        return []
+
+    approved_status = db.query(TaxonomyValue).filter(
+        TaxonomyValue.taxonomy_id == status_taxonomy.taxonomy_id,
+        TaxonomyValue.code == "APPROVED"
+    ).first()
+
+    if not approved_status:
+        return []
+
+    # Query versions with APPROVED validation requests
+    versions_query = db.query(ModelVersion).join(
+        ValidationRequest,
+        ModelVersion.validation_request_id == ValidationRequest.request_id
+    ).join(
+        Model,
+        ModelVersion.model_id == Model.model_id
+    ).filter(
+        ValidationRequest.current_status_id == approved_status.value_id
+    ).options(
+        joinedload(ModelVersion.model),
+        joinedload(ModelVersion.validation_request)
+    )
+
+    # Apply model_id filter
+    if model_id:
+        versions_query = versions_query.filter(ModelVersion.model_id == model_id)
+
+    # Apply my_models_only filter
+    if my_models_only:
+        from app.models.model_delegate import ModelDelegate
+        # Filter to models user owns, develops, or is a delegate for
+        versions_query = versions_query.filter(
+            (Model.owner_id == current_user.user_id) |
+            (Model.developer_id == current_user.user_id) |
+            Model.model_id.in_(
+                db.query(ModelDelegate.model_id).filter(
+                    ModelDelegate.user_id == current_user.user_id,
+                    ModelDelegate.revoked_at.is_(None)
+                )
+            )
+        )
+
+    versions = versions_query.all()
+
+    # Filter by RLS access and deployment status
+    results = []
+
+    for version in versions:
+        # Check RLS access
+        if not can_access_model(version.model_id, current_user, db):
+            continue
+
+        # Get all regions for this model
+        model_regions = db.query(ModelRegion).filter(
+            ModelRegion.model_id == version.model_id
+        ).options(joinedload(ModelRegion.region)).all()
+
+        total_regions_count = len(model_regions)
+
+        if total_regions_count == 0:
+            # Model has no regions, skip (can't be deployed)
+            continue
+
+        # Get CONFIRMED deployment tasks for this version
+        confirmed_tasks = db.query(VersionDeploymentTask).filter(
+            VersionDeploymentTask.version_id == version.version_id,
+            VersionDeploymentTask.status == "CONFIRMED"
+        ).all()
+
+        confirmed_region_ids = {task.region_id for task in confirmed_tasks}
+        deployed_regions_count = len(confirmed_region_ids)
+
+        # Skip if fully deployed
+        if deployed_regions_count >= total_regions_count:
+            continue
+
+        # Calculate pending regions
+        pending_regions = []
+        for mr in model_regions:
+            if mr.region_id not in confirmed_region_ids:
+                pending_regions.append(mr.region.code if mr.region else "Unknown")
+
+        # Get PENDING deployment tasks count
+        pending_tasks_count = db.query(VersionDeploymentTask).filter(
+            VersionDeploymentTask.version_id == version.version_id,
+            VersionDeploymentTask.status == "PENDING"
+        ).count()
+
+        # Get owner name
+        owner = db.query(User).filter(User.user_id == version.model.owner_id).first()
+        owner_name = owner.full_name if owner else "Unknown"
+
+        # Calculate days since approval
+        val_request = version.validation_request
+        if val_request and val_request.completion_date:
+            # Convert datetime to date if needed
+            completion = val_request.completion_date
+            if hasattr(completion, 'date'):
+                completion = completion.date()
+            days_since_approval = (date.today() - completion).days
+        else:
+            # Use request_date as fallback
+            if val_request and val_request.request_date:
+                request_dt = val_request.request_date
+                if hasattr(request_dt, 'date'):
+                    request_dt = request_dt.date()
+                days_since_approval = (date.today() - request_dt).days
+            else:
+                days_since_approval = 0
+
+        # Get validation_approved_date, converting datetime to date if needed
+        validation_approved_date = None
+        if val_request and val_request.completion_date:
+            approved_dt = val_request.completion_date
+            if hasattr(approved_dt, 'date'):
+                validation_approved_date = approved_dt.date()
+            else:
+                validation_approved_date = approved_dt
+
+        results.append(ReadyToDeployVersion(
+            version_id=version.version_id,
+            version_number=version.version_number,
+            model_id=version.model_id,
+            model_name=version.model.model_name,
+            validation_status="Approved",
+            validation_approved_date=validation_approved_date,
+            total_regions_count=total_regions_count,
+            deployed_regions_count=deployed_regions_count,
+            pending_regions=pending_regions,
+            pending_tasks_count=pending_tasks_count,
+            has_pending_tasks=pending_tasks_count > 0,
+            owner_name=owner_name,
+            days_since_approval=days_since_approval
+        ))
+
+    # Sort by days_since_approval descending (oldest approvals first)
+    results.sort(key=lambda x: x.days_since_approval, reverse=True)
+
+    return results
+
+
+@router.get("/versions/ready-to-deploy/summary", response_model=ReadyToDeploySummary)
+def get_ready_to_deploy_summary(
+    my_models_only: bool = False,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Get summary statistics for ready-to-deploy versions.
+
+    Useful for dashboard badges and quick metrics.
+
+    Returns:
+    - ready_count: Total versions ready to deploy
+    - partially_deployed_count: Deployed to some but not all regions
+    - with_pending_tasks_count: Have scheduled deployment tasks
+    """
+    # Reuse the main endpoint logic to get the data
+    versions = get_ready_to_deploy_versions(
+        model_id=None,
+        my_models_only=my_models_only,
+        db=db,
+        current_user=current_user
+    )
+
+    ready_count = len(versions)
+    partially_deployed_count = sum(1 for v in versions if v.deployed_regions_count > 0)
+    with_pending_tasks_count = sum(1 for v in versions if v.has_pending_tasks)
+
+    return ReadyToDeploySummary(
+        ready_count=ready_count,
+        partially_deployed_count=partially_deployed_count,
+        with_pending_tasks_count=with_pending_tasks_count
+    )
+
+
+# ============================================================================
+# GENERIC VERSION ROUTES - Must come after specific routes
+# ============================================================================
 @router.get("/versions/{version_id}", response_model=ModelVersionResponse)
 def get_version_details(
     version_id: int,
@@ -1046,6 +1414,18 @@ def get_version_details(
             detail="Version not found"
         )
 
+    # Get validation request status if version has a linked validation request
+    validation_request_status = None
+    if version.validation_request_id:
+        validation_status = db.query(TaxonomyValue.code).join(
+            ValidationRequest,
+            ValidationRequest.current_status_id == TaxonomyValue.value_id
+        ).filter(
+            ValidationRequest.request_id == version.validation_request_id
+        ).first()
+        if validation_status:
+            validation_request_status = validation_status.code
+
     # Build response with taxonomy names
     return {
         "version_id": version.version_id,
@@ -1072,6 +1452,8 @@ def get_version_details(
         "created_by_name": version.created_by.full_name if version.created_by else None,
         "change_type_name": version.change_type_detail.name if version.change_type_detail else None,
         "change_category_name": version.change_type_detail.category.name if version.change_type_detail and version.change_type_detail.category else None,
+        # Validation workflow status (for edit permission checks)
+        "validation_request_status": validation_request_status,
     }
 
 

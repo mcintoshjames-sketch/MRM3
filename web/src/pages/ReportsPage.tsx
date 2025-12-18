@@ -62,6 +62,22 @@ const adminReports: Report[] = [
         icon: '📈',
         category: 'Risk'
     },
+    {
+        id: 'ready-to-deploy',
+        name: 'Ready to Deploy Report',
+        description: 'Model versions with approved validations awaiting deployment. Shows deployment progress by region, days since approval, and pending deployment tasks.',
+        path: '/reports/ready-to-deploy',
+        icon: '🚀',
+        category: 'Operations'
+    },
+    {
+        id: 'exceptions',
+        name: 'Model Exceptions Report',
+        description: 'Track and manage model exceptions including unmitigated performance issues, out-of-scope usage, and pre-validation deployments. View exception status, acknowledge issues, and close with documented resolutions.',
+        path: '/reports/exceptions',
+        icon: '⚠️',
+        category: 'Risk'
+    },
 ];
 
 // User reports - personal portfolio view

@@ -44,17 +44,6 @@ const VersionsList: React.FC<VersionsListProps> = ({ modelId, refreshTrigger, on
         loadVersions();
     }, [modelId, refreshTrigger]);
 
-    const handleApprove = async (e: React.MouseEvent, versionId: number) => {
-        e.stopPropagation(); // Prevent row click
-        if (!confirm('Approve this version?')) return;
-        try {
-            await versionsApi.approveVersion(versionId);
-            loadVersions();
-        } catch (err: any) {
-            alert(err.response?.data?.detail || 'Failed to approve version');
-        }
-    };
-
     const handleActivate = async (e: React.MouseEvent, versionId: number) => {
         e.stopPropagation(); // Prevent row click
         if (!confirm('Activate this version? This will supersede the current active version.')) return;
@@ -133,7 +122,10 @@ const VersionsList: React.FC<VersionsListProps> = ({ modelId, refreshTrigger, on
         }
     };
 
-    const canApprove = user?.role === 'Validator' || user?.role === 'Admin';
+    const canEdit = user?.role === 'Validator' || user?.role === 'Admin';
+
+    // Editable validation statuses (before REVIEW stage)
+    const editableValidationStatuses = ['INTAKE', 'PLANNING', 'IN_PROGRESS'];
 
     if (loading) return <div className="p-4">Loading versions...</div>;
     if (error) return <div className="p-4 text-red-600">{error}</div>;
@@ -238,13 +230,21 @@ const VersionsList: React.FC<VersionsListProps> = ({ modelId, refreshTrigger, on
                                 </td>
                                 <td className="px-4 py-3 text-sm">
                                     <div className="flex gap-2">
-                                        {version.status === 'IN_VALIDATION' && canApprove && (
-                                            <button
-                                                onClick={(e) => handleApprove(e, version.version_id)}
-                                                className="text-green-600 hover:text-green-800 font-medium"
-                                            >
-                                                Approve
-                                            </button>
+                                        {/* Edit button for IN_VALIDATION versions - only when validation hasn't progressed past IN_PROGRESS */}
+                                        {version.status === 'IN_VALIDATION' && canEdit && (
+                                            version.validation_request_status && editableValidationStatuses.includes(version.validation_request_status) ? (
+                                                <Link
+                                                    to={`/models/${modelId}/versions/${version.version_id}`}
+                                                    onClick={(e) => e.stopPropagation()}
+                                                    className="text-blue-600 hover:text-blue-800 font-medium"
+                                                >
+                                                    Edit
+                                                </Link>
+                                            ) : (
+                                                <span className="text-gray-400 text-xs italic" title="Validation has progressed past editable stage">
+                                                    Locked
+                                                </span>
+                                            )
                                         )}
                                         {version.status === 'APPROVED' && (
                                             <>
@@ -271,15 +271,12 @@ const VersionsList: React.FC<VersionsListProps> = ({ modelId, refreshTrigger, on
                                             </button>
                                         )}
                                         {version.status === 'ACTIVE' && (
-                                            <>
-                                                <span className="text-xs text-gray-500 italic">Current</span>
-                                                <button
-                                                    onClick={(e) => handleDeploy(e, version)}
-                                                    className="text-purple-600 hover:text-purple-800 font-medium"
-                                                >
-                                                    Deploy
-                                                </button>
-                                            </>
+                                            <button
+                                                onClick={(e) => handleDeploy(e, version)}
+                                                className="text-purple-600 hover:text-purple-800 font-medium"
+                                            >
+                                                Deploy
+                                            </button>
                                         )}
                                     </div>
                                 </td>

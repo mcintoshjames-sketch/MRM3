@@ -144,6 +144,38 @@ def _require_admin(user: User):
 
 
 # =============================================================================
+# Closure Reasons Endpoint (must be before /{exception_id} to avoid route conflict)
+# =============================================================================
+
+@router.get("/closure-reasons", response_model=List[TaxonomyValueBrief])
+def get_closure_reasons(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Get available closure reasons from the Exception Closure Reason taxonomy."""
+    taxonomy = db.query(Taxonomy).filter(
+        Taxonomy.name == "Exception Closure Reason"
+    ).first()
+
+    if not taxonomy:
+        return []
+
+    values = db.query(TaxonomyValue).filter(
+        TaxonomyValue.taxonomy_id == taxonomy.taxonomy_id,
+        TaxonomyValue.is_active == True,
+    ).order_by(TaxonomyValue.sort_order).all()
+
+    return [
+        TaxonomyValueBrief(
+            value_id=v.value_id,
+            code=v.code,
+            label=v.label,
+        )
+        for v in values
+    ]
+
+
+# =============================================================================
 # List & Detail Endpoints
 # =============================================================================
 
@@ -761,33 +793,3 @@ def get_model_exceptions(
     return [_build_exception_list_response(exc) for exc in exceptions]
 
 
-# =============================================================================
-# Closure Reasons Endpoint
-# =============================================================================
-
-@router.get("/closure-reasons", response_model=List[TaxonomyValueBrief])
-def get_closure_reasons(
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    """Get available closure reasons from the Exception Closure Reason taxonomy."""
-    taxonomy = db.query(Taxonomy).filter(
-        Taxonomy.name == "Exception Closure Reason"
-    ).first()
-
-    if not taxonomy:
-        return []
-
-    values = db.query(TaxonomyValue).filter(
-        TaxonomyValue.taxonomy_id == taxonomy.taxonomy_id,
-        TaxonomyValue.is_active == True,
-    ).order_by(TaxonomyValue.sort_order).all()
-
-    return [
-        TaxonomyValueBrief(
-            value_id=v.value_id,
-            code=v.code,
-            label=v.label,
-        )
-        for v in values
-    ]
