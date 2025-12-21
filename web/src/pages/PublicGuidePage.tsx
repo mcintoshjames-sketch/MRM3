@@ -1,133 +1,44 @@
+import { useState, useEffect } from 'react';
 import { Link, useParams } from 'react-router-dom';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import PublicLayout from '../components/public/PublicLayout';
-
-type GuideContent = {
-    title: string;
-    summary: string;
-    sections: Array<{ heading: string; bullets: string[] }>;
-};
-
-const GUIDES: Record<string, GuideContent> = {
-    'getting-started': {
-        title: 'Getting Started',
-        summary: 'A quick orientation for first-time users.',
-        sections: [
-            {
-                heading: 'Sign In',
-                bullets: [
-                    'Use your assigned account to sign in.',
-                    'If you do not have access, contact your system administrator.',
-                ],
-            },
-            {
-                heading: 'Navigation',
-                bullets: [
-                    'Use the main navigation to access dashboards, workflows, and reports.',
-                    'Your available pages depend on your role (admin, validator, owner, approver).',
-                ],
-            },
-            {
-                heading: 'Common Tasks',
-                bullets: [
-                    'Find and update model records you own or contribute to.',
-                    'Track validation requests and recommendations relevant to you.',
-                    'Complete required attestations when cycles are open.',
-                ],
-            },
-        ],
-    },
-    'model-owners': {
-        title: 'Model Owners & Contributors',
-        summary: 'Maintain model records and respond to governance actions.',
-        sections: [
-            {
-                heading: 'Model Record Maintenance',
-                bullets: [
-                    'Keep model metadata current (ownership, status, key attributes).',
-                    'Update relationships and supporting information as required by policy.',
-                ],
-            },
-            {
-                heading: 'Recommendations & Action Plans',
-                bullets: [
-                    'Review recommendations assigned to your models.',
-                    'Provide responses and complete action plans as applicable.',
-                ],
-            },
-            {
-                heading: 'Attestations',
-                bullets: [
-                    'Complete attestations within the open window.',
-                    'Provide required evidence when requested.',
-                ],
-            },
-        ],
-    },
-    validators: {
-        title: 'Validators',
-        summary: 'Execute validation workflow steps and manage validation outcomes.',
-        sections: [
-            {
-                heading: 'Workflow Execution',
-                bullets: [
-                    'Review incoming requests and required artifacts.',
-                    'Record outcomes and manage status progression.',
-                ],
-            },
-            {
-                heading: 'Oversight',
-                bullets: [
-                    'Monitor queues and timelines using dashboards and reports.',
-                    'Escalate exceptions according to governance processes.',
-                ],
-            },
-        ],
-    },
-    approvers: {
-        title: 'Approvers',
-        summary: 'Review items awaiting approval and record decisions.',
-        sections: [
-            {
-                heading: 'Approvals',
-                bullets: [
-                    'Review approval requests relevant to your remit.',
-                    'Approve, reject, or request follow-up as permitted.',
-                ],
-            },
-            {
-                heading: 'Traceability',
-                bullets: [
-                    'Use built-in history and audit views to understand context.',
-                ],
-            },
-        ],
-    },
-    admins: {
-        title: 'Admins',
-        summary: 'Configure reference data and oversee operational management.',
-        sections: [
-            {
-                heading: 'Configuration',
-                bullets: [
-                    'Manage reference data and system configuration according to governance.',
-                    'Maintain user access and roles as needed.',
-                ],
-            },
-            {
-                heading: 'Operations',
-                bullets: [
-                    'Monitor logs and operational reports.',
-                    'Coordinate changes with appropriate review and testing.',
-                ],
-            },
-        ],
-    },
-};
+import { GUIDES, type Guide } from './PublicGuidesIndexPage';
 
 export default function PublicGuidePage() {
     const { slug } = useParams();
+    const [content, setContent] = useState<string | null>(null);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
 
-    const guide = (slug && GUIDES[slug]) || null;
+    const guide: Guide | undefined = GUIDES.find((g) => g.slug === slug);
+
+    useEffect(() => {
+        if (!guide) {
+            setLoading(false);
+            return;
+        }
+
+        const fetchGuide = async () => {
+            try {
+                setLoading(true);
+                setError(null);
+                const response = await fetch(`/guides/${guide.filename}`);
+                if (!response.ok) {
+                    throw new Error('Failed to load guide');
+                }
+                const text = await response.text();
+                setContent(text);
+            } catch (err) {
+                setError('Unable to load this guide. Please try again later.');
+                console.error('Failed to fetch guide:', err);
+            } finally {
+                setLoading(false);
+            }
+        };
+
+        fetchGuide();
+    }, [guide]);
 
     return (
         <PublicLayout>
@@ -136,33 +47,54 @@ export default function PublicGuidePage() {
                     <div className="bg-white border border-gray-200 rounded-lg p-6">
                         <div className="text-lg font-semibold text-gray-900">Guide not found</div>
                         <div className="mt-2 text-sm text-gray-700">
-                            Return to <Link className="text-blue-700 font-medium" to="/guides">User Guides</Link>.
+                            Return to <Link className="text-blue-700 font-medium hover:underline" to="/guides">User Guides</Link>.
+                        </div>
+                    </div>
+                ) : loading ? (
+                    <div className="flex flex-col gap-6">
+                        <header className="flex flex-col gap-2">
+                            <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">{guide.title}</h1>
+                            <p className="text-gray-700 max-w-3xl">{guide.description}</p>
+                        </header>
+                        <div className="bg-white border border-gray-200 rounded-lg p-6">
+                            <div className="animate-pulse flex flex-col gap-4">
+                                <div className="h-4 bg-gray-200 rounded w-3/4"></div>
+                                <div className="h-4 bg-gray-200 rounded w-1/2"></div>
+                                <div className="h-4 bg-gray-200 rounded w-5/6"></div>
+                                <div className="h-4 bg-gray-200 rounded w-2/3"></div>
+                            </div>
+                        </div>
+                    </div>
+                ) : error ? (
+                    <div className="flex flex-col gap-6">
+                        <header className="flex flex-col gap-2">
+                            <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">{guide.title}</h1>
+                        </header>
+                        <div className="bg-red-50 border border-red-200 rounded-lg p-6">
+                            <div className="text-red-700">{error}</div>
+                        </div>
+                        <div className="text-sm text-gray-600">
+                            Back to <Link className="text-blue-700 font-medium hover:underline" to="/guides">User Guides</Link>.
                         </div>
                     </div>
                 ) : (
                     <div className="flex flex-col gap-6">
-                        <header className="flex flex-col gap-2">
-                            <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">{guide.title}</h1>
-                            <p className="text-gray-700 max-w-3xl">{guide.summary}</p>
-                        </header>
+                        <div className="flex items-center gap-2 text-sm text-gray-600">
+                            <Link className="text-blue-700 hover:underline" to="/guides">User Guides</Link>
+                            <span>›</span>
+                            <span className="text-gray-900">{guide.title}</span>
+                        </div>
 
-                        <div className="bg-white border border-gray-200 rounded-lg p-6">
-                            <div className="flex flex-col gap-5">
-                                {guide.sections.map((section) => (
-                                    <section key={section.heading}>
-                                        <div className="text-base font-semibold text-gray-900">{section.heading}</div>
-                                        <ul className="mt-2 list-disc pl-5 space-y-1 text-sm text-gray-700">
-                                            {section.bullets.map((b) => (
-                                                <li key={b}>{b}</li>
-                                            ))}
-                                        </ul>
-                                    </section>
-                                ))}
-                            </div>
+                        <div className="bg-white border border-gray-200 rounded-lg p-6 sm:p-8">
+                            <article className="prose prose-gray max-w-none prose-headings:font-semibold prose-h1:text-2xl prose-h1:border-b prose-h1:pb-3 prose-h1:mb-6 prose-h2:text-xl prose-h2:mt-8 prose-h2:mb-4 prose-h3:text-lg prose-h3:mt-6 prose-a:text-blue-700 prose-a:no-underline hover:prose-a:underline prose-table:text-sm prose-th:bg-gray-100 prose-th:px-4 prose-th:py-2 prose-td:px-4 prose-td:py-2 prose-td:border prose-th:border prose-blockquote:border-blue-300 prose-blockquote:bg-blue-50 prose-blockquote:py-1 prose-blockquote:not-italic prose-code:before:content-none prose-code:after:content-none prose-code:bg-gray-100 prose-code:px-1 prose-code:py-0.5 prose-code:rounded prose-code:text-sm prose-code:font-normal">
+                                <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                                    {content || ''}
+                                </ReactMarkdown>
+                            </article>
                         </div>
 
                         <div className="text-sm text-gray-600">
-                            Back to <Link className="text-blue-700 font-medium" to="/guides">User Guides</Link>.
+                            Back to <Link className="text-blue-700 font-medium hover:underline" to="/guides">User Guides</Link>.
                         </div>
                     </div>
                 )}
