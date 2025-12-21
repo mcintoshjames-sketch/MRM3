@@ -1728,7 +1728,9 @@ interface BackupInfo {
     error?: string;
 }
 
-function UATToolsSection({ onRefresh }: { onRefresh: () => void }) {
+// UAT Tools Section - kept for UAT testing, usage commented out in production
+// Exported to prevent TS6133 "declared but never read" error
+export function UATToolsSection({ onRefresh }: { onRefresh: () => void }) {
     const [isResetting, setIsResetting] = useState(false);
     const [isSeeding, setIsSeeding] = useState(false);
     const [isBackingUp, setIsBackingUp] = useState(false);
