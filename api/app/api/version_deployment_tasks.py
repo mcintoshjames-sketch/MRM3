@@ -954,9 +954,10 @@ def deploy_version(
             validation_approved = status_value and status_value.code == "APPROVED"
             validation_region_ids = {r.region_id for r in val_request.regions}
 
-    # If deploy now and validation not approved, require override reason
+    # If deploy now and validation exists but not approved, require override reason
+    # Note: MINOR changes don't create validation requests, so they can deploy without override
     deployed_before_validation = False
-    if deploy_request.deploy_now and not validation_approved:
+    if deploy_request.deploy_now and version.validation_request_id and not validation_approved:
         if not deploy_request.validation_override_reason:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,

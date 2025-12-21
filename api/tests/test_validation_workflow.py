@@ -2658,6 +2658,471 @@ class TestSmartApproverAssignment:
         assert audit_entry.changes["approvers"][0]["role"] == "Global Approver"
 
 
+class TestRegionalApprovalScopeHierarchy:
+    """Test the regional approval scope hierarchy logic.
+
+    Priority hierarchy:
+    1. Explicit scoped regions (user override) - highest priority
+    2. Any GLOBAL version present - triggers global behavior (all deployment regions)
+    3. Only REGIONAL versions - use their specific regions
+    4. Fallback - use all deployment regions
+    """
+
+    def test_scoped_validation_only_requires_scoped_region_approval(
+        self, client, db_session, admin_headers, sample_model, workflow_taxonomies, lob_hierarchy
+    ):
+        """Test that validation scoped to APAC does NOT require UK approval even if model deployed to UK."""
+        from app.models.user import User, UserRole, user_regions
+        from app.models.region import Region
+        from app.models.model_region import ModelRegion
+        from app.core.security import get_password_hash
+        from app.models.validation import ValidationApproval
+
+        # Create regions: APAC, UK, US
+        apac_region = Region(code="APAC", name="Asia Pacific", requires_regional_approval=True)
+        uk_region = Region(code="UK", name="United Kingdom", requires_regional_approval=True)
+        us_region = Region(code="US", name="United States", requires_regional_approval=True)
+        db_session.add_all([apac_region, uk_region, us_region])
+        db_session.flush()
+
+        # Deploy sample model to all three regions
+        for region in [apac_region, uk_region, us_region]:
+            db_session.add(ModelRegion(model_id=sample_model.model_id, region_id=region.region_id))
+        db_session.commit()
+
+        # Create regional approvers for each region
+        apac_approver = User(
+            email="apac.approver@example.com",
+            full_name="APAC Regional Approver",
+            password_hash=get_password_hash("password123"),
+            role=UserRole.REGIONAL_APPROVER,
+            lob_id=lob_hierarchy["retail"].lob_id
+        )
+        uk_approver = User(
+            email="uk.approver@example.com",
+            full_name="UK Regional Approver",
+            password_hash=get_password_hash("password123"),
+            role=UserRole.REGIONAL_APPROVER,
+            lob_id=lob_hierarchy["retail"].lob_id
+        )
+        db_session.add_all([apac_approver, uk_approver])
+        db_session.flush()
+
+        # Associate approvers with regions
+        db_session.execute(user_regions.insert().values(user_id=apac_approver.user_id, region_id=apac_region.region_id))
+        db_session.execute(user_regions.insert().values(user_id=uk_approver.user_id, region_id=uk_region.region_id))
+        db_session.commit()
+
+        # Create validation SCOPED to APAC only
+        response = client.post(
+            "/validation-workflow/requests/",
+            json={
+                "model_ids": [sample_model.model_id],
+                "validation_type_id": workflow_taxonomies["type"]["initial"].value_id,
+                "priority_id": workflow_taxonomies["priority"]["standard"].value_id,
+                "target_completion_date": "2025-12-31",
+                "trigger_reason": "APAC-scoped validation test",
+                "region_ids": [apac_region.region_id]  # Only APAC
+            },
+            headers=admin_headers
+        )
+
+        assert response.status_code == 201
+        validation_request = response.json()
+
+        # Verify ONLY APAC approver was assigned, NOT UK
+        approvals = db_session.query(ValidationApproval).filter(
+            ValidationApproval.request_id == validation_request["request_id"]
+        ).all()
+
+        approver_ids = {a.approver_id for a in approvals}
+        assert apac_approver.user_id in approver_ids, "APAC approver should be assigned"
+        assert uk_approver.user_id not in approver_ids, "UK approver should NOT be assigned for APAC-scoped validation"
+
+    def test_regional_version_triggers_version_region_approval(
+        self, client, db_session, admin_headers, sample_model, workflow_taxonomies, lob_hierarchy
+    ):
+        """Test that REGIONAL-scope version triggers approvals only for its affected regions."""
+        from app.models.user import User, UserRole, user_regions
+        from app.models.region import Region
+        from app.models.model_region import ModelRegion
+        from app.models.model_version import ModelVersion
+        from app.models.model_version_region import ModelVersionRegion
+        from app.core.security import get_password_hash
+        from app.models.validation import ValidationApproval
+
+        # Create regions: APAC, UK
+        apac_region = Region(code="APAC2", name="Asia Pacific 2", requires_regional_approval=True)
+        uk_region = Region(code="UK2", name="United Kingdom 2", requires_regional_approval=True)
+        db_session.add_all([apac_region, uk_region])
+        db_session.flush()
+
+        # Deploy sample model to both regions
+        for region in [apac_region, uk_region]:
+            db_session.add(ModelRegion(model_id=sample_model.model_id, region_id=region.region_id))
+        db_session.flush()
+
+        # Create a REGIONAL-scope version affecting only APAC
+        version = ModelVersion(
+            model_id=sample_model.model_id,
+            version_number="1.1",
+            change_type="MAJOR",
+            change_description="APAC-only calibration update",
+            created_by_id=1,
+            scope="REGIONAL"
+        )
+        db_session.add(version)
+        db_session.flush()
+
+        # Link version to APAC region only
+        db_session.add(ModelVersionRegion(version_id=version.version_id, region_id=apac_region.region_id))
+        db_session.commit()
+
+        # Create regional approvers
+        apac_approver = User(
+            email="apac2.approver@example.com",
+            full_name="APAC2 Regional Approver",
+            password_hash=get_password_hash("password123"),
+            role=UserRole.REGIONAL_APPROVER,
+            lob_id=lob_hierarchy["retail"].lob_id
+        )
+        uk_approver = User(
+            email="uk2.approver@example.com",
+            full_name="UK2 Regional Approver",
+            password_hash=get_password_hash("password123"),
+            role=UserRole.REGIONAL_APPROVER,
+            lob_id=lob_hierarchy["retail"].lob_id
+        )
+        db_session.add_all([apac_approver, uk_approver])
+        db_session.flush()
+
+        db_session.execute(user_regions.insert().values(user_id=apac_approver.user_id, region_id=apac_region.region_id))
+        db_session.execute(user_regions.insert().values(user_id=uk_approver.user_id, region_id=uk_region.region_id))
+        db_session.commit()
+
+        # Create validation WITHOUT explicit scope but WITH REGIONAL-scope version linked
+        response = client.post(
+            "/validation-workflow/requests/",
+            json={
+                "model_ids": [sample_model.model_id],
+                "validation_type_id": workflow_taxonomies["type"]["initial"].value_id,
+                "priority_id": workflow_taxonomies["priority"]["standard"].value_id,
+                "target_completion_date": "2025-12-31",
+                "trigger_reason": "REGIONAL version test",
+                "model_versions": {sample_model.model_id: version.version_id}  # Link the REGIONAL version
+            },
+            headers=admin_headers
+        )
+
+        assert response.status_code == 201
+        validation_request = response.json()
+
+        # Verify only APAC approver (from version's affected regions) was assigned
+        approvals = db_session.query(ValidationApproval).filter(
+            ValidationApproval.request_id == validation_request["request_id"]
+        ).all()
+
+        approver_ids = {a.approver_id for a in approvals}
+        assert apac_approver.user_id in approver_ids, "APAC approver should be assigned (version affected region)"
+        assert uk_approver.user_id not in approver_ids, "UK approver should NOT be assigned for REGIONAL version affecting only APAC"
+
+    def test_global_version_requires_all_deployment_regions(
+        self, client, db_session, admin_headers, sample_model, workflow_taxonomies, lob_hierarchy
+    ):
+        """Test that GLOBAL-scope version triggers approvals for ALL deployment regions."""
+        from app.models.user import User, UserRole, user_regions
+        from app.models.region import Region
+        from app.models.model_region import ModelRegion
+        from app.models.model_version import ModelVersion
+        from app.core.security import get_password_hash
+        from app.models.validation import ValidationApproval
+
+        # Create regions: APAC, UK
+        apac_region = Region(code="APAC3", name="Asia Pacific 3", requires_regional_approval=True)
+        uk_region = Region(code="UK3", name="United Kingdom 3", requires_regional_approval=True)
+        db_session.add_all([apac_region, uk_region])
+        db_session.flush()
+
+        # Deploy sample model to both regions
+        for region in [apac_region, uk_region]:
+            db_session.add(ModelRegion(model_id=sample_model.model_id, region_id=region.region_id))
+        db_session.flush()
+
+        # Create a GLOBAL-scope version
+        version = ModelVersion(
+            model_id=sample_model.model_id,
+            version_number="2.0",
+            change_type="MAJOR",
+            change_description="Global model update",
+            created_by_id=1,
+            scope="GLOBAL"
+        )
+        db_session.add(version)
+        db_session.commit()
+
+        # Create regional approvers for both regions
+        apac_approver = User(
+            email="apac3.approver@example.com",
+            full_name="APAC3 Regional Approver",
+            password_hash=get_password_hash("password123"),
+            role=UserRole.REGIONAL_APPROVER,
+            lob_id=lob_hierarchy["retail"].lob_id
+        )
+        uk_approver = User(
+            email="uk3.approver@example.com",
+            full_name="UK3 Regional Approver",
+            password_hash=get_password_hash("password123"),
+            role=UserRole.REGIONAL_APPROVER,
+            lob_id=lob_hierarchy["retail"].lob_id
+        )
+        db_session.add_all([apac_approver, uk_approver])
+        db_session.flush()
+
+        db_session.execute(user_regions.insert().values(user_id=apac_approver.user_id, region_id=apac_region.region_id))
+        db_session.execute(user_regions.insert().values(user_id=uk_approver.user_id, region_id=uk_region.region_id))
+        db_session.commit()
+
+        # Create validation with GLOBAL-scope version linked
+        response = client.post(
+            "/validation-workflow/requests/",
+            json={
+                "model_ids": [sample_model.model_id],
+                "validation_type_id": workflow_taxonomies["type"]["initial"].value_id,
+                "priority_id": workflow_taxonomies["priority"]["standard"].value_id,
+                "target_completion_date": "2025-12-31",
+                "trigger_reason": "GLOBAL version test",
+                "model_versions": {sample_model.model_id: version.version_id}  # Link the GLOBAL version
+            },
+            headers=admin_headers
+        )
+
+        assert response.status_code == 201
+        validation_request = response.json()
+
+        # Verify BOTH regional approvers were assigned (all deployment regions)
+        approvals = db_session.query(ValidationApproval).filter(
+            ValidationApproval.request_id == validation_request["request_id"]
+        ).all()
+
+        approver_ids = {a.approver_id for a in approvals}
+        assert apac_approver.user_id in approver_ids, "APAC approver should be assigned for GLOBAL version"
+        assert uk_approver.user_id in approver_ids, "UK approver should be assigned for GLOBAL version"
+
+    def test_governance_region_always_required(
+        self, client, db_session, admin_headers, workflow_taxonomies, lob_hierarchy
+    ):
+        """Test that wholly-owned region approval is always required even in scoped validations."""
+        from app.models.user import User, UserRole, user_regions
+        from app.models.region import Region
+        from app.models.model_region import ModelRegion
+        from app.models.model import Model
+        from app.core.security import get_password_hash
+        from app.models.validation import ValidationApproval
+
+        # Create regions: US (governance), APAC (deployment only)
+        us_region = Region(code="US4", name="United States 4", requires_regional_approval=True)
+        apac_region = Region(code="APAC4", name="Asia Pacific 4", requires_regional_approval=True)
+        db_session.add_all([us_region, apac_region])
+        db_session.flush()
+
+        # Create a model with US as governance region (wholly_owned_region_id)
+        model = Model(
+            model_name="Governance Test Model",
+            description="Model with governance region",
+            development_type="In-House",
+            owner_id=1,
+            status="Active",
+            usage_frequency_id=1,  # Required field
+            wholly_owned_region_id=us_region.region_id  # US is governance region
+        )
+        db_session.add(model)
+        db_session.flush()
+
+        # Also deploy to APAC
+        db_session.add(ModelRegion(model_id=model.model_id, region_id=apac_region.region_id))
+        db_session.commit()
+
+        # Create regional approvers
+        us_approver = User(
+            email="us4.approver@example.com",
+            full_name="US4 Regional Approver",
+            password_hash=get_password_hash("password123"),
+            role=UserRole.REGIONAL_APPROVER,
+            lob_id=lob_hierarchy["retail"].lob_id
+        )
+        apac_approver = User(
+            email="apac4.approver@example.com",
+            full_name="APAC4 Regional Approver",
+            password_hash=get_password_hash("password123"),
+            role=UserRole.REGIONAL_APPROVER,
+            lob_id=lob_hierarchy["retail"].lob_id
+        )
+        db_session.add_all([us_approver, apac_approver])
+        db_session.flush()
+
+        db_session.execute(user_regions.insert().values(user_id=us_approver.user_id, region_id=us_region.region_id))
+        db_session.execute(user_regions.insert().values(user_id=apac_approver.user_id, region_id=apac_region.region_id))
+        db_session.commit()
+
+        # Create validation SCOPED to APAC only
+        response = client.post(
+            "/validation-workflow/requests/",
+            json={
+                "model_ids": [model.model_id],
+                "validation_type_id": workflow_taxonomies["type"]["initial"].value_id,
+                "priority_id": workflow_taxonomies["priority"]["standard"].value_id,
+                "target_completion_date": "2025-12-31",
+                "trigger_reason": "APAC-scoped but governance required",
+                "region_ids": [apac_region.region_id]  # Scoped to APAC only
+            },
+            headers=admin_headers
+        )
+
+        assert response.status_code == 201
+        validation_request = response.json()
+
+        # Verify BOTH APAC (scoped) AND US (governance) approvers are assigned
+        approvals = db_session.query(ValidationApproval).filter(
+            ValidationApproval.request_id == validation_request["request_id"]
+        ).all()
+
+        approver_ids = {a.approver_id for a in approvals}
+        assert apac_approver.user_id in approver_ids, "APAC approver should be assigned (scoped region)"
+        assert us_approver.user_id in approver_ids, "US approver should be assigned (governance region always required)"
+
+    def test_mixed_version_scopes_global_wins(
+        self, client, db_session, admin_headers, workflow_taxonomies, lob_hierarchy
+    ):
+        """Test that if validation has both REGIONAL and GLOBAL versions, GLOBAL triggers all regions."""
+        from app.models.user import User, UserRole, user_regions
+        from app.models.region import Region
+        from app.models.model_region import ModelRegion
+        from app.models.model_version import ModelVersion
+        from app.models.model_version_region import ModelVersionRegion
+        from app.models.model import Model
+        from app.core.security import get_password_hash
+        from app.models.validation import ValidationApproval
+
+        # Create regions: EU, UK, APAC
+        eu_region = Region(code="EU5", name="European Union 5", requires_regional_approval=True)
+        uk_region = Region(code="UK5", name="United Kingdom 5", requires_regional_approval=True)
+        apac_region = Region(code="APAC5", name="Asia Pacific 5", requires_regional_approval=True)
+        db_session.add_all([eu_region, uk_region, apac_region])
+        db_session.flush()
+
+        # Create two models
+        model1 = Model(
+            model_name="Model with REGIONAL version",
+            description="Test model 1",
+            development_type="In-House",
+            owner_id=1,
+            status="Active",
+            usage_frequency_id=1  # Required field
+        )
+        model2 = Model(
+            model_name="Model with GLOBAL version",
+            description="Test model 2",
+            development_type="In-House",
+            owner_id=1,
+            status="Active",
+            usage_frequency_id=1  # Required field
+        )
+        db_session.add_all([model1, model2])
+        db_session.flush()
+
+        # Deploy model1 to APAC only, model2 to EU and UK
+        db_session.add(ModelRegion(model_id=model1.model_id, region_id=apac_region.region_id))
+        db_session.add(ModelRegion(model_id=model2.model_id, region_id=eu_region.region_id))
+        db_session.add(ModelRegion(model_id=model2.model_id, region_id=uk_region.region_id))
+        db_session.flush()
+
+        # Create REGIONAL version for model1 affecting only APAC
+        regional_version = ModelVersion(
+            model_id=model1.model_id,
+            version_number="1.0",
+            change_type="MINOR",
+            change_description="APAC calibration",
+            created_by_id=1,
+            scope="REGIONAL"
+        )
+        db_session.add(regional_version)
+        db_session.flush()
+        db_session.add(ModelVersionRegion(version_id=regional_version.version_id, region_id=apac_region.region_id))
+
+        # Create GLOBAL version for model2
+        global_version = ModelVersion(
+            model_id=model2.model_id,
+            version_number="2.0",
+            change_type="MAJOR",
+            change_description="Global update",
+            created_by_id=1,
+            scope="GLOBAL"
+        )
+        db_session.add(global_version)
+        db_session.commit()
+
+        # Create regional approvers for all regions
+        eu_approver = User(
+            email="eu5.approver@example.com",
+            full_name="EU5 Regional Approver",
+            password_hash=get_password_hash("password123"),
+            role=UserRole.REGIONAL_APPROVER,
+            lob_id=lob_hierarchy["retail"].lob_id
+        )
+        uk_approver = User(
+            email="uk5.approver@example.com",
+            full_name="UK5 Regional Approver",
+            password_hash=get_password_hash("password123"),
+            role=UserRole.REGIONAL_APPROVER,
+            lob_id=lob_hierarchy["retail"].lob_id
+        )
+        apac_approver = User(
+            email="apac5.approver@example.com",
+            full_name="APAC5 Regional Approver",
+            password_hash=get_password_hash("password123"),
+            role=UserRole.REGIONAL_APPROVER,
+            lob_id=lob_hierarchy["retail"].lob_id
+        )
+        db_session.add_all([eu_approver, uk_approver, apac_approver])
+        db_session.flush()
+
+        db_session.execute(user_regions.insert().values(user_id=eu_approver.user_id, region_id=eu_region.region_id))
+        db_session.execute(user_regions.insert().values(user_id=uk_approver.user_id, region_id=uk_region.region_id))
+        db_session.execute(user_regions.insert().values(user_id=apac_approver.user_id, region_id=apac_region.region_id))
+        db_session.commit()
+
+        # Create validation covering BOTH models with their respective versions
+        response = client.post(
+            "/validation-workflow/requests/",
+            json={
+                "model_ids": [model1.model_id, model2.model_id],
+                "validation_type_id": workflow_taxonomies["type"]["initial"].value_id,
+                "priority_id": workflow_taxonomies["priority"]["standard"].value_id,
+                "target_completion_date": "2025-12-31",
+                "trigger_reason": "Mixed REGIONAL+GLOBAL version test",
+                "model_versions": {
+                    model1.model_id: regional_version.version_id,  # REGIONAL
+                    model2.model_id: global_version.version_id      # GLOBAL
+                }
+            },
+            headers=admin_headers
+        )
+
+        assert response.status_code == 201
+        validation_request = response.json()
+
+        # Verify ALL regional approvers are assigned (GLOBAL wins, triggers all deployment regions)
+        approvals = db_session.query(ValidationApproval).filter(
+            ValidationApproval.request_id == validation_request["request_id"]
+        ).all()
+
+        approver_ids = {a.approver_id for a in approvals}
+        # GLOBAL version means ALL deployment regions should have approvers
+        assert eu_approver.user_id in approver_ids, "EU approver should be assigned (GLOBAL version triggers all regions)"
+        assert uk_approver.user_id in approver_ids, "UK approver should be assigned (GLOBAL version triggers all regions)"
+        assert apac_approver.user_id in approver_ids, "APAC approver should be assigned (from REGIONAL version + GLOBAL fallback)"
+
+
 class TestPriorValidationAutoPopulation:
     """Test auto-population of prior_validation_request_id and prior_full_validation_request_id."""
 

@@ -392,7 +392,7 @@ export default function Layout({ children }: LayoutProps) {
 
                                         {/* Components subsection */}
                                         <SubsectionLabel label="Components" />
-                                        <NavItem to="/component-definitions">Component Definitions</NavItem>
+                                        <NavItem to="/taxonomy?tab=component-definitions">Component Definitions</NavItem>
                                         <NavItem to="/configuration-history">Version History</NavItem>
                                     </>
                                 )}

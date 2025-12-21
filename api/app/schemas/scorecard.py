@@ -121,6 +121,14 @@ class CriterionRatingUpdate(BaseModel):
     comments: Optional[str] = None
 
 
+class OverallNarrativeUpdate(BaseModel):
+    """Schema for updating the overall assessment narrative."""
+    overall_assessment_narrative: Optional[str] = Field(
+        None,
+        description="Free-text narrative for overall scorecard assessment"
+    )
+
+
 class CriterionRatingResponse(BaseModel):
     """Response schema for a criterion rating."""
     model_config = ConfigDict(from_attributes=True)
@@ -167,6 +175,7 @@ class OverallAssessmentResponse(BaseModel):
     rating: Optional[str] = None
     sections_count: int
     rated_sections_count: int
+    overall_assessment_narrative: Optional[str] = None
 
 
 class ScorecardResultResponse(BaseModel):
@@ -177,6 +186,7 @@ class ScorecardResultResponse(BaseModel):
     request_id: int
     overall_numeric_score: Optional[int] = None
     overall_rating: Optional[str] = None
+    overall_assessment_narrative: Optional[str] = None
     section_summaries: Optional[dict] = None
     config_snapshot: Optional[dict] = None
     computed_at: datetime

@@ -8,6 +8,7 @@ from sqlalchemy import func, or_
 from app.core.database import get_db
 from app.core.time import utc_now
 from app.core.deps import get_current_user
+from app.core.rls import can_submit_owner_actions
 from app.models import (
     User, UserRole, Model, ModelVersion, ModelRegion, Region,
     Taxonomy, TaxonomyValue,
@@ -881,12 +882,12 @@ def submit_owner_review(
             detail="Owner approval is not required for this request (requestor is the model owner)"
         )
 
-    # Permission check: only model owner or Admin
-    model_owner_id = request.model.owner_id if request.model else None
-    if current_user.role != UserRole.ADMIN and current_user.user_id != model_owner_id:
+    # Permission check: Admin, model owner, or delegate with can_submit_changes permission
+    model_id = request.model.model_id if request.model else None
+    if not model_id or not can_submit_owner_actions(model_id, current_user, db):
         raise HTTPException(
             status_code=403,
-            detail="Only the model owner or Admin can submit owner review"
+            detail="Only the model owner, Admin, or a delegate with change submission permission can submit owner review"
         )
 
     if request.status != "PENDING":

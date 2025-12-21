@@ -22,7 +22,6 @@ import MyDeploymentTasksPage from './pages/MyDeploymentTasksPage';
 import RegionalComplianceReportPage from './pages/RegionalComplianceReportPage';
 import ReportsPage from './pages/ReportsPage';
 import AnalyticsPage from './pages/AnalyticsPage';
-import ComponentDefinitionsPage from './pages/ComponentDefinitionsPage';
 import ConfigurationHistoryPage from './pages/ConfigurationHistoryPage';
 import DeviationTrendsReportPage from './pages/DeviationTrendsReportPage';
 import ApproverRolesPage from './pages/ApproverRolesPage';
@@ -107,7 +106,7 @@ function App() {
             <Route path="/batch-delegates" element={user?.role === 'Admin' ? <BatchDelegatesPage /> : <Navigate to="/models" />} />
             <Route path="/regions" element={user?.role === 'Admin' ? <RegionsPage /> : <Navigate to="/models" />} />
             <Route path="/validation-policies" element={user?.role === 'Admin' ? <ValidationPoliciesPage /> : <Navigate to="/models" />} />
-            <Route path="/component-definitions" element={user?.role === 'Admin' ? <ComponentDefinitionsPage /> : <Navigate to="/models" />} />
+            <Route path="/component-definitions" element={<Navigate to="/taxonomy?tab=component-definitions" />} />
             <Route path="/configuration-history" element={user?.role === 'Admin' ? <ConfigurationHistoryPage /> : <Navigate to="/models" />} />
             <Route path="/approver-roles" element={user?.role === 'Admin' ? <ApproverRolesPage /> : <Navigate to="/models" />} />
             <Route path="/additional-approval-rules" element={user?.role === 'Admin' ? <ConditionalApprovalRulesPage /> : <Navigate to="/models" />} />

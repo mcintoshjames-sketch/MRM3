@@ -1,13 +1,16 @@
 """API endpoints for Validation Scorecard."""
+from io import BytesIO
 from typing import List, Optional
 from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.responses import StreamingResponse
 from sqlalchemy import func
 from sqlalchemy.orm import Session, joinedload
 
 from app.core.database import get_db
 from app.core.deps import get_current_user
 from app.core.time import utc_now
+from app.core.pdf_reports import generate_validation_scorecard_pdf
 from app.core.scorecard import (
     compute_scorecard,
     load_scorecard_config,
@@ -27,6 +30,8 @@ from app.models.scorecard import (
     ScorecardCriterionSnapshot,
 )
 from app.models.validation import ValidationRequest
+from app.models.model import Model
+from app.models.model_feed_dependency import ModelFeedDependency
 from app.schemas.scorecard import (
     ScorecardSectionResponse,
     ScorecardSectionWithCriteria,
@@ -44,6 +49,7 @@ from app.schemas.scorecard import (
     CriterionDetailResponse,
     SectionSummaryResponse,
     OverallAssessmentResponse,
+    OverallNarrativeUpdate,
     ScorecardResultResponse,
     # Configuration versioning schemas
     ScorecardConfigVersionResponse,
@@ -163,6 +169,13 @@ def compute_and_store_result(
         result = ValidationScorecardResult(request_id=request.request_id)
         db.add(result)
 
+    # Get active config version to link this scorecard
+    active_version = (
+        db.query(ScorecardConfigVersion)
+        .filter(ScorecardConfigVersion.is_active == True)
+        .first()
+    )
+
     # Update result
     result.overall_numeric_score = computed["overall_assessment"]["numeric_score"]
     result.overall_rating = computed["overall_assessment"]["rating"]
@@ -175,6 +188,10 @@ def compute_and_store_result(
         "snapshot_timestamp": utc_now().isoformat()
     }
     result.computed_at = utc_now()
+
+    # Link to active config version (if exists and not already linked)
+    if active_version and not result.config_version_id:
+        result.config_version_id = active_version.version_id
 
     return result
 
@@ -349,6 +366,172 @@ def get_scorecard(
     return _build_scorecard_response(db, validation_request, config)
 
 
+@router.get("/validation/{request_id}/export-pdf")
+def export_validation_scorecard_pdf(
+    request_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+) -> StreamingResponse:
+    """
+    Export validation scorecard as PDF.
+
+    Returns a one-page PDF containing:
+    - Model metadata (owner, name, submission type)
+    - Overall assessment with rating badge
+    - Criteria ratings table organized by section
+    - Related models (upstream/downstream dependencies)
+    - Region metadata
+    """
+    # Get validation request with models relationship
+    validation_request = (
+        db.query(ValidationRequest)
+        .options(
+            joinedload(ValidationRequest.scorecard_ratings),
+            joinedload(ValidationRequest.scorecard_result),
+            joinedload(ValidationRequest.models),
+            joinedload(ValidationRequest.validation_type),
+        )
+        .filter(ValidationRequest.request_id == request_id)
+        .first()
+    )
+
+    if not validation_request:
+        raise HTTPException(status_code=404, detail="Validation request not found")
+
+    # Get the primary model (first model in the request)
+    if not validation_request.models:
+        raise HTTPException(
+            status_code=400,
+            detail="No model associated with this validation request"
+        )
+    model = validation_request.models[0]
+
+    # Reload model with all relationships
+    model = (
+        db.query(Model)
+        .options(
+            joinedload(Model.owner),
+            joinedload(Model.model_type),
+            joinedload(Model.model_regions),
+            joinedload(Model.inbound_dependencies).joinedload(ModelFeedDependency.feeder_model),
+            joinedload(Model.outbound_dependencies).joinedload(ModelFeedDependency.consumer_model),
+        )
+        .filter(Model.model_id == model.model_id)
+        .first()
+    )
+
+    # Get scorecard configuration and data
+    config = get_scorecard_config_from_db(db)
+    if not config["criteria"]:
+        config = load_scorecard_config()
+
+    # Ensure scorecard result exists
+    if not validation_request.scorecard_result:
+        compute_and_store_result(db, validation_request, config)
+        db.commit()
+
+    # Build scorecard response data
+    scorecard_response = _build_scorecard_response(db, validation_request, config)
+
+    # Build validation request dict for PDF
+    validation_request_dict = {
+        "request_id": validation_request.request_id,
+        "validation_type": (
+            validation_request.validation_type.label
+            if validation_request.validation_type else None
+        ),
+    }
+
+    # Build model dict for PDF
+    model_dict = {
+        "model_id": model.model_id,
+        "model_name": model.model_name,
+        "owner_name": model.owner.full_name if model.owner else None,
+        "model_type": model.model_type.label if model.model_type else None,
+        "regions": [
+            {"region_name": mr.region.name}
+            for mr in model.model_regions
+            if mr.region
+        ] if model.model_regions else [],
+    }
+
+    # Build dependencies dict for PDF
+    upstream_models = []
+    downstream_models = []
+
+    for dep in model.inbound_dependencies or []:
+        if dep.feeder_model:
+            upstream_models.append({
+                "model_id": dep.feeder_model.model_id,
+                "model_name": dep.feeder_model.model_name,
+            })
+
+    for dep in model.outbound_dependencies or []:
+        if dep.consumer_model:
+            downstream_models.append({
+                "model_id": dep.consumer_model.model_id,
+                "model_name": dep.consumer_model.model_name,
+            })
+
+    dependencies_dict = {
+        "upstream": upstream_models,
+        "downstream": downstream_models,
+    }
+
+    # Build scorecard data dict for PDF
+    scorecard_dict = {
+        "criteria_details": [
+            {
+                "criterion_code": cd.criterion_code,
+                "criterion_name": cd.criterion_name,
+                "section_code": cd.section_code,
+                "rating": cd.rating,
+                "numeric_score": cd.numeric_score,
+                "description": cd.description,
+                "comments": cd.comments,
+            }
+            for cd in scorecard_response.criteria_details
+        ],
+        "section_summaries": [
+            {
+                "section_code": ss.section_code,
+                "section_name": ss.section_name,
+                "rating": ss.rating,
+            }
+            for ss in scorecard_response.section_summaries
+        ],
+        "overall_assessment": {
+            "numeric_score": scorecard_response.overall_assessment.numeric_score,
+            "rating": scorecard_response.overall_assessment.rating,
+            "overall_assessment_narrative": scorecard_response.overall_assessment.overall_assessment_narrative,
+        },
+        "computed_at": scorecard_response.computed_at.isoformat() if scorecard_response.computed_at else None,
+    }
+
+    # Generate PDF
+    pdf_bytes = generate_validation_scorecard_pdf(
+        validation_request=validation_request_dict,
+        model=model_dict,
+        scorecard_data=scorecard_dict,
+        dependencies=dependencies_dict,
+    )
+
+    # Build filename
+    model_name_safe = "".join(
+        c if c.isalnum() or c in " -_" else "_"
+        for c in (model.model_name or "model")
+    ).strip()
+    filename = f"Scorecard_{model_name_safe}_{request_id}.pdf"
+
+    return StreamingResponse(
+        BytesIO(pdf_bytes),
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"'
+        }
+    )
+
+
 @router.patch(
     "/validation/{request_id}/ratings/{criterion_code}",
     response_model=ScorecardFullResponse
@@ -433,6 +616,59 @@ def update_single_rating(
     return _build_scorecard_response(db, validation_request, config)
 
 
+@router.patch(
+    "/validation/{request_id}/overall-narrative",
+    response_model=ScorecardFullResponse
+)
+def update_overall_narrative(
+    request_id: int,
+    data: OverallNarrativeUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin_or_validator)
+):
+    """
+    Update the overall assessment narrative for a validation scorecard.
+
+    This endpoint allows updating just the narrative text without affecting
+    ratings or recomputing scores. Ideal for auto-save functionality.
+
+    Requires Admin or Validator role.
+    """
+    validation_request = get_request_or_404(db, request_id)
+
+    # Get configuration
+    config = get_scorecard_config_from_db(db)
+    if not config["criteria"]:
+        config = load_scorecard_config()
+
+    # Get or create result
+    result = validation_request.scorecard_result
+    if not result:
+        result = compute_and_store_result(db, validation_request, config)
+
+    # Update narrative
+    old_narrative = result.overall_assessment_narrative
+    result.overall_assessment_narrative = data.overall_assessment_narrative
+
+    # Create audit log
+    create_audit_log(
+        db=db,
+        entity_type="ValidationScorecard",
+        entity_id=validation_request.request_id,
+        action="UPDATE",
+        user_id=current_user.user_id,
+        changes={
+            "field": "overall_assessment_narrative",
+            "old": old_narrative[:100] + "..." if old_narrative and len(old_narrative) > 100 else old_narrative,
+            "new": data.overall_assessment_narrative[:100] + "..." if data.overall_assessment_narrative and len(data.overall_assessment_narrative) > 100 else data.overall_assessment_narrative
+        }
+    )
+
+    db.commit()
+
+    return _build_scorecard_response(db, validation_request, config)
+
+
 # ============================================================================
 # Response Builder
 # ============================================================================
@@ -477,6 +713,10 @@ def _build_scorecard_response(
 
     # Build overall assessment
     overall = OverallAssessmentResponse(**computed["overall_assessment"])
+
+    # Add stored narrative from result if exists
+    if validation_request.scorecard_result:
+        overall.overall_assessment_narrative = validation_request.scorecard_result.overall_assessment_narrative
 
     # Get computed_at from result if exists
     computed_at = validation_request.scorecard_result.computed_at if validation_request.scorecard_result else utc_now()

@@ -101,8 +101,9 @@ Every validation request moves through a defined set of stages:
      - Revalidation deadlines
    - Warnings appear if the date conflicts with policy requirements
 
-6. **Select Regions** (if applicable)
-   - For regional validations, specify which regions are in scope
+6. **Specific Region Scope (Optional)**
+   - Add regions only when the validation is limited to certain geographies
+   - Leave blank if the validation is global (not specific to a region)
    - The system suggests regions based on models' regional associations
 
 7. **Provide Trigger Reason**
@@ -512,6 +513,46 @@ For models used in multiple regions with `requires_regional_approval` enabled:
 - Regional approvers sign off for their respective regions
 - The validation is only complete when all regional approvals are granted
 
+### How Regional Approvals Are Determined
+
+When a validation transitions to Pending Approval, the system determines which
+regions require sign-off based on the validation's scope:
+
+#### Scoped Validations
+If the validation request has **explicitly selected regions** OR is linked to a
+**REGIONAL-scope model version**, regional approvals are required ONLY for:
+- Regions explicitly selected in the validation request
+- Regions affected by the linked REGIONAL-scope version
+- The model's governance region (wholly-owned region, always required)
+
+**Example**: A model deployed to UK, EU, and APAC is undergoing a targeted APAC
+validation. Only APAC and any governance region will require regional approval—
+UK and EU approvers do NOT need to sign off.
+
+#### Global Validations
+If NO regions are selected AND the linked version has GLOBAL scope (or no version
+is linked), regional approvals are required for ALL regions where the model operates:
+- Model's governance region (wholly-owned)
+- All model deployment regions
+
+**Example**: A comprehensive revalidation of a model deployed to UK, EU, and APAC
+with no regional scope selected will require sign-off from all three regional
+approvers (if those regions have `requires_regional_approval` enabled).
+
+#### Summary Table (Priority Order)
+
+| Priority | Condition | Regional Approvals Required |
+|----------|-----------|---------------------------|
+| 1 (Highest) | User explicitly selects regions | Selected regions + REGIONAL version regions + governance |
+| 2 | Any linked version is GLOBAL | All deployment regions + governance |
+| 3 | Only REGIONAL versions linked | Version's affected regions + governance |
+| 4 (Fallback) | No versions linked | All deployment regions + governance |
+
+> **Note on Mixed Scopes**: If a validation covers multiple models and one has a
+> GLOBAL version while another has a REGIONAL version, the system requires
+> approval from ALL deployment regions. This ensures the GLOBAL version receives
+> proper oversight from all jurisdictions where the model operates.
+
 ### Proxy Approvals
 
 In some cases, approvals can be submitted on behalf of another approver:
@@ -698,6 +739,155 @@ Administrators configure validation policies per risk tier:
 | **Medium** | 18 months | 3 months | 90 days |
 | **Low** | 24 months | 3 months | 60 days |
 
+### Configuring Validation Policies (Configuration Section)
+
+Administrators can configure both **risk-tier-based policies** and **workflow SLA timelines** through dedicated configuration pages. This section walks through how to access and modify these settings.
+
+#### Accessing Policy Configuration
+
+Navigate to the configuration pages using the sidebar:
+
+1. Click on the **Configuration** section in the left navigation panel
+2. Under **Workflow & Policies**, you'll find two configuration pages:
+   - **Workflow Config** — Global workflow SLA timelines
+   - **Validation Policies** — Risk-tier-specific validation settings
+
+> **Note:** Only users with the **Admin** role can modify these settings. Non-admin users can view the configurations but cannot make changes.
+
+#### Validation Policies Page
+
+**Path:** Configuration → Validation Policies
+
+This page displays a table of validation policies, one row per risk tier (High, Medium, Low). Each policy controls:
+
+| Field | Description | Typical Range |
+|-------|-------------|---------------|
+| **Re-Validation Frequency** | Time from last validation completion to next validation submission/intake | 12–24 months |
+| **Grace Period** | Additional time after submission due date before the item is considered overdue | 1–6 months |
+| **Completion Lead Time** | Additional days after grace period ends to complete the validation | 30–120 days |
+| **Description** | Optional notes explaining the policy rationale | Free text |
+
+**To edit a policy:**
+1. Click the **Edit** button on the desired risk tier row
+2. Modify the numeric values in the input fields
+3. Click **Save** to apply changes, or **Cancel** to discard
+
+**Info Box Reference:**
+The page includes a helpful calculation example showing how these values combine to determine when a validation becomes overdue:
+
+```
+Overdue Calculation Example (Tier 2: 18 months, 3 months grace, 90 days)
+Last validation completed: Jan 1, 2024
+
+• Submission due: Jul 1, 2025 (+ 18 months frequency)
+• Submission overdue: Oct 1, 2025 (+ 3 months grace period)
+• Validation overdue: Dec 30, 2025 (+ 90 days lead time)
+```
+
+#### Workflow SLA Configuration Page
+
+**Path:** Configuration → Workflow Config
+
+This page configures the **service level agreement timelines** that apply to all validation requests regardless of risk tier. These timelines track team performance during the workflow:
+
+| Field | Description | Typical Value |
+|-------|-------------|---------------|
+| **Assignment / Claim Period** | Time allowed for a validation project to be assigned to a validator or claimed (from Intake to having a primary validator assigned) | 10 days |
+| **Begin Work Period** | Time allowed for assigned validators to begin work after assignment or claim (from Planning to In Progress status) | 5 days |
+| **Approval Period** | Time allowed for approvals to be obtained after requesting approval (from Pending Approval to Approved status) | 10 days |
+
+**To update SLA settings:**
+1. Modify the numeric values in the input fields (range: 1–365 days)
+2. Click **Save Configuration**
+3. The "Last updated" timestamp at the bottom confirms when changes were applied
+
+**Work Completion Lead Time Note:**
+The page displays an informational section explaining that work completion lead time is **not** configured here—it's determined by each model's inherent risk tier and configured in the **Validation Policies** page. This allows different completion expectations based on model complexity and risk exposure.
+
+#### How Policies Propagate to Due Dates
+
+The system combines values from **both** configuration pages to calculate due dates displayed throughout the application. The **Validation Overdue Date** is the sum of all policy and SLA components:
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                     DUE DATE CALCULATION FLOW                           │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                         │
+│  LAST VALIDATION COMPLETION DATE                                        │
+│            │                                                            │
+│            ▼                                                            │
+│  ┌─────────────────────────────────────────┐                           │
+│  │ + Frequency Months (from Validation     │                           │
+│  │   Policies, based on risk tier)         │                           │
+│  └─────────────────────────────────────────┘                           │
+│            │                                                            │
+│            ▼                                                            │
+│  ════════════════════════════════════════════                          │
+│         SUBMISSION DUE DATE                                             │
+│  ════════════════════════════════════════════                          │
+│            │                                                            │
+│            ▼                                                            │
+│  ┌─────────────────────────────────────────┐                           │
+│  │ + Grace Period Months (from Validation  │                           │
+│  │   Policies, based on risk tier)         │                           │
+│  └─────────────────────────────────────────┘                           │
+│            │                                                            │
+│            ▼                                                            │
+│  ════════════════════════════════════════════                          │
+│         SUBMISSION OVERDUE DATE                                         │
+│         (Grace Period End)                                              │
+│  ════════════════════════════════════════════                          │
+│            │                                                            │
+│            ▼                                                            │
+│  ┌─────────────────────────────────────────┐                           │
+│  │ + Completion Lead Time Days             │  ← Validation Policies    │
+│  │   (from Validation Policies)            │                           │
+│  ├─────────────────────────────────────────┤                           │
+│  │ + Assignment / Claim Period Days        │                           │
+│  │   (from Workflow Config)                │  ← Workflow SLA           │
+│  ├─────────────────────────────────────────┤                           │
+│  │ + Begin Work Period Days                │                           │
+│  │   (from Workflow Config)                │  ← Workflow SLA           │
+│  ├─────────────────────────────────────────┤                           │
+│  │ + Approval Period Days                  │                           │
+│  │   (from Workflow Config)                │  ← Workflow SLA           │
+│  └─────────────────────────────────────────┘                           │
+│            │                                                            │
+│            ▼                                                            │
+│  ════════════════════════════════════════════                          │
+│         VALIDATION OVERDUE DATE                                         │
+│         (Model Compliance Deadline)                                     │
+│  ════════════════════════════════════════════                          │
+│                                                                         │
+│  Formula: Grace Period End + Lead Time + Assignment + Begin Work +      │
+│           Approval Days                                                 │
+│                                                                         │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+**Complete Calculation Example:**
+Using default settings (Tier 2: 18 months frequency, 3 months grace, 90 days lead time + 10+5+10 SLA days):
+
+```
+Last validation completed: Jan 1, 2024
+
+• Submission Due:     Jul 1, 2025   (+ 18 months frequency)
+• Submission Overdue: Oct 1, 2025   (+ 3 months grace period)
+• Validation Overdue: Jan 24, 2026  (+ 90 lead time + 10 assignment + 5 begin work + 10 approval = 115 days)
+```
+
+**Workflow SLA Timelines Serve Dual Purposes:**
+1. **Contribute to Validation Overdue Date** — The three SLA periods (Assignment, Begin Work, Approval) are added to the Lead Time Days when calculating the final validation overdue deadline
+2. **Track Team Performance** — These same timelines are used to:
+   - Calculate "time remaining" displayed in each workflow phase
+   - Generate overdue alerts for delayed validations
+   - Track performance metrics and SLA adherence
+   - Identify validation process bottlenecks
+
+**Key Distinction:**
+- **Model Compliance Deadline** (Validation Overdue Date) = Sum of Lead Time Days + All SLA Periods; the regulatory/policy deadline that cannot be extended
+- **Individual Phase SLAs** = Internal team performance targets for each workflow stage
+
 ### SLA Calculations
 
 **Assignment SLA**: Time to assign validators after request creation
@@ -827,3 +1017,5 @@ A: Administrators configure policies through the Taxonomy and Validation Policy 
 ---
 
 *Last Updated: December 2025*
+
+<!-- Added: Configuring Validation Policies (Admin) subsection covering admin UI walkthrough for Validation Policies and Workflow SLA Configuration pages -->

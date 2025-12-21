@@ -3152,7 +3152,7 @@ export default function ModelDetailsPage() {
             ) : activeTab === 'versions' ? (
                 <div className="space-y-6">
                     {/* Regional Version Deployments */}
-                    <RegionalVersionsTable modelId={model.model_id} />
+                    <RegionalVersionsTable modelId={model.model_id} refreshTrigger={versionsRefreshTrigger} />
 
                     {/* Model Versions List */}
                     <div className="bg-white p-6 rounded-lg shadow-md">
@@ -3161,6 +3161,7 @@ export default function ModelDetailsPage() {
                             modelId={model.model_id}
                             refreshTrigger={versionsRefreshTrigger}
                             onVersionClick={(version) => setSelectedVersion(version)}
+                            onActivate={() => setVersionsRefreshTrigger(prev => prev + 1)}
                         />
                     </div>
                 </div>

@@ -8,9 +8,10 @@ interface VersionsListProps {
     modelId: number;
     refreshTrigger?: number;
     onVersionClick?: (version: ModelVersion) => void;
+    onActivate?: () => void;
 }
 
-const VersionsList: React.FC<VersionsListProps> = ({ modelId, refreshTrigger, onVersionClick }) => {
+const VersionsList: React.FC<VersionsListProps> = ({ modelId, refreshTrigger, onVersionClick, onActivate }) => {
     const { user } = useAuth();
     const [versions, setVersions] = useState<ModelVersion[]>([]);
     const [loading, setLoading] = useState(true);
@@ -50,6 +51,10 @@ const VersionsList: React.FC<VersionsListProps> = ({ modelId, refreshTrigger, on
         try {
             await versionsApi.activateVersion(versionId);
             loadVersions();
+            // Notify parent to refresh other components (e.g., RegionalVersionsTable)
+            if (onActivate) {
+                onActivate();
+            }
         } catch (err: any) {
             alert(err.response?.data?.detail || 'Failed to activate version');
         }

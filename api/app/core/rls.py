@@ -282,3 +282,78 @@ def can_access_exception(exception_id: int, user: User, db: Session) -> bool:
         return False
 
     return can_access_model(exception.model_id, user, db)
+
+
+def is_owner_or_delegate_with_permission(
+    model_id: int,
+    user: User,
+    db: Session,
+    permission: str
+) -> bool:
+    """
+    Check if a user is the model owner OR an active delegate with a specific permission.
+
+    Args:
+        model_id: The model ID to check
+        user: The current user
+        db: Database session
+        permission: The delegate permission to check ('can_submit_changes', 'can_manage_regional', 'can_attest')
+
+    Returns:
+        True if user is Admin, model owner, or delegate with the specified permission
+    """
+    # Admin can always act
+    if user.role == "Admin":
+        return True
+
+    model = db.query(Model).filter(Model.model_id == model_id).first()
+    if not model:
+        return False
+
+    # Check if user is the model owner
+    if model.owner_id == user.user_id:
+        return True
+
+    # Check if user is an active delegate with the specified permission
+    delegate_query = db.query(ModelDelegate).filter(
+        ModelDelegate.model_id == model_id,
+        ModelDelegate.user_id == user.user_id,
+        ModelDelegate.revoked_at == None
+    )
+
+    # Apply the specific permission filter
+    if permission == 'can_submit_changes':
+        delegate_query = delegate_query.filter(ModelDelegate.can_submit_changes == True)
+    elif permission == 'can_manage_regional':
+        delegate_query = delegate_query.filter(ModelDelegate.can_manage_regional == True)
+    elif permission == 'can_attest':
+        delegate_query = delegate_query.filter(ModelDelegate.can_attest == True)
+    else:
+        # Unknown permission, deny access
+        return False
+
+    return delegate_query.first() is not None
+
+
+def can_manage_model_region(model_id: int, user: User, db: Session) -> bool:
+    """
+    Check if a user can manage regional metadata for a specific model.
+
+    Access is granted if:
+    - User is Admin, OR
+    - User is the model owner, OR
+    - User is an active delegate with can_manage_regional=True
+    """
+    return is_owner_or_delegate_with_permission(model_id, user, db, 'can_manage_regional')
+
+
+def can_submit_owner_actions(model_id: int, user: User, db: Session) -> bool:
+    """
+    Check if a user can perform owner-level actions (like decommissioning review).
+
+    Access is granted if:
+    - User is Admin, OR
+    - User is the model owner, OR
+    - User is an active delegate with can_submit_changes=True
+    """
+    return is_owner_or_delegate_with_permission(model_id, user, db, 'can_submit_changes')

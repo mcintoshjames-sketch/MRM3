@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.core.deps import get_current_user
+from app.core.rls import can_manage_model_region
 from app.models import ModelRegion as ModelRegionModel, Model, Region, User, UserRole
 from app.models.audit_log import AuditLog
 from app.schemas.model_region import ModelRegion, ModelRegionCreate, ModelRegionUpdate
@@ -54,6 +55,13 @@ def create_model_region(
     model = db.query(Model).filter(Model.model_id == model_id).first()
     if not model:
         raise HTTPException(status_code=404, detail="Model not found")
+
+    # Permission check: Admin, model owner, or delegate with can_manage_regional permission
+    if not can_manage_model_region(model_id, current_user, db):
+        raise HTTPException(
+            status_code=403,
+            detail="Only the model owner, Admin, or a delegate with regional management permission can create model regions"
+        )
 
     # Verify region exists
     region = db.query(Region).filter(Region.region_id == region_data.region_id).first()
@@ -115,6 +123,13 @@ def update_model_region(
     model_region = db.query(ModelRegionModel).filter(ModelRegionModel.id == id).first()
     if not model_region:
         raise HTTPException(status_code=404, detail="Model-region link not found")
+
+    # Permission check: Admin, model owner, or delegate with can_manage_regional permission
+    if not can_manage_model_region(model_region.model_id, current_user, db):
+        raise HTTPException(
+            status_code=403,
+            detail="Only the model owner, Admin, or a delegate with regional management permission can update model regions"
+        )
 
     # Verify shared_model_owner if being updated
     if region_data.shared_model_owner_id is not None:

@@ -136,16 +136,8 @@ Validation just approved	Today
 Version has planned_production_date	That date
 Previous version deployed on specific weekday	Same weekday next occurrence
 Region has deployment window defined	Next valid window
-3. Overdue Alerts (Daily Job)
+3. Overdue Alerts (Calculated and surfaced on dashbaords)
 
-# Pseudo-code for daily job
-tasks = get_pending_tasks_past_planned_date()
-for task in tasks:
-    if task.days_overdue == 1:
-        send_email(task.owner, "Deployment overdue", task)
-    elif task.days_overdue == 7:
-        send_email([task.owner, task.owner.manager], "Deployment 1 week overdue", task)
-    # Add to Overdue Deployments dashboard widget
 4. Post-Deployment Auto-Actions
 
 On deployment confirmation:
@@ -215,7 +207,6 @@ Phase 4: Automation
 Phase 5: Polish
  Regional approval integration
  Dashboard widget for pending deployments
- Email notifications
 Summary
 Feature	Benefit
 Version-centric deploy modal	Mental model matches user intent

@@ -12,6 +12,7 @@ import { listValidationRequestLimitations, LimitationListItem } from '../api/lim
 import RecommendationCreateModal from '../components/RecommendationCreateModal';
 import ValidationScorecardTab from '../components/ValidationScorecardTab';
 import DeployModal from '../components/DeployModal';
+import { Region } from '../api/regions';
 
 interface TaxonomyValue {
     value_id: number;
@@ -106,6 +107,8 @@ interface ModelVersion {
     created_at: string;
     created_by_name: string;
     validation_request_id: number | null;
+    scope?: string;  // GLOBAL | REGIONAL
+    affected_region_ids?: number[] | null;
 }
 
 interface ValidationRequestDetail {
@@ -134,6 +137,8 @@ interface ValidationRequestDetail {
     total_hold_days: number;
     previous_status_before_hold: string | null;
     adjusted_validation_team_sla_due_date: string | null;
+    // Scoped regions for regional approval logic
+    regions?: Region[];
 }
 
 interface PriorValidationSummary {
@@ -2441,6 +2446,22 @@ export default function ValidationRequestDetailPage() {
                                 {actionLoading ? 'Downloading...' : '📄 Export Challenge Report'}
                             </button>
                         </div>
+
+                        {/* Info box explaining how regional approvals are determined */}
+                        {request.approvals.filter(a => a.approver_role !== 'Conditional' && a.approver_role !== 'Global' && !a.voided_at).length > 0 && (
+                            <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-md text-sm">
+                                <strong>Regional Approvals:</strong> Based on {
+                                    request.regions && request.regions.length > 0
+                                        ? "validation scope (explicitly selected regions)"
+                                        : relatedVersions.some(v => v.scope === 'REGIONAL')
+                                            ? relatedVersions.every(v => v.scope === 'REGIONAL')
+                                                ? "linked version's regional scope"
+                                                : "model deployment regions (global version present)"
+                                            : "model deployment regions"
+                                }
+                            </div>
+                        )}
+
                         {/* Filter out Conditional approvals - they're shown in the ConditionalApprovalsSection below */}
                         {request.approvals.filter(a => a.approver_role !== 'Conditional' && !a.voided_at).length === 0 ? (
                             <div className="text-gray-500 text-center py-8">

@@ -253,6 +253,11 @@ class ValidationScorecardResult(Base):
         nullable=True,
         comment="Overall rating string (Green, Green-, etc.)"
     )
+    overall_assessment_narrative: Mapped[Optional[str]] = mapped_column(
+        Text,
+        nullable=True,
+        comment="Free-text narrative for overall scorecard assessment"
+    )
 
     # Section Summaries (JSON for flexibility)
     section_summaries: Mapped[Optional[dict]] = mapped_column(

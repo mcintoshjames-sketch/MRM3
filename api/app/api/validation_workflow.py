@@ -1058,24 +1058,64 @@ def auto_assign_approvers(
         if existing.approver_id:
             assigned_approver_ids.add(existing.approver_id)
 
-    # Collect all unique regions across governance, deployment, and validation scope
+    # Determine which regions require approval based on scope hierarchy:
+    #   1. Explicit scoped regions (user override) - highest priority
+    #   2. Any GLOBAL version present - triggers global behavior (all deployment regions)
+    #   3. Only REGIONAL versions - use their specific regions
+    #   4. Fallback - use all deployment regions
     all_region_ids = set()
 
     if validation_request.models and len(validation_request.models) > 0:
-        # Collect governance regions (wholly_owned_region_id)
+        # Collect governance regions (wholly_owned_region_id) - always required
         governance_region_ids = set()
         for model in validation_request.models:
             if model.wholly_owned_region_id is not None:
-                all_region_ids.add(model.wholly_owned_region_id)
                 governance_region_ids.add(model.wholly_owned_region_id)
 
-            # Collect deployment regions (model_regions)
+        # Collect all deployment regions (used as fallback for global scope)
+        all_deployment_region_ids = set()
+        for model in validation_request.models:
             for model_region in model.model_regions:
-                all_region_ids.add(model_region.region_id)
+                all_deployment_region_ids.add(model_region.region_id)
 
-        # Collect validation request scope regions
+        # 1. Check if validation request has explicitly scoped regions (user override)
+        scoped_region_ids = set()
         for region in validation_request.regions:
-            all_region_ids.add(region.region_id)
+            scoped_region_ids.add(region.region_id)
+
+        # 2. Analyze linked model versions for scope
+        has_global_version = False
+        version_region_ids = set()
+
+        for assoc in validation_request.model_versions_assoc:
+            if assoc.version:
+                if assoc.version.scope == "REGIONAL":
+                    # Collect regions affected by REGIONAL-scope versions
+                    for region in assoc.version.affected_regions:
+                        version_region_ids.add(region.region_id)
+                else:
+                    # Treat "GLOBAL" or None as global scope
+                    has_global_version = True
+
+        # 3. Determine final approval regions using priority hierarchy
+        if scoped_region_ids:
+            # User explicitly selected regions - they always win
+            # Also include any REGIONAL version regions for completeness
+            all_region_ids = scoped_region_ids | version_region_ids
+        elif has_global_version:
+            # Any GLOBAL version means we need global approval behavior
+            # Use all deployment regions + governance regions
+            all_region_ids = all_deployment_region_ids | governance_region_ids
+        elif version_region_ids:
+            # Only REGIONAL versions linked - use just those version regions
+            all_region_ids = version_region_ids.copy()
+        else:
+            # No versions linked or no explicit scope - use all deployment regions
+            all_region_ids = all_deployment_region_ids.copy()
+
+        # 4. Always include governance regions (for wholly-owned models)
+        # Even in scoped validations, governance region approval is required
+        all_region_ids |= governance_region_ids
 
         # Business Rule: Global Approvers are ALWAYS required for all validations
         # Regional Approvers are required for regions that have requires_regional_approval=True

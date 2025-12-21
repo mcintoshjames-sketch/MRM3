@@ -779,7 +779,7 @@ class TestDecommissioningAPI:
             headers=non_owner_headers
         )
         assert review_resp.status_code == 403
-        assert "model owner or Admin" in review_resp.json()["detail"]
+        assert "model owner" in review_resp.json()["detail"]
 
     # --- Update (PATCH) Tests ---
 

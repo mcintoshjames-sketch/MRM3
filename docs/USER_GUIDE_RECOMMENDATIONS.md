@@ -119,6 +119,76 @@ Use the **Show overdue only** toggle to highlight recommendations that have pass
 
 ---
 
+## Admin Configuration: Priority Workflow Settings
+
+Administrators can customize how each recommendation priority level behaves through the **Priority Workflow Config** section in the Taxonomy page. This allows your organization to tailor the recommendation workflow to match your specific governance policies.
+
+### Base Priority Configuration
+
+For each priority level (High, Medium, Low, Consideration), admins can configure three key workflow settings:
+
+| Setting | Description | Impact |
+|---------|-------------|--------|
+| **Requires Action Plan** | Whether developers must submit a detailed action plan before remediation. | When enabled, developers must create tasks with owners and due dates. When disabled, developers can skip straight to remediation after acknowledging the recommendation. |
+| **Requires Final Approval** | Whether Global/Regional Approvers must sign off on closure. | When enabled, Validator approval alone is insufficient—Global and Regional approvers must also approve before the recommendation closes. When disabled, Validator approval is final. |
+| **Enforce Timeframes** | Whether target dates are validated against configured max timeframes. | When enabled, the system enforces maximum allowed remediation periods (e.g., 90 days for High priority). When disabled, any target date is accepted. |
+
+**Example Use Case:**
+- **High Priority**: Requires Action Plan = Yes, Requires Final Approval = Yes, Enforce Timeframes = Yes (strictest oversight)
+- **Low Priority**: Requires Action Plan = No, Requires Final Approval = No, Enforce Timeframes = No (streamlined closure)
+- **Consideration**: Requires Action Plan = No, Requires Final Approval = No, Enforce Timeframes = No (minimal process for informational items)
+
+### Regional Overrides
+
+For organizations operating across multiple jurisdictions, admins can create **Regional Overrides** that modify priority settings for specific regions. This is useful when regulatory requirements differ by geography.
+
+**How Regional Overrides Work:**
+- Each override applies to a specific priority level + region combination
+- Override settings take precedence over base priority configuration
+- You can override any combination of the three workflow settings (action plan, final approval, timeframes)
+- Overrides only affect recommendations for models deployed in that region
+
+**Example Use Case:**
+A model deployed in both the US and UK might have different closure requirements:
+- **Base Setting (Medium Priority)**: Requires Final Approval = No (US standard)
+- **UK Regional Override (Medium Priority)**: Requires Final Approval = Yes (stricter UK regulation)
+- **Result**: The same Medium priority recommendation requires approver sign-off only for the UK deployment
+
+### Timeframe Configurations
+
+Timeframe configurations set the maximum number of days allowed for remediation based on priority level. These timeframes are enforced when the **Enforce Timeframes** setting is enabled for that priority.
+
+**How Timeframe Enforcement Works:**
+- When creating or editing a recommendation, the system validates the target date against the configured maximum days
+- If **Enforce Timeframes** is enabled for the priority level, target dates exceeding the maximum are rejected
+- If **Enforce Timeframes** is disabled, any target date is accepted (no validation)
+- Timeframes provide guardrails to ensure high-priority issues are remediated within acceptable periods
+
+**Configuration:**
+- Each priority level has its own `max_days` setting (e.g., 90 days for High, 180 days for Medium)
+- Admins can update max_days values to align with organizational policies
+- Setting max_days to a higher value gives more flexibility; lower values enforce tighter deadlines
+
+**Example Use Case:**
+Your organization implements the following timeframe policy:
+- **High Priority**: max_days = 90 (must be fixed within 3 months)
+- **Medium Priority**: max_days = 180 (must be fixed within 6 months)
+- **Low Priority**: max_days = 365 (must be fixed within 1 year)
+- **Consideration**: max_days = null (no limit, informational only)
+
+When a Validator creates a High priority recommendation with "Enforce Timeframes" enabled, the system will only accept target dates within 90 days of creation. This ensures critical issues receive timely attention according to governance standards.
+
+### Accessing Priority Workflow Config
+
+Admins can access these settings at:
+1. Navigate to **Taxonomy** in the main menu
+2. Select **Priority Workflow Config** from the dropdown
+3. Click **Edit** next to any priority level to modify base settings
+4. Expand a priority row (using the arrow icon) to view/add regional overrides
+5. Use **+ Add Regional Override** to create region-specific rules
+
+---
+
 ## Frequently Asked Questions
 
 **Q: Can I edit a recommendation after sending it?**
@@ -128,7 +198,10 @@ A: Partially. Validators/Admins can edit recommendations in **Draft**, **Pending
 A: You must submit an Action Plan. The system enforces a "one-strike" rule for rebuttals to prevent indefinite arguments.
 
 **Q: Who can close a Low priority recommendation?**
-A: Low priority items are closed immediately after the Validator approves the closure evidence. They do not require Global or Regional sign-off.
+A: By default, Low priority items are closed immediately after the Validator approves the closure evidence—they do not require Global or Regional sign-off. However, this can be changed by an Admin through the Priority Workflow Config if your organization requires additional oversight.
 
 **Q: Why do I need to provide a reason when changing the target date?**
-A: Target dates are validated against configured timeframes and require an explanation when changed, to preserve an audit trail.
+A: Target dates are validated against configured timeframes (when "Enforce Timeframes" is enabled for that priority level) and require an explanation when changed, to preserve an audit trail.
+
+**Q: Can different regions have different approval requirements?**
+A: Yes! Admins can create Regional Overrides that modify workflow settings for specific regions. For example, High priority items might require final approval in the EU but not in the US, reflecting different regulatory requirements.

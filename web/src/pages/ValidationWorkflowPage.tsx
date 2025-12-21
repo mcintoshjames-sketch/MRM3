@@ -397,12 +397,13 @@ export default function ValidationWorkflowPage() {
                     const versions = versionsResponses[index].data;
                     newModelVersions[modelId] = versions;
 
-                    // Auto-select the latest ACTIVE version if available, otherwise null
-                    const activeVersions = versions.filter((v: ModelVersion) => v.status === 'ACTIVE');
-                    if (activeVersions.length > 0) {
+                    // Auto-select the latest DRAFT version if available, otherwise null
+                    // DRAFT versions need validation; ACTIVE versions are already validated and in production
+                    const draftVersions = versions.filter((v: ModelVersion) => v.status === 'DRAFT');
+                    if (draftVersions.length > 0) {
                         // Sort by version_id descending to get latest
-                        activeVersions.sort((a: ModelVersion, b: ModelVersion) => b.version_id - a.version_id);
-                        newSelectedVersions[modelId] = activeVersions[0].version_id;
+                        draftVersions.sort((a: ModelVersion, b: ModelVersion) => b.version_id - a.version_id);
+                        newSelectedVersions[modelId] = draftVersions[0].version_id;
                     } else {
                         newSelectedVersions[modelId] = null;
                     }
@@ -920,8 +921,8 @@ export default function ValidationWorkflowPage() {
 
                             <div className="mb-4">
                                 <label className="block text-sm font-medium mb-2">
-                                    Regions (Optional)
-                                    <span className="text-xs text-gray-500 ml-2">Leave empty for global validation</span>
+                                    Specific Region Scope (Optional)
+                                    <span className="text-xs text-gray-500 ml-2">Leave empty if the validation is global (not specific to a region)</span>
                                 </label>
                                 <MultiSelectDropdown
                                     label=""
@@ -947,7 +948,7 @@ export default function ValidationWorkflowPage() {
                                                     </span>
                                                 </p>
                                                 <p className="text-xs text-purple-700 mb-3">
-                                                    Based on the selected models, the following regions may apply to this validation:
+                                                    Based on the selected models, you may add one or more region scopes if the validation applies only to them:
                                                 </p>
                                                 <ul className="space-y-2">
                                                     {suggestedRegions.map(region => (

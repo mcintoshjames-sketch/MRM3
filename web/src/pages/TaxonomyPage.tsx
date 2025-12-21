@@ -246,6 +246,35 @@ interface Region {
     name: string;
 }
 
+// ============================================================================
+// TYPES - Component Definitions
+// ============================================================================
+
+interface ComponentDefinition {
+    component_id: number;
+    section_number: string;
+    section_title: string;
+    component_code: string;
+    component_title: string;
+    is_test_or_analysis: boolean;
+    expectation_high: string;
+    expectation_medium: string;
+    expectation_low: string;
+    expectation_very_low: string;
+    sort_order: number;
+    is_active: boolean;
+}
+
+interface ComponentConfiguration {
+    config_id: number;
+    config_name: string;
+    description: string;
+    effective_date: string;
+    created_by_user_id: number;
+    created_at: string;
+    is_active: boolean;
+}
+
 export default function TaxonomyPage() {
     // URL search params for direct tab linking
     const [searchParams, setSearchParams] = useSearchParams();
@@ -254,7 +283,7 @@ export default function TaxonomyPage() {
 
     // Tab management - initialize from URL param or default to 'general'
     const tabParam = searchParams.get('tab');
-    const validTabs = ['general', 'change-type', 'model-type', 'methodology-library', 'kpm', 'fry', 'recommendation-priority', 'risk-factors', 'scorecard', 'residual-risk-map', 'organizations'] as const;
+    const validTabs = ['general', 'change-type', 'model-type', 'methodology-library', 'kpm', 'fry', 'recommendation-priority', 'risk-factors', 'scorecard', 'residual-risk-map', 'organizations', 'component-definitions'] as const;
     type TabType = typeof validTabs[number];
     const initialTab: TabType = validTabs.includes(tabParam as TabType) ? (tabParam as TabType) : 'general';
     const [activeTab, setActiveTab] = useState<TabType>(initialTab);
@@ -482,6 +511,21 @@ export default function TaxonomyPage() {
     const [expandedMetricGroups, setExpandedMetricGroups] = useState<Set<number>>(new Set());
     const [editingFryItem, setEditingFryItem] = useState<FryMetricGroup | null>(null);
 
+    // Component Definitions state
+    const [componentDefinitions, setComponentDefinitions] = useState<ComponentDefinition[]>([]);
+    const [activeComponentConfig, setActiveComponentConfig] = useState<ComponentConfiguration | null>(null);
+    const [editingComponentId, setEditingComponentId] = useState<number | null>(null);
+    const [componentEditForm, setComponentEditForm] = useState<Partial<ComponentDefinition>>({});
+    const [componentDefLoading, setComponentDefLoading] = useState(false);
+    const [componentDefError, setComponentDefError] = useState<string | null>(null);
+    const [componentDefSuccess, setComponentDefSuccess] = useState<string | null>(null);
+    const [showComponentPublishModal, setShowComponentPublishModal] = useState(false);
+    const [componentPublishForm, setComponentPublishForm] = useState({
+        config_name: '',
+        description: '',
+        effective_date: new Date().toISOString().split('T')[0]
+    });
+
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
@@ -506,8 +550,100 @@ export default function TaxonomyPage() {
             fetchScorecardSections();
         } else if (activeTab === 'residual-risk-map') {
             fetchResidualRiskMapConfig();
+        } else if (activeTab === 'component-definitions') {
+            fetchComponentDefinitions();
         }
     }, [activeTab]);
+
+    // ============================================================================
+    // COMPONENT DEFINITIONS FUNCTIONS
+    // ============================================================================
+
+    const fetchComponentDefinitions = async () => {
+        setComponentDefLoading(true);
+        setComponentDefError(null);
+        try {
+            // Fetch component definitions
+            const componentsRes = await api.get('/validation-workflow/component-definitions');
+            setComponentDefinitions(componentsRes.data);
+
+            // Fetch configurations to get active one
+            const configsRes = await api.get('/validation-workflow/configurations');
+            const activeConf = configsRes.data.find((c: ComponentConfiguration) => c.is_active);
+            setActiveComponentConfig(activeConf || null);
+        } catch (err: any) {
+            setComponentDefError(err.response?.data?.detail || 'Failed to load component definitions');
+            console.error('Error loading component definitions:', err);
+        } finally {
+            setComponentDefLoading(false);
+        }
+    };
+
+    const handleComponentEditClick = (component: ComponentDefinition) => {
+        setEditingComponentId(component.component_id);
+        setComponentEditForm({
+            expectation_high: component.expectation_high,
+            expectation_medium: component.expectation_medium,
+            expectation_low: component.expectation_low,
+            expectation_very_low: component.expectation_very_low
+        });
+    };
+
+    const handleComponentCancelEdit = () => {
+        setEditingComponentId(null);
+        setComponentEditForm({});
+    };
+
+    const handleComponentSaveEdit = async (componentId: number) => {
+        setComponentDefLoading(true);
+        setComponentDefError(null);
+        setComponentDefSuccess(null);
+
+        try {
+            const response = await api.patch(
+                `/validation-workflow/component-definitions/${componentId}`,
+                componentEditForm
+            );
+
+            // Update local state
+            setComponentDefinitions(componentDefinitions.map(c =>
+                c.component_id === componentId ? response.data : c
+            ));
+
+            setEditingComponentId(null);
+            setComponentEditForm({});
+            setComponentDefSuccess('Component updated successfully. Changes will apply to new plans after publishing a new configuration.');
+        } catch (err: any) {
+            setComponentDefError(err.response?.data?.detail || 'Failed to update component');
+            console.error('Error updating component:', err);
+        } finally {
+            setComponentDefLoading(false);
+        }
+    };
+
+    const handleComponentPublishConfiguration = async () => {
+        setComponentDefLoading(true);
+        setComponentDefError(null);
+        setComponentDefSuccess(null);
+
+        try {
+            const response = await api.post('/validation-workflow/configurations/publish', componentPublishForm);
+
+            setActiveComponentConfig(response.data);
+            setShowComponentPublishModal(false);
+            setComponentPublishForm({
+                config_name: '',
+                description: '',
+                effective_date: new Date().toISOString().split('T')[0]
+            });
+            setComponentDefSuccess(`Configuration "${response.data.config_name}" published successfully. New validation plans will use this configuration.`);
+        } catch (err: any) {
+            setComponentDefError(err.response?.data?.detail || 'Failed to publish configuration');
+            console.error('Error publishing configuration:', err);
+        } finally {
+            setComponentDefLoading(false);
+        }
+    };
 
     // ============================================================================
     // RESIDUAL RISK MAP FUNCTIONS
@@ -1939,6 +2075,36 @@ export default function TaxonomyPage() {
         return regions.filter(r => !existingRegionIds.has(r.region_id));
     };
 
+    // ============================================================================
+    // COMPONENT DEFINITIONS HELPER FUNCTIONS
+    // ============================================================================
+
+    const getExpectationBadge = (expectation: string) => {
+        const colors: Record<string, string> = {
+            'Required': 'bg-green-100 text-green-800',
+            'IfApplicable': 'bg-yellow-100 text-yellow-800',
+            'NotExpected': 'bg-gray-100 text-gray-800'
+        };
+        return colors[expectation] || 'bg-gray-100 text-gray-800';
+    };
+
+    // Group components by section for display
+    const groupedComponents = componentDefinitions.reduce((acc, comp) => {
+        const sectionKey = `${comp.section_number}|${comp.section_title}`;
+        if (!acc[sectionKey]) {
+            acc[sectionKey] = [];
+        }
+        acc[sectionKey].push(comp);
+        return acc;
+    }, {} as Record<string, ComponentDefinition[]>);
+
+    // Sort sections by section number
+    const sections = Object.keys(groupedComponents).sort((a, b) => {
+        const aNum = parseInt(a.split('|')[0]);
+        const bNum = parseInt(b.split('|')[0]);
+        return aNum - bNum;
+    });
+
     if (loading) {
         return (
             <Layout>
@@ -1976,6 +2142,7 @@ export default function TaxonomyPage() {
                         <option value="scorecard">Scorecard Config</option>
                         <option value="residual-risk-map">Residual Risk Map</option>
                         <option value="organizations">Organizations (LOB)</option>
+                        <option value="component-definitions">Validation Component Definitions</option>
                     </select>
                 </div>
             </div>
@@ -6083,6 +6250,302 @@ export default function TaxonomyPage() {
                                 </div>
                             )}
                         </div>
+                    </div>
+                </>
+            )}
+
+            {/* COMPONENT DEFINITIONS TAB */}
+            {activeTab === 'component-definitions' && (
+                <>
+                    <div className="space-y-6">
+                        {/* Header */}
+                        <div className="bg-white rounded-lg shadow-md p-6">
+                            <div className="flex justify-between items-start mb-4">
+                                <div>
+                                    <h1 className="text-2xl font-bold text-gray-900">Component Definition Management</h1>
+                                    <p className="text-gray-600 mt-2">
+                                        Manage validation component expectations for different risk tiers. Changes require publishing a new component definition version.
+                                    </p>
+                                </div>
+                                <button
+                                    onClick={() => setShowComponentPublishModal(true)}
+                                    className="btn-primary"
+                                >
+                                    Publish New Version
+                                </button>
+                            </div>
+
+                            {/* Active Configuration Info */}
+                            {activeComponentConfig && (
+                                <div className="mt-4 p-4 bg-blue-50 border border-blue-200 rounded">
+                                    <div className="flex items-start gap-2">
+                                        <span className="text-blue-600 text-lg">ℹ️</span>
+                                        <div className="text-sm text-blue-900">
+                                            <div className="font-semibold">Active Configuration: {activeComponentConfig.config_name}</div>
+                                            <div className="mt-1">{activeComponentConfig.description}</div>
+                                            <div className="mt-1 text-xs">
+                                                Effective Date: {activeComponentConfig.effective_date} |
+                                                Created: {new Date(activeComponentConfig.created_at).toLocaleString()}
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+
+                        {/* Messages */}
+                        {componentDefError && (
+                            <div className="bg-red-50 border border-red-200 rounded p-4 text-red-800">
+                                {componentDefError}
+                            </div>
+                        )}
+
+                        {componentDefSuccess && (
+                            <div className="bg-green-50 border border-green-200 rounded p-4 text-green-800">
+                                {componentDefSuccess}
+                            </div>
+                        )}
+
+                        {/* Component Definitions Table */}
+                        {componentDefLoading ? (
+                            <div className="flex items-center justify-center p-8">
+                                <div className="text-gray-600">Loading component definitions...</div>
+                            </div>
+                        ) : (
+                            sections.map(sectionKey => {
+                                const [sectionNum, sectionTitle] = sectionKey.split('|');
+                                const sectionComponents = groupedComponents[sectionKey];
+
+                                return (
+                                    <div key={sectionKey} className="bg-white rounded-lg shadow-md overflow-hidden">
+                                        <div className="bg-gray-100 px-6 py-3 border-b">
+                                            <h2 className="font-semibold text-gray-800">
+                                                Section {sectionNum} – {sectionTitle}
+                                            </h2>
+                                        </div>
+
+                                        <div className="overflow-x-auto">
+                                            <table className="min-w-full">
+                                                <thead className="bg-gray-50">
+                                                    <tr>
+                                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase w-1/4">
+                                                            Component
+                                                        </th>
+                                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase w-1/6">
+                                                            Tier 1 (High)
+                                                        </th>
+                                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase w-1/6">
+                                                            Tier 2 (Medium)
+                                                        </th>
+                                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase w-1/6">
+                                                            Tier 3 (Low)
+                                                        </th>
+                                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase w-1/6">
+                                                            Tier 4 (Very Low)
+                                                        </th>
+                                                        <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase w-24">
+                                                            Actions
+                                                        </th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody className="bg-white divide-y divide-gray-200">
+                                                    {sectionComponents.map(component => {
+                                                        const isEditing = editingComponentId === component.component_id;
+
+                                                        return (
+                                                            <tr key={component.component_id}>
+                                                                <td className="px-6 py-4">
+                                                                    <div className="text-sm font-medium text-gray-900">
+                                                                        {component.component_code}
+                                                                    </div>
+                                                                    <div className="text-sm text-gray-600">
+                                                                        {component.component_title}
+                                                                    </div>
+                                                                </td>
+
+                                                                {/* Expectation columns */}
+                                                                {isEditing ? (
+                                                                    <>
+                                                                        <td className="px-6 py-4">
+                                                                            <select
+                                                                                value={componentEditForm.expectation_high}
+                                                                                onChange={(e) => setComponentEditForm({ ...componentEditForm, expectation_high: e.target.value })}
+                                                                                className="border border-gray-300 rounded px-2 py-1 text-sm w-full"
+                                                                            >
+                                                                                <option value="Required">Required</option>
+                                                                                <option value="IfApplicable">If Applicable</option>
+                                                                                <option value="NotExpected">Not Expected</option>
+                                                                            </select>
+                                                                        </td>
+                                                                        <td className="px-6 py-4">
+                                                                            <select
+                                                                                value={componentEditForm.expectation_medium}
+                                                                                onChange={(e) => setComponentEditForm({ ...componentEditForm, expectation_medium: e.target.value })}
+                                                                                className="border border-gray-300 rounded px-2 py-1 text-sm w-full"
+                                                                            >
+                                                                                <option value="Required">Required</option>
+                                                                                <option value="IfApplicable">If Applicable</option>
+                                                                                <option value="NotExpected">Not Expected</option>
+                                                                            </select>
+                                                                        </td>
+                                                                        <td className="px-6 py-4">
+                                                                            <select
+                                                                                value={componentEditForm.expectation_low}
+                                                                                onChange={(e) => setComponentEditForm({ ...componentEditForm, expectation_low: e.target.value })}
+                                                                                className="border border-gray-300 rounded px-2 py-1 text-sm w-full"
+                                                                            >
+                                                                                <option value="Required">Required</option>
+                                                                                <option value="IfApplicable">If Applicable</option>
+                                                                                <option value="NotExpected">Not Expected</option>
+                                                                            </select>
+                                                                        </td>
+                                                                        <td className="px-6 py-4">
+                                                                            <select
+                                                                                value={componentEditForm.expectation_very_low}
+                                                                                onChange={(e) => setComponentEditForm({ ...componentEditForm, expectation_very_low: e.target.value })}
+                                                                                className="border border-gray-300 rounded px-2 py-1 text-sm w-full"
+                                                                            >
+                                                                                <option value="Required">Required</option>
+                                                                                <option value="IfApplicable">If Applicable</option>
+                                                                                <option value="NotExpected">Not Expected</option>
+                                                                            </select>
+                                                                        </td>
+                                                                    </>
+                                                                ) : (
+                                                                    <>
+                                                                        <td className="px-6 py-4">
+                                                                            <span className={`px-2 py-1 rounded text-xs font-medium ${getExpectationBadge(component.expectation_high)}`}>
+                                                                                {component.expectation_high}
+                                                                            </span>
+                                                                        </td>
+                                                                        <td className="px-6 py-4">
+                                                                            <span className={`px-2 py-1 rounded text-xs font-medium ${getExpectationBadge(component.expectation_medium)}`}>
+                                                                                {component.expectation_medium}
+                                                                            </span>
+                                                                        </td>
+                                                                        <td className="px-6 py-4">
+                                                                            <span className={`px-2 py-1 rounded text-xs font-medium ${getExpectationBadge(component.expectation_low)}`}>
+                                                                                {component.expectation_low}
+                                                                            </span>
+                                                                        </td>
+                                                                        <td className="px-6 py-4">
+                                                                            <span className={`px-2 py-1 rounded text-xs font-medium ${getExpectationBadge(component.expectation_very_low)}`}>
+                                                                                {component.expectation_very_low}
+                                                                            </span>
+                                                                        </td>
+                                                                    </>
+                                                                )}
+
+                                                                {/* Actions */}
+                                                                <td className="px-6 py-4 text-right text-sm">
+                                                                    {isEditing ? (
+                                                                        <div className="flex gap-2 justify-end">
+                                                                            <button
+                                                                                onClick={() => handleComponentSaveEdit(component.component_id)}
+                                                                                disabled={componentDefLoading}
+                                                                                className="text-blue-600 hover:text-blue-800"
+                                                                            >
+                                                                                Save
+                                                                            </button>
+                                                                            <button
+                                                                                onClick={handleComponentCancelEdit}
+                                                                                disabled={componentDefLoading}
+                                                                                className="text-gray-600 hover:text-gray-800"
+                                                                            >
+                                                                                Cancel
+                                                                            </button>
+                                                                        </div>
+                                                                    ) : (
+                                                                        <button
+                                                                            onClick={() => handleComponentEditClick(component)}
+                                                                            className="text-blue-600 hover:text-blue-800"
+                                                                        >
+                                                                            Edit
+                                                                        </button>
+                                                                    )}
+                                                                </td>
+                                                            </tr>
+                                                        );
+                                                    })}
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    </div>
+                                );
+                            })
+                        )}
+
+                        {/* Publish Configuration Modal */}
+                        {showComponentPublishModal && (
+                            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+                                <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full mx-4">
+                                    <div className="p-6">
+                                        <h2 className="text-2xl font-bold mb-4">Publish New Component Definition Version</h2>
+                                        <p className="text-gray-600 mb-6">
+                                            Publishing a new version will snapshot the current component definitions.
+                                            New validation plans will use this version. Existing locked plans will remain linked to their original version.
+                                        </p>
+
+                                        <div className="space-y-4">
+                                            <div>
+                                                <label className="block text-sm font-medium text-gray-700 mb-1">
+                                                    Version Name <span className="text-red-500">*</span>
+                                                </label>
+                                                <input
+                                                    type="text"
+                                                    value={componentPublishForm.config_name}
+                                                    onChange={(e) => setComponentPublishForm({ ...componentPublishForm, config_name: e.target.value })}
+                                                    placeholder="e.g., Q4 2025 Requirements Update"
+                                                    className="w-full border border-gray-300 rounded px-3 py-2"
+                                                />
+                                            </div>
+
+                                            <div>
+                                                <label className="block text-sm font-medium text-gray-700 mb-1">
+                                                    Description
+                                                </label>
+                                                <textarea
+                                                    value={componentPublishForm.description}
+                                                    onChange={(e) => setComponentPublishForm({ ...componentPublishForm, description: e.target.value })}
+                                                    placeholder="Describe what changed in this version..."
+                                                    rows={3}
+                                                    className="w-full border border-gray-300 rounded px-3 py-2"
+                                                />
+                                            </div>
+
+                                            <div>
+                                                <label className="block text-sm font-medium text-gray-700 mb-1">
+                                                    Effective Date
+                                                </label>
+                                                <input
+                                                    type="date"
+                                                    value={componentPublishForm.effective_date}
+                                                    onChange={(e) => setComponentPublishForm({ ...componentPublishForm, effective_date: e.target.value })}
+                                                    className="border border-gray-300 rounded px-3 py-2"
+                                                />
+                                            </div>
+                                        </div>
+
+                                        <div className="flex justify-end gap-3 mt-6">
+                                            <button
+                                                onClick={() => setShowComponentPublishModal(false)}
+                                                disabled={componentDefLoading}
+                                                className="px-4 py-2 border border-gray-300 rounded hover:bg-gray-50"
+                                            >
+                                                Cancel
+                                            </button>
+                                            <button
+                                                onClick={handleComponentPublishConfiguration}
+                                                disabled={componentDefLoading || !componentPublishForm.config_name}
+                                                className="btn-primary"
+                                            >
+                                                {componentDefLoading ? 'Publishing...' : 'Publish Configuration'}
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
                     </div>
                 </>
             )}

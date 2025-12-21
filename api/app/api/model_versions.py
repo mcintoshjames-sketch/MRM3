@@ -386,6 +386,15 @@ def create_model_version(
     # Determine production date (prefer planned_production_date)
     target_production_date = version_data.planned_production_date or version_data.production_date
 
+    # Get ValidationWorkflowSLA configuration (needed for lead time calculation)
+    sla_config = db.query(ValidationWorkflowSLA).first()
+    if not sla_config:
+        # Create default SLA if doesn't exist
+        sla_config = ValidationWorkflowSLA()
+        db.add(sla_config)
+        db.commit()
+        db.refresh(sla_config)
+
     # Check lead time policy for ALL changes if production date is provided
     if target_production_date:
         from app.models.validation import ValidationPolicy
@@ -393,30 +402,28 @@ def create_model_version(
         # Calculate lead time based on submission date (today) vs implementation date
         days_lead_time = (target_production_date - date.today()).days
 
-        # Get model-specific lead time from validation policy
-        lead_time_required = 90  # Default
+        # Get model-specific completion lead time from validation policy
+        completion_lead_time = 90  # Default
         if model.risk_tier_id:
             policy = db.query(ValidationPolicy).filter(
                 ValidationPolicy.risk_tier_id == model.risk_tier_id
             ).first()
             if policy:
-                lead_time_required = policy.model_change_lead_time_days
+                completion_lead_time = policy.model_change_lead_time_days
+
+        # Total lead time = completion lead time + workflow SLA phases
+        lead_time_required = completion_lead_time
+        if sla_config:
+            lead_time_required += (sla_config.assignment_days or 0)
+            lead_time_required += (sla_config.begin_work_days or 0)
+            lead_time_required += (sla_config.approval_days or 0)
 
         if days_lead_time < lead_time_required:
             msg = f"Request submitted with insufficient lead time. Policy requires {lead_time_required} days lead time before implementation, but only {max(0, days_lead_time)} days remain."
-            validation_warning = "WARNING: " + msg
+            validation_warning = msg
 
     if version_data.change_type == "MAJOR":
         from datetime import timedelta
-
-        # Get ValidationWorkflowSLA configuration
-        sla_config = db.query(ValidationWorkflowSLA).first()
-        if not sla_config:
-            # Create default SLA if doesn't exist
-            sla_config = ValidationWorkflowSLA()
-            db.add(sla_config)
-            db.commit()
-            db.refresh(sla_config)
 
         # Calculate total SLA time using risk-tier-based lead time
         # lead_time_required was calculated above if target_production_date exists
@@ -445,7 +452,7 @@ def create_model_version(
                 priority_code = "HIGH"  # High priority
                 # Only add SLA message if no lead time warning already set (avoid redundant messaging)
                 if not validation_warning:
-                    validation_warning = f"WARNING: Production date ({target_production_date}) is within {days_until_production} days. " \
+                    validation_warning = f"Production date ({target_production_date}) is within {days_until_production} days. " \
                         f"Standard validation SLA is {total_sla_days} days. Expedited INTERIM review required."
 
         # Get validation type from taxonomy

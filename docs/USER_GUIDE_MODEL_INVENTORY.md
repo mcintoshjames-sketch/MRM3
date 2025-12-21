@@ -20,28 +20,21 @@ This guide explains how to work with the Model Inventory in the Quantitative Met
    - [Inherent Risk Matrix](#inherent-risk-matrix)
    - [Final Risk Tier](#final-risk-tier)
 5. [Model Versions (Changes)](#model-versions-changes)
-   - [Version Lifecycle](#version-lifecycle)
-   - [Creating a New Version](#creating-a-new-version)
-   - [Change Types](#change-types)
-6. [Version Deployment](#version-deployment)
-   - [Deploy Modal](#deploy-modal)
-   - [Deploy Now vs Schedule for Later](#deploy-now-vs-schedule-for-later)
-   - [Regional Approval Lock Icon](#regional-approval-lock-icon)
-   - [My Deployment Tasks](#my-deployment-tasks)
-   - [Bulk Operations](#bulk-operations)
-   - [Ready to Deploy Report](#ready-to-deploy-report)
-7. [Model Relationships](#model-relationships)
+   - [Quick Overview](#quick-overview)
+   - [Deployment Process](#deployment-process)
+   - [Comprehensive Documentation](#comprehensive-documentation)
+6. [Model Relationships](#model-relationships)
    - [Model Hierarchy (Parent-Child)](#model-hierarchy-parent-child)
    - [Data Dependencies](#data-dependencies)
-8. [Model Limitations](#model-limitations)
+7. [Model Limitations](#model-limitations)
    - [Recording a Limitation](#recording-a-limitation)
    - [Significance Levels](#significance-levels)
    - [Managing User Awareness](#managing-user-awareness)
-9. [Model Decommissioning](#model-decommissioning)
+8. [Model Decommissioning](#model-decommissioning)
    - [Initiating Decommissioning](#initiating-decommissioning)
    - [Approval Workflow](#approval-workflow)
    - [Decommissioning Reasons](#decommissioning-reasons)
-10. [Exporting Data](#exporting-data)
+9. [Exporting Data](#exporting-data)
 
 ---
 
@@ -186,35 +179,44 @@ Models are automatically classified as AI/ML based on their selected methodology
 
 The Risk Assessment tab provides a comprehensive framework for evaluating model risk. The assessment combines multiple approaches to determine the final risk classification.
 
-### Qualitative Assessment
+### Qualitative Assessment ⚙
 
-The qualitative assessment evaluates the model across four weighted factors:
+> **Note**: Qualitative risk factors are administrator-configurable. Administrators can add, modify, reorder, or deactivate factors through the system's qualitative factor management interface. Factor weights can be customized and must sum to 100%. Each factor can have custom rating guidance for HIGH, MEDIUM, and LOW ratings.
+
+The qualitative assessment evaluates the model across weighted factors. **By default**, the system includes four standard factors:
 
 | Factor | Weight | Description |
 |--------|--------|-------------|
-| **Reputation, Regulatory & Financial Risk** | 30% | Impact on reputation, compliance, and financial reporting |
-| **Complexity** | 30% | Technical sophistication and methodology complexity |
-| **Usage & Dependency** | 20% | Business reliance and downstream model dependencies |
-| **Stability** | 20% | Likelihood and magnitude of errors |
+| **Reputation, Regulatory Compliance and/or Financial Reporting Risk** | 30% | Impact on reputation, compliance, and financial reporting |
+| **Complexity of the Model** | 30% | Technical sophistication and methodology complexity |
+| **Model Usage and Model Dependency** | 20% | Business reliance and downstream model dependencies |
+| **Stability of the Model** | 20% | Likelihood and magnitude of errors |
 
 For each factor, you assign a rating:
 - **High** (Score: 3)
 - **Medium** (Score: 2)
 - **Low** (Score: 1)
 
+Each factor includes configurable guidance text to help assessors make consistent ratings.
+
 **How the Score is Calculated:**
 
-The system computes a weighted average:
+The system computes a weighted average using the active factors and their configured weights:
 
 ```
-Qualitative Score = (Reputation/Regulatory/Financial × 0.30) + (Complexity × 0.30) +
-                    (Usage/Dependency × 0.20) + (Stability × 0.20)
+Qualitative Score = Σ(Factor Rating × Factor Weight)
+
+Example with default factors:
+  = (Reputation/Regulatory/Financial × 0.30) + (Complexity × 0.30) +
+    (Usage/Dependency × 0.20) + (Stability × 0.20)
 ```
 
 The resulting score maps to a qualitative rating:
 - Score ≥ 2.1 = **HIGH**
 - Score ≥ 1.6 = **MEDIUM**
 - Score < 1.6 = **LOW**
+
+**Weight Snapshots**: When an assessment is saved, the system captures a snapshot of each factor's weight at that time. This ensures historical assessments remain accurate even if administrators later modify factor weights.
 
 ### Quantitative Assessment
 
@@ -250,222 +252,40 @@ The Final Risk Tier represents the official risk classification used for governa
 
 ## Model Versions (Changes)
 
-Model versions track all changes to the model over time, maintaining a complete audit history of modifications.
+Model versions track all changes to the model over time, maintaining a complete audit history of modifications. The version management system ensures that model changes are properly documented, validated, and deployed in a controlled manner.
 
-### Version Lifecycle
+### Quick Overview
 
-Each version progresses through defined states:
+- **Version Lifecycle**: DRAFT → IN_VALIDATION → APPROVED → ACTIVE → SUPERSEDED
+- **Change Types**: MAJOR (significant methodology/data changes) or Minor (bug fixes, calibration updates)
+- **Change Categories** ⚙: Model Theory, Implementation, Data/Input, Parameter, Output/Reporting
+- **Version Blockers**: System prevents creating a new version if an undeployed version exists or if a version is in active validation
 
-| Status | Description | Editable |
-|--------|-------------|----------|
-| **DRAFT** | Version is being prepared, not yet submitted | ✓ Yes |
-| **IN_VALIDATION** | Version is under review by the validation team | ✓ Conditional* |
-| **APPROVED** | Version has passed validation review | ✗ No |
-| **ACTIVE** | Version is currently deployed in production | ✗ No |
-| **SUPERSEDED** | Version was previously active but replaced by a newer version | ✗ No |
+### Deployment Process
 
-*\*Validators and Admins can edit IN_VALIDATION versions while the linked validation request is in Intake, Planning, or In Progress stages. Once validation reaches Review or later, the version is locked.*
+After a version is validated and approved, it must be deployed to production across the appropriate geographic regions. The deployment system provides:
 
-```
-DRAFT → IN_VALIDATION → APPROVED → ACTIVE → SUPERSEDED
-```
+- **Deploy Modal**: Accessed from the Versions tab or Validation Detail page
+- **Regional Deployment**: Deploy to specific regions with separate production dates
+- **Regional Approval Locks** 🔒: Some regions require separate regional approval
+- **My Deployment Tasks**: Track pending, confirmed, and overdue deployment tasks
+- **Bulk Operations**: Confirm, adjust, or cancel multiple deployments at once
+- **Ready to Deploy Report**: Centralized view of all versions ready for production
 
-### Creating a New Version
+### Comprehensive Documentation
 
-To record a model change:
+For complete details on model version management and deployment, including:
+- Version lifecycle states and transitions
+- Version creation blockers and resolutions
+- Change type selection guidance
+- Regional deployment workflows
+- Deployment task management
+- Bulk deployment operations
+- Ready to Deploy report usage
 
-1. Navigate to the model's **Details** page
-2. Click the **Submit Change** button (green) in the page header
-3. Complete the version details:
-   - **Version Number** - Typically follows semantic versioning (e.g., 1.2.0)
-   - **Change Type** - MAJOR or minor
-   - **Change Category** ⚙ - Category from the change taxonomy
-   - **Change Description** - Detailed explanation of what changed
-   - **Production Date** - When the change goes/went into production
+**See the dedicated guide**: [Model Changes User Guide](USER_GUIDE_MODEL_CHANGES.md)
 
-#### Version Creation Blockers
-
-The system enforces rules to ensure only one model version progresses through the validation pipeline at a time. When you attempt to create a new version, you may encounter one of these blockers:
-
-| Blocker | Condition | Resolution |
-|---------|-----------|------------|
-| **B1: Undeployed Version Exists** | A previous version (DRAFT, IN_VALIDATION, or APPROVED) has not yet been deployed to production | Deploy or cancel the existing version before creating a new one |
-| **B2: Version in Active Validation** | A version is currently linked to an active (non-approved) validation request | Wait for the validation to complete, or cancel the validation if the change is no longer needed |
-
-**What You'll See:**
-
-When blocked, the system displays an error message explaining:
-- Which version is blocking new version creation
-- For B2 blockers: A link to the active validation request
-
-**Why These Blockers Exist:**
-
-These constraints ensure:
-- Clear audit trail—each model change is properly validated before the next begins
-- No orphaned versions—changes don't get lost in the pipeline
-- Sequential governance—validation decisions apply to a known version state
-
-### Change Types
-
-| Type | Description | Validation Impact |
-|------|-------------|-------------------|
-| **MAJOR** | Significant changes to methodology, inputs, or outputs | Typically triggers re-validation |
-| **Minor** | Bug fixes, calibration updates, documentation | May not require re-validation |
-
-The change taxonomy ⚙ provides additional categorization:
-- Model Theory Changes
-- Implementation Changes
-- Data/Input Changes
-- Parameter Changes
-- Output/Reporting Changes
-
----
-
-## Version Deployment
-
-After a model version is validated and approved, it must be deployed to production across the appropriate geographic regions. The deployment feature provides tools to manage this rollout process.
-
-### Deploy Modal
-
-The Deploy Modal is accessed from two locations:
-
-1. **Versions Tab**: Click the **Deploy** button next to any APPROVED or ACTIVE version
-2. **Validation Detail Page**: After a validation is approved, click **Deploy Approved Version**
-
-The modal displays:
-
-| Section | Information |
-|---------|-------------|
-| **Version Info** | Version number and change description |
-| **Validation Status** | Whether the version's validation is approved |
-| **Region Checklist** | All regions where the model can be deployed |
-| **Current Deployment** | For each region: current version and deployment date |
-| **Lock Icon 🔒** | Indicates regions requiring separate regional approval |
-
-### Deploy Now vs Schedule for Later
-
-**Deploy Now**
-- Creates a confirmed deployment task
-- Immediately updates the model's regional deployment status
-- Records the actual production date
-- If validation is not approved, requires a **Validation Override Reason** explaining why immediate deployment is necessary
-
-**Schedule for Later**
-- Creates a pending deployment task
-- Allows you to set a future planned production date
-- Task appears in My Deployment Tasks for later confirmation
-- No validation override required (approval may be obtained before the planned date)
-
-**Apply Same Date to All**: When scheduling multiple regions, use this button to set the same planned date for all selected regions.
-
-### Regional Approval Lock Icon
-
-The lock icon 🔒 appears next to regions that require separate regional approval. This occurs when:
-
-1. The region has **requires_regional_approval = true** configured, AND
-2. The region is **NOT** included in the validation request's scope
-
-**What This Means:**
-- If a model's validation covered US and EU regions, but the model is now being deployed to UK (which requires regional approval), the UK region will show a lock icon
-- Deploying to a locked region triggers an automatic regional approval request
-- The regional approval must be granted separately from the main validation
-
-**Footer Note**: The Deploy Modal always displays an explanation of the lock icon at the bottom, along with a count of how many selected regions will require regional approval.
-
-### My Deployment Tasks
-
-Navigate to **My Deployment Tasks** in the sidebar to see all pending deployment tasks assigned to you.
-
-**Task Status Icons:**
-
-| Icon | Status | Meaning |
-|------|--------|---------|
-| 🟢 | Confirmed | Deployment has been completed |
-| 🟡 | Pending | Awaiting confirmation |
-| 🔴 | Overdue | Past the planned production date |
-| ⚫ | Cancelled | Deployment was cancelled |
-
-**Filters Available:**
-
-| Filter | Description |
-|--------|-------------|
-| **All** | Show all tasks |
-| **Overdue** | Tasks past their planned date |
-| **Due Today** | Tasks planned for today |
-| **This Week** | Tasks planned within the current week |
-| **Due Soon** | Tasks due within the next 7 days |
-| **Upcoming** | Tasks with future planned dates |
-
-**Additional Filters:**
-- **Search Box**: Filter by model name, version number, or region code
-- **Date Range**: Select start and end dates to filter by planned production date
-
-### Bulk Operations
-
-Select multiple tasks using the checkboxes to perform bulk operations:
-
-**Confirm Selected**
-- Opens the Bulk Confirmation Modal
-- Shows all selected deployments with lock icons 🔒 where applicable
-- Enter the **Actual Production Date** (single date applies to all)
-- Add optional **Confirmation Notes**
-- If any tasks require validation override, provide the reason
-- Footer note warns which regions will trigger regional approval requests
-
-**Adjust Dates**
-- Change the planned production date for multiple tasks
-- Enter the **New Planned Date**
-- Provide an **Adjustment Reason** (optional)
-
-**Cancel Selected**
-- Cancel multiple pending deployment tasks
-- Provide a **Cancellation Reason** (optional)
-- Cancelled tasks remain in history but cannot be confirmed
-
-**Important Notes:**
-- Only **Pending** tasks can be confirmed, adjusted, or cancelled
-- Confirmed and cancelled tasks are locked from further changes
-- All bulk operations are logged in the audit trail
-
-### Ready to Deploy Report
-
-The **Ready to Deploy** page provides a centralized view of all model versions that are ready for production deployment across different regions. Access it from the Reports section or via the "Ready to Deploy" navigation link.
-
-**Report Structure:**
-
-The report displays one row per (version, region) combination, showing:
-
-| Column | Description |
-|--------|-------------|
-| **Model Name** | Name of the model |
-| **Version** | Version number ready for deployment |
-| **Region** | Geographic region for deployment |
-| **Validation Status** | Current validation state (Approved, In Progress, etc.) |
-| **Version Source** | How the version was determined (see below) |
-| **Last Updated** | When the version information was last modified |
-
-**Understanding Version Source:**
-
-The `Version Source` column indicates how the system determined which version to display:
-
-| Source | Meaning |
-|--------|---------|
-| **Explicit** | The version was explicitly selected or linked to a validation request—this is the exact version that was validated |
-| **Inferred** | The system inferred the relevant version based on model state—typically the most recent approved version without an explicit validation link |
-
-**Why Version Source Matters:**
-
-- **Explicit** versions have a direct audit trail linking the validation decision to a specific version
-- **Inferred** versions require verification that the deployed version matches validation scope
-- Regulatory reviewers may ask about version traceability—the source field provides documentation
-
-**Filters Available:**
-
-| Filter | Description |
-|--------|-------------|
-| **My Models Only** | Show only models where you are the owner or developer |
-| **Region** | Filter by specific geographic region |
-| **Validation Status** | Filter by validation completion state |
+The standalone guide provides step-by-step instructions, visual diagrams, best practices, and frequently asked questions for managing model versions and deployments.
 
 ---
 

@@ -127,6 +127,7 @@ export interface OverallAssessmentResponse {
     rating: string | null;
     sections_count: number;
     rated_sections_count: number;
+    overall_assessment_narrative: string | null;
 }
 
 /**
@@ -223,6 +224,32 @@ export async function updateSingleRating(
     const response = await client.patch(
         `${BASE_URL}/validation/${requestId}/ratings/${criterionCode}`,
         data
+    );
+    return response.data;
+}
+
+/**
+ * Update the overall assessment narrative.
+ */
+export async function updateOverallNarrative(
+    requestId: number,
+    narrative: string | null
+): Promise<ScorecardFullResponse> {
+    const response = await client.patch(
+        `${BASE_URL}/validation/${requestId}/overall-narrative`,
+        { overall_assessment_narrative: narrative }
+    );
+    return response.data;
+}
+
+/**
+ * Export the validation scorecard as a PDF.
+ * Returns a Blob that can be downloaded by the browser.
+ */
+export async function exportScorecardPDF(requestId: number): Promise<Blob> {
+    const response = await client.get(
+        `${BASE_URL}/validation/${requestId}/export-pdf`,
+        { responseType: 'blob' }
     );
     return response.data;
 }
@@ -479,6 +506,8 @@ export default {
     getScorecard,
     saveScorecard,
     updateSingleRating,
+    updateOverallNarrative,
+    exportScorecardPDF,
     getRatingColorClass,
     getScoreColorClass,
     RATING_OPTIONS,

@@ -31,16 +31,17 @@ interface RegionalVersionsData {
 
 interface RegionalVersionsTableProps {
   modelId: number;
+  refreshTrigger?: number;
 }
 
-const RegionalVersionsTable: React.FC<RegionalVersionsTableProps> = ({ modelId }) => {
+const RegionalVersionsTable: React.FC<RegionalVersionsTableProps> = ({ modelId, refreshTrigger }) => {
   const [data, setData] = useState<RegionalVersionsData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     fetchRegionalVersions();
-  }, [modelId]);
+  }, [modelId, refreshTrigger]);
 
   const fetchRegionalVersions = async () => {
     try {

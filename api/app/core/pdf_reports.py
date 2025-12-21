@@ -1,7 +1,10 @@
-"""PDF Report Generation for Performance Monitoring Cycles.
+"""PDF Report Generation for Performance Monitoring Cycles and Validation Scorecards.
 
-This module provides the MonitoringCycleReportPDF class for generating
-professional PDF reports of completed monitoring cycles, including:
+This module provides PDF generation classes for:
+1. MonitoringCycleReportPDF - Performance monitoring cycle reports
+2. ValidationScorecardPDF - Validation scorecard one-page exports
+
+Features:
 - Cover page with branding
 - Executive summary with outcome breakdown
 - Detailed results table with color-coded outcomes
@@ -48,6 +51,24 @@ HEADER_TEXT = (255, 255, 255)   # White
 # Section header colors
 SECTION_BG = (243, 244, 246)    # Gray-100
 SECTION_TEXT = (31, 41, 55)     # Gray-800
+
+# Scorecard Rating Colors (background colors for cells)
+SCORECARD_COLORS = {
+    'Green': (165, 214, 167),    # #a5d6a7
+    'Green-': (165, 214, 167),   # #a5d6a7
+    'Yellow+': (255, 241, 118),  # #fff176
+    'Yellow': (255, 241, 118),   # #fff176
+    'Yellow-': (255, 235, 59),   # #ffeb3b
+    'Red': (239, 154, 154),      # #ef9a9a
+    'N/A': (245, 245, 245),      # Light gray
+}
+
+
+def scorecard_rating_to_color(rating: Optional[str]) -> Tuple[int, int, int]:
+    """Get background color tuple for a scorecard rating."""
+    if rating is None:
+        return SCORECARD_COLORS['N/A']
+    return SCORECARD_COLORS.get(rating, SCORECARD_COLORS['N/A'])
 
 
 def outcome_to_bg_color(outcome: Optional[str]) -> Tuple[int, int, int]:
@@ -858,3 +879,475 @@ class MonitoringCycleReportPDF(FPDF):
 
         # Return PDF bytes
         return bytes(self.output())
+
+
+class ValidationScorecardPDF(FPDF):
+    """Professional PDF generator for one-page Validation Scorecard export.
+
+    Generates a formal scorecard document suitable for inclusion in validation reports,
+    containing:
+    - Header with model metadata and submission type
+    - Overall assessment with rating badge and narrative
+    - Criteria table grouped by sections with color-coded ratings
+    - Footer with model usage and region checkboxes
+    """
+
+    def __init__(
+        self,
+        validation_request: Dict[str, Any],
+        model: Dict[str, Any],
+        scorecard_data: Dict[str, Any],
+        dependencies: Optional[Dict[str, List[Dict[str, Any]]]] = None,
+        logo_path: Optional[str] = None
+    ):
+        """Initialize the Validation Scorecard PDF.
+
+        Args:
+            validation_request: Validation request data with validation_type
+            model: Model data with owner, model_type, deployed_regions
+            scorecard_data: Scorecard response with criteria_details, section_summaries, overall_assessment
+            dependencies: Optional dict with 'upstream' and 'downstream' lists
+            logo_path: Optional path to company logo
+        """
+        super().__init__(orientation='P', unit='mm', format='A4')
+        self.validation_request = validation_request
+        self.model = model
+        self.scorecard_data = scorecard_data
+        self.dependencies = dependencies or {'upstream': [], 'downstream': []}
+        self.logo_path = logo_path
+
+        # Page settings
+        self.set_auto_page_break(auto=True, margin=15)
+        self.set_margins(15, 15, 15)
+
+        # Group criteria by section
+        self._group_criteria_by_section()
+
+    def _group_criteria_by_section(self):
+        """Group criteria details by section for table rendering."""
+        self.sections = {}
+        criteria_details = self.scorecard_data.get('criteria_details', [])
+
+        for criterion in criteria_details:
+            section_code = criterion.get('section_code', 'OTHER')
+            if section_code not in self.sections:
+                self.sections[section_code] = {
+                    'criteria': [],
+                    'name': None
+                }
+            self.sections[section_code]['criteria'].append(criterion)
+
+        # Get section names from section_summaries
+        for summary in self.scorecard_data.get('section_summaries', []):
+            section_code = summary.get('section_code')
+            if section_code in self.sections:
+                self.sections[section_code]['name'] = summary.get('section_name', section_code)
+
+    def header(self):
+        """Add minimal header - logo only."""
+        if self.logo_path and os.path.exists(self.logo_path):
+            try:
+                self.image(self.logo_path, x=15, y=8, h=10)
+            except Exception:
+                pass
+        self.ln(5)
+
+    def footer(self):
+        """Add page footer."""
+        self.set_y(-12)
+        self.set_font('helvetica', 'I', 8)
+        self.set_text_color(128, 128, 128)
+
+        # Request reference
+        request_id = self.validation_request.get('request_id', '')
+        model_name = self.model.get('model_name', '')
+        self.cell(0, 5, f'Validation Request #{request_id} - {model_name}', align='C')
+
+    def add_header_section(self):
+        """Add the header section with model metadata and checkboxes."""
+        self.set_font('helvetica', 'B', 14)
+        self.set_text_color(*SECTION_TEXT)
+        self.cell(0, 8, 'Validation Scorecard', align='C', ln=True)
+        self.ln(3)
+
+        # Draw metadata box
+        box_y = self.get_y()
+        self.set_draw_color(200, 200, 200)
+        self.rect(15, box_y, 180, 35)
+
+        # Left column
+        self.set_xy(18, box_y + 3)
+        self._add_metadata_row('Model Developer/Owner:', self._get_owner_name())
+        self._add_metadata_row('Model Name:', self.model.get('model_name', 'Unknown'))
+        self._add_metadata_row('Related Models:', self._get_related_models_text())
+
+        # Right column - Submission Type checkboxes
+        self.set_xy(115, box_y + 3)
+        self.set_font('helvetica', 'B', 9)
+        self.cell(0, 5, 'Submission Type:', ln=True)
+
+        validation_type = self._get_validation_type()
+        submission_types = ['Initial Validation', 'Annual Review', 'Model Change', 'Ad-Hoc', 'Other']
+
+        self.set_font('helvetica', '', 8)
+        for stype in submission_types:
+            self.set_x(117)
+            checked = '1' if validation_type and stype.lower() in validation_type.lower() else '0'
+            # Draw checkbox
+            self._draw_checkbox(self.get_x(), self.get_y() + 1, checked == '1')
+            self.set_x(self.get_x() + 5)
+            self.cell(0, 4.5, stype, ln=True)
+
+        self.set_y(box_y + 38)
+
+    def _add_metadata_row(self, label: str, value: str):
+        """Add a label-value row in metadata section."""
+        x = self.get_x()
+        self.set_font('helvetica', 'B', 9)
+        self.cell(35, 5, label)
+        self.set_font('helvetica', '', 9)
+        # Truncate long values
+        max_len = 40
+        display_value = value[:max_len] + '...' if len(value) > max_len else value
+        self.cell(55, 5, display_value, ln=True)
+        self.set_x(x)
+
+    def _draw_checkbox(self, x: float, y: float, checked: bool):
+        """Draw a checkbox at position."""
+        self.set_draw_color(100, 100, 100)
+        self.rect(x, y, 3, 3)
+        if checked:
+            self.set_fill_color(31, 41, 55)
+            self.rect(x + 0.5, y + 0.5, 2, 2, 'F')
+
+    def _get_owner_name(self) -> str:
+        """Get model owner name."""
+        owner = self.model.get('owner', {})
+        if isinstance(owner, dict):
+            return owner.get('full_name', owner.get('email', 'Unknown'))
+        return str(owner) if owner else 'Unknown'
+
+    def _get_related_models_text(self) -> str:
+        """Get related models text from dependencies."""
+        upstream = self.dependencies.get('upstream', [])
+        downstream = self.dependencies.get('downstream', [])
+
+        related = []
+        for dep in upstream[:2]:  # Limit to 2 upstream
+            name = dep.get('feeder_model', {}).get('model_name', '')
+            if name:
+                related.append(name)
+        for dep in downstream[:2]:  # Limit to 2 downstream
+            name = dep.get('consumer_model', {}).get('model_name', '')
+            if name:
+                related.append(name)
+
+        if not related:
+            return 'None'
+        return ', '.join(related[:3])  # Max 3 names
+
+    def _get_validation_type(self) -> str:
+        """Get validation type label."""
+        val_type = self.validation_request.get('validation_type', {})
+        if isinstance(val_type, dict):
+            return val_type.get('label', val_type.get('code', ''))
+        return str(val_type) if val_type else ''
+
+    def add_overall_assessment(self):
+        """Add overall assessment section with rating badge and narrative."""
+        self._add_section_header('Overall Assessment')
+        self.ln(3)
+
+        overall = self.scorecard_data.get('overall_assessment', {})
+        rating = overall.get('rating', 'N/A')
+        narrative = overall.get('overall_assessment_narrative', '')
+
+        # Rating badge
+        badge_color = scorecard_rating_to_color(rating)
+        self.set_fill_color(*badge_color)
+        self.set_font('helvetica', 'B', 12)
+        self.set_text_color(*SECTION_TEXT)
+
+        badge_width = 35
+        badge_x = 15
+        self.set_x(badge_x)
+        self.cell(badge_width, 10, rating or 'N/A', border=1, align='C', fill=True)
+
+        # Score info
+        numeric_score = overall.get('numeric_score', 0)
+        rated_sections = overall.get('rated_sections_count', 0)
+        total_sections = overall.get('sections_count', 0)
+
+        self.set_font('helvetica', '', 9)
+        self.set_x(badge_x + badge_width + 5)
+        self.cell(0, 10, f'Score: {numeric_score} | Sections Rated: {rated_sections}/{total_sections}')
+        self.ln(12)
+
+        # Narrative
+        if narrative:
+            self.set_font('helvetica', 'B', 9)
+            self.cell(0, 5, 'Summary:', ln=True)
+            self.set_font('helvetica', '', 9)
+            self.set_fill_color(250, 250, 250)
+            self.multi_cell(180, 5, narrative, border=0, fill=True)
+        else:
+            self.set_font('helvetica', 'I', 9)
+            self.set_text_color(128, 128, 128)
+            self.cell(0, 5, 'No overall assessment narrative provided.', ln=True)
+            self.set_text_color(*SECTION_TEXT)
+
+        self.ln(3)
+
+    def add_scorecard_table(self):
+        """Add the main scorecard criteria table."""
+        self._add_section_header('Scorecard Assessment')
+        self.ln(3)
+
+        # Column widths (total = 180mm)
+        col_widths = [45, 18, 45, 72]  # Criteria, Rating, Description, Comments
+        headers = ['Criteria', 'Rating', 'Description', 'Comments']
+
+        # Table header
+        self.set_fill_color(*HEADER_BG)
+        self.set_text_color(*HEADER_TEXT)
+        self.set_font('helvetica', 'B', 8)
+
+        for header, width in zip(headers, col_widths):
+            self.cell(width, 7, header, border=1, align='C', fill=True)
+        self.ln()
+
+        # Sort sections by code (1.0, 2.0, 3.0, etc.)
+        sorted_sections = sorted(self.sections.items(), key=lambda x: x[0])
+
+        self.set_font('helvetica', '', 8)
+        self.set_text_color(*SECTION_TEXT)
+
+        for section_code, section_data in sorted_sections:
+            # Check for page break
+            if self.get_y() > 250:
+                self.add_page()
+                # Repeat header
+                self.set_fill_color(*HEADER_BG)
+                self.set_text_color(*HEADER_TEXT)
+                self.set_font('helvetica', 'B', 8)
+                for header, width in zip(headers, col_widths):
+                    self.cell(width, 7, header, border=1, align='C', fill=True)
+                self.ln()
+                self.set_font('helvetica', '', 8)
+                self.set_text_color(*SECTION_TEXT)
+
+            # Section header row
+            section_name = section_data.get('name', section_code)
+            self.set_fill_color(*SECTION_BG)
+            self.set_font('helvetica', 'B', 8)
+            self.cell(sum(col_widths), 6, f'{section_code} - {section_name}', border=1, fill=True, ln=True)
+            self.set_font('helvetica', '', 8)
+
+            # Criteria rows
+            for criterion in section_data['criteria']:
+                # Check for page break
+                if self.get_y() > 265:
+                    self.add_page()
+                    # Repeat header
+                    self.set_fill_color(*HEADER_BG)
+                    self.set_text_color(*HEADER_TEXT)
+                    self.set_font('helvetica', 'B', 8)
+                    for header, width in zip(headers, col_widths):
+                        self.cell(width, 7, header, border=1, align='C', fill=True)
+                    self.ln()
+                    self.set_font('helvetica', '', 8)
+                    self.set_text_color(*SECTION_TEXT)
+
+                self._draw_criterion_row(criterion, col_widths)
+
+    def _draw_criterion_row(self, criterion: Dict[str, Any], col_widths: List[int]):
+        """Draw a single criterion row with wrapped text."""
+        criterion_name = criterion.get('criterion_name', criterion.get('criterion_code', ''))
+        rating = criterion.get('rating', '')
+        description = criterion.get('description', '') or ''
+        comments = criterion.get('comments', '') or ''
+
+        # Calculate row height based on content
+        # Estimate characters per line
+        chars_per_line_desc = max(1, int(col_widths[2] / 1.8))
+        chars_per_line_comm = max(1, int(col_widths[3] / 1.8))
+
+        desc_lines = max(1, len(description) // chars_per_line_desc + 1) if description else 1
+        comm_lines = max(1, len(comments) // chars_per_line_comm + 1) if comments else 1
+        name_lines = max(1, len(criterion_name) // 25 + 1)
+
+        max_lines = min(4, max(desc_lines, comm_lines, name_lines))  # Cap at 4 lines
+        row_height = max(6, max_lines * 4)
+
+        # Rating color
+        rating_color = scorecard_rating_to_color(rating)
+
+        # Starting Y position
+        y_start = self.get_y()
+        x_start = self.get_x()
+
+        # Criteria name cell
+        self.set_fill_color(255, 255, 255)
+        self.rect(x_start, y_start, col_widths[0], row_height)
+        self.set_xy(x_start + 1, y_start + 1)
+        self.multi_cell(col_widths[0] - 2, 4, criterion_name[:60], border=0)
+
+        # Rating cell (centered, colored)
+        self.set_fill_color(*rating_color)
+        x_rating = x_start + col_widths[0]
+        self.rect(x_rating, y_start, col_widths[1], row_height, 'DF')
+        self.set_xy(x_rating, y_start + (row_height - 4) / 2)
+        self.set_font('helvetica', 'B', 8)
+        self.cell(col_widths[1], 4, rating or '-', align='C')
+        self.set_font('helvetica', '', 8)
+
+        # Description cell
+        self.set_fill_color(255, 255, 255)
+        x_desc = x_rating + col_widths[1]
+        self.rect(x_desc, y_start, col_widths[2], row_height)
+        self.set_xy(x_desc + 1, y_start + 1)
+        # Truncate description
+        max_desc_chars = chars_per_line_desc * max_lines
+        truncated_desc = description[:max_desc_chars] + '...' if len(description) > max_desc_chars else description
+        self.multi_cell(col_widths[2] - 2, 4, truncated_desc, border=0)
+
+        # Comments cell
+        x_comm = x_desc + col_widths[2]
+        self.rect(x_comm, y_start, col_widths[3], row_height)
+        self.set_xy(x_comm + 1, y_start + 1)
+        # Truncate comments
+        max_comm_chars = chars_per_line_comm * max_lines
+        truncated_comm = comments[:max_comm_chars] + '...' if len(comments) > max_comm_chars else comments
+        self.multi_cell(col_widths[3] - 2, 4, truncated_comm, border=0)
+
+        # Draw all borders
+        self.set_draw_color(200, 200, 200)
+        self.line(x_start, y_start, x_start + sum(col_widths), y_start)
+        self.line(x_start, y_start + row_height, x_start + sum(col_widths), y_start + row_height)
+        for i, w in enumerate(col_widths):
+            x = x_start + sum(col_widths[:i+1])
+            self.line(x, y_start, x, y_start + row_height)
+        self.line(x_start, y_start, x_start, y_start + row_height)
+
+        # Move to next row
+        self.set_xy(x_start, y_start + row_height)
+
+    def add_footer_metadata(self):
+        """Add footer section with Model Usage and Region checkboxes."""
+        # Check if we need a new page
+        if self.get_y() > 240:
+            self.add_page()
+
+        self.ln(5)
+        self._add_section_header('Model Classification')
+        self.ln(3)
+
+        # Two column layout
+        col_width = 90
+
+        # Model Usage (left column)
+        self.set_font('helvetica', 'B', 9)
+        self.cell(col_width, 5, 'Model Usage:', ln=False)
+
+        # Region of Usage (right column header)
+        self.cell(col_width, 5, 'Region of Usage:', ln=True)
+
+        model_type = self._get_model_type()
+        deployed_regions = self._get_deployed_regions()
+
+        # Model usage options
+        usage_types = ['Scoring', 'Pricing', 'Risk Management', 'Forecasting', 'Regulatory', 'Other']
+
+        self.set_font('helvetica', '', 8)
+
+        for i, usage in enumerate(usage_types):
+            self.set_x(15)
+            checked = model_type and usage.lower() in model_type.lower()
+            self._draw_checkbox(self.get_x(), self.get_y() + 1, checked)
+            self.set_x(self.get_x() + 5)
+            self.cell(col_width - 5, 4.5, usage, ln=False)
+
+            # Region checkbox (right column)
+            regions = ['United States', 'United Kingdom', 'EMEA', 'APAC', 'LATAM', 'Global']
+            if i < len(regions):
+                region = regions[i]
+                self.set_x(15 + col_width)
+                checked = any(region.lower() in r.lower() for r in deployed_regions)
+                self._draw_checkbox(self.get_x(), self.get_y() + 1, checked)
+                self.set_x(self.get_x() + 5)
+                self.cell(col_width - 5, 4.5, region)
+
+            self.ln()
+
+    def _get_model_type(self) -> str:
+        """Get model type label."""
+        model_type = self.model.get('model_type', {})
+        if isinstance(model_type, dict):
+            return model_type.get('label', model_type.get('code', ''))
+        return str(model_type) if model_type else ''
+
+    def _get_deployed_regions(self) -> List[str]:
+        """Get list of deployed region names."""
+        regions = self.model.get('deployed_regions', [])
+        region_names = []
+        for region in regions:
+            if isinstance(region, dict):
+                region_names.append(region.get('name', region.get('code', '')))
+            else:
+                region_names.append(str(region))
+        return region_names
+
+    def _add_section_header(self, title: str):
+        """Add a styled section header."""
+        self.set_fill_color(*SECTION_BG)
+        self.set_text_color(*SECTION_TEXT)
+        self.set_font('helvetica', 'B', 10)
+        self.cell(0, 7, title, border=0, fill=True, ln=True)
+        self.set_draw_color(100, 100, 100)
+        self.line(15, self.get_y(), 195, self.get_y())
+
+    def generate(self) -> bytes:
+        """Generate the complete Validation Scorecard PDF.
+
+        Returns:
+            PDF file as bytes
+        """
+        self.add_page()
+
+        # Build the report sections
+        self.add_header_section()
+        self.add_overall_assessment()
+        self.add_scorecard_table()
+        self.add_footer_metadata()
+
+        # Return PDF bytes
+        return bytes(self.output())
+
+
+def generate_validation_scorecard_pdf(
+    validation_request: Dict[str, Any],
+    model: Dict[str, Any],
+    scorecard_data: Dict[str, Any],
+    dependencies: Optional[Dict[str, List[Dict[str, Any]]]] = None,
+    logo_path: Optional[str] = None
+) -> bytes:
+    """Generate a Validation Scorecard PDF.
+
+    Args:
+        validation_request: Validation request data
+        model: Model data with relationships
+        scorecard_data: Scorecard response from API
+        dependencies: Optional upstream/downstream dependencies
+        logo_path: Optional path to company logo
+
+    Returns:
+        PDF file as bytes
+    """
+    pdf = ValidationScorecardPDF(
+        validation_request=validation_request,
+        model=model,
+        scorecard_data=scorecard_data,
+        dependencies=dependencies,
+        logo_path=logo_path
+    )
+    return pdf.generate()
