@@ -124,10 +124,14 @@ export default function ActionPlanModal({ recommendation, users, onClose, onSucc
 
         try {
             setLoading(true);
-            await recommendationsApi.reviewActionPlan(recommendation.recommendation_id, {
-                decision: reviewDecision,
-                comments: reviewComments.trim() || undefined
-            });
+            if (reviewDecision === 'APPROVE') {
+                await recommendationsApi.finalize(recommendation.recommendation_id);
+            } else {
+                await recommendationsApi.requestActionPlanRevisions(
+                    recommendation.recommendation_id,
+                    reviewComments.trim()
+                );
+            }
             onSuccess();
         } catch (err: any) {
             setError(err.response?.data?.detail || 'Failed to submit review');
