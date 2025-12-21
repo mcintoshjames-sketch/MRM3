@@ -633,8 +633,8 @@ If you are a designated approver:
    - All metric results
    - The monitoring report (linked)
    - Any breach justifications
-5. Click **"Approve"** or **"Reject"**
-6. Add comments explaining your decision
+5. Click **"Decision"** to open the decision modal
+6. Select your decision (Approve or Reject) and add comments
 
 ### Approval Workflow
 
@@ -659,7 +659,7 @@ Cycle in PENDING_APPROVAL
 In cases where the designated approver is unavailable, an Administrator can approve on their behalf:
 
 1. Admin navigates to the approval requirement
-2. Admin clicks **"Approve on Behalf"**
+2. Admin clicks **"Decision on Behalf"**
 3. Admin must provide **approval evidence** (e.g., email confirmation, meeting minutes)
 4. The system records:
    - That this was a proxy approval

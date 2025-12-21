@@ -2520,7 +2520,7 @@ export default function ValidationRequestDetailPage() {
                                                                 ? `Cannot submit approval until request reaches 'Pending Approval' status (currently: ${request?.current_status?.label || 'Unknown'})`
                                                                 : undefined}
                                                         >
-                                                            {user?.role === 'Admin' && user?.user_id !== approval.approver.user_id ? 'Approve on Behalf' : 'Submit'}
+                                                            {user?.role === 'Admin' && user?.user_id !== approval.approver.user_id ? 'Decision on Behalf' : 'Decision'}
                                                         </button>
                                                     )}
                                                 {(approval.approval_status === 'Approved' || approval.approval_status === 'Rejected') && approval.approver &&
@@ -3200,13 +3200,13 @@ export default function ValidationRequestDetailPage() {
                 <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
                     <div className="bg-white rounded-lg p-6 w-full max-w-md">
                         <h3 className="text-lg font-bold mb-4">
-                            {approvalUpdate.isProxyApproval ? 'Proxy Approval (On Behalf)' : 'Submit Approval'}
+                            {approvalUpdate.isProxyApproval ? 'Proxy Decision (On Behalf)' : 'Submit Decision'}
                         </h3>
 
                         {approvalUpdate.isProxyApproval && request && (
                             <div className="mb-4 p-3 bg-yellow-50 border border-yellow-200 rounded">
                                 <p className="text-sm font-medium text-yellow-800">
-                                    You are approving on behalf of: {request.approvals.find(a => a.approval_id === approvalUpdate.approval_id)?.approver?.full_name || 'Unassigned Approver'}
+                                    You are submitting a decision on behalf of: {request.approvals.find(a => a.approval_id === approvalUpdate.approval_id)?.approver?.full_name || 'Unassigned Approver'}
                                 </p>
                                 <p className="text-xs text-yellow-700 mt-1">
                                     Certification required: You must attest that you have obtained proper authorization.
@@ -3232,7 +3232,6 @@ export default function ValidationRequestDetailPage() {
                             >
                                 <option value="">Select Decision</option>
                                 <option value="Approved">Approve</option>
-                                <option value="Rejected">Reject</option>
                                 {/* Only Global and Regional approvers can send back for revision */}
                                 {request && (() => {
                                     const currentApproval = request.approvals.find(a => a.approval_id === approvalUpdate.approval_id);

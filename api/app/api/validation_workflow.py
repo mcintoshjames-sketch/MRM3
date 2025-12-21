@@ -4226,7 +4226,7 @@ def submit_approval(
     approval.approval_status = update_data.approval_status
     approval.comments = update_data.comments
 
-    if update_data.approval_status in ["Approved", "Rejected"]:
+    if update_data.approval_status == "Approved":
         approval.approved_at = utc_now()
     elif update_data.approval_status == "Pending":
         # Clear approved_at when withdrawing approval
@@ -7391,7 +7391,7 @@ def submit_conditional_approval(
 
     Any Admin can approve on behalf of any approver role by providing:
     - approver_role_id: The role being approved
-    - approval_status: "Approved" or "Rejected"
+    - approval_status: "Approved" or "Sent Back" (to reject entirely, cancel the workflow instead)
     - approval_evidence: Description of evidence (meeting minutes, email, etc.)
     - comments: Optional additional comments
     """
@@ -7430,7 +7430,7 @@ def submit_conditional_approval(
             detail="This approval requirement has been voided"
         )
 
-    if approval.approval_status in ("Approved", "Rejected"):
+    if approval.approval_status in ("Approved", "Sent Back"):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"This approval has already been {approval.approval_status.lower()}"

@@ -251,8 +251,11 @@ export default function ConditionalApprovalsSection({ requestId, userRole, onUpd
                                     required
                                 >
                                     <option value="Approved">Approved</option>
-                                    <option value="Rejected">Rejected</option>
+                                    <option value="Sent Back">Sent Back for Revision</option>
                                 </select>
+                                <p className="text-xs text-gray-500 mt-1">
+                                    To reject this validation entirely, cancel the validation workflow instead.
+                                </p>
                             </div>
 
                             <div className="mb-4">

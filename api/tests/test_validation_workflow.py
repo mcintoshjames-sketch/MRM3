@@ -1172,11 +1172,12 @@ class TestApprovalWorkflow:
         # Check that decision timestamp was recorded
         assert "updated_at" in data or "created_at" in data
 
-    def test_reject_approval(self, client, admin_headers, sample_model, admin_user, workflow_taxonomies, db_session, validator_user, qualitative_factors):
-        """Test rejecting an approval."""
-        # Create risk assessment for the model (required before transitioning to REVIEW)
-        create_complete_risk_assessment(db_session, sample_model.model_id, qualitative_factors)
+    def test_rejected_approval_status_no_longer_allowed(self, client, admin_headers, sample_model, admin_user, workflow_taxonomies):
+        """Test that 'Rejected' approval status is no longer valid.
 
+        As of the workflow update, 'Rejected' is not a valid approval status.
+        Users should use 'Sent Back' for revisions or cancel the workflow entirely.
+        """
         target_date = (date.today() + timedelta(days=30)).isoformat()
         create_response = client.post(
             "/validation-workflow/requests/",
@@ -1190,49 +1191,6 @@ class TestApprovalWorkflow:
         )
         request_id = create_response.json()["request_id"]
 
-        # Assign validator (transitions to PLANNING)
-        client.post(
-            f"/validation-workflow/requests/{request_id}/assignments",
-            headers=admin_headers,
-            json={
-                "validator_id": validator_user.user_id,
-                "is_primary": True,
-                "independence_attestation": True
-            }
-        )
-
-        # Transition: PLANNING → IN_PROGRESS → REVIEW
-        for status_key in ["in_progress", "review"]:
-            client.patch(
-                f"/validation-workflow/requests/{request_id}/status",
-                headers=admin_headers,
-                json={
-                    "new_status_id": workflow_taxonomies["status"][status_key].value_id,
-                    "change_reason": f"Moving to {status_key}"
-                }
-            )
-
-        # Create outcome (required before PENDING_APPROVAL)
-        client.post(
-            f"/validation-workflow/requests/{request_id}/outcome",
-            headers=admin_headers,
-            json={
-                "overall_rating_id": workflow_taxonomies["rating"]["fit_for_purpose"].value_id,
-                "executive_summary": "Validation complete",
-                "effective_date": date.today().isoformat()
-            }
-        )
-
-        # Transition to PENDING_APPROVAL (required before submitting approvals)
-        client.patch(
-            f"/validation-workflow/requests/{request_id}/status",
-            headers=admin_headers,
-            json={
-                "new_status_id": workflow_taxonomies["status"]["pending_approval"].value_id,
-                "change_reason": "Ready for approval"
-            }
-        )
-
         approval_response = client.post(
             f"/validation-workflow/requests/{request_id}/approvals",
             headers=admin_headers,
@@ -1243,16 +1201,19 @@ class TestApprovalWorkflow:
         )
         approval_id = approval_response.json()["approval_id"]
 
+        # Attempt to submit "Rejected" status - should fail with 422
         response = client.patch(
             f"/validation-workflow/approvals/{approval_id}",
             headers=admin_headers,
             json={
                 "approval_status": "Rejected",
-                "comments": "Additional analysis required"
+                "comments": "Attempting rejection"
             }
         )
-        assert response.status_code == 200
-        assert response.json()["approval_status"] == "Rejected"
+        assert response.status_code == 422  # Validation error - Rejected is not allowed
+        # Verify error mentions the invalid status
+        error_detail = response.json()["detail"]
+        assert any("approval_status" in str(e.get("loc", "")) for e in error_detail)
 
     def test_invalid_approval_status(self, client, admin_headers, sample_model, admin_user, workflow_taxonomies):
         """Test that invalid approval status is rejected."""

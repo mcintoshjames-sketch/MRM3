@@ -167,7 +167,7 @@ def get_news_feed(
         ValidationRequest.request_id == validation_request_models.c.request_id
     ).filter(
         validation_request_models.c.model_id.in_(accessible_model_ids),
-        ValidationApproval.approval_status.in_(["Approved", "Rejected"]),
+        ValidationApproval.approval_status.in_(["Approved", "Rejected", "Sent Back"]),
         ValidationApproval.approved_at.isnot(None)
     ).order_by(ValidationApproval.approved_at.desc()).limit(50).all()
 
@@ -179,7 +179,13 @@ def get_news_feed(
         first_model_id = next((m.model_id for m in approval.request.models if m.model_id in accessible_model_ids), None)
 
         # Build approval description
-        approval_status = "approved" if approval.approval_status == "Approved" else "rejected"
+        # Map status to display action (keeping "rejected" for historical records)
+        if approval.approval_status == "Approved":
+            approval_status = "approved"
+        elif approval.approval_status == "Sent Back":
+            approval_status = "sent_back"
+        else:
+            approval_status = "rejected"
         role_text = approval.approver_role or "Approver"
 
         # Only add region if not already in the role text

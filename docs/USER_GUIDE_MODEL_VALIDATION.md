@@ -493,13 +493,14 @@ When you're a required approver:
 1. Navigate to the **Approvals** tab
 2. Find your pending approval
 3. Review the validation outcome and supporting documentation
-4. Click **"Submit Approval"**
+4. Click **"Decision"** (or **"Decision on Behalf"** if you're an Admin acting for the designated approver)
 5. Choose your decision:
    - **Approved**: You agree with the outcome
-   - **Rejected**: You disagree with the outcome (rare, requires justification)
-   - **Sent Back**: Request revisions before making a decision
+   - **Sent Back**: Request revisions before making a decision (returns to REVISION status)
 6. Add comments explaining your decision
 7. Submit
+
+> **Note**: To reject a validation entirely (e.g., wrong scope, invalid model), **cancel the workflow** rather than using the approval process. Navigate to the validation request and use "Cancel Workflow" with a cancellation reason. This allows a new validation request to be created with correct parameters if needed.
 
 ### Automatic Status Transitions
 
@@ -1011,8 +1012,10 @@ A: Administrators configure policies through the Taxonomy and Validation Policy 
 |--------|-------------|
 | **Pending** | Awaiting approver action |
 | **Approved** | Approver granted approval |
-| **Rejected** | Approver rejected outcome |
-| **Sent Back** | Approver requests revisions |
+| **Sent Back** | Approver requests revisions (returns to REVISION status) |
+| **Rejected** | *(Historical only)* Legacy status from prior workflow version |
+
+> **Note**: "Rejected" is no longer available for new approvals. Existing records with this status are preserved for audit purposes. Use "Sent Back" for revisions or cancel the workflow for true rejections.
 
 ---
 

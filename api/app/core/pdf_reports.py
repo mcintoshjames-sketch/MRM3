@@ -829,7 +829,9 @@ class MonitoringCycleReportPDF(FPDF):
             if status == 'Approved':
                 self.set_fill_color(*BG_GREEN)
             elif status == 'Rejected':
-                self.set_fill_color(*BG_RED)
+                self.set_fill_color(*BG_RED)  # Keep for historical records
+            elif status == 'Sent Back':
+                self.set_fill_color(*BG_YELLOW)
             else:
                 self.set_fill_color(*BG_GRAY)
 

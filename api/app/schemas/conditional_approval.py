@@ -118,7 +118,7 @@ class RequiredApproverRole(BaseModel):
     role_id: int
     role_name: str
     description: Optional[str]
-    approval_status: Optional[str] = Field(None, description="Pending, Approved, Rejected, or None if not yet created")
+    approval_status: Optional[str] = Field(None, description="Pending, Approved, Sent Back, or None if not yet created")
     approval_id: Optional[int] = None
 
 
@@ -137,7 +137,11 @@ class ConditionalApprovalsEvaluationResponse(BaseModel):
 # Submit conditional approval
 class SubmitConditionalApprovalRequest(BaseModel):
     approver_role_id: int
-    approval_status: str = Field(..., pattern="^(Approved|Rejected)$")
+    approval_status: str = Field(
+        ...,
+        pattern="^(Approved|Sent Back)$",
+        description="'Approved' or 'Sent Back' for revision. To reject entirely, cancel the validation workflow instead."
+    )
     approval_evidence: str = Field(..., min_length=1, description="Description of approval evidence (meeting minutes, email, etc.)")
     comments: Optional[str] = None
 

@@ -365,15 +365,15 @@ class ValidationApprovalCreate(ValidationApprovalBase):
 
 class ValidationApprovalUpdate(BaseModel):
     """Schema for updating a validation approval (submitting approval)."""
-    approval_status: str  # Pending, Approved, Rejected, Sent Back
+    approval_status: str  # Pending, Approved, Sent Back (Rejected removed - use workflow cancellation instead)
     comments: Optional[str] = None
 
     @field_validator('approval_status')
     @classmethod
     def validate_status(cls, v):
-        allowed = ['Pending', 'Approved', 'Rejected', 'Sent Back']
+        allowed = ['Pending', 'Approved', 'Sent Back']
         if v not in allowed:
-            raise ValueError(f'approval_status must be one of {allowed}')
+            raise ValueError(f'approval_status must be one of {allowed}. To reject a validation, cancel the workflow instead.')
         return v
 
 
