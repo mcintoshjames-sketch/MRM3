@@ -231,13 +231,10 @@ deploy_to_prod() {
         cd /opt/mrm
 
         echo "Pulling latest changes..."
-        sudo git pull origin main
+        git pull origin main
 
-        echo "Rebuilding containers..."
-        sudo docker compose -f docker-compose.prod.yml build --no-cache
-
-        echo "Restarting services..."
-        sudo docker compose -f docker-compose.prod.yml up -d
+        echo "Rebuilding and restarting services..."
+        sudo docker compose -f docker-compose.prod.yml up -d --build
 
         echo "Checking service health..."
         sleep 5
