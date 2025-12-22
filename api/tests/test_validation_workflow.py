@@ -917,6 +917,65 @@ class TestValidatorIndependence:
         assert "auto" in planning_entry["change_reason"].lower() or "assigned" in planning_entry["change_reason"].lower(), \
             f"Change reason should indicate auto-transition: {planning_entry['change_reason']}"
 
+    def test_auto_revert_planning_to_intake_when_last_validator_removed(
+        self, client, admin_headers, sample_model, validator_user, workflow_taxonomies
+    ):
+        """Test that removing the last validator from PLANNING reverts status to INTAKE."""
+        target_date = (date.today() + timedelta(days=30)).isoformat()
+
+        # Create request in INTAKE status
+        create_response = client.post(
+            "/validation-workflow/requests/",
+            headers=admin_headers,
+            json={
+                "model_ids": [sample_model.model_id],
+                "validation_type_id": workflow_taxonomies["type"]["initial"].value_id,
+                "priority_id": workflow_taxonomies["priority"]["standard"].value_id,
+                "target_completion_date": target_date,
+                "current_status_id": workflow_taxonomies["status"]["intake"].value_id
+            }
+        )
+        assert create_response.status_code == 201
+        request_id = create_response.json()["request_id"]
+
+        # Assign validator (auto-transitions to PLANNING)
+        assign_response = client.post(
+            f"/validation-workflow/requests/{request_id}/assignments",
+            headers=admin_headers,
+            json={
+                "validator_id": validator_user.user_id,
+                "is_primary": True,
+                "independence_attestation": True,
+                "estimated_hours": 40.0
+            }
+        )
+        assert assign_response.status_code == 201
+        assignment_id = assign_response.json()["assignment_id"]
+
+        # Verify it's in PLANNING status
+        get_response = client.get(f"/validation-workflow/requests/{request_id}", headers=admin_headers)
+        assert get_response.json()["current_status"]["code"] == "PLANNING"
+
+        # Remove the validator
+        delete_response = client.delete(
+            f"/validation-workflow/assignments/{assignment_id}",
+            headers=admin_headers
+        )
+        assert delete_response.status_code == 204
+
+        # Verify status reverted to INTAKE
+        get_response_after = client.get(f"/validation-workflow/requests/{request_id}", headers=admin_headers)
+        response_data = get_response_after.json()
+        assert response_data["current_status"]["code"] == "INTAKE", \
+            f"Expected INTAKE status after removing last validator, got {response_data['current_status']['code']}"
+
+        # Verify status history shows the reversion
+        status_history = response_data["status_history"]
+        intake_entry = next((h for h in status_history if h["new_status"]["code"] == "INTAKE" and
+                             h["old_status"]["code"] == "PLANNING"), None)
+        assert intake_entry is not None, "Should have status history entry for INTAKE reversion"
+        assert "removed" in intake_entry["change_reason"].lower() or "reverted" in intake_entry["change_reason"].lower()
+
 
 class TestOutcomeCreation:
     """Test outcome creation validation."""

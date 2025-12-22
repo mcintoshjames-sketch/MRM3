@@ -23,7 +23,7 @@ from app.models import (
     ValidationPolicy, ValidationWorkflowSLA, ModelRegion, Region,
     ValidationComponentDefinition, ValidationPlan, ValidationPlanComponent,
     ComponentDefinitionConfiguration, ComponentDefinitionConfigItem,
-    OverdueRevalidationComment, ValidationFinding
+    OverdueRevalidationComment
 )
 from app.models.recommendation import Recommendation
 from app.models.attestation import AttestationRecord
@@ -2250,7 +2250,6 @@ def get_pre_transition_warnings(
     unaddressed attestations).
 
     Warning Types:
-    - OPEN_FINDINGS: Prior validations have unresolved findings
     - PENDING_RECOMMENDATIONS: Model has open recommendations not yet addressed
     - UNADDRESSED_ATTESTATIONS: Model owner has pending attestation items
     """
@@ -2294,37 +2293,19 @@ def get_pre_transition_warnings(
 
         model_name = model.model_name
 
-        # 1. Check for OPEN_FINDINGS from prior validations
-        # Find prior validation requests for this model (not the current one)
-        prior_request_ids = db.query(ValidationRequestModelVersion.request_id).filter(
-            ValidationRequestModelVersion.model_id == model_id,
-            ValidationRequestModelVersion.request_id != request_id
-        ).subquery()
-
-        open_findings_count = db.query(func.count(ValidationFinding.finding_id)).filter(
-            ValidationFinding.request_id.in_(prior_request_ids),
-            ValidationFinding.status == "OPEN"
-        ).scalar()
-
-        if open_findings_count and open_findings_count > 0:
-            warnings.append(PreTransitionWarning(
-                warning_type="OPEN_FINDINGS",
-                severity="WARNING",
-                message=f"Model has {open_findings_count} open finding(s) from prior validations that should be reviewed.",
-                model_id=model_id,
-                model_name=model_name,
-                details={"finding_count": open_findings_count}
-            ))
-
-        # 2. Check for PENDING_RECOMMENDATIONS (not CLOSED)
+        # 1. Check for PENDING_RECOMMENDATIONS (not CLOSED)
+        # IMPORTANT: Exclude recommendations from the CURRENT validation being transitioned.
+        # Only warn about recommendations from prior validations or monitoring cycles.
         rec_query = db.query(func.count(Recommendation.recommendation_id)).filter(
-            Recommendation.model_id == model_id
+            Recommendation.model_id == model_id,
+            # Exclude recommendations that belong to THIS validation request
+            or_(
+                Recommendation.validation_request_id.is_(None),  # From monitoring (no validation source)
+                Recommendation.validation_request_id != request_id  # From a different validation
+            )
         )
         if closed_status_id:
             rec_query = rec_query.filter(Recommendation.current_status_id != closed_status_id)
-        else:
-            # If no CLOSED status found, count all recommendations (shouldn't happen in practice)
-            pass
 
         pending_rec_count = rec_query.scalar()
 
@@ -2332,7 +2313,7 @@ def get_pre_transition_warnings(
             warnings.append(PreTransitionWarning(
                 warning_type="PENDING_RECOMMENDATIONS",
                 severity="WARNING",
-                message=f"Model has {pending_rec_count} open recommendation(s) that should be addressed.",
+                message=f"Model has {pending_rec_count} open recommendation(s) from prior validations or monitoring that should be addressed.",
                 model_id=model_id,
                 model_name=model_name,
                 details={"recommendation_count": pending_rec_count}
@@ -3530,16 +3511,62 @@ def delete_assignment(
     if not assignment:
         raise HTTPException(status_code=404, detail="Assignment not found")
 
+    # Load the validation request with current status for auto-revert logic
+    validation_request = db.query(ValidationRequest).options(
+        joinedload(ValidationRequest.current_status)
+    ).filter(ValidationRequest.request_id == assignment.request_id).first()
+
     # Check how many validators will remain
     total_validators = db.query(ValidationAssignment).filter(
         ValidationAssignment.request_id == assignment.request_id
     ).count()
 
     if total_validators <= 1:
-        raise HTTPException(
-            status_code=400,
-            detail="Cannot remove the last validator. Assign another validator before removing this one."
-        )
+        # Check if we're in PLANNING - if so, allow removal and revert to INTAKE
+        if (validation_request and validation_request.current_status and
+                validation_request.current_status.code == "PLANNING"):
+            # Get INTAKE status
+            intake_status = db.query(TaxonomyValue).join(Taxonomy).filter(
+                Taxonomy.name == "Validation Request Status",
+                TaxonomyValue.code == "INTAKE"
+            ).first()
+
+            if intake_status:
+                old_status_id = validation_request.current_status_id
+                validation_request.current_status_id = intake_status.value_id
+                validation_request.updated_at = utc_now()
+
+                # Create status history entry
+                create_status_history_entry(
+                    db,
+                    assignment.request_id,
+                    old_status_id,
+                    intake_status.value_id,
+                    current_user.user_id,
+                    f"Auto-reverted to Intake when {assignment.validator.full_name} was removed (no validators remaining)"
+                )
+
+                # Create audit log for status change
+                status_audit_log = AuditLog(
+                    entity_type="ValidationRequest",
+                    entity_id=assignment.request_id,
+                    action="STATUS_CHANGE",
+                    user_id=current_user.user_id,
+                    changes={
+                        "field": "current_status",
+                        "old_value": "PLANNING",
+                        "new_value": "INTAKE",
+                        "reason": "Auto-reverted when last validator removed"
+                    },
+                    timestamp=utc_now()
+                )
+                db.add(status_audit_log)
+        else:
+            # For other active statuses, still block removal
+            raise HTTPException(
+                status_code=400,
+                detail="Cannot remove the last validator. Assign another validator before removing this one."
+            )
 
     # If removing primary validator, handle succession
     if assignment.is_primary:

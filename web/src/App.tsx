@@ -55,6 +55,8 @@ import PublicLandingPage from './pages/PublicLandingPage';
 import PublicOverviewPage from './pages/PublicOverviewPage';
 import PublicGuidesIndexPage from './pages/PublicGuidesIndexPage';
 import PublicGuidePage from './pages/PublicGuidePage';
+import PrivacyPolicyPage from './pages/PrivacyPolicyPage';
+import AboutPage from './pages/AboutPage';
 
 function App() {
     const { user, loading } = useAuth();
@@ -76,6 +78,8 @@ function App() {
             <Route path="/overview" element={<PublicOverviewPage />} />
             <Route path="/guides" element={<PublicGuidesIndexPage />} />
             <Route path="/guides/:slug" element={<PublicGuidePage />} />
+            <Route path="/privacy-policy" element={<PrivacyPolicyPage />} />
+            <Route path="/about" element={<AboutPage />} />
             <Route path="/login" element={!user ? <LoginPage /> : <Navigate to={getDefaultRoute()} />} />
             <Route path="/dashboard" element={user?.role === 'Admin' ? <AdminDashboardPage /> : <Navigate to="/models" />} />
             <Route path="/validator-dashboard" element={user?.role === 'Validator' ? <ValidatorDashboardPage /> : <Navigate to="/models" />} />

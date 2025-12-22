@@ -3,9 +3,14 @@
   <url><loc>https://app.mrmqmistest.org/</loc></url>
   <url><loc>https://app.mrmqmistest.org/overview</loc></url>
   <url><loc>https://app.mrmqmistest.org/guides</loc></url>
-  <url><loc>https://app.mrmqmistest.org/guides/getting-started</loc></url>
-  <url><loc>https://app.mrmqmistest.org/guides/model-owners</loc></url>
-  <url><loc>https://app.mrmqmistest.org/guides/validators</loc></url>
-  <url><loc>https://app.mrmqmistest.org/guides/approvers</loc></url>
-  <url><loc>https://app.mrmqmistest.org/guides/admins</loc></url>
+  <url><loc>https://app.mrmqmistest.org/guides/model-inventory</loc></url>
+  <url><loc>https://app.mrmqmistest.org/guides/model-validation</loc></url>
+  <url><loc>https://app.mrmqmistest.org/guides/model-changes</loc></url>
+  <url><loc>https://app.mrmqmistest.org/guides/recommendations</loc></url>
+  <url><loc>https://app.mrmqmistest.org/guides/model-exceptions</loc></url>
+  <url><loc>https://app.mrmqmistest.org/guides/attestation</loc></url>
+  <url><loc>https://app.mrmqmistest.org/guides/performance-monitoring</loc></url>
+  <url><loc>https://app.mrmqmistest.org/guides/mrsa-irp</loc></url>
+  <url><loc>https://app.mrmqmistest.org/privacy-policy</loc></url>
+  <url><loc>https://app.mrmqmistest.org/about</loc></url>
 </urlset>

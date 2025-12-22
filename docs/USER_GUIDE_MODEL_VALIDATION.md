@@ -249,23 +249,27 @@ When attempting to advance a validation request to **PENDING_APPROVAL** status, 
 
 **Warning Types:**
 
-| Warning | Condition | Recommended Action |
-|---------|-----------|-------------------|
-| **OPEN_FINDINGS** | Prior validations have unresolved findings still marked as open | Review open findings and update their status or document why they remain open |
-| **PENDING_RECOMMENDATIONS** | The model has active recommendations that haven't been addressed | Verify recommendations are being tracked and have appropriate response plans |
-| **UNADDRESSED_ATTESTATIONS** | Pending attestation items exist that haven't been completed | Complete required attestations or document why they're pending |
+| Warning | Condition | Severity | Recommended Action |
+|---------|-----------|----------|-------------------|
+| **PENDING_RECOMMENDATIONS** | The model has active recommendations not yet Closed, Superseded, or Rejected | Warning | Verify recommendations are being tracked and have appropriate response plans |
+| **UNADDRESSED_ATTESTATIONS** | Pending attestation items exist that haven't been completed | Warning | Complete required attestations or document why they're pending |
 
 **Example Warning Display:**
 
 ```
 ⚠ Pre-Transition Warnings
 
-The following items should be reviewed before requesting approval:
+Please review the following before advancing to Pending Approval:
 
-• OPEN_FINDINGS: There are 3 unresolved findings from prior validations
-• PENDING_RECOMMENDATIONS: 2 active recommendations require response
+WARNINGS (2)
+─────────────────────────────────────────
+• Credit Risk Scorecard - Pending Recommendations
+  2 active recommendations require response
 
-You may proceed, but approvers will see these outstanding items.
+• Credit Risk Scorecard - Unaddressed Attestations
+  1 pending attestation item needs attention
+
+These are advisory warnings. You may proceed after reviewing.
 
 [Proceed Anyway]  [Cancel]
 ```

@@ -13,6 +13,8 @@ import RecommendationCreateModal from '../components/RecommendationCreateModal';
 import ValidationScorecardTab from '../components/ValidationScorecardTab';
 import DeployModal from '../components/DeployModal';
 import { Region } from '../api/regions';
+import PreTransitionWarningModal from '../components/PreTransitionWarningModal';
+import { validationWorkflowApi, PreTransitionWarningsResponse } from '../api/validationWorkflow';
 
 interface TaxonomyValue {
     value_id: number;
@@ -268,6 +270,12 @@ export default function ValidationRequestDetailPage() {
     const [assessmentWarnings, setAssessmentWarnings] = useState<string[]>([]);
     const [pendingStatusUpdate, setPendingStatusUpdate] = useState<{ status_id: number; reason: string } | null>(null);
     const [pendingCompleteWork, setPendingCompleteWork] = useState<{ status_id: number; reason: string } | null>(null);
+
+    // Pre-transition warning modal state (for PENDING_APPROVAL transitions)
+    const [preTransitionWarnings, setPreTransitionWarnings] = useState<PreTransitionWarningsResponse | null>(null);
+    const [showPreTransitionModal, setShowPreTransitionModal] = useState(false);
+    const [pendingTransitionAction, setPendingTransitionAction] = useState<'complete_work' | 'status_update' | 'resubmit' | null>(null);
+    const [pendingResubmitResponse, setPendingResubmitResponse] = useState<string>('');
 
     useEffect(() => {
         fetchData();
@@ -544,8 +552,8 @@ export default function ValidationRequestDetailPage() {
         }
     };
 
-    // Admin status update handler (with assessment warning support)
-    const handleStatusUpdate = async (skipAssessmentWarning: boolean = false) => {
+    // Admin status update handler (with assessment warning support and pre-transition warning support)
+    const handleStatusUpdate = async (skipAssessmentWarning: boolean = false, skipPreTransitionWarning: boolean = false) => {
         const statusToUpdate = pendingStatusUpdate || newStatus;
         if (!statusToUpdate.status_id) return;
 
@@ -553,6 +561,29 @@ export default function ValidationRequestDetailPage() {
         if (!skipAssessmentWarning) {
             const canProceed = await checkUnsavedPlanChanges();
             if (!canProceed) return;
+        }
+
+        // Check if target status is PENDING_APPROVAL - if so, check for pre-transition warnings
+        const targetStatus = statusOptions.find(s => s.value_id === statusToUpdate.status_id);
+        if (targetStatus?.code === 'PENDING_APPROVAL' && !skipPreTransitionWarning) {
+            try {
+                const warningsResponse = await validationWorkflowApi.getPreTransitionWarnings(
+                    Number(id),
+                    'PENDING_APPROVAL'
+                );
+                if (warningsResponse.warnings.length > 0) {
+                    // Store pending state and show modal
+                    setPendingStatusUpdate(statusToUpdate);
+                    setPreTransitionWarnings(warningsResponse);
+                    setPendingTransitionAction('status_update');
+                    setShowPreTransitionModal(true);
+                    setShowStatusModal(false);
+                    return; // Wait for user confirmation via modal
+                }
+            } catch (err) {
+                // Fail-open: if warning check fails, proceed without warnings
+                console.error('Failed to check pre-transition warnings:', err);
+            }
         }
 
         setActionLoading(true);
@@ -566,6 +597,7 @@ export default function ValidationRequestDetailPage() {
             setShowAssessmentWarningModal(false);
             setNewStatus({ status_id: 0, reason: '' });
             setPendingStatusUpdate(null);
+            setPendingTransitionAction(null);
             setAssessmentWarnings([]);
             fetchData();
         } catch (err: any) {
@@ -733,8 +765,8 @@ export default function ValidationRequestDetailPage() {
         const assignment = request?.assignments.find(a => a.assignment_id === assignmentId);
         if (!assignment) return;
 
-        // Check if this is the last validator
-        if (request && request.assignments.length <= 1) {
+        // Check if this is the last validator - allow removal in PLANNING (will auto-revert to INTAKE)
+        if (request && request.assignments.length <= 1 && request.current_status?.code !== 'PLANNING') {
             setError('Cannot remove the last validator. Assign another validator before removing this one.');
             return;
         }
@@ -949,7 +981,7 @@ export default function ValidationRequestDetailPage() {
         }
     };
 
-    const handleCompleteWork = async (skipAssessmentWarning: boolean = false) => {
+    const handleCompleteWork = async (skipAssessmentWarning: boolean = false, skipPreTransitionWarning: boolean = false) => {
         if (!request) return;
 
         // Check if outcome has been created
@@ -980,6 +1012,25 @@ export default function ValidationRequestDetailPage() {
         if (!skipAssessmentWarning) {
             const confirmMessage = warningMessage + 'Are you sure you want to complete this validation?';
             if (!confirm(confirmMessage)) return;
+        }
+
+        // Check for pre-transition warnings when moving to PENDING_APPROVAL
+        if (targetStatusCode === 'PENDING_APPROVAL' && !skipPreTransitionWarning) {
+            try {
+                const warningsResponse = await validationWorkflowApi.getPreTransitionWarnings(
+                    Number(id),
+                    'PENDING_APPROVAL'
+                );
+                if (warningsResponse.warnings.length > 0) {
+                    setPreTransitionWarnings(warningsResponse);
+                    setPendingTransitionAction('complete_work');
+                    setShowPreTransitionModal(true);
+                    return; // Wait for user confirmation via modal
+                }
+            } catch (err) {
+                // Fail-open: if warning check fails, proceed without warnings
+                console.error('Failed to check pre-transition warnings:', err);
+            }
         }
 
         const targetStatus = statusOptions.find(s => s.code === targetStatusCode);
@@ -1094,13 +1145,35 @@ export default function ValidationRequestDetailPage() {
     };
 
     // Handle resubmitting validation from REVISION to PENDING_APPROVAL
-    const handleResubmitForApproval = async () => {
+    const handleResubmitForApproval = async (skipPreTransitionWarning: boolean = false) => {
         if (!request || !resubmitResponse.trim()) return;
 
         const pendingApprovalStatus = statusOptions.find(s => s.code === 'PENDING_APPROVAL');
         if (!pendingApprovalStatus) {
             setError('PENDING_APPROVAL status not found');
             return;
+        }
+
+        // Check for pre-transition warnings before moving to PENDING_APPROVAL
+        if (!skipPreTransitionWarning) {
+            try {
+                const warningsResponse = await validationWorkflowApi.getPreTransitionWarnings(
+                    Number(id),
+                    'PENDING_APPROVAL'
+                );
+                if (warningsResponse.warnings.length > 0) {
+                    // Store pending state and show modal
+                    setPendingResubmitResponse(resubmitResponse);
+                    setPreTransitionWarnings(warningsResponse);
+                    setPendingTransitionAction('resubmit');
+                    setShowPreTransitionModal(true);
+                    setShowResubmitModal(false);
+                    return; // Wait for user confirmation via modal
+                }
+            } catch (err) {
+                // Fail-open: if warning check fails, proceed without warnings
+                console.error('Failed to check pre-transition warnings:', err);
+            }
         }
 
         setActionLoading(true);
@@ -1111,6 +1184,7 @@ export default function ValidationRequestDetailPage() {
             });
             setShowResubmitModal(false);
             setResubmitResponse('');
+            setPendingResubmitResponse('');
             await fetchData();
         } catch (err: any) {
             setError(err.response?.data?.detail || 'Failed to resubmit for approval');
@@ -3368,7 +3442,7 @@ export default function ValidationRequestDetailPage() {
 
                         <div className="flex gap-2">
                             <button
-                                onClick={handleResubmitForApproval}
+                                onClick={() => handleResubmitForApproval()}
                                 disabled={actionLoading || !resubmitResponse.trim()}
                                 className="btn-primary disabled:opacity-50"
                             >
@@ -3692,6 +3766,39 @@ export default function ValidationRequestDetailPage() {
                         </div>
                     </div>
                 </div>
+            )}
+
+            {/* Pre-Transition Warning Modal - shown when advancing to Pending Approval with open recommendations or pending attestations */}
+            {showPreTransitionModal && preTransitionWarnings && (
+                <PreTransitionWarningModal
+                    warnings={preTransitionWarnings.warnings}
+                    canProceed={preTransitionWarnings.can_proceed}
+                    onClose={() => {
+                        setShowPreTransitionModal(false);
+                        setPendingTransitionAction(null);
+                        setPendingResubmitResponse('');
+                    }}
+                    onProceed={async () => {
+                        setShowPreTransitionModal(false);
+                        // Handle different action types that can trigger pre-transition warnings
+                        switch (pendingTransitionAction) {
+                            case 'complete_work':
+                                await handleCompleteWork(false, true); // Skip pre-transition warning on proceed
+                                break;
+                            case 'status_update':
+                                await handleStatusUpdate(true, true); // Skip both warnings on proceed
+                                break;
+                            case 'resubmit':
+                                // Restore the response and execute resubmit
+                                setResubmitResponse(pendingResubmitResponse);
+                                await handleResubmitForApproval(true); // Skip pre-transition warning on proceed
+                                break;
+                        }
+                        setPendingTransitionAction(null);
+                        setPendingResubmitResponse('');
+                    }}
+                    loading={actionLoading}
+                />
             )}
 
             {/* Deploy Modal (Issue 5: Deploy Approved Version) */}

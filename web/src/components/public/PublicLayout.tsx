@@ -27,6 +27,7 @@ export default function PublicLayout({ children }: { children: ReactNode }) {
                     <nav className="hidden sm:flex items-center gap-6">
                         <NavItem to="/overview" label="System Overview" />
                         <NavItem to="/guides" label="User Guides" />
+                        <NavItem to="/about" label="About" />
                     </nav>
 
                     <div className="flex items-center gap-2">
@@ -46,8 +47,10 @@ export default function PublicLayout({ children }: { children: ReactNode }) {
                     <div>
                         Public information only. Sign in to access application data.
                     </div>
-                    <div>
-                        © {new Date().getFullYear()} QMIS
+                    <div className="flex gap-4">
+                        <span>© {new Date().getFullYear()} QMIS</span>
+                        <Link to="/privacy-policy" className="hover:text-gray-900">Privacy Policy</Link>
+                        <Link to="/about" className="hover:text-gray-900">About</Link>
                     </div>
                 </div>
             </footer>

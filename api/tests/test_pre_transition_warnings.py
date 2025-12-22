@@ -5,9 +5,8 @@ These tests define the API contract for warnings displayed before transitioning
 a validation request to certain statuses (e.g., PENDING_APPROVAL, APPROVED).
 
 Warning Types:
-1. OPEN_FINDINGS - Prior validations have unresolved findings
-2. PENDING_RECOMMENDATIONS - Model has open recommendations not yet addressed
-3. UNADDRESSED_ATTESTATIONS - Model owner has pending attestation items
+1. PENDING_RECOMMENDATIONS - Model has open recommendations not yet addressed
+2. UNADDRESSED_ATTESTATIONS - Model owner has pending attestation items
 
 Endpoint: GET /validation-workflow/requests/{id}/pre-transition-warnings
 Query Param: target_status (e.g., "PENDING_APPROVAL")
@@ -18,7 +17,7 @@ from app.models.model import Model
 from app.models.model_version import ModelVersion
 from app.models.validation import (
     ValidationRequest, ValidationRequestModelVersion,
-    ValidationFinding, ValidationPolicy
+    ValidationPolicy
 )
 from app.models.recommendation import Recommendation
 from app.models.attestation import AttestationRecord, AttestationCycle
@@ -249,167 +248,6 @@ class TestPreTransitionWarningsEndpoint:
             headers=auth_headers
         )
         assert response.status_code == 422
-
-
-class TestOpenFindingsWarning:
-    """Tests for OPEN_FINDINGS warning type."""
-
-    def test_warning_generated_for_open_findings(
-        self, client, db_session, test_user, auth_headers, pre_transition_setup
-    ):
-        """
-        TDD Test: OPEN_FINDINGS warning should be generated when prior validations
-        have unresolved findings.
-
-        Scenario: Model has a prior approved validation with an open finding.
-        Expected: Warning with type OPEN_FINDINGS and details about the finding.
-        """
-        setup = pre_transition_setup
-        model = setup["model"]
-
-        # Create prior approved validation request
-        prior_request = ValidationRequest(
-            validation_type_id=setup["validation_type_id"],
-            priority_id=setup["priority_id"],
-            current_status_id=setup["approved_status_id"],
-            target_completion_date=date.today() - timedelta(days=60),
-            completion_date=date.today() - timedelta(days=60),
-            requestor_id=test_user.user_id
-        )
-        db_session.add(prior_request)
-        db_session.flush()
-
-        # Link model to prior request
-        prior_link = ValidationRequestModelVersion(
-            request_id=prior_request.request_id,
-            model_id=model.model_id,
-            version_id=None
-        )
-        db_session.add(prior_link)
-
-        # Create an open finding for the prior validation
-        finding = ValidationFinding(
-            request_id=prior_request.request_id,
-            finding_type="DATA_QUALITY",
-            severity="HIGH",
-            title="Data quality issue identified",
-            description="Test data has anomalies",
-            status="OPEN",
-            identified_by_id=test_user.user_id
-        )
-        db_session.add(finding)
-        db_session.flush()
-
-        # Create current validation request in REVIEW status
-        current_request = ValidationRequest(
-            validation_type_id=setup["validation_type_id"],
-            priority_id=setup["priority_id"],
-            current_status_id=setup["review_status_id"],
-            target_completion_date=date.today() + timedelta(days=30),
-            requestor_id=test_user.user_id
-        )
-        db_session.add(current_request)
-        db_session.flush()
-
-        current_link = ValidationRequestModelVersion(
-            request_id=current_request.request_id,
-            model_id=model.model_id,
-            version_id=None
-        )
-        db_session.add(current_link)
-        db_session.commit()
-
-        response = client.get(
-            f"/validation-workflow/requests/{current_request.request_id}/pre-transition-warnings?target_status=PENDING_APPROVAL",
-            headers=auth_headers
-        )
-        assert response.status_code == 200
-        data = response.json()
-
-        assert len(data["warnings"]) >= 1
-
-        finding_warning = next(
-            (w for w in data["warnings"] if w["warning_type"] == "OPEN_FINDINGS"),
-            None
-        )
-        assert finding_warning is not None
-        assert finding_warning["severity"] == "WARNING"
-        assert finding_warning["model_id"] == model.model_id
-        assert "open" in finding_warning["message"].lower() or "finding" in finding_warning["message"].lower()
-        assert finding_warning["details"]["finding_count"] >= 1
-
-    def test_no_warning_when_all_findings_resolved(
-        self, client, db_session, test_user, auth_headers, pre_transition_setup
-    ):
-        """
-        TDD Test: No OPEN_FINDINGS warning when all prior findings are resolved.
-        """
-        setup = pre_transition_setup
-        model = setup["model"]
-
-        # Create prior approved validation with RESOLVED finding
-        prior_request = ValidationRequest(
-            validation_type_id=setup["validation_type_id"],
-            priority_id=setup["priority_id"],
-            current_status_id=setup["approved_status_id"],
-            target_completion_date=date.today() - timedelta(days=60),
-            completion_date=date.today() - timedelta(days=60),
-            requestor_id=test_user.user_id
-        )
-        db_session.add(prior_request)
-        db_session.flush()
-
-        prior_link = ValidationRequestModelVersion(
-            request_id=prior_request.request_id,
-            model_id=model.model_id,
-            version_id=None
-        )
-        db_session.add(prior_link)
-
-        # Finding is RESOLVED
-        finding = ValidationFinding(
-            request_id=prior_request.request_id,
-            finding_type="DATA_QUALITY",
-            severity="HIGH",
-            title="Previously resolved issue",
-            description="This was resolved",
-            status="RESOLVED",
-            identified_by_id=test_user.user_id,
-            resolved_at=utc_now()
-        )
-        db_session.add(finding)
-
-        # Current request
-        current_request = ValidationRequest(
-            validation_type_id=setup["validation_type_id"],
-            priority_id=setup["priority_id"],
-            current_status_id=setup["review_status_id"],
-            target_completion_date=date.today() + timedelta(days=30),
-            requestor_id=test_user.user_id
-        )
-        db_session.add(current_request)
-        db_session.flush()
-
-        current_link = ValidationRequestModelVersion(
-            request_id=current_request.request_id,
-            model_id=model.model_id,
-            version_id=None
-        )
-        db_session.add(current_link)
-        db_session.commit()
-
-        response = client.get(
-            f"/validation-workflow/requests/{current_request.request_id}/pre-transition-warnings?target_status=PENDING_APPROVAL",
-            headers=auth_headers
-        )
-        assert response.status_code == 200
-        data = response.json()
-
-        finding_warning = next(
-            (w for w in data["warnings"] if w["warning_type"] == "OPEN_FINDINGS"),
-            None
-        )
-        assert finding_warning is None
 
 
 class TestPendingRecommendationsWarning:
@@ -683,36 +521,6 @@ class TestMultipleWarnings:
         setup = pre_transition_setup
         model = setup["model"]
 
-        # Setup: Open finding from prior validation
-        prior_request = ValidationRequest(
-            validation_type_id=setup["validation_type_id"],
-            priority_id=setup["priority_id"],
-            current_status_id=setup["approved_status_id"],
-            target_completion_date=date.today() - timedelta(days=60),
-            completion_date=date.today() - timedelta(days=60),
-            requestor_id=test_user.user_id
-        )
-        db_session.add(prior_request)
-        db_session.flush()
-
-        prior_link = ValidationRequestModelVersion(
-            request_id=prior_request.request_id,
-            model_id=model.model_id,
-            version_id=None
-        )
-        db_session.add(prior_link)
-
-        finding = ValidationFinding(
-            request_id=prior_request.request_id,
-            finding_type="DATA_QUALITY",
-            severity="HIGH",
-            title="Open finding",
-            description="Not resolved",
-            status="OPEN",
-            identified_by_id=test_user.user_id
-        )
-        db_session.add(finding)
-
         # Setup: Pending recommendation
         recommendation = Recommendation(
             recommendation_code="REC-TEST-0003",
@@ -774,9 +582,8 @@ class TestMultipleWarnings:
         assert response.status_code == 200
         data = response.json()
 
-        # Should have all three warning types
+        # Should have both warning types
         warning_types = [w["warning_type"] for w in data["warnings"]]
-        assert "OPEN_FINDINGS" in warning_types
         assert "PENDING_RECOMMENDATIONS" in warning_types
         assert "UNADDRESSED_ATTESTATIONS" in warning_types
 
@@ -996,3 +803,311 @@ class TestWarningResponseSchema:
         valid_severities = {"ERROR", "WARNING", "INFO"}
         for warning in data["warnings"]:
             assert warning["severity"] in valid_severities
+
+
+class TestRecommendationSourceFiltering:
+    """Tests for filtering recommendations by source (current vs prior validations)."""
+
+    def test_no_warning_for_recommendations_from_current_validation(
+        self, client, db_session, test_user, auth_headers, pre_transition_setup
+    ):
+        """
+        TDD Test: Recommendations created from the CURRENT validation request
+        should NOT trigger PENDING_RECOMMENDATIONS warning.
+
+        Business Logic: Recommendations from the current validation are expected
+        findings - they're the output of that validation work.
+        """
+        setup = pre_transition_setup
+        model = setup["model"]
+
+        # Create validation request
+        current_request = ValidationRequest(
+            validation_type_id=setup["validation_type_id"],
+            priority_id=setup["priority_id"],
+            current_status_id=setup["review_status_id"],
+            target_completion_date=date.today() + timedelta(days=30),
+            requestor_id=test_user.user_id
+        )
+        db_session.add(current_request)
+        db_session.flush()
+
+        # Link model to request
+        link = ValidationRequestModelVersion(
+            request_id=current_request.request_id,
+            model_id=model.model_id,
+            version_id=None
+        )
+        db_session.add(link)
+
+        # Create recommendation FROM THE CURRENT validation (should be excluded)
+        recommendation = Recommendation(
+            recommendation_code="REC-CURRENT-001",
+            model_id=model.model_id,
+            title="Finding from current validation",
+            description="This is a finding from the current validation work",
+            priority_id=setup["rec_priority_id"],
+            current_status_id=setup["rec_pending_status_id"],
+            original_target_date=date.today() + timedelta(days=30),
+            current_target_date=date.today() + timedelta(days=30),
+            assigned_to_id=test_user.user_id,
+            created_by_id=test_user.user_id,
+            validation_request_id=current_request.request_id  # KEY: Linked to current validation
+        )
+        db_session.add(recommendation)
+        db_session.commit()
+
+        response = client.get(
+            f"/validation-workflow/requests/{current_request.request_id}/pre-transition-warnings?target_status=PENDING_APPROVAL",
+            headers=auth_headers
+        )
+        assert response.status_code == 200
+        data = response.json()
+
+        # Should NOT have PENDING_RECOMMENDATIONS warning because the recommendation
+        # is from the current validation being transitioned
+        rec_warning = next(
+            (w for w in data["warnings"] if w["warning_type"] == "PENDING_RECOMMENDATIONS"),
+            None
+        )
+        assert rec_warning is None
+
+    def test_warning_for_recommendations_from_prior_validation(
+        self, client, db_session, test_user, auth_headers, pre_transition_setup
+    ):
+        """
+        TDD Test: Recommendations from PRIOR validations should trigger warning.
+
+        Business Logic: Recommendations from prior validations represent unaddressed
+        issues that should be reviewed before approving a new validation.
+        """
+        setup = pre_transition_setup
+        model = setup["model"]
+
+        # Create a PRIOR validation request (completed in the past)
+        prior_request = ValidationRequest(
+            validation_type_id=setup["validation_type_id"],
+            priority_id=setup["priority_id"],
+            current_status_id=setup["approved_status_id"],  # Prior validation is approved
+            target_completion_date=date.today() - timedelta(days=180),
+            requestor_id=test_user.user_id
+        )
+        db_session.add(prior_request)
+        db_session.flush()
+
+        # Create recommendation from the PRIOR validation (should be counted)
+        prior_recommendation = Recommendation(
+            recommendation_code="REC-PRIOR-001",
+            model_id=model.model_id,
+            title="Unaddressed finding from prior validation",
+            description="This was found in a previous validation but not yet addressed",
+            priority_id=setup["rec_priority_id"],
+            current_status_id=setup["rec_pending_status_id"],  # Still open
+            original_target_date=date.today() + timedelta(days=30),
+            current_target_date=date.today() + timedelta(days=30),
+            assigned_to_id=test_user.user_id,
+            created_by_id=test_user.user_id,
+            validation_request_id=prior_request.request_id  # KEY: Linked to PRIOR validation
+        )
+        db_session.add(prior_recommendation)
+
+        # Create CURRENT validation request
+        current_request = ValidationRequest(
+            validation_type_id=setup["validation_type_id"],
+            priority_id=setup["priority_id"],
+            current_status_id=setup["review_status_id"],
+            target_completion_date=date.today() + timedelta(days=30),
+            requestor_id=test_user.user_id
+        )
+        db_session.add(current_request)
+        db_session.flush()
+
+        link = ValidationRequestModelVersion(
+            request_id=current_request.request_id,
+            model_id=model.model_id,
+            version_id=None
+        )
+        db_session.add(link)
+        db_session.commit()
+
+        response = client.get(
+            f"/validation-workflow/requests/{current_request.request_id}/pre-transition-warnings?target_status=PENDING_APPROVAL",
+            headers=auth_headers
+        )
+        assert response.status_code == 200
+        data = response.json()
+
+        # SHOULD have PENDING_RECOMMENDATIONS warning for prior validation's recommendation
+        rec_warning = next(
+            (w for w in data["warnings"] if w["warning_type"] == "PENDING_RECOMMENDATIONS"),
+            None
+        )
+        assert rec_warning is not None
+        assert rec_warning["details"]["recommendation_count"] >= 1
+        assert "prior" in rec_warning["message"].lower() or "monitoring" in rec_warning["message"].lower()
+
+    def test_warning_for_recommendations_from_monitoring(
+        self, client, db_session, test_user, auth_headers, pre_transition_setup
+    ):
+        """
+        TDD Test: Recommendations with null validation_request_id (from monitoring
+        cycles or other sources) should trigger warning.
+
+        Business Logic: Recommendations from monitoring cycles are independent of
+        validations and represent issues that should be reviewed.
+        """
+        setup = pre_transition_setup
+        model = setup["model"]
+
+        # Create recommendation from MONITORING (null validation_request_id)
+        monitoring_recommendation = Recommendation(
+            recommendation_code="REC-MON-001",
+            model_id=model.model_id,
+            title="Finding from ongoing monitoring",
+            description="This came from a monitoring cycle, not a validation",
+            priority_id=setup["rec_priority_id"],
+            current_status_id=setup["rec_pending_status_id"],
+            original_target_date=date.today() + timedelta(days=60),
+            current_target_date=date.today() + timedelta(days=60),
+            assigned_to_id=test_user.user_id,
+            created_by_id=test_user.user_id,
+            validation_request_id=None  # KEY: From monitoring, not validation
+        )
+        db_session.add(monitoring_recommendation)
+
+        # Create CURRENT validation request
+        current_request = ValidationRequest(
+            validation_type_id=setup["validation_type_id"],
+            priority_id=setup["priority_id"],
+            current_status_id=setup["review_status_id"],
+            target_completion_date=date.today() + timedelta(days=30),
+            requestor_id=test_user.user_id
+        )
+        db_session.add(current_request)
+        db_session.flush()
+
+        link = ValidationRequestModelVersion(
+            request_id=current_request.request_id,
+            model_id=model.model_id,
+            version_id=None
+        )
+        db_session.add(link)
+        db_session.commit()
+
+        response = client.get(
+            f"/validation-workflow/requests/{current_request.request_id}/pre-transition-warnings?target_status=PENDING_APPROVAL",
+            headers=auth_headers
+        )
+        assert response.status_code == 200
+        data = response.json()
+
+        # SHOULD have PENDING_RECOMMENDATIONS warning for monitoring recommendation
+        rec_warning = next(
+            (w for w in data["warnings"] if w["warning_type"] == "PENDING_RECOMMENDATIONS"),
+            None
+        )
+        assert rec_warning is not None
+        assert rec_warning["details"]["recommendation_count"] >= 1
+
+    def test_mixed_recommendations_only_counts_external(
+        self, client, db_session, test_user, auth_headers, pre_transition_setup
+    ):
+        """
+        TDD Test: When model has recommendations from both current and prior validations,
+        only the external (prior/monitoring) recommendations should be counted.
+        """
+        setup = pre_transition_setup
+        model = setup["model"]
+
+        # Create PRIOR validation
+        prior_request = ValidationRequest(
+            validation_type_id=setup["validation_type_id"],
+            priority_id=setup["priority_id"],
+            current_status_id=setup["approved_status_id"],
+            target_completion_date=date.today() - timedelta(days=180),
+            requestor_id=test_user.user_id
+        )
+        db_session.add(prior_request)
+        db_session.flush()
+
+        # Create CURRENT validation
+        current_request = ValidationRequest(
+            validation_type_id=setup["validation_type_id"],
+            priority_id=setup["priority_id"],
+            current_status_id=setup["review_status_id"],
+            target_completion_date=date.today() + timedelta(days=30),
+            requestor_id=test_user.user_id
+        )
+        db_session.add(current_request)
+        db_session.flush()
+
+        link = ValidationRequestModelVersion(
+            request_id=current_request.request_id,
+            model_id=model.model_id,
+            version_id=None
+        )
+        db_session.add(link)
+
+        # Recommendation from CURRENT validation (should NOT be counted)
+        current_rec = Recommendation(
+            recommendation_code="REC-MIX-CURRENT",
+            model_id=model.model_id,
+            title="Current validation finding",
+            description="This is from the current validation",
+            priority_id=setup["rec_priority_id"],
+            current_status_id=setup["rec_pending_status_id"],
+            original_target_date=date.today() + timedelta(days=30),
+            current_target_date=date.today() + timedelta(days=30),
+            assigned_to_id=test_user.user_id,
+            created_by_id=test_user.user_id,
+            validation_request_id=current_request.request_id
+        )
+        db_session.add(current_rec)
+
+        # Recommendation from PRIOR validation (SHOULD be counted)
+        prior_rec = Recommendation(
+            recommendation_code="REC-MIX-PRIOR",
+            model_id=model.model_id,
+            title="Prior validation finding",
+            description="This is from a prior validation",
+            priority_id=setup["rec_priority_id"],
+            current_status_id=setup["rec_pending_status_id"],
+            original_target_date=date.today() + timedelta(days=30),
+            current_target_date=date.today() + timedelta(days=30),
+            assigned_to_id=test_user.user_id,
+            created_by_id=test_user.user_id,
+            validation_request_id=prior_request.request_id
+        )
+        db_session.add(prior_rec)
+
+        # Recommendation from MONITORING (SHOULD be counted)
+        monitoring_rec = Recommendation(
+            recommendation_code="REC-MIX-MON",
+            model_id=model.model_id,
+            title="Monitoring finding",
+            description="This is from monitoring",
+            priority_id=setup["rec_priority_id"],
+            current_status_id=setup["rec_pending_status_id"],
+            original_target_date=date.today() + timedelta(days=60),
+            current_target_date=date.today() + timedelta(days=60),
+            assigned_to_id=test_user.user_id,
+            created_by_id=test_user.user_id,
+            validation_request_id=None
+        )
+        db_session.add(monitoring_rec)
+        db_session.commit()
+
+        response = client.get(
+            f"/validation-workflow/requests/{current_request.request_id}/pre-transition-warnings?target_status=PENDING_APPROVAL",
+            headers=auth_headers
+        )
+        assert response.status_code == 200
+        data = response.json()
+
+        rec_warning = next(
+            (w for w in data["warnings"] if w["warning_type"] == "PENDING_RECOMMENDATIONS"),
+            None
+        )
+        assert rec_warning is not None
+        # Should count ONLY the prior + monitoring recs, NOT the current one
+        assert rec_warning["details"]["recommendation_count"] == 2
