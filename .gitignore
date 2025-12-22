@@ -43,3 +43,9 @@ build/
 dist/
 .eggs/
 *.log
+
+# Security - Service tokens and credentials
+mrm-service-token
+*.token
+.cloudflare/
+.claude/
