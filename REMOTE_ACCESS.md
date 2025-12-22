@@ -133,7 +133,29 @@ ssh mrm-admin@ssh.mrmqmistest.org "cd /opt/mrm && sudo docker compose -f docker-
 
 ## Common Deployment Operations
 
-Run these commands on the server after SSH:
+### Automated Deployment (Recommended)
+
+Use the `deploy.sh` script from your local machine to commit, push, and deploy in one step:
+
+```bash
+# Full flow: commit + push + deploy (interactive)
+./scripts/deploy.sh
+
+# With commit message
+./scripts/deploy.sh "fix: update validation workflow"
+
+# Check status only
+./scripts/deploy.sh --status
+
+# Deploy to server only (skip git)
+./scripts/deploy.sh --prod-only
+```
+
+The script handles SSH connection, git pull, Docker rebuild, and health verification automatically.
+
+### Manual Server Commands
+
+If you need to run commands directly on the server after SSH:
 
 ```bash
 # Navigate to app directory

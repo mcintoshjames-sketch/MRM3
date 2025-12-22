@@ -31,6 +31,40 @@ docker compose up --build
 - Frontend: http://localhost:5174
 - API docs: http://localhost:8001/docs
 
+### Deployment to Production
+
+**Preferred Method**: Use the `deploy.sh` script which combines git operations with production deployment:
+
+```bash
+# Full deployment flow (interactive - prompts for confirmation)
+./scripts/deploy.sh
+
+# Deploy with specific commit message
+./scripts/deploy.sh "fix: resolve validation workflow bug"
+
+# Check repository status only (no changes made)
+./scripts/deploy.sh --status
+
+# Deploy to production server only (skip git operations)
+./scripts/deploy.sh --prod-only
+```
+
+**What the script does:**
+1. Shows repository status (uncommitted changes, ahead/behind remote)
+2. Stages all changes and commits with auto-generated or custom message
+3. Pushes to origin/main
+4. SSHs to production server via Cloudflare Access
+5. Pulls latest code and rebuilds Docker containers
+6. Verifies service health (frontend + API)
+
+**Production Details:**
+- **Server**: `mrm-admin@ssh.mrmqmistest.org` (via Cloudflare Access)
+- **App Directory**: `/opt/mrm`
+- **Docker Compose**: `docker-compose.prod.yml`
+- **Public URL**: https://mrmqmistest.org
+
+See [REMOTE_ACCESS.md](REMOTE_ACCESS.md) for SSH configuration and troubleshooting.
+
 ### Shell Command Patterns (for Claude Code)
 **IMPORTANT**: When testing API endpoints with curl and auth tokens, avoid shell variable assignment with command substitution - it causes parse errors. Instead:
 
