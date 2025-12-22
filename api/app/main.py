@@ -2,13 +2,14 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.api import auth, models, vendors, taxonomies, audit_logs, validation_workflow, validation_policies, workflow_sla, regions, model_regions, model_versions, model_delegates, model_change_taxonomy, model_types, methodology, dashboard, export_views, version_deployment_tasks, regional_compliance_report, analytics, saved_queries, model_hierarchy, model_dependencies, approver_roles, conditional_approval_rules, fry, map_applications, model_applications, overdue_commentary, overdue_revalidation_report, decommissioning, kpm, monitoring, recommendations, risk_assessment, qualitative_factors, scorecard, uat_tools, residual_risk_map, limitations, attestations, lob_units, kpi_report, irp, my_portfolio, exceptions
+from app.core.config import settings
 
 app = FastAPI(title="QMIS v0.1", version="0.1.0")
 
-# CORS
+# CORS - uses environment-based origins from config
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5174", "http://localhost:5173"],
+    allow_origins=settings.get_cors_origins(),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -88,8 +89,9 @@ app.include_router(qualitative_factors.router,
 app.include_router(scorecard.router, prefix="/scorecard", tags=["scorecard"])
 # Residual Risk Map Configuration
 app.include_router(residual_risk_map.router, tags=["residual-risk-map"])
-# UAT Tools (TEMPORARY - remove before production)
-app.include_router(uat_tools.router, prefix="/uat", tags=["uat-tools"])
+# UAT Tools - only enabled when ENABLE_UAT_TOOLS=true (disabled by default)
+if settings.ENABLE_UAT_TOOLS:
+    app.include_router(uat_tools.router, prefix="/uat", tags=["uat-tools"])
 # Model Limitations
 app.include_router(limitations.router, tags=["limitations"])
 # Model Risk Attestations
