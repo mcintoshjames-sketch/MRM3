@@ -47,15 +47,15 @@ export default function IRPDetailPage() {
         try {
             const [irpData, taxonomiesResponse] = await Promise.all([
                 irpApi.get(parseInt(id)),
-                api.get('/taxonomies/')
+                api.get('/taxonomies/by-names/?names=IRP%20Review%20Outcome')
             ]);
             setIrp(irpData);
 
-            // Find IRP Review Outcome taxonomy
+            // Find IRP Review Outcome taxonomy (by-names endpoint includes values)
             const outcomeTaxonomy = taxonomiesResponse.data.find(
                 (t: any) => t.name === 'IRP Review Outcome'
             );
-            if (outcomeTaxonomy) {
+            if (outcomeTaxonomy && outcomeTaxonomy.values) {
                 setOutcomeOptions(outcomeTaxonomy.values.filter((v: TaxonomyValue) => v.code));
             }
         } catch (error) {

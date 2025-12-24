@@ -5,6 +5,7 @@ import { regionsApi, Region } from '../api/regions';
 import Layout from '../components/Layout';
 import MultiSelectDropdown from '../components/MultiSelectDropdown';
 import ValidationWarningModal from '../components/ValidationWarningModal';
+import VersionBlockerModal, { VersionBlocker } from '../components/VersionBlockerModal';
 import { useTableSort } from '../hooks/useTableSort';
 import { useColumnPreferences, ColumnDefinition } from '../hooks/useColumnPreferences';
 import { ColumnPickerModal, SaveViewModal } from '../components/ColumnPickerModal';
@@ -84,6 +85,7 @@ export default function ValidationWorkflowPage() {
     const [showValidationWarnings, setShowValidationWarnings] = useState(false);
     const [validationWarnings, setValidationWarnings] = useState<ValidationWarning[]>([]);
     const [canProceedWithWarnings, setCanProceedWithWarnings] = useState(false);
+    const [versionBlockers, setVersionBlockers] = useState<VersionBlocker[]>([]);
 
     const [formData, setFormData] = useState({
         model_ids: [] as number[],  // Support multiple models
@@ -93,6 +95,9 @@ export default function ValidationWorkflowPage() {
         trigger_reason: '',
         region_ids: [] as number[]  // Support multiple regions
     });
+
+    // Detect if CHANGE validation type is selected (requires version linking)
+    const isChangeType = validationTypes.find(t => t.value_id === formData.validation_type_id)?.code === 'CHANGE';
 
     // Filters
     const [filters, setFilters] = useState({
@@ -430,6 +435,20 @@ export default function ValidationWorkflowPage() {
             return;
         }
 
+        // For CHANGE validation type, require version selection for all models
+        if (isChangeType) {
+            const modelsWithoutVersions = formData.model_ids.filter(
+                modelId => !selectedVersions[modelId]
+            );
+            if (modelsWithoutVersions.length > 0) {
+                const modelNames = modelsWithoutVersions.map(id =>
+                    models.find(m => m.model_id === id)?.model_name || `Model ${id}`
+                ).join(', ');
+                setError(`CHANGE validations require version selection. Missing versions for: ${modelNames}`);
+                return;
+            }
+        }
+
         // Check for target completion date warnings
         if (formData.target_completion_date) {
             try {
@@ -496,7 +515,14 @@ export default function ValidationWorkflowPage() {
             fetchData();
         } catch (err: any) {
             console.error('Failed to create request:', err);
-            setError(err.response?.data?.detail || 'Failed to create validation project');
+            // Check if error contains version blockers for CHANGE validation type
+            if (err.response?.status === 400 && err.response?.data?.detail?.blockers) {
+                setVersionBlockers(err.response.data.detail.blockers);
+            } else {
+                setError(typeof err.response?.data?.detail === 'string'
+                    ? err.response.data.detail
+                    : 'Failed to create validation project');
+            }
             setShowRegionWarning(false);
         }
     };
@@ -823,10 +849,13 @@ export default function ValidationWorkflowPage() {
                                 {formData.model_ids.length > 0 && (
                                     <div className="mt-4">
                                         <label className="block text-sm font-medium mb-2">
-                                            Model Versions (Optional)
+                                            Model Versions {isChangeType ? <span className="text-red-600">(Required for Change Validations)</span> : '(Optional)'}
                                         </label>
                                         <p className="text-xs text-gray-600 mb-3">
-                                            Select the specific version being validated for each model. If no version is selected, the validation will apply to the model generally.
+                                            {isChangeType
+                                                ? 'CHANGE validations require linking each model to a specific version. Select the version containing the changes to be validated.'
+                                                : 'Select the specific version being validated for each model. If no version is selected, the validation will apply to the model generally.'
+                                            }
                                         </p>
                                         {loadingVersions ? (
                                             <div className="text-sm text-gray-500 italic">Loading versions...</div>
@@ -843,14 +872,15 @@ export default function ValidationWorkflowPage() {
                                                                         {model?.model_name}
                                                                     </label>
                                                                     <select
-                                                                        className="input-field text-sm"
+                                                                        className={`input-field text-sm ${isChangeType && !selectedVersions[modelId] ? 'border-red-300' : ''}`}
                                                                         value={selectedVersions[modelId] || ''}
                                                                         onChange={(e) => setSelectedVersions({
                                                                             ...selectedVersions,
                                                                             [modelId]: e.target.value ? parseInt(e.target.value) : null
                                                                         })}
                                                                     >
-                                                                        <option value="">No specific version (general validation)</option>
+                                                                        {!isChangeType && <option value="">No specific version (general validation)</option>}
+                                                                        {isChangeType && <option value="">-- Select a version (required) --</option>}
                                                                         {versions.map((v: ModelVersion) => (
                                                                             <option key={v.version_id} value={v.version_id}>
                                                                                 {v.version_number} - {v.status}
@@ -1086,6 +1116,18 @@ export default function ValidationWorkflowPage() {
                         setShowValidationWarnings(false);
                         setValidationWarnings([]);
                         // User can now edit the target_completion_date field in the form
+                    }}
+                />
+            )}
+
+            {/* Version Blockers Modal (for CHANGE validation type) */}
+            {versionBlockers.length > 0 && (
+                <VersionBlockerModal
+                    blockers={versionBlockers}
+                    onClose={() => setVersionBlockers([])}
+                    onSelectVersion={(modelId, versionId) => {
+                        setSelectedVersions(prev => ({ ...prev, [modelId]: versionId }));
+                        setVersionBlockers(prev => prev.filter(b => b.model_id !== modelId));
                     }}
                 />
             )}

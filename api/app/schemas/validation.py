@@ -108,6 +108,65 @@ class ValidationRequestWarningsResponse(BaseModel):
     request_data: ValidationRequestBase  # Echo back the request data
 
 
+# ==================== CHANGE VALIDATION BLOCKER SCHEMAS ====================
+
+class VersionAvailable(BaseModel):
+    """Summary of an available draft version for selection."""
+    version_id: int
+    version_number: str
+    change_description: Optional[str] = None
+
+
+class VersionBlocker(BaseModel):
+    """
+    Blocking issue for CHANGE validation creation.
+
+    When validation_type is CHANGE, each model must be linked to a specific
+    model version. These blockers indicate what's preventing creation.
+    """
+    type: str = Field(
+        ...,
+        description="Blocker type: 'NO_DRAFT_VERSION' (no version to select) or 'MISSING_VERSION_LINK' (version not specified)"
+    )
+    severity: str = Field(
+        default="ERROR",
+        description="Always ERROR for blockers - cannot be overridden"
+    )
+    model_id: int = Field(
+        ...,
+        description="ID of the model with the blocking issue"
+    )
+    model_name: str = Field(
+        ...,
+        description="Name of the model with the blocking issue"
+    )
+    message: str = Field(
+        ...,
+        description="Human-readable explanation of the blocking issue"
+    )
+    available_versions: Optional[List[VersionAvailable]] = Field(
+        None,
+        description="DRAFT versions available for selection (only for MISSING_VERSION_LINK)"
+    )
+
+
+class ValidationCreationBlockedResponse(BaseModel):
+    """
+    Response when CHANGE validation creation is blocked.
+
+    Returned with HTTP 400 when attempting to create a CHANGE validation
+    without properly linking models to versions.
+    """
+    message: str = Field(
+        ...,
+        description="Overall explanation of why creation was blocked"
+    )
+    blockers: List[VersionBlocker] = Field(
+        ...,
+        description="List of blocking issues per model"
+    )
+
+
 class ValidationRequestUpdate(BaseModel):
     """Schema for updating a validation request."""
     validation_type_id: Optional[int] = None

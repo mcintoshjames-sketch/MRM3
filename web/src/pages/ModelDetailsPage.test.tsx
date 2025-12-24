@@ -120,12 +120,19 @@ const setupApiMocks = (modelData = sampleModel) => {
         if (url === '/models/1/regions') return Promise.resolve({ data: [] });
         if (url === '/taxonomies/') return Promise.resolve({ data: sampleTaxonomies });
         if (url === '/model-types/categories') return Promise.resolve({ data: [] });
+        if (url === '/methodology-library/categories') return Promise.resolve({ data: [] });
         if (url === '/taxonomies/1') return Promise.resolve({ data: sampleTaxonomyDetails });
         if (url === '/validation-workflow/requests/?model_id=1') return Promise.resolve({ data: [] });
         if (url === '/models/1/versions') return Promise.resolve({ data: [] });
         if (url === '/models/1/revalidation-status') return Promise.resolve({ data: { status: 'Never Validated' } });
         if (url === '/validation-workflow/my-pending-submissions') return Promise.resolve({ data: [] });
         if (url === '/deployment-tasks/my-tasks') return Promise.resolve({ data: [] });
+        if (url === '/models/1/pending-edits') return Promise.resolve({ data: [] });
+        if (url === '/decommissioning/?model_id=1') return Promise.resolve({ data: [] });
+        if (url === '/models/1/final-risk-ranking') return Promise.resolve({ data: null });
+        if (url === '/models/1/risk-assessments/status') return Promise.resolve({ data: { has_assessment: false } });
+        if (url === '/models/1/name-history') return Promise.resolve({ data: [] });
+        if (url === '/models/1/roles-with-lob') return Promise.resolve({ data: { owner: { lob_rollup_name: null }, shared_owner: null, developer: null, shared_developer: null, monitoring_manager: null } });
         return Promise.reject(new Error(`Unknown URL: ${url}`));
     });
 };
@@ -194,7 +201,8 @@ describe('ModelDetailsPage', () => {
         setupApiMocks();
         render(<ModelDetailsPage />);
         await waitFor(() => {
-            expect(screen.getByText('Tier 1')).toBeInTheDocument();
+            const tier1Elements = screen.getAllByText('Tier 1');
+            expect(tier1Elements.length).toBeGreaterThan(0);
         });
     });
 
@@ -215,12 +223,12 @@ describe('ModelDetailsPage', () => {
         });
     });
 
-    it('displays tabs for details and validation history', async () => {
+    it('displays tabs for details and validations', async () => {
         setupApiMocks();
         render(<ModelDetailsPage />);
         await waitFor(() => {
             expect(screen.getByText('Model Details')).toBeInTheDocument();
-            expect(screen.getByText(/Validation History/)).toBeInTheDocument();
+            expect(screen.getByText(/Validations \(\d+ active\)/)).toBeInTheDocument();
         });
     });
 
@@ -228,7 +236,7 @@ describe('ModelDetailsPage', () => {
         setupApiMocks();
         render(<ModelDetailsPage />);
         await waitFor(() => {
-            expect(screen.getByText(/Validation History \(0 active, 0 historical\)/)).toBeInTheDocument();
+            expect(screen.getByText(/Validations \(0 active\)/)).toBeInTheDocument();
         });
     });
 
@@ -236,10 +244,10 @@ describe('ModelDetailsPage', () => {
         setupApiMocks();
         render(<ModelDetailsPage />);
         await waitFor(() => {
-            expect(screen.getByText(/Validation History \(0 active, 0 historical\)/)).toBeInTheDocument();
+            expect(screen.getByText(/Validations \(0 active\)/)).toBeInTheDocument();
         });
 
-        fireEvent.click(screen.getByText(/Validation History \(0 active, 0 historical\)/));
+        fireEvent.click(screen.getByText(/Validations \(0 active\)/));
 
         await waitFor(() => {
             // Should show empty state when no historical validations
@@ -253,8 +261,10 @@ describe('ModelDetailsPage', () => {
         setupApiMocks();
         render(<ModelDetailsPage />);
         await waitFor(() => {
-            fireEvent.click(screen.getByText(/Validation History \(0 active, 0 historical\)/));
+            expect(screen.getByText(/Validations \(0 active\)/)).toBeInTheDocument();
         });
+
+        fireEvent.click(screen.getByText(/Validations \(0 active\)/));
 
         await waitFor(() => {
             expect(screen.getByText('+ New Validation Project')).toBeInTheDocument();

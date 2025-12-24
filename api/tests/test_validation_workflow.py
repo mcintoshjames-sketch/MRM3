@@ -58,6 +58,7 @@ def workflow_taxonomies(db_session):
     comprehensive_val = TaxonomyValue(taxonomy_id=type_tax.taxonomy_id, code="COMPREHENSIVE", label="Comprehensive Review", sort_order=2)
     targeted_val = TaxonomyValue(taxonomy_id=type_tax.taxonomy_id, code="TARGETED", label="Targeted Review", sort_order=3)
     interim_val = TaxonomyValue(taxonomy_id=type_tax.taxonomy_id, code="INTERIM", label="Interim Review", sort_order=4)
+    change_val = TaxonomyValue(taxonomy_id=type_tax.taxonomy_id, code="CHANGE", label="Model Change Review", sort_order=5)
 
     # Work Component Type
     component_tax = Taxonomy(name="Work Component Type", is_system=True)
@@ -90,7 +91,7 @@ def workflow_taxonomies(db_session):
     db_session.add_all([
         urgent, medium, standard,
         intake, planning, in_progress, review, pending_approval, revision, approved, on_hold, cancelled,
-        initial_val, comprehensive_val, targeted_val, interim_val,
+        initial_val, comprehensive_val, targeted_val, interim_val, change_val,
         conceptual, data_quality, implementation, performance, documentation,
         not_started, comp_in_progress, completed,
         fit_for_purpose, not_fit
@@ -104,7 +105,7 @@ def workflow_taxonomies(db_session):
             "review": review, "pending_approval": pending_approval, "revision": revision, "approved": approved,
             "on_hold": on_hold, "cancelled": cancelled
         },
-        "type": {"initial": initial_val, "comprehensive": comprehensive_val, "targeted": targeted_val, "interim": interim_val},
+        "type": {"initial": initial_val, "comprehensive": comprehensive_val, "targeted": targeted_val, "interim": interim_val, "change": change_val},
         "component_type": {
             "conceptual": conceptual, "data_quality": data_quality,
             "implementation": implementation, "performance": performance, "documentation": documentation
@@ -4000,3 +4001,288 @@ class TestScopeOnlyValidationPlans:
         assert updated_plan["overall_scope_summary"] == "This is a targeted review scope summary."
         assert updated_plan["material_deviation_from_standard"] is False
         assert updated_plan["is_scope_only"] is True
+
+
+class TestChangeValidationType:
+    """Tests for CHANGE validation type requiring model version linking."""
+
+    def test_change_validation_requires_versions(
+        self, client, admin_headers, admin_user, workflow_taxonomies, db_session,
+        risk_tier_taxonomy, usage_frequency
+    ):
+        """CHANGE validation without version_ids should return 400 with blockers."""
+        from app.models.model_version import ModelVersion
+
+        # Create a model
+        model = Model(
+            model_name="Test Model for Change Validation",
+            description="Test model",
+            status="Active",
+            development_type="In-House",
+            owner_id=admin_user.user_id,
+            risk_tier_id=risk_tier_taxonomy["TIER_2"].value_id,
+            usage_frequency_id=usage_frequency["daily"].value_id
+        )
+        db_session.add(model)
+        db_session.commit()
+
+        # Create a DRAFT version for the model
+        version = ModelVersion(
+            model_id=model.model_id,
+            version_number="1.0",
+            change_type="Enhancement",
+            change_description="Initial version",
+            created_by_id=admin_user.user_id,
+            status="DRAFT"
+        )
+        db_session.add(version)
+        db_session.commit()
+
+        # Try to create a CHANGE validation without version_ids
+        response = client.post(
+            "/validation-workflow/requests/",
+            headers=admin_headers,
+            json={
+                "model_ids": [model.model_id],
+                "validation_type_id": workflow_taxonomies["type"]["change"].value_id,
+                "priority_id": workflow_taxonomies["priority"]["standard"].value_id,
+                "target_completion_date": (date.today() + timedelta(days=30)).isoformat()
+                # Note: no version_ids provided
+            }
+        )
+
+        # Should return 400 with blockers
+        assert response.status_code == 400
+        detail = response.json()["detail"]
+        assert "blockers" in detail
+        blockers = detail["blockers"]
+        assert len(blockers) == 1
+        assert blockers[0]["type"] == "MISSING_VERSION_LINK"
+        assert blockers[0]["model_id"] == model.model_id
+        assert blockers[0]["model_name"] == "Test Model for Change Validation"
+
+    def test_change_validation_blocks_no_draft(
+        self, client, admin_headers, admin_user, workflow_taxonomies, db_session,
+        risk_tier_taxonomy, usage_frequency
+    ):
+        """Model with no DRAFT version should return NO_DRAFT_VERSION blocker."""
+        from app.models.model_version import ModelVersion
+
+        # Create a model
+        model = Model(
+            model_name="Test Model No Draft",
+            description="Test model without draft version",
+            status="Active",
+            development_type="In-House",
+            owner_id=admin_user.user_id,
+            risk_tier_id=risk_tier_taxonomy["TIER_2"].value_id,
+            usage_frequency_id=usage_frequency["daily"].value_id
+        )
+        db_session.add(model)
+        db_session.commit()
+
+        # Create only an APPROVED version (not DRAFT)
+        version = ModelVersion(
+            model_id=model.model_id,
+            version_number="1.0",
+            change_type="Enhancement",
+            change_description="Production version",
+            created_by_id=admin_user.user_id,
+            status="APPROVED"
+        )
+        db_session.add(version)
+        db_session.commit()
+
+        # Try to create a CHANGE validation
+        response = client.post(
+            "/validation-workflow/requests/",
+            headers=admin_headers,
+            json={
+                "model_ids": [model.model_id],
+                "validation_type_id": workflow_taxonomies["type"]["change"].value_id,
+                "priority_id": workflow_taxonomies["priority"]["standard"].value_id,
+                "target_completion_date": (date.today() + timedelta(days=30)).isoformat()
+            }
+        )
+
+        # Should return 400 with NO_DRAFT_VERSION blocker
+        assert response.status_code == 400
+        detail = response.json()["detail"]
+        assert "blockers" in detail
+        blockers = detail["blockers"]
+        assert len(blockers) == 1
+        assert blockers[0]["type"] == "NO_DRAFT_VERSION"
+        assert blockers[0]["model_id"] == model.model_id
+        assert "has no DRAFT version" in blockers[0]["message"]
+
+    def test_change_validation_success(
+        self, client, admin_headers, admin_user, workflow_taxonomies, db_session,
+        risk_tier_taxonomy, usage_frequency
+    ):
+        """CHANGE validation with all models linked to DRAFT versions should succeed."""
+        from app.models.model_version import ModelVersion
+
+        # Create a model
+        model = Model(
+            model_name="Test Model Change Success",
+            description="Test model for successful change validation",
+            status="Active",
+            development_type="In-House",
+            owner_id=admin_user.user_id,
+            risk_tier_id=risk_tier_taxonomy["TIER_2"].value_id,
+            usage_frequency_id=usage_frequency["daily"].value_id
+        )
+        db_session.add(model)
+        db_session.commit()
+
+        # Create a DRAFT version
+        version = ModelVersion(
+            model_id=model.model_id,
+            version_number="2.0",
+            change_type="Enhancement",
+            change_description="New feature version",
+            created_by_id=admin_user.user_id,
+            status="DRAFT"
+        )
+        db_session.add(version)
+        db_session.commit()
+
+        # Create CHANGE validation WITH model_versions
+        response = client.post(
+            "/validation-workflow/requests/",
+            headers=admin_headers,
+            json={
+                "model_ids": [model.model_id],
+                "validation_type_id": workflow_taxonomies["type"]["change"].value_id,
+                "priority_id": workflow_taxonomies["priority"]["standard"].value_id,
+                "target_completion_date": (date.today() + timedelta(days=30)).isoformat(),
+                "model_versions": {model.model_id: version.version_id}  # Linking version
+            }
+        )
+
+        # Should succeed with 201
+        assert response.status_code == 201
+        data = response.json()
+        assert data["validation_type"]["code"] == "CHANGE"
+
+    def test_non_change_validation_no_version_required(
+        self, client, admin_headers, admin_user, workflow_taxonomies, db_session,
+        risk_tier_taxonomy, usage_frequency
+    ):
+        """Non-CHANGE validation types (INITIAL, TARGETED) should not require version_ids."""
+        # Create a model without any versions
+        model = Model(
+            model_name="Test Model Non-Change",
+            description="Test model for non-change validation",
+            status="Active",
+            development_type="In-House",
+            owner_id=admin_user.user_id,
+            risk_tier_id=risk_tier_taxonomy["TIER_2"].value_id,
+            usage_frequency_id=usage_frequency["daily"].value_id
+        )
+        db_session.add(model)
+        db_session.commit()
+
+        # Test INITIAL validation - should succeed without versions
+        initial_response = client.post(
+            "/validation-workflow/requests/",
+            headers=admin_headers,
+            json={
+                "model_ids": [model.model_id],
+                "validation_type_id": workflow_taxonomies["type"]["initial"].value_id,
+                "priority_id": workflow_taxonomies["priority"]["standard"].value_id,
+                "target_completion_date": (date.today() + timedelta(days=30)).isoformat()
+            }
+        )
+        assert initial_response.status_code == 201
+
+        # Test TARGETED validation - should succeed without versions
+        targeted_response = client.post(
+            "/validation-workflow/requests/",
+            headers=admin_headers,
+            json={
+                "model_ids": [model.model_id],
+                "validation_type_id": workflow_taxonomies["type"]["targeted"].value_id,
+                "priority_id": workflow_taxonomies["priority"]["standard"].value_id,
+                "target_completion_date": (date.today() + timedelta(days=60)).isoformat()
+            }
+        )
+        assert targeted_response.status_code == 201
+
+        # Test COMPREHENSIVE validation - should succeed without versions
+        comprehensive_response = client.post(
+            "/validation-workflow/requests/",
+            headers=admin_headers,
+            json={
+                "model_ids": [model.model_id],
+                "validation_type_id": workflow_taxonomies["type"]["comprehensive"].value_id,
+                "priority_id": workflow_taxonomies["priority"]["standard"].value_id,
+                "target_completion_date": (date.today() + timedelta(days=90)).isoformat()
+            }
+        )
+        assert comprehensive_response.status_code == 201
+
+    def test_change_validation_partial_versions(
+        self, client, admin_headers, admin_user, workflow_taxonomies, db_session,
+        risk_tier_taxonomy, usage_frequency
+    ):
+        """When some models have versions linked and some don't, return blockers only for missing."""
+        from app.models.model_version import ModelVersion
+
+        # Create two models
+        model1 = Model(
+            model_name="Test Model With Draft",
+            description="Model that has a draft version",
+            status="Active",
+            development_type="In-House",
+            owner_id=admin_user.user_id,
+            risk_tier_id=risk_tier_taxonomy["TIER_2"].value_id,
+            usage_frequency_id=usage_frequency["daily"].value_id
+        )
+        model2 = Model(
+            model_name="Test Model Without Draft",
+            description="Model that has no draft version",
+            status="Active",
+            development_type="In-House",
+            owner_id=admin_user.user_id,
+            risk_tier_id=risk_tier_taxonomy["TIER_1"].value_id,
+            usage_frequency_id=usage_frequency["daily"].value_id
+        )
+        db_session.add_all([model1, model2])
+        db_session.commit()
+
+        # Create DRAFT version only for model1
+        version1 = ModelVersion(
+            model_id=model1.model_id,
+            version_number="1.0",
+            change_type="Enhancement",
+            change_description="Draft version for model1",
+            created_by_id=admin_user.user_id,
+            status="DRAFT"
+        )
+        db_session.add(version1)
+        db_session.commit()
+
+        # Try CHANGE validation with both models but only linking model1's version
+        response = client.post(
+            "/validation-workflow/requests/",
+            headers=admin_headers,
+            json={
+                "model_ids": [model1.model_id, model2.model_id],
+                "validation_type_id": workflow_taxonomies["type"]["change"].value_id,
+                "priority_id": workflow_taxonomies["priority"]["standard"].value_id,
+                "target_completion_date": (date.today() + timedelta(days=30)).isoformat(),
+                "model_versions": {model1.model_id: version1.version_id}  # Only linking model1's version
+            }
+        )
+
+        # Should return 400 with blocker only for model2 (NO_DRAFT_VERSION)
+        assert response.status_code == 400
+        detail = response.json()["detail"]
+        assert "blockers" in detail
+        blockers = detail["blockers"]
+        # model2 has no draft version at all
+        assert len(blockers) == 1
+        assert blockers[0]["type"] == "NO_DRAFT_VERSION"
+        assert blockers[0]["model_id"] == model2.model_id
+        assert blockers[0]["model_name"] == "Test Model Without Draft"

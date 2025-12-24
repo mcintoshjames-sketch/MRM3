@@ -667,6 +667,85 @@ def get_taxonomy_value_by_code(db: Session, taxonomy_name: str, code: str) -> Ta
     return value
 
 
+def check_change_validation_blockers(
+    db: Session,
+    validation_type_id: int,
+    model_ids: List[int],
+    model_versions: Optional[Dict[int, Optional[int]]]
+) -> List[Dict]:
+    """
+    Check if CHANGE validation type requirements are met.
+
+    For CHANGE validation requests, each model must be linked to a specific
+    model version. If any model lacks a DRAFT version, the user must create
+    one first via the model change submission flow.
+
+    Args:
+        db: Database session
+        validation_type_id: The selected validation type ID
+        model_ids: List of model IDs included in the validation request
+        model_versions: Optional dict mapping model_id -> version_id
+
+    Returns:
+        List of blocker dicts if requirements not satisfied, empty list otherwise.
+        Blockers are hard errors that prevent creation (cannot be overridden).
+    """
+    # Check if validation type is CHANGE
+    change_type = db.query(TaxonomyValue).join(Taxonomy).filter(
+        Taxonomy.name == "Validation Type",
+        TaxonomyValue.code == "CHANGE"
+    ).first()
+
+    if not change_type or validation_type_id != change_type.value_id:
+        return []  # Not a CHANGE validation, no blockers
+
+    # Import ModelVersion locally (following existing pattern in this file)
+    from app.models import ModelVersion
+
+    blockers = []
+    model_versions = model_versions or {}
+
+    for model_id in model_ids:
+        model = db.query(Model).filter(Model.model_id == model_id).first()
+        if not model:
+            continue  # Model validation happens elsewhere
+
+        version_id = model_versions.get(model_id)
+
+        # For CHANGE validations, version must be specified
+        if version_id is None:
+            # Check if model has any DRAFT versions available
+            draft_versions = db.query(ModelVersion).filter(
+                ModelVersion.model_id == model_id,
+                ModelVersion.status == "DRAFT"
+            ).all()
+
+            if not draft_versions:
+                blockers.append({
+                    "type": "NO_DRAFT_VERSION",
+                    "severity": "ERROR",
+                    "model_id": model_id,
+                    "model_name": model.model_name,
+                    "message": f"Model '{model.model_name}' has no DRAFT version. "
+                               f"Submit a model change first to create a version for validation."
+                })
+            else:
+                blockers.append({
+                    "type": "MISSING_VERSION_LINK",
+                    "severity": "ERROR",
+                    "model_id": model_id,
+                    "model_name": model.model_name,
+                    "message": f"Model '{model.model_name}' must be linked to a specific "
+                               f"version for CHANGE validations.",
+                    "available_versions": [
+                        {"version_id": v.version_id, "version_number": v.version_number}
+                        for v in draft_versions
+                    ]
+                })
+
+    return blockers
+
+
 def find_prior_validation_for_models(
     db: Session,
     model_ids: List[int],
@@ -1674,6 +1753,22 @@ def create_validation_request(
     if not validation_type:
         raise HTTPException(
             status_code=404, detail="Validation type not found")
+
+    # Check CHANGE validation type requirements (version linking)
+    change_blockers = check_change_validation_blockers(
+        db=db,
+        validation_type_id=request_data.validation_type_id,
+        model_ids=request_data.model_ids,
+        model_versions=request_data.model_versions
+    )
+    if change_blockers:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "message": "Cannot create CHANGE validation without linking to model versions",
+                "blockers": change_blockers
+            }
+        )
 
     # Verify priority exists
     priority = db.query(TaxonomyValue).filter(
