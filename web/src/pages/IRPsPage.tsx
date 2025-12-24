@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import Layout from '../components/Layout';
+import MRSAReviewDashboardWidget from '../components/MRSAReviewDashboardWidget';
 import { useTableSort } from '../hooks/useTableSort';
 import { useAuth } from '../contexts/AuthContext';
 import { irpApi, IRP, IRPCreate, IRPUpdate } from '../api/irp';
@@ -176,6 +177,14 @@ export default function IRPsPage() {
                             </button>
                         )}
                     </div>
+                </div>
+
+                <div className="mb-6">
+                    <MRSAReviewDashboardWidget
+                        title="MRSA Review Status"
+                        description="Monitor independent review obligations across MRSAs covered by IRPs."
+                        showPolicyLink={isAdmin}
+                    />
                 </div>
 
                 {/* Filters */}

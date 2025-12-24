@@ -4,6 +4,7 @@ import { useAuth } from '../contexts/AuthContext';
 import api from '../api/client';
 import Layout from '../components/Layout';
 import OverdueCommentaryModal, { OverdueType } from '../components/OverdueCommentaryModal';
+import MRSAReviewDashboardWidget from '../components/MRSAReviewDashboardWidget';
 
 interface OverdueItem {
     overdue_type: 'PRE_SUBMISSION' | 'VALIDATION_IN_PROGRESS';
@@ -327,6 +328,15 @@ export default function ModelOwnerDashboardPage() {
                         </Link>
                     </div>
                 </div>
+            </div>
+
+            <div className="mb-6">
+                <MRSAReviewDashboardWidget
+                    title="My MRSA Reviews"
+                    description="Review status for MRSAs you own."
+                    ownerId={user?.user_id}
+                    showOwnerColumn={false}
+                />
             </div>
 
             {/* Pending Attestations Alert */}

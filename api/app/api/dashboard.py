@@ -1,5 +1,6 @@
 """Dashboard routes."""
 from typing import List, Any
+from datetime import date
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session, joinedload
 from app.core.database import get_db
@@ -18,7 +19,14 @@ from app.models.model_approval_status_history import ModelApprovalStatusHistory
 from app.models.attestation import AttestationRecord
 from app.models.model_version import ModelVersion
 from app.models.model_exception import ModelException, ModelExceptionStatusHistory
+from app.models.mrsa_review_policy import MRSAReviewPolicy, MRSAReviewException
+from app.models.irp import IRP
+from app.models.taxonomy import TaxonomyValue
 from app.core.rls import apply_model_rls
+from app.core.mrsa_review_utils import get_mrsa_review_details
+from app.schemas.mrsa_review_policy import (
+    MRSAReviewSummary, MRSAReviewStatus, MRSAReviewStatusEnum
+)
 
 router = APIRouter()
 
@@ -427,6 +435,145 @@ def get_news_feed(
     # Sort combined feed by created_at descending and limit to 50
     feed.sort(key=lambda x: x["created_at"], reverse=True)
     return feed[:50]
+
+
+# ============================================================================
+# MRSA Review Dashboard Endpoints
+# ============================================================================
+
+@router.get("/mrsa-reviews/summary", response_model=MRSAReviewSummary)
+def get_mrsa_reviews_summary(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Get summary counts of MRSA review statuses.
+
+    Returns counts grouped by status:
+    - CURRENT: Reviews not yet due
+    - UPCOMING: Due within warning period
+    - OVERDUE: Past due date
+    - NO_IRP: Requires IRP but has no coverage
+    - NEVER_REVIEWED: No reviews recorded
+    - NO_REQUIREMENT: No review policy applies
+    """
+    today = date.today()
+
+    # Get all MRSAs with necessary relationships eagerly loaded
+    mrsas = db.query(Model).options(
+        joinedload(Model.mrsa_risk_level),
+        joinedload(Model.owner),
+        joinedload(Model.irps).joinedload(IRP.reviews)
+    ).filter(Model.is_mrsa == True).all()
+
+    # Initialize counters
+    counts = {
+        "total_count": len(mrsas),
+        "current_count": 0,
+        "upcoming_count": 0,
+        "overdue_count": 0,
+        "no_irp_count": 0,
+        "never_reviewed_count": 0,
+        "no_requirement_count": 0
+    }
+
+    # Count by status
+    for mrsa in mrsas:
+        review_details = get_mrsa_review_details(mrsa, db, today)
+        status = review_details["status"]
+
+        if status == MRSAReviewStatusEnum.CURRENT:
+            counts["current_count"] += 1
+        elif status == MRSAReviewStatusEnum.UPCOMING:
+            counts["upcoming_count"] += 1
+        elif status == MRSAReviewStatusEnum.OVERDUE:
+            counts["overdue_count"] += 1
+        elif status == MRSAReviewStatusEnum.NO_IRP:
+            counts["no_irp_count"] += 1
+        elif status == MRSAReviewStatusEnum.NEVER_REVIEWED:
+            counts["never_reviewed_count"] += 1
+        elif status == MRSAReviewStatusEnum.NO_REQUIREMENT:
+            counts["no_requirement_count"] += 1
+
+    return MRSAReviewSummary(**counts)
+
+
+@router.get("/mrsa-reviews/upcoming", response_model=List[MRSAReviewStatus])
+def get_mrsa_reviews_upcoming(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Get MRSAs with reviews due within warning period.
+
+    Returns MRSAs in UPCOMING status, sorted by days_until_due (ascending).
+    """
+    today = date.today()
+
+    # Get all MRSAs with necessary relationships eagerly loaded
+    mrsas = db.query(Model).options(
+        joinedload(Model.mrsa_risk_level),
+        joinedload(Model.owner),
+        joinedload(Model.irps).joinedload(IRP.reviews)
+    ).filter(Model.is_mrsa == True).all()
+
+    # Filter to upcoming only
+    upcoming = []
+    for mrsa in mrsas:
+        review_details = get_mrsa_review_details(mrsa, db, today)
+        if review_details["status"] == MRSAReviewStatusEnum.UPCOMING:
+            upcoming.append(MRSAReviewStatus(**review_details))
+
+    # Sort by days_until_due (ascending - soonest first)
+    upcoming.sort(key=lambda x: x.days_until_due if x.days_until_due is not None else 999999)
+
+    return upcoming
+
+
+@router.get("/mrsa-reviews/overdue", response_model=List[MRSAReviewStatus])
+def get_mrsa_reviews_overdue(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Get overdue/no-coverage MRSAs.
+
+    Returns MRSAs with past-due review dates or missing IRP coverage,
+    sorted by severity then by days overdue (worst first).
+    """
+    today = date.today()
+
+    # Get all MRSAs with necessary relationships eagerly loaded
+    mrsas = db.query(Model).options(
+        joinedload(Model.mrsa_risk_level),
+        joinedload(Model.owner),
+        joinedload(Model.irps).joinedload(IRP.reviews)
+    ).filter(Model.is_mrsa == True).all()
+
+    problems = []
+    for mrsa in mrsas:
+        review_details = get_mrsa_review_details(mrsa, db, today)
+        status = review_details["status"]
+        days_until_due = review_details["days_until_due"]
+
+        if status == MRSAReviewStatusEnum.NO_IRP:
+            problems.append(MRSAReviewStatus(**review_details))
+            continue
+
+        if days_until_due is not None and days_until_due < 0:
+            problems.append(MRSAReviewStatus(**review_details))
+
+    # Sort by severity then by days overdue
+    # Severity order: NO_IRP > NEVER_REVIEWED > OVERDUE
+    severity_order = {
+        MRSAReviewStatusEnum.NO_IRP: 0,
+        MRSAReviewStatusEnum.NEVER_REVIEWED: 1,
+        MRSAReviewStatusEnum.OVERDUE: 2
+    }
+
+    problems.sort(key=lambda x: (
+        severity_order.get(x.status, 999),
+        x.days_until_due if x.days_until_due is not None else 0  # More negative = worse
+    ))
+
+    return problems
 
 
 def _format_decom_action(history: DecommissioningStatusHistory) -> str:

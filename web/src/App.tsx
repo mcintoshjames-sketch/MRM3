@@ -17,6 +17,7 @@ import WorkflowConfigurationPage from './pages/WorkflowConfigurationPage';
 import BatchDelegatesPage from './pages/BatchDelegatesPage';
 import RegionsPage from './pages/RegionsPage';
 import ValidationPoliciesPage from './pages/ValidationPoliciesPage';
+import MRSAReviewPoliciesPage from './pages/MRSAReviewPoliciesPage';
 import MyPendingSubmissionsPage from './pages/MyPendingSubmissionsPage';
 import MyDeploymentTasksPage from './pages/MyDeploymentTasksPage';
 import RegionalComplianceReportPage from './pages/RegionalComplianceReportPage';
@@ -110,6 +111,7 @@ function App() {
             <Route path="/batch-delegates" element={user?.role === 'Admin' ? <BatchDelegatesPage /> : <Navigate to="/models" />} />
             <Route path="/regions" element={user?.role === 'Admin' ? <RegionsPage /> : <Navigate to="/models" />} />
             <Route path="/validation-policies" element={user?.role === 'Admin' ? <ValidationPoliciesPage /> : <Navigate to="/models" />} />
+            <Route path="/mrsa-review-policies" element={user?.role === 'Admin' ? <MRSAReviewPoliciesPage /> : <Navigate to="/models" />} />
             <Route path="/component-definitions" element={<Navigate to="/taxonomy?tab=component-definitions" />} />
             <Route path="/configuration-history" element={user?.role === 'Admin' ? <ConfigurationHistoryPage /> : <Navigate to="/models" />} />
             <Route path="/approver-roles" element={user?.role === 'Admin' ? <ApproverRolesPage /> : <Navigate to="/models" />} />

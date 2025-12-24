@@ -1,5 +1,7 @@
 """IRP (Independent Review Process) routes."""
 from typing import List, Optional
+from datetime import date
+from dateutil.relativedelta import relativedelta
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session, joinedload
 from app.core.database import get_db
@@ -7,6 +9,7 @@ from app.core.deps import get_current_user
 from app.models.user import User
 from app.models.model import Model
 from app.models.irp import IRP, IRPReview, IRPCertification
+from app.models.mrsa_review_policy import MRSAReviewPolicy, MRSAReviewException
 from app.models.taxonomy import TaxonomyValue
 from app.models.audit_log import AuditLog
 from app.schemas.irp import (
@@ -14,6 +17,9 @@ from app.schemas.irp import (
     IRPReviewCreate, IRPReviewResponse,
     IRPCertificationCreate, IRPCertificationResponse,
     MRSASummary, IRPCoverageStatus
+)
+from app.schemas.mrsa_review_policy import (
+    MRSAReviewStatus, MRSAReviewStatusEnum
 )
 
 router = APIRouter()
@@ -221,7 +227,9 @@ def create_irp(
     return _build_irp_detail_response(irp)
 
 
-@router.get("/{irp_id}", response_model=IRPDetailResponse)
+
+
+@router.get("/{irp_id:int}", response_model=IRPDetailResponse)
 def get_irp(
     irp_id: int,
     db: Session = Depends(get_db),
@@ -246,7 +254,7 @@ def get_irp(
     return _build_irp_detail_response(irp)
 
 
-@router.patch("/{irp_id}", response_model=IRPDetailResponse)
+@router.patch("/{irp_id:int}", response_model=IRPDetailResponse)
 def update_irp(
     irp_id: int,
     irp_data: IRPUpdate,
@@ -391,7 +399,7 @@ def update_irp(
     return _build_irp_detail_response(irp)
 
 
-@router.delete("/{irp_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/{irp_id:int}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_irp(
     irp_id: int,
     db: Session = Depends(get_db),
@@ -454,7 +462,7 @@ def delete_irp(
 # IRP Review Endpoints
 # ============================================================================
 
-@router.get("/{irp_id}/reviews", response_model=List[IRPReviewResponse])
+@router.get("/{irp_id:int}/reviews", response_model=List[IRPReviewResponse])
 def list_irp_reviews(
     irp_id: int,
     db: Session = Depends(get_db),
@@ -476,7 +484,7 @@ def list_irp_reviews(
     return reviews
 
 
-@router.post("/{irp_id}/reviews", response_model=IRPReviewResponse, status_code=status.HTTP_201_CREATED)
+@router.post("/{irp_id:int}/reviews", response_model=IRPReviewResponse, status_code=status.HTTP_201_CREATED)
 def create_irp_review(
     irp_id: int,
     review_data: IRPReviewCreate,
@@ -540,7 +548,7 @@ def create_irp_review(
 # IRP Certification Endpoints
 # ============================================================================
 
-@router.get("/{irp_id}/certifications", response_model=List[IRPCertificationResponse])
+@router.get("/{irp_id:int}/certifications", response_model=List[IRPCertificationResponse])
 def list_irp_certifications(
     irp_id: int,
     db: Session = Depends(get_db),
@@ -561,7 +569,7 @@ def list_irp_certifications(
     return certifications
 
 
-@router.post("/{irp_id}/certifications", response_model=IRPCertificationResponse, status_code=status.HTTP_201_CREATED)
+@router.post("/{irp_id:int}/certifications", response_model=IRPCertificationResponse, status_code=status.HTTP_201_CREATED)
 def create_irp_certification(
     irp_id: int,
     certification_data: IRPCertificationCreate,
@@ -666,6 +674,146 @@ def check_irp_coverage(
             is_compliant=is_compliant,
             irp_ids=[irp.irp_id for irp in mrsa.irps],
             irp_names=[irp.process_name for irp in mrsa.irps],
+        ))
+
+    return results
+
+
+# ============================================================================
+# MRSA Review Status Calculation
+# ============================================================================
+
+def calculate_mrsa_review_status(
+    mrsa: Model,
+    policy: Optional[MRSAReviewPolicy],
+    exception: Optional[MRSAReviewException],
+    latest_review_date: Optional[date]
+) -> tuple[MRSAReviewStatusEnum, Optional[date], Optional[int]]:
+    """Calculate review status for a single MRSA.
+
+    Args:
+        mrsa: Model instance (must be MRSA)
+        policy: Active review policy for the MRSA's risk level
+        exception: Active exception for this MRSA (if any)
+        latest_review_date: Date of most recent review across all covering IRPs
+
+    Returns:
+        tuple of (status, next_due_date, days_until_due)
+    """
+    today = date.today()
+
+    # NO_IRP: High-Risk MRSA with no IRP coverage
+    if mrsa.mrsa_risk_level and mrsa.mrsa_risk_level.requires_irp and len(mrsa.irps) == 0:
+        return (MRSAReviewStatusEnum.NO_IRP, None, None)
+
+    # NO_REQUIREMENT: No active policy (typically Low-Risk MRSAs)
+    if not policy or not policy.is_active:
+        return (MRSAReviewStatusEnum.NO_REQUIREMENT, None, None)
+
+    # Calculate next due date
+    if latest_review_date:
+        # Use latest review date + frequency
+        next_due_date = latest_review_date + relativedelta(months=policy.frequency_months)
+    else:
+        # NEVER_REVIEWED: Use creation date + initial review period
+        next_due_date = mrsa.created_at.date() + relativedelta(months=policy.initial_review_months)
+
+    # Apply exception override if exists
+    if exception and exception.is_active:
+        next_due_date = exception.override_due_date
+
+    # Calculate days until due
+    days_until_due = (next_due_date - today).days
+
+    # NEVER_REVIEWED: Has IRP but no review ever performed
+    if not latest_review_date:
+        if days_until_due < 0:
+            return (MRSAReviewStatusEnum.OVERDUE, next_due_date, days_until_due)
+        return (MRSAReviewStatusEnum.NEVER_REVIEWED, next_due_date, days_until_due)
+
+    # Determine status based on days until due
+    if days_until_due < 0:
+        return (MRSAReviewStatusEnum.OVERDUE, next_due_date, days_until_due)
+    elif days_until_due <= policy.warning_days:
+        return (MRSAReviewStatusEnum.UPCOMING, next_due_date, days_until_due)
+    else:
+        return (MRSAReviewStatusEnum.CURRENT, next_due_date, days_until_due)
+
+
+@router.get("/mrsa-review-status", response_model=List[MRSAReviewStatus])
+def get_mrsa_review_status(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Get review status for all MRSAs.
+
+    Returns review compliance status for all MRSAs based on:
+    - Review policy for their risk level
+    - Latest review date across all covering IRPs
+    - Active exceptions
+    """
+    # Query all MRSAs with eager loading
+    mrsas = db.query(Model).options(
+        joinedload(Model.owner),
+        joinedload(Model.mrsa_risk_level),
+        joinedload(Model.irps).joinedload(IRP.reviews)
+    ).filter(Model.is_mrsa == True).all()
+
+    # Batch load all policies and exceptions
+    policies_dict = {}
+    policies = db.query(MRSAReviewPolicy).filter(
+        MRSAReviewPolicy.is_active == True
+    ).all()
+    for policy in policies:
+        policies_dict[policy.mrsa_risk_level_id] = policy
+
+    exceptions_dict = {}
+    exceptions = db.query(MRSAReviewException).filter(
+        MRSAReviewException.is_active == True
+    ).all()
+    for exception in exceptions:
+        exceptions_dict[exception.mrsa_id] = exception
+
+    # Calculate status for each MRSA
+    results = []
+    for mrsa in mrsas:
+        # Get policy for this MRSA's risk level
+        policy = policies_dict.get(mrsa.mrsa_risk_level_id) if mrsa.mrsa_risk_level_id else None
+
+        # Get exception for this MRSA
+        exception = exceptions_dict.get(mrsa.model_id)
+
+        # Find latest review across ALL covering IRPs
+        latest_review_date = None
+        for irp in mrsa.irps:
+            if irp.reviews:
+                irp_latest = irp.reviews[0].review_date  # Reviews are ordered DESC by review_date
+                if latest_review_date is None or irp_latest > latest_review_date:
+                    latest_review_date = irp_latest
+
+        # Calculate status
+        status, next_due_date, days_until_due = calculate_mrsa_review_status(
+            mrsa=mrsa,
+            policy=policy,
+            exception=exception,
+            latest_review_date=latest_review_date
+        )
+
+        results.append(MRSAReviewStatus(
+            mrsa_id=mrsa.model_id,
+            mrsa_name=mrsa.model_name,
+            risk_level=mrsa.mrsa_risk_level.label if mrsa.mrsa_risk_level else None,
+            last_review_date=latest_review_date,
+            next_due_date=next_due_date,
+            status=status,
+            days_until_due=days_until_due,
+            owner={
+                "user_id": mrsa.owner.user_id,
+                "full_name": mrsa.owner.full_name,
+                "email": mrsa.owner.email
+            } if mrsa.owner else None,
+            has_exception=exception is not None,
+            exception_due_date=exception.override_due_date if exception else None
         ))
 
     return results

@@ -15,6 +15,7 @@ from app.models.model import Model
 from app.models.risk_assessment import QualitativeRiskFactor, QualitativeFactorGuidance
 from app.models.scorecard import ScorecardSection, ScorecardCriterion
 from app.models.residual_risk_map import ResidualRiskMapConfig
+from app.models.mrsa_review_policy import MRSAReviewPolicy
 from app.core.monitoring_constants import (
     QUALITATIVE_OUTCOME_TAXONOMY_NAME,
     OUTCOME_GREEN,
@@ -2272,6 +2273,41 @@ def seed_database():
         else:
             print(
                 "⚠ Recommendation Priority taxonomy not found - skipping priority config seeding")
+
+        # Seed default MRSA Review Policy for High-Risk MRSAs
+        print("\n=== Seeding MRSA Review Policy ===")
+        mrsa_risk_level_taxonomy = db.query(Taxonomy).filter(
+            Taxonomy.name == "MRSA Risk Level"
+        ).first()
+
+        if mrsa_risk_level_taxonomy:
+            high_risk_value = db.query(TaxonomyValue).filter(
+                TaxonomyValue.taxonomy_id == mrsa_risk_level_taxonomy.taxonomy_id,
+                TaxonomyValue.code == "HIGH_RISK"
+            ).first()
+
+            if high_risk_value:
+                existing_policy = db.query(MRSAReviewPolicy).filter(
+                    MRSAReviewPolicy.mrsa_risk_level_id == high_risk_value.value_id
+                ).first()
+
+                if not existing_policy:
+                    policy = MRSAReviewPolicy(
+                        mrsa_risk_level_id=high_risk_value.value_id,
+                        frequency_months=24,  # 2-year review cycle
+                        initial_review_months=3,  # Initial review within 3 months
+                        warning_days=90,  # 90-day warning before due
+                        is_active=True
+                    )
+                    db.add(policy)
+                    db.commit()
+                    print("✓ Created default MRSA Review Policy for High-Risk MRSAs")
+                else:
+                    print("✓ MRSA Review Policy already exists for High-Risk MRSAs (skipping update to preserve user changes)")
+            else:
+                print("⚠ High-Risk MRSA Risk Level value not found - skipping MRSA Review Policy seeding")
+        else:
+            print("⚠ MRSA Risk Level taxonomy not found - skipping MRSA Review Policy seeding")
 
         # Seed timeframe configurations
         seed_timeframe_configs(db)

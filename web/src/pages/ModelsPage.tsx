@@ -5,6 +5,7 @@ import { useAuth } from '../contexts/AuthContext';
 import Layout from '../components/Layout';
 import { useTableSort } from '../hooks/useTableSort';
 import MultiSelectDropdown from '../components/MultiSelectDropdown';
+import MRSAReviewStatusBadge, { MRSAReviewStatusCode } from '../components/MRSAReviewStatusBadge';
 import { Region } from '../api/regions';
 import { exportViewsApi, ExportView } from '../api/exportViews';
 import { linkChangeToAttestationIfPresent } from '../api/attestation';
@@ -74,6 +75,19 @@ interface IRPItem {
     contact_user?: IRPContactUser;
 }
 
+interface MRSAReviewStatus {
+    mrsa_id: number;
+    mrsa_name: string;
+    risk_level: string | null;
+    last_review_date: string | null;
+    next_due_date: string | null;
+    status: MRSAReviewStatusCode;
+    days_until_due: number | null;
+    owner: IRPContactUser | null;
+    has_exception: boolean;
+    exception_due_date: string | null;
+}
+
 interface Methodology {
     methodology_id: number;
     name: string;
@@ -113,6 +127,12 @@ interface Model {
     mrsa_risk_level_id: number | null;
     mrsa_risk_level: TaxonomyValue | null;
     mrsa_risk_rationale: string | null;
+    mrsa_review_status?: MRSAReviewStatusCode | null;
+    mrsa_last_review_date?: string | null;
+    mrsa_next_due_date?: string | null;
+    mrsa_days_until_due?: number | null;
+    mrsa_has_exception?: boolean;
+    mrsa_exception_due_date?: string | null;
     // Usage frequency taxonomy
     usage_frequency_id: number | null;
     usage_frequency: TaxonomyValue | null;
@@ -307,6 +327,9 @@ export default function ModelsPage() {
         { key: 'is_mrsa', label: 'MRSA', default: false },
         { key: 'mrsa_risk_level', label: 'MRSA Risk Level', default: false },
         { key: 'mrsa_risk_rationale', label: 'MRSA Risk Rationale', default: false },
+        { key: 'mrsa_review_status', label: 'MRSA Review Status', default: false },
+        { key: 'mrsa_last_review_date', label: 'MRSA Last Review', default: false },
+        { key: 'mrsa_next_due_date', label: 'MRSA Next Due', default: false },
         { key: 'irp_coverage', label: 'IRP (MRSA Only)', default: false },
         { key: 'irp_contact', label: 'IRP Contact (MRSA Only)', default: false },
         { key: 'owner', label: 'Owner', default: true },
@@ -345,6 +368,15 @@ export default function ModelsPage() {
         { key: 'days_overdue', label: 'Days Overdue', default: false },
         { key: 'penalty_notches', label: 'Penalty Notches', default: false },
         { key: 'adjusted_scorecard_outcome', label: 'Adjusted Outcome', default: false }
+    ];
+
+    const mrsaReviewStatusOptions = [
+        { value: 'OVERDUE', label: 'Overdue' },
+        { value: 'NEVER_REVIEWED', label: 'Never Reviewed' },
+        { value: 'NO_IRP', label: 'No IRP' },
+        { value: 'UPCOMING', label: 'Upcoming' },
+        { value: 'CURRENT', label: 'Current' },
+        { value: 'NO_REQUIREMENT', label: 'No Requirement' }
     ];
 
     // Define default preset views
@@ -397,6 +429,16 @@ export default function ModelsPage() {
         availableColumns.filter(col => col.default).map(col => col.key)
     );
 
+    useEffect(() => {
+        if (viewMode !== 'mrsas') return;
+        const mrsaColumns = ['mrsa_review_status', 'mrsa_last_review_date', 'mrsa_next_due_date'];
+        setSelectedColumns((prev) => {
+            const next = new Set(prev);
+            mrsaColumns.forEach((column) => next.add(column));
+            return Array.from(next);
+        });
+    }, [viewMode]);
+
     // Filters
     const [filters, setFilters] = useState({
         search: '',
@@ -405,6 +447,7 @@ export default function ModelsPage() {
         owner_ids: [] as number[],
         vendor_ids: [] as number[],
         region_ids: [] as number[],
+        mrsa_review_statuses: [] as MRSAReviewStatusCode[],
         include_sub_models: false,
         is_aiml: '' as '' | 'true' | 'false' | 'null'  // '', 'true', 'false', 'null' (undefined)
     });
@@ -478,6 +521,16 @@ export default function ModelsPage() {
                 return false;
             }
             if (filters.is_aiml === 'null' && model.is_aiml !== null) {
+                return false;
+            }
+        }
+
+        // MRSA review status filter (only applies to MRSAs)
+        if (filters.mrsa_review_statuses.length > 0) {
+            if (!model.is_mrsa) {
+                return false;
+            }
+            if (!model.mrsa_review_status || !filters.mrsa_review_statuses.includes(model.mrsa_review_status)) {
                 return false;
             }
         }
@@ -565,15 +618,51 @@ export default function ModelsPage() {
             const taxonomyNames = ['Validation Type', 'Validation Priority', 'Model Usage Frequency', 'MRSA Risk Level'];
             const taxonomyQueryString = taxonomyNames.map(n => `names=${encodeURIComponent(n)}`).join('&');
 
-            const [modelsRes, usersRes, vendorsRes, regionsRes, taxonomiesRes, modelTypesRes] = await Promise.all([
+            const [
+                modelsRes,
+                usersRes,
+                vendorsRes,
+                regionsRes,
+                taxonomiesRes,
+                modelTypesRes,
+                mrsaReviewRes
+            ] = await Promise.all([
                 api.get(`/models/?${params.toString()}`),
                 api.get('/auth/users'),
                 api.get('/vendors/'),
                 api.get('/regions/'),
                 api.get(`/taxonomies/by-names/?${taxonomyQueryString}`),
-                api.get('/model-types/categories')
+                api.get('/model-types/categories'),
+                api.get('/irps/mrsa-review-status').catch(() => ({ data: [] }))
             ]);
-            setModels(modelsRes.data);
+            const mrsaReviewMap = new Map<number, MRSAReviewStatus>(
+                (mrsaReviewRes.data as MRSAReviewStatus[]).map((item) => [item.mrsa_id, item])
+            );
+            const enrichedModels = modelsRes.data.map((model: Model) => {
+                if (!model.is_mrsa) {
+                    return {
+                        ...model,
+                        mrsa_review_status: null,
+                        mrsa_last_review_date: null,
+                        mrsa_next_due_date: null,
+                        mrsa_days_until_due: null,
+                        mrsa_has_exception: false,
+                        mrsa_exception_due_date: null
+                    };
+                }
+
+                const reviewStatus = mrsaReviewMap.get(model.model_id);
+                return {
+                    ...model,
+                    mrsa_review_status: reviewStatus?.status ?? null,
+                    mrsa_last_review_date: reviewStatus?.last_review_date ?? null,
+                    mrsa_next_due_date: reviewStatus?.next_due_date ?? null,
+                    mrsa_days_until_due: reviewStatus?.days_until_due ?? null,
+                    mrsa_has_exception: reviewStatus?.has_exception ?? false,
+                    mrsa_exception_due_date: reviewStatus?.exception_due_date ?? null
+                };
+            });
+            setModels(enrichedModels);
             setUsers(usersRes.data);
             setVendors(vendorsRes.data);
             setRegions(regionsRes.data);
@@ -778,6 +867,11 @@ export default function ModelsPage() {
         }
     };
 
+    const formatDate = (value: string | null | undefined) => {
+        if (!value) return '-';
+        return value.split('T')[0];
+    };
+
     // Column renderers: define how each column renders in table and CSV
     const columnRenderers: Record<string, {
         header: string;
@@ -881,6 +975,46 @@ export default function ModelsPage() {
                 <span className="text-sm text-gray-400">-</span>
             ),
             csvValue: (model) => model.is_mrsa ? (model.mrsa_risk_rationale || '') : ''
+        },
+        mrsa_review_status: {
+            header: 'MRSA Review Status',
+            sortKey: 'mrsa_review_status',
+            cell: (model) => {
+                if (!model.is_mrsa || !model.mrsa_review_status) {
+                    return <span className="text-sm text-gray-400">-</span>;
+                }
+                return <MRSAReviewStatusBadge status={model.mrsa_review_status} />;
+            },
+            csvValue: (model) => model.is_mrsa && model.mrsa_review_status ? model.mrsa_review_status : ''
+        },
+        mrsa_last_review_date: {
+            header: 'MRSA Last Review',
+            sortKey: 'mrsa_last_review_date',
+            cell: (model) => {
+                if (!model.is_mrsa) return <span className="text-sm text-gray-400">-</span>;
+                return <span>{formatDate(model.mrsa_last_review_date)}</span>;
+            },
+            csvValue: (model) =>
+                model.is_mrsa && model.mrsa_last_review_date ? formatDate(model.mrsa_last_review_date) : ''
+        },
+        mrsa_next_due_date: {
+            header: 'MRSA Next Due',
+            sortKey: 'mrsa_next_due_date',
+            cell: (model) => {
+                if (!model.is_mrsa) return <span className="text-sm text-gray-400">-</span>;
+                return (
+                    <div>
+                        <div>{formatDate(model.mrsa_next_due_date)}</div>
+                        {model.mrsa_has_exception && model.mrsa_exception_due_date && (
+                            <div className="text-xs text-purple-600 mt-0.5">
+                                Exception: {formatDate(model.mrsa_exception_due_date)}
+                            </div>
+                        )}
+                    </div>
+                );
+            },
+            csvValue: (model) =>
+                model.is_mrsa && model.mrsa_next_due_date ? formatDate(model.mrsa_next_due_date) : ''
         },
         irp_coverage: {
             header: 'IRP (MRSA Only)',
@@ -2442,6 +2576,16 @@ export default function ModelsPage() {
                             </select>
                         </div>
 
+                        {(viewMode === 'mrsas' || viewMode === 'all') && (
+                            <MultiSelectDropdown
+                                label="MRSA Review Status"
+                                placeholder="All Statuses"
+                                options={mrsaReviewStatusOptions}
+                                selectedValues={filters.mrsa_review_statuses}
+                                onChange={(values) => setFilters({ ...filters, mrsa_review_statuses: values as MRSAReviewStatusCode[] })}
+                            />
+                        )}
+
                         {/* View Mode Toggle */}
                         <div>
                             <label className="block text-sm font-medium text-gray-700 mb-1">View Mode</label>
@@ -2529,6 +2673,7 @@ export default function ModelsPage() {
                                     owner_ids: [],
                                     vendor_ids: [],
                                     region_ids: [],
+                                    mrsa_review_statuses: [],
                                     include_sub_models: false,
                                     is_aiml: ''
                                 });

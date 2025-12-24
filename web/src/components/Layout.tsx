@@ -382,6 +382,7 @@ export default function Layout({ children }: LayoutProps) {
                                         <SubsectionLabel label="Workflow & Policies" />
                                         <NavItem to="/workflow-config">Workflow Config</NavItem>
                                         <NavItem to="/validation-policies">Validation Policies</NavItem>
+                                        <NavItem to="/mrsa-review-policies">MRSA Review Policies</NavItem>
                                         <NavItem to="/approver-roles">Approver Roles</NavItem>
                                         <NavItem to="/additional-approval-rules">Additional Approvals</NavItem>
 

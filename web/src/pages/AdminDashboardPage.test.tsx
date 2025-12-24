@@ -130,7 +130,22 @@ const samplePendingModelSubmissions = [
     },
 ];
 
-const setupApiMocks = (overrides: Partial<Record<string, any[]>> = {}) => {
+const sampleMrsaPastDue = [
+    {
+        mrsa_id: 101,
+        mrsa_name: 'Credit Risk MRSA',
+        risk_level: 'High-Risk',
+        last_review_date: '2023-01-01',
+        next_due_date: '2024-01-01',
+        status: 'OVERDUE',
+        days_until_due: -120,
+        owner: { user_id: 2, full_name: 'Dana Lee', email: 'dana@example.com' },
+        has_exception: false,
+        exception_due_date: null,
+    },
+];
+
+const setupApiMocks = (overrides: Partial<Record<string, any>> = {}) => {
     const data = {
         slaViolations: sampleSLAViolations,
         outOfOrder: sampleOutOfOrder,
@@ -139,6 +154,15 @@ const setupApiMocks = (overrides: Partial<Record<string, any[]>> = {}) => {
         overdueValidations: sampleOverdueValidations,
         upcomingRevalidations: sampleUpcomingRevalidations,
         pendingModelSubmissions: samplePendingModelSubmissions,
+        pendingModelEdits: [],
+        pendingAdditionalApprovals: [],
+        myOverdueItems: [],
+        monitoringOverview: { cycles: [] },
+        recommendationsOpen: { total_open: 0, overdue_count: 0, by_status: [], by_priority: [] },
+        recommendationsOverdue: { recommendations: [] },
+        mrsaPastDue: sampleMrsaPastDue,
+        cycleReminder: { should_show_reminder: false },
+        attestationStats: { submitted_count: 0 },
         ...overrides,
     };
 
@@ -158,6 +182,24 @@ const setupApiMocks = (overrides: Partial<Record<string, any[]>> = {}) => {
                 return Promise.resolve({ data: data.upcomingRevalidations });
             case '/models/pending-submissions':
                 return Promise.resolve({ data: data.pendingModelSubmissions });
+            case '/models/pending-edits/all':
+                return Promise.resolve({ data: data.pendingModelEdits });
+            case '/validation-workflow/dashboard/pending-additional-approvals':
+                return Promise.resolve({ data: data.pendingAdditionalApprovals });
+            case '/validation-workflow/dashboard/my-overdue-items':
+                return Promise.resolve({ data: data.myOverdueItems });
+            case '/monitoring/admin-overview':
+                return Promise.resolve({ data: data.monitoringOverview });
+            case '/recommendations/dashboard/open':
+                return Promise.resolve({ data: data.recommendationsOpen });
+            case '/recommendations/dashboard/overdue':
+                return Promise.resolve({ data: data.recommendationsOverdue });
+            case '/dashboard/mrsa-reviews/overdue':
+                return Promise.resolve({ data: data.mrsaPastDue });
+            case '/attestations/cycles/reminder':
+                return Promise.resolve({ data: data.cycleReminder });
+            case '/attestations/dashboard/stats':
+                return Promise.resolve({ data: data.attestationStats });
             case '/validation-workflow/my-pending-submissions':
                 return Promise.resolve({ data: [] });
             case '/deployment-tasks/my-tasks':
@@ -256,6 +298,7 @@ describe('AdminDashboardPage', () => {
             overdueValidations: [],
             upcomingRevalidations: [],
             pendingModelSubmissions: [],
+            mrsaPastDue: [],
         });
 
         render(<AdminDashboardPage />);

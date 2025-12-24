@@ -96,6 +96,7 @@ from app.models.scorecard import (
 from app.models.residual_risk_map import ResidualRiskMapConfig
 from app.models.limitation import ModelLimitation
 from app.models.irp import IRP, IRPReview, IRPCertification, mrsa_irp
+from app.models.mrsa_review_policy import MRSAReviewPolicy, MRSAReviewException
 from app.models.attestation import (
     AttestationCycleStatus,
     AttestationFrequency,
@@ -234,6 +235,9 @@ __all__ = [
     "IRPReview",
     "IRPCertification",
     "mrsa_irp",
+    # MRSA Review Policy
+    "MRSAReviewPolicy",
+    "MRSAReviewException",
     # Attestations
     "AttestationCycleStatus",
     "AttestationFrequency",

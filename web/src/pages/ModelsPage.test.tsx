@@ -87,11 +87,12 @@ const setupApiMocks = (models = sampleModels) => {
         if (url === '/auth/users') return Promise.resolve({ data: sampleUsers });
         if (url === '/vendors/') return Promise.resolve({ data: sampleVendors });
         if (url === '/regions/') return Promise.resolve({ data: [] });
-        if (url === '/taxonomies/') return Promise.resolve({ data: [] });
+        if (url.startsWith('/taxonomies/by-names/')) return Promise.resolve({ data: [] });
         if (url === '/model-types/categories') return Promise.resolve({ data: [] });
         if (url === '/export-views/?entity_type=models') return Promise.resolve({ data: [] });
         if (url === '/validation-workflow/my-pending-submissions') return Promise.resolve({ data: [] });
         if (url === '/deployment-tasks/my-tasks') return Promise.resolve({ data: [] });
+        if (url === '/irps/mrsa-review-status') return Promise.resolve({ data: [] });
         return Promise.reject(new Error('Unknown URL: ' + url));
     });
 };
