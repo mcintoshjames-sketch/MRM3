@@ -6,12 +6,13 @@
 2. [Key Concepts](#2-key-concepts)
 3. [Managing MRSAs](#3-managing-mrsas)
 4. [Managing IRPs](#4-managing-irps)
-5. [Recording IRP Reviews](#5-recording-irp-reviews)
-6. [IRP Certifications](#6-irp-certifications)
-7. [Coverage Compliance](#7-coverage-compliance)
-8. [Role-Based Workflows](#8-role-based-workflows)
-9. [Frequently Asked Questions](#9-frequently-asked-questions)
-10. [Appendix](#10-appendix)
+5. [MRSA Review Tracking](#5-mrsa-review-tracking)
+6. [Recording IRP Reviews](#6-recording-irp-reviews)
+7. [IRP Certifications](#7-irp-certifications)
+8. [Coverage Compliance](#8-coverage-compliance)
+9. [Role-Based Workflows](#9-role-based-workflows)
+10. [Frequently Asked Questions](#10-frequently-asked-questions)
+11. [Appendix](#11-appendix)
 
 ---
 
@@ -44,9 +45,9 @@ MRSAs can propagate model risk downstream. If a model produces inaccurate output
 
 | Role | Primary Activities |
 |------|-------------------|
-| **Administrator** | Full IRP management: create, edit, delete IRPs; issue certifications; link MRSAs to IRPs |
-| **Validator** | View MRSAs, participate in validation activities |
-| **Model Owner** | Register MRSAs, assign risk classifications, view IRP coverage status on MRSA detail pages |
+| **Administrator** | Full IRP management: create, edit, delete IRPs; configure MRSA review policies; issue certifications; link MRSAs to IRPs |
+| **Validator** | View MRSAs and review status, participate in validation activities |
+| **Model Owner** | Register MRSAs, assign risk classifications, monitor MRSA review status and IRP coverage |
 
 ---
 
@@ -62,6 +63,18 @@ MRSAs are classified by risk level, which determines governance requirements:
 | **Low-Risk** | Non-critical applications with limited impact | No |
 
 Risk levels are configurable via the Taxonomy system. Administrators can add additional risk levels as needed.
+
+High-Risk MRSAs are subject to periodic independent reviews (default frequency is 24 months when the policy is active).
+
+### MRSA Review Policies
+
+High-risk MRSAs are tracked against a configurable review policy tied to each MRSA risk level. Policies define the recurring review frequency, the initial review deadline for newly created MRSAs, and the warning window used to flag upcoming reviews.
+
+If no active policy exists for a risk level, the review status will display **No Requirement**. See [MRSA Review Tracking](#5-mrsa-review-tracking) for details.
+
+### MRSA Review Status
+
+Review status is calculated from the latest IRP review across any linked IRP and the policy for the MRSA risk level. Status badges appear on dashboards and the Models list to highlight upcoming or overdue reviews.
 
 ### IRP Coverage
 
@@ -110,6 +123,19 @@ MRSAs are displayed on the **Models** page. To filter for MRSAs:
 1. Navigate to **Models** in the sidebar
 2. Use the view toggle to select **MRSAs Only**
 3. The list shows all registered MRSAs with their risk levels
+
+### Viewing MRSA Review Status
+
+When viewing MRSAs, you can surface the review tracking fields directly in the Models list:
+
+1. Open the column chooser and enable:
+   - **MRSA Review Status**
+   - **MRSA Last Review**
+   - **MRSA Next Due**
+2. Use the **MRSA Review Status** filter to focus on Upcoming, Overdue, No IRP, or Never Reviewed items.
+3. If an approved exception exists, the **MRSA Next Due** column will show an "Exception" date beneath the standard due date.
+
+Review status fields are only populated for MRSAs; non-MRSAs display a dash.
 
 ### Creating an MRSA
 
@@ -171,6 +197,15 @@ The IRP list displays:
 
 **Export**: Click **Export CSV** to download the IRP list.
 
+### MRSA Review Status Widget
+
+The IRP Management page includes an **MRSA Review Status** widget that summarizes review obligations across all MRSAs (Administrator-only view):
+
+- Summary counts for Current, Upcoming, and Overdue
+- Filters for **Needs Attention** (Overdue, No IRP, Never Reviewed), **Upcoming**, or **All**
+- CSV export for the current view
+- Admins see a link to **MRSA Review Policies**
+
 ### Creating an IRP
 
 *Requires Administrator role*
@@ -216,7 +251,57 @@ Inactive IRPs remain in the system for historical reference but are hidden from 
 
 ---
 
-## 5. Recording IRP Reviews
+## 5. MRSA Review Tracking
+
+High-risk MRSAs are tracked against configurable review policies. Review status is based on the latest IRP review across any linked IRP and the policy tied to the MRSA risk level.
+
+### Review Policy Fields
+
+- **Frequency Months**: Recurring review cycle after the most recent IRP review
+- **Initial Review Months**: Deadline for the first review after MRSA creation if no reviews exist
+- **Warning Days**: Window before the due date when status changes to Upcoming
+- **Active**: Only active policies are used for status calculations
+
+**Default High-Risk Policy**: Frequency 24 months, Initial Review 3 months, Warning 90 days.
+
+### Review Status Definitions
+
+| Status | Meaning | Typical Action |
+|--------|---------|----------------|
+| **CURRENT** | Review due date is beyond the warning window | Continue normal monitoring |
+| **UPCOMING** | Review due within warning window | Schedule the review |
+| **OVERDUE** | Review due date has passed (no grace period) | Escalate and complete the review |
+| **NEVER_REVIEWED** | No reviews recorded yet; initial review deadline applies | Schedule the initial review |
+| **NO_IRP** | MRSA has no linked IRP while a policy is active | Link to an IRP immediately |
+| **NO_REQUIREMENT** | No active policy for the risk level | No review tracking required |
+
+### How Status Is Calculated
+
+1. The system looks up the active policy for the MRSA's risk level.
+2. If no policy is active, the MRSA is labeled **No Requirement**.
+3. If an MRSA with an active policy has no linked IRP, the status is **No IRP**.
+4. The latest review date across all linked IRPs sets the next due date.
+5. If no reviews exist, the due date is **MRSA created date + Initial Review Months** and the status is **Never Reviewed**.
+6. If an approved exception exists, the due date is overridden and flagged in the UI.
+
+### Where to Monitor Review Status
+
+- **IRP Management**: MRSA Review Status widget with filters and CSV export
+- **Models List**: MRSA Review Status, MRSA Last Review, and MRSA Next Due columns with status filters
+- **Admin Dashboard**: Past-Due MRSA Reviews feed highlighting overdue, no-IRP, and never-reviewed items
+- **Model Owner Dashboard**: "My MRSA Reviews" summary for owned applications
+
+### Configuring MRSA Review Policies (Admin)
+
+1. Go to **Configuration** > **Workflow & Policies** > **MRSA Review Policies**.
+2. Review the policy list by MRSA risk level.
+3. Click **Edit** to update frequency, initial review window, warning days, or active status.
+4. Use **Create MRSA Review Policy** to add a policy for new risk levels.
+5. Click **Save** to apply changes (status calculations update immediately).
+
+---
+
+## 6. Recording IRP Reviews
 
 IRP reviews document periodic assessments of MRSA governance.
 
@@ -245,6 +330,12 @@ IRP reviews document periodic assessments of MRSA governance.
 | **Conditionally Satisfactory** | Minor gaps identified; remediation actions defined |
 | **Not Satisfactory** | Material control weaknesses; immediate attention required |
 
+### How Reviews Affect MRSA Review Status
+
+- The review tracker uses the most recent review date from any IRP linked to the MRSA.
+- Adding a new review resets the next due date based on the policy frequency.
+- If an MRSA has coverage but no reviews, it remains **Never Reviewed** until the first review is recorded.
+
 ### Review Best Practices
 
 - Conduct reviews at regular intervals (e.g., annually)
@@ -254,7 +345,7 @@ IRP reviews document periodic assessments of MRSA governance.
 
 ---
 
-## 6. IRP Certifications
+## 7. IRP Certifications
 
 Certifications are formal attestations that an IRP's design is adequate.
 
@@ -286,11 +377,13 @@ Certifications are typically issued:
 
 ---
 
-## 7. Coverage Compliance
+## 8. Coverage Compliance
 
 ### High-Risk MRSA Governance
 
 High-Risk MRSAs **should** be covered by an IRP as a best practice. The system tracks coverage status but does not currently enforce it during save.
+
+High-risk MRSAs are also tracked against MRSA review policies. Use MRSA review status to identify **No IRP**, **Never Reviewed**, and **Overdue** items that require action.
 
 ### Checking Coverage Status
 
@@ -320,7 +413,7 @@ To remove coverage:
 
 ---
 
-## 8. Role-Based Workflows
+## 9. Role-Based Workflows
 
 ### Administrator Workflow
 
@@ -332,6 +425,7 @@ To remove coverage:
 │  1. Configure Taxonomies                                │
 │     └─► Set up MRSA Risk Levels                         │
 │     └─► Set up IRP Review Outcomes                      │
+│     └─► Configure MRSA Review Policies                  │
 │                                                         │
 │  2. Create and Manage IRPs                              │
 │     └─► Define process scope                            │
@@ -348,6 +442,7 @@ To remove coverage:
 │     └─► Document conclusions                            │
 │                                                         │
 │  5. Monitor Compliance                                  │
+│     └─► Track MRSA review status and past-due items     │
 │     └─► Ensure High-Risk MRSAs have coverage            │
 │     └─► Review unsatisfactory findings                  │
 │                                                         │
@@ -371,6 +466,7 @@ To remove coverage:
 │     └─► Document risk rationale                         │
 │                                                         │
 │  3. Participate in Governance                           │
+│     └─► Track MRSA review status on dashboards          │
 │     └─► View IRP coverage status on MRSA detail page    │
 │     └─► Support IRP reviews when requested              │
 │     └─► Address findings from IRP assessments           │
@@ -382,7 +478,7 @@ To remove coverage:
 
 ---
 
-## 9. Frequently Asked Questions
+## 10. Frequently Asked Questions
 
 ### General Questions
 
@@ -416,6 +512,24 @@ A: Only Administrators can issue certifications. This provides a formal control 
 
 A: Deactivating is preferred. This preserves historical review and certification records while removing the IRP from active governance.
 
+### MRSA Review Tracking
+
+**Q: Where do I configure MRSA review frequency and warning windows?**
+
+A: Administrators can manage these settings on the **MRSA Review Policies** page under **Configuration** > **Workflow & Policies**. Changes apply immediately to review status calculations.
+
+**Q: Why does an MRSA show "No Requirement"?**
+
+A: There is no active review policy for the MRSA's risk level (commonly for low-risk MRSAs or when a policy is inactive).
+
+**Q: What does "Never Reviewed" mean?**
+
+A: The MRSA has IRP coverage, but no reviews have been recorded yet. The due date is based on the MRSA creation date plus the policy's initial review window.
+
+**Q: How do I request a review due date exception?**
+
+A: Administrators can record a review exception to override the due date. When an exception is active, the UI displays an "Exception" date. Exceptions are currently managed by administrators.
+
 ### Coverage and Compliance
 
 **Q: How do I know if all High-Risk MRSAs are covered?**
@@ -432,7 +546,7 @@ A: Navigate to the MRSA detail page and use the "+ Link to IRP" button in the IR
 
 ---
 
-## 10. Appendix
+## 11. Appendix
 
 ### A. MRSA Risk Level Taxonomy
 
@@ -451,7 +565,18 @@ A: Navigate to the MRSA detail page and use the "+ Link to IRP" button in the IR
 | CONDITIONALLY_SATISFACTORY | Conditionally Satisfactory | Yellow |
 | NOT_SATISFACTORY | Not Satisfactory | Red |
 
-### C. Navigation Reference
+### C. MRSA Review Status Codes
+
+| Status | Description |
+|--------|-------------|
+| CURRENT | Review due date is beyond the warning window |
+| UPCOMING | Due within warning window |
+| OVERDUE | Past due date (no grace period) |
+| NEVER_REVIEWED | No IRP review recorded yet; initial review deadline applies |
+| NO_IRP | MRSA has no linked IRP while a policy is active |
+| NO_REQUIREMENT | No active policy for the MRSA risk level |
+
+### D. Navigation Reference
 
 | Page | Path | Description |
 |------|------|-------------|
@@ -459,8 +584,9 @@ A: Navigate to the MRSA detail page and use the "+ Link to IRP" button in the IR
 | IRPs | /irps | IRP management list |
 | IRP Detail | /irps/:id | Individual IRP with tabs |
 | Taxonomy | /taxonomy | Configure risk levels and outcomes |
+| MRSA Review Policies | /mrsa-review-policies | Configure MRSA review frequencies and warnings |
 
-### D. Permission Matrix
+### E. Permission Matrix
 
 | Action | Admin | Validator | User |
 |--------|-------|-----------|------|
@@ -470,6 +596,7 @@ A: Navigate to the MRSA detail page and use the "+ Link to IRP" button in the IR
 | Delete IRP | Yes | No | No |
 | Add Review | Yes | No | No |
 | Add Certification | Yes | No | No |
+| Manage MRSA Review Policies | Yes | No | No |
 | View MRSAs | Yes | Yes | Yes |
 | Create MRSA | Yes | Yes | Yes |
 | Edit MRSA | Yes | Yes | Owned only |
@@ -477,4 +604,4 @@ A: Navigate to the MRSA detail page and use the "+ Link to IRP" button in the IR
 
 ---
 
-*Last Updated: December 2024*
+*Last Updated: 2025-12-24*
