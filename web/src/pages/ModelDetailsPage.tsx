@@ -356,6 +356,7 @@ export default function ModelDetailsPage() {
     const [showIrpLinkModal, setShowIrpLinkModal] = useState(false);
     const [selectedIrpId, setSelectedIrpId] = useState<number | null>(null);
     const [linkingIrp, setLinkingIrp] = useState(false);
+    const [irpSearchTerm, setIrpSearchTerm] = useState('');
     const [finalRiskRanking, setFinalRiskRanking] = useState<FinalRiskRanking | null>(null);
     // Track whether the model has a global risk assessment (disables direct risk tier editing)
     const [hasGlobalAssessment, setHasGlobalAssessment] = useState(false);
@@ -654,6 +655,7 @@ export default function ModelDetailsPage() {
             await fetchIrpData();
             setShowIrpLinkModal(false);
             setSelectedIrpId(null);
+            setIrpSearchTerm('');
         } catch (error) {
             console.error('Failed to link IRP:', error);
             alert('Failed to link IRP. Please try again.');
@@ -2689,7 +2691,11 @@ export default function ModelDetailsPage() {
                                 {/* Link to IRP button - Admin only */}
                                 {user?.role === 'Admin' && (
                                     <button
-                                        onClick={() => setShowIrpLinkModal(true)}
+                                        onClick={() => {
+                                            setShowIrpLinkModal(true);
+                                            setSelectedIrpId(null);
+                                            setIrpSearchTerm('');
+                                        }}
                                         className="mt-2 text-sm text-blue-600 hover:text-blue-800"
                                     >
                                         + Link to IRP
@@ -3897,6 +3903,22 @@ export default function ModelDetailsPage() {
             {showIrpLinkModal && model?.is_mrsa && (
                 <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
                     <div className="bg-white rounded-lg shadow-xl max-w-lg w-full mx-4">
+                        {(() => {
+                            const linkedIrpIds = irpCoverage?.irp_ids ?? [];
+                            const availableIrps = allIrps.filter((irp) => !linkedIrpIds.includes(irp.irp_id));
+                            const normalizedSearch = irpSearchTerm.trim().toLowerCase();
+                            const filteredIrps = normalizedSearch
+                                ? availableIrps.filter((irp) => {
+                                    const nameMatch = irp.process_name.toLowerCase().includes(normalizedSearch);
+                                    const descriptionMatch = (irp.description || '').toLowerCase().includes(normalizedSearch);
+                                    const contactMatch = (irp.contact_user?.full_name || '').toLowerCase().includes(normalizedSearch);
+                                    return nameMatch || descriptionMatch || contactMatch;
+                                })
+                                : availableIrps;
+                            const hasAvailableIrps = availableIrps.length > 0;
+
+                            return (
+                                <>
                         <div className="px-6 py-4 border-b border-gray-200">
                             <h3 className="text-lg font-semibold text-gray-900">Link MRSA to IRP</h3>
                             <p className="text-sm text-gray-500 mt-1">
@@ -3912,48 +3934,66 @@ export default function ModelDetailsPage() {
                                     </p>
                                 </div>
                             ) : (
-                                <div className="space-y-3 max-h-96 overflow-y-auto">
-                                    {allIrps
-                                        .filter(irp => !irpCoverage?.irp_ids.includes(irp.irp_id))
-                                        .map((irp) => (
-                                            <label
-                                                key={irp.irp_id}
-                                                className={`flex items-start p-3 border rounded-lg cursor-pointer transition-colors ${
-                                                    selectedIrpId === irp.irp_id
-                                                        ? 'border-blue-500 bg-blue-50'
-                                                        : 'border-gray-200 hover:border-gray-300'
-                                                }`}
-                                            >
-                                                <input
-                                                    type="radio"
-                                                    name="irp"
-                                                    value={irp.irp_id}
-                                                    checked={selectedIrpId === irp.irp_id}
-                                                    onChange={() => setSelectedIrpId(irp.irp_id)}
-                                                    className="mt-1 mr-3"
-                                                />
-                                                <div className="flex-1">
-                                                    <div className="font-medium text-gray-900">
-                                                        {irp.process_name}
-                                                    </div>
-                                                    {irp.description && (
-                                                        <p className="text-sm text-gray-500 mt-0.5">
-                                                            {irp.description}
-                                                        </p>
-                                                    )}
-                                                    <div className="text-xs text-gray-400 mt-1">
-                                                        Contact: {irp.contact_user?.full_name || 'Unknown'} •
-                                                        {irp.covered_mrsa_count} MRSA{irp.covered_mrsa_count !== 1 ? 's' : ''} covered
-                                                    </div>
-                                                </div>
-                                            </label>
-                                        ))}
-                                    {allIrps.filter(irp => !irpCoverage?.irp_ids.includes(irp.irp_id)).length === 0 && (
+                                <>
+                                    <div className="mb-3">
+                                        <label className="block text-sm font-medium text-gray-600 mb-1">
+                                            Search IRPs
+                                        </label>
+                                        <input
+                                            type="text"
+                                            className="input-field"
+                                            placeholder="Search by name, description, or contact..."
+                                            value={irpSearchTerm}
+                                            onChange={(event) => setIrpSearchTerm(event.target.value)}
+                                        />
+                                    </div>
+                                    {!hasAvailableIrps ? (
                                         <p className="text-center text-gray-500 py-4">
                                             This MRSA is already linked to all available IRPs.
                                         </p>
+                                    ) : (
+                                        <div className="space-y-3 max-h-96 overflow-y-auto">
+                                            {filteredIrps.map((irp) => (
+                                                <label
+                                                    key={irp.irp_id}
+                                                    className={`flex items-start p-3 border rounded-lg cursor-pointer transition-colors ${
+                                                        selectedIrpId === irp.irp_id
+                                                            ? 'border-blue-500 bg-blue-50'
+                                                            : 'border-gray-200 hover:border-gray-300'
+                                                    }`}
+                                                >
+                                                    <input
+                                                        type="radio"
+                                                        name="irp"
+                                                        value={irp.irp_id}
+                                                        checked={selectedIrpId === irp.irp_id}
+                                                        onChange={() => setSelectedIrpId(irp.irp_id)}
+                                                        className="mt-1 mr-3"
+                                                    />
+                                                    <div className="flex-1">
+                                                        <div className="font-medium text-gray-900">
+                                                            {irp.process_name}
+                                                        </div>
+                                                        {irp.description && (
+                                                            <p className="text-sm text-gray-500 mt-0.5">
+                                                                {irp.description}
+                                                            </p>
+                                                        )}
+                                                        <div className="text-xs text-gray-400 mt-1">
+                                                            Contact: {irp.contact_user?.full_name || 'Unknown'} •
+                                                            {irp.covered_mrsa_count} MRSA{irp.covered_mrsa_count !== 1 ? 's' : ''} covered
+                                                        </div>
+                                                    </div>
+                                                </label>
+                                            ))}
+                                            {filteredIrps.length === 0 && (
+                                                <p className="text-center text-gray-500 py-4">
+                                                    No IRPs match your search.
+                                                </p>
+                                            )}
+                                        </div>
                                     )}
-                                </div>
+                                </>
                             )}
                         </div>
                         <div className="px-6 py-4 border-t border-gray-200 flex justify-end gap-3">
@@ -3961,6 +4001,7 @@ export default function ModelDetailsPage() {
                                 onClick={() => {
                                     setShowIrpLinkModal(false);
                                     setSelectedIrpId(null);
+                                    setIrpSearchTerm('');
                                 }}
                                 className="px-4 py-2 text-gray-700 bg-gray-100 rounded-md hover:bg-gray-200"
                             >
@@ -3974,6 +4015,9 @@ export default function ModelDetailsPage() {
                                 {linkingIrp ? 'Linking...' : 'Link to IRP'}
                             </button>
                         </div>
+                                </>
+                            );
+                        })()}
                     </div>
                 </div>
             )}

@@ -4,7 +4,7 @@ import { useAuth } from '../contexts/AuthContext';
 import api from '../api/client';
 import Layout from '../components/Layout';
 import OverdueCommentaryModal, { OverdueType } from '../components/OverdueCommentaryModal';
-import MRSAReviewDashboardWidget from '../components/MRSAReviewDashboardWidget';
+import MRSAReviewStatusBadge, { MRSAReviewStatusCode } from '../components/MRSAReviewStatusBadge';
 
 interface OverdueItem {
     overdue_type: 'PRE_SUBMISSION' | 'VALIDATION_IN_PROGRESS';
@@ -100,6 +100,25 @@ interface RecommendationTasksData {
     tasks: RecommendationTaskItem[];
 }
 
+interface MRSAReviewOwner {
+    user_id: number;
+    full_name: string;
+    email: string;
+}
+
+interface MRSAReviewStatus {
+    mrsa_id: number;
+    mrsa_name: string;
+    risk_level: string | null;
+    last_review_date: string | null;
+    next_due_date: string | null;
+    status: MRSAReviewStatusCode;
+    days_until_due: number | null;
+    owner: MRSAReviewOwner | null;
+    has_exception: boolean;
+    exception_due_date: string | null;
+}
+
 export default function ModelOwnerDashboardPage() {
     const { user } = useAuth();
     const [newsFeed, setNewsFeed] = useState<NewsFeedItem[]>([]);
@@ -109,6 +128,7 @@ export default function ModelOwnerDashboardPage() {
     const [pendingDecomReviews, setPendingDecomReviews] = useState<PendingDecommissioningReview[]>([]);
     const [attestationData, setAttestationData] = useState<AttestationWidgetData | null>(null);
     const [recommendationTasks, setRecommendationTasks] = useState<RecommendationTasksData | null>(null);
+    const [mrsaReviewAttention, setMrsaReviewAttention] = useState<MRSAReviewStatus[]>([]);
     const [loading, setLoading] = useState(true);
 
     // Commentary modal state
@@ -121,14 +141,15 @@ export default function ModelOwnerDashboardPage() {
 
     const fetchDashboardData = async () => {
         try {
-            const [feedRes, submissionsRes, approvalsRes, overdueRes, decomReviewsRes, attestationsRes, recTasksRes] = await Promise.all([
+            const [feedRes, submissionsRes, approvalsRes, overdueRes, decomReviewsRes, attestationsRes, recTasksRes, mrsaReviewsRes] = await Promise.all([
                 api.get('/dashboard/news-feed'),
                 api.get('/models/my-submissions'),
                 api.get('/validation-workflow/dashboard/recent-approvals?days_back=30'),
                 api.get('/validation-workflow/my-overdue-items'),
                 api.get('/decommissioning/my-pending-owner-reviews'),
                 api.get('/attestations/my-upcoming').catch(() => ({ data: null })),
-                api.get('/recommendations/my-tasks').catch(() => ({ data: { total_tasks: 0, overdue_count: 0, tasks: [] } }))
+                api.get('/recommendations/my-tasks').catch(() => ({ data: { total_tasks: 0, overdue_count: 0, tasks: [] } })),
+                api.get('/irps/mrsa-review-status').catch(() => ({ data: [] }))
             ]);
             setNewsFeed(feedRes.data);
             setMySubmissions(submissionsRes.data);
@@ -137,6 +158,27 @@ export default function ModelOwnerDashboardPage() {
             setPendingDecomReviews(decomReviewsRes.data);
             setAttestationData(attestationsRes.data);
             setRecommendationTasks(recTasksRes.data);
+            const attentionStatuses: MRSAReviewStatusCode[] = ['OVERDUE', 'NO_IRP', 'NEVER_REVIEWED'];
+            const attentionItems = (mrsaReviewsRes.data as MRSAReviewStatus[]).filter((item) =>
+                attentionStatuses.includes(item.status)
+            );
+            const severityOrder: Record<MRSAReviewStatusCode, number> = {
+                NO_IRP: 0,
+                OVERDUE: 1,
+                NEVER_REVIEWED: 2,
+                UPCOMING: 3,
+                CURRENT: 4,
+                NO_REQUIREMENT: 5
+            };
+            attentionItems.sort((a, b) => {
+                const aPriority = severityOrder[a.status] ?? 99;
+                const bPriority = severityOrder[b.status] ?? 99;
+                if (aPriority !== bPriority) return aPriority - bPriority;
+                const aDays = a.days_until_due ?? 0;
+                const bDays = b.days_until_due ?? 0;
+                return aDays - bDays;
+            });
+            setMrsaReviewAttention(attentionItems);
         } catch (error) {
             console.error('Failed to fetch dashboard data:', error);
         } finally {
@@ -180,6 +222,18 @@ export default function ModelOwnerDashboardPage() {
         if (diffDays < 7) return `${diffDays} days ago`;
         if (diffDays < 30) return `${Math.floor(diffDays / 7)} weeks ago`;
         return `${Math.floor(diffDays / 30)} months ago`;
+    };
+
+    const formatDate = (value: string | null | undefined) => {
+        if (!value) return '-';
+        return value.split('T')[0];
+    };
+
+    const formatDaysUntil = (days: number | null | undefined) => {
+        if (days === null || days === undefined) return 'No due date';
+        if (days < 0) return `${Math.abs(days)} days overdue`;
+        if (days === 0) return 'Due today';
+        return `${days} days until due`;
     };
 
     const getActionIcon = (action: string | null, type?: string) => {
@@ -287,6 +341,20 @@ export default function ModelOwnerDashboardPage() {
         );
     }
 
+    const mrsaCriticalCount = mrsaReviewAttention.filter(
+        (item) => item.status === 'OVERDUE' || item.status === 'NO_IRP'
+    ).length;
+    const mrsaNeverReviewedCount = mrsaReviewAttention.filter(
+        (item) => item.status === 'NEVER_REVIEWED'
+    ).length;
+    const mrsaAttentionDetails: string[] = [];
+    if (mrsaCriticalCount > 0) {
+        mrsaAttentionDetails.push(`${mrsaCriticalCount} overdue/no IRP`);
+    }
+    if (mrsaNeverReviewedCount > 0) {
+        mrsaAttentionDetails.push(`${mrsaNeverReviewedCount} never reviewed`);
+    }
+
     return (
         <Layout>
             <div className="mb-6">
@@ -330,14 +398,109 @@ export default function ModelOwnerDashboardPage() {
                 </div>
             </div>
 
-            <div className="mb-6">
-                <MRSAReviewDashboardWidget
-                    title="My MRSA Reviews"
-                    description="Review status for MRSAs you own."
-                    ownerId={user?.user_id}
-                    showOwnerColumn={false}
-                />
-            </div>
+            {mrsaReviewAttention.length > 0 && (
+                <div className={`border-l-4 p-4 rounded-lg shadow mb-6 ${
+                    mrsaCriticalCount > 0
+                        ? 'bg-red-50 border-red-500'
+                        : 'bg-amber-50 border-amber-500'
+                }`}>
+                    <div className="flex items-center justify-between mb-3">
+                        <div className="flex items-center gap-3">
+                            <svg className={`w-6 h-6 ${mrsaCriticalCount > 0 ? 'text-red-500' : 'text-amber-500'}`} fill="currentColor" viewBox="0 0 20 20">
+                                <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
+                            </svg>
+                            <div>
+                                <h3 className={`text-sm font-semibold ${mrsaCriticalCount > 0 ? 'text-red-800' : 'text-amber-800'}`}>
+                                    {mrsaCriticalCount > 0 ? 'MRSA Reviews Need Attention' : 'MRSA Reviews Pending'}
+                                </h3>
+                                <p className={`text-sm ${mrsaCriticalCount > 0 ? 'text-red-700' : 'text-amber-700'}`}>
+                                    You have <span className="font-bold">{mrsaReviewAttention.length}</span> MRSA review{mrsaReviewAttention.length !== 1 ? 's' : ''} needing attention
+                                    {mrsaAttentionDetails.length > 0 && (
+                                        <> (<span className="font-bold">{mrsaAttentionDetails.join(', ')}</span>)</>
+                                    )}
+                                    .
+                                </p>
+                            </div>
+                        </div>
+                        <Link
+                            to="/my-mrsa-reviews"
+                            className={`inline-flex items-center px-4 py-2 text-sm font-medium text-white rounded-md transition-colors ${
+                                mrsaCriticalCount > 0
+                                    ? 'bg-red-600 hover:bg-red-700'
+                                    : 'bg-amber-600 hover:bg-amber-700'
+                            }`}
+                        >
+                            View All
+                            <svg className="ml-2 w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                            </svg>
+                        </Link>
+                    </div>
+                    <div className="space-y-2 max-h-64 overflow-y-auto">
+                        {mrsaReviewAttention.slice(0, 5).map((item) => (
+                            <div
+                                key={item.mrsa_id}
+                                className={`bg-white border rounded p-3 ${
+                                    item.status === 'OVERDUE' || item.status === 'NO_IRP'
+                                        ? 'border-red-200'
+                                        : 'border-amber-100'
+                                }`}
+                            >
+                                <div className="flex items-start justify-between gap-2">
+                                    <div className="flex-1 min-w-0">
+                                        <div className="flex items-center gap-2 mb-1 flex-wrap">
+                                            <MRSAReviewStatusBadge status={item.status} />
+                                            <span className="text-xs text-gray-500">
+                                                {formatDaysUntil(item.days_until_due)}
+                                            </span>
+                                        </div>
+                                        <Link
+                                            to={`/models/${item.mrsa_id}`}
+                                            className="text-sm font-medium text-gray-900 hover:text-blue-600 hover:underline"
+                                        >
+                                            {item.mrsa_name}
+                                        </Link>
+                                        <div className="text-xs text-gray-600 mt-1">
+                                            {item.risk_level ? `${item.risk_level} risk` : 'Risk level not set'}
+                                            {item.owner ? ` • Owner: ${item.owner.full_name}` : ' • Owner unassigned'}
+                                        </div>
+                                        <div className="text-xs text-gray-500 mt-0.5">
+                                            Last review: {formatDate(item.last_review_date)} • Next due: {formatDate(item.next_due_date)}
+                                        </div>
+                                        {item.has_exception && item.exception_due_date && (
+                                            <div className="text-xs text-purple-600 mt-0.5">
+                                                Exception: {formatDate(item.exception_due_date)}
+                                            </div>
+                                        )}
+                                    </div>
+                                    <div className="flex-shrink-0">
+                                        <Link
+                                            to={`/models/${item.mrsa_id}`}
+                                            className={`inline-flex items-center px-3 py-1.5 text-xs font-medium rounded transition-colors ${
+                                                item.status === 'OVERDUE' || item.status === 'NO_IRP'
+                                                    ? 'bg-red-600 text-white hover:bg-red-700'
+                                                    : 'bg-amber-600 text-white hover:bg-amber-700'
+                                            }`}
+                                        >
+                                            View
+                                        </Link>
+                                    </div>
+                                </div>
+                            </div>
+                        ))}
+                        {mrsaReviewAttention.length > 5 && (
+                            <div className="text-center py-2">
+                                <Link
+                                    to="/my-mrsa-reviews"
+                                    className={`text-sm ${mrsaCriticalCount > 0 ? 'text-red-600' : 'text-amber-700'} hover:underline`}
+                                >
+                                    View all {mrsaReviewAttention.length} MRSA reviews →
+                                </Link>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            )}
 
             {/* Pending Attestations Alert */}
             {attestationData && attestationData.pending_count > 0 && (

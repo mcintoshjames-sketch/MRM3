@@ -40,23 +40,25 @@ export default function IRPDetailPage() {
 
     useEffect(() => {
         fetchData();
-    }, [id]);
+    }, [id, isAdmin]);
 
     const fetchData = async () => {
         if (!id) return;
+        setLoading(true);
         try {
-            const [irpData, taxonomiesResponse] = await Promise.all([
-                irpApi.get(parseInt(id)),
-                api.get('/taxonomies/by-names/?names=IRP%20Review%20Outcome')
-            ]);
+            const irpData = await irpApi.get(parseInt(id));
             setIrp(irpData);
 
-            // Find IRP Review Outcome taxonomy (by-names endpoint includes values)
-            const outcomeTaxonomy = taxonomiesResponse.data.find(
-                (t: any) => t.name === 'IRP Review Outcome'
-            );
-            if (outcomeTaxonomy && outcomeTaxonomy.values) {
-                setOutcomeOptions(outcomeTaxonomy.values.filter((v: TaxonomyValue) => v.code));
+            if (isAdmin) {
+                const taxonomiesResponse = await api.get('/taxonomies/by-names/?names=IRP%20Review%20Outcome');
+                const outcomeTaxonomy = taxonomiesResponse.data.find(
+                    (t: any) => t.name === 'IRP Review Outcome'
+                );
+                if (outcomeTaxonomy && outcomeTaxonomy.values) {
+                    setOutcomeOptions(outcomeTaxonomy.values.filter((v: TaxonomyValue) => v.code));
+                }
+            } else {
+                setOutcomeOptions([]);
             }
         } catch (error) {
             console.error('Failed to fetch IRP:', error);
@@ -119,6 +121,9 @@ export default function IRPDetailPage() {
         }
     };
 
+    const backLink = isAdmin ? '/irps' : '/my-mrsa-reviews';
+    const backLabel = isAdmin ? 'IRPs' : 'My MRSA Reviews';
+
     if (loading) {
         return (
             <Layout>
@@ -133,8 +138,8 @@ export default function IRPDetailPage() {
                 <div className="p-6">
                     <div className="text-center py-12">
                         <h2 className="text-xl font-semibold text-gray-700">IRP not found</h2>
-                        <Link to="/irps" className="text-blue-600 hover:underline mt-2 inline-block">
-                            Back to IRPs
+                        <Link to={backLink} className="text-blue-600 hover:underline mt-2 inline-block">
+                            Back to {backLabel}
                         </Link>
                     </div>
                 </div>
@@ -155,7 +160,7 @@ export default function IRPDetailPage() {
                 {/* Header */}
                 <div className="mb-6">
                     <div className="flex items-center gap-2 text-sm text-gray-500 mb-2">
-                        <Link to="/irps" className="hover:text-blue-600">IRPs</Link>
+                        <Link to={backLink} className="hover:text-blue-600">{backLabel}</Link>
                         <span>/</span>
                         <span>{irp.process_name}</span>
                     </div>
@@ -175,8 +180,8 @@ export default function IRPDetailPage() {
                                 Contact: {irp.contact_user?.full_name || 'Unknown'}
                             </p>
                         </div>
-                        <Link to="/irps" className="btn-secondary">
-                            ← Back to List
+                        <Link to={backLink} className="btn-secondary">
+                            ← Back to {backLabel}
                         </Link>
                     </div>
                 </div>
@@ -353,16 +358,18 @@ export default function IRPDetailPage() {
                         <div className="p-6">
                             <div className="flex justify-between items-center mb-4">
                                 <h3 className="text-lg font-semibold">Review History</h3>
-                                <button
-                                    onClick={() => setShowReviewForm(true)}
-                                    className="btn-primary"
-                                >
-                                    + Add Review
-                                </button>
+                                {isAdmin && (
+                                    <button
+                                        onClick={() => setShowReviewForm(true)}
+                                        className="btn-primary"
+                                    >
+                                        + Add Review
+                                    </button>
+                                )}
                             </div>
 
                             {/* Review Form */}
-                            {showReviewForm && (
+                            {showReviewForm && isAdmin && (
                                 <div className="bg-gray-50 p-4 rounded-lg mb-4">
                                     <h4 className="font-medium mb-3">New Review</h4>
                                     <form onSubmit={handleCreateReview}>

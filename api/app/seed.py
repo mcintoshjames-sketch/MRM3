@@ -2,6 +2,7 @@
 import re
 from datetime import datetime, date, timedelta
 from typing import Dict, List
+from sqlalchemy.orm import Session
 from app.core.database import SessionLocal
 from app.core.time import utc_now
 from app.core.security import get_password_hash
@@ -16,6 +17,7 @@ from app.models.risk_assessment import QualitativeRiskFactor, QualitativeFactorG
 from app.models.scorecard import ScorecardSection, ScorecardCriterion
 from app.models.residual_risk_map import ResidualRiskMapConfig
 from app.models.mrsa_review_policy import MRSAReviewPolicy
+from app.models.irp import IRP, IRPReview
 from app.core.monitoring_constants import (
     QUALITATIVE_OUTCOME_TAXONOMY_NAME,
     OUTCOME_GREEN,
@@ -2309,6 +2311,9 @@ def seed_database():
         else:
             print("⚠ MRSA Risk Level taxonomy not found - skipping MRSA Review Policy seeding")
 
+        # Seed MRSA demo data for Independent Review Tracking feature
+        seed_mrsa_demo_data(db)
+
         # Seed timeframe configurations
         seed_timeframe_configs(db)
 
@@ -4440,6 +4445,287 @@ def seed_methodology_library(db):
     db.commit()
     print(
         f"✓ Methodology Library seeded: {len(categories_data)} categories, {method_count} new methodologies")
+
+
+def seed_mrsa_demo_data(db: Session):
+    """Seed demo data for MRSA Independent Review Tracking feature.
+
+    Creates 9 high-risk MRSAs covering all 6 review status stages:
+    - CURRENT (2): Recently reviewed, well ahead of next due date
+    - UPCOMING (2): Review due within warning period (90 days)
+    - OVERDUE (2): Past due date
+    - NO_IRP (1): High-risk without IRP coverage
+    - NEVER_REVIEWED (1): Has IRP but no reviews yet
+    - NO_REQUIREMENT (1): Low-risk (no review requirement)
+    """
+    from datetime import date, timedelta
+    from app.models.model import Model
+    from app.models.taxonomy import Taxonomy, TaxonomyValue
+    from app.models.user import User
+    from app.models.irp import IRP, IRPReview
+
+    print("\n=== Seeding MRSA Demo Data for Independent Review Tracking ===")
+
+    # Check if already seeded (idempotent)
+    existing_demo = db.query(Model).filter(
+        Model.model_name.like("MRSA Demo:%")
+    ).first()
+
+    if existing_demo:
+        print("✓ MRSA Demo data already seeded (skipping)")
+        return
+
+    # Get required taxonomy values
+    mrsa_risk_level_taxonomy = db.query(Taxonomy).filter(
+        Taxonomy.name == "MRSA Risk Level"
+    ).first()
+
+    if not mrsa_risk_level_taxonomy:
+        print("⚠ MRSA Risk Level taxonomy not found - skipping MRSA demo seeding")
+        return
+
+    high_risk = db.query(TaxonomyValue).filter(
+        TaxonomyValue.taxonomy_id == mrsa_risk_level_taxonomy.taxonomy_id,
+        TaxonomyValue.code == "HIGH_RISK"
+    ).first()
+
+    low_risk = db.query(TaxonomyValue).filter(
+        TaxonomyValue.taxonomy_id == mrsa_risk_level_taxonomy.taxonomy_id,
+        TaxonomyValue.code == "LOW_RISK"
+    ).first()
+
+    if not high_risk or not low_risk:
+        print("⚠ MRSA Risk Level values not found - skipping MRSA demo seeding")
+        return
+
+    # Get IRP Review Outcome taxonomy values
+    irp_outcome_taxonomy = db.query(Taxonomy).filter(
+        Taxonomy.name == "IRP Review Outcome"
+    ).first()
+
+    if not irp_outcome_taxonomy:
+        print("⚠ IRP Review Outcome taxonomy not found - skipping MRSA demo seeding")
+        return
+
+    satisfactory = db.query(TaxonomyValue).filter(
+        TaxonomyValue.taxonomy_id == irp_outcome_taxonomy.taxonomy_id,
+        TaxonomyValue.code == "SATISFACTORY"
+    ).first()
+
+    conditionally_satisfactory = db.query(TaxonomyValue).filter(
+        TaxonomyValue.taxonomy_id == irp_outcome_taxonomy.taxonomy_id,
+        TaxonomyValue.code == "CONDITIONALLY_SATISFACTORY"
+    ).first()
+
+    not_satisfactory = db.query(TaxonomyValue).filter(
+        TaxonomyValue.taxonomy_id == irp_outcome_taxonomy.taxonomy_id,
+        TaxonomyValue.code == "NOT_SATISFACTORY"
+    ).first()
+
+    if not satisfactory or not conditionally_satisfactory or not not_satisfactory:
+        print("⚠ IRP Review Outcome values not found - skipping MRSA demo seeding")
+        return
+
+    # Get users for ownership and reviews
+    admin_user = db.query(User).filter(User.email == "admin@example.com").first()
+    validator_user = db.query(User).filter(User.email == "validator@example.com").first()
+
+    if not admin_user or not validator_user:
+        print("⚠ Required users not found - skipping MRSA demo seeding")
+        return
+
+    # Get usage frequency (required for all models)
+    usage_freq_monthly = db.query(TaxonomyValue).filter(
+        TaxonomyValue.code == "MONTHLY"
+    ).first()
+
+    if not usage_freq_monthly:
+        print("⚠ Usage Frequency taxonomy value not found - skipping MRSA demo seeding")
+        return
+
+    # Calculate strategic dates based on policy:
+    # frequency_months=24 (720 days), warning_days=90
+    # CURRENT: days_until_due > 90 (reviewed within last 630 days)
+    # UPCOMING: 0 <= days_until_due <= 90 (reviewed 630-720 days ago)
+    # OVERDUE: days_until_due < 0 (reviewed > 720 days ago)
+    today = date.today()
+
+    # Create 9 MRSAs
+    mrsas_data = [
+        # CURRENT status (2) - recently reviewed
+        {
+            "name": "MRSA Demo: Current - Risk Scoring Tool",
+            "description": "Automated risk scoring tool for customer segmentation. Recently reviewed with satisfactory outcome.",
+            "risk_level_id": high_risk.value_id,
+            "rationale": "High-risk due to direct customer impact and credit decisions.",
+            "irp": "Customer Analytics IRP",
+            "review_days_ago": 183,  # +537 days until due
+            "outcome": satisfactory,
+        },
+        {
+            "name": "MRSA Demo: Current (Conditional) - Limit Calculator",
+            "description": "Credit limit calculation tool. Reviewed recently with conditional findings.",
+            "risk_level_id": high_risk.value_id,
+            "rationale": "High-risk due to exposure calculation impact.",
+            "irp": "Customer Analytics IRP",
+            "review_days_ago": 275,  # +445 days until due
+            "outcome": conditionally_satisfactory,
+        },
+        # UPCOMING status (2) - review due within 90 days
+        {
+            "name": "MRSA Demo: Upcoming - Trade Aggregator",
+            "description": "Trade aggregation tool for position reporting. Review coming up soon.",
+            "risk_level_id": high_risk.value_id,
+            "rationale": "High-risk due to regulatory reporting implications.",
+            "irp": "Customer Analytics IRP",
+            "review_days_ago": 675,  # +45 days until due
+            "outcome": satisfactory,
+        },
+        {
+            "name": "MRSA Demo: Imminent Review - Exposure Calculator",
+            "description": "Counterparty exposure calculation tool. Review due very soon.",
+            "risk_level_id": high_risk.value_id,
+            "rationale": "High-risk due to counterparty risk management.",
+            "irp": "Trading Operations IRP",
+            "review_days_ago": 710,  # +10 days until due
+            "outcome": conditionally_satisfactory,
+        },
+        # OVERDUE status (2) - past due date
+        {
+            "name": "MRSA Demo: Overdue (30 days) - Collateral Optimizer",
+            "description": "Collateral optimization tool. Review is 30 days overdue.",
+            "risk_level_id": high_risk.value_id,
+            "rationale": "High-risk due to collateral management impact.",
+            "irp": "Trading Operations IRP",
+            "review_days_ago": 750,  # -30 days (overdue)
+            "outcome": not_satisfactory,
+        },
+        {
+            "name": "MRSA Demo: Severely Overdue - Position Reconciler",
+            "description": "Position reconciliation tool. Review is 180 days overdue.",
+            "risk_level_id": high_risk.value_id,
+            "rationale": "High-risk due to operational risk and financial reporting.",
+            "irp": "Trading Operations IRP",
+            "review_days_ago": 900,  # -180 days (severely overdue)
+            "outcome": satisfactory,
+        },
+        # NO_IRP status - high-risk without IRP coverage
+        {
+            "name": "MRSA Demo: No IRP Coverage - Data Validator",
+            "description": "Data validation tool requiring IRP but not yet assigned.",
+            "risk_level_id": high_risk.value_id,
+            "rationale": "High-risk due to data quality impact on downstream models.",
+            "irp": None,
+            "review_days_ago": None,
+            "outcome": None,
+        },
+        # NEVER_REVIEWED status - has IRP but no reviews yet
+        {
+            "name": "MRSA Demo: Never Reviewed - Fee Calculator",
+            "description": "Fee calculation tool. Recently onboarded, awaiting initial review.",
+            "risk_level_id": high_risk.value_id,
+            "rationale": "High-risk due to revenue recognition and customer billing.",
+            "irp": "Billing Systems IRP",
+            "review_days_ago": None,  # No reviews yet
+            "outcome": None,
+        },
+        # NO_REQUIREMENT status - low-risk (no review requirement)
+        {
+            "name": "MRSA Demo: No Requirement - Report Generator",
+            "description": "Simple report generation tool. Low-risk, no review requirement.",
+            "risk_level_id": low_risk.value_id,
+            "rationale": "Low-risk informational tool with no decision impact.",
+            "irp": None,
+            "review_days_ago": None,
+            "outcome": None,
+        },
+    ]
+
+    # Create MRSAs
+    created_mrsas = []
+    for mrsa_data in mrsas_data:
+        mrsa = Model(
+            model_name=mrsa_data["name"],
+            description=mrsa_data["description"],
+            development_type="In-House",
+            owner_id=admin_user.user_id,
+            usage_frequency_id=usage_freq_monthly.value_id,
+            is_model=False,
+            is_mrsa=True,
+            mrsa_risk_level_id=mrsa_data["risk_level_id"],
+            mrsa_risk_rationale=mrsa_data["rationale"],
+        )
+        db.add(mrsa)
+        created_mrsas.append((mrsa, mrsa_data))
+
+    db.flush()  # Get IDs assigned
+    print(f"✓ Created {len(created_mrsas)} demo MRSAs")
+
+    # Create 3 IRPs
+    irps_data = [
+        {
+            "name": "Customer Analytics IRP",
+            "description": "Independent review process for customer analytics and scoring tools.",
+            "mrsas": ["MRSA Demo: Current - Risk Scoring Tool",
+                      "MRSA Demo: Current (Conditional) - Limit Calculator",
+                      "MRSA Demo: Upcoming - Trade Aggregator"],
+        },
+        {
+            "name": "Trading Operations IRP",
+            "description": "Independent review process for trading and position management tools.",
+            "mrsas": ["MRSA Demo: Imminent Review - Exposure Calculator",
+                      "MRSA Demo: Overdue (30 days) - Collateral Optimizer",
+                      "MRSA Demo: Severely Overdue - Position Reconciler"],
+        },
+        {
+            "name": "Billing Systems IRP",
+            "description": "Independent review process for billing and fee calculation tools.",
+            "mrsas": ["MRSA Demo: Never Reviewed - Fee Calculator"],
+        },
+    ]
+
+    # Build MRSA lookup by name
+    mrsa_by_name = {m.model_name: m for m, _ in created_mrsas}
+
+    created_irps = {}
+    for irp_data in irps_data:
+        irp = IRP(
+            process_name=irp_data["name"],
+            contact_user_id=validator_user.user_id,
+            description=irp_data["description"],
+            is_active=True,
+        )
+        db.add(irp)
+        db.flush()
+
+        # Link MRSAs to IRP
+        for mrsa_name in irp_data["mrsas"]:
+            if mrsa_name in mrsa_by_name:
+                mrsa_by_name[mrsa_name].irps.append(irp)
+
+        created_irps[irp_data["name"]] = irp
+
+    print(f"✓ Created {len(created_irps)} demo IRPs")
+
+    # Create IRPReviews with strategic dates
+    reviews_created = 0
+    for mrsa, mrsa_data in created_mrsas:
+        if mrsa_data["irp"] and mrsa_data["review_days_ago"] is not None:
+            irp = created_irps.get(mrsa_data["irp"])
+            if irp and mrsa_data["outcome"]:
+                review = IRPReview(
+                    irp_id=irp.irp_id,
+                    review_date=today - timedelta(days=mrsa_data["review_days_ago"]),
+                    outcome_id=mrsa_data["outcome"].value_id,
+                    notes=f"Periodic review of {mrsa.model_name}.",
+                    reviewed_by_user_id=validator_user.user_id,
+                )
+                db.add(review)
+                reviews_created += 1
+
+    db.commit()
+    print(f"✓ Created {reviews_created} demo IRP reviews")
+    print("✓ MRSA Demo data seeding complete")
 
 
 if __name__ == "__main__":

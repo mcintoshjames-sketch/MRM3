@@ -37,7 +37,9 @@ export default function Layout({ children }: LayoutProps) {
         monitoring: 0,
         attestations: 0,
         approvals: 0,
-        recommendations: 0
+        recommendations: 0,
+        irpAttention: 0,
+        mrsaAttention: 0
     });
 
     // Load collapsed state from localStorage
@@ -133,6 +135,30 @@ export default function Layout({ children }: LayoutProps) {
                     // Silently fail
                 }
 
+                // Fetch MRSA reviews needing attention (Admin only - matches nav visibility)
+                let irpAttention = 0;
+                if (user?.role === 'Admin') {
+                    try {
+                        const mrsaRes = await api.get('/dashboard/mrsa-reviews/summary');
+                        irpAttention = (mrsaRes.data.overdue_count || 0) + (mrsaRes.data.no_irp_count || 0);
+                    } catch {
+                        // Silent fail - badge just won't show
+                    }
+                }
+
+                // Fetch MRSA reviews needing attention for model owners/delegates
+                let mrsaAttention = 0;
+                if (user?.role !== 'Admin' && user?.role !== 'Validator') {
+                    try {
+                        const mrsaRes = await api.get('/dashboard/mrsa-reviews/summary');
+                        mrsaAttention = (mrsaRes.data.overdue_count || 0)
+                            + (mrsaRes.data.no_irp_count || 0)
+                            + (mrsaRes.data.never_reviewed_count || 0);
+                    } catch {
+                        // Silent fail - badge just won't show
+                    }
+                }
+
                 setPendingCounts({
                     submissions: urgentSubmissions,
                     deployments: pendingDeployments,
@@ -140,7 +166,9 @@ export default function Layout({ children }: LayoutProps) {
                     monitoring: pendingMonitoring,
                     attestations: pendingAttestations,
                     approvals: pendingApprovals,
-                    recommendations: pendingRecommendations
+                    recommendations: pendingRecommendations,
+                    irpAttention: irpAttention,
+                    mrsaAttention: mrsaAttention
                 });
             } catch (error) {
                 console.error('Failed to fetch pending counts:', error);
@@ -162,7 +190,8 @@ export default function Layout({ children }: LayoutProps) {
     // Calculate total tasks badge
     const totalTasksBadge = pendingCounts.submissions + pendingCounts.deployments +
         pendingCounts.decommissioning + (user?.role !== 'Admin' ? pendingCounts.attestations : 0) +
-        pendingCounts.approvals + pendingCounts.recommendations;
+        pendingCounts.approvals + pendingCounts.recommendations +
+        (user?.role !== 'Admin' && user?.role !== 'Validator' ? pendingCounts.mrsaAttention : 0);
 
     // Reusable nav link component
     const NavItem = ({ to, children, badge, badgeColor = 'red', end = false }: {
@@ -276,7 +305,7 @@ export default function Layout({ children }: LayoutProps) {
                             <NavItem to="/attestations">Attestation Management</NavItem>
                         )}
                         {user?.role === 'Admin' && (
-                            <NavItem to="/irps">IRP Management</NavItem>
+                            <NavItem to="/irps" badge={pendingCounts.irpAttention} badgeColor="red">IRP Management</NavItem>
                         )}
                         {(user?.role === 'Admin' || user?.role === 'Validator') && (
                             <NavItem to="/reports/exceptions">Model Exceptions</NavItem>
@@ -311,6 +340,11 @@ export default function Layout({ children }: LayoutProps) {
                                 {user?.role !== 'Admin' && (
                                     <NavItem to="/my-attestations" badge={pendingCounts.attestations} badgeColor="orange">
                                         My Attestations
+                                    </NavItem>
+                                )}
+                                {user?.role !== 'Admin' && user?.role !== 'Validator' && (
+                                    <NavItem to="/my-mrsa-reviews" badge={pendingCounts.mrsaAttention} badgeColor="red">
+                                        My MRSA Reviews
                                     </NavItem>
                                 )}
                             </>

@@ -24,6 +24,7 @@ from app.models.irp import IRP
 from app.models.taxonomy import TaxonomyValue
 from app.core.rls import apply_model_rls
 from app.core.mrsa_review_utils import get_mrsa_review_details
+from app.core.rls import apply_model_rls
 from app.schemas.mrsa_review_policy import (
     MRSAReviewSummary, MRSAReviewStatus, MRSAReviewStatusEnum
 )
@@ -459,11 +460,15 @@ def get_mrsa_reviews_summary(
     today = date.today()
 
     # Get all MRSAs with necessary relationships eagerly loaded
-    mrsas = db.query(Model).options(
+    query = db.query(Model).options(
         joinedload(Model.mrsa_risk_level),
         joinedload(Model.owner),
         joinedload(Model.irps).joinedload(IRP.reviews)
-    ).filter(Model.is_mrsa == True).all()
+    ).filter(Model.is_mrsa == True)
+
+    # Apply row-level security for non-privileged users
+    query = apply_model_rls(query, current_user, db)
+    mrsas = query.all()
 
     # Initialize counters
     counts = {
@@ -509,11 +514,15 @@ def get_mrsa_reviews_upcoming(
     today = date.today()
 
     # Get all MRSAs with necessary relationships eagerly loaded
-    mrsas = db.query(Model).options(
+    query = db.query(Model).options(
         joinedload(Model.mrsa_risk_level),
         joinedload(Model.owner),
         joinedload(Model.irps).joinedload(IRP.reviews)
-    ).filter(Model.is_mrsa == True).all()
+    ).filter(Model.is_mrsa == True)
+
+    # Apply row-level security for non-privileged users
+    query = apply_model_rls(query, current_user, db)
+    mrsas = query.all()
 
     # Filter to upcoming only
     upcoming = []
@@ -541,11 +550,15 @@ def get_mrsa_reviews_overdue(
     today = date.today()
 
     # Get all MRSAs with necessary relationships eagerly loaded
-    mrsas = db.query(Model).options(
+    query = db.query(Model).options(
         joinedload(Model.mrsa_risk_level),
         joinedload(Model.owner),
         joinedload(Model.irps).joinedload(IRP.reviews)
-    ).filter(Model.is_mrsa == True).all()
+    ).filter(Model.is_mrsa == True)
+
+    # Apply row-level security for non-privileged users
+    query = apply_model_rls(query, current_user, db)
+    mrsas = query.all()
 
     problems = []
     for mrsa in mrsas:

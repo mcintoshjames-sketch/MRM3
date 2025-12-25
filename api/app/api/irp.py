@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session, joinedload
 from app.core.database import get_db
 from app.core.deps import get_current_user
+from app.core.rls import apply_model_rls, can_see_all_data
 from app.models.user import User
 from app.models.model import Model
 from app.models.irp import IRP, IRPReview, IRPCertification
@@ -23,6 +24,26 @@ from app.schemas.mrsa_review_policy import (
 )
 
 router = APIRouter()
+
+def _get_accessible_mrsa_ids(db: Session, current_user: User) -> set[int]:
+    query = db.query(Model.model_id).filter(Model.is_mrsa == True)
+    query = apply_model_rls(query, current_user, db)
+    return {row[0] for row in query.all()}
+
+
+def _require_irp_access(irp: IRP, accessible_mrsa_ids: set[int] | None) -> None:
+    if accessible_mrsa_ids is None:
+        return
+    if not irp.covered_mrsas:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied"
+        )
+    if not any(mrsa.model_id in accessible_mrsa_ids for mrsa in irp.covered_mrsas):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied"
+        )
 
 
 def create_audit_log(db: Session, entity_type: str, entity_id: int, action: str, user_id: int, changes: dict = None):
@@ -68,11 +89,12 @@ def _build_irp_response(irp: IRP) -> dict:
     return response
 
 
-def _build_irp_detail_response(irp: IRP) -> dict:
+def _build_irp_detail_response(irp: IRP, covered_mrsas: Optional[List[Model]] = None) -> dict:
     """Build detailed IRP response with nested relationships."""
     response = _build_irp_response(irp)
 
     # Add covered MRSAs
+    mrsas = covered_mrsas if covered_mrsas is not None else irp.covered_mrsas
     response["covered_mrsas"] = [
         MRSASummary(
             model_id=mrsa.model_id,
@@ -85,8 +107,10 @@ def _build_irp_detail_response(irp: IRP) -> dict:
             owner_id=mrsa.owner_id,
             owner_name=mrsa.owner.full_name if mrsa.owner else None,
         )
-        for mrsa in irp.covered_mrsas
+        for mrsa in mrsas
     ]
+    if covered_mrsas is not None:
+        response["covered_mrsa_count"] = len(mrsas)
 
     # Add reviews
     response["reviews"] = irp.reviews
@@ -116,6 +140,14 @@ def list_irps(
         joinedload(IRP.certifications),
         joinedload(IRP.covered_mrsas),
     )
+
+    if not can_see_all_data(current_user):
+        accessible_mrsa_ids = _get_accessible_mrsa_ids(db, current_user)
+        if not accessible_mrsa_ids:
+            return []
+        query = query.join(IRP.covered_mrsas).filter(
+            Model.model_id.in_(accessible_mrsa_ids)
+        ).distinct()
 
     if is_active is not None:
         query = query.filter(IRP.is_active == is_active)
@@ -250,6 +282,14 @@ def get_irp(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="IRP not found"
         )
+
+    if not can_see_all_data(current_user):
+        accessible_mrsa_ids = _get_accessible_mrsa_ids(db, current_user)
+        _require_irp_access(irp, accessible_mrsa_ids)
+        accessible_mrsas = [
+            mrsa for mrsa in irp.covered_mrsas if mrsa.model_id in accessible_mrsa_ids
+        ]
+        return _build_irp_detail_response(irp, accessible_mrsas)
 
     return _build_irp_detail_response(irp)
 
@@ -469,12 +509,18 @@ def list_irp_reviews(
     current_user: User = Depends(get_current_user)
 ):
     """List all reviews for an IRP."""
-    irp = db.query(IRP).filter(IRP.irp_id == irp_id).first()
+    irp = db.query(IRP).options(
+        joinedload(IRP.covered_mrsas)
+    ).filter(IRP.irp_id == irp_id).first()
     if not irp:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="IRP not found"
         )
+
+    if not can_see_all_data(current_user):
+        accessible_mrsa_ids = _get_accessible_mrsa_ids(db, current_user)
+        _require_irp_access(irp, accessible_mrsa_ids)
 
     reviews = db.query(IRPReview).options(
         joinedload(IRPReview.outcome),
@@ -492,6 +538,12 @@ def create_irp_review(
     current_user: User = Depends(get_current_user)
 ):
     """Create a new review for an IRP."""
+    if current_user.role != "Admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin access required"
+        )
+
     irp = db.query(IRP).filter(IRP.irp_id == irp_id).first()
     if not irp:
         raise HTTPException(
@@ -555,12 +607,18 @@ def list_irp_certifications(
     current_user: User = Depends(get_current_user)
 ):
     """List all certifications for an IRP."""
-    irp = db.query(IRP).filter(IRP.irp_id == irp_id).first()
+    irp = db.query(IRP).options(
+        joinedload(IRP.covered_mrsas)
+    ).filter(IRP.irp_id == irp_id).first()
     if not irp:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="IRP not found"
         )
+
+    if not can_see_all_data(current_user):
+        accessible_mrsa_ids = _get_accessible_mrsa_ids(db, current_user)
+        _require_irp_access(irp, accessible_mrsa_ids)
 
     certifications = db.query(IRPCertification).options(
         joinedload(IRPCertification.certified_by),
@@ -643,6 +701,8 @@ def check_irp_coverage(
         joinedload(Model.mrsa_risk_level),
         joinedload(Model.irps),
     ).filter(Model.is_mrsa == True)
+
+    query = apply_model_rls(query, current_user, db)
 
     if mrsa_ids:
         query = query.filter(Model.model_id.in_(mrsa_ids))
@@ -753,11 +813,15 @@ def get_mrsa_review_status(
     - Active exceptions
     """
     # Query all MRSAs with eager loading
-    mrsas = db.query(Model).options(
+    query = db.query(Model).options(
         joinedload(Model.owner),
         joinedload(Model.mrsa_risk_level),
         joinedload(Model.irps).joinedload(IRP.reviews)
-    ).filter(Model.is_mrsa == True).all()
+    ).filter(Model.is_mrsa == True)
+
+    # Apply row-level security for non-privileged users
+    query = apply_model_rls(query, current_user, db)
+    mrsas = query.all()
 
     # Batch load all policies and exceptions
     policies_dict = {}

@@ -20,6 +20,7 @@ import ValidationPoliciesPage from './pages/ValidationPoliciesPage';
 import MRSAReviewPoliciesPage from './pages/MRSAReviewPoliciesPage';
 import MyPendingSubmissionsPage from './pages/MyPendingSubmissionsPage';
 import MyDeploymentTasksPage from './pages/MyDeploymentTasksPage';
+import MyMRSAReviewsPage from './pages/MyMRSAReviewsPage';
 import RegionalComplianceReportPage from './pages/RegionalComplianceReportPage';
 import ReportsPage from './pages/ReportsPage';
 import AnalyticsPage from './pages/AnalyticsPage';
@@ -97,6 +98,7 @@ function App() {
             <Route path="/recommendations/:id" element={user ? <RecommendationDetailPage /> : <Navigate to="/login" />} />
             <Route path="/my-pending-submissions" element={user ? <MyPendingSubmissionsPage /> : <Navigate to="/login" />} />
             <Route path="/my-deployment-tasks" element={user ? <MyDeploymentTasksPage /> : <Navigate to="/login" />} />
+            <Route path="/my-mrsa-reviews" element={user ? <MyMRSAReviewsPage /> : <Navigate to="/login" />} />
             <Route path="/my-monitoring" element={user?.role === 'Admin' ? <Navigate to="/monitoring-plans" /> : (user ? <MyMonitoringPage /> : <Navigate to="/login" />)} />
             <Route path="/my-monitoring-tasks" element={user ? <MyMonitoringTasksPage /> : <Navigate to="/login" />} />
             <Route path="/pending-decommissioning" element={user ? <PendingDecommissioningPage /> : <Navigate to="/login" />} />
@@ -136,7 +138,7 @@ function App() {
             <Route path="/attestations/:id" element={user ? <AttestationDetailPage /> : <Navigate to="/login" />} />
             <Route path="/attestations/bulk/:cycleId" element={user ? <BulkAttestationPage /> : <Navigate to="/login" />} />
             <Route path="/irps" element={user?.role === 'Admin' ? <IRPsPage /> : <Navigate to="/models" />} />
-            <Route path="/irps/:id" element={user?.role === 'Admin' ? <IRPDetailPage /> : <Navigate to="/models" />} />
+            <Route path="/irps/:id" element={user ? <IRPDetailPage /> : <Navigate to="/login" />} />
             <Route path="*" element={<Navigate to={user ? getDefaultRoute() : '/'} />} />
         </Routes>
     );
