@@ -4344,9 +4344,30 @@ def get_metric_trend(
         joinedload(MonitoringResult.model)
     ).order_by(MonitoringCycle.period_end_date.asc()).all()
 
+    snapshot_by_version_id: dict[int, MonitoringPlanMetricSnapshot] = {}
+    version_ids = {
+        result.cycle.plan_version_id
+        for result in results
+        if result.cycle and result.cycle.plan_version_id
+    }
+    if version_ids:
+        snapshots = db.query(MonitoringPlanMetricSnapshot).filter(
+            MonitoringPlanMetricSnapshot.version_id.in_(version_ids),
+            MonitoringPlanMetricSnapshot.original_metric_id == plan_metric_id
+        ).all()
+        snapshot_by_version_id = {snapshot.version_id: snapshot for snapshot in snapshots}
+
     # Build trend data points
     data_points = []
     for result in results:
+        snapshot = None
+        if result.cycle and result.cycle.plan_version_id:
+            snapshot = snapshot_by_version_id.get(result.cycle.plan_version_id)
+        yellow_min = snapshot.yellow_min if snapshot else metric.yellow_min
+        yellow_max = snapshot.yellow_max if snapshot else metric.yellow_max
+        red_min = snapshot.red_min if snapshot else metric.red_min
+        red_max = snapshot.red_max if snapshot else metric.red_max
+
         data_points.append(MetricTrendPoint(
             cycle_id=result.cycle_id,
             period_end_date=result.cycle.period_end_date,
@@ -4354,7 +4375,11 @@ def get_metric_trend(
             calculated_outcome=result.calculated_outcome,
             model_id=result.model_id,
             model_name=result.model.model_name if result.model else None,
-            narrative=result.narrative
+            narrative=result.narrative,
+            yellow_min=yellow_min,
+            yellow_max=yellow_max,
+            red_min=red_min,
+            red_max=red_max,
         ))
 
     return MetricTrendResponse(

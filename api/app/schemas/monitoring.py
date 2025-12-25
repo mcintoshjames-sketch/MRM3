@@ -656,6 +656,10 @@ class MetricTrendPoint(BaseModel):
     model_id: Optional[int] = None
     model_name: Optional[str] = None
     narrative: Optional[str] = None  # Qualitative assessment narrative
+    yellow_min: Optional[float] = None
+    yellow_max: Optional[float] = None
+    red_min: Optional[float] = None
+    red_max: Optional[float] = None
 
 
 class MetricTrendResponse(BaseModel):

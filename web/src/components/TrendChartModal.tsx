@@ -21,6 +21,11 @@ interface TrendDataPoint {
     calculated_outcome: string | null;
     model_id: number | null;
     model_name: string | null;
+    yellow_min?: number | null;
+    yellow_max?: number | null;
+    red_min?: number | null;
+    red_max?: number | null;
+    narrative?: string;
 }
 
 interface TrendData {
@@ -167,8 +172,8 @@ const TrendChartModal: React.FC<TrendChartModalProps> = ({
         );
     }
 
-    // Effective thresholds: prefer API data, fallback to props
-    const effectiveThresholds: ThresholdConfig = {
+    // Base thresholds: prefer API data, fallback to props
+    const baseThresholds: ThresholdConfig = {
         yellow_min: trendData?.yellow_min ?? thresholds.yellow_min,
         yellow_max: trendData?.yellow_max ?? thresholds.yellow_max,
         red_min: trendData?.red_min ?? thresholds.red_min,
@@ -183,10 +188,17 @@ const TrendChartModal: React.FC<TrendChartModalProps> = ({
 
     // Process data for chart - group by model if multiple models exist
     const processChartData = () => {
-        if (!trendData || !trendData.data_points.length) return { chartData: [] as ChartDataPoint[], modelNames: [] as string[] };
+        if (!trendData || !trendData.data_points.length) {
+            return {
+                chartData: [] as ChartDataPoint[],
+                modelNames: [] as string[],
+                thresholdsByDate: new Map<string, ThresholdConfig>(),
+            };
+        }
 
         const modelNames = new Set<string>();
         const dateMap = new Map<string, ChartDataPoint>();
+        const thresholdsByDate = new Map<string, ThresholdConfig>();
 
         // Filter data points based on model filter
         let filteredPoints = trendData.data_points;
@@ -204,6 +216,14 @@ const TrendChartModal: React.FC<TrendChartModalProps> = ({
             if (!dateMap.has(dateKey)) {
                 dateMap.set(dateKey, { date: dateKey });
             }
+            if (!thresholdsByDate.has(dateKey)) {
+                thresholdsByDate.set(dateKey, {
+                    yellow_min: point.yellow_min ?? baseThresholds.yellow_min,
+                    yellow_max: point.yellow_max ?? baseThresholds.yellow_max,
+                    red_min: point.red_min ?? baseThresholds.red_min,
+                    red_max: point.red_max ?? baseThresholds.red_max,
+                });
+            }
             const dateEntry = dateMap.get(dateKey)!;
             dateEntry[modelKey] = point.numeric_value;
         });
@@ -213,10 +233,10 @@ const TrendChartModal: React.FC<TrendChartModalProps> = ({
             a.date.localeCompare(b.date)
         );
 
-        return { chartData, modelNames: Array.from(modelNames) };
+        return { chartData, modelNames: Array.from(modelNames), thresholdsByDate };
     };
 
-    const { chartData, modelNames } = processChartData();
+    const { chartData, modelNames, thresholdsByDate } = processChartData();
 
     // Calculate Y-axis domain based on data and thresholds
     const calculateYDomain = (): [number, number] => {
@@ -231,16 +251,24 @@ const TrendChartModal: React.FC<TrendChartModalProps> = ({
         const dataMin = Math.min(...allValues);
         const dataMax = Math.max(...allValues);
 
-        // Include threshold values in range
-        const thresholdValues = [
-            effectiveThresholds.yellow_min,
-            effectiveThresholds.yellow_max,
-            effectiveThresholds.red_min,
-            effectiveThresholds.red_max,
+        const thresholdValues = Array.from(thresholdsByDate.values()).flatMap(
+            (threshold) => [
+                threshold.yellow_min,
+                threshold.yellow_max,
+                threshold.red_min,
+                threshold.red_max,
+            ].filter((v): v is number => v !== null)
+        );
+        const fallbackThresholdValues = [
+            baseThresholds.yellow_min,
+            baseThresholds.yellow_max,
+            baseThresholds.red_min,
+            baseThresholds.red_max,
         ].filter((v): v is number => v !== null);
+        const allThresholdValues = thresholdValues.length > 0 ? thresholdValues : fallbackThresholdValues;
 
-        const allMin = Math.min(dataMin, ...thresholdValues);
-        const allMax = Math.max(dataMax, ...thresholdValues);
+        const allMin = allThresholdValues.length ? Math.min(dataMin, ...allThresholdValues) : dataMin;
+        const allMax = allThresholdValues.length ? Math.max(dataMax, ...allThresholdValues) : dataMax;
 
         // Add 10% padding
         const padding = (allMax - allMin) * 0.1 || 0.1;
@@ -271,83 +299,29 @@ const TrendChartModal: React.FC<TrendChartModalProps> = ({
         );
     };
 
-    // Determine threshold band rendering based on threshold configuration
-    const renderThresholdBands = () => {
-        const bands = [];
-        const { yellow_min, yellow_max, red_min, red_max } = effectiveThresholds;
+    const hasDynamicThresholds = Array.from(thresholdsByDate.values()).some((threshold) => {
+        const lowerIsBetter = threshold.yellow_max !== null && threshold.red_max !== null && threshold.red_max > threshold.yellow_max;
+        const higherIsBetter = threshold.yellow_min !== null && threshold.red_min !== null && threshold.red_min < threshold.yellow_min;
+        return lowerIsBetter || higherIsBetter;
+    });
 
-        // For "lower is better" metrics like PSI: green < yellow_max < red_max
+    const renderStaticBands = (thresholdsToRender: ThresholdConfig) => {
+        const bands = [];
+        const { yellow_min, yellow_max, red_min, red_max } = thresholdsToRender;
+
         if (yellow_max !== null && red_max !== null && red_max > yellow_max) {
-            // Green zone: 0 to yellow_max
             bands.push(
-                <ReferenceArea
-                    key="green"
-                    y1={yDomain[0]}
-                    y2={yellow_max}
-                    fill="#22c55e"
-                    fillOpacity={0.1}
-                />
-            );
-            // Yellow zone: yellow_max to red_max
-            bands.push(
-                <ReferenceArea
-                    key="yellow"
-                    y1={yellow_max}
-                    y2={red_max}
-                    fill="#eab308"
-                    fillOpacity={0.1}
-                />
-            );
-            // Red zone: red_max to top
-            bands.push(
-                <ReferenceArea
-                    key="red"
-                    y1={red_max}
-                    y2={yDomain[1]}
-                    fill="#ef4444"
-                    fillOpacity={0.1}
-                />
-            );
-            // Threshold lines
-            bands.push(
+                <ReferenceArea key="green" y1={yDomain[0]} y2={yellow_max} fill="#22c55e" fillOpacity={0.1} />,
+                <ReferenceArea key="yellow" y1={yellow_max} y2={red_max} fill="#eab308" fillOpacity={0.1} />,
+                <ReferenceArea key="red" y1={red_max} y2={yDomain[1]} fill="#ef4444" fillOpacity={0.1} />,
                 <ReferenceLine key="yellow-line" y={yellow_max} stroke="#eab308" strokeDasharray="5 5" />,
                 <ReferenceLine key="red-line" y={red_max} stroke="#ef4444" strokeDasharray="5 5" />
             );
-        }
-        // For "higher is better" metrics like Gini: green > yellow_min > red_min
-        else if (yellow_min !== null && red_min !== null && red_min < yellow_min) {
-            // Red zone: bottom to red_min
+        } else if (yellow_min !== null && red_min !== null && red_min < yellow_min) {
             bands.push(
-                <ReferenceArea
-                    key="red"
-                    y1={yDomain[0]}
-                    y2={red_min}
-                    fill="#ef4444"
-                    fillOpacity={0.1}
-                />
-            );
-            // Yellow zone: red_min to yellow_min
-            bands.push(
-                <ReferenceArea
-                    key="yellow"
-                    y1={red_min}
-                    y2={yellow_min}
-                    fill="#eab308"
-                    fillOpacity={0.1}
-                />
-            );
-            // Green zone: yellow_min to top
-            bands.push(
-                <ReferenceArea
-                    key="green"
-                    y1={yellow_min}
-                    y2={yDomain[1]}
-                    fill="#22c55e"
-                    fillOpacity={0.1}
-                />
-            );
-            // Threshold lines
-            bands.push(
+                <ReferenceArea key="red" y1={yDomain[0]} y2={red_min} fill="#ef4444" fillOpacity={0.1} />,
+                <ReferenceArea key="yellow" y1={red_min} y2={yellow_min} fill="#eab308" fillOpacity={0.1} />,
+                <ReferenceArea key="green" y1={yellow_min} y2={yDomain[1]} fill="#22c55e" fillOpacity={0.1} />,
                 <ReferenceLine key="yellow-line" y={yellow_min} stroke="#eab308" strokeDasharray="5 5" />,
                 <ReferenceLine key="red-line" y={red_min} stroke="#ef4444" strokeDasharray="5 5" />
             );
@@ -355,6 +329,47 @@ const TrendChartModal: React.FC<TrendChartModalProps> = ({
 
         return bands;
     };
+
+    const renderThresholdBands = () => {
+        if (!chartData.length) return [];
+        if (chartData.length < 2 || !hasDynamicThresholds) {
+            return renderStaticBands(baseThresholds);
+        }
+
+        const dateKeys = chartData.map((entry) => entry.date);
+        const bands = [];
+
+        for (let index = 1; index < dateKeys.length; index += 1) {
+            const startDate = dateKeys[index - 1];
+            const endDate = dateKeys[index];
+            const threshold = thresholdsByDate.get(endDate) ?? baseThresholds;
+
+            const lowerIsBetter = threshold.yellow_max !== null && threshold.red_max !== null && threshold.red_max > threshold.yellow_max;
+            const higherIsBetter = threshold.yellow_min !== null && threshold.red_min !== null && threshold.red_min < threshold.yellow_min;
+
+            if (lowerIsBetter) {
+                bands.push(
+                    <ReferenceArea key={`green-${endDate}`} x1={startDate} x2={endDate} y1={yDomain[0]} y2={threshold.yellow_max as number} fill="#22c55e" fillOpacity={0.1} />,
+                    <ReferenceArea key={`yellow-${endDate}`} x1={startDate} x2={endDate} y1={threshold.yellow_max as number} y2={threshold.red_max as number} fill="#eab308" fillOpacity={0.1} />,
+                    <ReferenceArea key={`red-${endDate}`} x1={startDate} x2={endDate} y1={threshold.red_max as number} y2={yDomain[1]} fill="#ef4444" fillOpacity={0.1} />
+                );
+            } else if (higherIsBetter) {
+                bands.push(
+                    <ReferenceArea key={`red-${endDate}`} x1={startDate} x2={endDate} y1={yDomain[0]} y2={threshold.red_min as number} fill="#ef4444" fillOpacity={0.1} />,
+                    <ReferenceArea key={`yellow-${endDate}`} x1={startDate} x2={endDate} y1={threshold.red_min as number} y2={threshold.yellow_min as number} fill="#eab308" fillOpacity={0.1} />,
+                    <ReferenceArea key={`green-${endDate}`} x1={startDate} x2={endDate} y1={threshold.yellow_min as number} y2={yDomain[1]} fill="#22c55e" fillOpacity={0.1} />
+                );
+            }
+        }
+
+        return bands;
+    };
+
+    const latestThresholds = (() => {
+        if (!chartData.length) return baseThresholds;
+        const lastDate = chartData[chartData.length - 1].date;
+        return thresholdsByDate.get(lastDate) ?? baseThresholds;
+    })();
 
     return (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
@@ -493,13 +508,13 @@ const TrendChartModal: React.FC<TrendChartModalProps> = ({
                                 <div className="bg-gray-50 rounded p-3 text-center">
                                     <p className="text-xs text-gray-500 uppercase">Yellow Threshold</p>
                                     <p className="text-xl font-bold text-yellow-600">
-                                        {effectiveThresholds.yellow_max?.toFixed(2) || effectiveThresholds.yellow_min?.toFixed(2) || 'N/A'}
+                                        {latestThresholds.yellow_max?.toFixed(2) || latestThresholds.yellow_min?.toFixed(2) || 'N/A'}
                                     </p>
                                 </div>
                                 <div className="bg-gray-50 rounded p-3 text-center">
                                     <p className="text-xs text-gray-500 uppercase">Red Threshold</p>
                                     <p className="text-xl font-bold text-red-600">
-                                        {effectiveThresholds.red_max?.toFixed(2) || effectiveThresholds.red_min?.toFixed(2) || 'N/A'}
+                                        {latestThresholds.red_max?.toFixed(2) || latestThresholds.red_min?.toFixed(2) || 'N/A'}
                                     </p>
                                 </div>
                             </div>
@@ -507,14 +522,17 @@ const TrendChartModal: React.FC<TrendChartModalProps> = ({
                             {/* Threshold Info */}
                             <div className="mt-4 text-sm text-gray-600 bg-blue-50 p-3 rounded">
                                 <p className="font-medium text-blue-800">Threshold Configuration:</p>
+                                <p className="text-xs text-blue-700 mt-1">
+                                    Bands reflect thresholds active for each cycle; values below show the latest thresholds.
+                                </p>
                                 <p>
-                                    {effectiveThresholds.yellow_max !== null && effectiveThresholds.red_max !== null && (
-                                        <>Lower is better: Green &lt; {effectiveThresholds.yellow_max}, Yellow {effectiveThresholds.yellow_max}-{effectiveThresholds.red_max}, Red &gt; {effectiveThresholds.red_max}</>
+                                    {latestThresholds.yellow_max !== null && latestThresholds.red_max !== null && (
+                                        <>Lower is better: Green &lt; {latestThresholds.yellow_max}, Yellow {latestThresholds.yellow_max}-{latestThresholds.red_max}, Red &gt; {latestThresholds.red_max}</>
                                     )}
-                                    {effectiveThresholds.yellow_min !== null && effectiveThresholds.red_min !== null && (
-                                        <>Higher is better: Green &gt; {effectiveThresholds.yellow_min}, Yellow {effectiveThresholds.red_min}-{effectiveThresholds.yellow_min}, Red &lt; {effectiveThresholds.red_min}</>
+                                    {latestThresholds.yellow_min !== null && latestThresholds.red_min !== null && (
+                                        <>Higher is better: Green &gt; {latestThresholds.yellow_min}, Yellow {latestThresholds.red_min}-{latestThresholds.yellow_min}, Red &lt; {latestThresholds.red_min}</>
                                     )}
-                                    {effectiveThresholds.yellow_max === null && effectiveThresholds.yellow_min === null && effectiveThresholds.red_max === null && effectiveThresholds.red_min === null && (
+                                    {latestThresholds.yellow_max === null && latestThresholds.yellow_min === null && latestThresholds.red_max === null && latestThresholds.red_min === null && (
                                         <>No thresholds configured for this metric.</>
                                     )}
                                 </p>
