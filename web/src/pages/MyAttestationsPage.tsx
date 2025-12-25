@@ -36,7 +36,7 @@ interface UpcomingWidget {
     days_until_due: number | null;
 }
 
-type FilterStatus = 'all' | 'PENDING' | 'SUBMITTED' | 'ADMIN_REVIEW' | 'ACCEPTED' | 'REJECTED' | 'INDIVIDUAL';
+type FilterStatus = 'all' | 'PENDING' | 'SUBMITTED' | 'ADMIN_REVIEW' | 'ACCEPTED' | 'REJECTED' | 'INDIVIDUAL' | 'OVERDUE';
 
 export default function MyAttestationsPage() {
     const navigate = useNavigate();
@@ -72,6 +72,9 @@ export default function MyAttestationsPage() {
         if (filterStatus === 'INDIVIDUAL') {
             // Show excluded pending or rejected models that need individual attention
             return (att.status === 'PENDING' && att.is_excluded) || att.status === 'REJECTED';
+        }
+        if (filterStatus === 'OVERDUE') {
+            return att.status === 'PENDING' && att.days_until_due < 0;
         }
         return att.status === filterStatus;
     });
@@ -123,6 +126,13 @@ export default function MyAttestationsPage() {
     const acceptedCount = attestations.filter(a => a.status === 'ACCEPTED').length;
     const rejectedCount = attestations.filter(a => a.status === 'REJECTED').length;
     const individualRequiredCount = pendingIndividualCount + rejectedCount;
+
+    const hasActiveFilter = filterStatus !== 'all';
+    const filterLabel = filterStatus === 'INDIVIDUAL'
+        ? 'Individual Required'
+        : filterStatus === 'OVERDUE'
+        ? 'Overdue'
+        : filterStatus;
 
     return (
         <Layout>
@@ -210,64 +220,74 @@ export default function MyAttestationsPage() {
 
             {/* Stats Cards */}
             <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
-                <div
-                    className={`bg-white p-4 rounded-lg shadow cursor-pointer transition-shadow hover:shadow-md ${
+                <button
+                    type="button"
+                    aria-pressed={filterStatus === 'PENDING'}
+                    className={`w-full text-left bg-white p-4 rounded-lg shadow cursor-pointer transition-shadow hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-yellow-500 ${
                         filterStatus === 'PENDING' ? 'ring-2 ring-yellow-500' : ''
                     }`}
                     onClick={() => setFilterStatus(filterStatus === 'PENDING' ? 'all' : 'PENDING')}
                 >
                     <div className="text-sm text-gray-500">Pending</div>
                     <div className="text-2xl font-bold text-yellow-600">{pendingCount}</div>
-                </div>
-                <div
-                    className={`bg-white p-4 rounded-lg shadow cursor-pointer transition-shadow hover:shadow-md ${
+                </button>
+                <button
+                    type="button"
+                    aria-pressed={filterStatus === 'INDIVIDUAL'}
+                    className={`w-full text-left bg-white p-4 rounded-lg shadow cursor-pointer transition-shadow hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-500 ${
                         filterStatus === 'INDIVIDUAL' ? 'ring-2 ring-orange-500' : ''
                     }`}
                     onClick={() => setFilterStatus(filterStatus === 'INDIVIDUAL' ? 'all' : 'INDIVIDUAL')}
                 >
                     <div className="text-sm text-gray-500">Individual Required</div>
                     <div className="text-2xl font-bold text-orange-600">{individualRequiredCount}</div>
-                </div>
-                <div
-                    className={`bg-white p-4 rounded-lg shadow cursor-pointer transition-shadow hover:shadow-md ${
+                </button>
+                <button
+                    type="button"
+                    aria-pressed={filterStatus === 'SUBMITTED'}
+                    className={`w-full text-left bg-white p-4 rounded-lg shadow cursor-pointer transition-shadow hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${
                         filterStatus === 'SUBMITTED' ? 'ring-2 ring-blue-500' : ''
                     }`}
                     onClick={() => setFilterStatus(filterStatus === 'SUBMITTED' ? 'all' : 'SUBMITTED')}
                 >
                     <div className="text-sm text-gray-500">Submitted</div>
                     <div className="text-2xl font-bold text-blue-600">{submittedCount}</div>
-                </div>
-                <div
-                    className={`bg-white p-4 rounded-lg shadow cursor-pointer transition-shadow hover:shadow-md ${
+                </button>
+                <button
+                    type="button"
+                    aria-pressed={filterStatus === 'ACCEPTED'}
+                    className={`w-full text-left bg-white p-4 rounded-lg shadow cursor-pointer transition-shadow hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500 ${
                         filterStatus === 'ACCEPTED' ? 'ring-2 ring-green-500' : ''
                     }`}
                     onClick={() => setFilterStatus(filterStatus === 'ACCEPTED' ? 'all' : 'ACCEPTED')}
                 >
                     <div className="text-sm text-gray-500">Accepted</div>
                     <div className="text-2xl font-bold text-green-600">{acceptedCount}</div>
-                </div>
-                <div
-                    className={`bg-white p-4 rounded-lg shadow cursor-pointer transition-shadow hover:shadow-md ${
-                        filterStatus === 'REJECTED' ? 'ring-2 ring-red-500' : ''
+                </button>
+                <button
+                    type="button"
+                    aria-pressed={filterStatus === 'OVERDUE'}
+                    className={`w-full text-left bg-white p-4 rounded-lg shadow cursor-pointer transition-shadow hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 ${
+                        filterStatus === 'OVERDUE' ? 'ring-2 ring-red-500' : ''
                     }`}
-                    onClick={() => setFilterStatus(filterStatus === 'REJECTED' ? 'all' : 'REJECTED')}
+                    onClick={() => setFilterStatus(filterStatus === 'OVERDUE' ? 'all' : 'OVERDUE')}
                 >
                     <div className="text-sm text-gray-500">Overdue</div>
                     <div className="text-2xl font-bold text-red-600">{overdueCount}</div>
-                </div>
+                </button>
             </div>
 
             {/* Filter Status Indicator */}
-            {filterStatus !== 'all' && (
-                <div className="mb-4 flex items-center">
+            {hasActiveFilter && (
+                <div className="mb-4 flex flex-wrap items-center gap-3">
                     <span className="text-sm text-gray-600">
-                        Showing: <strong>{filterStatus === 'INDIVIDUAL' ? 'Individual Required' : filterStatus}</strong> attestations
+                        Showing: <strong>{filterLabel}</strong> attestations
                     </span>
                     <button
                         onClick={() => setFilterStatus('all')}
-                        className="ml-2 text-blue-600 hover:text-blue-800 text-sm"
+                        className="btn-secondary text-sm"
                     >
-                        Clear filter
+                        Clear filters
                     </button>
                 </div>
             )}

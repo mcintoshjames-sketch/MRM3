@@ -149,6 +149,8 @@ interface AttestationChangeLink {
 
 type TabType = 'cycles' | 'rules' | 'targets' | 'review' | 'owners' | 'all-records' | 'questions' | 'linked-changes';
 type FilterCycle = 'all' | number;
+type AllRecordsStatusFilter = 'all' | 'PENDING' | 'SUBMITTED' | 'ACCEPTED' | 'REJECTED' | 'OVERDUE';
+type LinkedChangesFilter = 'all' | 'MODEL_EDIT' | 'NEW_MODEL' | 'DECOMMISSION';
 
 interface GroupedByOwner {
     owner_id: number;
@@ -241,6 +243,7 @@ export default function AttestationCyclesPage() {
     const [allRecords, setAllRecords] = useState<AttestationRecord[]>([]);
     const [loadingAllRecords, setLoadingAllRecords] = useState(false);
     const [allRecordsCycleFilter, setAllRecordsCycleFilter] = useState<number | null>(null);
+    const [allRecordsStatusFilter, setAllRecordsStatusFilter] = useState<AllRecordsStatusFilter>('all');
     const [expandedOwners, setExpandedOwners] = useState<Set<number>>(new Set());
 
     // Questions tab state
@@ -260,6 +263,7 @@ export default function AttestationCyclesPage() {
     const [linkedChanges, setLinkedChanges] = useState<AttestationChangeLink[]>([]);
     const [loadingLinkedChanges, setLoadingLinkedChanges] = useState(false);
     const [linkedChangesCycleFilter, setLinkedChangesCycleFilter] = useState<number | null>(null);
+    const [linkedChangesTypeFilter, setLinkedChangesTypeFilter] = useState<LinkedChangesFilter>('all');
 
     // Error/success messages
     const [error, setError] = useState<string | null>(null);
@@ -508,11 +512,19 @@ export default function AttestationCyclesPage() {
         }
     }, [allRecordsCycleFilter]);
 
+    const filteredAllRecords = useMemo(() => {
+        if (allRecordsStatusFilter === 'all') return allRecords;
+        if (allRecordsStatusFilter === 'OVERDUE') {
+            return allRecords.filter(record => record.is_overdue);
+        }
+        return allRecords.filter(record => record.status === allRecordsStatusFilter);
+    }, [allRecords, allRecordsStatusFilter]);
+
     // Group records by owner
     const groupedByOwner: GroupedByOwner[] = useMemo(() => {
         const groups: Record<string, GroupedByOwner> = {};
 
-        allRecords.forEach(record => {
+        filteredAllRecords.forEach(record => {
             const key = record.owner_name;
             if (!groups[key]) {
                 groups[key] = {
@@ -537,7 +549,7 @@ export default function AttestationCyclesPage() {
         });
 
         return Object.values(groups).sort((a, b) => a.owner_name.localeCompare(b.owner_name));
-    }, [allRecords]);
+    }, [filteredAllRecords]);
 
     const toggleOwnerExpanded = (ownerName: string) => {
         setExpandedOwners(prev => {
@@ -569,6 +581,24 @@ export default function AttestationCyclesPage() {
         setExpandedOwners(new Set());
     };
 
+    const clearAllRecordsFilters = () => {
+        setAllRecordsCycleFilter(null);
+        setAllRecordsStatusFilter('all');
+    };
+
+    const clearLinkedChangesFilters = () => {
+        setLinkedChangesCycleFilter(null);
+        setLinkedChangesTypeFilter('all');
+    };
+
+    const toggleAllRecordsStatusFilter = (next: AllRecordsStatusFilter) => {
+        setAllRecordsStatusFilter(prev => (prev === next ? 'all' : next));
+    };
+
+    const toggleLinkedChangesTypeFilter = (next: LinkedChangesFilter) => {
+        setLinkedChangesTypeFilter(prev => (prev === next ? 'all' : next));
+    };
+
     const handleToggleHighFluctuation = async (userId: number, currentFlag: boolean) => {
         setError(null);
         try {
@@ -591,6 +621,11 @@ export default function AttestationCyclesPage() {
         if (filterCycle === 'all') return true;
         return r.cycle_id === filterCycle;
     });
+
+    const filteredLinkedChanges = useMemo(() => {
+        if (linkedChangesTypeFilter === 'all') return linkedChanges;
+        return linkedChanges.filter(link => link.change_type === linkedChangesTypeFilter);
+    }, [linkedChanges, linkedChangesTypeFilter]);
 
     const getDecisionBadge = (decision: string | null) => {
         switch (decision) {
@@ -619,6 +654,9 @@ export default function AttestationCyclesPage() {
             </span>
         );
     };
+
+    const hasAllRecordsFilters = allRecordsStatusFilter !== 'all' || allRecordsCycleFilter !== null;
+    const hasLinkedChangesFilters = linkedChangesTypeFilter !== 'all' || linkedChangesCycleFilter !== null;
 
     const handleCreateCycle = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -2019,19 +2057,31 @@ export default function AttestationCyclesPage() {
                                 </select>
                             </div>
                             <div className="flex items-center gap-2 ml-auto">
+                                {hasAllRecordsFilters && (
+                                    <button
+                                        type="button"
+                                        onClick={clearAllRecordsFilters}
+                                        className="btn-secondary text-sm"
+                                    >
+                                        Clear Filters
+                                    </button>
+                                )}
                                 <button
+                                    type="button"
                                     onClick={expandAllOwners}
                                     className="btn-secondary text-sm"
                                 >
                                     Expand All
                                 </button>
                                 <button
+                                    type="button"
                                     onClick={collapseAllOwners}
                                     className="btn-secondary text-sm"
                                 >
                                     Collapse All
                                 </button>
                                 <button
+                                    type="button"
                                     onClick={() => fetchAllRecords()}
                                     className="btn-secondary text-sm"
                                 >
@@ -2043,38 +2093,82 @@ export default function AttestationCyclesPage() {
 
                     {/* Summary Stats */}
                     <div className="grid grid-cols-2 md:grid-cols-6 gap-4 mb-6">
-                        <div className="bg-white p-4 rounded-lg shadow">
+                        <button
+                            type="button"
+                            aria-pressed={allRecordsStatusFilter === 'all'}
+                            onClick={() => toggleAllRecordsStatusFilter('all')}
+                            className={`w-full text-left bg-white p-4 rounded-lg shadow cursor-pointer transition-shadow hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-400 ${
+                                allRecordsStatusFilter === 'all' ? 'ring-2 ring-gray-400' : ''
+                            }`}
+                        >
                             <div className="text-sm text-gray-500">Total Records</div>
                             <div className="text-2xl font-bold text-gray-900">{allRecords.length}</div>
-                        </div>
-                        <div className="bg-white p-4 rounded-lg shadow">
-                            <div className="text-sm text-gray-500">Owners</div>
-                            <div className="text-2xl font-bold text-blue-600">{groupedByOwner.length}</div>
-                        </div>
-                        <div className="bg-white p-4 rounded-lg shadow">
+                        </button>
+                        <button
+                            type="button"
+                            aria-pressed={allRecordsStatusFilter === 'PENDING'}
+                            onClick={() => toggleAllRecordsStatusFilter('PENDING')}
+                            className={`w-full text-left bg-white p-4 rounded-lg shadow cursor-pointer transition-shadow hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-yellow-500 ${
+                                allRecordsStatusFilter === 'PENDING' ? 'ring-2 ring-yellow-500' : ''
+                            }`}
+                        >
                             <div className="text-sm text-gray-500">Pending</div>
                             <div className="text-2xl font-bold text-yellow-600">
                                 {allRecords.filter(r => r.status === 'PENDING').length}
                             </div>
-                        </div>
-                        <div className="bg-white p-4 rounded-lg shadow">
+                        </button>
+                        <button
+                            type="button"
+                            aria-pressed={allRecordsStatusFilter === 'SUBMITTED'}
+                            onClick={() => toggleAllRecordsStatusFilter('SUBMITTED')}
+                            className={`w-full text-left bg-white p-4 rounded-lg shadow cursor-pointer transition-shadow hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${
+                                allRecordsStatusFilter === 'SUBMITTED' ? 'ring-2 ring-blue-500' : ''
+                            }`}
+                        >
                             <div className="text-sm text-gray-500">Submitted</div>
                             <div className="text-2xl font-bold text-blue-600">
                                 {allRecords.filter(r => r.status === 'SUBMITTED').length}
                             </div>
-                        </div>
-                        <div className="bg-white p-4 rounded-lg shadow">
+                        </button>
+                        <button
+                            type="button"
+                            aria-pressed={allRecordsStatusFilter === 'ACCEPTED'}
+                            onClick={() => toggleAllRecordsStatusFilter('ACCEPTED')}
+                            className={`w-full text-left bg-white p-4 rounded-lg shadow cursor-pointer transition-shadow hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500 ${
+                                allRecordsStatusFilter === 'ACCEPTED' ? 'ring-2 ring-green-500' : ''
+                            }`}
+                        >
                             <div className="text-sm text-gray-500">Accepted</div>
                             <div className="text-2xl font-bold text-green-600">
                                 {allRecords.filter(r => r.status === 'ACCEPTED').length}
                             </div>
-                        </div>
-                        <div className="bg-white p-4 rounded-lg shadow">
+                        </button>
+                        <button
+                            type="button"
+                            aria-pressed={allRecordsStatusFilter === 'REJECTED'}
+                            onClick={() => toggleAllRecordsStatusFilter('REJECTED')}
+                            className={`w-full text-left bg-white p-4 rounded-lg shadow cursor-pointer transition-shadow hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 ${
+                                allRecordsStatusFilter === 'REJECTED' ? 'ring-2 ring-red-500' : ''
+                            }`}
+                        >
+                            <div className="text-sm text-gray-500">Rejected</div>
+                            <div className="text-2xl font-bold text-red-600">
+                                {allRecords.filter(r => r.status === 'REJECTED').length}
+                            </div>
+                        </button>
+                        <button
+                            type="button"
+                            aria-pressed={allRecordsStatusFilter === 'OVERDUE'}
+                            onClick={() => toggleAllRecordsStatusFilter('OVERDUE')}
+                            className={`w-full text-left bg-white p-4 rounded-lg shadow cursor-pointer transition-shadow hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 ${
+                                allRecordsStatusFilter === 'OVERDUE' ? 'ring-2 ring-red-500' : ''
+                            }`}
+                        >
                             <div className="text-sm text-gray-500">Overdue</div>
                             <div className="text-2xl font-bold text-red-600">
                                 {allRecords.filter(r => r.is_overdue).length}
                             </div>
-                        </div>
+                        </button>
                     </div>
 
                     {/* Grouped by Owner */}
@@ -2082,7 +2176,11 @@ export default function AttestationCyclesPage() {
                         <div className="bg-white rounded-lg shadow p-8 text-center text-gray-500">Loading...</div>
                     ) : groupedByOwner.length === 0 ? (
                         <div className="bg-white rounded-lg shadow p-8 text-center text-gray-500">
-                            No attestation records found. {allRecordsCycleFilter ? 'Try selecting a different cycle.' : 'Open a cycle to generate attestation records.'}
+                            {allRecordsStatusFilter !== 'all'
+                                ? 'No attestation records match the selected filters.'
+                                : allRecordsCycleFilter
+                                ? 'No attestation records found. Try selecting a different cycle.'
+                                : 'Open a cycle to generate attestation records.'}
                         </div>
                     ) : (
                         <div className="space-y-4">
@@ -2433,47 +2531,91 @@ export default function AttestationCyclesPage() {
                                     ))}
                                 </select>
                             </div>
-                            <button
-                                onClick={() => fetchLinkedChanges()}
-                                className="btn-secondary text-sm ml-auto"
-                            >
-                                Refresh
-                            </button>
+                            <div className="flex items-center gap-2 ml-auto">
+                                {hasLinkedChangesFilters && (
+                                    <button
+                                        type="button"
+                                        onClick={clearLinkedChangesFilters}
+                                        className="btn-secondary text-sm"
+                                    >
+                                        Clear Filters
+                                    </button>
+                                )}
+                                <button
+                                    type="button"
+                                    onClick={() => fetchLinkedChanges()}
+                                    className="btn-secondary text-sm"
+                                >
+                                    Refresh
+                                </button>
+                            </div>
                         </div>
                     </div>
 
                     {/* Summary Stats */}
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-                        <div className="bg-white p-4 rounded-lg shadow">
+                        <button
+                            type="button"
+                            aria-pressed={linkedChangesTypeFilter === 'all'}
+                            onClick={() => toggleLinkedChangesTypeFilter('all')}
+                            className={`w-full text-left bg-white p-4 rounded-lg shadow cursor-pointer transition-shadow hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-400 ${
+                                linkedChangesTypeFilter === 'all' ? 'ring-2 ring-gray-400' : ''
+                            }`}
+                        >
                             <div className="text-sm text-gray-500">Total Links</div>
                             <div className="text-2xl font-bold text-gray-900">{linkedChanges.length}</div>
-                        </div>
-                        <div className="bg-white p-4 rounded-lg shadow">
+                        </button>
+                        <button
+                            type="button"
+                            aria-pressed={linkedChangesTypeFilter === 'MODEL_EDIT'}
+                            onClick={() => toggleLinkedChangesTypeFilter('MODEL_EDIT')}
+                            className={`w-full text-left bg-white p-4 rounded-lg shadow cursor-pointer transition-shadow hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${
+                                linkedChangesTypeFilter === 'MODEL_EDIT' ? 'ring-2 ring-blue-500' : ''
+                            }`}
+                        >
                             <div className="text-sm text-gray-500">Model Edits</div>
                             <div className="text-2xl font-bold text-blue-600">
                                 {linkedChanges.filter(l => l.change_type === 'MODEL_EDIT').length}
                             </div>
-                        </div>
-                        <div className="bg-white p-4 rounded-lg shadow">
+                        </button>
+                        <button
+                            type="button"
+                            aria-pressed={linkedChangesTypeFilter === 'NEW_MODEL'}
+                            onClick={() => toggleLinkedChangesTypeFilter('NEW_MODEL')}
+                            className={`w-full text-left bg-white p-4 rounded-lg shadow cursor-pointer transition-shadow hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500 ${
+                                linkedChangesTypeFilter === 'NEW_MODEL' ? 'ring-2 ring-green-500' : ''
+                            }`}
+                        >
                             <div className="text-sm text-gray-500">New Models</div>
                             <div className="text-2xl font-bold text-green-600">
                                 {linkedChanges.filter(l => l.change_type === 'NEW_MODEL').length}
                             </div>
-                        </div>
-                        <div className="bg-white p-4 rounded-lg shadow">
+                        </button>
+                        <button
+                            type="button"
+                            aria-pressed={linkedChangesTypeFilter === 'DECOMMISSION'}
+                            onClick={() => toggleLinkedChangesTypeFilter('DECOMMISSION')}
+                            className={`w-full text-left bg-white p-4 rounded-lg shadow cursor-pointer transition-shadow hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 ${
+                                linkedChangesTypeFilter === 'DECOMMISSION' ? 'ring-2 ring-red-500' : ''
+                            }`}
+                        >
                             <div className="text-sm text-gray-500">Decommissions</div>
                             <div className="text-2xl font-bold text-red-600">
                                 {linkedChanges.filter(l => l.change_type === 'DECOMMISSION').length}
                             </div>
-                        </div>
+                        </button>
                     </div>
 
                     {/* Linked Changes Table */}
                     {loadingLinkedChanges ? (
                         <div className="bg-white rounded-lg shadow p-8 text-center text-gray-500">Loading...</div>
-                    ) : linkedChanges.length === 0 ? (
+                    ) : filteredLinkedChanges.length === 0 ? (
                         <div className="bg-white rounded-lg shadow p-8 text-center text-gray-500">
-                            No linked changes found. {linkedChangesCycleFilter ? 'Try selecting a different cycle.' : 'Linked changes will appear here when model owners make inventory changes during attestation.'}
+                            {linkedChangesTypeFilter !== 'all'
+                                ? 'No linked changes match the selected filters.'
+                                : linkedChangesCycleFilter
+                                ? 'No linked changes found. Try selecting a different cycle.'
+                                : 'Linked changes will appear here when model owners make inventory changes during attestation.'}
                         </div>
                     ) : (
                         <div className="bg-white rounded-lg shadow overflow-hidden">
@@ -2491,7 +2633,7 @@ export default function AttestationCyclesPage() {
                                     </tr>
                                 </thead>
                                 <tbody className="bg-white divide-y divide-gray-200">
-                                    {linkedChanges.map((link) => (
+                                    {filteredLinkedChanges.map((link) => (
                                         <tr key={link.link_id}>
                                             <td className="px-6 py-4 whitespace-nowrap">
                                                 <span className={`px-2 py-1 text-xs font-medium rounded ${

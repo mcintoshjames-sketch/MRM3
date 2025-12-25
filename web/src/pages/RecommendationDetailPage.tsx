@@ -600,7 +600,7 @@ export default function RecommendationDetailPage() {
                                              (task.owner?.user_id === user?.user_id || isAdmin) && (
                                                 <select
                                                     className="ml-4 text-sm border rounded px-2 py-1"
-                                                    value={task.completion_status_id}
+                                                    value={task.completion_status?.value_id ?? task.completion_status_id}
                                                     onChange={(e) => handleUpdateTask(task.task_id, parseInt(e.target.value))}
                                                 >
                                                     {taskStatuses.map(status => (

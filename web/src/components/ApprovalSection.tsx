@@ -118,6 +118,28 @@ export default function ApprovalSection({ recommendation, currentUser, onRefresh
         }
     };
 
+    const getApprovalRequirementLabel = (approval: any) => {
+        const approvalType = (approval.approval_type || '').toUpperCase();
+        if (approvalType === 'GLOBAL') {
+            return 'Global Approval';
+        }
+        if (approvalType === 'REGIONAL') {
+            const regionLabel = approval.region?.name || approval.region?.code || approval.region_name;
+            return regionLabel ? `Regional Approval - ${regionLabel}` : 'Regional Approval';
+        }
+        return 'Approval';
+    };
+
+    const getApproverLabel = (approval: any) => {
+        if (approval.approver?.full_name) {
+            return approval.approver.full_name;
+        }
+        if (approval.approver?.email) {
+            return approval.approver.email;
+        }
+        return 'Unassigned';
+    };
+
     if (approvals.length === 0) {
         return (
             <p className="text-gray-500 text-center py-8">
@@ -153,13 +175,15 @@ export default function ApprovalSection({ recommendation, currentUser, onRefresh
                         <div>
                             <div className="flex items-center gap-2 mb-1">
                                 <span className={`font-medium ${approval.approval_status === 'VOIDED' ? 'text-gray-500' : ''}`}>
-                                    {approval.approver?.full_name}
+                                    {getApprovalRequirementLabel(approval)}
                                 </span>
                                 <span className={`px-2 py-0.5 text-xs rounded ${getDecisionColor(approval.approval_status)}`}>
                                     {getDecisionLabel(approval.approval_status)}
                                 </span>
                             </div>
-                            <p className="text-sm text-gray-500">{approval.approver_role?.label}</p>
+                            <p className="text-sm text-gray-500">
+                                Approver: {getApproverLabel(approval)}
+                            </p>
                         </div>
                         {approval.approved_at && (
                             <span className="text-sm text-gray-500">
