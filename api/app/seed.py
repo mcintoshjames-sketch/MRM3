@@ -1,11 +1,14 @@
 """Seed minimal reference data."""
+import os
 import re
+import sys
 from datetime import datetime, date, timedelta
 from typing import Dict, List
 from sqlalchemy.orm import Session
 from app.core.database import SessionLocal
 from app.core.time import utc_now
-from app.core.security import get_password_hash
+from app.core.config import settings
+from app.core.security import get_password_hash, verify_password
 from app.models import User, UserRole, Vendor, EntraUser, Taxonomy, TaxonomyValue, ValidationWorkflowSLA, ValidationPolicy, Region, ValidationComponentDefinition, ComponentDefinitionConfiguration, ComponentDefinitionConfigItem, ModelTypeCategory, ModelType, ValidationRequest, ValidationOutcome, ValidationRequestModelVersion, ApproverRole, ConditionalApprovalRule, RuleRequiredApprover, MapApplication, ValidationAssignment, ValidationStatusHistory
 from app.models.lob import LOBUnit
 from app.models.recommendation import RecommendationPriorityConfig, RecommendationTimeframeConfig
@@ -70,6 +73,44 @@ REGULATORY_CATEGORY_VALUES = [
     {"code": "NON_REG", "label": "Non-Regulatory / Business Only",
         "description": "Business-impacting models with no direct regulatory regime linkage."},
 ]
+
+
+def is_production_env() -> bool:
+    return settings.ENVIRONMENT.lower() == "production"
+
+
+def parse_bool_env(value: str | None) -> bool | None:
+    if value is None:
+        return None
+    normalized = value.strip().lower()
+    if normalized in {"1", "true", "yes", "y"}:
+        return True
+    if normalized in {"0", "false", "no", "n"}:
+        return False
+    return None
+
+
+def should_seed_demo_data() -> bool:
+    override = parse_bool_env(os.getenv("SEED_DEMO_DATA"))
+    if override is None:
+        return not is_production_env()
+    return override
+
+
+def get_seed_admin_password() -> str | None:
+    password = os.getenv("SEED_ADMIN_PASSWORD")
+    if password:
+        password = password.strip()
+
+    if is_production_env():
+        if password:
+            if password == "admin123":
+                print("FATAL: SEED_ADMIN_PASSWORD cannot be the default in production.", file=sys.stderr)
+                sys.exit(1)
+            return password
+        return None
+
+    return password or "admin123"
 
 
 MODEL_TYPE_VALUES = [
@@ -1081,6 +1122,8 @@ def seed_database():
 
         # Seed LOB hierarchy first (users need LOB assignment)
         default_lob_id = seed_lob_units(db)
+        seed_demo_data = should_seed_demo_data()
+        admin_password = get_seed_admin_password()
 
         # Helper to assign LOB to existing users if not set
         def ensure_user_lob(user):
@@ -1094,133 +1137,144 @@ def seed_database():
         admin = db.query(User).filter(
             User.email == "admin@example.com").first()
         if not admin:
+            if admin_password is None:
+                print("FATAL: SEED_ADMIN_PASSWORD is required to create the admin user in production.", file=sys.stderr)
+                sys.exit(1)
             admin = User(
                 email="admin@example.com",
                 full_name="Admin User",
-                password_hash=get_password_hash("admin123"),
+                password_hash=get_password_hash(admin_password),
                 role=UserRole.ADMIN,
                 lob_id=default_lob_id
             )
             db.add(admin)
             db.commit()
-            print("✓ Created admin user (admin@example.com / admin123)")
+            print("✓ Created admin user (admin@example.com)")
         else:
             if ensure_user_lob(admin):
                 db.commit()
                 print("✓ Updated admin user with LOB assignment")
             else:
                 print("✓ Admin user already exists")
+            if is_production_env() and verify_password("admin123", admin.password_hash):
+                print("WARNING: admin@example.com still uses the default password in production. Rotate immediately.", file=sys.stderr)
 
-        # Create validator user for UAT
-        validator = db.query(User).filter(
-            User.email == "validator@example.com").first()
-        if not validator:
-            validator = User(
-                email="validator@example.com",
-                full_name="Sarah Chen",
-                password_hash=get_password_hash("validator123"),
-                role=UserRole.VALIDATOR,
-                lob_id=default_lob_id
-            )
-            db.add(validator)
-            db.commit()
-            print("✓ Created validator user (validator@example.com / validator123)")
-        else:
-            if ensure_user_lob(validator):
+        if seed_demo_data:
+            # Create validator user for UAT
+            validator = db.query(User).filter(
+                User.email == "validator@example.com").first()
+            if not validator:
+                validator = User(
+                    email="validator@example.com",
+                    full_name="Sarah Chen",
+                    password_hash=get_password_hash("validator123"),
+                    role=UserRole.VALIDATOR,
+                    lob_id=default_lob_id
+                )
+                db.add(validator)
                 db.commit()
-                print("✓ Updated validator user with LOB assignment")
+                print("✓ Created validator user (validator@example.com)")
             else:
-                print("✓ Validator user already exists")
+                if ensure_user_lob(validator):
+                    db.commit()
+                    print("✓ Updated validator user with LOB assignment")
+                else:
+                    print("✓ Validator user already exists")
 
-        # Create regular user for testing
-        regular_user = db.query(User).filter(
-            User.email == "user@example.com").first()
-        if not regular_user:
-            regular_user = User(
-                email="user@example.com",
-                full_name="Model Owner User",
-                password_hash=get_password_hash("user123"),
-                role=UserRole.USER,
-                lob_id=default_lob_id
-            )
-            db.add(regular_user)
-            db.commit()
-            print("✓ Created regular user (user@example.com / user123)")
-        else:
-            if ensure_user_lob(regular_user):
+            # Create regular user for testing
+            regular_user = db.query(User).filter(
+                User.email == "user@example.com").first()
+            if not regular_user:
+                regular_user = User(
+                    email="user@example.com",
+                    full_name="Model Owner User",
+                    password_hash=get_password_hash("user123"),
+                    role=UserRole.USER,
+                    lob_id=default_lob_id
+                )
+                db.add(regular_user)
                 db.commit()
-                print("✓ Updated regular user with LOB assignment")
+                print("✓ Created regular user (user@example.com)")
             else:
-                print("✓ Regular user already exists")
+                if ensure_user_lob(regular_user):
+                    db.commit()
+                    print("✓ Updated regular user with LOB assignment")
+                else:
+                    print("✓ Regular user already exists")
 
-        # Create global approver user
-        global_approver = db.query(User).filter(
-            User.email == "globalapprover@example.com").first()
-        if not global_approver:
-            global_approver = User(
-                email="globalapprover@example.com",
-                full_name="Global Approver",
-                password_hash=get_password_hash("approver123"),
-                role=UserRole.GLOBAL_APPROVER,
-                lob_id=default_lob_id
-            )
-            db.add(global_approver)
-            db.commit()
-            print("✓ Created global approver (globalapprover@example.com / approver123)")
-        else:
-            if ensure_user_lob(global_approver):
+            # Create global approver user
+            global_approver = db.query(User).filter(
+                User.email == "globalapprover@example.com").first()
+            if not global_approver:
+                global_approver = User(
+                    email="globalapprover@example.com",
+                    full_name="Global Approver",
+                    password_hash=get_password_hash("approver123"),
+                    role=UserRole.GLOBAL_APPROVER,
+                    lob_id=default_lob_id
+                )
+                db.add(global_approver)
                 db.commit()
-                print("✓ Updated global approver with LOB assignment")
+                print("✓ Created global approver (globalapprover@example.com)")
             else:
-                print("✓ Global approver already exists")
+                if ensure_user_lob(global_approver):
+                    db.commit()
+                    print("✓ Updated global approver with LOB assignment")
+                else:
+                    print("✓ Global approver already exists")
 
-        # Create John Smith (UAT User)
-        john_smith = db.query(User).filter(
-            User.email == "john.smith@contoso.com").first()
-        if not john_smith:
-            john_smith = User(
-                email="john.smith@contoso.com",
-                full_name="John Smith",
-                password_hash=get_password_hash("john123"),
-                role=UserRole.USER,
-                lob_id=default_lob_id
-            )
-            db.add(john_smith)
-            db.commit()
-            print("✓ Created John Smith (john.smith@contoso.com / john123)")
-        else:
-            updated = False
-            if john_smith.role != UserRole.USER:
-                john_smith.role = UserRole.USER
-                updated = True
-            if ensure_user_lob(john_smith):
-                updated = True
-            if updated:
+            # Create John Smith (UAT User)
+            john_smith = db.query(User).filter(
+                User.email == "john.smith@contoso.com").first()
+            if not john_smith:
+                john_smith = User(
+                    email="john.smith@contoso.com",
+                    full_name="John Smith",
+                    password_hash=get_password_hash("john123"),
+                    role=UserRole.USER,
+                    lob_id=default_lob_id
+                )
+                db.add(john_smith)
                 db.commit()
-                print("✓ Updated John Smith (role/LOB)")
+                print("✓ Created John Smith (john.smith@contoso.com)")
             else:
-                print("✓ John Smith already exists")
+                updated = False
+                if john_smith.role != UserRole.USER:
+                    john_smith.role = UserRole.USER
+                    updated = True
+                if ensure_user_lob(john_smith):
+                    updated = True
+                if updated:
+                    db.commit()
+                    print("✓ Updated John Smith (role/LOB)")
+                else:
+                    print("✓ John Smith already exists")
+        else:
+            print("ℹ Skipping demo users (SEED_DEMO_DATA=false).")
 
         # Create sample vendors
-        sample_vendors = [
-            {"name": "Bloomberg", "contact_info": "support@bloomberg.com"},
-            {"name": "Moody's Analytics", "contact_info": "analytics@moodys.com"},
-            {"name": "MSCI", "contact_info": "clientservice@msci.com"},
-            {"name": "S&P Global", "contact_info": "support@spglobal.com"},
-            {"name": "FactSet", "contact_info": "support@factset.com"},
-        ]
+        if seed_demo_data:
+            sample_vendors = [
+                {"name": "Bloomberg", "contact_info": "support@bloomberg.com"},
+                {"name": "Moody's Analytics", "contact_info": "analytics@moodys.com"},
+                {"name": "MSCI", "contact_info": "clientservice@msci.com"},
+                {"name": "S&P Global", "contact_info": "support@spglobal.com"},
+                {"name": "FactSet", "contact_info": "support@factset.com"},
+            ]
 
-        for vendor_data in sample_vendors:
-            existing = db.query(Vendor).filter(
-                Vendor.name == vendor_data["name"]).first()
-            if not existing:
-                vendor = Vendor(**vendor_data)
-                db.add(vendor)
-                print(f"✓ Created vendor: {vendor_data['name']}")
-            else:
-                print(f"✓ Vendor already exists: {vendor_data['name']}")
+            for vendor_data in sample_vendors:
+                existing = db.query(Vendor).filter(
+                    Vendor.name == vendor_data["name"]).first()
+                if not existing:
+                    vendor = Vendor(**vendor_data)
+                    db.add(vendor)
+                    print(f"✓ Created vendor: {vendor_data['name']}")
+                else:
+                    print(f"✓ Vendor already exists: {vendor_data['name']}")
 
-        db.commit()
+            db.commit()
+        else:
+            print("ℹ Skipping sample vendors (SEED_DEMO_DATA=false).")
 
         # Create regions
         default_regions = [
@@ -2312,507 +2366,510 @@ def seed_database():
             print("⚠ MRSA Risk Level taxonomy not found - skipping MRSA Review Policy seeding")
 
         # Seed MRSA demo data for Independent Review Tracking feature
-        seed_mrsa_demo_data(db)
+        if seed_demo_data:
+            seed_mrsa_demo_data(db)
+        else:
+            print("ℹ Skipping MRSA demo data (SEED_DEMO_DATA=false).")
 
         # Seed timeframe configurations
         seed_timeframe_configs(db)
 
         # Create demo models with validations to demonstrate overdue logic
-        print("\n=== Creating Demo Data for Overdue Validation Dashboard ===")
+        if seed_demo_data:
+            print("\n=== Creating Demo Data for Overdue Validation Dashboard ===")
 
-        # Get required taxonomy values
-        tier_2 = db.query(TaxonomyValue).filter(
-            TaxonomyValue.code == "TIER_2"
-        ).first()
-        tier_3 = db.query(TaxonomyValue).filter(
-            TaxonomyValue.code == "TIER_3"
-        ).first()
-        initial_val_type = db.query(TaxonomyValue).filter(
-            TaxonomyValue.code == "INITIAL"
-        ).first()
-        comprehensive_val_type = db.query(TaxonomyValue).filter(
-            TaxonomyValue.code == "COMPREHENSIVE"
-        ).first()
-        pass_outcome = db.query(TaxonomyValue).filter(
-            TaxonomyValue.code == "PASS"
-        ).first()
-
-        # New taxonomy values for ValidationRequest
-        standard_priority = db.query(TaxonomyValue).filter(
-            TaxonomyValue.code == "STANDARD").first()
-        approved_status = db.query(TaxonomyValue).filter(
-            TaxonomyValue.code == "APPROVED").first()
-        fit_for_purpose = db.query(TaxonomyValue).filter(
-            TaxonomyValue.code == "FIT_FOR_PURPOSE").first()
-
-        # Get usage frequency for demo models
-        usage_freq_monthly = db.query(TaxonomyValue).filter(
-            TaxonomyValue.code == "MONTHLY").first()
-
-        if tier_2 and tier_3 and initial_val_type and comprehensive_val_type and pass_outcome and admin and validator and standard_priority and approved_status and fit_for_purpose and usage_freq_monthly:
-            # Calculate strategic dates for Tier 2 (18 month frequency, 90 day lead time)
-            # Total overdue threshold: 18 months + 3 months grace + 90 days = ~21.5 months
-            today = date.today()
-
-            # Model A: Completely overdue (last validated 24 months ago)
-            model_a_exists = db.query(Model).filter(
-                Model.model_name == "Demo: Overdue Model").first()
-            if not model_a_exists:
-                model_a = Model(
-                    model_name="Demo: Overdue Model",
-                    description="Tier 2 model - validation overdue (last validated 24 months ago)",
-                    development_type="In-House",
-                    status="Active",
-                    owner_id=admin.user_id,
-                    risk_tier_id=tier_2.value_id,
-                    usage_frequency_id=usage_freq_monthly.value_id,
-                    created_at=utc_now()
-                )
-                db.add(model_a)
-                db.flush()
-
-                # Add validation from 24 months ago
-                val_date = today - timedelta(days=24*30)
-                req = ValidationRequest(
-                    requestor_id=admin.user_id,
-                    validation_type_id=comprehensive_val_type.value_id,
-                    priority_id=standard_priority.value_id,
-                    target_completion_date=val_date,
-                    current_status_id=approved_status.value_id,
-                    created_at=val_date - timedelta(days=30),
-                    updated_at=val_date,
-                    completion_date=datetime.combine(
-                        val_date, datetime.min.time())
-                )
-                db.add(req)
-                db.flush()
-
-                db.add(ValidationRequestModelVersion(
-                    request_id=req.request_id, model_id=model_a.model_id))
-
-                outcome = ValidationOutcome(
-                    request_id=req.request_id,
-                    overall_rating_id=fit_for_purpose.value_id,
-                    executive_summary="Comprehensive validation completed. Model performing as expected.",
-                    effective_date=val_date,
-                    created_at=val_date
-                )
-                db.add(outcome)
-
-                print(
-                    "✓ Created 'Demo: Overdue Model' (24 months since last validation - OVERDUE)")
-
-            # Model B: Submission overdue but validation not yet due (last validated 20 months ago)
-            model_b_exists = db.query(Model).filter(
-                Model.model_name == "Demo: Submission Overdue").first()
-            if not model_b_exists:
-                model_b = Model(
-                    model_name="Demo: Submission Overdue",
-                    description="Tier 2 model - past submission grace period (last validated 20 months ago)",
-                    development_type="In-House",
-                    status="Active",
-                    owner_id=admin.user_id,
-                    risk_tier_id=tier_2.value_id,
-                    usage_frequency_id=usage_freq_monthly.value_id,
-                    created_at=utc_now()
-                )
-                db.add(model_b)
-                db.flush()
-
-                # Add validation from 20 months ago
-                val_date = today - timedelta(days=20*30)
-                req = ValidationRequest(
-                    requestor_id=admin.user_id,
-                    validation_type_id=comprehensive_val_type.value_id,
-                    priority_id=standard_priority.value_id,
-                    target_completion_date=val_date,
-                    current_status_id=approved_status.value_id,
-                    created_at=val_date - timedelta(days=30),
-                    updated_at=val_date,
-                    completion_date=datetime.combine(
-                        val_date, datetime.min.time())
-                )
-                db.add(req)
-                db.flush()
-
-                db.add(ValidationRequestModelVersion(
-                    request_id=req.request_id, model_id=model_b.model_id))
-
-                outcome = ValidationOutcome(
-                    request_id=req.request_id,
-                    overall_rating_id=fit_for_purpose.value_id,
-                    executive_summary="Comprehensive validation completed.",
-                    effective_date=val_date,
-                    created_at=val_date
-                )
-                db.add(outcome)
-
-                print(
-                    "✓ Created 'Demo: Submission Overdue' (20 months - submission grace passed)")
-
-            # Model C: Due soon but not overdue (last validated 17 months ago)
-            model_c_exists = db.query(Model).filter(
-                Model.model_name == "Demo: Due Soon").first()
-            if not model_c_exists:
-                model_c = Model(
-                    model_name="Demo: Due Soon",
-                    description="Tier 2 model - approaching submission deadline (last validated 17 months ago)",
-                    development_type="In-House",
-                    status="Active",
-                    owner_id=admin.user_id,
-                    risk_tier_id=tier_2.value_id,
-                    usage_frequency_id=usage_freq_monthly.value_id,
-                    created_at=utc_now()
-                )
-                db.add(model_c)
-                db.flush()
-
-                # Add validation from 17 months ago
-                val_date = today - timedelta(days=17*30)
-                req = ValidationRequest(
-                    requestor_id=admin.user_id,
-                    validation_type_id=comprehensive_val_type.value_id,
-                    priority_id=standard_priority.value_id,
-                    target_completion_date=val_date,
-                    current_status_id=approved_status.value_id,
-                    created_at=val_date - timedelta(days=30),
-                    updated_at=val_date,
-                    completion_date=datetime.combine(
-                        val_date, datetime.min.time())
-                )
-                db.add(req)
-                db.flush()
-
-                db.add(ValidationRequestModelVersion(
-                    request_id=req.request_id, model_id=model_c.model_id))
-
-                outcome = ValidationOutcome(
-                    request_id=req.request_id,
-                    overall_rating_id=fit_for_purpose.value_id,
-                    executive_summary="Comprehensive validation completed.",
-                    effective_date=val_date,
-                    created_at=val_date
-                )
-                db.add(outcome)
-
-                print(
-                    "✓ Created 'Demo: Due Soon' (17 months - submission due within 1 month)")
-
-            # Model D: Never validated (Tier 3)
-            model_d_exists = db.query(Model).filter(
-                Model.model_name == "Demo: Never Validated").first()
-            if not model_d_exists:
-                model_d = Model(
-                    model_name="Demo: Never Validated",
-                    description="Tier 3 model - never validated since deployment",
-                    development_type="In-House",
-                    status="Active",
-                    owner_id=admin.user_id,
-                    risk_tier_id=tier_3.value_id,
-                    usage_frequency_id=usage_freq_monthly.value_id,
-                    created_at=utc_now()
-                )
-                db.add(model_d)
-                print("✓ Created 'Demo: Never Validated' (no validation history)")
-
-            # Model E: Recently validated (compliant)
-            model_e_exists = db.query(Model).filter(
-                Model.model_name == "Demo: Compliant Model").first()
-            if not model_e_exists:
-                model_e = Model(
-                    model_name="Demo: Compliant Model",
-                    description="Tier 2 model - recently validated and compliant (6 months ago)",
-                    development_type="In-House",
-                    status="Active",
-                    owner_id=admin.user_id,
-                    risk_tier_id=tier_2.value_id,
-                    usage_frequency_id=usage_freq_monthly.value_id,
-                    created_at=utc_now()
-                )
-                db.add(model_e)
-                db.flush()
-
-                # Add recent validation
-                val_date = today - timedelta(days=6*30)
-                req = ValidationRequest(
-                    requestor_id=admin.user_id,
-                    validation_type_id=comprehensive_val_type.value_id,
-                    priority_id=standard_priority.value_id,
-                    target_completion_date=val_date,
-                    current_status_id=approved_status.value_id,
-                    created_at=val_date - timedelta(days=30),
-                    updated_at=val_date,
-                    completion_date=datetime.combine(
-                        val_date, datetime.min.time())
-                )
-                db.add(req)
-                db.flush()
-
-                db.add(ValidationRequestModelVersion(
-                    request_id=req.request_id, model_id=model_e.model_id))
-
-                outcome = ValidationOutcome(
-                    request_id=req.request_id,
-                    overall_rating_id=fit_for_purpose.value_id,
-                    executive_summary="Comprehensive validation completed. Model is compliant.",
-                    effective_date=val_date,
-                    created_at=val_date
-                )
-                db.add(outcome)
-
-                print(
-                    "✓ Created 'Demo: Compliant Model' (6 months - well within compliance)")
-
-            # ================================================================
-            # NEW: Models that appear in the Overdue Revalidation Report
-            # These require CURRENT in-progress validations with past due dates
-            # ================================================================
-
-            # Get Tier 1 for higher risk overdue examples
-            tier_1 = db.query(TaxonomyValue).filter(
-                TaxonomyValue.code == "TIER_1"
+            # Get required taxonomy values
+            tier_2 = db.query(TaxonomyValue).filter(
+                TaxonomyValue.code == "TIER_2"
+            ).first()
+            tier_3 = db.query(TaxonomyValue).filter(
+                TaxonomyValue.code == "TIER_3"
+            ).first()
+            initial_val_type = db.query(TaxonomyValue).filter(
+                TaxonomyValue.code == "INITIAL"
+            ).first()
+            comprehensive_val_type = db.query(TaxonomyValue).filter(
+                TaxonomyValue.code == "COMPREHENSIVE"
+            ).first()
+            pass_outcome = db.query(TaxonomyValue).filter(
+                TaxonomyValue.code == "PASS"
             ).first()
 
-            # Get status values for in-progress workflows
-            intake_status = db.query(TaxonomyValue).join(Taxonomy).filter(
-                TaxonomyValue.code == "INTAKE",
-                Taxonomy.name == "Validation Request Status"
-            ).first()
-            planning_status = db.query(TaxonomyValue).join(Taxonomy).filter(
-                TaxonomyValue.code == "PLANNING",
-                Taxonomy.name == "Validation Request Status"
-            ).first()
-            in_progress_status = db.query(TaxonomyValue).join(Taxonomy).filter(
-                TaxonomyValue.code == "IN_PROGRESS",
-                Taxonomy.name == "Validation Request Status"
-            ).first()
+            # New taxonomy values for ValidationRequest
+            standard_priority = db.query(TaxonomyValue).filter(
+                TaxonomyValue.code == "STANDARD").first()
+            approved_status = db.query(TaxonomyValue).filter(
+                TaxonomyValue.code == "APPROVED").first()
+            fit_for_purpose = db.query(TaxonomyValue).filter(
+                TaxonomyValue.code == "FIT_FOR_PURPOSE").first()
 
-            if tier_1 and intake_status and planning_status and in_progress_status:
-                # Tier 1 policy: 12 month frequency, 1 month grace, 120 day lead time
-                # Timeline for overdue:
-                #   - submission_due = prior_completion + 12 months
-                #   - grace_period_end = submission_due + 1 month
-                #   - model_validation_due = grace_period_end + 120 days
+            # Get usage frequency for demo models
+            usage_freq_monthly = db.query(TaxonomyValue).filter(
+                TaxonomyValue.code == "MONTHLY").first()
 
-                # ============================================================
-                # Model F: PRE_SUBMISSION Overdue (Awaiting Documentation) - MODERATE
-                # - Prior validation completed 27 months ago
-                # - submission_due_date = 15 months ago (27 - 12 = 15) = ~450 days
-                # - grace_period_end = 14 months ago (15 - 1 = 14) = ~420 days
-                # - Days overdue: ~420 days = MODERATE (366-730 days)
-                # - Status: PLANNING (waiting for model owner to submit docs)
-                # ============================================================
-                model_f_exists = db.query(Model).filter(
-                    Model.model_name == "Demo: Awaiting Submission"
-                ).first()
-                if not model_f_exists:
-                    model_f = Model(
-                        model_name="Demo: Awaiting Submission",
-                        description="Tier 1 model - revalidation significantly overdue. Model owner has not submitted documentation for over a year.",
+            if tier_2 and tier_3 and initial_val_type and comprehensive_val_type and pass_outcome and admin and validator and standard_priority and approved_status and fit_for_purpose and usage_freq_monthly:
+                # Calculate strategic dates for Tier 2 (18 month frequency, 90 day lead time)
+                # Total overdue threshold: 18 months + 3 months grace + 90 days = ~21.5 months
+                today = date.today()
+
+                # Model A: Completely overdue (last validated 24 months ago)
+                model_a_exists = db.query(Model).filter(
+                    Model.model_name == "Demo: Overdue Model").first()
+                if not model_a_exists:
+                    model_a = Model(
+                        model_name="Demo: Overdue Model",
+                        description="Tier 2 model - validation overdue (last validated 24 months ago)",
                         development_type="In-House",
                         status="Active",
                         owner_id=admin.user_id,
-                        developer_id=2,  # John Smith
-                        risk_tier_id=tier_1.value_id,
+                        risk_tier_id=tier_2.value_id,
                         usage_frequency_id=usage_freq_monthly.value_id,
                         created_at=utc_now()
                     )
-                    db.add(model_f)
+                    db.add(model_a)
                     db.flush()
 
-                    # Step 1: Create the PRIOR approved comprehensive validation (27 months ago)
-                    prior_val_date = today - timedelta(days=27 * 30)
-                    prior_req_f = ValidationRequest(
+                    # Add validation from 24 months ago
+                    val_date = today - timedelta(days=24*30)
+                    req = ValidationRequest(
                         requestor_id=admin.user_id,
                         validation_type_id=comprehensive_val_type.value_id,
                         priority_id=standard_priority.value_id,
-                        target_completion_date=prior_val_date,
+                        target_completion_date=val_date,
                         current_status_id=approved_status.value_id,
-                        created_at=prior_val_date - timedelta(days=60),
-                        updated_at=prior_val_date,
+                        created_at=val_date - timedelta(days=30),
+                        updated_at=val_date,
                         completion_date=datetime.combine(
-                            prior_val_date, datetime.min.time())
+                            val_date, datetime.min.time())
                     )
-                    db.add(prior_req_f)
+                    db.add(req)
                     db.flush()
 
                     db.add(ValidationRequestModelVersion(
-                        request_id=prior_req_f.request_id, model_id=model_f.model_id
-                    ))
+                        request_id=req.request_id, model_id=model_a.model_id))
 
-                    prior_outcome_f = ValidationOutcome(
-                        request_id=prior_req_f.request_id,
+                    outcome = ValidationOutcome(
+                        request_id=req.request_id,
                         overall_rating_id=fit_for_purpose.value_id,
-                        executive_summary="Annual comprehensive validation completed. Model performing within expectations.",
-                        effective_date=prior_val_date,
-                        created_at=prior_val_date
+                        executive_summary="Comprehensive validation completed. Model performing as expected.",
+                        effective_date=val_date,
+                        created_at=val_date
                     )
-                    db.add(prior_outcome_f)
-                    db.flush()
-
-                    # Step 2: Create CURRENT revalidation request (in PLANNING, waiting for submission)
-                    # submission_due_date = prior_val_date + 12 months = 15 months ago (~450 days)
-                    submission_due_f = prior_val_date + timedelta(days=12 * 30)
-                    current_req_f = ValidationRequest(
-                        requestor_id=admin.user_id,
-                        validation_type_id=comprehensive_val_type.value_id,
-                        priority_id=standard_priority.value_id,
-                        target_completion_date=today +
-                        timedelta(days=60),  # optimistic target
-                        current_status_id=planning_status.value_id,
-                        prior_validation_request_id=prior_req_f.request_id,
-                        submission_due_date=submission_due_f,
-                        submission_received_date=None,  # NOT YET SUBMITTED - this is why it's overdue
-                        created_at=submission_due_f -
-                        timedelta(days=30),  # Created before due date
-                        updated_at=utc_now()
-                    )
-                    db.add(current_req_f)
-                    db.flush()
-
-                    db.add(ValidationRequestModelVersion(
-                        request_id=current_req_f.request_id, model_id=model_f.model_id
-                    ))
-
-                    # Add a validator assignment (waiting for submission before work can begin)
-                    db.add(ValidationAssignment(
-                        request_id=current_req_f.request_id,
-                        validator_id=validator.user_id,
-                        is_primary=True,
-                        assignment_date=submission_due_f - timedelta(days=30),
-                        independence_attestation=True
-                    ))
+                    db.add(outcome)
 
                     print(
-                        "✓ Created 'Demo: Awaiting Submission' (PRE_SUBMISSION overdue - MODERATE - ~420 days overdue)")
+                        "✓ Created 'Demo: Overdue Model' (24 months since last validation - OVERDUE)")
 
-                # ============================================================
-                # Model G: VALIDATION_IN_PROGRESS Overdue (Validation Behind Schedule)
-                # - Prior validation completed 18 months ago
-                # - submission_due_date = 6 months ago (18 - 12 = 6)
-                # - submission_received_date = 5.5 months ago (submitted during grace period)
-                # - grace_period_end = 5 months ago (6 - 1 = 5)
-                # - model_validation_due = 5 months - 120 days = ~1 month ago
-                # - Status: IN_PROGRESS (validation team is behind)
-                # ============================================================
-                model_g_exists = db.query(Model).filter(
-                    Model.model_name == "Demo: Validation Behind Schedule"
-                ).first()
-                if not model_g_exists:
-                    model_g = Model(
-                        model_name="Demo: Validation Behind Schedule",
-                        description="Tier 1 model - documentation submitted but validation work is behind schedule. Model is overdue for completion.",
+                # Model B: Submission overdue but validation not yet due (last validated 20 months ago)
+                model_b_exists = db.query(Model).filter(
+                    Model.model_name == "Demo: Submission Overdue").first()
+                if not model_b_exists:
+                    model_b = Model(
+                        model_name="Demo: Submission Overdue",
+                        description="Tier 2 model - past submission grace period (last validated 20 months ago)",
                         development_type="In-House",
                         status="Active",
-                        owner_id=5,  # Model Owner User
-                        developer_id=admin.user_id,
-                        risk_tier_id=tier_1.value_id,
+                        owner_id=admin.user_id,
+                        risk_tier_id=tier_2.value_id,
                         usage_frequency_id=usage_freq_monthly.value_id,
                         created_at=utc_now()
                     )
-                    db.add(model_g)
+                    db.add(model_b)
                     db.flush()
 
-                    # Step 1: Create the PRIOR approved comprehensive validation (18 months ago)
-                    prior_val_date_g = today - timedelta(days=18 * 30)
-                    prior_req_g = ValidationRequest(
+                    # Add validation from 20 months ago
+                    val_date = today - timedelta(days=20*30)
+                    req = ValidationRequest(
                         requestor_id=admin.user_id,
                         validation_type_id=comprehensive_val_type.value_id,
                         priority_id=standard_priority.value_id,
-                        target_completion_date=prior_val_date_g,
+                        target_completion_date=val_date,
                         current_status_id=approved_status.value_id,
-                        created_at=prior_val_date_g - timedelta(days=60),
-                        updated_at=prior_val_date_g,
+                        created_at=val_date - timedelta(days=30),
+                        updated_at=val_date,
                         completion_date=datetime.combine(
-                            prior_val_date_g, datetime.min.time())
+                            val_date, datetime.min.time())
                     )
-                    db.add(prior_req_g)
+                    db.add(req)
                     db.flush()
 
                     db.add(ValidationRequestModelVersion(
-                        request_id=prior_req_g.request_id, model_id=model_g.model_id
-                    ))
+                        request_id=req.request_id, model_id=model_b.model_id))
 
-                    prior_outcome_g = ValidationOutcome(
-                        request_id=prior_req_g.request_id,
+                    outcome = ValidationOutcome(
+                        request_id=req.request_id,
                         overall_rating_id=fit_for_purpose.value_id,
-                        executive_summary="Annual comprehensive validation completed successfully.",
-                        effective_date=prior_val_date_g,
-                        created_at=prior_val_date_g
+                        executive_summary="Comprehensive validation completed.",
+                        effective_date=val_date,
+                        created_at=val_date
                     )
-                    db.add(prior_outcome_g)
-                    db.flush()
-
-                    # Step 2: Create CURRENT revalidation request (IN_PROGRESS, behind schedule)
-                    # submission_due_date = prior_val_date_g + 12 months = 6 months ago
-                    submission_due_g = prior_val_date_g + \
-                        timedelta(days=12 * 30)
-                    # Model owner submitted during grace period (about 2 weeks after due date)
-                    submission_received_g = submission_due_g + \
-                        timedelta(days=14)
-
-                    current_req_g = ValidationRequest(
-                        requestor_id=admin.user_id,
-                        validation_type_id=comprehensive_val_type.value_id,
-                        priority_id=standard_priority.value_id,
-                        target_completion_date=today +
-                        timedelta(days=30),  # revised target
-                        current_status_id=in_progress_status.value_id,
-                        prior_validation_request_id=prior_req_g.request_id,
-                        submission_due_date=submission_due_g,
-                        submission_received_date=submission_received_g,  # SUBMITTED but late
-                        created_at=submission_due_g - timedelta(days=30),
-                        updated_at=utc_now()
-                    )
-                    db.add(current_req_g)
-                    db.flush()
-
-                    db.add(ValidationRequestModelVersion(
-                        request_id=current_req_g.request_id, model_id=model_g.model_id
-                    ))
-
-                    # Add validator assignments (validation work ongoing but behind)
-                    db.add(ValidationAssignment(
-                        request_id=current_req_g.request_id,
-                        validator_id=validator.user_id,
-                        is_primary=True,
-                        assignment_date=submission_received_g +
-                        timedelta(days=7),
-                        independence_attestation=True,
-                        estimated_hours=80.0,
-                        actual_hours=40.0  # Only halfway done
-                    ))
-
-                    # Add status history to show the progression
-                    db.add(ValidationStatusHistory(
-                        request_id=current_req_g.request_id,
-                        old_status_id=intake_status.value_id,
-                        new_status_id=planning_status.value_id,
-                        changed_by_id=admin.user_id,
-                        change_reason="Validator assigned, entering planning phase",
-                        changed_at=submission_received_g + timedelta(days=7)
-                    ))
-                    db.add(ValidationStatusHistory(
-                        request_id=current_req_g.request_id,
-                        old_status_id=planning_status.value_id,
-                        new_status_id=in_progress_status.value_id,
-                        changed_by_id=validator.user_id,
-                        change_reason="Validation work commenced",
-                        changed_at=submission_received_g + timedelta(days=14)
-                    ))
+                    db.add(outcome)
 
                     print(
-                        "✓ Created 'Demo: Validation Behind Schedule' (VALIDATION_IN_PROGRESS overdue - work behind schedule)")
+                        "✓ Created 'Demo: Submission Overdue' (20 months - submission grace passed)")
 
-            else:
-                print(
-                    "⚠ Missing Tier 1 or status taxonomy values - skipping overdue report demo data")
+                # Model C: Due soon but not overdue (last validated 17 months ago)
+                model_c_exists = db.query(Model).filter(
+                    Model.model_name == "Demo: Due Soon").first()
+                if not model_c_exists:
+                    model_c = Model(
+                        model_name="Demo: Due Soon",
+                        description="Tier 2 model - approaching submission deadline (last validated 17 months ago)",
+                        development_type="In-House",
+                        status="Active",
+                        owner_id=admin.user_id,
+                        risk_tier_id=tier_2.value_id,
+                        usage_frequency_id=usage_freq_monthly.value_id,
+                        created_at=utc_now()
+                    )
+                    db.add(model_c)
+                    db.flush()
 
-            db.commit()
-            print("✓ Demo data creation completed\n")
+                    # Add validation from 17 months ago
+                    val_date = today - timedelta(days=17*30)
+                    req = ValidationRequest(
+                        requestor_id=admin.user_id,
+                        validation_type_id=comprehensive_val_type.value_id,
+                        priority_id=standard_priority.value_id,
+                        target_completion_date=val_date,
+                        current_status_id=approved_status.value_id,
+                        created_at=val_date - timedelta(days=30),
+                        updated_at=val_date,
+                        completion_date=datetime.combine(
+                            val_date, datetime.min.time())
+                    )
+                    db.add(req)
+                    db.flush()
+
+                    db.add(ValidationRequestModelVersion(
+                        request_id=req.request_id, model_id=model_c.model_id))
+
+                    outcome = ValidationOutcome(
+                        request_id=req.request_id,
+                        overall_rating_id=fit_for_purpose.value_id,
+                        executive_summary="Comprehensive validation completed.",
+                        effective_date=val_date,
+                        created_at=val_date
+                    )
+                    db.add(outcome)
+
+                    print(
+                        "✓ Created 'Demo: Due Soon' (17 months - submission due within 1 month)")
+
+                # Model D: Never validated (Tier 3)
+                model_d_exists = db.query(Model).filter(
+                    Model.model_name == "Demo: Never Validated").first()
+                if not model_d_exists:
+                    model_d = Model(
+                        model_name="Demo: Never Validated",
+                        description="Tier 3 model - never validated since deployment",
+                        development_type="In-House",
+                        status="Active",
+                        owner_id=admin.user_id,
+                        risk_tier_id=tier_3.value_id,
+                        usage_frequency_id=usage_freq_monthly.value_id,
+                        created_at=utc_now()
+                    )
+                    db.add(model_d)
+                    print("✓ Created 'Demo: Never Validated' (no validation history)")
+
+                # Model E: Recently validated (compliant)
+                model_e_exists = db.query(Model).filter(
+                    Model.model_name == "Demo: Compliant Model").first()
+                if not model_e_exists:
+                    model_e = Model(
+                        model_name="Demo: Compliant Model",
+                        description="Tier 2 model - recently validated and compliant (6 months ago)",
+                        development_type="In-House",
+                        status="Active",
+                        owner_id=admin.user_id,
+                        risk_tier_id=tier_2.value_id,
+                        usage_frequency_id=usage_freq_monthly.value_id,
+                        created_at=utc_now()
+                    )
+                    db.add(model_e)
+                    db.flush()
+
+                    # Add recent validation
+                    val_date = today - timedelta(days=6*30)
+                    req = ValidationRequest(
+                        requestor_id=admin.user_id,
+                        validation_type_id=comprehensive_val_type.value_id,
+                        priority_id=standard_priority.value_id,
+                        target_completion_date=val_date,
+                        current_status_id=approved_status.value_id,
+                        created_at=val_date - timedelta(days=30),
+                        updated_at=val_date,
+                        completion_date=datetime.combine(
+                            val_date, datetime.min.time())
+                    )
+                    db.add(req)
+                    db.flush()
+
+                    db.add(ValidationRequestModelVersion(
+                        request_id=req.request_id, model_id=model_e.model_id))
+
+                    outcome = ValidationOutcome(
+                        request_id=req.request_id,
+                        overall_rating_id=fit_for_purpose.value_id,
+                        executive_summary="Comprehensive validation completed. Model is compliant.",
+                        effective_date=val_date,
+                        created_at=val_date
+                    )
+                    db.add(outcome)
+
+                    print(
+                        "✓ Created 'Demo: Compliant Model' (6 months - well within compliance)")
+
+                # ================================================================
+                # NEW: Models that appear in the Overdue Revalidation Report
+                # These require CURRENT in-progress validations with past due dates
+                # ================================================================
+
+                # Get Tier 1 for higher risk overdue examples
+                tier_1 = db.query(TaxonomyValue).filter(
+                    TaxonomyValue.code == "TIER_1"
+                ).first()
+
+                # Get status values for in-progress workflows
+                intake_status = db.query(TaxonomyValue).join(Taxonomy).filter(
+                    TaxonomyValue.code == "INTAKE",
+                    Taxonomy.name == "Validation Request Status"
+                ).first()
+                planning_status = db.query(TaxonomyValue).join(Taxonomy).filter(
+                    TaxonomyValue.code == "PLANNING",
+                    Taxonomy.name == "Validation Request Status"
+                ).first()
+                in_progress_status = db.query(TaxonomyValue).join(Taxonomy).filter(
+                    TaxonomyValue.code == "IN_PROGRESS",
+                    Taxonomy.name == "Validation Request Status"
+                ).first()
+
+                if tier_1 and intake_status and planning_status and in_progress_status:
+                    # Tier 1 policy: 12 month frequency, 1 month grace, 120 day lead time
+                    # Timeline for overdue:
+                    #   - submission_due = prior_completion + 12 months
+                    #   - grace_period_end = submission_due + 1 month
+                    #   - model_validation_due = grace_period_end + 120 days
+
+                    # ============================================================
+                    # Model F: PRE_SUBMISSION Overdue (Awaiting Documentation) - MODERATE
+                    # - Prior validation completed 27 months ago
+                    # - submission_due_date = 15 months ago (27 - 12 = 15) = ~450 days
+                    # - grace_period_end = 14 months ago (15 - 1 = 14) = ~420 days
+                    # - Days overdue: ~420 days = MODERATE (366-730 days)
+                    # - Status: PLANNING (waiting for model owner to submit docs)
+                    # ============================================================
+                    model_f_exists = db.query(Model).filter(
+                        Model.model_name == "Demo: Awaiting Submission"
+                    ).first()
+                    if not model_f_exists:
+                        model_f = Model(
+                            model_name="Demo: Awaiting Submission",
+                            description="Tier 1 model - revalidation significantly overdue. Model owner has not submitted documentation for over a year.",
+                            development_type="In-House",
+                            status="Active",
+                            owner_id=admin.user_id,
+                            developer_id=2,  # John Smith
+                            risk_tier_id=tier_1.value_id,
+                            usage_frequency_id=usage_freq_monthly.value_id,
+                            created_at=utc_now()
+                        )
+                        db.add(model_f)
+                        db.flush()
+
+                        # Step 1: Create the PRIOR approved comprehensive validation (27 months ago)
+                        prior_val_date = today - timedelta(days=27 * 30)
+                        prior_req_f = ValidationRequest(
+                            requestor_id=admin.user_id,
+                            validation_type_id=comprehensive_val_type.value_id,
+                            priority_id=standard_priority.value_id,
+                            target_completion_date=prior_val_date,
+                            current_status_id=approved_status.value_id,
+                            created_at=prior_val_date - timedelta(days=60),
+                            updated_at=prior_val_date,
+                            completion_date=datetime.combine(
+                                prior_val_date, datetime.min.time())
+                        )
+                        db.add(prior_req_f)
+                        db.flush()
+
+                        db.add(ValidationRequestModelVersion(
+                            request_id=prior_req_f.request_id, model_id=model_f.model_id
+                        ))
+
+                        prior_outcome_f = ValidationOutcome(
+                            request_id=prior_req_f.request_id,
+                            overall_rating_id=fit_for_purpose.value_id,
+                            executive_summary="Annual comprehensive validation completed. Model performing within expectations.",
+                            effective_date=prior_val_date,
+                            created_at=prior_val_date
+                        )
+                        db.add(prior_outcome_f)
+                        db.flush()
+
+                        # Step 2: Create CURRENT revalidation request (in PLANNING, waiting for submission)
+                        # submission_due_date = prior_val_date + 12 months = 15 months ago (~450 days)
+                        submission_due_f = prior_val_date + timedelta(days=12 * 30)
+                        current_req_f = ValidationRequest(
+                            requestor_id=admin.user_id,
+                            validation_type_id=comprehensive_val_type.value_id,
+                            priority_id=standard_priority.value_id,
+                            target_completion_date=today +
+                            timedelta(days=60),  # optimistic target
+                            current_status_id=planning_status.value_id,
+                            prior_validation_request_id=prior_req_f.request_id,
+                            submission_due_date=submission_due_f,
+                            submission_received_date=None,  # NOT YET SUBMITTED - this is why it's overdue
+                            created_at=submission_due_f -
+                            timedelta(days=30),  # Created before due date
+                            updated_at=utc_now()
+                        )
+                        db.add(current_req_f)
+                        db.flush()
+
+                        db.add(ValidationRequestModelVersion(
+                            request_id=current_req_f.request_id, model_id=model_f.model_id
+                        ))
+
+                        # Add a validator assignment (waiting for submission before work can begin)
+                        db.add(ValidationAssignment(
+                            request_id=current_req_f.request_id,
+                            validator_id=validator.user_id,
+                            is_primary=True,
+                            assignment_date=submission_due_f - timedelta(days=30),
+                            independence_attestation=True
+                        ))
+
+                        print(
+                            "✓ Created 'Demo: Awaiting Submission' (PRE_SUBMISSION overdue - MODERATE - ~420 days overdue)")
+
+                    # ============================================================
+                    # Model G: VALIDATION_IN_PROGRESS Overdue (Validation Behind Schedule)
+                    # - Prior validation completed 18 months ago
+                    # - submission_due_date = 6 months ago (18 - 12 = 6)
+                    # - submission_received_date = 5.5 months ago (submitted during grace period)
+                    # - grace_period_end = 5 months ago (6 - 1 = 5)
+                    # - model_validation_due = 5 months - 120 days = ~1 month ago
+                    # - Status: IN_PROGRESS (validation team is behind)
+                    # ============================================================
+                    model_g_exists = db.query(Model).filter(
+                        Model.model_name == "Demo: Validation Behind Schedule"
+                    ).first()
+                    if not model_g_exists:
+                        model_g = Model(
+                            model_name="Demo: Validation Behind Schedule",
+                            description="Tier 1 model - documentation submitted but validation work is behind schedule. Model is overdue for completion.",
+                            development_type="In-House",
+                            status="Active",
+                            owner_id=5,  # Model Owner User
+                            developer_id=admin.user_id,
+                            risk_tier_id=tier_1.value_id,
+                            usage_frequency_id=usage_freq_monthly.value_id,
+                            created_at=utc_now()
+                        )
+                        db.add(model_g)
+                        db.flush()
+
+                        # Step 1: Create the PRIOR approved comprehensive validation (18 months ago)
+                        prior_val_date_g = today - timedelta(days=18 * 30)
+                        prior_req_g = ValidationRequest(
+                            requestor_id=admin.user_id,
+                            validation_type_id=comprehensive_val_type.value_id,
+                            priority_id=standard_priority.value_id,
+                            target_completion_date=prior_val_date_g,
+                            current_status_id=approved_status.value_id,
+                            created_at=prior_val_date_g - timedelta(days=60),
+                            updated_at=prior_val_date_g,
+                            completion_date=datetime.combine(
+                                prior_val_date_g, datetime.min.time())
+                        )
+                        db.add(prior_req_g)
+                        db.flush()
+
+                        db.add(ValidationRequestModelVersion(
+                            request_id=prior_req_g.request_id, model_id=model_g.model_id
+                        ))
+
+                        prior_outcome_g = ValidationOutcome(
+                            request_id=prior_req_g.request_id,
+                            overall_rating_id=fit_for_purpose.value_id,
+                            executive_summary="Annual comprehensive validation completed successfully.",
+                            effective_date=prior_val_date_g,
+                            created_at=prior_val_date_g
+                        )
+                        db.add(prior_outcome_g)
+                        db.flush()
+
+                        # Step 2: Create CURRENT revalidation request (IN_PROGRESS, behind schedule)
+                        # submission_due_date = prior_val_date_g + 12 months = 6 months ago
+                        submission_due_g = prior_val_date_g + \
+                            timedelta(days=12 * 30)
+                        # Model owner submitted during grace period (about 2 weeks after due date)
+                        submission_received_g = submission_due_g + \
+                            timedelta(days=14)
+
+                        current_req_g = ValidationRequest(
+                            requestor_id=admin.user_id,
+                            validation_type_id=comprehensive_val_type.value_id,
+                            priority_id=standard_priority.value_id,
+                            target_completion_date=today +
+                            timedelta(days=30),  # revised target
+                            current_status_id=in_progress_status.value_id,
+                            prior_validation_request_id=prior_req_g.request_id,
+                            submission_due_date=submission_due_g,
+                            submission_received_date=submission_received_g,  # SUBMITTED but late
+                            created_at=submission_due_g - timedelta(days=30),
+                            updated_at=utc_now()
+                        )
+                        db.add(current_req_g)
+                        db.flush()
+
+                        db.add(ValidationRequestModelVersion(
+                            request_id=current_req_g.request_id, model_id=model_g.model_id
+                        ))
+
+                        # Add validator assignments (validation work ongoing but behind)
+                        db.add(ValidationAssignment(
+                            request_id=current_req_g.request_id,
+                            validator_id=validator.user_id,
+                            is_primary=True,
+                            assignment_date=submission_received_g +
+                            timedelta(days=7),
+                            independence_attestation=True,
+                            estimated_hours=80.0,
+                            actual_hours=40.0  # Only halfway done
+                        ))
+
+                        # Add status history to show the progression
+                        db.add(ValidationStatusHistory(
+                            request_id=current_req_g.request_id,
+                            old_status_id=intake_status.value_id,
+                            new_status_id=planning_status.value_id,
+                            changed_by_id=admin.user_id,
+                            change_reason="Validator assigned, entering planning phase",
+                            changed_at=submission_received_g + timedelta(days=7)
+                        ))
+                        db.add(ValidationStatusHistory(
+                            request_id=current_req_g.request_id,
+                            old_status_id=planning_status.value_id,
+                            new_status_id=in_progress_status.value_id,
+                            changed_by_id=validator.user_id,
+                            change_reason="Validation work commenced",
+                            changed_at=submission_received_g + timedelta(days=14)
+                        ))
+
+                        print(
+                            "✓ Created 'Demo: Validation Behind Schedule' (VALIDATION_IN_PROGRESS overdue - work behind schedule)")
+
+                    print(
+                        "⚠ Missing Tier 1 or status taxonomy values - skipping overdue report demo data")
+
+                db.commit()
+                print("✓ Demo data creation completed\n")
+
         else:
-            print(
-                "⚠ Missing required taxonomy values or users - skipping demo data creation\n")
+            print("ℹ Skipping overdue validation demo data (SEED_DEMO_DATA=false).")
 
         # Seed Model Type Hierarchy
         seed_model_type_taxonomy(db)

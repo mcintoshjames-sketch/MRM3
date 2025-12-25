@@ -153,6 +153,13 @@ Use the `deploy.sh` script from your local machine to commit, push, and deploy i
 
 The script handles SSH connection, git pull, Docker rebuild, and health verification automatically.
 
+## Production Safety Checklist
+
+- Ensure `ENVIRONMENT=production` is set in `/opt/mrm/docker-compose.prod.yml`.
+- Do not run `python -m app.seed` in production unless `SEED_ADMIN_PASSWORD` is set and `SEED_DEMO_DATA=false`.
+- Avoid mirroring local databases into production; if a restore is required, exclude `users`/auth tables and rotate credentials immediately.
+- After any restore, reset default/demo accounts (`admin@example.com`, `validator@example.com`, `user@example.com`, `globalapprover@example.com`, `john.smith@contoso.com`).
+
 ### Manual Server Commands
 
 If you need to run commands directly on the server after SSH:
