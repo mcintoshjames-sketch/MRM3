@@ -172,6 +172,16 @@ export default function RecommendationDetailPage() {
         }
     };
 
+    const isValidEvidenceUrl = (value?: string | null) => {
+        if (!value) return false;
+        try {
+            const parsed = new URL(value);
+            return ['http:', 'https:'].includes(parsed.protocol);
+        } catch {
+            return false;
+        }
+    };
+
     // Workflow action handlers
     const handleFinalize = async () => {
         if (!recommendation) return;
@@ -647,7 +657,18 @@ export default function RecommendationDetailPage() {
                                         {rebuttal.supporting_evidence && (
                                             <div className="mb-3">
                                                 <h4 className="text-sm font-medium text-gray-500 mb-1">Supporting Evidence</h4>
-                                                <p className="text-gray-900 whitespace-pre-wrap">{rebuttal.supporting_evidence}</p>
+                                                {isValidEvidenceUrl(rebuttal.supporting_evidence) ? (
+                                                    <a
+                                                        href={rebuttal.supporting_evidence}
+                                                        target="_blank"
+                                                        rel="noopener noreferrer"
+                                                        className="text-blue-600 hover:underline break-all"
+                                                    >
+                                                        {rebuttal.supporting_evidence}
+                                                    </a>
+                                                ) : (
+                                                    <p className="text-gray-900 whitespace-pre-wrap">{rebuttal.supporting_evidence}</p>
+                                                )}
                                             </div>
                                         )}
                                         {rebuttal.review_decision && (

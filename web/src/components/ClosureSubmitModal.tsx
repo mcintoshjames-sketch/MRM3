@@ -92,9 +92,9 @@ export default function ClosureSubmitModal({ recommendation, onClose, onSuccess 
                         {/* Evidence Summary */}
                         {recommendation.closure_evidence && recommendation.closure_evidence.length > 0 && (
                             <div className="bg-gray-50 p-4 rounded-lg mb-4">
-                                <h4 className="font-medium mb-2">Evidence Attached</h4>
+                                <h4 className="font-medium mb-2">Evidence Links (Optional)</h4>
                                 <p className="text-sm text-gray-600">
-                                    {recommendation.closure_evidence.length} evidence item(s) uploaded
+                                    {recommendation.closure_evidence.length} evidence link(s) added
                                 </p>
                             </div>
                         )}

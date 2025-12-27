@@ -6,6 +6,7 @@ including action plan tasks, rebuttals, evidence upload, and multi-stakeholder a
 from dataclasses import dataclass
 from datetime import datetime, date, timedelta
 from typing import List, Optional
+from urllib.parse import urlparse
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import desc, func, or_, exists
@@ -1908,12 +1909,21 @@ def submit_rebuttal(
         RecommendationRebuttal.is_current == True
     ).update({"is_current": False})
 
+    evidence_url = (rebuttal_data.supporting_evidence or "").strip()
+    if evidence_url:
+        parsed_url = urlparse(evidence_url)
+        if parsed_url.scheme not in ("http", "https") or not parsed_url.netloc:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Supporting evidence must be a valid http(s) link"
+            )
+
     # Create rebuttal
     rebuttal = RecommendationRebuttal(
         recommendation_id=recommendation_id,
         submitted_by_id=current_user.user_id,
         rationale=rebuttal_data.rationale,
-        supporting_evidence=rebuttal_data.supporting_evidence,
+        supporting_evidence=evidence_url or None,
         is_current=True
     )
     db.add(rebuttal)
@@ -2423,7 +2433,7 @@ def upload_evidence(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Upload closure evidence. Developer only, when status is OPEN or REWORK_REQUIRED."""
+    """Add closure evidence link. Developer only, when status is OPEN or REWORK_REQUIRED."""
     recommendation = db.query(Recommendation).filter(
         Recommendation.recommendation_id == recommendation_id
     ).first()
@@ -2445,13 +2455,33 @@ def upload_evidence(
     if current_status.code not in allowed_statuses:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Cannot upload evidence in {current_status.label} status"
+            detail=f"Cannot add evidence link in {current_status.label} status"
         )
+
+    evidence_url = (evidence_data.file_path or "").strip()
+    if not evidence_url:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Evidence URL is required"
+        )
+
+    parsed_url = urlparse(evidence_url)
+    if parsed_url.scheme not in ("http", "https") or not parsed_url.netloc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Evidence URL must be a valid http(s) link"
+        )
+
+    file_name = (evidence_data.file_name or "").strip()
+    if not file_name:
+        path_parts = [part for part in parsed_url.path.split("/") if part]
+        file_name = f"{parsed_url.netloc}/{path_parts[-1]}" if path_parts else parsed_url.netloc
+    file_name = file_name[:255]
 
     evidence = ClosureEvidence(
         recommendation_id=recommendation_id,
-        file_name=evidence_data.file_name,
-        file_path=evidence_data.file_path,
+        file_name=file_name,
+        file_path=evidence_url,
         file_type=evidence_data.file_type,
         file_size_bytes=evidence_data.file_size_bytes,
         description=evidence_data.description,
@@ -2471,7 +2501,7 @@ def submit_for_closure(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Submit recommendation for closure. Developer only. OPEN -> PENDING_CLOSURE_REVIEW."""
+    """Submit recommendation for closure (evidence links optional). Developer only. OPEN -> PENDING_CLOSURE_REVIEW."""
     recommendation = db.query(Recommendation).filter(
         Recommendation.recommendation_id == recommendation_id
     ).first()
@@ -2506,17 +2536,6 @@ def submit_for_closure(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"{incomplete_tasks} task(s) are not completed. Complete all tasks before submitting for closure."
-        )
-
-    # Check evidence is provided
-    evidence_count = db.query(ClosureEvidence).filter(
-        ClosureEvidence.recommendation_id == recommendation_id
-    ).count()
-
-    if evidence_count == 0:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="At least one piece of closure evidence is required"
         )
 
     # Transition to PENDING_CLOSURE_REVIEW

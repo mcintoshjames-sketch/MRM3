@@ -22,6 +22,15 @@ export default function RebuttalModal({ recommendation, onClose, onSuccess }: Re
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
+    const isValidEvidenceUrl = (value: string) => {
+        try {
+            const parsed = new URL(value);
+            return ['http:', 'https:'].includes(parsed.protocol);
+        } catch {
+            return false;
+        }
+    };
+
     // Find the current rebuttal for review
     const currentRebuttal = recommendation.rebuttals?.find(r => r.is_current);
 
@@ -34,11 +43,17 @@ export default function RebuttalModal({ recommendation, onClose, onSuccess }: Re
             return;
         }
 
+        const trimmedEvidence = supportingEvidence.trim();
+        if (trimmedEvidence && !isValidEvidenceUrl(trimmedEvidence)) {
+            setError('Supporting evidence must be a valid http(s) link');
+            return;
+        }
+
         try {
             setLoading(true);
             await recommendationsApi.submitRebuttal(recommendation.recommendation_id, {
                 rationale: rationale.trim(),
-                supporting_evidence: supportingEvidence.trim() || undefined
+                supporting_evidence: trimmedEvidence || undefined
             });
             onSuccess();
         } catch (err: any) {
@@ -106,7 +121,18 @@ export default function RebuttalModal({ recommendation, onClose, onSuccess }: Re
                                     {currentRebuttal.supporting_evidence && (
                                         <div className="mt-2 pt-2 border-t">
                                             <span className="text-sm font-medium text-gray-500">Supporting Evidence:</span>
-                                            <p className="text-gray-700 text-sm">{currentRebuttal.supporting_evidence}</p>
+                                            {isValidEvidenceUrl(currentRebuttal.supporting_evidence) ? (
+                                                <a
+                                                    href={currentRebuttal.supporting_evidence}
+                                                    target="_blank"
+                                                    rel="noopener noreferrer"
+                                                    className="block text-sm text-blue-600 hover:underline break-all"
+                                                >
+                                                    {currentRebuttal.supporting_evidence}
+                                                </a>
+                                            ) : (
+                                                <p className="text-gray-700 text-sm">{currentRebuttal.supporting_evidence}</p>
+                                            )}
                                         </div>
                                     )}
                                     <div className="mt-2 text-sm text-gray-500">
@@ -211,14 +237,14 @@ export default function RebuttalModal({ recommendation, onClose, onSuccess }: Re
 
                                 <div>
                                     <label className="block text-sm font-medium text-gray-700 mb-1">
-                                        Supporting Evidence
+                                        Supporting Evidence URL <span className="text-gray-400">(Optional)</span>
                                     </label>
-                                    <textarea
+                                    <input
+                                        type="url"
                                         value={supportingEvidence}
                                         onChange={(e) => setSupportingEvidence(e.target.value)}
-                                        rows={3}
                                         className="input-field"
-                                        placeholder="Optional: Provide supporting evidence for your rebuttal..."
+                                        placeholder="https://link-to-supporting-evidence.example.com"
                                     />
                                 </div>
                             </div>

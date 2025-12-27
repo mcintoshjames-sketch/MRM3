@@ -880,6 +880,22 @@ Model Risk Management inventory system with a FastAPI backend, React/TypeScript 
   - **Exception Closure Reason**: Configurable closure reason values (e.g., "Recommendation Implemented", "Validation Completed", "Scope Clarified")
 - **Testing**: 56 tests in `tests/test_exceptions.py` covering detection logic, CRUD, workflow transitions, authorization, and edge cases.
 
+## My Portfolio Report
+- **Purpose**: Consolidated dashboard for model owners showing all their responsibilities and action items across the system.
+- **API Endpoints** (prefix: `/reports`):
+  - `GET /my-portfolio` - Returns comprehensive portfolio data including:
+    - **Action Items**: Pending attestations, recommendations requiring response, validation submissions awaiting action
+    - **Monitoring Alerts**: RED/YELLOW outcomes from monitoring cycles in the last 90 days
+    - **Open Exceptions**: Count and details of unresolved exceptions on owned models
+    - **Calendar Items**: Upcoming due dates for validations, attestations, and recommendations
+    - **Model Portfolio**: Complete list of models with status details, risk tier, and compliance indicators
+  - `GET /my-portfolio/pdf` - PDF export of the complete portfolio report
+- **Authorization**: Available to all authenticated users. Results are filtered by row-level security to show only models where the user is owner, developer, or delegate.
+- **Frontend**:
+  - **MyPortfolioReportPage** (`/reports/my-portfolio`): Dashboard with action items summary, alerts panel, calendar view, and model portfolio table
+  - Accessible from Reports gallery and "My Portfolio" link in navigation
+- **PDF Generation**: Uses `MyPortfolioPDF` class with ReportLab for formatted PDF output including all dashboard sections.
+
 ## Security, Error Handling, Logging
 - JWT auth with token expiry; passwords hashed with bcrypt.
 - 401 handling: frontend interceptor removes token and redirects to `/login`.

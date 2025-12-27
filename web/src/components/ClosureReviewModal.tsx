@@ -106,15 +106,17 @@ export default function ClosureReviewModal({ recommendation, onClose, onSuccess 
                             <div className="space-y-2">
                                 {recommendation.closure_evidence.map((ev) => (
                                     <div key={ev.evidence_id} className="text-sm">
-                                        <p className="text-gray-700">{ev.description}</p>
+                                        {ev.description && (
+                                            <p className="text-gray-700">{ev.description}</p>
+                                        )}
                                         {ev.file_path && (
                                             <a
                                                 href={ev.file_path}
                                                 target="_blank"
                                                 rel="noopener noreferrer"
-                                                className="text-blue-600 hover:underline text-xs"
+                                                className="text-blue-600 hover:underline text-xs break-all"
                                             >
-                                                View document
+                                                {ev.file_name || ev.file_path}
                                             </a>
                                         )}
                                     </div>

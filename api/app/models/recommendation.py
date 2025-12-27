@@ -237,7 +237,7 @@ class ClosureEvidence(Base):
     file_name: Mapped[str] = mapped_column(String(255), nullable=False)
     file_path: Mapped[str] = mapped_column(
         Text, nullable=False,
-        comment="Storage path or URL to evidence document"
+        comment="URL to evidence document"
     )
     file_type: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
     file_size_bytes: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)

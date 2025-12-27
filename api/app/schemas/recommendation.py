@@ -174,8 +174,8 @@ class RebuttalReviewResponse(BaseModel):
 # ==================== CLOSURE EVIDENCE SCHEMAS ====================
 
 class ClosureEvidenceCreate(BaseModel):
-    """Schema for uploading closure evidence."""
-    file_name: str
+    """Schema for adding closure evidence links."""
+    file_name: Optional[str] = None
     file_path: str
     file_type: Optional[str] = None
     file_size_bytes: Optional[int] = None
@@ -183,7 +183,7 @@ class ClosureEvidenceCreate(BaseModel):
 
 
 class ClosureEvidenceResponse(BaseModel):
-    """Response schema for closure evidence."""
+    """Response schema for closure evidence links."""
     evidence_id: int
     recommendation_id: int
     file_name: str
