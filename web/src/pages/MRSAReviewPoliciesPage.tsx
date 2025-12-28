@@ -41,6 +41,7 @@ export default function MRSAReviewPoliciesPage() {
         warning_days: 90,
         is_active: true
     });
+    const [showCreateForm, setShowCreateForm] = useState(false);
 
     const { sortedData, requestSort, getSortIcon } = useTableSort<MRSAReviewPolicy>(
         policies,
@@ -133,6 +134,7 @@ export default function MRSAReviewPoliciesPage() {
                 warning_days: 90,
                 is_active: true
             });
+            setShowCreateForm(false);
         } catch (err: any) {
             console.error('Failed to create MRSA review policy:', err);
             setError(err.response?.data?.detail || 'Failed to create MRSA review policy');
@@ -191,6 +193,13 @@ export default function MRSAReviewPoliciesPage() {
                         </p>
                     </div>
                     <div className="flex gap-2">
+                        <button
+                            onClick={() => setShowCreateForm(true)}
+                            className="px-3 py-1.5 bg-blue-600 text-white rounded text-sm hover:bg-blue-700 disabled:opacity-50"
+                            disabled={availableRiskLevels.length === 0}
+                        >
+                            Add Policy
+                        </button>
                         <button
                             onClick={fetchData}
                             className="px-3 py-1.5 border border-gray-300 rounded text-sm text-gray-700 hover:bg-gray-50"
@@ -408,95 +417,112 @@ export default function MRSAReviewPoliciesPage() {
                 </table>
             </div>
 
-            <div className="bg-white rounded-lg shadow p-6 mb-6">
-                <h2 className="text-lg font-semibold mb-4">Create MRSA Review Policy</h2>
-                {availableRiskLevels.length === 0 ? (
-                    <p className="text-sm text-gray-600">All MRSA risk levels already have policies.</p>
-                ) : (
-                    <form onSubmit={handleCreate} className="grid grid-cols-1 md:grid-cols-6 gap-4">
-                        <div className="md:col-span-2">
-                            <label className="block text-xs font-medium text-gray-700 mb-1">MRSA Risk Level</label>
-                            <select
-                                value={createFormData.mrsa_risk_level_id}
-                                onChange={(e) => setCreateFormData({
-                                    ...createFormData,
-                                    mrsa_risk_level_id: parseInt(e.target.value, 10)
-                                })}
-                                className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
-                            >
-                                <option value={0}>Select Risk Level</option>
-                                {availableRiskLevels.map((level) => (
-                                    <option key={level.value_id} value={level.value_id}>
-                                        {level.label}
-                                    </option>
-                                ))}
-                            </select>
-                        </div>
-                        <div>
-                            <label className="block text-xs font-medium text-gray-700 mb-1">Frequency (months)</label>
-                            <input
-                                type="number"
-                                min="1"
-                                max="60"
-                                value={createFormData.frequency_months}
-                                onChange={(e) => setCreateFormData({
-                                    ...createFormData,
-                                    frequency_months: parseInt(e.target.value, 10) || 0
-                                })}
-                                className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
-                            />
-                        </div>
-                        <div>
-                            <label className="block text-xs font-medium text-gray-700 mb-1">Initial Review (months)</label>
-                            <input
-                                type="number"
-                                min="1"
-                                max="24"
-                                value={createFormData.initial_review_months}
-                                onChange={(e) => setCreateFormData({
-                                    ...createFormData,
-                                    initial_review_months: parseInt(e.target.value, 10) || 0
-                                })}
-                                className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
-                            />
-                        </div>
-                        <div>
-                            <label className="block text-xs font-medium text-gray-700 mb-1">Warning Days</label>
-                            <input
-                                type="number"
-                                min="0"
-                                max="365"
-                                value={createFormData.warning_days}
-                                onChange={(e) => setCreateFormData({
-                                    ...createFormData,
-                                    warning_days: parseInt(e.target.value, 10) || 0
-                                })}
-                                className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
-                            />
-                        </div>
-                        <div className="flex items-center gap-2 pt-6">
-                            <input
-                                type="checkbox"
-                                checked={createFormData.is_active}
-                                onChange={(e) => setCreateFormData({
-                                    ...createFormData,
-                                    is_active: e.target.checked
-                                })}
-                                className="h-4 w-4 text-blue-600 border-gray-300 rounded"
-                            />
-                            <span className="text-sm text-gray-700">Active</span>
-                        </div>
-                        <div className="md:col-span-6 flex justify-end">
-                            <button
-                                type="submit"
-                                className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
-                            >
-                                Create Policy
-                            </button>
-                        </div>
-                    </form>
-                )}
-            </div>
+            {showCreateForm && (
+                <div className="bg-white rounded-lg shadow p-6 mb-6">
+                    <div className="flex items-center justify-between mb-4">
+                        <h2 className="text-lg font-semibold">Create MRSA Review Policy</h2>
+                        <button
+                            onClick={() => setShowCreateForm(false)}
+                            className="text-sm text-gray-600 hover:text-gray-800"
+                        >
+                            Close
+                        </button>
+                    </div>
+                    {availableRiskLevels.length === 0 ? (
+                        <p className="text-sm text-gray-600">All MRSA risk levels already have policies.</p>
+                    ) : (
+                        <form onSubmit={handleCreate} className="grid grid-cols-1 md:grid-cols-6 gap-4">
+                            <div className="md:col-span-2">
+                                <label className="block text-xs font-medium text-gray-700 mb-1">MRSA Risk Level</label>
+                                <select
+                                    value={createFormData.mrsa_risk_level_id}
+                                    onChange={(e) => setCreateFormData({
+                                        ...createFormData,
+                                        mrsa_risk_level_id: parseInt(e.target.value, 10)
+                                    })}
+                                    className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
+                                >
+                                    <option value={0}>Select Risk Level</option>
+                                    {availableRiskLevels.map((level) => (
+                                        <option key={level.value_id} value={level.value_id}>
+                                            {level.label}
+                                        </option>
+                                    ))}
+                                </select>
+                            </div>
+                            <div>
+                                <label className="block text-xs font-medium text-gray-700 mb-1">Frequency (months)</label>
+                                <input
+                                    type="number"
+                                    min="1"
+                                    max="60"
+                                    value={createFormData.frequency_months}
+                                    onChange={(e) => setCreateFormData({
+                                        ...createFormData,
+                                        frequency_months: parseInt(e.target.value, 10) || 0
+                                    })}
+                                    className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-xs font-medium text-gray-700 mb-1">Initial Review (months)</label>
+                                <input
+                                    type="number"
+                                    min="1"
+                                    max="24"
+                                    value={createFormData.initial_review_months}
+                                    onChange={(e) => setCreateFormData({
+                                        ...createFormData,
+                                        initial_review_months: parseInt(e.target.value, 10) || 0
+                                    })}
+                                    className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-xs font-medium text-gray-700 mb-1">Warning Days</label>
+                                <input
+                                    type="number"
+                                    min="0"
+                                    max="365"
+                                    value={createFormData.warning_days}
+                                    onChange={(e) => setCreateFormData({
+                                        ...createFormData,
+                                        warning_days: parseInt(e.target.value, 10) || 0
+                                    })}
+                                    className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
+                                />
+                            </div>
+                            <div className="flex items-center gap-2 pt-6">
+                                <input
+                                    type="checkbox"
+                                    checked={createFormData.is_active}
+                                    onChange={(e) => setCreateFormData({
+                                        ...createFormData,
+                                        is_active: e.target.checked
+                                    })}
+                                    className="h-4 w-4 text-blue-600 border-gray-300 rounded"
+                                />
+                                <span className="text-sm text-gray-700">Active</span>
+                            </div>
+                            <div className="md:col-span-6 flex justify-end gap-2">
+                                <button
+                                    type="button"
+                                    onClick={() => setShowCreateForm(false)}
+                                    className="px-4 py-2 border border-gray-300 text-gray-700 rounded hover:bg-gray-50"
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    type="submit"
+                                    className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+                                >
+                                    Create Policy
+                                </button>
+                            </div>
+                        </form>
+                    )}
+                </div>
+            )}
 
             <div className="p-4 bg-blue-50 border border-blue-200 rounded">
                 <h3 className="text-sm font-medium text-blue-900 mb-2">Policy Definitions</h3>

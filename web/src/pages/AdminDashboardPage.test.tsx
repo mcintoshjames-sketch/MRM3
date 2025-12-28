@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor } from '../test/utils';
+import { render, screen, waitFor, within } from '../test/utils';
 import AdminDashboardPage from './AdminDashboardPage';
 
 // Mock the API client
@@ -285,8 +285,9 @@ describe('AdminDashboardPage', () => {
             expect(screen.getByText(/Pending and Overdue Revalidation Submissions/)).toBeInTheDocument();
         });
 
-        expect(screen.getByText('Liquidity Model')).toBeInTheDocument();
-        expect(screen.getByText('Overdue')).toBeInTheDocument();
+        const row = screen.getByText('Liquidity Model').closest('tr');
+        expect(row).not.toBeNull();
+        expect(within(row as HTMLElement).getByText('Overdue')).toBeInTheDocument();
     });
 
     it('hides data sections when API returns no rows but keeps summary cards', async () => {

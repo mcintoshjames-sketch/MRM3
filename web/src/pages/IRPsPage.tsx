@@ -16,6 +16,8 @@ interface User {
 export default function IRPsPage() {
     const { user } = useAuth();
     const isAdmin = user?.role === 'Admin';
+    type TabType = 'irps' | 'mrsa-review-status';
+    const [activeTab, setActiveTab] = useState<TabType>('irps');
 
     const [irps, setIrps] = useState<IRP[]>([]);
     const [users, setUsers] = useState<User[]>([]);
@@ -167,315 +169,348 @@ export default function IRPsPage() {
                             Manage IRPs that provide governance coverage for high-risk MRSAs
                         </p>
                     </div>
-                    <div className="flex gap-2">
-                        <button onClick={exportToCsv} className="btn-secondary">
-                            Export CSV
-                        </button>
-                        {isAdmin && (
-                            <button onClick={() => setShowForm(true)} className="btn-primary">
-                                + Add IRP
+                    {activeTab === 'irps' && (
+                        <div className="flex gap-2">
+                            <button onClick={exportToCsv} className="btn-secondary">
+                                Export CSV
                             </button>
-                        )}
-                    </div>
-                </div>
-
-                <div className="mb-6">
-                    <MRSAReviewDashboardWidget
-                        title="MRSA Review Status"
-                        description="Monitor independent review obligations across MRSAs covered by IRPs."
-                        showPolicyLink={isAdmin}
-                    />
-                </div>
-
-                {/* Filters */}
-                <div className="bg-white p-4 rounded-lg shadow-md mb-6">
-                    <div className="flex items-center gap-4">
-                        <label className="flex items-center gap-2">
-                            <input
-                                type="checkbox"
-                                checked={showActiveOnly}
-                                onChange={(e) => setShowActiveOnly(e.target.checked)}
-                                className="h-4 w-4 text-blue-600 rounded"
-                            />
-                            <span className="text-sm font-medium text-gray-700">Show Active Only</span>
-                        </label>
-                        <div className="text-sm text-gray-500">
-                            Showing {sortedData.length} of {irps.length} IRPs
+                            {isAdmin && (
+                                <button onClick={() => setShowForm(true)} className="btn-primary">
+                                    + Add IRP
+                                </button>
+                            )}
                         </div>
-                    </div>
+                    )}
                 </div>
 
-                {/* Form */}
-                {showForm && (
-                    <div className="bg-white p-6 rounded-lg shadow-md mb-6">
-                        <h3 className="text-lg font-bold mb-4">
-                            {editingIrp ? 'Edit IRP' : 'Create New IRP'}
-                        </h3>
-                        <form onSubmit={handleSubmit}>
-                            <div className="grid grid-cols-2 gap-4">
-                                <div className="mb-4">
-                                    <label htmlFor="process_name" className="block text-sm font-medium mb-2">
-                                        Process Name *
-                                    </label>
-                                    <input
-                                        id="process_name"
-                                        type="text"
-                                        className="input-field"
-                                        value={formData.process_name}
-                                        onChange={(e) => setFormData({ ...formData, process_name: e.target.value })}
-                                        required
-                                    />
-                                </div>
-                                <div className="mb-4">
-                                    <label htmlFor="contact_user_id" className="block text-sm font-medium mb-2">
-                                        Contact User *
-                                    </label>
-                                    <div className="relative">
-                                        <input
-                                            type="text"
-                                            placeholder="Type to search users..."
-                                            value={contactUserSearch}
-                                            onChange={(e) => {
-                                                setContactUserSearch(e.target.value);
-                                                setShowContactUserDropdown(true);
-                                                // Clear selection if user is typing new text
-                                                if (formData.contact_user_id && e.target.value !== users.find(u => u.user_id === formData.contact_user_id)?.full_name) {
-                                                    setFormData({ ...formData, contact_user_id: 0 });
-                                                }
-                                            }}
-                                            onFocus={() => setShowContactUserDropdown(true)}
-                                            className="input-field"
-                                        />
-                                        {showContactUserDropdown && contactUserSearch.length > 0 && (
-                                            <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg max-h-60 overflow-y-auto">
-                                                {users
-                                                    .filter((u) =>
-                                                        u.full_name.toLowerCase().includes(contactUserSearch.toLowerCase()) ||
-                                                        u.email.toLowerCase().includes(contactUserSearch.toLowerCase())
-                                                    )
-                                                    .slice(0, 50)
-                                                    .map((u) => (
-                                                        <div
-                                                            key={u.user_id}
-                                                            className="px-4 py-2 hover:bg-gray-100 cursor-pointer text-sm"
-                                                            onClick={() => {
-                                                                setFormData({ ...formData, contact_user_id: u.user_id });
-                                                                setContactUserSearch(u.full_name);
-                                                                setShowContactUserDropdown(false);
-                                                            }}
-                                                        >
-                                                            <div className="font-medium">{u.full_name}</div>
-                                                            <div className="text-xs text-gray-500">{u.email}</div>
-                                                        </div>
-                                                    ))}
-                                                {users.filter((u) =>
-                                                    u.full_name.toLowerCase().includes(contactUserSearch.toLowerCase()) ||
-                                                    u.email.toLowerCase().includes(contactUserSearch.toLowerCase())
-                                                ).length === 0 && (
-                                                    <div className="px-4 py-2 text-sm text-gray-500">No users found</div>
-                                                )}
-                                            </div>
-                                        )}
-                                    </div>
-                                    {formData.contact_user_id > 0 && (
-                                        <p className="mt-1 text-sm text-green-600">
-                                            Selected: {users.find(u => u.user_id === formData.contact_user_id)?.full_name}
-                                        </p>
-                                    )}
-                                </div>
-                                <div className="mb-4 col-span-2">
-                                    <label htmlFor="description" className="block text-sm font-medium mb-2">
-                                        Description
-                                    </label>
-                                    <textarea
-                                        id="description"
-                                        className="input-field"
-                                        rows={3}
-                                        value={formData.description}
-                                        onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                                        placeholder="Describe the IRP scope and purpose..."
-                                    />
-                                </div>
-                                <div className="mb-4">
-                                    <label className="flex items-center gap-2">
-                                        <input
-                                            type="checkbox"
-                                            checked={formData.is_active}
-                                            onChange={(e) => setFormData({ ...formData, is_active: e.target.checked })}
-                                            className="h-4 w-4 text-blue-600 rounded"
-                                        />
-                                        <span className="text-sm font-medium text-gray-700">Active</span>
-                                    </label>
-                                </div>
-                            </div>
-                            <div className="flex gap-2">
-                                <button type="submit" className="btn-primary">
-                                    {editingIrp ? 'Update' : 'Create'}
-                                </button>
-                                <button type="button" onClick={resetForm} className="btn-secondary">
-                                    Cancel
-                                </button>
-                            </div>
-                        </form>
+                <div className="border-b border-gray-200 mb-6">
+                    <nav className="-mb-px flex space-x-8">
+                        <button
+                            onClick={() => setActiveTab('irps')}
+                            className={`py-2 px-1 border-b-2 font-medium text-sm ${
+                                activeTab === 'irps'
+                                    ? 'border-blue-500 text-blue-600'
+                                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                            }`}
+                        >
+                            IRPs
+                        </button>
+                        <button
+                            onClick={() => setActiveTab('mrsa-review-status')}
+                            className={`py-2 px-1 border-b-2 font-medium text-sm ${
+                                activeTab === 'mrsa-review-status'
+                                    ? 'border-blue-500 text-blue-600'
+                                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                            }`}
+                        >
+                            MRSA Review Status
+                        </button>
+                    </nav>
+                </div>
+
+                {activeTab === 'mrsa-review-status' && (
+                    <div className="mb-6">
+                        <MRSAReviewDashboardWidget
+                            title="MRSA Review Status"
+                            description="Monitor independent review obligations across MRSAs covered by IRPs."
+                            showPolicyLink={isAdmin}
+                        />
                     </div>
                 )}
 
-                {/* Table */}
-                <div className="bg-white rounded-lg shadow-md overflow-hidden">
-                    <table className="min-w-full divide-y divide-gray-200">
-                        <thead className="bg-gray-50">
-                            <tr>
-                                <th
-                                    className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100"
-                                    onClick={() => requestSort('irp_id')}
-                                >
-                                    <div className="flex items-center gap-2">
-                                        ID
-                                        {getSortIcon('irp_id')}
-                                    </div>
-                                </th>
-                                <th
-                                    className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100"
-                                    onClick={() => requestSort('process_name')}
-                                >
-                                    <div className="flex items-center gap-2">
-                                        Process Name
-                                        {getSortIcon('process_name')}
-                                    </div>
-                                </th>
-                                <th
-                                    className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100"
-                                    onClick={() => requestSort('contact_user.full_name')}
-                                >
-                                    <div className="flex items-center gap-2">
-                                        Contact
-                                        {getSortIcon('contact_user.full_name')}
-                                    </div>
-                                </th>
-                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
-                                    Status
-                                </th>
-                                <th
-                                    className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100"
-                                    onClick={() => requestSort('covered_mrsa_count')}
-                                >
-                                    <div className="flex items-center gap-2">
-                                        MRSAs
-                                        {getSortIcon('covered_mrsa_count')}
-                                    </div>
-                                </th>
-                                <th
-                                    className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100"
-                                    onClick={() => requestSort('latest_review_date')}
-                                >
-                                    <div className="flex items-center gap-2">
-                                        Latest Review
-                                        {getSortIcon('latest_review_date')}
-                                    </div>
-                                </th>
-                                <th
-                                    className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100"
-                                    onClick={() => requestSort('latest_certification_date')}
-                                >
-                                    <div className="flex items-center gap-2">
-                                        Certification
-                                        {getSortIcon('latest_certification_date')}
-                                    </div>
-                                </th>
-                                {isAdmin && (
-                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
-                                        Actions
-                                    </th>
-                                )}
-                            </tr>
-                        </thead>
-                        <tbody className="bg-white divide-y divide-gray-200">
-                            {sortedData.length === 0 ? (
-                                <tr>
-                                    <td colSpan={isAdmin ? 8 : 7} className="px-6 py-4 text-center text-gray-500">
-                                        No IRPs found. {isAdmin && 'Click "Add IRP" to create one.'}
-                                    </td>
-                                </tr>
-                            ) : (
-                                sortedData.map((irp) => (
-                                    <tr key={irp.irp_id} className="hover:bg-gray-50">
-                                        <td className="px-6 py-4 whitespace-nowrap text-sm">
-                                            {irp.irp_id}
-                                        </td>
-                                        <td className="px-6 py-4 whitespace-nowrap text-sm">
-                                            <Link
-                                                to={`/irps/${irp.irp_id}`}
-                                                className="font-medium text-blue-600 hover:text-blue-800"
-                                            >
-                                                {irp.process_name}
-                                            </Link>
-                                        </td>
-                                        <td className="px-6 py-4 whitespace-nowrap text-sm">
-                                            {irp.contact_user?.full_name || '-'}
-                                        </td>
-                                        <td className="px-6 py-4 whitespace-nowrap text-sm">
-                                            <span className={`px-2 py-1 text-xs rounded font-medium ${
-                                                irp.is_active
-                                                    ? 'bg-green-100 text-green-800'
-                                                    : 'bg-gray-100 text-gray-700'
-                                            }`}>
-                                                {irp.is_active ? 'Active' : 'Inactive'}
-                                            </span>
-                                        </td>
-                                        <td className="px-6 py-4 whitespace-nowrap text-sm">
-                                            <span className="px-2 py-1 bg-amber-100 text-amber-800 rounded text-xs font-medium">
-                                                {irp.covered_mrsa_count}
-                                            </span>
-                                        </td>
-                                        <td className="px-6 py-4 whitespace-nowrap text-sm">
-                                            {irp.latest_review_date ? (
-                                                <div className="flex flex-col">
-                                                    <span>{irp.latest_review_date}</span>
-                                                    {irp.latest_review_outcome && (
-                                                        <span className={`text-xs px-1.5 py-0.5 rounded mt-0.5 inline-block w-fit ${
-                                                            irp.latest_review_outcome === 'Satisfactory'
-                                                                ? 'bg-green-100 text-green-700'
-                                                                : irp.latest_review_outcome === 'Conditionally Satisfactory'
-                                                                    ? 'bg-yellow-100 text-yellow-700'
-                                                                    : 'bg-red-100 text-red-700'
-                                                        }`}>
-                                                            {irp.latest_review_outcome}
-                                                        </span>
-                                                    )}
-                                                </div>
-                                            ) : (
-                                                <span className="text-gray-400">No reviews</span>
+                {activeTab === 'irps' && (
+                    <>
+                        {/* Filters */}
+                        <div className="bg-white p-4 rounded-lg shadow-md mb-6">
+                            <div className="flex items-center gap-4">
+                                <label className="flex items-center gap-2">
+                                    <input
+                                        type="checkbox"
+                                        checked={showActiveOnly}
+                                        onChange={(e) => setShowActiveOnly(e.target.checked)}
+                                        className="h-4 w-4 text-blue-600 rounded"
+                                    />
+                                    <span className="text-sm font-medium text-gray-700">Show Active Only</span>
+                                </label>
+                                <div className="text-sm text-gray-500">
+                                    Showing {sortedData.length} of {irps.length} IRPs
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Form */}
+                        {showForm && (
+                            <div className="bg-white p-6 rounded-lg shadow-md mb-6">
+                                <h3 className="text-lg font-bold mb-4">
+                                    {editingIrp ? 'Edit IRP' : 'Create New IRP'}
+                                </h3>
+                                <form onSubmit={handleSubmit}>
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <div className="mb-4">
+                                            <label htmlFor="process_name" className="block text-sm font-medium mb-2">
+                                                Process Name *
+                                            </label>
+                                            <input
+                                                id="process_name"
+                                                type="text"
+                                                className="input-field"
+                                                value={formData.process_name}
+                                                onChange={(e) => setFormData({ ...formData, process_name: e.target.value })}
+                                                required
+                                            />
+                                        </div>
+                                        <div className="mb-4">
+                                            <label htmlFor="contact_user_id" className="block text-sm font-medium mb-2">
+                                                Contact User *
+                                            </label>
+                                            <div className="relative">
+                                                <input
+                                                    type="text"
+                                                    placeholder="Type to search users..."
+                                                    value={contactUserSearch}
+                                                    onChange={(e) => {
+                                                        setContactUserSearch(e.target.value);
+                                                        setShowContactUserDropdown(true);
+                                                        // Clear selection if user is typing new text
+                                                        if (formData.contact_user_id && e.target.value !== users.find(u => u.user_id === formData.contact_user_id)?.full_name) {
+                                                            setFormData({ ...formData, contact_user_id: 0 });
+                                                        }
+                                                    }}
+                                                    onFocus={() => setShowContactUserDropdown(true)}
+                                                    className="input-field"
+                                                />
+                                                {showContactUserDropdown && contactUserSearch.length > 0 && (
+                                                    <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg max-h-60 overflow-y-auto">
+                                                        {users
+                                                            .filter((u) =>
+                                                                u.full_name.toLowerCase().includes(contactUserSearch.toLowerCase()) ||
+                                                                u.email.toLowerCase().includes(contactUserSearch.toLowerCase())
+                                                            )
+                                                            .slice(0, 50)
+                                                            .map((u) => (
+                                                                <div
+                                                                    key={u.user_id}
+                                                                    className="px-4 py-2 hover:bg-gray-100 cursor-pointer text-sm"
+                                                                    onClick={() => {
+                                                                        setFormData({ ...formData, contact_user_id: u.user_id });
+                                                                        setContactUserSearch(u.full_name);
+                                                                        setShowContactUserDropdown(false);
+                                                                    }}
+                                                                >
+                                                                    <div className="font-medium">{u.full_name}</div>
+                                                                    <div className="text-xs text-gray-500">{u.email}</div>
+                                                                </div>
+                                                            ))}
+                                                        {users.filter((u) =>
+                                                            u.full_name.toLowerCase().includes(contactUserSearch.toLowerCase()) ||
+                                                            u.email.toLowerCase().includes(contactUserSearch.toLowerCase())
+                                                        ).length === 0 && (
+                                                            <div className="px-4 py-2 text-sm text-gray-500">No users found</div>
+                                                        )}
+                                                    </div>
+                                                )}
+                                            </div>
+                                            {formData.contact_user_id > 0 && (
+                                                <p className="mt-1 text-sm text-green-600">
+                                                    Selected: {users.find(u => u.user_id === formData.contact_user_id)?.full_name}
+                                                </p>
                                             )}
-                                        </td>
-                                        <td className="px-6 py-4 whitespace-nowrap text-sm">
-                                            {irp.latest_certification_date || (
-                                                <span className="text-gray-400">Not certified</span>
-                                            )}
-                                        </td>
+                                        </div>
+                                        <div className="mb-4 col-span-2">
+                                            <label htmlFor="description" className="block text-sm font-medium mb-2">
+                                                Description
+                                            </label>
+                                            <textarea
+                                                id="description"
+                                                className="input-field"
+                                                rows={3}
+                                                value={formData.description}
+                                                onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                                                placeholder="Describe the IRP scope and purpose..."
+                                            />
+                                        </div>
+                                        <div className="mb-4">
+                                            <label className="flex items-center gap-2">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={formData.is_active}
+                                                    onChange={(e) => setFormData({ ...formData, is_active: e.target.checked })}
+                                                    className="h-4 w-4 text-blue-600 rounded"
+                                                />
+                                                <span className="text-sm font-medium text-gray-700">Active</span>
+                                            </label>
+                                        </div>
+                                    </div>
+                                    <div className="flex gap-2">
+                                        <button type="submit" className="btn-primary">
+                                            {editingIrp ? 'Update' : 'Create'}
+                                        </button>
+                                        <button type="button" onClick={resetForm} className="btn-secondary">
+                                            Cancel
+                                        </button>
+                                    </div>
+                                </form>
+                            </div>
+                        )}
+
+                        {/* Table */}
+                        <div className="bg-white rounded-lg shadow-md overflow-hidden">
+                            <table className="min-w-full divide-y divide-gray-200">
+                                <thead className="bg-gray-50">
+                                    <tr>
+                                        <th
+                                            className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100"
+                                            onClick={() => requestSort('irp_id')}
+                                        >
+                                            <div className="flex items-center gap-2">
+                                                ID
+                                                {getSortIcon('irp_id')}
+                                            </div>
+                                        </th>
+                                        <th
+                                            className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100"
+                                            onClick={() => requestSort('process_name')}
+                                        >
+                                            <div className="flex items-center gap-2">
+                                                Process Name
+                                                {getSortIcon('process_name')}
+                                            </div>
+                                        </th>
+                                        <th
+                                            className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100"
+                                            onClick={() => requestSort('contact_user.full_name')}
+                                        >
+                                            <div className="flex items-center gap-2">
+                                                Contact
+                                                {getSortIcon('contact_user.full_name')}
+                                            </div>
+                                        </th>
+                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                                            Status
+                                        </th>
+                                        <th
+                                            className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100"
+                                            onClick={() => requestSort('covered_mrsa_count')}
+                                        >
+                                            <div className="flex items-center gap-2">
+                                                MRSAs
+                                                {getSortIcon('covered_mrsa_count')}
+                                            </div>
+                                        </th>
+                                        <th
+                                            className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100"
+                                            onClick={() => requestSort('latest_review_date')}
+                                        >
+                                            <div className="flex items-center gap-2">
+                                                Latest Review
+                                                {getSortIcon('latest_review_date')}
+                                            </div>
+                                        </th>
+                                        <th
+                                            className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100"
+                                            onClick={() => requestSort('latest_certification_date')}
+                                        >
+                                            <div className="flex items-center gap-2">
+                                                Certification
+                                                {getSortIcon('latest_certification_date')}
+                                            </div>
+                                        </th>
                                         {isAdmin && (
-                                            <td className="px-6 py-4 whitespace-nowrap text-sm">
-                                                <div className="flex gap-2">
-                                                    <button
-                                                        onClick={() => handleEdit(irp)}
-                                                        className="text-blue-600 hover:text-blue-800"
-                                                    >
-                                                        Edit
-                                                    </button>
-                                                    <button
-                                                        onClick={() => handleDelete(irp.irp_id)}
-                                                        className="text-red-600 hover:text-red-800"
-                                                    >
-                                                        Delete
-                                                    </button>
-                                                </div>
-                                            </td>
+                                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                                                Actions
+                                            </th>
                                         )}
                                     </tr>
-                                ))
-                            )}
-                        </tbody>
-                    </table>
-                </div>
+                                </thead>
+                                <tbody className="bg-white divide-y divide-gray-200">
+                                    {sortedData.length === 0 ? (
+                                        <tr>
+                                            <td colSpan={isAdmin ? 8 : 7} className="px-6 py-4 text-center text-gray-500">
+                                                No IRPs found. {isAdmin && 'Click "Add IRP" to create one.'}
+                                            </td>
+                                        </tr>
+                                    ) : (
+                                        sortedData.map((irp) => (
+                                            <tr key={irp.irp_id} className="hover:bg-gray-50">
+                                                <td className="px-6 py-4 whitespace-nowrap text-sm">
+                                                    {irp.irp_id}
+                                                </td>
+                                                <td className="px-6 py-4 whitespace-nowrap text-sm">
+                                                    <Link
+                                                        to={`/irps/${irp.irp_id}`}
+                                                        className="font-medium text-blue-600 hover:text-blue-800"
+                                                    >
+                                                        {irp.process_name}
+                                                    </Link>
+                                                </td>
+                                                <td className="px-6 py-4 whitespace-nowrap text-sm">
+                                                    {irp.contact_user?.full_name || '-'}
+                                                </td>
+                                                <td className="px-6 py-4 whitespace-nowrap text-sm">
+                                                    <span className={`px-2 py-1 text-xs rounded font-medium ${
+                                                        irp.is_active
+                                                            ? 'bg-green-100 text-green-800'
+                                                            : 'bg-gray-100 text-gray-700'
+                                                    }`}>
+                                                        {irp.is_active ? 'Active' : 'Inactive'}
+                                                    </span>
+                                                </td>
+                                                <td className="px-6 py-4 whitespace-nowrap text-sm">
+                                                    <span className="px-2 py-1 bg-amber-100 text-amber-800 rounded text-xs font-medium">
+                                                        {irp.covered_mrsa_count}
+                                                    </span>
+                                                </td>
+                                                <td className="px-6 py-4 whitespace-nowrap text-sm">
+                                                    {irp.latest_review_date ? (
+                                                        <div className="flex flex-col">
+                                                            <span>{irp.latest_review_date}</span>
+                                                            {irp.latest_review_outcome && (
+                                                                <span className={`text-xs px-1.5 py-0.5 rounded mt-0.5 inline-block w-fit ${
+                                                                    irp.latest_review_outcome === 'Satisfactory'
+                                                                        ? 'bg-green-100 text-green-700'
+                                                                        : irp.latest_review_outcome === 'Conditionally Satisfactory'
+                                                                            ? 'bg-yellow-100 text-yellow-700'
+                                                                            : 'bg-red-100 text-red-700'
+                                                                }`}>
+                                                                    {irp.latest_review_outcome}
+                                                                </span>
+                                                            )}
+                                                        </div>
+                                                    ) : (
+                                                        <span className="text-gray-400">No reviews</span>
+                                                    )}
+                                                </td>
+                                                <td className="px-6 py-4 whitespace-nowrap text-sm">
+                                                    {irp.latest_certification_date || (
+                                                        <span className="text-gray-400">Not certified</span>
+                                                    )}
+                                                </td>
+                                                {isAdmin && (
+                                                    <td className="px-6 py-4 whitespace-nowrap text-sm">
+                                                        <div className="flex gap-2">
+                                                            <button
+                                                                onClick={() => handleEdit(irp)}
+                                                                className="text-blue-600 hover:text-blue-800"
+                                                            >
+                                                                Edit
+                                                            </button>
+                                                            <button
+                                                                onClick={() => handleDelete(irp.irp_id)}
+                                                                className="text-red-600 hover:text-red-800"
+                                                            >
+                                                                Delete
+                                                            </button>
+                                                        </div>
+                                                    </td>
+                                                )}
+                                            </tr>
+                                        ))
+                                    )}
+                                </tbody>
+                            </table>
+                        </div>
+                    </>
+                )}
             </div>
         </Layout>
     );

@@ -1,9 +1,11 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import Layout from '../components/Layout';
 import client from '../api/client';
 import OverdueCommentaryModal, { OverdueType } from '../components/OverdueCommentaryModal';
 import { getResidualRiskBadgeClass } from '../api/residualRiskMap';
+import FilterStatusBar from '../components/FilterStatusBar';
+import StatFilterCard from '../components/StatFilterCard';
 
 interface RegionInfo {
     region_id: number;
@@ -104,6 +106,8 @@ const OverdueRevalidationReportPage: React.FC = () => {
     const [pastDueLevelFilter, setPastDueLevelFilter] = useState<string>('');
     const [needsUpdateOnly, setNeedsUpdateOnly] = useState(false);
     const [daysOverdueMin, setDaysOverdueMin] = useState<string>('');
+    type QuickFilter = 'all' | 'pre_submission' | 'validation' | 'missing_commentary' | 'stale_commentary';
+    const [quickFilter, setQuickFilter] = useState<QuickFilter>('all');
 
     // Commentary modal
     const [showCommentaryModal, setShowCommentaryModal] = useState(false);
@@ -219,8 +223,40 @@ const OverdueRevalidationReportPage: React.FC = () => {
         return 'bg-gray-100 text-gray-700';
     };
 
+    const filteredRecords = useMemo(() => {
+        if (!reportData) return [];
+        let result = reportData.records;
+
+        switch (quickFilter) {
+            case 'pre_submission':
+                result = result.filter(r => r.overdue_type === 'PRE_SUBMISSION');
+                break;
+            case 'validation':
+                result = result.filter(r => r.overdue_type === 'VALIDATION_IN_PROGRESS');
+                break;
+            case 'missing_commentary':
+                result = result.filter(r => r.comment_status === 'MISSING');
+                break;
+            case 'stale_commentary':
+                result = result.filter(r => r.comment_status === 'STALE');
+                break;
+        }
+
+        return result;
+    }, [reportData, quickFilter]);
+
+    const activeFilterLabel = quickFilter === 'pre_submission'
+        ? 'Pre-Submission Overdue'
+        : quickFilter === 'validation'
+            ? 'Validation Overdue'
+            : quickFilter === 'missing_commentary'
+                ? 'Missing Commentary'
+                : quickFilter === 'stale_commentary'
+                    ? 'Stale Commentary'
+                    : '';
+
     const exportToCsv = () => {
-        if (!reportData || reportData.records.length === 0) return;
+        if (!reportData || filteredRecords.length === 0) return;
 
         const headers = [
             'Overdue Type',
@@ -249,7 +285,7 @@ const OverdueRevalidationReportPage: React.FC = () => {
             'Computed Completion Date'
         ];
 
-        const rows = reportData.records.map(record => [
+        const rows = filteredRecords.map(record => [
             record.overdue_type === 'PRE_SUBMISSION' ? 'Submission' : 'Validation',
             record.request_id,
             record.model_id,
@@ -308,32 +344,59 @@ const OverdueRevalidationReportPage: React.FC = () => {
 
                 {/* Primary Summary Cards */}
                 {reportData && (
-                    <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4 mb-4">
-                        <div className="bg-white p-4 rounded-lg shadow-sm border">
-                            <div className="text-2xl font-bold text-gray-900">{reportData.summary.total_overdue}</div>
-                            <div className="text-xs text-gray-500">Total Overdue</div>
-                        </div>
-                        <div className="bg-orange-50 p-4 rounded-lg shadow-sm border border-orange-200">
-                            <div className="text-2xl font-bold text-orange-700">{reportData.summary.pre_submission_overdue}</div>
-                            <div className="text-xs text-orange-600">Submissions</div>
-                        </div>
-                        <div className="bg-red-50 p-4 rounded-lg shadow-sm border border-red-200">
-                            <div className="text-2xl font-bold text-red-700">{reportData.summary.validation_overdue}</div>
-                            <div className="text-xs text-red-600">Validations</div>
-                        </div>
-                        <div className="bg-red-50 p-4 rounded-lg shadow-sm border border-red-200">
-                            <div className="text-2xl font-bold text-red-700">{reportData.summary.missing_commentary}</div>
-                            <div className="text-xs text-red-600">Missing Commentary</div>
-                        </div>
-                        <div className="bg-yellow-50 p-4 rounded-lg shadow-sm border border-yellow-200">
-                            <div className="text-2xl font-bold text-yellow-700">{reportData.summary.stale_commentary}</div>
-                            <div className="text-xs text-yellow-600">Stale Commentary</div>
-                        </div>
-                        <div className="bg-green-50 p-4 rounded-lg shadow-sm border border-green-200">
-                            <div className="text-2xl font-bold text-green-700">{reportData.summary.current_commentary}</div>
-                            <div className="text-xs text-green-600">Current Commentary</div>
-                        </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-4 mb-4">
+                        <StatFilterCard
+                            label="Total Overdue"
+                            count={reportData.summary.total_overdue}
+                            isActive={quickFilter === 'all'}
+                            onClick={() => setQuickFilter('all')}
+                            colorScheme="blue"
+                        />
+                        <StatFilterCard
+                            label="Pre-Submission Overdue"
+                            count={reportData.summary.pre_submission_overdue}
+                            isActive={quickFilter === 'pre_submission'}
+                            onClick={() => setQuickFilter(prev => (prev === 'pre_submission' ? 'all' : 'pre_submission'))}
+                            colorScheme="red"
+                        />
+                        <StatFilterCard
+                            label="Validation Overdue"
+                            count={reportData.summary.validation_overdue}
+                            isActive={quickFilter === 'validation'}
+                            onClick={() => setQuickFilter(prev => (prev === 'validation' ? 'all' : 'validation'))}
+                            colorScheme="yellow"
+                        />
+                        <StatFilterCard
+                            label="Missing Commentary"
+                            count={reportData.summary.missing_commentary}
+                            isActive={quickFilter === 'missing_commentary'}
+                            onClick={() => setQuickFilter(prev => (prev === 'missing_commentary' ? 'all' : 'missing_commentary'))}
+                            colorScheme="orange"
+                        />
+                        <StatFilterCard
+                            label="Stale Commentary"
+                            count={reportData.summary.stale_commentary}
+                            isActive={quickFilter === 'stale_commentary'}
+                            onClick={() => setQuickFilter(prev => (prev === 'stale_commentary' ? 'all' : 'stale_commentary'))}
+                            colorScheme="purple"
+                        />
+                        <StatFilterCard
+                            label="Current Commentary"
+                            count={reportData.summary.current_commentary}
+                            isActive={false}
+                            onClick={() => {}}
+                            colorScheme="green"
+                            disabled
+                        />
                     </div>
+                )}
+
+                {quickFilter !== 'all' && (
+                    <FilterStatusBar
+                        activeFilterLabel={activeFilterLabel}
+                        onClear={() => setQuickFilter('all')}
+                        entityName="records"
+                    />
                 )}
 
                 {/* Enhanced Metrics Panel */}
@@ -503,7 +566,7 @@ const OverdueRevalidationReportPage: React.FC = () => {
                             </button>
                             <button
                                 onClick={exportToCsv}
-                                disabled={!reportData || reportData.records.length === 0}
+                                disabled={!reportData || filteredRecords.length === 0}
                                 className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 disabled:bg-gray-400 text-sm"
                             >
                                 Export CSV
@@ -517,11 +580,16 @@ const OverdueRevalidationReportPage: React.FC = () => {
                     <div className="flex items-center justify-center h-64">
                         <div className="text-gray-500">Loading report...</div>
                     </div>
-                ) : reportData && reportData.records.length > 0 ? (
+                ) : reportData && filteredRecords.length > 0 ? (
                     <div className="bg-white rounded-lg shadow-sm border overflow-hidden">
                         <div className="p-4 border-b bg-gray-50 flex justify-between items-center">
                             <span className="text-sm font-medium text-gray-700">
-                                {reportData.total_records} records found
+                                {filteredRecords.length} records shown
+                                {filteredRecords.length !== reportData.total_records && (
+                                    <span className="ml-1 text-gray-500">
+                                        (of {reportData.total_records})
+                                    </span>
+                                )}
                                 {reportData.filters_applied.region_name && (
                                     <span className="ml-2 text-blue-600">
                                         (filtered by: {reportData.filters_applied.region_name})
@@ -553,7 +621,7 @@ const OverdueRevalidationReportPage: React.FC = () => {
                                     </tr>
                                 </thead>
                                 <tbody className="bg-white divide-y divide-gray-200">
-                                    {reportData.records.map((record) => (
+                                    {filteredRecords.map((record) => (
                                         <tr
                                             key={`${record.request_id}-${record.overdue_type}`}
                                             className={`hover:bg-gray-50 ${record.needs_comment_update ? 'bg-red-50' : ''}`}
@@ -685,9 +753,15 @@ const OverdueRevalidationReportPage: React.FC = () => {
                     </div>
                 ) : (
                     <div className="bg-white rounded-lg shadow-sm border p-8 text-center">
-                        <div className="text-gray-400 text-lg mb-2">No overdue items found</div>
+                        <div className="text-gray-400 text-lg mb-2">
+                            {reportData && reportData.records.length > 0
+                                ? 'No overdue items match the selected filters'
+                                : 'No overdue items found'}
+                        </div>
                         <p className="text-sm text-gray-500">
-                            All models are up to date with their revalidation schedules.
+                            {reportData && reportData.records.length > 0
+                                ? 'Try adjusting the quick filters or other filters to see results.'
+                                : 'All models are up to date with their revalidation schedules.'}
                         </p>
                     </div>
                 )}

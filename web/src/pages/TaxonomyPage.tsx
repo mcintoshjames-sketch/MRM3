@@ -288,6 +288,13 @@ export default function TaxonomyPage() {
     const initialTab: TabType = validTabs.includes(tabParam as TabType) ? (tabParam as TabType) : 'general';
     const [activeTab, setActiveTab] = useState<TabType>(initialTab);
 
+    useEffect(() => {
+        const nextTab: TabType = validTabs.includes(tabParam as TabType) ? (tabParam as TabType) : 'general';
+        if (nextTab !== activeTab) {
+            setActiveTab(nextTab);
+        }
+    }, [tabParam, activeTab]);
+
     // Update URL when tab changes
     const handleTabChange = (tab: TabType) => {
         setActiveTab(tab);
@@ -576,6 +583,7 @@ export default function TaxonomyPage() {
             console.error('Error loading component definitions:', err);
         } finally {
             setComponentDefLoading(false);
+            setLoading(false);
         }
     };
 

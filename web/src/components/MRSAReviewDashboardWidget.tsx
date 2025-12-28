@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import api from '../api/client';
+import FilterStatusBar from './FilterStatusBar';
 import { useTableSort } from '../hooks/useTableSort';
 import MRSAReviewStatusBadge, { MRSAReviewStatusCode } from './MRSAReviewStatusBadge';
+import StatFilterCard from './StatFilterCard';
 
 interface MRSAReviewOwner {
     user_id: number;
@@ -23,7 +25,7 @@ interface MRSAReviewStatus {
     exception_due_date: string | null;
 }
 
-type StatusFilter = 'attention' | 'upcoming' | 'all';
+type StatusFilter = 'attention' | 'upcoming' | 'current' | 'all';
 
 interface MRSAReviewDashboardWidgetProps {
     title?: string;
@@ -63,7 +65,7 @@ export default function MRSAReviewDashboardWidget({
     const [data, setData] = useState<MRSAReviewStatus[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
-    const [statusFilter, setStatusFilter] = useState<StatusFilter>('attention');
+    const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
 
     const shouldShowOwnerColumn = showOwnerColumn ?? ownerId === undefined;
 
@@ -133,6 +135,9 @@ export default function MRSAReviewDashboardWidget({
         if (statusFilter === 'upcoming') {
             return scopedData.filter((item) => item.status === 'UPCOMING');
         }
+        if (statusFilter === 'current') {
+            return scopedData.filter((item) => item.status === 'CURRENT');
+        }
         return scopedData.filter((item) => ATTENTION_STATUSES.includes(item.status));
     }, [scopedData, statusFilter]);
 
@@ -191,7 +196,7 @@ export default function MRSAReviewDashboardWidget({
 
     if (loading) {
         return (
-            <div className={`bg-white p-4 rounded-lg shadow ${className}`}>
+            <div className={`bg-gray-50 border border-gray-200 p-4 rounded-lg shadow-sm ${className}`}>
                 <div className="flex items-center justify-center h-40">
                     <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
                     <span className="ml-3 text-gray-600">Loading MRSA review status...</span>
@@ -202,7 +207,7 @@ export default function MRSAReviewDashboardWidget({
 
     if (error) {
         return (
-            <div className={`bg-white p-4 rounded-lg shadow ${className}`}>
+            <div className={`bg-gray-50 border border-gray-200 p-4 rounded-lg shadow-sm ${className}`}>
                 <div className="bg-red-50 border border-red-200 rounded-lg p-4 text-center">
                     <p className="text-red-800">{error}</p>
                     <button
@@ -217,7 +222,7 @@ export default function MRSAReviewDashboardWidget({
     }
 
     return (
-        <div className={`bg-white p-4 rounded-lg shadow ${className}`}>
+        <div className={`bg-gray-50 border border-gray-200 p-4 rounded-lg shadow-sm ${className}`}>
             <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-3 mb-4">
                 <div>
                     <h3 className="text-lg font-semibold text-gray-900">{title}</h3>
@@ -241,22 +246,53 @@ export default function MRSAReviewDashboardWidget({
                 </div>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
-                <div className="bg-orange-50 border border-orange-100 p-3 rounded-lg">
-                    <h4 className="text-xs font-medium text-orange-700 uppercase">Overdue</h4>
-                    <p className="text-2xl font-bold text-orange-700 mt-1">{summary.overdue}</p>
-                </div>
-                <div className="bg-amber-50 border border-amber-100 p-3 rounded-lg">
-                    <h4 className="text-xs font-medium text-amber-700 uppercase">Upcoming</h4>
-                    <p className="text-2xl font-bold text-amber-700 mt-1">{summary.upcoming}</p>
-                </div>
-                <div className="bg-green-50 border border-green-100 p-3 rounded-lg">
-                    <h4 className="text-xs font-medium text-green-700 uppercase">Current</h4>
-                    <p className="text-2xl font-bold text-green-700 mt-1">{summary.current}</p>
-                </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
+                <StatFilterCard
+                    label="Needs Attention"
+                    count={summary.overdue + summary.noIrp + summary.neverReviewed}
+                    isActive={statusFilter === 'attention'}
+                    onClick={() => setStatusFilter(prev => (prev === 'attention' ? 'all' : 'attention'))}
+                    colorScheme="red"
+                />
+                <StatFilterCard
+                    label="Upcoming"
+                    count={summary.upcoming}
+                    isActive={statusFilter === 'upcoming'}
+                    onClick={() => setStatusFilter(prev => (prev === 'upcoming' ? 'all' : 'upcoming'))}
+                    colorScheme="yellow"
+                />
+                <StatFilterCard
+                    label="Current"
+                    count={summary.current}
+                    isActive={statusFilter === 'current'}
+                    onClick={() => setStatusFilter(prev => (prev === 'current' ? 'all' : 'current'))}
+                    colorScheme="green"
+                />
+                <StatFilterCard
+                    label="Total MRSAs"
+                    count={scopedData.length}
+                    isActive={statusFilter === 'all'}
+                    onClick={() => setStatusFilter('all')}
+                    colorScheme="blue"
+                />
             </div>
 
+            {statusFilter !== 'all' && (
+                <FilterStatusBar
+                    activeFilterLabel={statusFilter === 'attention'
+                        ? 'Needs Attention'
+                        : statusFilter === 'upcoming'
+                            ? 'Upcoming'
+                            : 'Current'}
+                    onClear={() => setStatusFilter('all')}
+                    entityName="MRSAs"
+                />
+            )}
+
             <div className="flex flex-wrap items-center gap-4 text-xs text-gray-600 mb-4">
+                <div>
+                    <span className="font-semibold text-gray-800">{summary.overdue}</span> overdue
+                </div>
                 <div>
                     <span className="font-semibold text-gray-800">{summary.noIrp}</span> no IRP
                 </div>
@@ -269,37 +305,8 @@ export default function MRSAReviewDashboardWidget({
             </div>
 
             <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 mb-3">
-                <div className="flex flex-wrap gap-2">
-                    <button
-                        onClick={() => setStatusFilter('attention')}
-                        className={`px-3 py-1.5 rounded text-sm ${
-                            statusFilter === 'attention'
-                                ? 'bg-gray-900 text-white'
-                                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                        }`}
-                    >
-                        Needs Attention ({summary.overdue + summary.noIrp + summary.neverReviewed})
-                    </button>
-                    <button
-                        onClick={() => setStatusFilter('upcoming')}
-                        className={`px-3 py-1.5 rounded text-sm ${
-                            statusFilter === 'upcoming'
-                                ? 'bg-gray-900 text-white'
-                                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                        }`}
-                    >
-                        Upcoming ({summary.upcoming})
-                    </button>
-                    <button
-                        onClick={() => setStatusFilter('all')}
-                        className={`px-3 py-1.5 rounded text-sm ${
-                            statusFilter === 'all'
-                                ? 'bg-gray-900 text-white'
-                                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                        }`}
-                    >
-                        All ({scopedData.length})
-                    </button>
+                <div className="text-sm text-gray-500">
+                    Showing {sortedData.length} of {scopedData.length} MRSAs
                 </div>
                 <div className="flex gap-2">
                     <button

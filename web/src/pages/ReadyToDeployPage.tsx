@@ -1,20 +1,20 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import Layout from '../components/Layout';
+import FilterStatusBar from '../components/FilterStatusBar';
+import StatFilterCard from '../components/StatFilterCard';
 import { readyToDeployApi, ReadyToDeployItem } from '../api/versions';
 import { useTableSort } from '../hooks/useTableSort';
+import { useAuth } from '../contexts/AuthContext';
 
 const ReadyToDeployPage: React.FC = () => {
+    const { user } = useAuth();
     const [items, setItems] = useState<ReadyToDeployItem[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [myModelsOnly, setMyModelsOnly] = useState(false);
-
-    const { sortedData, requestSort, getSortIcon } = useTableSort<ReadyToDeployItem>(
-        items,
-        'days_since_approval',
-        'desc'
-    );
+    type DeployFilterMode = 'all' | 'ready' | 'pending';
+    const [filterMode, setFilterMode] = useState<DeployFilterMode>('all');
 
     const fetchData = async () => {
         setLoading(true);
@@ -33,6 +33,44 @@ const ReadyToDeployPage: React.FC = () => {
     useEffect(() => {
         fetchData();
     }, [myModelsOnly]);
+
+    const baseData = useMemo(() => {
+        if (!myModelsOnly || !user) {
+            return items;
+        }
+        return items.filter(item => item.owner_id === user.user_id);
+    }, [items, myModelsOnly, user]);
+
+    const { totalCount, readyCount, pendingCount } = useMemo(() => {
+        return {
+            totalCount: baseData.length,
+            readyCount: baseData.filter(item => !item.has_pending_task).length,
+            pendingCount: baseData.filter(item => item.has_pending_task).length,
+        };
+    }, [baseData]);
+
+    const filteredItems = useMemo(() => {
+        switch (filterMode) {
+            case 'ready':
+                return baseData.filter(item => !item.has_pending_task);
+            case 'pending':
+                return baseData.filter(item => item.has_pending_task);
+            default:
+                return baseData;
+        }
+    }, [baseData, filterMode]);
+
+    const { sortedData, requestSort, getSortIcon } = useTableSort<ReadyToDeployItem>(
+        filteredItems,
+        'days_since_approval',
+        'desc'
+    );
+
+    const activeFilterLabel = filterMode === 'ready'
+        ? 'Ready to Deploy'
+        : filterMode === 'pending'
+            ? 'Pending Tasks'
+            : '';
 
     const exportCSV = () => {
         if (sortedData.length === 0) return;
@@ -97,11 +135,6 @@ const ReadyToDeployPage: React.FC = () => {
         );
     };
 
-    // Compute unique counts for summary
-    const uniqueVersionsCount = new Set(items.map(i => i.version_id)).size;
-    const uniqueModelsCount = new Set(items.map(i => i.model_id)).size;
-    const pendingTasksCount = items.filter(i => i.has_pending_task).length;
-
     return (
         <Layout>
             <div className="space-y-6">
@@ -149,63 +182,37 @@ const ReadyToDeployPage: React.FC = () => {
 
                 {/* Summary Cards */}
                 {!loading && (
-                    <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                        <div className="bg-white rounded-lg shadow p-6">
-                            <div className="flex items-center">
-                                <div className="flex-shrink-0 bg-blue-500 rounded-md p-3">
-                                    <svg className="h-6 w-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                                    </svg>
-                                </div>
-                                <div className="ml-4">
-                                    <p className="text-sm font-medium text-gray-500">Region Deployments</p>
-                                    <p className="text-2xl font-semibold text-gray-900">{items.length}</p>
-                                </div>
-                            </div>
-                        </div>
-
-                        <div className="bg-white rounded-lg shadow p-6">
-                            <div className="flex items-center">
-                                <div className="flex-shrink-0 bg-indigo-500 rounded-md p-3">
-                                    <svg className="h-6 w-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
-                                    </svg>
-                                </div>
-                                <div className="ml-4">
-                                    <p className="text-sm font-medium text-gray-500">Unique Versions</p>
-                                    <p className="text-2xl font-semibold text-gray-900">{uniqueVersionsCount}</p>
-                                </div>
-                            </div>
-                        </div>
-
-                        <div className="bg-white rounded-lg shadow p-6">
-                            <div className="flex items-center">
-                                <div className="flex-shrink-0 bg-purple-500 rounded-md p-3">
-                                    <svg className="h-6 w-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
-                                    </svg>
-                                </div>
-                                <div className="ml-4">
-                                    <p className="text-sm font-medium text-gray-500">Unique Models</p>
-                                    <p className="text-2xl font-semibold text-gray-900">{uniqueModelsCount}</p>
-                                </div>
-                            </div>
-                        </div>
-
-                        <div className="bg-white rounded-lg shadow p-6">
-                            <div className="flex items-center">
-                                <div className="flex-shrink-0 bg-green-500 rounded-md p-3">
-                                    <svg className="h-6 w-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                                    </svg>
-                                </div>
-                                <div className="ml-4">
-                                    <p className="text-sm font-medium text-gray-500">With Pending Tasks</p>
-                                    <p className="text-2xl font-semibold text-gray-900">{pendingTasksCount}</p>
-                                </div>
-                            </div>
-                        </div>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+                        <StatFilterCard
+                            label="Total Candidates"
+                            count={totalCount}
+                            isActive={filterMode === 'all'}
+                            onClick={() => setFilterMode('all')}
+                            colorScheme="blue"
+                        />
+                        <StatFilterCard
+                            label="Ready to Deploy"
+                            count={readyCount}
+                            isActive={filterMode === 'ready'}
+                            onClick={() => setFilterMode(prev => (prev === 'ready' ? 'all' : 'ready'))}
+                            colorScheme="green"
+                        />
+                        <StatFilterCard
+                            label="Pending Tasks"
+                            count={pendingCount}
+                            isActive={filterMode === 'pending'}
+                            onClick={() => setFilterMode(prev => (prev === 'pending' ? 'all' : 'pending'))}
+                            colorScheme="yellow"
+                        />
                     </div>
+                )}
+
+                {!loading && filterMode !== 'all' && (
+                    <FilterStatusBar
+                        activeFilterLabel={activeFilterLabel}
+                        onClear={() => setFilterMode('all')}
+                        entityName="candidates"
+                    />
                 )}
 
                 {/* Loading State */}

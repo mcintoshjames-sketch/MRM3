@@ -3,6 +3,7 @@ import { Link, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import api from '../api/client';
 import Layout from '../components/Layout';
+import StatFilterCard from '../components/StatFilterCard';
 
 // Interfaces
 interface AttestationCycle {
@@ -512,13 +513,36 @@ export default function AttestationCyclesPage() {
         }
     }, [allRecordsCycleFilter]);
 
+    const baseAllRecords = useMemo(() => {
+        if (!allRecordsCycleFilter) return allRecords;
+        return allRecords.filter(record => record.cycle_id === allRecordsCycleFilter);
+    }, [allRecords, allRecordsCycleFilter]);
+
     const filteredAllRecords = useMemo(() => {
-        if (allRecordsStatusFilter === 'all') return allRecords;
+        if (allRecordsStatusFilter === 'all') return baseAllRecords;
         if (allRecordsStatusFilter === 'OVERDUE') {
-            return allRecords.filter(record => record.is_overdue);
+            return baseAllRecords.filter(record => record.is_overdue);
         }
-        return allRecords.filter(record => record.status === allRecordsStatusFilter);
-    }, [allRecords, allRecordsStatusFilter]);
+        return baseAllRecords.filter(record => record.status === allRecordsStatusFilter);
+    }, [baseAllRecords, allRecordsStatusFilter]);
+
+    const {
+        totalRecordsCount,
+        pendingCount,
+        submittedCount,
+        acceptedCount,
+        rejectedCount,
+        overdueCount,
+    } = useMemo(() => {
+        return {
+            totalRecordsCount: baseAllRecords.length,
+            pendingCount: baseAllRecords.filter(r => r.status === 'PENDING').length,
+            submittedCount: baseAllRecords.filter(r => r.status === 'SUBMITTED').length,
+            acceptedCount: baseAllRecords.filter(r => r.status === 'ACCEPTED').length,
+            rejectedCount: baseAllRecords.filter(r => r.status === 'REJECTED').length,
+            overdueCount: baseAllRecords.filter(r => r.is_overdue).length,
+        };
+    }, [baseAllRecords]);
 
     // Group records by owner
     const groupedByOwner: GroupedByOwner[] = useMemo(() => {
@@ -925,26 +949,46 @@ export default function AttestationCyclesPage() {
             {/* Dashboard Stats */}
             {activeTab === 'cycles' && stats && (
                 <div className="grid grid-cols-1 md:grid-cols-5 gap-4 mb-6">
-                    <div className="bg-white p-4 rounded-lg shadow">
-                        <div className="text-sm text-gray-500">Active Cycles</div>
-                        <div className="text-2xl font-bold text-blue-600">{stats.active_cycles}</div>
-                    </div>
-                    <div className="bg-white p-4 rounded-lg shadow">
-                        <div className="text-sm text-gray-500">Pending</div>
-                        <div className="text-2xl font-bold text-yellow-600">{stats.pending_count}</div>
-                    </div>
-                    <div className="bg-white p-4 rounded-lg shadow">
-                        <div className="text-sm text-gray-500">Submitted</div>
-                        <div className="text-2xl font-bold text-blue-600">{stats.submitted_count}</div>
-                    </div>
-                    <div className="bg-white p-4 rounded-lg shadow">
-                        <div className="text-sm text-gray-500">Overdue</div>
-                        <div className="text-2xl font-bold text-red-600">{stats.overdue_count}</div>
-                    </div>
-                    <div className="bg-white p-4 rounded-lg shadow">
-                        <div className="text-sm text-gray-500">Pending Changes</div>
-                        <div className="text-2xl font-bold text-purple-600">{stats.pending_changes}</div>
-                    </div>
+                    <StatFilterCard
+                        label="Active Cycles"
+                        count={stats.active_cycles}
+                        isActive={false}
+                        onClick={() => {}}
+                        colorScheme="blue"
+                        disabled
+                    />
+                    <StatFilterCard
+                        label="Pending"
+                        count={stats.pending_count}
+                        isActive={false}
+                        onClick={() => {}}
+                        colorScheme="yellow"
+                        disabled
+                    />
+                    <StatFilterCard
+                        label="Submitted"
+                        count={stats.submitted_count}
+                        isActive={false}
+                        onClick={() => {}}
+                        colorScheme="blue"
+                        disabled
+                    />
+                    <StatFilterCard
+                        label="Overdue"
+                        count={stats.overdue_count}
+                        isActive={false}
+                        onClick={() => {}}
+                        colorScheme="red"
+                        disabled
+                    />
+                    <StatFilterCard
+                        label="Pending Changes"
+                        count={stats.pending_changes}
+                        isActive={false}
+                        onClick={() => {}}
+                        colorScheme="purple"
+                        disabled
+                    />
                 </div>
             )}
 
@@ -2092,83 +2136,49 @@ export default function AttestationCyclesPage() {
                     </div>
 
                     {/* Summary Stats */}
-                    <div className="grid grid-cols-2 md:grid-cols-6 gap-4 mb-6">
-                        <button
-                            type="button"
-                            aria-pressed={allRecordsStatusFilter === 'all'}
-                            onClick={() => toggleAllRecordsStatusFilter('all')}
-                            className={`w-full text-left bg-white p-4 rounded-lg shadow cursor-pointer transition-shadow hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-400 ${
-                                allRecordsStatusFilter === 'all' ? 'ring-2 ring-gray-400' : ''
-                            }`}
-                        >
-                            <div className="text-sm text-gray-500">Total Records</div>
-                            <div className="text-2xl font-bold text-gray-900">{allRecords.length}</div>
-                        </button>
-                        <button
-                            type="button"
-                            aria-pressed={allRecordsStatusFilter === 'PENDING'}
+                    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-6">
+                        <StatFilterCard
+                            label="Total Records"
+                            count={totalRecordsCount}
+                            isActive={allRecordsStatusFilter === 'all'}
+                            onClick={() => setAllRecordsStatusFilter('all')}
+                            colorScheme="blue"
+                        />
+                        <StatFilterCard
+                            label="Pending"
+                            count={pendingCount}
+                            isActive={allRecordsStatusFilter === 'PENDING'}
                             onClick={() => toggleAllRecordsStatusFilter('PENDING')}
-                            className={`w-full text-left bg-white p-4 rounded-lg shadow cursor-pointer transition-shadow hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-yellow-500 ${
-                                allRecordsStatusFilter === 'PENDING' ? 'ring-2 ring-yellow-500' : ''
-                            }`}
-                        >
-                            <div className="text-sm text-gray-500">Pending</div>
-                            <div className="text-2xl font-bold text-yellow-600">
-                                {allRecords.filter(r => r.status === 'PENDING').length}
-                            </div>
-                        </button>
-                        <button
-                            type="button"
-                            aria-pressed={allRecordsStatusFilter === 'SUBMITTED'}
+                            colorScheme="yellow"
+                        />
+                        <StatFilterCard
+                            label="Submitted"
+                            count={submittedCount}
+                            isActive={allRecordsStatusFilter === 'SUBMITTED'}
                             onClick={() => toggleAllRecordsStatusFilter('SUBMITTED')}
-                            className={`w-full text-left bg-white p-4 rounded-lg shadow cursor-pointer transition-shadow hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${
-                                allRecordsStatusFilter === 'SUBMITTED' ? 'ring-2 ring-blue-500' : ''
-                            }`}
-                        >
-                            <div className="text-sm text-gray-500">Submitted</div>
-                            <div className="text-2xl font-bold text-blue-600">
-                                {allRecords.filter(r => r.status === 'SUBMITTED').length}
-                            </div>
-                        </button>
-                        <button
-                            type="button"
-                            aria-pressed={allRecordsStatusFilter === 'ACCEPTED'}
+                            colorScheme="purple"
+                        />
+                        <StatFilterCard
+                            label="Accepted"
+                            count={acceptedCount}
+                            isActive={allRecordsStatusFilter === 'ACCEPTED'}
                             onClick={() => toggleAllRecordsStatusFilter('ACCEPTED')}
-                            className={`w-full text-left bg-white p-4 rounded-lg shadow cursor-pointer transition-shadow hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500 ${
-                                allRecordsStatusFilter === 'ACCEPTED' ? 'ring-2 ring-green-500' : ''
-                            }`}
-                        >
-                            <div className="text-sm text-gray-500">Accepted</div>
-                            <div className="text-2xl font-bold text-green-600">
-                                {allRecords.filter(r => r.status === 'ACCEPTED').length}
-                            </div>
-                        </button>
-                        <button
-                            type="button"
-                            aria-pressed={allRecordsStatusFilter === 'REJECTED'}
+                            colorScheme="green"
+                        />
+                        <StatFilterCard
+                            label="Rejected"
+                            count={rejectedCount}
+                            isActive={allRecordsStatusFilter === 'REJECTED'}
                             onClick={() => toggleAllRecordsStatusFilter('REJECTED')}
-                            className={`w-full text-left bg-white p-4 rounded-lg shadow cursor-pointer transition-shadow hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 ${
-                                allRecordsStatusFilter === 'REJECTED' ? 'ring-2 ring-red-500' : ''
-                            }`}
-                        >
-                            <div className="text-sm text-gray-500">Rejected</div>
-                            <div className="text-2xl font-bold text-red-600">
-                                {allRecords.filter(r => r.status === 'REJECTED').length}
-                            </div>
-                        </button>
-                        <button
-                            type="button"
-                            aria-pressed={allRecordsStatusFilter === 'OVERDUE'}
+                            colorScheme="red"
+                        />
+                        <StatFilterCard
+                            label="Overdue"
+                            count={overdueCount}
+                            isActive={allRecordsStatusFilter === 'OVERDUE'}
                             onClick={() => toggleAllRecordsStatusFilter('OVERDUE')}
-                            className={`w-full text-left bg-white p-4 rounded-lg shadow cursor-pointer transition-shadow hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 ${
-                                allRecordsStatusFilter === 'OVERDUE' ? 'ring-2 ring-red-500' : ''
-                            }`}
-                        >
-                            <div className="text-sm text-gray-500">Overdue</div>
-                            <div className="text-2xl font-bold text-red-600">
-                                {allRecords.filter(r => r.is_overdue).length}
-                            </div>
-                        </button>
+                            colorScheme="red"
+                        />
                     </div>
 
                     {/* Grouped by Owner */}

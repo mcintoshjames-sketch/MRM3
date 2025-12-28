@@ -1,10 +1,12 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import api from '../api/client';
 import { recommendationsApi, RecommendationListItem, TaxonomyValue } from '../api/recommendations';
 import Layout from '../components/Layout';
+import FilterStatusBar from '../components/FilterStatusBar';
 import MultiSelectDropdown from '../components/MultiSelectDropdown';
 import RecommendationCreateModal from '../components/RecommendationCreateModal';
+import StatFilterCard from '../components/StatFilterCard';
 import { useTableSort } from '../hooks/useTableSort';
 import { useColumnPreferences, ColumnDefinition } from '../hooks/useColumnPreferences';
 import { ColumnPickerModal, SaveViewModal } from '../components/ColumnPickerModal';
@@ -20,6 +22,24 @@ interface User {
     email: string;
     full_name: string;
 }
+
+const TERMINAL_STATUS_CODES = ['REC_DROPPED', 'REC_CLOSED'];
+
+const isOverdue = (rec: RecommendationListItem) => {
+    if (TERMINAL_STATUS_CODES.includes(rec.current_status?.code || '')) return false;
+    const targetDate = new Date(rec.current_target_date);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    return targetDate < today;
+};
+
+const getDaysOverdue = (rec: RecommendationListItem) => {
+    const targetDate = new Date(rec.current_target_date);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const diffTime = today.getTime() - targetDate.getTime();
+    return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+};
 
 export default function RecommendationsPage() {
     const { user } = useAuth();
@@ -39,25 +59,23 @@ export default function RecommendationsPage() {
     const urlValidationRequestId = searchParams.get('validation_request_id');
     const urlMyTasks = searchParams.get('my_tasks') === 'true';
 
-    // Filters
-    const [filters, setFilters] = useState({
-        search: '',
-        status_filter: [] as string[],
-        priority_filter: [] as string[],
-        category_filter: [] as string[],
-        model_id: urlModelId ? parseInt(urlModelId) : null as number | null,
-        validation_request_id: urlValidationRequestId ? parseInt(urlValidationRequestId) : null as number | null,
-        assigned_to_id: null as number | null,
-        overdue_only: false,
-        my_tasks_only: urlMyTasks
-    });
+    type FilterMode = 'all' | 'my_tasks' | 'overdue' | 'high_priority';
+    const [filterMode, setFilterMode] = useState<FilterMode>(urlMyTasks ? 'my_tasks' : 'all');
+    const [searchQuery, setSearchQuery] = useState('');
+    const [statusFilter, setStatusFilter] = useState<string[]>([]);
+    const [priorityFilter, setPriorityFilter] = useState<string[]>([]);
+    const [categoryFilter, setCategoryFilter] = useState<string[]>([]);
+    const [modelFilterId, setModelFilterId] = useState<number | null>(
+        urlModelId ? parseInt(urlModelId) : null
+    );
+    const [validationRequestId, setValidationRequestId] = useState<number | null>(
+        urlValidationRequestId ? parseInt(urlValidationRequestId) : null
+    );
+    const [assignedToId, setAssignedToId] = useState<number | null>(null);
 
     // My Tasks IDs - fetched from /recommendations/my-tasks endpoint
     // This correctly identifies tasks by workflow status + role, not just assigned_to
     const [myTaskIds, setMyTaskIds] = useState<Set<number>>(new Set());
-
-    // Terminal statuses
-    const terminalStatusCodes = ['REC_DROPPED', 'REC_CLOSED'];
 
     // Column customization configuration
     const availableColumns: ColumnDefinition[] = [
@@ -102,88 +120,69 @@ export default function RecommendationsPage() {
         defaultViews,
     });
 
-    // Apply filters
-    const filteredRecommendations = recommendations.filter(rec => {
-        // Search filter (code or title)
-        if (filters.search) {
-            const searchLower = filters.search.toLowerCase();
-            const matchesCode = rec.recommendation_code.toLowerCase().includes(searchLower);
-            const matchesTitle = rec.title.toLowerCase().includes(searchLower);
-            const matchesModel = rec.model?.model_name?.toLowerCase().includes(searchLower);
-            if (!matchesCode && !matchesTitle && !matchesModel) {
-                return false;
-            }
+    const filteredRecommendations = useMemo(() => {
+        let result = recommendations;
+
+        switch (filterMode) {
+            case 'my_tasks':
+                result = result.filter(rec => myTaskIds.has(rec.recommendation_id));
+                break;
+            case 'overdue':
+                result = result.filter(rec => isOverdue(rec));
+                break;
+            case 'high_priority':
+                result = result.filter(rec => rec.priority?.code === 'HIGH');
+                break;
         }
 
-        // Status filter
-        if (filters.status_filter.length > 0) {
-            const statusCode = rec.current_status?.code || '';
-            if (!filters.status_filter.includes(statusCode)) {
-                return false;
-            }
+        if (searchQuery) {
+            const searchLower = searchQuery.toLowerCase();
+            const matchesSearch = (rec: RecommendationListItem) => {
+                const matchesCode = rec.recommendation_code.toLowerCase().includes(searchLower);
+                const matchesTitle = rec.title.toLowerCase().includes(searchLower);
+                const matchesModel = rec.model?.model_name?.toLowerCase().includes(searchLower);
+                return matchesCode || matchesTitle || matchesModel;
+            };
+            result = result.filter(matchesSearch);
         }
 
-        // Priority filter
-        if (filters.priority_filter.length > 0) {
-            const priorityCode = rec.priority?.code || '';
-            if (!filters.priority_filter.includes(priorityCode)) {
-                return false;
-            }
+        if (statusFilter.length > 0) {
+            result = result.filter(rec => statusFilter.includes(rec.current_status?.code || ''));
         }
 
-        // Category filter
-        if (filters.category_filter.length > 0) {
-            const categoryCode = rec.category?.code || '';
-            if (!filters.category_filter.includes(categoryCode)) {
-                return false;
-            }
+        if (priorityFilter.length > 0) {
+            result = result.filter(rec => priorityFilter.includes(rec.priority?.code || ''));
         }
 
-        // Model filter
-        if (filters.model_id) {
-            if (rec.model_id !== filters.model_id) {
-                return false;
-            }
+        if (categoryFilter.length > 0) {
+            result = result.filter(rec => categoryFilter.includes(rec.category?.code || ''));
         }
 
-        // Validation request filter
-        if (filters.validation_request_id) {
-            if (rec.validation_request_id !== filters.validation_request_id) {
-                return false;
-            }
+        if (modelFilterId) {
+            result = result.filter(rec => rec.model_id === modelFilterId);
         }
 
-        // Assigned to filter
-        if (filters.assigned_to_id) {
-            if (rec.assigned_to_id !== filters.assigned_to_id) {
-                return false;
-            }
+        if (validationRequestId) {
+            result = result.filter(rec => rec.validation_request_id === validationRequestId);
         }
 
-        // Overdue filter
-        if (filters.overdue_only) {
-            // Exclude terminal statuses
-            if (terminalStatusCodes.includes(rec.current_status?.code || '')) {
-                return false;
-            }
-            const targetDate = new Date(rec.current_target_date);
-            const today = new Date();
-            today.setHours(0, 0, 0, 0);
-            if (targetDate >= today) {
-                return false;
-            }
+        if (assignedToId) {
+            result = result.filter(rec => rec.assigned_to_id === assignedToId);
         }
 
-        // My Tasks filter - uses IDs from /recommendations/my-tasks endpoint
-        // This correctly identifies tasks by workflow status + role
-        if (filters.my_tasks_only) {
-            if (!myTaskIds.has(rec.recommendation_id)) {
-                return false;
-            }
-        }
-
-        return true;
-    });
+        return result;
+    }, [
+        recommendations,
+        filterMode,
+        myTaskIds,
+        searchQuery,
+        statusFilter,
+        priorityFilter,
+        categoryFilter,
+        modelFilterId,
+        validationRequestId,
+        assignedToId,
+    ]);
 
     // Table sorting
     const { sortedData, requestSort, getSortIcon } = useTableSort<RecommendationListItem>(
@@ -267,22 +266,6 @@ export default function RecommendationsPage() {
             case 'CONSIDERATION': return 'bg-blue-100 text-blue-800';
             default: return 'bg-gray-100 text-gray-800';
         }
-    };
-
-    const isOverdue = (rec: RecommendationListItem) => {
-        if (terminalStatusCodes.includes(rec.current_status?.code || '')) return false;
-        const targetDate = new Date(rec.current_target_date);
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
-        return targetDate < today;
-    };
-
-    const getDaysOverdue = (rec: RecommendationListItem) => {
-        const targetDate = new Date(rec.current_target_date);
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
-        const diffTime = today.getTime() - targetDate.getTime();
-        return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
     };
 
     // Column renderers for dynamic table
@@ -468,6 +451,40 @@ export default function RecommendationsPage() {
         link.click();
     };
 
+    const { openCount, myTasksCount, overdueCount, highPriorityCount } = useMemo(() => {
+        const open = recommendations.filter(
+            r => !TERMINAL_STATUS_CODES.includes(r.current_status?.code || '')
+        ).length;
+        const myTasks = recommendations.filter(r => myTaskIds.has(r.recommendation_id)).length;
+        const overdue = recommendations.filter(rec => isOverdue(rec)).length;
+        const highPriority = recommendations.filter(rec => rec.priority?.code === 'HIGH').length;
+        return {
+            openCount: open,
+            myTasksCount: myTasks,
+            overdueCount: overdue,
+            highPriorityCount: highPriority,
+        };
+    }, [recommendations, myTaskIds]);
+
+    const activeFilterLabel = filterMode === 'my_tasks'
+        ? 'My Tasks'
+        : filterMode === 'overdue'
+            ? 'Overdue'
+            : filterMode === 'high_priority'
+                ? 'High Priority'
+                : '';
+
+    const resetAllFilters = () => {
+        setFilterMode('all');
+        setSearchQuery('');
+        setStatusFilter([]);
+        setPriorityFilter([]);
+        setCategoryFilter([]);
+        setModelFilterId(null);
+        setValidationRequestId(null);
+        setAssignedToId(null);
+    };
+
     const canCreate = user?.role === 'Admin' || user?.role === 'Validator';
 
     if (loading) {
@@ -511,6 +528,45 @@ export default function RecommendationsPage() {
                 </div>
             )}
 
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+                <StatFilterCard
+                    label="Total Open"
+                    count={openCount}
+                    isActive={filterMode === 'all'}
+                    onClick={() => setFilterMode('all')}
+                    colorScheme="blue"
+                />
+                <StatFilterCard
+                    label="My Tasks"
+                    count={myTasksCount}
+                    isActive={filterMode === 'my_tasks'}
+                    onClick={() => setFilterMode(prev => (prev === 'my_tasks' ? 'all' : 'my_tasks'))}
+                    colorScheme="purple"
+                />
+                <StatFilterCard
+                    label="Overdue"
+                    count={overdueCount}
+                    isActive={filterMode === 'overdue'}
+                    onClick={() => setFilterMode(prev => (prev === 'overdue' ? 'all' : 'overdue'))}
+                    colorScheme="red"
+                />
+                <StatFilterCard
+                    label="High Priority"
+                    count={highPriorityCount}
+                    isActive={filterMode === 'high_priority'}
+                    onClick={() => setFilterMode(prev => (prev === 'high_priority' ? 'all' : 'high_priority'))}
+                    colorScheme="yellow"
+                />
+            </div>
+
+            {filterMode !== 'all' && (
+                <FilterStatusBar
+                    activeFilterLabel={activeFilterLabel}
+                    onClear={() => setFilterMode('all')}
+                    entityName="recommendations"
+                />
+            )}
+
             {/* Filters */}
             <div className="bg-white p-4 rounded-lg shadow-md mb-6">
                 <div className="grid grid-cols-1 md:grid-cols-6 gap-4">
@@ -524,8 +580,8 @@ export default function RecommendationsPage() {
                             type="text"
                             className="input-field text-sm"
                             placeholder="Code, title, model..."
-                            value={filters.search}
-                            onChange={(e) => setFilters({ ...filters, search: e.target.value })}
+                            value={searchQuery}
+                            onChange={(e) => setSearchQuery(e.target.value)}
                         />
                     </div>
 
@@ -534,8 +590,8 @@ export default function RecommendationsPage() {
                         label="Status"
                         placeholder="All Statuses"
                         options={statuses.map(s => ({ value: s.code, label: s.label }))}
-                        selectedValues={filters.status_filter}
-                        onChange={(values) => setFilters({ ...filters, status_filter: values as string[] })}
+                        selectedValues={statusFilter}
+                        onChange={(values) => setStatusFilter(values as string[])}
                     />
 
                     {/* Priority */}
@@ -543,8 +599,8 @@ export default function RecommendationsPage() {
                         label="Priority"
                         placeholder="All Priorities"
                         options={priorities.map(p => ({ value: p.code, label: p.label }))}
-                        selectedValues={filters.priority_filter}
-                        onChange={(values) => setFilters({ ...filters, priority_filter: values as string[] })}
+                        selectedValues={priorityFilter}
+                        onChange={(values) => setPriorityFilter(values as string[])}
                     />
 
                     {/* Category */}
@@ -552,8 +608,8 @@ export default function RecommendationsPage() {
                         label="Category"
                         placeholder="All Categories"
                         options={categories.map(c => ({ value: c.code, label: c.label }))}
-                        selectedValues={filters.category_filter}
-                        onChange={(values) => setFilters({ ...filters, category_filter: values as string[] })}
+                        selectedValues={categoryFilter}
+                        onChange={(values) => setCategoryFilter(values as string[])}
                     />
 
                     {/* Model */}
@@ -564,8 +620,8 @@ export default function RecommendationsPage() {
                         <select
                             id="filter-model"
                             className="input-field text-sm"
-                            value={filters.model_id || ''}
-                            onChange={(e) => setFilters({ ...filters, model_id: e.target.value ? parseInt(e.target.value) : null })}
+                            value={modelFilterId || ''}
+                            onChange={(e) => setModelFilterId(e.target.value ? parseInt(e.target.value) : null)}
                         >
                             <option value="">All Models</option>
                             {models.map(m => (
@@ -582,8 +638,8 @@ export default function RecommendationsPage() {
                         <select
                             id="filter-assigned"
                             className="input-field text-sm"
-                            value={filters.assigned_to_id || ''}
-                            onChange={(e) => setFilters({ ...filters, assigned_to_id: e.target.value ? parseInt(e.target.value) : null })}
+                            value={assignedToId || ''}
+                            onChange={(e) => setAssignedToId(e.target.value ? parseInt(e.target.value) : null)}
                         >
                             <option value="">All Users</option>
                             {users.map(u => (
@@ -593,45 +649,6 @@ export default function RecommendationsPage() {
                     </div>
                 </div>
 
-                {/* Quick Filters */}
-                <div className="mt-3 flex items-center gap-6">
-                    {/* My Tasks Toggle */}
-                    <label className="flex items-center cursor-pointer">
-                        <input
-                            type="checkbox"
-                            className="h-4 w-4 text-purple-600 focus:ring-purple-500 border-gray-300 rounded"
-                            checked={filters.my_tasks_only}
-                            onChange={(e) => setFilters(prev => ({ ...prev, my_tasks_only: e.target.checked }))}
-                        />
-                        <span className="ml-2 text-sm font-medium text-gray-700">
-                            My Tasks Only
-                        </span>
-                        {filters.my_tasks_only && (
-                            <span className="ml-2 px-1.5 py-0.5 text-xs font-medium rounded bg-purple-600 text-white">
-                                FILTERED
-                            </span>
-                        )}
-                    </label>
-
-                    {/* Overdue Filter */}
-                    <label className="flex items-center cursor-pointer">
-                        <input
-                            type="checkbox"
-                            className="h-4 w-4 text-red-600 focus:ring-red-500 border-gray-300 rounded"
-                            checked={filters.overdue_only}
-                            onChange={(e) => setFilters({ ...filters, overdue_only: e.target.checked })}
-                        />
-                        <span className="ml-2 text-sm font-medium text-gray-700">
-                            Show overdue only
-                        </span>
-                        {filters.overdue_only && (
-                            <span className="ml-2 px-1.5 py-0.5 text-xs font-medium rounded bg-red-600 text-white">
-                                OVERDUE
-                            </span>
-                        )}
-                    </label>
-                </div>
-
                 {/* Clear Filters and Results Count */}
                 <div className="flex items-center justify-between mt-3 pt-3 border-t">
                     <div className="text-sm text-gray-600">
@@ -639,20 +656,10 @@ export default function RecommendationsPage() {
                         <span className="font-semibold">{recommendations.length}</span> recommendations
                     </div>
                     <button
-                        onClick={() => setFilters({
-                            search: '',
-                            status_filter: [],
-                            priority_filter: [],
-                            category_filter: [],
-                            model_id: null,
-                            validation_request_id: null,
-                            assigned_to_id: null,
-                            overdue_only: false,
-                            my_tasks_only: false
-                        })}
+                        onClick={resetAllFilters}
                         className="text-sm text-blue-600 hover:text-blue-800"
                     >
-                        Clear Filters
+                        Clear All Filters
                     </button>
                 </div>
             </div>
@@ -719,8 +726,8 @@ export default function RecommendationsPage() {
                     users={users}
                     priorities={priorities}
                     categories={categories}
-                    preselectedModelId={filters.model_id || undefined}
-                    preselectedValidationRequestId={filters.validation_request_id || undefined}
+                    preselectedModelId={modelFilterId || undefined}
+                    preselectedValidationRequestId={validationRequestId || undefined}
                 />
             )}
 

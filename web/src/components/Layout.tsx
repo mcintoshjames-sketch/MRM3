@@ -1,4 +1,4 @@
-import { NavLink, useNavigate } from 'react-router-dom';
+import { Link, useLocation, useMatch, useNavigate, useResolvedPath } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { useState, useEffect } from 'react';
 import api from '../api/client';
@@ -30,6 +30,7 @@ const ChevronRight = ({ className = "w-4 h-4" }: { className?: string }) => (
 export default function Layout({ children }: LayoutProps) {
     const { user, logout } = useAuth();
     const navigate = useNavigate();
+    const location = useLocation();
     const [pendingCounts, setPendingCounts] = useState({
         submissions: 0,
         deployments: 0,
@@ -194,13 +195,17 @@ export default function Layout({ children }: LayoutProps) {
         (user?.role !== 'Admin' && user?.role !== 'Validator' ? pendingCounts.mrsaAttention : 0);
 
     // Reusable nav link component
-    const NavItem = ({ to, children, badge, badgeColor = 'red', end = false }: {
+    const NavItem = ({ to, children, badge, badgeColor = 'red', end = false, isActiveOverride }: {
         to: string;
         children: React.ReactNode;
         badge?: number;
         badgeColor?: 'red' | 'purple' | 'green' | 'orange';
         end?: boolean;
+        isActiveOverride?: boolean;
     }) => {
+        const resolved = useResolvedPath(to);
+        const match = useMatch({ path: resolved.pathname, end });
+        const isActive = typeof isActiveOverride === 'boolean' ? isActiveOverride : Boolean(match);
         const colorClasses = {
             red: 'bg-red-500',
             purple: 'bg-purple-500',
@@ -210,29 +215,24 @@ export default function Layout({ children }: LayoutProps) {
 
         return (
             <li>
-                <NavLink
+                <Link
                     to={to}
-                    end={end}
-                    className={({ isActive }) =>
-                        `block px-4 py-2 rounded transition-colors ${isActive
-                            ? 'bg-blue-600 text-white'
-                            : 'text-gray-700 hover:bg-gray-100'
-                        }`
-                    }
+                    aria-current={isActive ? 'page' : undefined}
+                    className={`block px-4 py-2 rounded transition-colors ${
+                        isActive ? 'bg-blue-600 text-white' : 'text-gray-700 hover:bg-gray-100'
+                    }`}
                 >
-                    {({ isActive }) => (
-                        <div className="flex items-center justify-between">
-                            <span>{children}</span>
-                            {badge !== undefined && badge > 0 && (
-                                <span className={`ml-2 px-2 py-0.5 text-xs font-bold rounded-full ${
-                                    isActive ? 'bg-white text-blue-600' : `${colorClasses[badgeColor]} text-white`
-                                }`}>
-                                    {badge}
-                                </span>
-                            )}
-                        </div>
-                    )}
-                </NavLink>
+                    <div className="flex items-center justify-between">
+                        <span>{children}</span>
+                        {badge !== undefined && badge > 0 && (
+                            <span className={`ml-2 px-2 py-0.5 text-xs font-bold rounded-full ${
+                                isActive ? 'bg-white text-blue-600' : `${colorClasses[badgeColor]} text-white`
+                            }`}>
+                                {badge}
+                            </span>
+                        )}
+                    </div>
+                </Link>
             </li>
         );
     };
@@ -409,8 +409,14 @@ export default function Layout({ children }: LayoutProps) {
                                     <>
                                         {/* Reference Data subsection */}
                                         <SubsectionLabel label="Reference Data" />
-                                        <NavItem to="/reference-data">Reference Data</NavItem>
-                                        <NavItem to="/taxonomy">Taxonomy</NavItem>
+                                    <NavItem to="/reference-data">Reference Data</NavItem>
+                                    <NavItem
+                                        to="/taxonomy"
+                                        isActiveOverride={location.pathname === '/taxonomy'
+                                            && new URLSearchParams(location.search).get('tab') !== 'component-definitions'}
+                                    >
+                                        Taxonomy
+                                    </NavItem>
 
                                         {/* Workflow & Policies subsection */}
                                         <SubsectionLabel label="Workflow & Policies" />
@@ -427,7 +433,13 @@ export default function Layout({ children }: LayoutProps) {
 
                                         {/* Components subsection */}
                                         <SubsectionLabel label="Components" />
-                                        <NavItem to="/taxonomy?tab=component-definitions">Component Definitions</NavItem>
+                                    <NavItem
+                                        to="/taxonomy?tab=component-definitions"
+                                        isActiveOverride={location.pathname === '/taxonomy'
+                                            && new URLSearchParams(location.search).get('tab') === 'component-definitions'}
+                                    >
+                                        Component Definitions
+                                    </NavItem>
                                         <NavItem to="/configuration-history">Version History</NavItem>
                                     </>
                                 )}

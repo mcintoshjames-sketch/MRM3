@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '../test/utils';
+import { render, screen, fireEvent, waitFor, within } from '../test/utils';
 import MRSAReviewDashboardWidget from './MRSAReviewDashboardWidget';
 
 const mockGet = vi.fn();
@@ -62,13 +62,20 @@ describe('MRSAReviewDashboardWidget', () => {
             expect(screen.getByText('MRSA Review Status')).toBeInTheDocument();
         });
 
-        fireEvent.click(screen.getByRole('button', { name: /All/i }));
+        expect(screen.getByRole('button', { name: /Needs Attention/i })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: /Upcoming/i })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: /Current/i })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: /Total MRSAs/i })).toBeInTheDocument();
 
         expect(screen.getByText('Alpha MRSA')).toBeInTheDocument();
         expect(screen.getByText('Beta MRSA')).toBeInTheDocument();
         expect(screen.getByText('Gamma MRSA')).toBeInTheDocument();
-        expect(screen.getAllByText('Overdue')).toHaveLength(2);
-        expect(screen.getAllByText('Upcoming')).toHaveLength(2);
+        const overdueRow = screen.getByText('Beta MRSA').closest('tr');
+        const upcomingRow = screen.getByText('Gamma MRSA').closest('tr');
+        expect(overdueRow).not.toBeNull();
+        expect(upcomingRow).not.toBeNull();
+        expect(within(overdueRow as HTMLElement).getByText('Overdue')).toBeInTheDocument();
+        expect(within(upcomingRow as HTMLElement).getByText('Upcoming')).toBeInTheDocument();
     });
 
     it('filters to upcoming items', async () => {
@@ -93,7 +100,7 @@ describe('MRSAReviewDashboardWidget', () => {
             expect(screen.getByText('MRSA Review Status')).toBeInTheDocument();
         });
 
-        fireEvent.click(screen.getByRole('button', { name: /All/i }));
+        fireEvent.click(screen.getByRole('button', { name: /Total MRSAs/i }));
 
         expect(screen.getByText('Alpha MRSA')).toBeInTheDocument();
         expect(screen.getByText('Gamma MRSA')).toBeInTheDocument();
