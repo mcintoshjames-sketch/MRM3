@@ -24,7 +24,6 @@ import MyMRSAReviewsPage from './pages/MyMRSAReviewsPage';
 import RegionalComplianceReportPage from './pages/RegionalComplianceReportPage';
 import ReportsPage from './pages/ReportsPage';
 import AnalyticsPage from './pages/AnalyticsPage';
-import ConfigurationHistoryPage from './pages/ConfigurationHistoryPage';
 import DeviationTrendsReportPage from './pages/DeviationTrendsReportPage';
 import ApproverRolesPage from './pages/ApproverRolesPage';
 import ConditionalApprovalRulesPage from './pages/ConditionalApprovalRulesPage';
@@ -115,7 +114,10 @@ function App() {
             <Route path="/validation-policies" element={user?.role === 'Admin' ? <ValidationPoliciesPage /> : <Navigate to="/models" />} />
             <Route path="/mrsa-review-policies" element={user?.role === 'Admin' ? <MRSAReviewPoliciesPage /> : <Navigate to="/models" />} />
             <Route path="/component-definitions" element={<Navigate to="/taxonomy?tab=component-definitions" />} />
-            <Route path="/configuration-history" element={user?.role === 'Admin' ? <ConfigurationHistoryPage /> : <Navigate to="/models" />} />
+            <Route
+                path="/configuration-history"
+                element={user?.role === 'Admin' ? <Navigate to="/taxonomy?tab=component-definitions&componentTab=version-history" /> : <Navigate to="/models" />}
+            />
             <Route path="/approver-roles" element={user?.role === 'Admin' ? <ApproverRolesPage /> : <Navigate to="/models" />} />
             <Route path="/additional-approval-rules" element={user?.role === 'Admin' ? <ConditionalApprovalRulesPage /> : <Navigate to="/models" />} />
             <Route path="/fry-config" element={<Navigate to="/taxonomy" />} />

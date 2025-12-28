@@ -432,7 +432,7 @@ export default function Layout({ children }: LayoutProps) {
                                         <NavItem to="/batch-delegates">Batch Delegates</NavItem>
 
                                         {/* Components subsection */}
-                                        <SubsectionLabel label="Components" />
+                                        <SubsectionLabel label="Validation Components" />
                                     <NavItem
                                         to="/taxonomy?tab=component-definitions"
                                         isActiveOverride={location.pathname === '/taxonomy'
@@ -440,7 +440,6 @@ export default function Layout({ children }: LayoutProps) {
                                     >
                                         Component Definitions
                                     </NavItem>
-                                        <NavItem to="/configuration-history">Version History</NavItem>
                                     </>
                                 )}
                             </>
