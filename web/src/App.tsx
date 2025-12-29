@@ -10,6 +10,7 @@ import TaxonomyPage from './pages/TaxonomyPage';
 import AuditPage from './pages/AuditPage';
 import AdminDashboardPage from './pages/AdminDashboardPage';
 import ValidationWorkflowPage from './pages/ValidationWorkflowPage';
+import ValidationAlertsPage from './pages/ValidationAlertsPage';
 import ValidationRequestDetailPage from './pages/ValidationRequestDetailPage';
 import ValidatorDashboardPage from './pages/ValidatorDashboardPage';
 import ModelOwnerDashboardPage from './pages/ModelOwnerDashboardPage';
@@ -93,6 +94,7 @@ function App() {
             <Route path="/validation-workflow" element={user ? <ValidationWorkflowPage /> : <Navigate to="/login" />} />
             <Route path="/validation-workflow/new" element={user ? <ValidationWorkflowPage /> : <Navigate to="/login" />} />
             <Route path="/validation-workflow/:id" element={user ? <ValidationRequestDetailPage /> : <Navigate to="/login" />} />
+            <Route path="/validation-alerts" element={user?.role === 'Admin' ? <ValidationAlertsPage /> : <Navigate to="/models" />} />
             <Route path="/recommendations" element={user ? <RecommendationsPage /> : <Navigate to="/login" />} />
             <Route path="/recommendations/:id" element={user ? <RecommendationDetailPage /> : <Navigate to="/login" />} />
             <Route path="/my-pending-submissions" element={user ? <MyPendingSubmissionsPage /> : <Navigate to="/login" />} />

@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
+import { useState, useEffect, ReactNode } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import api from '../api/client';
 import Layout from '../components/Layout';
@@ -22,7 +22,8 @@ interface SLAViolation {
 
 interface OutOfOrderValidation {
     request_id: number;
-    model_name: string;
+    model_name?: string;
+    model_names?: string[];
     version_number: string;
     validation_type: string;
     target_completion_date: string;
@@ -33,6 +34,17 @@ interface OutOfOrderValidation {
     severity: string;
     is_interim: boolean;
 }
+
+const getOutOfOrderModelLabel = (item: OutOfOrderValidation) => {
+    const primaryName = (item.model_name || '').trim();
+    if (primaryName && primaryName !== '-') {
+        return primaryName;
+    }
+    if (item.model_names && item.model_names.length > 0) {
+        return item.model_names[0];
+    }
+    return `Request #${item.request_id}`;
+};
 
 interface PendingAssignment {
     request_id: number;
@@ -193,6 +205,7 @@ interface MRSAReviewPastDue {
 
 export default function AdminDashboardPage() {
     const { user } = useAuth();
+    const navigate = useNavigate();
     const [slaViolations, setSlaViolations] = useState<SLAViolation[]>([]);
     const [outOfOrder, setOutOfOrder] = useState<OutOfOrderValidation[]>([]);
     const [pendingAssignments, setPendingAssignments] = useState<PendingAssignment[]>([]);
@@ -259,7 +272,11 @@ export default function AdminDashboardPage() {
                 api.get('/attestations/dashboard/stats').catch(() => ({ data: { submitted_count: 0 } }))
             ]);
             setSlaViolations(violationsRes.data);
-            setOutOfOrder(outOfOrderRes.data);
+            const normalizedOutOfOrder = (outOfOrderRes.data || []).map((item: OutOfOrderValidation) => ({
+                ...item,
+                model_name: getOutOfOrderModelLabel(item),
+            }));
+            setOutOfOrder(normalizedOutOfOrder);
             setPendingAssignments(pendingRes.data);
             setOverdueSubmissions(overdueSubmissionsRes.data);
             setOverdueValidations(overdueValidationsRes.data);
@@ -410,6 +427,36 @@ export default function AdminDashboardPage() {
         link.parentNode?.removeChild(link);
         window.URL.revokeObjectURL(url);
     };
+
+    const StatNavCard = ({
+        title,
+        count,
+        description,
+        colorClass,
+        onClick,
+        disabled,
+    }: {
+        title: string;
+        count: number;
+        description?: ReactNode;
+        colorClass: string;
+        onClick: () => void;
+        disabled: boolean;
+    }) => (
+        <button
+            type="button"
+            onClick={onClick}
+            disabled={disabled}
+            aria-disabled={disabled}
+            className={`bg-white p-4 rounded-lg shadow-md text-left transition-shadow ${
+                disabled ? 'cursor-default opacity-70' : 'cursor-pointer hover:shadow-lg'
+            }`}
+        >
+            <h3 className="text-xs font-medium text-gray-500 uppercase">{title}</h3>
+            <p className={`text-3xl font-bold mt-2 ${colorClass}`}>{count}</p>
+            {description && <div className="text-xs text-gray-600 mt-1">{description}</div>}
+        </button>
+    );
 
     if (loading) {
         return (
@@ -831,47 +878,66 @@ export default function AdminDashboardPage() {
 
             {/* Summary Cards */}
             <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-8 gap-4 mb-6">
-                <div className="bg-white p-4 rounded-lg shadow-md">
-                    <h3 className="text-xs font-medium text-gray-500 uppercase">Pending Assignment</h3>
-                    <p className="text-3xl font-bold text-blue-600 mt-2">{pendingAssignments.length}</p>
-                    <p className="text-xs text-gray-600 mt-1">Awaiting validator</p>
-                </div>
-                <div className="bg-white p-4 rounded-lg shadow-md">
-                    <h3 className="text-xs font-medium text-gray-500 uppercase">Lead Time Violations</h3>
-                    <p className="text-3xl font-bold text-red-600 mt-2">{slaViolations.length}</p>
-                    <p className="text-xs text-gray-600 mt-1">Validation team SLA exceeded</p>
-                </div>
-                <div className="bg-white p-4 rounded-lg shadow-md">
-                    <h3 className="text-xs font-medium text-gray-500 uppercase">Out of Order</h3>
-                    <p className="text-3xl font-bold text-purple-600 mt-2">{outOfOrder.length}</p>
-                    <p className="text-xs text-gray-600 mt-1">Validation after production</p>
-                </div>
-                <div className="bg-white p-4 rounded-lg shadow-md">
-                    <h3 className="text-xs font-medium text-gray-500 uppercase">Pending Submissions</h3>
-                    <p className="text-3xl font-bold text-orange-600 mt-2">{overdueSubmissions.length}</p>
-                    <p className="text-xs text-gray-600 mt-1">Past due date</p>
-                </div>
-                <div className="bg-white p-4 rounded-lg shadow-md">
-                    <h3 className="text-xs font-medium text-gray-500 uppercase">Overdue Validations</h3>
-                    <p className="text-3xl font-bold text-red-600 mt-2">{overdueValidations.length}</p>
-                    <p className="text-xs text-gray-600 mt-1">Past validation due</p>
-                </div>
-                <div className="bg-white p-4 rounded-lg shadow-md">
-                    <h3 className="text-xs font-medium text-gray-500 uppercase">Overdue Monitoring</h3>
-                    <p className="text-3xl font-bold text-red-600 mt-2">{overdueMonitoringCycles.length}</p>
-                    <p className="text-xs text-gray-600 mt-1">Past report due</p>
-                </div>
-                <div className="bg-white p-4 rounded-lg shadow-md">
-                    <h3 className="text-xs font-medium text-gray-500 uppercase">Open Recommendations</h3>
-                    <p className="text-3xl font-bold text-orange-600 mt-2">{recommendationsSummary?.total_open || 0}</p>
-                    <p className="text-xs text-gray-600 mt-1">
-                        {overdueRecommendations.length > 0 ? (
-                            <span className="text-red-600 font-medium">{overdueRecommendations.length} overdue</span>
-                        ) : (
-                            'None overdue'
-                        )}
-                    </p>
-                </div>
+                <StatNavCard
+                    title="Pending Assignment"
+                    count={pendingAssignments.length}
+                    description="Awaiting validator"
+                    colorClass="text-blue-600"
+                    onClick={() => navigate('/validation-workflow?status=Intake&pending_assignment=true')}
+                    disabled={pendingAssignments.length === 0}
+                />
+                <StatNavCard
+                    title="Lead Time Violations"
+                    count={slaViolations.length}
+                    description="Validation team SLA exceeded"
+                    colorClass="text-red-600"
+                    onClick={() => navigate('/validation-alerts?tab=lead-time')}
+                    disabled={slaViolations.length === 0}
+                />
+                <StatNavCard
+                    title="Out of Order"
+                    count={outOfOrder.length}
+                    description="Validation after production"
+                    colorClass="text-purple-600"
+                    onClick={() => navigate('/validation-alerts?tab=out-of-order')}
+                    disabled={outOfOrder.length === 0}
+                />
+                <StatNavCard
+                    title="Pending Submissions"
+                    count={overdueSubmissions.length}
+                    description="Past due date"
+                    colorClass="text-orange-600"
+                    onClick={() => navigate('/reports/overdue-revalidation?overdue_type=PRE_SUBMISSION')}
+                    disabled={overdueSubmissions.length === 0}
+                />
+                <StatNavCard
+                    title="Overdue Validations"
+                    count={overdueValidations.length}
+                    description="Past validation due"
+                    colorClass="text-red-600"
+                    onClick={() => navigate('/reports/overdue-revalidation?overdue_type=VALIDATION_IN_PROGRESS')}
+                    disabled={overdueValidations.length === 0}
+                />
+                <StatNavCard
+                    title="Overdue Monitoring"
+                    count={overdueMonitoringCycles.length}
+                    description="Past report due"
+                    colorClass="text-red-600"
+                    onClick={() => navigate('/monitoring-plans?tab=overview&status=overdue')}
+                    disabled={overdueMonitoringCycles.length === 0}
+                />
+                <StatNavCard
+                    title="Open Recommendations"
+                    count={recommendationsSummary?.total_open || 0}
+                    description={overdueRecommendations.length > 0 ? (
+                        <span className="text-red-600 font-medium">{overdueRecommendations.length} overdue</span>
+                    ) : (
+                        'None overdue'
+                    )}
+                    colorClass="text-orange-600"
+                    onClick={() => navigate('/recommendations?open_only=true')}
+                    disabled={(recommendationsSummary?.total_open || 0) === 0}
+                />
                 <div className="bg-white p-4 rounded-lg shadow-md">
                     <h3 className="text-xs font-medium text-gray-500 uppercase">Quick Actions</h3>
                     <div className="mt-2 space-y-1">
@@ -1095,7 +1161,7 @@ export default function AdminDashboardPage() {
                     {pendingAssignments.length > 5 && (
                         <div className="mt-3 pt-2 border-t text-center">
                             <Link
-                                to="/validation-workflow?status=Intake"
+                                to="/validation-workflow?status=Intake&pending_assignment=true"
                                 className="text-xs text-blue-600 hover:text-blue-800"
                             >
                                 View all {pendingAssignments.length} pending assignments &rarr;
@@ -1175,7 +1241,7 @@ export default function AdminDashboardPage() {
                     {slaViolations.length > 5 && (
                         <div className="mt-3 pt-2 border-t text-center">
                             <Link
-                                to="/validation-workflow"
+                                to="/validation-alerts?tab=lead-time"
                                 className="text-xs text-blue-600 hover:text-blue-800"
                             >
                                 View all {slaViolations.length} violations &rarr;
@@ -1215,56 +1281,60 @@ export default function AdminDashboardPage() {
                         </button>
                     </div>
                     <div className="space-y-2 max-h-64 overflow-y-auto">
-                        {outOfOrder.slice(0, 5).map((item, index) => (
-                            <div
-                                key={`${item.request_id}-${index}`}
-                                className="border-l-3 pl-3 py-2 hover:bg-gray-50 rounded-r"
-                                style={{
-                                    borderLeftWidth: '3px',
-                                    borderLeftColor: item.severity === 'critical' ? '#9333ea' :
-                                                    item.severity === 'high' ? '#a855f7' : '#c084fc'
-                                }}
-                            >
-                                <div className="flex items-start justify-between gap-2">
-                                    <div className="flex-1 min-w-0">
-                                        <div className="flex items-center gap-2 mb-1">
-                                            <span className={`px-1.5 py-0.5 text-xs font-medium rounded ${
-                                                item.severity === 'critical' ? 'bg-purple-100 text-purple-700' :
-                                                item.severity === 'high' ? 'bg-purple-50 text-purple-600' :
-                                                'bg-purple-50 text-purple-500'
-                                            }`}>
-                                                {item.severity}
-                                            </span>
-                                            {item.is_interim && (
-                                                <span className="px-1.5 py-0.5 text-xs font-medium rounded bg-yellow-100 text-yellow-800">
-                                                    INTERIM
+                        {outOfOrder.slice(0, 5).map((item, index) => {
+                            const modelLabel = getOutOfOrderModelLabel(item);
+                            const versionLabel = (item.version_number || '').trim();
+                            return (
+                                <div
+                                    key={`${item.request_id}-${index}`}
+                                    className="border-l-3 pl-3 py-2 hover:bg-gray-50 rounded-r"
+                                    style={{
+                                        borderLeftWidth: '3px',
+                                        borderLeftColor: item.severity === 'critical' ? '#9333ea' :
+                                                        item.severity === 'high' ? '#a855f7' : '#c084fc'
+                                    }}
+                                >
+                                    <div className="flex items-start justify-between gap-2">
+                                        <div className="flex-1 min-w-0">
+                                            <div className="flex items-center gap-2 mb-1">
+                                                <span className={`px-1.5 py-0.5 text-xs font-medium rounded ${
+                                                    item.severity === 'critical' ? 'bg-purple-100 text-purple-700' :
+                                                    item.severity === 'high' ? 'bg-purple-50 text-purple-600' :
+                                                    'bg-purple-50 text-purple-500'
+                                                }`}>
+                                                    {item.severity}
                                                 </span>
-                                            )}
+                                                {item.is_interim && (
+                                                    <span className="px-1.5 py-0.5 text-xs font-medium rounded bg-yellow-100 text-yellow-800">
+                                                        INTERIM
+                                                    </span>
+                                                )}
+                                            </div>
+                                            <Link
+                                                to={`/validation-workflow/${item.request_id}`}
+                                                className="text-sm font-medium text-gray-800 hover:text-blue-600 truncate block"
+                                            >
+                                                {modelLabel}{versionLabel ? ` - v${versionLabel}` : ''}
+                                            </Link>
+                                            <p className="text-xs text-gray-600 mt-0.5">
+                                                Target completion: {item.target_completion_date.split('T')[0]}
+                                                <span className="text-red-600 font-medium ml-1">
+                                                    ({item.days_gap}d after production)
+                                                </span>
+                                            </p>
+                                            <p className="text-xs text-gray-500">
+                                                Production date: {item.production_date.split('T')[0]}
+                                            </p>
                                         </div>
-                                        <Link
-                                            to={`/validation-workflow/${item.request_id}`}
-                                            className="text-sm font-medium text-gray-800 hover:text-blue-600 truncate block"
-                                        >
-                                            {item.model_name} - v{item.version_number}
-                                        </Link>
-                                        <p className="text-xs text-gray-600 mt-0.5">
-                                            Target completion: {item.target_completion_date.split('T')[0]}
-                                            <span className="text-red-600 font-medium ml-1">
-                                                ({item.days_gap}d after production)
-                                            </span>
-                                        </p>
-                                        <p className="text-xs text-gray-500">
-                                            Production date: {item.production_date.split('T')[0]}
-                                        </p>
                                     </div>
                                 </div>
-                            </div>
-                        ))}
+                            );
+                        })}
                     </div>
                     {outOfOrder.length > 5 && (
                         <div className="mt-3 pt-2 border-t text-center">
                             <Link
-                                to="/validation-workflow"
+                                to="/validation-alerts?tab=out-of-order"
                                 className="text-xs text-blue-600 hover:text-blue-800"
                             >
                                 View all {outOfOrder.length} out-of-order validations &rarr;

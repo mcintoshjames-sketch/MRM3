@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import api from '../api/client';
 import FilterStatusBar from './FilterStatusBar';
 import StatFilterCard from './StatFilterCard';
@@ -44,10 +44,18 @@ export default function AdminMonitoringOverview() {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
+    const [searchParams] = useSearchParams();
 
     useEffect(() => {
         fetchOverview();
     }, []);
+
+    useEffect(() => {
+        const statusParam = searchParams.get('status');
+        if (statusParam === 'overdue' || statusParam === 'pending_approval' || statusParam === 'in_progress') {
+            setStatusFilter(statusParam);
+        }
+    }, [searchParams]);
 
     const fetchOverview = async () => {
         try {

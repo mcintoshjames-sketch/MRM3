@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import Layout from '../components/Layout';
 import client from '../api/client';
 import OverdueCommentaryModal, { OverdueType } from '../components/OverdueCommentaryModal';
@@ -94,20 +94,34 @@ interface OverdueRevalidationReportResponse {
     data_limitations: DataLimitation[];
 }
 
+type QuickFilter = 'all' | 'pre_submission' | 'validation' | 'missing_commentary' | 'stale_commentary';
+
 const OverdueRevalidationReportPage: React.FC = () => {
+    const [searchParams] = useSearchParams();
+    const overdueTypeParam = searchParams.get('overdue_type');
+    const initialOverdueTypeFilter = overdueTypeParam === 'PRE_SUBMISSION' || overdueTypeParam === 'VALIDATION_IN_PROGRESS'
+        ? overdueTypeParam
+        : '';
     const [loading, setLoading] = useState(true);
     const [reportData, setReportData] = useState<OverdueRevalidationReportResponse | null>(null);
     const [regions, setRegions] = useState<RegionInfo[]>([]);
 
     // Filters
-    const [overdueTypeFilter, setOverdueTypeFilter] = useState<string>('');
+    const [overdueTypeFilter, setOverdueTypeFilter] = useState<string>(initialOverdueTypeFilter);
     const [regionFilter, setRegionFilter] = useState<string>('');
     const [commentStatusFilter, setCommentStatusFilter] = useState<string>('');
     const [pastDueLevelFilter, setPastDueLevelFilter] = useState<string>('');
     const [needsUpdateOnly, setNeedsUpdateOnly] = useState(false);
     const [daysOverdueMin, setDaysOverdueMin] = useState<string>('');
-    type QuickFilter = 'all' | 'pre_submission' | 'validation' | 'missing_commentary' | 'stale_commentary';
-    const [quickFilter, setQuickFilter] = useState<QuickFilter>('all');
+    const quickFilter: QuickFilter = overdueTypeFilter === 'PRE_SUBMISSION'
+        ? 'pre_submission'
+        : overdueTypeFilter === 'VALIDATION_IN_PROGRESS'
+            ? 'validation'
+            : commentStatusFilter === 'MISSING'
+                ? 'missing_commentary'
+                : commentStatusFilter === 'STALE'
+                    ? 'stale_commentary'
+                    : 'all';
 
     // Commentary modal
     const [showCommentaryModal, setShowCommentaryModal] = useState(false);
@@ -225,25 +239,8 @@ const OverdueRevalidationReportPage: React.FC = () => {
 
     const filteredRecords = useMemo(() => {
         if (!reportData) return [];
-        let result = reportData.records;
-
-        switch (quickFilter) {
-            case 'pre_submission':
-                result = result.filter(r => r.overdue_type === 'PRE_SUBMISSION');
-                break;
-            case 'validation':
-                result = result.filter(r => r.overdue_type === 'VALIDATION_IN_PROGRESS');
-                break;
-            case 'missing_commentary':
-                result = result.filter(r => r.comment_status === 'MISSING');
-                break;
-            case 'stale_commentary':
-                result = result.filter(r => r.comment_status === 'STALE');
-                break;
-        }
-
-        return result;
-    }, [reportData, quickFilter]);
+        return reportData.records;
+    }, [reportData]);
 
     const activeFilterLabel = quickFilter === 'pre_submission'
         ? 'Pre-Submission Overdue'
@@ -254,6 +251,37 @@ const OverdueRevalidationReportPage: React.FC = () => {
                 : quickFilter === 'stale_commentary'
                     ? 'Stale Commentary'
                     : '';
+
+    const applyQuickFilter = (next: QuickFilter) => {
+        if (next === 'all' || quickFilter === next) {
+            setOverdueTypeFilter('');
+            setCommentStatusFilter('');
+            return;
+        }
+
+        if (next === 'pre_submission') {
+            setOverdueTypeFilter('PRE_SUBMISSION');
+            setCommentStatusFilter('');
+            return;
+        }
+
+        if (next === 'validation') {
+            setOverdueTypeFilter('VALIDATION_IN_PROGRESS');
+            setCommentStatusFilter('');
+            return;
+        }
+
+        if (next === 'missing_commentary') {
+            setCommentStatusFilter('MISSING');
+            setOverdueTypeFilter('');
+            return;
+        }
+
+        if (next === 'stale_commentary') {
+            setCommentStatusFilter('STALE');
+            setOverdueTypeFilter('');
+        }
+    };
 
     const exportToCsv = () => {
         if (!reportData || filteredRecords.length === 0) return;
@@ -349,35 +377,35 @@ const OverdueRevalidationReportPage: React.FC = () => {
                             label="Total Overdue"
                             count={reportData.summary.total_overdue}
                             isActive={quickFilter === 'all'}
-                            onClick={() => setQuickFilter('all')}
+                            onClick={() => applyQuickFilter('all')}
                             colorScheme="blue"
                         />
                         <StatFilterCard
                             label="Pre-Submission Overdue"
                             count={reportData.summary.pre_submission_overdue}
                             isActive={quickFilter === 'pre_submission'}
-                            onClick={() => setQuickFilter(prev => (prev === 'pre_submission' ? 'all' : 'pre_submission'))}
+                            onClick={() => applyQuickFilter('pre_submission')}
                             colorScheme="red"
                         />
                         <StatFilterCard
                             label="Validation Overdue"
                             count={reportData.summary.validation_overdue}
                             isActive={quickFilter === 'validation'}
-                            onClick={() => setQuickFilter(prev => (prev === 'validation' ? 'all' : 'validation'))}
+                            onClick={() => applyQuickFilter('validation')}
                             colorScheme="yellow"
                         />
                         <StatFilterCard
                             label="Missing Commentary"
                             count={reportData.summary.missing_commentary}
                             isActive={quickFilter === 'missing_commentary'}
-                            onClick={() => setQuickFilter(prev => (prev === 'missing_commentary' ? 'all' : 'missing_commentary'))}
+                            onClick={() => applyQuickFilter('missing_commentary')}
                             colorScheme="orange"
                         />
                         <StatFilterCard
                             label="Stale Commentary"
                             count={reportData.summary.stale_commentary}
                             isActive={quickFilter === 'stale_commentary'}
-                            onClick={() => setQuickFilter(prev => (prev === 'stale_commentary' ? 'all' : 'stale_commentary'))}
+                            onClick={() => applyQuickFilter('stale_commentary')}
                             colorScheme="purple"
                         />
                         <StatFilterCard
@@ -394,7 +422,7 @@ const OverdueRevalidationReportPage: React.FC = () => {
                 {quickFilter !== 'all' && (
                     <FilterStatusBar
                         activeFilterLabel={activeFilterLabel}
-                        onClear={() => setQuickFilter('all')}
+                        onClear={() => applyQuickFilter('all')}
                         entityName="records"
                     />
                 )}
@@ -484,7 +512,13 @@ const OverdueRevalidationReportPage: React.FC = () => {
                             <label className="block text-xs font-medium text-gray-500 mb-1">Overdue Type</label>
                             <select
                                 value={overdueTypeFilter}
-                                onChange={(e) => setOverdueTypeFilter(e.target.value)}
+                                onChange={(e) => {
+                                    const nextValue = e.target.value;
+                                    setOverdueTypeFilter(nextValue);
+                                    if (nextValue) {
+                                        setCommentStatusFilter('');
+                                    }
+                                }}
                                 className="block w-40 rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 text-sm"
                             >
                                 <option value="">All Types</option>
@@ -511,7 +545,13 @@ const OverdueRevalidationReportPage: React.FC = () => {
                             <label className="block text-xs font-medium text-gray-500 mb-1">Commentary Status</label>
                             <select
                                 value={commentStatusFilter}
-                                onChange={(e) => setCommentStatusFilter(e.target.value)}
+                                onChange={(e) => {
+                                    const nextValue = e.target.value;
+                                    setCommentStatusFilter(nextValue);
+                                    if (nextValue) {
+                                        setOverdueTypeFilter('');
+                                    }
+                                }}
                                 className="block w-40 rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 text-sm"
                             >
                                 <option value="">All Statuses</option>

@@ -58,9 +58,12 @@ export default function RecommendationsPage() {
     const urlModelId = searchParams.get('model_id');
     const urlValidationRequestId = searchParams.get('validation_request_id');
     const urlMyTasks = searchParams.get('my_tasks') === 'true';
+    const urlOpenOnly = searchParams.get('open_only') === 'true';
 
-    type FilterMode = 'all' | 'my_tasks' | 'overdue' | 'high_priority';
-    const [filterMode, setFilterMode] = useState<FilterMode>(urlMyTasks ? 'my_tasks' : 'all');
+    type FilterMode = 'all' | 'open' | 'my_tasks' | 'overdue' | 'high_priority';
+    const [filterMode, setFilterMode] = useState<FilterMode>(
+        urlMyTasks ? 'my_tasks' : urlOpenOnly ? 'open' : 'all'
+    );
     const [searchQuery, setSearchQuery] = useState('');
     const [statusFilter, setStatusFilter] = useState<string[]>([]);
     const [priorityFilter, setPriorityFilter] = useState<string[]>([]);
@@ -124,6 +127,9 @@ export default function RecommendationsPage() {
         let result = recommendations;
 
         switch (filterMode) {
+            case 'open':
+                result = result.filter(rec => !TERMINAL_STATUS_CODES.includes(rec.current_status?.code || ''));
+                break;
             case 'my_tasks':
                 result = result.filter(rec => myTaskIds.has(rec.recommendation_id));
                 break;
@@ -472,7 +478,9 @@ export default function RecommendationsPage() {
             ? 'Overdue'
             : filterMode === 'high_priority'
                 ? 'High Priority'
-                : '';
+                : filterMode === 'open'
+                    ? 'Open'
+                    : '';
 
     const resetAllFilters = () => {
         setFilterMode('all');
@@ -532,8 +540,8 @@ export default function RecommendationsPage() {
                 <StatFilterCard
                     label="Total Open"
                     count={openCount}
-                    isActive={filterMode === 'all'}
-                    onClick={() => setFilterMode('all')}
+                    isActive={filterMode === 'open'}
+                    onClick={() => setFilterMode(prev => (prev === 'open' ? 'all' : 'open'))}
                     colorScheme="blue"
                 />
                 <StatFilterCard

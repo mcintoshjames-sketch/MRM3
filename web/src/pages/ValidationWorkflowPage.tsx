@@ -107,6 +107,7 @@ export default function ValidationWorkflowPage() {
         validation_type_filter: [] as string[],
         region_ids: [] as number[],
         overdue_only: false,
+        unassigned_only: false,
         show_cancelled: false  // Hide cancelled items by default
     });
 
@@ -214,6 +215,11 @@ export default function ValidationWorkflowPage() {
             if (targetDate >= today) return false;
         }
 
+        // Unassigned filter (pending assignment)
+        if (filters.unassigned_only && req.primary_validator) {
+            return false;
+        }
+
         return true;
     });
 
@@ -241,10 +247,12 @@ export default function ValidationWorkflowPage() {
     // Initialize filters from URL parameters
     useEffect(() => {
         const statusParam = searchParams.get('status');
-        if (statusParam) {
+        const pendingAssignmentParam = searchParams.get('pending_assignment') === 'true';
+        if (statusParam || pendingAssignmentParam) {
             setFilters(prev => ({
                 ...prev,
-                status_filter: [statusParam]
+                status_filter: statusParam ? [statusParam] : pendingAssignmentParam ? ['Intake'] : prev.status_filter,
+                unassigned_only: pendingAssignmentParam ? true : prev.unassigned_only,
             }));
         }
     }, [searchParams]);
@@ -1219,6 +1227,23 @@ export default function ValidationWorkflowPage() {
                     <label className="flex items-center cursor-pointer">
                         <input
                             type="checkbox"
+                            className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                            checked={filters.unassigned_only}
+                            onChange={(e) => setFilters({ ...filters, unassigned_only: e.target.checked })}
+                        />
+                        <span className="ml-2 text-sm font-medium text-gray-700">
+                            Awaiting validator assignment
+                        </span>
+                        {filters.unassigned_only && (
+                            <span className="ml-2 px-1.5 py-0.5 text-xs font-medium rounded bg-blue-600 text-white">
+                                UNASSIGNED
+                            </span>
+                        )}
+                    </label>
+
+                    <label className="flex items-center cursor-pointer">
+                        <input
+                            type="checkbox"
                             className="h-4 w-4 text-gray-600 focus:ring-gray-500 border-gray-300 rounded"
                             checked={filters.show_cancelled}
                             onChange={(e) => setFilters({ ...filters, show_cancelled: e.target.checked })}
@@ -1243,6 +1268,7 @@ export default function ValidationWorkflowPage() {
                             validation_type_filter: [],
                             region_ids: [],
                             overdue_only: false,
+                            unassigned_only: false,
                             show_cancelled: false
                         })}
                         className="text-sm text-blue-600 hover:text-blue-800"
