@@ -49,3 +49,6 @@ mrm-service-token
 *.token
 .cloudflare/
 .claude/
+
+# Screenshots
+screenshots/
