@@ -17,3 +17,4 @@ matplotlib==3.8.2
 pytest==7.4.4
 pytest-cov==4.1.0
 httpx==0.26.0
+requests==2.31.0
