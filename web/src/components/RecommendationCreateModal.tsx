@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import api from '../api/client';
 import { recommendationsApi, TaxonomyValue } from '../api/recommendations';
+import ModelSearchSelect from './ModelSearchSelect';
 
 interface Model {
     model_id: number;
@@ -81,6 +82,8 @@ export default function RecommendationCreateModal({
         original_target_date: '',
         target_date_change_reason: ''
     });
+    const [assignedUserSearch, setAssignedUserSearch] = useState('');
+    const [showAssignedUserDropdown, setShowAssignedUserDropdown] = useState(false);
 
     const [validationRequests, setValidationRequests] = useState<ValidationRequest[]>([]);
     const [monitoringCycles, setMonitoringCycles] = useState<MonitoringCycle[]>([]);
@@ -249,6 +252,17 @@ export default function RecommendationCreateModal({
         }
     };
 
+    const selectedAssignedUser = users.find((u) => u.user_id === formData.assigned_to_id);
+    const normalizedAssignedUserSearch = assignedUserSearch.trim().toLowerCase();
+    const filteredAssignedUsers = users.filter((u) => {
+        if (!normalizedAssignedUserSearch) return true;
+        return (
+            u.full_name.toLowerCase().includes(normalizedAssignedUserSearch) ||
+            u.email.toLowerCase().includes(normalizedAssignedUserSearch)
+        );
+    }).slice(0, 50);
+    const selectedModel = models.find((m) => m.model_id === formData.model_id);
+
     return (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
             <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full mx-4 max-h-[90vh] overflow-y-auto">
@@ -283,24 +297,28 @@ export default function RecommendationCreateModal({
                                 <label htmlFor="model_id" className="block text-sm font-medium text-gray-700 mb-1">
                                     Model <span className="text-red-500">*</span>
                                 </label>
-                                <select
+                                <ModelSearchSelect
                                     id="model_id"
-                                    className="input-field"
-                                    value={formData.model_id || ''}
-                                    onChange={(e) => setFormData({
-                                        ...formData,
-                                        model_id: parseInt(e.target.value) || 0,
-                                        validation_request_id: null,
-                                        monitoring_cycle_id: null
-                                    })}
-                                    required
+                                    models={models}
+                                    value={formData.model_id || null}
+                                    onChange={(value) => {
+                                        const nextId = typeof value === 'number' ? value : 0;
+                                        setFormData({
+                                            ...formData,
+                                            model_id: nextId,
+                                            validation_request_id: null,
+                                            monitoring_cycle_id: null
+                                        });
+                                    }}
+                                    placeholder="Type to search by model name or ID..."
                                     disabled={!!preselectedModelId}
-                                >
-                                    <option value="">Select a model...</option>
-                                    {models.map(m => (
-                                        <option key={m.model_id} value={m.model_id}>{m.model_name}</option>
-                                    ))}
-                                </select>
+                                    required
+                                />
+                                {formData.model_id > 0 && selectedModel && (
+                                    <p className="mt-1 text-sm text-green-600">
+                                        Selected: {selectedModel.model_name}
+                                    </p>
+                                )}
                             </div>
 
                             {/* Validation Request (Optional) */}
@@ -438,18 +456,53 @@ export default function RecommendationCreateModal({
                                     <label htmlFor="assigned_to_id" className="block text-sm font-medium text-gray-700 mb-1">
                                         Assigned To <span className="text-red-500">*</span>
                                     </label>
-                                    <select
-                                        id="assigned_to_id"
-                                        className="input-field"
-                                        value={formData.assigned_to_id || ''}
-                                        onChange={(e) => setFormData({ ...formData, assigned_to_id: parseInt(e.target.value) || 0 })}
-                                        required
-                                    >
-                                        <option value="">Select user...</option>
-                                        {users.map(u => (
-                                            <option key={u.user_id} value={u.user_id}>{u.full_name}</option>
-                                        ))}
-                                    </select>
+                                    <div className="relative">
+                                        <input
+                                            id="assigned_to_id"
+                                            type="text"
+                                            placeholder="Type to search users..."
+                                            value={assignedUserSearch}
+                                            onChange={(e) => {
+                                                const value = e.target.value;
+                                                setAssignedUserSearch(value);
+                                                setShowAssignedUserDropdown(true);
+                                                if (formData.assigned_to_id && selectedAssignedUser) {
+                                                    if (value !== selectedAssignedUser.full_name && value !== selectedAssignedUser.email) {
+                                                        setFormData({ ...formData, assigned_to_id: 0 });
+                                                    }
+                                                }
+                                            }}
+                                            onFocus={() => setShowAssignedUserDropdown(true)}
+                                            className="input-field"
+                                            required
+                                        />
+                                        {showAssignedUserDropdown && (
+                                            <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg max-h-60 overflow-y-auto">
+                                                {filteredAssignedUsers.map((u) => (
+                                                    <div
+                                                        key={u.user_id}
+                                                        className="px-4 py-2 hover:bg-gray-100 cursor-pointer text-sm"
+                                                        onClick={() => {
+                                                            setFormData({ ...formData, assigned_to_id: u.user_id });
+                                                            setAssignedUserSearch(u.full_name);
+                                                            setShowAssignedUserDropdown(false);
+                                                        }}
+                                                    >
+                                                        <div className="font-medium">{u.full_name}</div>
+                                                        <div className="text-xs text-gray-500">{u.email}</div>
+                                                    </div>
+                                                ))}
+                                                {filteredAssignedUsers.length === 0 && (
+                                                    <div className="px-4 py-2 text-sm text-gray-500">No users found</div>
+                                                )}
+                                            </div>
+                                        )}
+                                    </div>
+                                    {formData.assigned_to_id > 0 && selectedAssignedUser && (
+                                        <p className="mt-1 text-sm text-green-600">
+                                            Selected: {selectedAssignedUser.full_name}
+                                        </p>
+                                    )}
                                     <p className="text-xs text-gray-500 mt-1">
                                         The developer responsible for remediation
                                     </p>

@@ -175,9 +175,14 @@ interface PerformanceSummary {
 
 // Helper function for formatting periods
 function formatPeriod(startDate: string, endDate: string): string {
-    const start = startDate.split('-').slice(1).join('/');
-    const end = endDate.split('-').slice(1).join('/');
-    return `${start} - ${end}`;
+    const startParts = startDate.split('T')[0].split('-');
+    const endParts = endDate.split('T')[0].split('-');
+    if (startParts.length < 3 || endParts.length < 3) {
+        return `${startDate} - ${endDate}`;
+    }
+    const [startYear, startMonth, startDay] = startParts;
+    const [endYear, endMonth, endDay] = endParts;
+    return `${startMonth}/${startDay}/${startYear} - ${endMonth}/${endDay}/${endYear}`;
 }
 
 interface UseMonitoringCycleReturn {

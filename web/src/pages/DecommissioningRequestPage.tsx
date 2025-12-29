@@ -278,7 +278,13 @@ const DecommissioningRequestPage = () => {
   // Filter models based on search query
   const filteredModels = allModels
     .filter(m => m.model_id !== modelId)
-    .filter(m => m.model_name.toLowerCase().includes(replacementSearch.toLowerCase()));
+    .filter(m => {
+      const normalizedSearch = replacementSearch.toLowerCase();
+      return (
+        m.model_name.toLowerCase().includes(normalizedSearch) ||
+        String(m.model_id).includes(normalizedSearch)
+      );
+    });
 
   const selectedReason = reasons.find(r => r.value_id === reasonId);
   const requiresReplacement = selectedReason && REASONS_REQUIRING_REPLACEMENT.includes(selectedReason.code);
@@ -584,7 +590,7 @@ const DecommissioningRequestPage = () => {
                       }
                     }}
                     onFocus={() => setShowReplacementDropdown(true)}
-                    placeholder="Search for a model..."
+                    placeholder="Search by name or ID..."
                     className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
                   {replacementModelId && (
@@ -625,7 +631,8 @@ const DecommissioningRequestPage = () => {
                             replacementModelId === m.model_id ? 'bg-blue-100 text-blue-800' : ''
                           }`}
                         >
-                          {m.model_name}
+                          <div className="font-medium">{m.model_name}</div>
+                          <div className="text-xs text-gray-500">ID: {m.model_id}</div>
                         </button>
                       ))
                     )}

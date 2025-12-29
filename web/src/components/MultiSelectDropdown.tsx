@@ -3,6 +3,8 @@ import { useState, useRef, useEffect } from 'react';
 interface Option {
     value: string | number;
     label: string;
+    searchText?: string;
+    secondaryLabel?: string;
 }
 
 interface MultiSelectDropdownProps {
@@ -37,9 +39,11 @@ export default function MultiSelectDropdown({
         return () => document.removeEventListener('mousedown', handleClickOutside);
     }, []);
 
-    const filteredOptions = options.filter(option =>
-        option.label.toLowerCase().includes(searchTerm.toLowerCase())
-    );
+    const normalizedSearch = searchTerm.toLowerCase();
+    const filteredOptions = options.filter(option => {
+        const haystack = (option.searchText || option.label).toLowerCase();
+        return haystack.includes(normalizedSearch);
+    });
 
     const toggleOption = (value: string | number) => {
         if (selectedValues.includes(value)) {
@@ -142,7 +146,12 @@ export default function MultiSelectDropdown({
                                         onChange={() => toggleOption(option.value)}
                                         className="mr-2 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
                                     />
-                                    <span className="text-sm">{option.label}</span>
+                                    <span className="text-sm">
+                                        <span className="block">{option.label}</span>
+                                        {option.secondaryLabel && (
+                                            <span className="block text-xs text-gray-500">{option.secondaryLabel}</span>
+                                        )}
+                                    </span>
                                 </label>
                             ))
                         )}

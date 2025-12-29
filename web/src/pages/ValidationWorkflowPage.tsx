@@ -787,7 +787,12 @@ export default function ValidationWorkflowPage() {
                                 <MultiSelectDropdown
                                     label=""
                                     placeholder="Select Models"
-                                    options={models.map(m => ({ value: m.model_id, label: m.model_name }))}
+                                    options={models.map(m => ({
+                                        value: m.model_id,
+                                        label: m.model_name,
+                                        searchText: `${m.model_name} ${m.model_id}`,
+                                        secondaryLabel: `ID: ${m.model_id}`
+                                    }))}
                                     selectedValues={formData.model_ids}
                                     onChange={(values) => setFormData({ ...formData, model_ids: values as number[] })}
                                 />

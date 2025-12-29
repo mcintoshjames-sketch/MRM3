@@ -153,6 +153,50 @@ Use the `deploy.sh` script from your local machine to commit, push, and deploy i
 
 The script handles SSH connection, git pull, Docker rebuild, and health verification automatically.
 
+### Database Mirror (Dev → Production)
+
+Use the `mirror_to_prod.sh` script to sync dev database content to production while **preserving production passwords**:
+
+```bash
+./scripts/mirror_to_prod.sh
+```
+
+**What it does:**
+1. Creates a full dump of the local dev database
+2. Backs up production user passwords (email + password_hash) to CSV
+3. Stops the production API to prevent writes during restore
+4. Transfers and restores the dev database dump
+5. Restores all production passwords from backup
+6. Restarts services and verifies health
+
+**Safety features:**
+- Interactive confirmation required before proceeding
+- Production passwords are preserved (users keep existing credentials)
+- New users from dev will have dev passwords (may need reset)
+- Complete verification of services after restore
+
+**When to use:**
+- Syncing seed/demo data updates to production
+- Resetting production to match dev after major schema changes
+- Populating production with test data for demos
+
+**Output example:**
+```
+=== MRM Database Mirror: Dev -> Production ===
+Step 1: Creating dev database dump...
+Step 2: Testing SSH connection to production...
+Step 3: Backing up production user passwords...
+...
+Step 9: Verifying services...
+Frontend: 200
+API: 200
+User Count: 10
+Model Count: 46
+=== Database mirror completed successfully! ===
+```
+
+---
+
 ## Production Safety Checklist
 
 - Ensure `ENVIRONMENT=production` is set in `/opt/mrm/docker-compose.prod.yml`.

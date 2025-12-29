@@ -63,7 +63,7 @@ def test_create_version_lead_time_warning(client, db_session, test_user, auth_he
     db_session.add(model)
     db_session.commit()
 
-    # Create version with production date 30 days from now (Policy requires 90)
+    # Create version with production date 30 days from now (Policy requires 90 + SLA buffers)
     prod_date = date.today() + timedelta(days=30)
 
     payload = {
@@ -81,9 +81,9 @@ def test_create_version_lead_time_warning(client, db_session, test_user, auth_he
 
     # Check for warning
     assert data["validation_warning"] is not None
-    assert "WARNING: Request submitted with insufficient lead time" in data[
+    assert "Request submitted with insufficient lead time" in data[
         "validation_warning"]
-    assert "90 days lead time" in data["validation_warning"]
+    assert "105 days lead time" in data["validation_warning"]
     assert "30 days remain" in data["validation_warning"]
 
 
@@ -101,8 +101,8 @@ def test_create_version_sufficient_lead_time(client, db_session, test_user, auth
     db_session.add(model)
     db_session.commit()
 
-    # Create version with production date 100 days from now (Policy requires 90)
-    prod_date = date.today() + timedelta(days=100)
+    # Create version with production date 130 days from now (beyond lead time + SLA window)
+    prod_date = date.today() + timedelta(days=130)
 
     payload = {
         "version_number": "1.0",
@@ -117,7 +117,5 @@ def test_create_version_sufficient_lead_time(client, db_session, test_user, auth
     assert response.status_code == 201
     data = response.json()
 
-    # Check for NO warning (or at least not the lead time one)
-    # Note: It might still have other warnings if logic exists, but shouldn't have lead time warning
-    if data["validation_warning"]:
-        assert "insufficient lead time" not in data["validation_warning"]
+    # Check for NO warning
+    assert data["validation_warning"] is None

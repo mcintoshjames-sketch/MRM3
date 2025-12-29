@@ -1,10 +1,11 @@
 """Validation workflow API endpoints."""
 from datetime import datetime, date, timedelta, timezone
 from dateutil.relativedelta import relativedelta
-from typing import List, Optional, Union, Dict, Tuple
+from typing import List, Optional, Union, Dict, Tuple, Set
 import json
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from fastapi.responses import FileResponse
+from fastapi.encoders import jsonable_encoder
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import desc, or_, func, nullslast, select
 from fpdf import FPDF
@@ -16,8 +17,12 @@ from app.core.time import utc_now
 from app.core.deps import get_current_user
 from app.core.rule_evaluation import get_required_approver_roles
 from app.core.exception_detection import autoclose_type3_on_full_validation_approved
+from app.core.validation_conflicts import (
+    find_active_validation_conflicts,
+    build_validation_conflict_message
+)
 from app.models import (
-    User, Model, TaxonomyValue, Taxonomy, AuditLog, Region,
+    User, Model, ModelVersion, TaxonomyValue, Taxonomy, AuditLog, Region,
     ValidationRequest, ValidationRequestModelVersion, ValidationStatusHistory, ValidationAssignment,
     ValidationOutcome, ValidationReviewOutcome, ValidationApproval, ValidationGroupingMemory,
     ValidationPolicy, ValidationWorkflowSLA, ModelRegion, Region,
@@ -33,6 +38,7 @@ from app.schemas.validation import (
     ValidationRequestHold, ValidationRequestCancel, ValidationRequestResume,
     ValidationRequestDecline, ValidationRequestMarkSubmission, ValidationApprovalUnlink,
     ValidationWarning, ValidationRequestWarningsResponse,
+    ValidationRequestModelUpdate, ValidationRequestModelUpdateResponse,
     ValidationRequestResponse, ValidationRequestDetailResponse, ValidationRequestListResponse,
     ValidationAssignmentCreate, ValidationAssignmentUpdate, ValidationAssignmentResponse,
     ReviewerSignOffRequest,
@@ -1095,6 +1101,82 @@ def compute_suggested_regions(model_ids: List[int], db: Session) -> List[dict]:
     return list(regions_dict.values())
 
 
+def _get_request_models(validation_request: ValidationRequest) -> List[Model]:
+    models = [assoc.model for assoc in validation_request.model_versions_assoc if assoc.model]
+    if models:
+        return models
+    return list(validation_request.models or [])
+
+
+def get_primary_model_from_models(models: List[Model]) -> Optional[Model]:
+    """Primary model uses stable MIN(model_id)."""
+    if not models:
+        return None
+    return min(models, key=lambda model: model.model_id)
+
+
+def compute_required_approval_scope(
+    validation_request: ValidationRequest
+) -> Tuple[bool, Set[int]]:
+    """
+    Compute approval scope using the same region-selection logic as auto_assign_approvers.
+
+    Returns (requires_global, required_region_ids).
+    Global approvals are always required per business rule, but this flag is retained
+    for future flexibility and for symmetry with regional scope calculations.
+    """
+    requires_global = True
+    required_region_ids: Set[int] = set()
+
+    models = _get_request_models(validation_request)
+    if not models:
+        return requires_global, required_region_ids
+
+    # Collect governance regions (wholly_owned_region_id) - always required
+    governance_region_ids = set()
+    for model in models:
+        if model.wholly_owned_region_id is not None:
+            governance_region_ids.add(model.wholly_owned_region_id)
+
+    # Collect all deployment regions (used as fallback for global scope)
+    all_deployment_region_ids = set()
+    for model in models:
+        for model_region in model.model_regions:
+            all_deployment_region_ids.add(model_region.region_id)
+
+    # 1. Explicit scoped regions (user override)
+    scoped_region_ids = set()
+    for region in validation_request.regions:
+        scoped_region_ids.add(region.region_id)
+
+    # 2. Analyze linked model versions for scope
+    has_global_version = False
+    version_region_ids = set()
+
+    for assoc in validation_request.model_versions_assoc:
+        if assoc.version:
+            if assoc.version.scope == "REGIONAL":
+                for region in assoc.version.affected_regions:
+                    version_region_ids.add(region.region_id)
+            else:
+                has_global_version = True
+
+    # 3. Determine final approval regions using priority hierarchy
+    if scoped_region_ids:
+        required_region_ids = scoped_region_ids | version_region_ids
+    elif has_global_version:
+        required_region_ids = all_deployment_region_ids | governance_region_ids
+    elif version_region_ids:
+        required_region_ids = version_region_ids.copy()
+    else:
+        required_region_ids = all_deployment_region_ids.copy()
+
+    # 4. Always include governance regions (for wholly-owned models)
+    required_region_ids |= governance_region_ids
+
+    return requires_global, required_region_ids
+
+
 def auto_assign_approvers(
     db: Session,
     validation_request: ValidationRequest,
@@ -1137,65 +1219,10 @@ def auto_assign_approvers(
         if existing.approver_id:
             assigned_approver_ids.add(existing.approver_id)
 
-    # Determine which regions require approval based on scope hierarchy:
-    #   1. Explicit scoped regions (user override) - highest priority
-    #   2. Any GLOBAL version present - triggers global behavior (all deployment regions)
-    #   3. Only REGIONAL versions - use their specific regions
-    #   4. Fallback - use all deployment regions
-    all_region_ids = set()
+    # Determine required regions using shared scope helper
+    _, all_region_ids = compute_required_approval_scope(validation_request)
 
     if validation_request.models and len(validation_request.models) > 0:
-        # Collect governance regions (wholly_owned_region_id) - always required
-        governance_region_ids = set()
-        for model in validation_request.models:
-            if model.wholly_owned_region_id is not None:
-                governance_region_ids.add(model.wholly_owned_region_id)
-
-        # Collect all deployment regions (used as fallback for global scope)
-        all_deployment_region_ids = set()
-        for model in validation_request.models:
-            for model_region in model.model_regions:
-                all_deployment_region_ids.add(model_region.region_id)
-
-        # 1. Check if validation request has explicitly scoped regions (user override)
-        scoped_region_ids = set()
-        for region in validation_request.regions:
-            scoped_region_ids.add(region.region_id)
-
-        # 2. Analyze linked model versions for scope
-        has_global_version = False
-        version_region_ids = set()
-
-        for assoc in validation_request.model_versions_assoc:
-            if assoc.version:
-                if assoc.version.scope == "REGIONAL":
-                    # Collect regions affected by REGIONAL-scope versions
-                    for region in assoc.version.affected_regions:
-                        version_region_ids.add(region.region_id)
-                else:
-                    # Treat "GLOBAL" or None as global scope
-                    has_global_version = True
-
-        # 3. Determine final approval regions using priority hierarchy
-        if scoped_region_ids:
-            # User explicitly selected regions - they always win
-            # Also include any REGIONAL version regions for completeness
-            all_region_ids = scoped_region_ids | version_region_ids
-        elif has_global_version:
-            # Any GLOBAL version means we need global approval behavior
-            # Use all deployment regions + governance regions
-            all_region_ids = all_deployment_region_ids | governance_region_ids
-        elif version_region_ids:
-            # Only REGIONAL versions linked - use just those version regions
-            all_region_ids = version_region_ids.copy()
-        else:
-            # No versions linked or no explicit scope - use all deployment regions
-            all_region_ids = all_deployment_region_ids.copy()
-
-        # 4. Always include governance regions (for wholly-owned models)
-        # Even in scoped validations, governance region approval is required
-        all_region_ids |= governance_region_ids
-
         # Business Rule: Global Approvers are ALWAYS required for all validations
         # Regional Approvers are required for regions that have requires_regional_approval=True
 
@@ -1321,6 +1348,194 @@ def evaluate_and_create_conditional_approvals(
         )
         db.add(approval)
 
+
+# ==================== MODEL UPDATE HELPERS ====================
+
+def sync_approvals_for_scope_change(
+    db: Session,
+    validation_request: ValidationRequest,
+    pre_scope: Tuple[bool, Set[int]],
+    current_user: User
+) -> Tuple[int, int]:
+    """
+    Sync Global/Regional approvals when approval scope changes.
+
+    Returns (added_count, voided_count).
+    """
+    _pre_requires_global, _pre_region_ids = pre_scope
+    post_requires_global, post_region_ids = compute_required_approval_scope(validation_request)
+
+    active_approvals = db.query(ValidationApproval).filter(
+        ValidationApproval.request_id == validation_request.request_id,
+        ValidationApproval.approval_type.in_(["Global", "Regional"]),
+        ValidationApproval.voided_at.is_(None)
+    ).all()
+
+    voided_count = 0
+    for approval in active_approvals:
+        if approval.approval_type == "Global" and not post_requires_global:
+            approval.voided_by_id = current_user.user_id
+            approval.void_reason = "Approval no longer required after model scope change"
+            approval.voided_at = utc_now()
+            voided_count += 1
+        elif approval.approval_type == "Regional" and approval.region_id not in post_region_ids:
+            approval.voided_by_id = current_user.user_id
+            approval.void_reason = "Regional approval no longer required after model scope change"
+            approval.voided_at = utc_now()
+            voided_count += 1
+
+    db.flush()
+
+    before_active = db.query(ValidationApproval).filter(
+        ValidationApproval.request_id == validation_request.request_id,
+        ValidationApproval.approval_type.in_(["Global", "Regional"]),
+        ValidationApproval.voided_at.is_(None)
+    ).count()
+
+    auto_assign_approvers(db, validation_request, current_user)
+
+    after_active = db.query(ValidationApproval).filter(
+        ValidationApproval.request_id == validation_request.request_id,
+        ValidationApproval.approval_type.in_(["Global", "Regional"]),
+        ValidationApproval.voided_at.is_(None)
+    ).count()
+
+    added_count = max(0, after_active - max(0, before_active - voided_count))
+    return added_count, voided_count
+
+
+def sync_conditional_approvals(
+    db: Session,
+    validation_request: ValidationRequest,
+    current_user: User
+) -> Tuple[int, int]:
+    """
+    Re-evaluate conditional approvals against the updated model set.
+
+    Returns (added_count, voided_count).
+    """
+    from app.models import ApproverRole
+
+    required_role_ids: Set[int] = set()
+    for model in _get_request_models(validation_request):
+        result = get_required_approver_roles(db, validation_request, model)
+        required_role_ids.update(r["role_id"] for r in result.get("required_roles", []))
+
+    existing = db.query(ValidationApproval).filter(
+        ValidationApproval.request_id == validation_request.request_id,
+        ValidationApproval.approval_type == "Conditional",
+        ValidationApproval.voided_at.is_(None)
+    ).all()
+
+    existing_by_role = {a.approver_role_id: a for a in existing if a.approver_role_id}
+
+    added_count = 0
+    for role_id in required_role_ids:
+        if role_id not in existing_by_role:
+            role = db.query(ApproverRole).filter(ApproverRole.role_id == role_id).first()
+            db.add(ValidationApproval(
+                request_id=validation_request.request_id,
+                approver_role_id=role_id,
+                approver_role="Conditional",
+                approval_type="Conditional",
+                approval_status="Pending",
+                is_required=True,
+                comments=f"Additional approval required from {role.role_name}" if role else None,
+                created_at=utc_now()
+            ))
+            added_count += 1
+
+    voided_count = 0
+    for approval in existing:
+        if approval.approver_role_id not in required_role_ids and approval.approval_status == "Pending":
+            approval.voided_by_id = current_user.user_id
+            approval.void_reason = "Conditional approval no longer required after model change"
+            approval.voided_at = utc_now()
+            voided_count += 1
+
+    return added_count, voided_count
+
+
+def flag_plan_deviations_for_tier_change(
+    db: Session,
+    validation_request: ValidationRequest
+) -> int:
+    """
+    Update plan components when the most conservative tier changes.
+
+    Recalculates default_expectation and is_deviation while preserving planned_treatment.
+    Returns count of components newly flagged as deviations.
+    """
+    if not validation_request.validation_plan:
+        return 0
+
+    validation_type_code = validation_request.validation_type.code if validation_request.validation_type else None
+    if validation_type_code in SCOPE_ONLY_VALIDATION_TYPES:
+        return 0
+
+    plan = db.query(ValidationPlan).options(
+        joinedload(ValidationPlan.components).joinedload(
+            ValidationPlanComponent.component_definition)
+    ).filter(ValidationPlan.request_id == validation_request.request_id).first()
+    if not plan:
+        return 0
+
+    tier_hierarchy = {"TIER_1": 1, "TIER_2": 2, "TIER_3": 3, "TIER_4": 4}
+    most_conservative = "TIER_2"
+    highest_risk = 4
+
+    for model_assoc in validation_request.model_versions_assoc:
+        model = model_assoc.model
+        if model and model.risk_tier and model.risk_tier.code:
+            tier_code = model.risk_tier.code
+            risk_level = tier_hierarchy.get(tier_code, 2)
+            if risk_level < highest_risk:
+                highest_risk = risk_level
+                most_conservative = tier_code
+
+    flagged = 0
+    for component in plan.components:
+        comp_def = component.component_definition
+        new_expectation = get_expectation_for_tier(comp_def, most_conservative)
+
+        component.default_expectation = new_expectation
+        new_is_deviation = calculate_is_deviation(
+            new_expectation, component.planned_treatment
+        )
+        if new_is_deviation and not component.is_deviation:
+            flagged += 1
+        component.is_deviation = new_is_deviation
+
+    return flagged
+
+
+def log_model_change_audit(
+    db: Session,
+    validation_request: ValidationRequest,
+    update_data: ValidationRequestModelUpdate,
+    current_user: User,
+    validators_unassigned: Optional[List[str]] = None,
+    approvals_voided: Optional[int] = None,
+    conditional_voided: Optional[int] = None
+) -> None:
+    """Create audit log entry for model add/remove operations."""
+    changes = {
+        "models_added": [entry.model_id for entry in (update_data.add_models or [])],
+        "models_removed": list(update_data.remove_model_ids or []),
+        "validators_unassigned": validators_unassigned or [],
+        "approvals_voided": approvals_voided or 0,
+        "conditional_approvals_voided": conditional_voided or 0
+    }
+
+    audit_log = AuditLog(
+        entity_type="ValidationRequest",
+        entity_id=validation_request.request_id,
+        action="UPDATE_MODELS",
+        user_id=current_user.user_id,
+        changes=changes,
+        timestamp=utc_now()
+    )
+    db.add(audit_log)
 
 # ==================== REVALIDATION LIFECYCLE HELPERS ====================
 
@@ -1709,6 +1924,25 @@ def create_validation_request(
         raise HTTPException(
             status_code=404, detail="One or more models not found")
 
+    # Verify validation type exists
+    validation_type = db.query(TaxonomyValue).filter(
+        TaxonomyValue.value_id == request_data.validation_type_id
+    ).first()
+    if not validation_type:
+        raise HTTPException(
+            status_code=404, detail="Validation type not found")
+
+    conflicts = find_active_validation_conflicts(
+        db,
+        request_data.model_ids,
+        validation_type.code
+    )
+    if conflicts:
+        raise HTTPException(
+            status_code=400,
+            detail=build_validation_conflict_message(conflicts, validation_type.code)
+        )
+
     # If check_warnings flag is set, return warnings without creating
     if request_data.check_warnings:
         warnings = check_target_completion_date_warnings(db, request_data)
@@ -1745,14 +1979,6 @@ def create_validation_request(
             )
 
         # If force_create is True and only warnings, proceed with creation
-
-    # Verify validation type exists
-    validation_type = db.query(TaxonomyValue).filter(
-        TaxonomyValue.value_id == request_data.validation_type_id
-    ).first()
-    if not validation_type:
-        raise HTTPException(
-            status_code=404, detail="Validation type not found")
 
     # Check CHANGE validation type requirements (version linking)
     change_blockers = check_change_validation_blockers(
@@ -1892,8 +2118,7 @@ def create_validation_request(
     auto_assign_approvers(db, validation_request, current_user)
 
     # Evaluate conditional approval rules and create approval requirements
-    # Use first model as primary model for rule evaluation
-    primary_model = models[0] if models else None
+    primary_model = get_primary_model_from_models(models)
     if primary_model:
         evaluate_and_create_conditional_approvals(
             db, validation_request, primary_model)
@@ -2189,6 +2414,304 @@ def update_validation_request(
     db.commit()
     db.refresh(validation_request)
     return validation_request
+
+
+@router.patch("/requests/{request_id}/models", response_model=ValidationRequestModelUpdateResponse)
+def update_request_models(
+    request_id: int,
+    update_data: ValidationRequestModelUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Add or remove models from a validation request during INTAKE or PLANNING."""
+    check_validator_or_admin(current_user)
+
+    validation_request = db.query(ValidationRequest).options(
+        joinedload(ValidationRequest.current_status),
+        joinedload(ValidationRequest.validation_type),
+        joinedload(ValidationRequest.regions),
+        joinedload(ValidationRequest.assignments).joinedload(ValidationAssignment.validator),
+        joinedload(ValidationRequest.approvals),
+        joinedload(ValidationRequest.models).joinedload(Model.model_regions),
+        joinedload(ValidationRequest.model_versions_assoc).joinedload(
+            ValidationRequestModelVersion.model).joinedload(Model.model_regions),
+        joinedload(ValidationRequest.model_versions_assoc).joinedload(
+            ValidationRequestModelVersion.version)
+    ).filter(ValidationRequest.request_id == request_id).first()
+    if not validation_request:
+        raise HTTPException(
+            status_code=404, detail="Validation request not found")
+
+    status_code = validation_request.current_status.code if validation_request.current_status else None
+    if status_code not in ("INTAKE", "PLANNING"):
+        raise HTTPException(
+            status_code=400,
+            detail="Model changes only allowed in Intake or Planning status"
+        )
+
+    add_entries = update_data.add_models or []
+    remove_ids = set(update_data.remove_model_ids or [])
+
+    if not add_entries and not remove_ids:
+        lead_time = validation_request.applicable_lead_time_days
+        return ValidationRequestModelUpdateResponse(
+            success=True,
+            models_added=[],
+            models_removed=[],
+            lead_time_changed=False,
+            old_lead_time_days=lead_time,
+            new_lead_time_days=lead_time,
+            warnings=[],
+            plan_deviations_flagged=0,
+            approvals_added=0,
+            approvals_voided=0,
+            conditional_approvals_added=0,
+            conditional_approvals_voided=0,
+            validators_unassigned=[]
+        )
+
+    add_model_ids = [entry.model_id for entry in add_entries]
+    if len(add_model_ids) != len(set(add_model_ids)):
+        raise HTTPException(
+            status_code=400,
+            detail="Duplicate model_id entries in add_models"
+        )
+
+    overlap = set(add_model_ids) & remove_ids
+    if overlap:
+        raise HTTPException(
+            status_code=400,
+            detail="Model IDs cannot be both added and removed in the same update"
+        )
+
+    requested_ids = set(add_model_ids) | remove_ids
+    models_by_id: Dict[int, Model] = {}
+    if requested_ids:
+        models = db.query(Model).filter(
+            Model.model_id.in_(requested_ids)
+        ).all()
+        if len(models) != len(requested_ids):
+            raise HTTPException(
+                status_code=404, detail="One or more models not found")
+        models_by_id = {model.model_id: model for model in models}
+
+    existing_model_ids = {assoc.model_id for assoc in validation_request.model_versions_assoc}
+
+    missing_remove = remove_ids - existing_model_ids
+    if missing_remove:
+        missing_id = sorted(missing_remove)[0]
+        raise HTTPException(
+            status_code=400,
+            detail=f"Model {missing_id} is not associated with this request"
+        )
+
+    for model_id in add_model_ids:
+        if model_id in existing_model_ids:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Model {model_id} is already associated"
+            )
+
+    if add_model_ids:
+        validation_type_code = validation_request.validation_type.code if validation_request.validation_type else None
+        conflicts = find_active_validation_conflicts(
+            db,
+            add_model_ids,
+            validation_type_code,
+            exclude_request_id=request_id
+        )
+        if conflicts:
+            raise HTTPException(
+                status_code=400,
+                detail=build_validation_conflict_message(conflicts, validation_type_code)
+            )
+
+    remaining_ids = (existing_model_ids - remove_ids) | set(add_model_ids)
+    if not remaining_ids:
+        raise HTTPException(
+            status_code=400, detail="At least one model must remain")
+
+    is_change = validation_request.validation_type.code == "CHANGE" if validation_request.validation_type else False
+
+    for entry in add_entries:
+        if is_change and entry.version_id is None:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Model {entry.model_id}: CHANGE validations require a version_id"
+            )
+        if entry.version_id is not None:
+            version = db.query(ModelVersion).filter(
+                ModelVersion.version_id == entry.version_id
+            ).first()
+            if not version or version.model_id != entry.model_id:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Model {entry.model_id}: version_id does not belong to this model"
+                )
+            if is_change and version.status != "DRAFT":
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Model {entry.model_id}: Only DRAFT versions can be added to CHANGE validations"
+                )
+
+    pre_scope = compute_required_approval_scope(validation_request)
+    old_lead_time = validation_request.applicable_lead_time_days
+
+    if remove_ids:
+        db.query(ValidationRequestModelVersion).filter(
+            ValidationRequestModelVersion.request_id == request_id,
+            ValidationRequestModelVersion.model_id.in_(remove_ids)
+        ).delete(synchronize_session=False)
+
+    for entry in add_entries:
+        db.add(ValidationRequestModelVersion(
+            request_id=request_id,
+            model_id=entry.model_id,
+            version_id=entry.version_id
+        ))
+
+    db.flush()
+
+    # Reload relationships after bulk delete/insert to avoid stale collections.
+    validation_request = db.query(ValidationRequest).options(
+        joinedload(ValidationRequest.current_status),
+        joinedload(ValidationRequest.validation_type),
+        joinedload(ValidationRequest.regions),
+        joinedload(ValidationRequest.assignments).joinedload(ValidationAssignment.validator),
+        joinedload(ValidationRequest.approvals),
+        joinedload(ValidationRequest.models).joinedload(Model.model_regions),
+        joinedload(ValidationRequest.model_versions_assoc).joinedload(
+            ValidationRequestModelVersion.model).joinedload(Model.model_regions),
+        joinedload(ValidationRequest.model_versions_assoc).joinedload(
+            ValidationRequestModelVersion.version)
+    ).populate_existing().filter(ValidationRequest.request_id == request_id).first()
+    if not validation_request:
+        raise HTTPException(
+            status_code=404, detail="Validation request not found")
+
+    is_change = validation_request.validation_type.code == "CHANGE" if validation_request.validation_type else False
+    if is_change and any(assoc.version_id is None for assoc in validation_request.model_versions_assoc):
+        raise HTTPException(
+            status_code=400,
+            detail="CHANGE validations require versions for all models"
+        )
+
+    validators_unassigned: List[str] = []
+    updated_model_ids = [
+        assoc.model_id for assoc in validation_request.model_versions_assoc
+    ]
+    conflicting = [
+        assignment for assignment in validation_request.assignments
+        if not check_validator_independence(
+            db, updated_model_ids, assignment.validator_id)
+    ]
+
+    if conflicting and not update_data.allow_unassign_conflicts:
+        names = [assignment.validator.full_name for assignment in conflicting]
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "message": "Validator independence violation",
+                "conflicting_validators": names,
+                "action": "Set allow_unassign_conflicts=true to proceed and unassign"
+            }
+        )
+
+    for assignment in conflicting:
+        validators_unassigned.append(assignment.validator.full_name)
+        db.delete(assignment)
+
+    combined_versions = {
+        assoc.model_id: assoc.version_id
+        for assoc in validation_request.model_versions_assoc
+    }
+    warnings = check_target_completion_date_warnings(
+        db,
+        ValidationRequestCreate(
+            model_ids=updated_model_ids,
+            model_versions=combined_versions,
+            validation_type_id=validation_request.validation_type_id,
+            priority_id=validation_request.priority_id,
+            target_completion_date=validation_request.target_completion_date,
+            trigger_reason=validation_request.trigger_reason,
+            region_ids=[region.region_id for region in validation_request.regions]
+        )
+    )
+    if any(warning.severity == "ERROR" for warning in warnings):
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "message": "Model changes violate target completion rules",
+                "warnings": jsonable_encoder(warnings)
+            }
+        )
+
+    deviations_flagged = flag_plan_deviations_for_tier_change(
+        db, validation_request)
+    approvals_added, approvals_voided = sync_approvals_for_scope_change(
+        db, validation_request, pre_scope, current_user)
+    conditional_added, conditional_voided = sync_conditional_approvals(
+        db, validation_request, current_user)
+
+    from app.core.model_approval_status import update_model_approval_status_if_changed
+
+    for model_id in remove_ids:
+        model = models_by_id.get(model_id)
+        if model:
+            update_model_approval_status_if_changed(
+                model=model,
+                db=db,
+                trigger_type="VALIDATION_REQUEST_MODEL_REMOVED",
+                trigger_entity_type="ValidationRequest",
+                trigger_entity_id=request_id
+            )
+
+    for entry in add_entries:
+        model = models_by_id.get(entry.model_id)
+        if model:
+            update_model_approval_status_if_changed(
+                model=model,
+                db=db,
+                trigger_type="VALIDATION_REQUEST_MODEL_ADDED",
+                trigger_entity_type="ValidationRequest",
+                trigger_entity_id=request_id
+            )
+
+    models_for_grouping = [
+        assoc.model for assoc in validation_request.model_versions_assoc if assoc.model
+    ]
+    update_grouping_memory(db, validation_request, models_for_grouping)
+
+    validation_request.updated_at = utc_now()
+    new_lead_time = validation_request.applicable_lead_time_days
+
+    log_model_change_audit(
+        db,
+        validation_request,
+        update_data,
+        current_user,
+        validators_unassigned=validators_unassigned,
+        approvals_voided=approvals_voided,
+        conditional_voided=conditional_voided
+    )
+
+    db.commit()
+
+    return ValidationRequestModelUpdateResponse(
+        success=True,
+        models_added=[entry.model_id for entry in add_entries],
+        models_removed=list(remove_ids),
+        lead_time_changed=old_lead_time != new_lead_time,
+        old_lead_time_days=old_lead_time,
+        new_lead_time_days=new_lead_time,
+        warnings=warnings,
+        plan_deviations_flagged=deviations_flagged,
+        approvals_added=approvals_added,
+        approvals_voided=approvals_voided,
+        conditional_approvals_added=conditional_added,
+        conditional_approvals_voided=conditional_voided,
+        validators_unassigned=validators_unassigned
+    )
 
 
 @router.post("/requests/{request_id}/mark-submission", response_model=ValidationRequestResponse)

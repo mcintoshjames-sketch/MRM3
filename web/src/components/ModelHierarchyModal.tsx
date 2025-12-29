@@ -196,9 +196,13 @@ export default function ModelHierarchyModal({
 
     if (!isOpen) return null;
 
-    const filteredModels = models.filter(m =>
-        m.model_name.toLowerCase().includes(searchTerm.toLowerCase())
-    );
+    const filteredModels = models.filter((model) => {
+        const normalizedSearch = searchTerm.toLowerCase();
+        return (
+            model.model_name.toLowerCase().includes(normalizedSearch) ||
+            String(model.model_id).includes(normalizedSearch)
+        );
+    });
 
     return (
         <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
@@ -244,7 +248,7 @@ export default function ModelHierarchyModal({
                             </label>
                             <input
                                 type="text"
-                                placeholder="Type to search models..."
+                                placeholder="Type to search by name or ID..."
                                 value={searchTerm}
                                 onChange={(e) => setSearchTerm(e.target.value)}
                                 className="w-full px-3 py-2 border border-gray-300 rounded-md mb-2 focus:ring-blue-500 focus:border-blue-500"
@@ -262,7 +266,8 @@ export default function ModelHierarchyModal({
                                             className={`px-3 py-2 cursor-pointer hover:bg-blue-50 ${selectedModelId === model.model_id ? 'bg-blue-100 font-medium' : ''
                                                 }`}
                                         >
-                                            {model.model_name}
+                                            <div className="font-medium">{model.model_name}</div>
+                                            <div className="text-xs text-gray-500">ID: {model.model_id}</div>
                                         </div>
                                     ))
                                 )}

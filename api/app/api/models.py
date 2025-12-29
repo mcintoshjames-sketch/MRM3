@@ -11,6 +11,10 @@ from sqlalchemy.orm import Session, joinedload, selectinload
 from app.core.database import get_db
 from app.core.time import utc_now
 from app.core.deps import get_current_user
+from app.core.validation_conflicts import (
+    find_active_validation_conflicts,
+    build_validation_conflict_message
+)
 from app.models.user import User
 from app.models.model import Model
 from app.models.vendor import Vendor
@@ -2252,6 +2256,26 @@ def approve_model_submission(
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="INTAKE status not found in taxonomy"
+            )
+
+        validation_type = db.query(TaxonomyValue).filter(
+            TaxonomyValue.value_id == validation_type_id
+        ).first()
+        if not validation_type:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Validation type not found"
+            )
+
+        conflicts = find_active_validation_conflicts(
+            db,
+            [model_id],
+            validation_type.code
+        )
+        if conflicts:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=build_validation_conflict_message(conflicts, validation_type.code)
             )
 
         # Get current version

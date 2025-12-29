@@ -101,6 +101,17 @@ def get_status_by_code(db: Session, code: str) -> TaxonomyValue:
         TaxonomyValue.code == code
     ).first()
     if not value:
+        status_aliases = {
+            "REC_PENDING_FINAL_APPROVAL": "REC_PENDING_APPROVAL",
+            "REC_PENDING_APPROVAL": "REC_PENDING_FINAL_APPROVAL",
+        }
+        alt_code = status_aliases.get(code)
+        if alt_code:
+            value = db.query(TaxonomyValue).filter(
+                TaxonomyValue.taxonomy_id == taxonomy.taxonomy_id,
+                TaxonomyValue.code == alt_code
+            ).first()
+    if not value:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Status code {code} not found"
@@ -121,6 +132,15 @@ def get_task_status_by_code(db: Session, code: str) -> TaxonomyValue:
         TaxonomyValue.taxonomy_id == taxonomy.taxonomy_id,
         TaxonomyValue.code == code
     ).first()
+    if not value:
+        if code.startswith("TASK_"):
+            alt_code = code.replace("TASK_", "", 1)
+        else:
+            alt_code = f"TASK_{code}"
+        value = db.query(TaxonomyValue).filter(
+            TaxonomyValue.taxonomy_id == taxonomy.taxonomy_id,
+            TaxonomyValue.code == alt_code
+        ).first()
     if not value:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -1671,8 +1691,13 @@ def update_recommendation(
         "REC_PENDING_ACKNOWLEDGEMENT", "REC_OPEN", "REC_REWORK_REQUIRED"]
 
     # Statuses that don't allow editing
-    no_edit_statuses = ["REC_PENDING_CLOSURE",
-                        "REC_PENDING_APPROVAL", "REC_CLOSED", "REC_WITHDRAWN"]
+    no_edit_statuses = [
+        "REC_PENDING_CLOSURE_REVIEW",
+        "REC_PENDING_FINAL_APPROVAL",
+        "REC_PENDING_APPROVAL",
+        "REC_CLOSED",
+        "REC_WITHDRAWN",
+    ]
 
     if current_status.code in no_edit_statuses:
         raise HTTPException(
@@ -2415,7 +2440,7 @@ def update_task(
         new_status = db.query(TaxonomyValue).filter(
             TaxonomyValue.value_id == task_update.completion_status_id
         ).first()
-        if new_status and new_status.code == "TASK_COMPLETED":
+        if new_status and new_status.code in {"COMPLETED", "TASK_COMPLETED"}:
             task.completed_date = date.today()
         task.completion_status_id = task_update.completion_status_id
 
@@ -2466,16 +2491,21 @@ def upload_evidence(
         )
 
     parsed_url = urlparse(evidence_url)
-    if parsed_url.scheme not in ("http", "https") or not parsed_url.netloc:
+    is_url = parsed_url.scheme in ("http", "https") and parsed_url.netloc
+    if not is_url and not evidence_url.startswith("/"):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Evidence URL must be a valid http(s) link"
+            detail="Evidence URL must be a valid http(s) link or absolute path"
         )
 
     file_name = (evidence_data.file_name or "").strip()
     if not file_name:
-        path_parts = [part for part in parsed_url.path.split("/") if part]
-        file_name = f"{parsed_url.netloc}/{path_parts[-1]}" if path_parts else parsed_url.netloc
+        if is_url:
+            path_parts = [part for part in parsed_url.path.split("/") if part]
+            file_name = f"{parsed_url.netloc}/{path_parts[-1]}" if path_parts else parsed_url.netloc
+        else:
+            path_parts = [part for part in evidence_url.split("/") if part]
+            file_name = path_parts[-1] if path_parts else evidence_url
     file_name = file_name[:255]
 
     evidence = ClosureEvidence(
@@ -2529,7 +2559,7 @@ def submit_for_closure(
     # Check all tasks are completed
     incomplete_tasks = db.query(ActionPlanTask).join(TaxonomyValue).filter(
         ActionPlanTask.recommendation_id == recommendation_id,
-        TaxonomyValue.code != "COMPLETED"
+        TaxonomyValue.code.notin_(["COMPLETED", "TASK_COMPLETED"])
     ).count()
 
     if incomplete_tasks > 0:
@@ -2601,9 +2631,9 @@ def review_closure(
         ).first()
 
         if priority_config and priority_config.requires_final_approval:
-            # Create approvals and transition to PENDING_APPROVAL
+            # Create approvals and transition to PENDING_FINAL_APPROVAL
             create_final_approvals(db, recommendation)
-            new_status = get_status_by_code(db, "REC_PENDING_APPROVAL")
+            new_status = get_status_by_code(db, "REC_PENDING_FINAL_APPROVAL")
             recommendation.closure_summary = review_data.closure_summary
             create_status_history(
                 db, recommendation, new_status, current_user,
@@ -2729,12 +2759,19 @@ def approve_recommendation(
     # Verify authorization
     check_approval_authorization(current_user, approval)
 
+    approval_evidence = (approval_data.approval_evidence or "").strip()
+    if current_user.role == "Admin" and not approval_evidence:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Admin approvals require approval_evidence attestation"
+        )
+
     # Update approval
     approval.approver_id = current_user.user_id
     approval.approved_at = utc_now()
     approval.approval_status = "APPROVED"
     approval.comments = approval_data.comments
-    approval.approval_evidence = approval_data.approval_evidence
+    approval.approval_evidence = approval_evidence or None
 
     # Track which region the approver represents (for audit trail)
     if approval.approval_type == "REGIONAL":

@@ -9,6 +9,10 @@ from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import desc
 from app.core.database import get_db
 from app.core.deps import get_current_user
+from app.core.validation_conflicts import (
+    find_active_validation_conflicts,
+    build_validation_conflict_message
+)
 from app.models.user import User
 from app.models.model import Model
 from app.models.model_version import ModelVersion
@@ -370,13 +374,7 @@ def create_model_version(
             )
             db.add(assoc)
 
-    db.commit()
-    db.refresh(new_version)
-
-    # Eager-load the affected_regions_assoc for the response
-    if new_version.scope == "REGIONAL":
-        # Force load the associations so the property works
-        _ = new_version.affected_regions_assoc
+    db.flush()
 
     # Auto-create validation request for MAJOR changes (requires MV approval)
     validation_request = None
@@ -392,7 +390,7 @@ def create_model_version(
         # Create default SLA if doesn't exist
         sla_config = ValidationWorkflowSLA()
         db.add(sla_config)
-        db.commit()
+        db.flush()
         db.refresh(sla_config)
 
     # Check lead time policy for ALL changes if production date is provided
@@ -454,6 +452,17 @@ def create_model_version(
                 if not validation_warning:
                     validation_warning = f"Production date ({target_production_date}) is within {days_until_production} days. " \
                         f"Standard validation SLA is {total_sla_days} days. Expedited INTERIM review required."
+
+        conflicts = find_active_validation_conflicts(
+            db,
+            [model_id],
+            validation_type_code
+        )
+        if conflicts:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=build_validation_conflict_message(conflicts, validation_type_code)
+            )
 
         # Get validation type from taxonomy
         validation_type = db.query(TaxonomyValue).join(
@@ -534,9 +543,6 @@ def create_model_version(
                 if version_data.scope == "REGIONAL" and new_version.affected_regions:
                     validation_request.regions = new_version.affected_regions
 
-                db.commit()
-                db.refresh(validation_request)
-
                 # Audit log for validation request creation
                 create_audit_log(
                     db=db,
@@ -566,6 +572,10 @@ def create_model_version(
     )
     db.commit()
     db.refresh(new_version)
+
+    # Eager-load the affected_regions_assoc for the response
+    if new_version.scope == "REGIONAL":
+        _ = new_version.affected_regions_assoc
 
     # Create response with validation info
     response_dict = {

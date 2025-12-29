@@ -119,6 +119,37 @@ def workflow_taxonomies(db_session):
     }
 
 
+def create_active_validation_request(
+    db_session,
+    workflow_taxonomies,
+    requestor_id,
+    model_id,
+    validation_type_key="initial",
+    status_key="intake"
+):
+    """Create an active validation request linked to a model."""
+    from app.models.validation import ValidationRequestModelVersion
+
+    request = ValidationRequest(
+        request_date=date.today(),
+        requestor_id=requestor_id,
+        validation_type_id=workflow_taxonomies["type"][validation_type_key].value_id,
+        priority_id=workflow_taxonomies["priority"]["standard"].value_id,
+        target_completion_date=date.today() + timedelta(days=30),
+        current_status_id=workflow_taxonomies["status"][status_key].value_id,
+        created_at=utc_now(),
+        updated_at=utc_now()
+    )
+    db_session.add(request)
+    db_session.flush()
+    db_session.add(ValidationRequestModelVersion(
+        request_id=request.request_id,
+        model_id=model_id
+    ))
+    db_session.commit()
+    return request
+
+
 @pytest.fixture
 def qualitative_factors(db_session):
     """Create the 4 standard qualitative risk factors with guidance."""
@@ -392,6 +423,101 @@ class TestValidationRequestCRUD:
         # Should have 1 history entry
         assert len(data["status_history"]) == 1
         assert data["status_history"][0]["new_status"]["label"] == "Intake"
+
+
+class TestValidationRequestOverlapRules:
+    """Tests for active validation overlap rules."""
+
+    def test_create_non_targeted_blocked_when_active_non_targeted_exists(
+        self, client, admin_headers, sample_model, workflow_taxonomies
+    ):
+        target_date = (date.today() + timedelta(days=30)).isoformat()
+        first = client.post(
+            "/validation-workflow/requests/",
+            headers=admin_headers,
+            json={
+                "model_ids": [sample_model.model_id],
+                "validation_type_id": workflow_taxonomies["type"]["initial"].value_id,
+                "priority_id": workflow_taxonomies["priority"]["standard"].value_id,
+                "target_completion_date": target_date
+            }
+        )
+        assert first.status_code == 201
+
+        response = client.post(
+            "/validation-workflow/requests/",
+            headers=admin_headers,
+            json={
+                "model_ids": [sample_model.model_id],
+                "validation_type_id": workflow_taxonomies["type"]["comprehensive"].value_id,
+                "priority_id": workflow_taxonomies["priority"]["standard"].value_id,
+                "target_completion_date": target_date
+            }
+        )
+        assert response.status_code == 400
+        assert "non-targeted" in response.json()["detail"].lower()
+
+    def test_create_targeted_allowed_with_existing_non_targeted(
+        self, client, admin_headers, sample_model, workflow_taxonomies
+    ):
+        target_date = (date.today() + timedelta(days=30)).isoformat()
+        first = client.post(
+            "/validation-workflow/requests/",
+            headers=admin_headers,
+            json={
+                "model_ids": [sample_model.model_id],
+                "validation_type_id": workflow_taxonomies["type"]["initial"].value_id,
+                "priority_id": workflow_taxonomies["priority"]["standard"].value_id,
+                "target_completion_date": target_date
+            }
+        )
+        assert first.status_code == 201
+
+        response = client.post(
+            "/validation-workflow/requests/",
+            headers=admin_headers,
+            json={
+                "model_ids": [sample_model.model_id],
+                "validation_type_id": workflow_taxonomies["type"]["targeted"].value_id,
+                "priority_id": workflow_taxonomies["priority"]["standard"].value_id,
+                "target_completion_date": target_date
+            }
+        )
+        assert response.status_code == 201
+
+    def test_create_targeted_blocked_with_multiple_non_targeted(
+        self, client, db_session, admin_headers, admin_user, sample_model, workflow_taxonomies
+    ):
+        create_active_validation_request(
+            db_session,
+            workflow_taxonomies,
+            admin_user.user_id,
+            sample_model.model_id,
+            validation_type_key="initial",
+            status_key="intake"
+        )
+        create_active_validation_request(
+            db_session,
+            workflow_taxonomies,
+            admin_user.user_id,
+            sample_model.model_id,
+            validation_type_key="comprehensive",
+            status_key="planning"
+        )
+
+        target_date = (date.today() + timedelta(days=30)).isoformat()
+        response = client.post(
+            "/validation-workflow/requests/",
+            headers=admin_headers,
+            json={
+                "model_ids": [sample_model.model_id],
+                "validation_type_id": workflow_taxonomies["type"]["targeted"].value_id,
+                "priority_id": workflow_taxonomies["priority"]["standard"].value_id,
+                "target_completion_date": target_date
+            }
+        )
+        assert response.status_code == 400
+        assert "non-targeted" in response.json()["detail"].lower()
 
 
 class TestStatusTransitions:
@@ -4286,3 +4412,1441 @@ class TestChangeValidationType:
         assert blockers[0]["type"] == "NO_DRAFT_VERSION"
         assert blockers[0]["model_id"] == model2.model_id
         assert blockers[0]["model_name"] == "Test Model Without Draft"
+
+
+class TestValidationRequestModelChanges:
+    """Tests for add/remove models from validation request."""
+
+    def _create_request(
+        self,
+        client,
+        headers,
+        workflow_taxonomies,
+        model_ids,
+        validation_type_key="initial",
+        priority_key="standard",
+        target_completion_date=None,
+        model_versions=None,
+        region_ids=None
+    ):
+        if target_completion_date is None:
+            target_completion_date = (date.today() + timedelta(days=30)).isoformat()
+
+        payload = {
+            "model_ids": model_ids,
+            "validation_type_id": workflow_taxonomies["type"][validation_type_key].value_id,
+            "priority_id": workflow_taxonomies["priority"][priority_key].value_id,
+            "target_completion_date": target_completion_date
+        }
+        if model_versions is not None:
+            payload["model_versions"] = model_versions
+        if region_ids is not None:
+            payload["region_ids"] = region_ids
+
+        response = client.post(
+            "/validation-workflow/requests/",
+            headers=headers,
+            json=payload
+        )
+        assert response.status_code == 201
+        return response.json()
+
+    def _assign_primary_validator(self, client, headers, request_id, validator_user):
+        response = client.post(
+            f"/validation-workflow/requests/{request_id}/assignments",
+            headers=headers,
+            json={
+                "validator_id": validator_user.user_id,
+                "is_primary": True,
+                "is_reviewer": False,
+                "independence_attestation": True
+            }
+        )
+        assert response.status_code == 201
+
+    def test_add_model_in_intake_status(
+        self, client, db_session, admin_headers, admin_user, sample_model, workflow_taxonomies, usage_frequency
+    ):
+        from app.models.validation import ValidationRequestModelVersion
+
+        request = self._create_request(
+            client,
+            admin_headers,
+            workflow_taxonomies,
+            [sample_model.model_id]
+        )
+
+        model2 = Model(
+            model_name="Second Model",
+            description="Second model",
+            status="Active",
+            development_type="In-House",
+            owner_id=admin_user.user_id,
+            usage_frequency_id=usage_frequency["daily"].value_id
+        )
+        db_session.add(model2)
+        db_session.commit()
+
+        response = client.patch(
+            f"/validation-workflow/requests/{request['request_id']}/models",
+            headers=admin_headers,
+            json={
+                "add_models": [{"model_id": model2.model_id}]
+            }
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert model2.model_id in data["models_added"]
+
+        assoc_count = db_session.query(ValidationRequestModelVersion).filter(
+            ValidationRequestModelVersion.request_id == request["request_id"]
+        ).count()
+        assert assoc_count == 2
+
+    def test_add_model_in_planning_status(
+        self, client, db_session, admin_headers, admin_user, validator_user,
+        sample_model, workflow_taxonomies, usage_frequency
+    ):
+        from app.models.validation import ValidationRequestModelVersion
+
+        request = self._create_request(
+            client,
+            admin_headers,
+            workflow_taxonomies,
+            [sample_model.model_id]
+        )
+        self._assign_primary_validator(client, admin_headers, request["request_id"], validator_user)
+
+        model2 = Model(
+            model_name="Planning Add Model",
+            description="Planning add",
+            status="Active",
+            development_type="In-House",
+            owner_id=admin_user.user_id,
+            usage_frequency_id=usage_frequency["daily"].value_id
+        )
+        db_session.add(model2)
+        db_session.commit()
+
+        response = client.patch(
+            f"/validation-workflow/requests/{request['request_id']}/models",
+            headers=admin_headers,
+            json={
+                "add_models": [{"model_id": model2.model_id}]
+            }
+        )
+        assert response.status_code == 200
+
+        assoc_count = db_session.query(ValidationRequestModelVersion).filter(
+            ValidationRequestModelVersion.request_id == request["request_id"]
+        ).count()
+        assert assoc_count == 2
+
+    def test_add_model_blocked_when_model_has_active_non_targeted(
+        self, client, db_session, admin_headers, admin_user, sample_model,
+        workflow_taxonomies, usage_frequency
+    ):
+        model2 = Model(
+            model_name="Overlap Add Model",
+            description="Overlap add",
+            status="Active",
+            development_type="In-House",
+            owner_id=admin_user.user_id,
+            usage_frequency_id=usage_frequency["daily"].value_id
+        )
+        db_session.add(model2)
+        db_session.commit()
+
+        self._create_request(
+            client,
+            admin_headers,
+            workflow_taxonomies,
+            [model2.model_id]
+        )
+        request = self._create_request(
+            client,
+            admin_headers,
+            workflow_taxonomies,
+            [sample_model.model_id]
+        )
+
+        response = client.patch(
+            f"/validation-workflow/requests/{request['request_id']}/models",
+            headers=admin_headers,
+            json={"add_models": [{"model_id": model2.model_id}]}
+        )
+        assert response.status_code == 400
+        assert "non-targeted" in response.json()["detail"].lower()
+
+    def test_add_model_to_targeted_allowed_with_existing_non_targeted(
+        self, client, db_session, admin_headers, admin_user, sample_model,
+        workflow_taxonomies, usage_frequency
+    ):
+        model2 = Model(
+            model_name="Targeted Allowed Add",
+            description="Targeted allowed",
+            status="Active",
+            development_type="In-House",
+            owner_id=admin_user.user_id,
+            usage_frequency_id=usage_frequency["daily"].value_id
+        )
+        db_session.add(model2)
+        db_session.commit()
+
+        self._create_request(
+            client,
+            admin_headers,
+            workflow_taxonomies,
+            [model2.model_id]
+        )
+        request = self._create_request(
+            client,
+            admin_headers,
+            workflow_taxonomies,
+            [sample_model.model_id],
+            validation_type_key="targeted"
+        )
+
+        response = client.patch(
+            f"/validation-workflow/requests/{request['request_id']}/models",
+            headers=admin_headers,
+            json={"add_models": [{"model_id": model2.model_id}]}
+        )
+        assert response.status_code == 200
+
+    def test_add_model_to_targeted_blocked_with_multiple_non_targeted(
+        self, client, db_session, admin_headers, admin_user, sample_model,
+        workflow_taxonomies, usage_frequency
+    ):
+        model2 = Model(
+            model_name="Targeted Blocked Add",
+            description="Targeted blocked",
+            status="Active",
+            development_type="In-House",
+            owner_id=admin_user.user_id,
+            usage_frequency_id=usage_frequency["daily"].value_id
+        )
+        db_session.add(model2)
+        db_session.commit()
+
+        create_active_validation_request(
+            db_session,
+            workflow_taxonomies,
+            admin_user.user_id,
+            model2.model_id,
+            validation_type_key="initial",
+            status_key="intake"
+        )
+        create_active_validation_request(
+            db_session,
+            workflow_taxonomies,
+            admin_user.user_id,
+            model2.model_id,
+            validation_type_key="comprehensive",
+            status_key="planning"
+        )
+
+        request = self._create_request(
+            client,
+            admin_headers,
+            workflow_taxonomies,
+            [sample_model.model_id],
+            validation_type_key="targeted"
+        )
+
+        response = client.patch(
+            f"/validation-workflow/requests/{request['request_id']}/models",
+            headers=admin_headers,
+            json={"add_models": [{"model_id": model2.model_id}]}
+        )
+        assert response.status_code == 400
+        assert "non-targeted" in response.json()["detail"].lower()
+
+    def test_add_model_fails_in_progress(
+        self, client, db_session, admin_headers, admin_user, validator_user, sample_model,
+        workflow_taxonomies, usage_frequency
+    ):
+        request = self._create_request(
+            client,
+            admin_headers,
+            workflow_taxonomies,
+            [sample_model.model_id]
+        )
+        self._assign_primary_validator(client, admin_headers, request["request_id"], validator_user)
+
+        status_response = client.patch(
+            f"/validation-workflow/requests/{request['request_id']}/status",
+            headers=admin_headers,
+            json={
+                "new_status_id": workflow_taxonomies["status"]["in_progress"].value_id,
+                "change_reason": "Move to in progress for test"
+            }
+        )
+        assert status_response.status_code == 200
+
+        model2 = Model(
+            model_name="In Progress Add Model",
+            description="Should fail",
+            status="Active",
+            development_type="In-House",
+            owner_id=admin_user.user_id,
+            usage_frequency_id=usage_frequency["daily"].value_id
+        )
+        db_session.add(model2)
+        db_session.commit()
+
+        response = client.patch(
+            f"/validation-workflow/requests/{request['request_id']}/models",
+            headers=admin_headers,
+            json={
+                "add_models": [{"model_id": model2.model_id}]
+            }
+        )
+        assert response.status_code == 400
+
+    def test_remove_model_succeeds(
+        self, client, db_session, admin_headers, admin_user, sample_model,
+        workflow_taxonomies, usage_frequency
+    ):
+        from app.models.validation import ValidationRequestModelVersion
+
+        model2 = Model(
+            model_name="Remove Model",
+            description="Remove model",
+            status="Active",
+            development_type="In-House",
+            owner_id=admin_user.user_id,
+            usage_frequency_id=usage_frequency["daily"].value_id
+        )
+        db_session.add(model2)
+        db_session.commit()
+
+        request = self._create_request(
+            client,
+            admin_headers,
+            workflow_taxonomies,
+            [sample_model.model_id, model2.model_id]
+        )
+
+        response = client.patch(
+            f"/validation-workflow/requests/{request['request_id']}/models",
+            headers=admin_headers,
+            json={"remove_model_ids": [model2.model_id]}
+        )
+        assert response.status_code == 200
+
+        remaining = db_session.query(ValidationRequestModelVersion).filter(
+            ValidationRequestModelVersion.request_id == request["request_id"]
+        ).all()
+        remaining_ids = {assoc.model_id for assoc in remaining}
+        assert remaining_ids == {sample_model.model_id}
+
+    def test_cannot_remove_last_model(
+        self, client, admin_headers, sample_model, workflow_taxonomies
+    ):
+        request = self._create_request(
+            client,
+            admin_headers,
+            workflow_taxonomies,
+            [sample_model.model_id]
+        )
+
+        response = client.patch(
+            f"/validation-workflow/requests/{request['request_id']}/models",
+            headers=admin_headers,
+            json={"remove_model_ids": [sample_model.model_id]}
+        )
+        assert response.status_code == 400
+
+    def test_duplicate_model_rejected(
+        self, client, admin_headers, sample_model, workflow_taxonomies
+    ):
+        request = self._create_request(
+            client,
+            admin_headers,
+            workflow_taxonomies,
+            [sample_model.model_id]
+        )
+
+        response = client.patch(
+            f"/validation-workflow/requests/{request['request_id']}/models",
+            headers=admin_headers,
+            json={"add_models": [{"model_id": sample_model.model_id}]}
+        )
+        assert response.status_code == 400
+
+    def test_user_role_cannot_modify_models(
+        self, client, auth_headers, admin_headers, sample_model, workflow_taxonomies
+    ):
+        request = self._create_request(
+            client,
+            admin_headers,
+            workflow_taxonomies,
+            [sample_model.model_id]
+        )
+
+        response = client.patch(
+            f"/validation-workflow/requests/{request['request_id']}/models",
+            headers=auth_headers,
+            json={"add_models": [{"model_id": sample_model.model_id}]}
+        )
+        assert response.status_code == 403
+
+    def test_change_type_requires_version_id(
+        self, client, db_session, admin_headers, admin_user, workflow_taxonomies,
+        risk_tier_taxonomy, usage_frequency
+    ):
+        from app.models.model_version import ModelVersion
+
+        model = Model(
+            model_name="Change Base Model",
+            description="Change base",
+            status="Active",
+            development_type="In-House",
+            owner_id=admin_user.user_id,
+            risk_tier_id=risk_tier_taxonomy["TIER_2"].value_id,
+            usage_frequency_id=usage_frequency["daily"].value_id
+        )
+        db_session.add(model)
+        db_session.commit()
+
+        version = ModelVersion(
+            model_id=model.model_id,
+            version_number="1.0",
+            change_type="MAJOR",
+            change_description="Draft",
+            created_by_id=admin_user.user_id,
+            status="DRAFT"
+        )
+        db_session.add(version)
+        db_session.commit()
+
+        request = self._create_request(
+            client,
+            admin_headers,
+            workflow_taxonomies,
+            [model.model_id],
+            validation_type_key="change",
+            model_versions={model.model_id: version.version_id}
+        )
+
+        model2 = Model(
+            model_name="Change Add Model",
+            description="Add without version",
+            status="Active",
+            development_type="In-House",
+            owner_id=admin_user.user_id,
+            usage_frequency_id=usage_frequency["daily"].value_id
+        )
+        db_session.add(model2)
+        db_session.commit()
+
+        response = client.patch(
+            f"/validation-workflow/requests/{request['request_id']}/models",
+            headers=admin_headers,
+            json={"add_models": [{"model_id": model2.model_id}]}
+        )
+        assert response.status_code == 400
+
+    def test_change_type_rejects_non_draft_version(
+        self, client, db_session, admin_headers, admin_user, workflow_taxonomies,
+        risk_tier_taxonomy, usage_frequency
+    ):
+        from app.models.model_version import ModelVersion
+
+        model = Model(
+            model_name="Change Base Draft",
+            description="Change base",
+            status="Active",
+            development_type="In-House",
+            owner_id=admin_user.user_id,
+            risk_tier_id=risk_tier_taxonomy["TIER_2"].value_id,
+            usage_frequency_id=usage_frequency["daily"].value_id
+        )
+        db_session.add(model)
+        db_session.commit()
+
+        base_version = ModelVersion(
+            model_id=model.model_id,
+            version_number="1.0",
+            change_type="MAJOR",
+            change_description="Draft",
+            created_by_id=admin_user.user_id,
+            status="DRAFT"
+        )
+        db_session.add(base_version)
+        db_session.commit()
+
+        request = self._create_request(
+            client,
+            admin_headers,
+            workflow_taxonomies,
+            [model.model_id],
+            validation_type_key="change",
+            model_versions={model.model_id: base_version.version_id}
+        )
+
+        model2 = Model(
+            model_name="Change Add Non Draft",
+            description="Non draft",
+            status="Active",
+            development_type="In-House",
+            owner_id=admin_user.user_id,
+            usage_frequency_id=usage_frequency["daily"].value_id
+        )
+        db_session.add(model2)
+        db_session.commit()
+
+        version2 = ModelVersion(
+            model_id=model2.model_id,
+            version_number="2.0",
+            change_type="MAJOR",
+            change_description="Approved",
+            created_by_id=admin_user.user_id,
+            status="APPROVED"
+        )
+        db_session.add(version2)
+        db_session.commit()
+
+        response = client.patch(
+            f"/validation-workflow/requests/{request['request_id']}/models",
+            headers=admin_headers,
+            json={"add_models": [{"model_id": model2.model_id, "version_id": version2.version_id}]}
+        )
+        assert response.status_code == 400
+
+    def test_change_type_rejects_version_not_belonging_to_model(
+        self, client, db_session, admin_headers, admin_user, workflow_taxonomies,
+        risk_tier_taxonomy, usage_frequency
+    ):
+        from app.models.model_version import ModelVersion
+
+        model = Model(
+            model_name="Change Base",
+            description="Change base",
+            status="Active",
+            development_type="In-House",
+            owner_id=admin_user.user_id,
+            risk_tier_id=risk_tier_taxonomy["TIER_2"].value_id,
+            usage_frequency_id=usage_frequency["daily"].value_id
+        )
+        db_session.add(model)
+        db_session.commit()
+
+        base_version = ModelVersion(
+            model_id=model.model_id,
+            version_number="1.0",
+            change_type="MAJOR",
+            change_description="Draft",
+            created_by_id=admin_user.user_id,
+            status="DRAFT"
+        )
+        db_session.add(base_version)
+        db_session.commit()
+
+        request = self._create_request(
+            client,
+            admin_headers,
+            workflow_taxonomies,
+            [model.model_id],
+            validation_type_key="change",
+            model_versions={model.model_id: base_version.version_id}
+        )
+
+        model2 = Model(
+            model_name="Change Add Wrong Version",
+            description="Wrong version",
+            status="Active",
+            development_type="In-House",
+            owner_id=admin_user.user_id,
+            usage_frequency_id=usage_frequency["daily"].value_id
+        )
+        db_session.add(model2)
+        db_session.commit()
+
+        response = client.patch(
+            f"/validation-workflow/requests/{request['request_id']}/models",
+            headers=admin_headers,
+            json={"add_models": [{"model_id": model2.model_id, "version_id": base_version.version_id}]}
+        )
+        assert response.status_code == 400
+
+    def test_non_change_type_version_optional(
+        self, client, db_session, admin_headers, admin_user, sample_model,
+        workflow_taxonomies, usage_frequency
+    ):
+        request = self._create_request(
+            client,
+            admin_headers,
+            workflow_taxonomies,
+            [sample_model.model_id]
+        )
+
+        model2 = Model(
+            model_name="Non Change Add Model",
+            description="Optional version",
+            status="Active",
+            development_type="In-House",
+            owner_id=admin_user.user_id,
+            usage_frequency_id=usage_frequency["daily"].value_id
+        )
+        db_session.add(model2)
+        db_session.commit()
+
+        response = client.patch(
+            f"/validation-workflow/requests/{request['request_id']}/models",
+            headers=admin_headers,
+            json={"add_models": [{"model_id": model2.model_id}]}
+        )
+        assert response.status_code == 200
+
+    def test_target_completion_errors_block_update(
+        self, client, db_session, admin_headers, admin_user, sample_model,
+        workflow_taxonomies, usage_frequency
+    ):
+        from app.models.model_version import ModelVersion
+
+        request = self._create_request(
+            client,
+            admin_headers,
+            workflow_taxonomies,
+            [sample_model.model_id],
+            target_completion_date=(date.today() + timedelta(days=30)).isoformat()
+        )
+
+        model2 = Model(
+            model_name="Target Error Model",
+            description="Trigger error",
+            status="Active",
+            development_type="In-House",
+            owner_id=admin_user.user_id,
+            usage_frequency_id=usage_frequency["daily"].value_id
+        )
+        db_session.add(model2)
+        db_session.commit()
+
+        version2 = ModelVersion(
+            model_id=model2.model_id,
+            version_number="1.0",
+            change_type="MAJOR",
+            change_description="Has production date",
+            created_by_id=admin_user.user_id,
+            production_date=date.today() + timedelta(days=10),
+            status="DRAFT"
+        )
+        db_session.add(version2)
+        db_session.commit()
+
+        response = client.patch(
+            f"/validation-workflow/requests/{request['request_id']}/models",
+            headers=admin_headers,
+            json={"add_models": [{"model_id": model2.model_id, "version_id": version2.version_id}]}
+        )
+        assert response.status_code == 400
+        detail = response.json()["detail"]
+        assert "warnings" in detail
+
+    def test_target_completion_warnings_returned_on_success(
+        self, client, db_session, admin_headers, admin_user, sample_model,
+        workflow_taxonomies, risk_tier_taxonomy, usage_frequency
+    ):
+        from app.models.model_version import ModelVersion
+        from app.models.validation import ValidationPolicy
+
+        policy = ValidationPolicy(
+            risk_tier_id=risk_tier_taxonomy["TIER_1"].value_id,
+            frequency_months=12,
+            model_change_lead_time_days=90,
+            description="Tier 1 Policy"
+        )
+        db_session.add(policy)
+        db_session.commit()
+
+        request = self._create_request(
+            client,
+            admin_headers,
+            workflow_taxonomies,
+            [sample_model.model_id],
+            target_completion_date=(date.today() + timedelta(days=30)).isoformat()
+        )
+
+        model2 = Model(
+            model_name="Target Warning Model",
+            description="Trigger warning",
+            status="Active",
+            development_type="In-House",
+            owner_id=admin_user.user_id,
+            risk_tier_id=risk_tier_taxonomy["TIER_1"].value_id,
+            usage_frequency_id=usage_frequency["daily"].value_id
+        )
+        db_session.add(model2)
+        db_session.commit()
+
+        version2 = ModelVersion(
+            model_id=model2.model_id,
+            version_number="1.0",
+            change_type="MAJOR",
+            change_description="Lead time warning",
+            created_by_id=admin_user.user_id,
+            production_date=date.today() + timedelta(days=40),
+            status="DRAFT"
+        )
+        db_session.add(version2)
+        db_session.commit()
+
+        response = client.patch(
+            f"/validation-workflow/requests/{request['request_id']}/models",
+            headers=admin_headers,
+            json={"add_models": [{"model_id": model2.model_id, "version_id": version2.version_id}]}
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["warnings"]
+
+    def test_lead_time_recalculated_on_model_change(
+        self, client, db_session, admin_headers, admin_user,
+        workflow_taxonomies, risk_tier_taxonomy, usage_frequency
+    ):
+        from app.models.validation import ValidationPolicy
+
+        db_session.add_all([
+            ValidationPolicy(
+                risk_tier_id=risk_tier_taxonomy["TIER_2"].value_id,
+                frequency_months=12,
+                model_change_lead_time_days=30,
+                description="Tier 2 Policy"
+            ),
+            ValidationPolicy(
+                risk_tier_id=risk_tier_taxonomy["TIER_1"].value_id,
+                frequency_months=12,
+                model_change_lead_time_days=120,
+                description="Tier 1 Policy"
+            )
+        ])
+        db_session.commit()
+
+        model_low = Model(
+            model_name="Lead Time Low",
+            description="Lower lead time",
+            status="Active",
+            development_type="In-House",
+            owner_id=admin_user.user_id,
+            risk_tier_id=risk_tier_taxonomy["TIER_2"].value_id,
+            usage_frequency_id=usage_frequency["daily"].value_id
+        )
+        model_high = Model(
+            model_name="Lead Time High",
+            description="Higher lead time",
+            status="Active",
+            development_type="In-House",
+            owner_id=admin_user.user_id,
+            risk_tier_id=risk_tier_taxonomy["TIER_1"].value_id,
+            usage_frequency_id=usage_frequency["daily"].value_id
+        )
+        db_session.add_all([model_low, model_high])
+        db_session.commit()
+
+        request = self._create_request(
+            client,
+            admin_headers,
+            workflow_taxonomies,
+            [model_low.model_id]
+        )
+
+        response = client.patch(
+            f"/validation-workflow/requests/{request['request_id']}/models",
+            headers=admin_headers,
+            json={"add_models": [{"model_id": model_high.model_id}]}
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["lead_time_changed"] is True
+        assert data["old_lead_time_days"] == 30
+        assert data["new_lead_time_days"] == 120
+
+    def test_add_blocked_if_would_violate_and_allow_unassign_false(
+        self, client, db_session, admin_headers, validator_user, sample_model,
+        workflow_taxonomies, usage_frequency
+    ):
+        request = self._create_request(
+            client,
+            admin_headers,
+            workflow_taxonomies,
+            [sample_model.model_id]
+        )
+        self._assign_primary_validator(client, admin_headers, request["request_id"], validator_user)
+
+        conflicting_model = Model(
+            model_name="Conflicting Model",
+            description="Validator owns this model",
+            status="Active",
+            development_type="In-House",
+            owner_id=validator_user.user_id,
+            usage_frequency_id=usage_frequency["daily"].value_id
+        )
+        db_session.add(conflicting_model)
+        db_session.commit()
+
+        response = client.patch(
+            f"/validation-workflow/requests/{request['request_id']}/models",
+            headers=admin_headers,
+            json={"add_models": [{"model_id": conflicting_model.model_id}]}
+        )
+        assert response.status_code == 409
+
+    def test_validator_unassigned_if_independence_violated_and_allowed(
+        self, client, db_session, admin_headers, validator_user, sample_model,
+        workflow_taxonomies, usage_frequency
+    ):
+        from app.models.validation import ValidationAssignment
+
+        request = self._create_request(
+            client,
+            admin_headers,
+            workflow_taxonomies,
+            [sample_model.model_id]
+        )
+        self._assign_primary_validator(client, admin_headers, request["request_id"], validator_user)
+
+        conflicting_model = Model(
+            model_name="Conflicting Model Allowed",
+            description="Validator owns this model",
+            status="Active",
+            development_type="In-House",
+            owner_id=validator_user.user_id,
+            usage_frequency_id=usage_frequency["daily"].value_id
+        )
+        db_session.add(conflicting_model)
+        db_session.commit()
+
+        response = client.patch(
+            f"/validation-workflow/requests/{request['request_id']}/models",
+            headers=admin_headers,
+            json={
+                "add_models": [{"model_id": conflicting_model.model_id}],
+                "allow_unassign_conflicts": True
+            }
+        )
+        assert response.status_code == 200
+
+        assignments = db_session.query(ValidationAssignment).filter(
+            ValidationAssignment.request_id == request["request_id"]
+        ).all()
+        assert len(assignments) == 0
+
+    def test_stale_regional_approvals_voided_on_model_removal(
+        self, client, db_session, admin_headers, admin_user, workflow_taxonomies, lob_hierarchy, usage_frequency
+    ):
+        from app.models.user import User, UserRole, user_regions
+        from app.models.validation import ValidationApproval
+
+        region_a = Region(code="RA", name="Region A", requires_regional_approval=True)
+        region_b = Region(code="RB", name="Region B", requires_regional_approval=True)
+        db_session.add_all([region_a, region_b])
+        db_session.flush()
+
+        model_a = Model(
+            model_name="Region A Model",
+            description="Region A model",
+            status="Active",
+            development_type="In-House",
+            owner_id=admin_user.user_id,
+            usage_frequency_id=usage_frequency["daily"].value_id
+        )
+        model_b = Model(
+            model_name="Region B Model",
+            description="Region B model",
+            status="Active",
+            development_type="In-House",
+            owner_id=admin_user.user_id,
+            usage_frequency_id=usage_frequency["daily"].value_id
+        )
+        db_session.add_all([model_a, model_b])
+        db_session.flush()
+
+        db_session.add(ModelRegion(model_id=model_a.model_id, region_id=region_a.region_id))
+        db_session.add(ModelRegion(model_id=model_b.model_id, region_id=region_b.region_id))
+        db_session.flush()
+
+        regional_approver = User(
+            email="regiona.approver@example.com",
+            full_name="Region A Approver",
+            password_hash="hash",
+            role=UserRole.REGIONAL_APPROVER,
+            lob_id=lob_hierarchy["retail"].lob_id
+        )
+        db_session.add(regional_approver)
+        db_session.flush()
+        db_session.execute(user_regions.insert().values(
+            user_id=regional_approver.user_id, region_id=region_a.region_id
+        ))
+        db_session.commit()
+
+        request = self._create_request(
+            client,
+            admin_headers,
+            workflow_taxonomies,
+            [model_a.model_id, model_b.model_id]
+        )
+
+        approvals = db_session.query(ValidationApproval).filter(
+            ValidationApproval.request_id == request["request_id"],
+            ValidationApproval.region_id == region_a.region_id,
+            ValidationApproval.voided_at.is_(None)
+        ).all()
+        assert approvals
+
+        response = client.patch(
+            f"/validation-workflow/requests/{request['request_id']}/models",
+            headers=admin_headers,
+            json={"remove_model_ids": [model_a.model_id]}
+        )
+        assert response.status_code == 200
+
+        voided = db_session.query(ValidationApproval).filter(
+            ValidationApproval.request_id == request["request_id"],
+            ValidationApproval.region_id == region_a.region_id,
+            ValidationApproval.voided_at.isnot(None)
+        ).all()
+        assert voided
+
+    def test_approvals_kept_if_region_still_covered(
+        self, client, db_session, admin_headers, admin_user, workflow_taxonomies, lob_hierarchy, usage_frequency
+    ):
+        from app.models.user import User, UserRole, user_regions
+        from app.models.validation import ValidationApproval
+
+        region_a = Region(code="RC", name="Region C", requires_regional_approval=True)
+        db_session.add(region_a)
+        db_session.flush()
+
+        model_a = Model(
+            model_name="Region C Model 1",
+            description="Region C model 1",
+            status="Active",
+            development_type="In-House",
+            owner_id=admin_user.user_id,
+            usage_frequency_id=usage_frequency["daily"].value_id
+        )
+        model_b = Model(
+            model_name="Region C Model 2",
+            description="Region C model 2",
+            status="Active",
+            development_type="In-House",
+            owner_id=admin_user.user_id,
+            usage_frequency_id=usage_frequency["daily"].value_id
+        )
+        db_session.add_all([model_a, model_b])
+        db_session.flush()
+
+        db_session.add(ModelRegion(model_id=model_a.model_id, region_id=region_a.region_id))
+        db_session.add(ModelRegion(model_id=model_b.model_id, region_id=region_a.region_id))
+        db_session.flush()
+
+        regional_approver = User(
+            email="regionc.approver@example.com",
+            full_name="Region C Approver",
+            password_hash="hash",
+            role=UserRole.REGIONAL_APPROVER,
+            lob_id=lob_hierarchy["retail"].lob_id
+        )
+        db_session.add(regional_approver)
+        db_session.flush()
+        db_session.execute(user_regions.insert().values(
+            user_id=regional_approver.user_id, region_id=region_a.region_id
+        ))
+        db_session.commit()
+
+        request = self._create_request(
+            client,
+            admin_headers,
+            workflow_taxonomies,
+            [model_a.model_id, model_b.model_id]
+        )
+
+        response = client.patch(
+            f"/validation-workflow/requests/{request['request_id']}/models",
+            headers=admin_headers,
+            json={"remove_model_ids": [model_a.model_id]}
+        )
+        assert response.status_code == 200
+
+        still_active = db_session.query(ValidationApproval).filter(
+            ValidationApproval.request_id == request["request_id"],
+            ValidationApproval.region_id == region_a.region_id,
+            ValidationApproval.voided_at.is_(None)
+        ).all()
+        assert still_active
+
+    def test_conditional_approvals_added_on_add(
+        self, client, db_session, admin_headers, admin_user, workflow_taxonomies, risk_tier_taxonomy, usage_frequency
+    ):
+        from app.models.conditional_approval import ApproverRole, ConditionalApprovalRule, RuleRequiredApprover
+        from app.models.validation import ValidationApproval
+
+        role = ApproverRole(role_name="Test Committee")
+        db_session.add(role)
+        db_session.flush()
+
+        rule = ConditionalApprovalRule(
+            rule_name="Tier1 Rule",
+            validation_type_ids=str(workflow_taxonomies["type"]["initial"].value_id),
+            risk_tier_ids=str(risk_tier_taxonomy["TIER_1"].value_id),
+            is_active=True
+        )
+        db_session.add(rule)
+        db_session.flush()
+        db_session.add(RuleRequiredApprover(rule_id=rule.rule_id, approver_role_id=role.role_id))
+        db_session.commit()
+
+        model_low = Model(
+            model_name="Low Tier Model",
+            description="Low tier",
+            status="Active",
+            development_type="In-House",
+            owner_id=admin_user.user_id,
+            risk_tier_id=risk_tier_taxonomy["TIER_2"].value_id,
+            usage_frequency_id=usage_frequency["daily"].value_id
+        )
+        model_high = Model(
+            model_name="High Tier Model",
+            description="High tier",
+            status="Active",
+            development_type="In-House",
+            owner_id=admin_user.user_id,
+            risk_tier_id=risk_tier_taxonomy["TIER_1"].value_id,
+            usage_frequency_id=usage_frequency["daily"].value_id
+        )
+        db_session.add_all([model_low, model_high])
+        db_session.commit()
+
+        request = self._create_request(
+            client,
+            admin_headers,
+            workflow_taxonomies,
+            [model_low.model_id]
+        )
+
+        response = client.patch(
+            f"/validation-workflow/requests/{request['request_id']}/models",
+            headers=admin_headers,
+            json={"add_models": [{"model_id": model_high.model_id}]}
+        )
+        assert response.status_code == 200
+
+        approvals = db_session.query(ValidationApproval).filter(
+            ValidationApproval.request_id == request["request_id"],
+            ValidationApproval.approval_type == "Conditional",
+            ValidationApproval.approver_role_id == role.role_id,
+            ValidationApproval.voided_at.is_(None)
+        ).all()
+        assert approvals
+
+    def test_conditional_approvals_voided_if_no_longer_match(
+        self, client, db_session, admin_headers, admin_user, workflow_taxonomies, risk_tier_taxonomy, usage_frequency
+    ):
+        from app.models.conditional_approval import ApproverRole, ConditionalApprovalRule, RuleRequiredApprover
+        from app.models.validation import ValidationApproval
+
+        role = ApproverRole(role_name="Test Committee Remove")
+        db_session.add(role)
+        db_session.flush()
+
+        rule = ConditionalApprovalRule(
+            rule_name="Tier1 Rule Remove",
+            validation_type_ids=str(workflow_taxonomies["type"]["initial"].value_id),
+            risk_tier_ids=str(risk_tier_taxonomy["TIER_1"].value_id),
+            is_active=True
+        )
+        db_session.add(rule)
+        db_session.flush()
+        db_session.add(RuleRequiredApprover(rule_id=rule.rule_id, approver_role_id=role.role_id))
+        db_session.commit()
+
+        model_high = Model(
+            model_name="High Tier Model Remove",
+            description="High tier",
+            status="Active",
+            development_type="In-House",
+            owner_id=admin_user.user_id,
+            risk_tier_id=risk_tier_taxonomy["TIER_1"].value_id,
+            usage_frequency_id=usage_frequency["daily"].value_id
+        )
+        model_low = Model(
+            model_name="Low Tier Model Remove",
+            description="Low tier",
+            status="Active",
+            development_type="In-House",
+            owner_id=admin_user.user_id,
+            risk_tier_id=risk_tier_taxonomy["TIER_2"].value_id,
+            usage_frequency_id=usage_frequency["daily"].value_id
+        )
+        db_session.add_all([model_high, model_low])
+        db_session.commit()
+
+        request = self._create_request(
+            client,
+            admin_headers,
+            workflow_taxonomies,
+            [model_high.model_id, model_low.model_id]
+        )
+
+        pre = db_session.query(ValidationApproval).filter(
+            ValidationApproval.request_id == request["request_id"],
+            ValidationApproval.approval_type == "Conditional",
+            ValidationApproval.approver_role_id == role.role_id,
+            ValidationApproval.voided_at.is_(None)
+        ).all()
+        assert pre
+
+        response = client.patch(
+            f"/validation-workflow/requests/{request['request_id']}/models",
+            headers=admin_headers,
+            json={"remove_model_ids": [model_high.model_id]}
+        )
+        assert response.status_code == 200
+
+        voided = db_session.query(ValidationApproval).filter(
+            ValidationApproval.request_id == request["request_id"],
+            ValidationApproval.approval_type == "Conditional",
+            ValidationApproval.approver_role_id == role.role_id,
+            ValidationApproval.voided_at.isnot(None)
+        ).all()
+        assert voided
+
+    def test_adding_higher_tier_model_updates_expectations(
+        self, client, db_session, admin_headers, admin_user, workflow_taxonomies,
+        risk_tier_taxonomy, usage_frequency
+    ):
+        from app.models.validation import ValidationComponentDefinition, ValidationPlanComponent
+
+        comp_def = ValidationComponentDefinition(
+            section_number="1",
+            section_title="Section",
+            component_code="1.1",
+            component_title="Component",
+            expectation_high="Required",
+            expectation_medium="NotExpected",
+            expectation_low="NotExpected",
+            expectation_very_low="NotExpected",
+            sort_order=1,
+            is_active=True
+        )
+        db_session.add(comp_def)
+        db_session.commit()
+
+        model_low = Model(
+            model_name="Plan Low Tier",
+            description="Low tier",
+            status="Active",
+            development_type="In-House",
+            owner_id=admin_user.user_id,
+            risk_tier_id=risk_tier_taxonomy["TIER_2"].value_id,
+            usage_frequency_id=usage_frequency["daily"].value_id
+        )
+        model_high = Model(
+            model_name="Plan High Tier",
+            description="High tier",
+            status="Active",
+            development_type="In-House",
+            owner_id=admin_user.user_id,
+            risk_tier_id=risk_tier_taxonomy["TIER_1"].value_id,
+            usage_frequency_id=usage_frequency["daily"].value_id
+        )
+        db_session.add_all([model_low, model_high])
+        db_session.commit()
+
+        request = self._create_request(
+            client,
+            admin_headers,
+            workflow_taxonomies,
+            [model_low.model_id]
+        )
+
+        plan_response = client.post(
+            f"/validation-workflow/requests/{request['request_id']}/plan",
+            headers=admin_headers,
+            json={}
+        )
+        assert plan_response.status_code == 201
+
+        response = client.patch(
+            f"/validation-workflow/requests/{request['request_id']}/models",
+            headers=admin_headers,
+            json={"add_models": [{"model_id": model_high.model_id}]}
+        )
+        assert response.status_code == 200
+
+        component = db_session.query(ValidationPlanComponent).join(
+            ValidationPlanComponent.component_definition
+        ).filter(
+            ValidationPlanComponent.plan_id == plan_response.json()["plan_id"],
+            ValidationComponentDefinition.component_id == comp_def.component_id
+        ).first()
+        assert component.default_expectation == "Required"
+
+    def test_adding_higher_tier_model_flags_deviations(
+        self, client, db_session, admin_headers, admin_user, workflow_taxonomies,
+        risk_tier_taxonomy, usage_frequency
+    ):
+        from app.models.validation import ValidationComponentDefinition, ValidationPlanComponent
+
+        comp_def = ValidationComponentDefinition(
+            section_number="2",
+            section_title="Section",
+            component_code="2.1",
+            component_title="Component 2",
+            expectation_high="Required",
+            expectation_medium="NotExpected",
+            expectation_low="NotExpected",
+            expectation_very_low="NotExpected",
+            sort_order=2,
+            is_active=True
+        )
+        db_session.add(comp_def)
+        db_session.commit()
+
+        model_low = Model(
+            model_name="Deviation Low Tier",
+            description="Low tier",
+            status="Active",
+            development_type="In-House",
+            owner_id=admin_user.user_id,
+            risk_tier_id=risk_tier_taxonomy["TIER_2"].value_id,
+            usage_frequency_id=usage_frequency["daily"].value_id
+        )
+        model_high = Model(
+            model_name="Deviation High Tier",
+            description="High tier",
+            status="Active",
+            development_type="In-House",
+            owner_id=admin_user.user_id,
+            risk_tier_id=risk_tier_taxonomy["TIER_1"].value_id,
+            usage_frequency_id=usage_frequency["daily"].value_id
+        )
+        db_session.add_all([model_low, model_high])
+        db_session.commit()
+
+        request = self._create_request(
+            client,
+            admin_headers,
+            workflow_taxonomies,
+            [model_low.model_id]
+        )
+
+        plan_response = client.post(
+            f"/validation-workflow/requests/{request['request_id']}/plan",
+            headers=admin_headers,
+            json={}
+        )
+        assert plan_response.status_code == 201
+
+        response = client.patch(
+            f"/validation-workflow/requests/{request['request_id']}/models",
+            headers=admin_headers,
+            json={"add_models": [{"model_id": model_high.model_id}]}
+        )
+        assert response.status_code == 200
+
+        component = db_session.query(ValidationPlanComponent).join(
+            ValidationPlanComponent.component_definition
+        ).filter(
+            ValidationPlanComponent.plan_id == plan_response.json()["plan_id"],
+            ValidationComponentDefinition.component_id == comp_def.component_id
+        ).first()
+        assert component.is_deviation is True
+
+    def test_primary_model_is_min_model_id(
+        self, db_session, admin_user, sample_model, usage_frequency
+    ):
+        from app.api.validation_workflow import get_primary_model_from_models
+
+        model2 = Model(
+            model_name="Primary Model Check",
+            description="Second model",
+            status="Active",
+            development_type="In-House",
+            owner_id=admin_user.user_id,
+            usage_frequency_id=usage_frequency["daily"].value_id
+        )
+        db_session.add(model2)
+        db_session.commit()
+
+        primary = get_primary_model_from_models([model2, sample_model])
+        assert primary.model_id == min(model2.model_id, sample_model.model_id)
+
+    def test_model_approval_status_updated_on_add(
+        self, client, db_session, admin_headers, admin_user, sample_model,
+        workflow_taxonomies, usage_frequency, monkeypatch
+    ):
+        request = self._create_request(
+            client,
+            admin_headers,
+            workflow_taxonomies,
+            [sample_model.model_id]
+        )
+
+        model2 = Model(
+            model_name="Approval Status Add",
+            description="Add model",
+            status="Active",
+            development_type="In-House",
+            owner_id=admin_user.user_id,
+            usage_frequency_id=usage_frequency["daily"].value_id
+        )
+        db_session.add(model2)
+        db_session.commit()
+
+        calls = []
+
+        def fake_update(*, model, db, trigger_type, trigger_entity_type, trigger_entity_id, **kwargs):
+            calls.append({
+                "model_id": model.model_id,
+                "trigger_type": trigger_type,
+                "trigger_entity_type": trigger_entity_type,
+                "trigger_entity_id": trigger_entity_id
+            })
+
+        monkeypatch.setattr(
+            "app.core.model_approval_status.update_model_approval_status_if_changed",
+            fake_update
+        )
+
+        response = client.patch(
+            f"/validation-workflow/requests/{request['request_id']}/models",
+            headers=admin_headers,
+            json={"add_models": [{"model_id": model2.model_id}]}
+        )
+        assert response.status_code == 200
+        assert any(
+            call["model_id"] == model2.model_id
+            and call["trigger_type"] == "VALIDATION_REQUEST_MODEL_ADDED"
+            and call["trigger_entity_type"] == "ValidationRequest"
+            and call["trigger_entity_id"] == request["request_id"]
+            for call in calls
+        )
+
+    def test_model_approval_status_updated_on_remove(
+        self, client, db_session, admin_headers, admin_user, sample_model,
+        workflow_taxonomies, usage_frequency, monkeypatch
+    ):
+        model2 = Model(
+            model_name="Approval Status Remove",
+            description="Remove model",
+            status="Active",
+            development_type="In-House",
+            owner_id=admin_user.user_id,
+            usage_frequency_id=usage_frequency["daily"].value_id
+        )
+        db_session.add(model2)
+        db_session.commit()
+
+        request = self._create_request(
+            client,
+            admin_headers,
+            workflow_taxonomies,
+            [sample_model.model_id, model2.model_id]
+        )
+
+        calls = []
+
+        def fake_update(*, model, db, trigger_type, trigger_entity_type, trigger_entity_id, **kwargs):
+            calls.append({
+                "model_id": model.model_id,
+                "trigger_type": trigger_type,
+                "trigger_entity_type": trigger_entity_type,
+                "trigger_entity_id": trigger_entity_id
+            })
+
+        monkeypatch.setattr(
+            "app.core.model_approval_status.update_model_approval_status_if_changed",
+            fake_update
+        )
+
+        response = client.patch(
+            f"/validation-workflow/requests/{request['request_id']}/models",
+            headers=admin_headers,
+            json={"remove_model_ids": [model2.model_id]}
+        )
+        assert response.status_code == 200
+        assert any(
+            call["model_id"] == model2.model_id
+            and call["trigger_type"] == "VALIDATION_REQUEST_MODEL_REMOVED"
+            and call["trigger_entity_type"] == "ValidationRequest"
+            and call["trigger_entity_id"] == request["request_id"]
+            for call in calls
+        )
+
+
+class TestValidationOverlapAutoCreate:
+    """Tests overlap rules for auto-created validations."""
+
+    def test_create_version_blocks_interim_when_active_non_targeted_exists(
+        self, client, db_session, admin_user, admin_headers, workflow_taxonomies, usage_frequency
+    ):
+        from app.models.model_version import ModelVersion
+
+        model = Model(
+            model_name="Overlap Version Model",
+            description="Overlap version model",
+            status="Active",
+            development_type="In-House",
+            owner_id=admin_user.user_id,
+            usage_frequency_id=usage_frequency["daily"].value_id
+        )
+        db_session.add(model)
+        db_session.commit()
+
+        create_active_validation_request(
+            db_session,
+            workflow_taxonomies,
+            admin_user.user_id,
+            model.model_id,
+            validation_type_key="initial",
+            status_key="intake"
+        )
+
+        payload = {
+            "change_type": "MAJOR",
+            "change_description": "Major change with near production",
+            "production_date": (date.today() + timedelta(days=30)).isoformat()
+        }
+
+        response = client.post(
+            f"/models/{model.model_id}/versions",
+            headers=admin_headers,
+            json=payload
+        )
+        assert response.status_code == 400
+        assert "non-targeted" in response.json()["detail"].lower()
+
+        version_count = db_session.query(ModelVersion).filter(
+            ModelVersion.model_id == model.model_id
+        ).count()
+        assert version_count == 0
+
+    def test_approve_model_blocks_validation_when_active_non_targeted_exists(
+        self, client, db_session, admin_headers, admin_user, sample_model, workflow_taxonomies
+    ):
+        create_active_validation_request(
+            db_session,
+            workflow_taxonomies,
+            admin_user.user_id,
+            sample_model.model_id,
+            validation_type_key="initial",
+            status_key="intake"
+        )
+
+        target_date = (date.today() + timedelta(days=30)).isoformat()
+        response = client.post(
+            f"/models/{sample_model.model_id}/approve"
+            f"?create_validation=true"
+            f"&validation_type_id={workflow_taxonomies['type']['initial'].value_id}"
+            f"&validation_priority_id={workflow_taxonomies['priority']['standard'].value_id}"
+            f"&validation_target_date={target_date}"
+            f"&validation_trigger_reason=Approval overlap test",
+            headers=admin_headers,
+            json={"comment": "Approve with validation"}
+        )
+        assert response.status_code == 400
+        assert "non-targeted" in response.json()["detail"].lower()

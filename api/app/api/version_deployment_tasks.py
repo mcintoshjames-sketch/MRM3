@@ -759,6 +759,9 @@ def check_and_update_version_production_date(db: Session, version: ModelVersion)
         ModelRegion.model_id == version.model_id
     ).all()
 
+    if not model_regions:
+        return
+
     # Check if all have deployed_at set
     if all(mr.deployed_at is not None for mr in model_regions):
         # Use max deployed_at date

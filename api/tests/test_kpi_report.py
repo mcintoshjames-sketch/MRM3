@@ -202,14 +202,14 @@ class TestKPIReportRegionFiltering:
     def test_all_19_metrics_present(
         self, client, admin_headers, kpi_regions, kpi_models_with_regions
     ):
-        """All 19 metrics are returned regardless of region filter."""
+        """All metrics are returned regardless of region filter."""
         response = client.get(
             f"/kpi-report/?region_id={kpi_regions['us'].region_id}",
             headers=admin_headers
         )
 
         data = response.json()
-        assert len(data["metrics"]) == 21  # Actual count of metrics in the system
+        assert len(data["metrics"]) == 22  # Actual count of metrics in the system
 
     def test_region_response_includes_region_info(
         self, client, admin_headers, kpi_regions, kpi_models_with_regions

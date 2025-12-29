@@ -1502,7 +1502,7 @@ export default function AttestationCyclesPage() {
                                             <label className="block text-sm font-medium text-gray-700">Search and Select Model *</label>
                                             <input
                                                 type="text"
-                                                placeholder="Type to search models..."
+                                                placeholder="Type to search by name or ID..."
                                                 value={modelSearchQuery}
                                                 onChange={(e) => {
                                                     setModelSearchQuery(e.target.value);
@@ -1515,7 +1515,8 @@ export default function AttestationCyclesPage() {
                                                 <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg max-h-60 overflow-y-auto">
                                                     {models
                                                         .filter((model) =>
-                                                            model.model_name.toLowerCase().includes(modelSearchQuery.toLowerCase())
+                                                            model.model_name.toLowerCase().includes(modelSearchQuery.toLowerCase()) ||
+                                                            String(model.model_id).includes(modelSearchQuery.toLowerCase())
                                                         )
                                                         .slice(0, 50)
                                                         .map((model) => (
@@ -1528,11 +1529,13 @@ export default function AttestationCyclesPage() {
                                                                     setShowModelDropdown(false);
                                                                 }}
                                                             >
-                                                                {model.model_name}
+                                                                <div className="font-medium">{model.model_name}</div>
+                                                                <div className="text-xs text-gray-500">ID: {model.model_id}</div>
                                                             </div>
                                                         ))}
                                                     {models.filter((model) =>
-                                                        model.model_name.toLowerCase().includes(modelSearchQuery.toLowerCase())
+                                                        model.model_name.toLowerCase().includes(modelSearchQuery.toLowerCase()) ||
+                                                        String(model.model_id).includes(modelSearchQuery.toLowerCase())
                                                     ).length === 0 && (
                                                         <div className="px-4 py-2 text-sm text-gray-500">No models found</div>
                                                     )}

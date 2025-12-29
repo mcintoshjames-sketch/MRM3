@@ -31,6 +31,8 @@ export default function RecommendationEditModal({
     const [priorities, setPriorities] = useState<TaxonomyValue[]>([]);
     const [categories, setCategories] = useState<TaxonomyValue[]>([]);
     const [users, setUsers] = useState<User[]>([]);
+    const [userSearch, setUserSearch] = useState('');
+    const [showUserDropdown, setShowUserDropdown] = useState(false);
     const [saving, setSaving] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [targetDateChangeReason, setTargetDateChangeReason] = useState('');
@@ -54,10 +56,22 @@ export default function RecommendationEditModal({
             });
             setTargetDateChangeReason('');
             setError(null);
+            setUserSearch(recommendation.assigned_to?.full_name || recommendation.assigned_to?.email || '');
+            setShowUserDropdown(false);
             fetchTaxonomies();
             fetchUsers();
         }
     }, [isOpen, recommendation]);
+
+    useEffect(() => {
+        if (!isOpen) return;
+        if (!userSearch && formData.assigned_to_id && users.length > 0) {
+            const selectedUser = users.find((u) => u.user_id === formData.assigned_to_id);
+            if (selectedUser) {
+                setUserSearch(selectedUser.full_name);
+            }
+        }
+    }, [isOpen, users, formData.assigned_to_id, userSearch]);
 
     const fetchTaxonomies = async () => {
         try {
@@ -104,6 +118,13 @@ export default function RecommendationEditModal({
             const originalPriorityId = recommendation.priority?.value_id || recommendation.priority_id;
             const originalCategoryId = recommendation.category?.value_id || recommendation.category_id || null;
             const originalAssignedToId = recommendation.assigned_to?.user_id || recommendation.assigned_to_id;
+            const assignedToId = formData.assigned_to_id;
+
+            if (!assignedToId) {
+                setError('Assigned To is required.');
+                setSaving(false);
+                return;
+            }
 
             if (isFullEdit) {
                 if (formData.title !== recommendation.title) {
@@ -124,8 +145,8 @@ export default function RecommendationEditModal({
             }
 
             // These fields are allowed in both full and limited edit modes
-            if (formData.assigned_to_id !== originalAssignedToId) {
-                updatePayload.assigned_to_id = formData.assigned_to_id;
+            if (assignedToId !== originalAssignedToId) {
+                updatePayload.assigned_to_id = assignedToId;
             }
             if (formData.current_target_date !== recommendation.current_target_date) {
                 updatePayload.current_target_date = formData.current_target_date;
@@ -156,6 +177,15 @@ export default function RecommendationEditModal({
     };
 
     if (!isOpen) return null;
+    const selectedUser: User | undefined = users.find((u) => u.user_id === formData.assigned_to_id) || recommendation.assigned_to;
+    const normalizedUserSearch = userSearch.trim().toLowerCase();
+    const filteredUsers = users.filter((u) => {
+        if (!normalizedUserSearch) return true;
+        return (
+            u.full_name.toLowerCase().includes(normalizedUserSearch) ||
+            u.email.toLowerCase().includes(normalizedUserSearch)
+        );
+    }).slice(0, 50);
 
     return (
         <div className="fixed inset-0 bg-gray-500 bg-opacity-75 flex items-center justify-center z-50">
@@ -283,19 +313,52 @@ export default function RecommendationEditModal({
                         <label className="block text-sm font-medium text-gray-700">
                             Assigned To <span className="text-red-500">*</span>
                         </label>
-                        <select
-                            value={formData.assigned_to_id || ''}
-                            onChange={(e) => setFormData({ ...formData, assigned_to_id: parseInt(e.target.value) })}
-                            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 input-field"
-                            required
-                        >
-                            <option value="">Select user...</option>
-                            {users.map((u) => (
-                                <option key={u.user_id} value={u.user_id}>
-                                    {u.full_name} ({u.email})
-                                </option>
-                            ))}
-                        </select>
+                        <div className="relative">
+                            <input
+                                type="text"
+                                placeholder="Type to search users..."
+                                value={userSearch}
+                                onChange={(e) => {
+                                    const value = e.target.value;
+                                    setUserSearch(value);
+                                    setShowUserDropdown(true);
+                                    if (formData.assigned_to_id && selectedUser) {
+                                        if (value !== selectedUser.full_name && value !== selectedUser.email) {
+                                            setFormData({ ...formData, assigned_to_id: undefined });
+                                        }
+                                    }
+                                }}
+                                onFocus={() => setShowUserDropdown(true)}
+                                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 input-field"
+                                required
+                            />
+                            {showUserDropdown && (
+                                <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg max-h-60 overflow-y-auto">
+                                    {filteredUsers.map((u) => (
+                                            <div
+                                                key={u.user_id}
+                                                className="px-4 py-2 hover:bg-gray-100 cursor-pointer text-sm"
+                                                onClick={() => {
+                                                    setFormData({ ...formData, assigned_to_id: u.user_id });
+                                                    setUserSearch(u.full_name);
+                                                    setShowUserDropdown(false);
+                                                }}
+                                            >
+                                                    <div className="font-medium">{u.full_name}</div>
+                                                    <div className="text-xs text-gray-500">{u.email}</div>
+                                            </div>
+                                    ))}
+                                    {filteredUsers.length === 0 && (
+                                        <div className="px-4 py-2 text-sm text-gray-500">No users found</div>
+                                    )}
+                                </div>
+                            )}
+                        </div>
+                        {formData.assigned_to_id && selectedUser && (
+                            <p className="mt-1 text-sm text-green-600">
+                                Selected: {selectedUser.full_name}
+                            </p>
+                        )}
                     </div>
 
                     {/* Current Target Date - Always editable */}

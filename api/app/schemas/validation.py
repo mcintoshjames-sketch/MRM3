@@ -176,6 +176,36 @@ class ValidationRequestUpdate(BaseModel):
     region_ids: Optional[List[int]] = None
 
 
+class ModelVersionEntry(BaseModel):
+    """Entry for adding a model with optional version."""
+    model_id: int
+    version_id: Optional[int] = None  # Required for CHANGE type validations
+
+
+class ValidationRequestModelUpdate(BaseModel):
+    """Schema for adding/removing models from a validation request."""
+    add_models: Optional[List[ModelVersionEntry]] = None
+    remove_model_ids: Optional[List[int]] = None
+    allow_unassign_conflicts: bool = False
+
+
+class ValidationRequestModelUpdateResponse(BaseModel):
+    """Response with impacts of the model change."""
+    success: bool
+    models_added: List[int]
+    models_removed: List[int]
+    lead_time_changed: bool
+    old_lead_time_days: Optional[int] = None
+    new_lead_time_days: Optional[int] = None
+    warnings: List[ValidationWarning] = Field(default_factory=list)
+    plan_deviations_flagged: int
+    approvals_added: int
+    approvals_voided: int
+    conditional_approvals_added: int
+    conditional_approvals_voided: int
+    validators_unassigned: List[str] = Field(default_factory=list)
+
+
 class ValidationRequestStatusUpdate(BaseModel):
     """Schema for updating validation request status."""
     new_status_id: int

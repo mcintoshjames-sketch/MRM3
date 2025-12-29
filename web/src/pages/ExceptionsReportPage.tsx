@@ -282,10 +282,14 @@ const ExceptionsReportPage: React.FC = () => {
     };
 
     // Filter models for searchable dropdown
-    const filteredModels = models.filter((model) =>
-        model.model_name.toLowerCase().includes(modelSearchQuery.toLowerCase()) ||
-        (model.model_code && model.model_code.toLowerCase().includes(modelSearchQuery.toLowerCase()))
-    ).slice(0, 50);
+    const filteredModels = models.filter((model) => {
+        const normalizedSearch = modelSearchQuery.toLowerCase();
+        return (
+            model.model_name.toLowerCase().includes(normalizedSearch) ||
+            String(model.model_id).includes(normalizedSearch) ||
+            (model.model_code && model.model_code.toLowerCase().includes(normalizedSearch))
+        );
+    }).slice(0, 50);
 
     // Get selected model name for display
     const selectedModelName = createModelId
@@ -1035,7 +1039,7 @@ const ExceptionsReportPage: React.FC = () => {
                                         <div className="relative">
                                             <input
                                                 type="text"
-                                                placeholder="Type to search for a model..."
+                                                placeholder="Type to search by name or ID..."
                                                 value={modelSearchQuery}
                                                 onChange={(e) => {
                                                     setModelSearchQuery(e.target.value);
@@ -1057,10 +1061,11 @@ const ExceptionsReportPage: React.FC = () => {
                                                                     setShowModelDropdown(false);
                                                                 }}
                                                             >
-                                                                {model.model_name}
-                                                                {model.model_code && (
-                                                                    <span className="text-gray-500 ml-2">({model.model_code})</span>
-                                                                )}
+                                                                <div className="font-medium">{model.model_name}</div>
+                                                                <div className="text-xs text-gray-500">
+                                                                    ID: {model.model_id}
+                                                                    {model.model_code && ` • ${model.model_code}`}
+                                                                </div>
                                                             </div>
                                                         ))
                                                     ) : (

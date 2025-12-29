@@ -12,9 +12,10 @@ import { listValidationRequestLimitations, LimitationListItem } from '../api/lim
 import RecommendationCreateModal from '../components/RecommendationCreateModal';
 import ValidationScorecardTab from '../components/ValidationScorecardTab';
 import DeployModal from '../components/DeployModal';
+import ManageModelsModal from '../components/ManageModelsModal';
 import { Region } from '../api/regions';
 import PreTransitionWarningModal from '../components/PreTransitionWarningModal';
-import { validationWorkflowApi, PreTransitionWarningsResponse } from '../api/validationWorkflow';
+import { validationWorkflowApi, PreTransitionWarningsResponse, ValidationRequestModelUpdateResponse } from '../api/validationWorkflow';
 
 interface TaxonomyValue {
     value_id: number;
@@ -143,6 +144,11 @@ interface ValidationRequestDetail {
     regions?: Region[];
 }
 
+const getPrimaryModel = (models?: ModelSummary[]): ModelSummary | undefined => {
+    if (!models || models.length === 0) return undefined;
+    return models.reduce((min, model) => (model.model_id < min.model_id ? model : min), models[0]);
+};
+
 interface PriorValidationSummary {
     request_id: number;
     validation_type: TaxonomyValue;
@@ -181,6 +187,7 @@ export default function ValidationRequestDetailPage() {
     const [workflowSLA, setWorkflowSLA] = useState<WorkflowSLA | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
+    const [modelChangeNotices, setModelChangeNotices] = useState<string[]>([]);
     const [activeTab, setActiveTab] = useState<TabType>('overview');
     const [actionLoading, setActionLoading] = useState(false);
 
@@ -193,6 +200,7 @@ export default function ValidationRequestDetailPage() {
     const [showOutcomeModal, setShowOutcomeModal] = useState(false);
     const [showApprovalModal, setShowApprovalModal] = useState(false);
     const [showSubmissionModal, setShowSubmissionModal] = useState(false);
+    const [showManageModelsModal, setShowManageModelsModal] = useState(false);
     // Hold/Cancel/Resume modals
     const [showHoldModal, setShowHoldModal] = useState(false);
     const [showCancelModal, setShowCancelModal] = useState(false);
@@ -423,9 +431,10 @@ export default function ValidationRequestDetailPage() {
             setWorkflowSLA(slaRes.data);
 
             // Fetch model versions that link to this validation project
-            if (requestRes.data.models && requestRes.data.models.length > 0 && requestRes.data.models[0].model_id && id) {
+            const primaryModel = getPrimaryModel(requestRes.data.models);
+            if (primaryModel && primaryModel.model_id && id) {
                 try {
-                    const versionsRes = await api.get(`/models/${requestRes.data.models[0].model_id}/versions`);
+                    const versionsRes = await api.get(`/models/${primaryModel.model_id}/versions`);
                     const linkedVersions = versionsRes.data.filter((v: any) => v.validation_request_id === parseInt(id));
                     setRelatedVersions(linkedVersions);
                 } catch (err) {
@@ -927,7 +936,9 @@ export default function ValidationRequestDetailPage() {
 
         // Load available versions for the first model
         try {
-            const modelId = request.models[0].model_id;
+            const primary = getPrimaryModel(request.models);
+            if (!primary) return;
+            const modelId = primary.model_id;
             const versionsRes = await api.get(`/models/${modelId}/versions`);
             setAvailableVersions(versionsRes.data);
 
@@ -1219,7 +1230,36 @@ export default function ValidationRequestDetailPage() {
         }
     };
 
+    const handleModelsUpdated = async (response: ValidationRequestModelUpdateResponse) => {
+        const notices: string[] = [];
+        if (response.warnings?.length) {
+            response.warnings.forEach((warning) => {
+                notices.push(`${warning.severity}: ${warning.message}`);
+            });
+        }
+        if (response.validators_unassigned?.length) {
+            notices.push(`Validators unassigned: ${response.validators_unassigned.join(', ')}`);
+        }
+        if (response.plan_deviations_flagged > 0) {
+            notices.push(`${response.plan_deviations_flagged} plan component(s) flagged for review.`);
+        }
+        if (response.approvals_voided > 0 || response.approvals_added > 0) {
+            notices.push(`Approvals updated: +${response.approvals_added} / voided ${response.approvals_voided}.`);
+        }
+        if (response.conditional_approvals_added > 0 || response.conditional_approvals_voided > 0) {
+            notices.push(`Conditional approvals updated: +${response.conditional_approvals_added} / voided ${response.conditional_approvals_voided}.`);
+        }
+        setModelChangeNotices(notices);
+        setShowManageModelsModal(false);
+        await fetchData();
+    };
+
     const canEditRequest = user?.role === 'Admin' || user?.role === 'Validator';
+    const canEditModels = (
+        (user?.role === 'Admin' || user?.role === 'Validator') &&
+        (request?.current_status?.code === 'INTAKE' || request?.current_status?.code === 'PLANNING')
+    );
+    const primaryModel = getPrimaryModel(request?.models);
     const isPrimaryValidator = request && user && request.assignments.some(
         a => a.is_primary && a.validator.user_id === user.user_id
     );
@@ -1321,12 +1361,12 @@ export default function ValidationRequestDetailPage() {
                         Validation Project #{request.request_id}
                     </h2>
                     <div className="flex items-center gap-3 mt-2">
-                        {request.models && request.models.length > 0 && (
+                        {primaryModel && (
                             <Link
-                                to={`/models/${request.models[0].model_id}`}
+                                to={`/models/${primaryModel.model_id}`}
                                 className="text-blue-600 hover:text-blue-800 font-medium"
                             >
-                                {request.models[0].model_name}
+                                {primaryModel.model_name}
                             </Link>
                         )}
                         <span className={`px-2 py-1 text-xs rounded ${getStatusColor(request.current_status.label)}`}>
@@ -1338,6 +1378,14 @@ export default function ValidationRequestDetailPage() {
                     </div>
                 </div>
                 <div className="flex gap-2">
+                    {canEditModels && (
+                        <button
+                            onClick={() => setShowManageModelsModal(true)}
+                            className="bg-slate-700 text-white px-4 py-2 rounded hover:bg-slate-800"
+                        >
+                            Manage Models
+                        </button>
+                    )}
                     {/* Mark Submission Received Button */}
                     {isPrimaryValidator && request.current_status.code === 'PLANNING' && (
                         <button
@@ -1463,6 +1511,20 @@ export default function ValidationRequestDetailPage() {
                 <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
                     {error}
                     <button onClick={() => setError(null)} className="float-right font-bold">×</button>
+                </div>
+            )}
+
+            {modelChangeNotices.length > 0 && (
+                <div className="bg-blue-50 border border-blue-200 text-blue-900 px-4 py-3 rounded mb-4">
+                    <div className="flex items-start justify-between">
+                        <span className="font-medium">Model changes saved</span>
+                        <button onClick={() => setModelChangeNotices([])} className="font-bold">×</button>
+                    </div>
+                    <ul className="mt-2 list-disc ml-5 text-sm space-y-1">
+                        {modelChangeNotices.map((notice, index) => (
+                            <li key={`${notice}-${index}`}>{notice}</li>
+                        ))}
+                    </ul>
                 </div>
             )}
 
@@ -1752,12 +1814,12 @@ export default function ValidationRequestDetailPage() {
                             </div>
                             <div>
                                 <h4 className="text-sm font-medium text-gray-500 mb-1">Model</h4>
-                                {request.models && request.models.length > 0 && (
+                                {primaryModel && (
                                     <>
-                                        <Link to={`/models/${request.models[0].model_id}`} className="text-blue-600 hover:text-blue-800">
-                                            {request.models[0].model_name}
+                                        <Link to={`/models/${primaryModel.model_id}`} className="text-blue-600 hover:text-blue-800">
+                                            {primaryModel.model_name}
                                         </Link>
-                                        <span className="ml-2 text-sm text-gray-500">({request.models[0].status})</span>
+                                        <span className="ml-2 text-sm text-gray-500">({primaryModel.status})</span>
                                     </>
                                 )}
                             </div>
@@ -1908,9 +1970,9 @@ export default function ValidationRequestDetailPage() {
                                                     <div className="text-xs text-gray-500">
                                                         Created by {version.created_by_name} on {version.created_at.split('T')[0]}
                                                     </div>
-                                                    {(version.status === 'APPROVED' || version.status === 'ACTIVE') && request.models[0] && (
+                                                    {(version.status === 'APPROVED' || version.status === 'ACTIVE') && primaryModel && (
                                                         <Link
-                                                            to={`/models/${request.models[0].model_id}/versions/${version.version_id}`}
+                                                            to={`/models/${primaryModel.model_id}/versions/${version.version_id}`}
                                                             className="inline-flex items-center gap-1 px-3 py-1 text-xs font-medium text-purple-700 bg-purple-100 rounded-full hover:bg-purple-200 transition-colors"
                                                         >
                                                             <span>🚀</span> Deploy
@@ -2013,9 +2075,9 @@ export default function ValidationRequestDetailPage() {
                     <ValidationPlanForm
                         ref={validationPlanRef}
                         requestId={request.request_id}
-                        modelId={request.models[0]?.model_id}
-                        modelName={request.models[0]?.model_name}
-                        riskTier={request.models[0]?.model_id ? 'Loading...' : undefined}
+                        modelId={primaryModel?.model_id}
+                        modelName={primaryModel?.model_name}
+                        riskTier={primaryModel?.model_id ? 'Loading...' : undefined}
                         onSave={fetchData}
                         canEdit={canEditRequest}
                         validationTypeCode={request.validation_type?.code}
@@ -3681,12 +3743,21 @@ export default function ValidationRequestDetailPage() {
                 </div>
             )}
 
+            {showManageModelsModal && request && (
+                <ManageModelsModal
+                    request={request}
+                    isOpen={showManageModelsModal}
+                    onClose={() => setShowManageModelsModal(false)}
+                    onSave={handleModelsUpdated}
+                />
+            )}
+
             {/* Overdue Commentary Modal */}
             {showCommentaryModal && request && (
                 <OverdueCommentaryModal
                     requestId={request.request_id}
                     overdueType={commentaryModalType}
-                    modelName={request.models?.[0]?.model_name}
+                    modelName={primaryModel?.model_name}
                     currentComment={overdueCommentary?.current_comment}
                     onClose={() => setShowCommentaryModal(false)}
                     onSuccess={handleCommentarySuccess}
@@ -3721,7 +3792,7 @@ export default function ValidationRequestDetailPage() {
                     users={users.map(u => ({ user_id: u.user_id, email: u.email, full_name: u.full_name }))}
                     priorities={recPriorities}
                     categories={recCategories}
-                    preselectedModelId={request.models[0]?.model_id}
+                    preselectedModelId={primaryModel?.model_id}
                     preselectedValidationRequestId={request.request_id}
                 />
             )}

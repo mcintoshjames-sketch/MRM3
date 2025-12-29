@@ -356,11 +356,19 @@ def load_scorecard_config(config_path: Optional[str] = None) -> dict:
         json.JSONDecodeError: If config file is invalid JSON.
     """
     if config_path is None:
-        # Default to SCORE_CRITERIA.json in /app directory
-        # Navigate from app/core/scorecard.py to /app (3 levels up)
-        # Inside Docker: /app/app/core/scorecard.py -> /app/SCORE_CRITERIA.json
-        app_root = Path(__file__).parent.parent.parent
-        config_path = app_root / "SCORE_CRITERIA.json"
+        # Default to SCORE_CRITERIA.json in repo root (/app in Docker).
+        # In local dev, this file may live one level above /api.
+        app_root = Path(__file__).resolve().parents[2]
+        candidate_paths = [
+            app_root / "SCORE_CRITERIA.json",
+            app_root.parent / "SCORE_CRITERIA.json",
+        ]
+        for candidate in candidate_paths:
+            if candidate.exists() and candidate.stat().st_size > 0:
+                config_path = candidate
+                break
+        else:
+            config_path = candidate_paths[0]
 
     with open(config_path, "r") as f:
         return json.load(f)

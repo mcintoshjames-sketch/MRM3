@@ -253,6 +253,35 @@ class TestMonitoringTeams:
         data = response.json()
         assert len(data["members"]) == 1
 
+    def test_create_team_duplicate_members_fails(self, client, admin_headers, test_user, second_user):
+        """Cannot create team with identical member set."""
+        create_resp = client.post("/monitoring/teams", headers=admin_headers, json={
+            "name": "Team One",
+            "member_ids": [test_user.user_id, second_user.user_id]
+        })
+        assert create_resp.status_code == 201
+
+        response = client.post("/monitoring/teams", headers=admin_headers, json={
+            "name": "Team Two",
+            "member_ids": [second_user.user_id, test_user.user_id]
+        })
+        assert response.status_code == 400
+        assert "same members" in response.json()["detail"].lower()
+
+    def test_create_team_different_members_allowed(self, client, admin_headers, test_user, second_user):
+        """Allows teams with different member sets."""
+        create_resp = client.post("/monitoring/teams", headers=admin_headers, json={
+            "name": "Team Alpha",
+            "member_ids": [test_user.user_id]
+        })
+        assert create_resp.status_code == 201
+
+        response = client.post("/monitoring/teams", headers=admin_headers, json={
+            "name": "Team Beta",
+            "member_ids": [second_user.user_id]
+        })
+        assert response.status_code == 201
+
     def test_get_team_by_id(self, client, admin_headers):
         """Get a specific team by ID."""
         create_resp = client.post("/monitoring/teams", headers=admin_headers, json={
@@ -283,6 +312,29 @@ class TestMonitoringTeams:
         assert response.status_code == 200
         assert response.json()["name"] == "Updated Team Name"
         assert response.json()["is_active"] is False
+
+    def test_update_team_duplicate_members_fails(self, client, admin_headers, test_user, second_user):
+        """Cannot update team to duplicate existing member set."""
+        team_a_resp = client.post("/monitoring/teams", headers=admin_headers, json={
+            "name": "Team Alpha",
+            "member_ids": [test_user.user_id, second_user.user_id]
+        })
+        team_a_id = team_a_resp.json()["team_id"]
+
+        team_b_resp = client.post("/monitoring/teams", headers=admin_headers, json={
+            "name": "Team Beta",
+            "member_ids": [test_user.user_id]
+        })
+        team_b_id = team_b_resp.json()["team_id"]
+
+        response = client.patch(f"/monitoring/teams/{team_b_id}", headers=admin_headers, json={
+            "member_ids": [second_user.user_id, test_user.user_id]
+        })
+        assert response.status_code == 400
+        detail = response.json()["detail"].lower()
+        assert "same members" in detail
+        assert "team alpha" in detail
+        assert str(team_a_id) in detail
 
     def test_delete_team(self, client, admin_headers):
         """Admin can delete a monitoring team without plans."""
@@ -529,6 +581,124 @@ class TestMonitoringPlans:
         new_date = date.fromisoformat(response.json()["next_submission_due_date"])
         expected_date = original_date + relativedelta(months=3)
         assert new_date == expected_date
+
+
+class TestMonitoringPlanFrequencyOverlap:
+    """Tests for monitoring plan frequency overlap rules."""
+
+    def test_create_plan_blocks_same_frequency_for_model(self, client, admin_headers, sample_model):
+        create_resp = client.post("/monitoring/plans", headers=admin_headers, json={
+            "name": "Monthly Plan A",
+            "frequency": "Monthly",
+            "model_ids": [sample_model.model_id]
+        })
+        assert create_resp.status_code == 201
+        plan_id = create_resp.json()["plan_id"]
+
+        response = client.post("/monitoring/plans", headers=admin_headers, json={
+            "name": "Monthly Plan B",
+            "frequency": "Monthly",
+            "model_ids": [sample_model.model_id]
+        })
+        assert response.status_code == 400
+        detail = response.json()["detail"]
+        assert "one active monitoring plan per frequency" in detail.lower()
+        assert str(sample_model.model_id) in detail
+        assert str(plan_id) in detail
+
+    def test_create_plan_allows_different_frequency(self, client, admin_headers, sample_model):
+        create_resp = client.post("/monitoring/plans", headers=admin_headers, json={
+            "name": "Monthly Plan A",
+            "frequency": "Monthly",
+            "model_ids": [sample_model.model_id]
+        })
+        assert create_resp.status_code == 201
+
+        response = client.post("/monitoring/plans", headers=admin_headers, json={
+            "name": "Quarterly Plan B",
+            "frequency": "Quarterly",
+            "model_ids": [sample_model.model_id]
+        })
+        assert response.status_code == 201
+
+    def test_update_plan_blocks_adding_model_conflict(self, client, admin_headers, sample_model):
+        create_resp = client.post("/monitoring/plans", headers=admin_headers, json={
+            "name": "Monthly Plan A",
+            "frequency": "Monthly",
+            "model_ids": [sample_model.model_id]
+        })
+        assert create_resp.status_code == 201
+        plan_id = create_resp.json()["plan_id"]
+
+        second_resp = client.post("/monitoring/plans", headers=admin_headers, json={
+            "name": "Monthly Plan B",
+            "frequency": "Monthly"
+        })
+        assert second_resp.status_code == 201
+        second_plan_id = second_resp.json()["plan_id"]
+
+        response = client.patch(f"/monitoring/plans/{second_plan_id}", headers=admin_headers, json={
+            "model_ids": [sample_model.model_id]
+        })
+        assert response.status_code == 400
+        detail = response.json()["detail"]
+        assert "one active monitoring plan per frequency" in detail.lower()
+        assert str(sample_model.model_id) in detail
+        assert str(plan_id) in detail
+
+    def test_update_plan_blocks_frequency_change_conflict(self, client, admin_headers, sample_model):
+        quarterly_resp = client.post("/monitoring/plans", headers=admin_headers, json={
+            "name": "Quarterly Plan A",
+            "frequency": "Quarterly",
+            "model_ids": [sample_model.model_id]
+        })
+        assert quarterly_resp.status_code == 201
+        plan_id = quarterly_resp.json()["plan_id"]
+
+        monthly_resp = client.post("/monitoring/plans", headers=admin_headers, json={
+            "name": "Monthly Plan B",
+            "frequency": "Monthly",
+            "model_ids": [sample_model.model_id]
+        })
+        assert monthly_resp.status_code == 201
+        monthly_plan_id = monthly_resp.json()["plan_id"]
+
+        response = client.patch(f"/monitoring/plans/{monthly_plan_id}", headers=admin_headers, json={
+            "frequency": "Quarterly"
+        })
+        assert response.status_code == 400
+        detail = response.json()["detail"]
+        assert "one active monitoring plan per frequency" in detail.lower()
+        assert str(sample_model.model_id) in detail
+        assert str(plan_id) in detail
+
+    def test_activate_plan_blocks_frequency_conflict(self, client, admin_headers, sample_model):
+        active_resp = client.post("/monitoring/plans", headers=admin_headers, json={
+            "name": "Monthly Plan A",
+            "frequency": "Monthly",
+            "model_ids": [sample_model.model_id],
+            "is_active": True
+        })
+        assert active_resp.status_code == 201
+        plan_id = active_resp.json()["plan_id"]
+
+        inactive_resp = client.post("/monitoring/plans", headers=admin_headers, json={
+            "name": "Monthly Plan B",
+            "frequency": "Monthly",
+            "model_ids": [sample_model.model_id],
+            "is_active": False
+        })
+        assert inactive_resp.status_code == 201
+        inactive_plan_id = inactive_resp.json()["plan_id"]
+
+        response = client.patch(f"/monitoring/plans/{inactive_plan_id}", headers=admin_headers, json={
+            "is_active": True
+        })
+        assert response.status_code == 400
+        detail = response.json()["detail"]
+        assert "one active monitoring plan per frequency" in detail.lower()
+        assert str(sample_model.model_id) in detail
+        assert str(plan_id) in detail
 
 
 class TestMonitoringPlanMetrics:
@@ -1005,6 +1175,8 @@ class TestCycleWorkflow:
             "frequency": "Quarterly"
         })
         plan_id = plan_resp.json()["plan_id"]
+        plan_before = client.get(f"/monitoring/plans/{plan_id}", headers=admin_headers).json()
+        old_submission = date.fromisoformat(plan_before["next_submission_due_date"])
 
         cycle_resp = client.post(f"/monitoring/plans/{plan_id}/cycles", headers=admin_headers, json={})
         cycle_id = cycle_resp.json()["cycle_id"]
@@ -1015,6 +1187,10 @@ class TestCycleWorkflow:
         assert response.status_code == 200
         assert response.json()["status"] == "CANCELLED"
         assert "CANCELLED" in response.json()["notes"]
+
+        plan_after = client.get(f"/monitoring/plans/{plan_id}", headers=admin_headers).json()
+        new_submission = date.fromisoformat(plan_after["next_submission_due_date"])
+        assert new_submission == old_submission + relativedelta(months=3)
 
     def test_cycle_overdue_fields_past_due_date(self, client, admin_headers):
         """Cycle with past report_due_date in DATA_COLLECTION shows is_overdue=True."""
@@ -1726,6 +1902,8 @@ class TestApprovalWorkflow:
         """Cycle transitions to APPROVED when all approvals are granted."""
         # Setup cycle in UNDER_REVIEW state
         plan_id, cycle_id = self._setup_cycle_for_approval(client, admin_headers, "Plan For Auto Complete")
+        plan_before = client.get(f"/monitoring/plans/{plan_id}", headers=admin_headers).json()
+        old_submission = date.fromisoformat(plan_before["next_submission_due_date"])
         client.post(f"/monitoring/cycles/{cycle_id}/request-approval", headers=admin_headers,
                    json={"report_url": "https://example.com/reports/test-report.pdf"})
 
@@ -1743,6 +1921,10 @@ class TestApprovalWorkflow:
         cycle_resp = client.get(f"/monitoring/cycles/{cycle_id}", headers=admin_headers)
         assert cycle_resp.json()["status"] == "APPROVED"
         assert cycle_resp.json()["completed_at"] is not None
+
+        plan_after = client.get(f"/monitoring/plans/{plan_id}", headers=admin_headers).json()
+        new_submission = date.fromisoformat(plan_after["next_submission_due_date"])
+        assert new_submission == old_submission + relativedelta(months=3)
 
     def test_reject_approval_returns_to_under_review(self, client, admin_headers):
         """Rejecting an approval returns cycle to UNDER_REVIEW."""

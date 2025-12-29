@@ -1,4 +1,5 @@
 import React, { useMemo } from 'react';
+import ModelSearchSelect from '../ModelSearchSelect';
 
 interface TrendDataPoint {
     cycle_id: number;
@@ -237,21 +238,23 @@ const QualitativeStatusTimeline: React.FC<QualitativeStatusTimelineProps> = ({
                 {availableModels.length > 1 && onModelFilterChange && (
                     <div className="px-6 py-3 border-b bg-gray-50 flex items-center gap-3">
                         <label className="text-sm font-medium text-gray-700">Filter by Model:</label>
-                        <select
-                            value={modelFilter === 'all' ? 'all' : modelFilter === 'plan-level' ? 'plan-level' : modelFilter.toString()}
-                            onChange={(e) => onModelFilterChange(e.target.value)}
-                            className="border rounded-md px-3 py-1.5 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                        >
-                            <option value="all">All Results</option>
-                            {availableModels.map((model) => (
-                                <option
-                                    key={model.model_id}
-                                    value={model.model_id === -1 ? 'plan-level' : model.model_id.toString()}
-                                >
-                                    {model.model_name}
-                                </option>
-                            ))}
-                        </select>
+                        <ModelSearchSelect
+                            models={availableModels}
+                            value={modelFilter === 'all' || modelFilter === 'plan-level' ? modelFilter : modelFilter}
+                            onChange={(value) => {
+                                if (value === null) {
+                                    onModelFilterChange('all');
+                                    return;
+                                }
+                                onModelFilterChange(String(value));
+                            }}
+                            specialOptions={[
+                                { value: 'all', label: 'All Results' },
+                                { value: 'plan-level', label: 'Plan Level (All Models)' }
+                            ]}
+                            inputClassName="border rounded-md px-3 py-1.5 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                            placeholder="Search models..."
+                        />
                         {modelFilter !== 'all' && (
                             <span className="text-xs text-gray-500">
                                 Showing results for selected model only

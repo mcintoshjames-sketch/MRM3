@@ -1,4 +1,5 @@
 import React from 'react';
+import ModelSearchSelect from '../ModelSearchSelect';
 
 // Types
 export interface UserRef {
@@ -100,12 +101,14 @@ export interface CycleResultsPanelProps {
 
 // Helper functions
 export const formatPeriod = (start: string, end: string): string => {
-    const startDate = new Date(start);
-    const endDate = new Date(end);
-    const startMonth = startDate.toLocaleString('default', { month: 'short' });
-    const endMonth = endDate.toLocaleString('default', { month: 'short' });
-    const year = endDate.getFullYear();
-    return `${startMonth} - ${endMonth} ${year}`;
+    const startParts = start.split('T')[0].split('-');
+    const endParts = end.split('T')[0].split('-');
+    if (startParts.length < 3 || endParts.length < 3) {
+        return `${start} - ${end}`;
+    }
+    const [startYear, startMonth, startDay] = startParts;
+    const [endYear, endMonth, endDay] = endParts;
+    return `${startMonth}/${startDay}/${startYear} - ${endMonth}/${endDay}/${endYear}`;
 };
 
 export const getOutcomeColor = (outcome: string | null): string => {
@@ -196,30 +199,31 @@ const CycleResultsPanel: React.FC<CycleResultsPanelProps> = ({
                             <label className="text-sm font-medium text-gray-700">
                                 Enter Results For:
                             </label>
-                            <select
+                            <ModelSearchSelect
+                                models={models}
                                 value={selectedModel === null ? 'plan-level' : selectedModel}
-                                onChange={(e) => {
-                                    const value = e.target.value;
-                                    onModelChange(value === 'plan-level' ? null : parseInt(value));
+                                onChange={(value) => {
+                                    if (value === 'plan-level' || value === null) {
+                                        onModelChange(null);
+                                        return;
+                                    }
+                                    if (typeof value === 'number') {
+                                        onModelChange(value);
+                                    }
                                 }}
-                                className="border rounded-md px-3 py-1.5 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                            >
-                                <option
-                                    value="plan-level"
-                                    disabled={existingResultsMode === 'model-specific'}
-                                >
-                                    Plan Level (All Models){existingResultsMode === 'model-specific' ? ' - locked' : ''}
-                                </option>
-                                {models.map((model) => (
-                                    <option
-                                        key={model.model_id}
-                                        value={model.model_id}
-                                        disabled={existingResultsMode === 'plan-level'}
-                                    >
-                                        {model.model_name} (ID: {model.model_id}){existingResultsMode === 'plan-level' ? ' - locked' : ''}
-                                    </option>
-                                ))}
-                            </select>
+                                specialOptions={[
+                                    {
+                                        value: 'plan-level',
+                                        label: `Plan Level (All Models)${existingResultsMode === 'model-specific' ? ' - locked' : ''}`
+                                    }
+                                ]}
+                                disabledValues={[
+                                    ...(existingResultsMode === 'model-specific' ? ['plan-level'] : []),
+                                    ...(existingResultsMode === 'plan-level' ? models.map((model) => model.model_id) : [])
+                                ]}
+                                inputClassName="border rounded-md px-3 py-1.5 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                placeholder="Search models..."
+                            />
                             {/* Mode indicator badge */}
                             {existingResultsMode !== 'none' && (
                                 <span className={`px-2 py-0.5 text-xs rounded-full ${

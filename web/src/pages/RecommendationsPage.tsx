@@ -6,6 +6,7 @@ import Layout from '../components/Layout';
 import FilterStatusBar from '../components/FilterStatusBar';
 import MultiSelectDropdown from '../components/MultiSelectDropdown';
 import RecommendationCreateModal from '../components/RecommendationCreateModal';
+import ModelSearchSelect from '../components/ModelSearchSelect';
 import StatFilterCard from '../components/StatFilterCard';
 import { useTableSort } from '../hooks/useTableSort';
 import { useColumnPreferences, ColumnDefinition } from '../hooks/useColumnPreferences';
@@ -625,17 +626,14 @@ export default function RecommendationsPage() {
                         <label htmlFor="filter-model" className="block text-xs font-medium text-gray-700 mb-1">
                             Model
                         </label>
-                        <select
+                        <ModelSearchSelect
                             id="filter-model"
-                            className="input-field text-sm"
-                            value={modelFilterId || ''}
-                            onChange={(e) => setModelFilterId(e.target.value ? parseInt(e.target.value) : null)}
-                        >
-                            <option value="">All Models</option>
-                            {models.map(m => (
-                                <option key={m.model_id} value={m.model_id}>{m.model_name}</option>
-                            ))}
-                        </select>
+                            models={models}
+                            value={modelFilterId}
+                            onChange={(value) => setModelFilterId(typeof value === 'number' ? value : null)}
+                            placeholder="All Models"
+                            inputClassName="input-field text-sm"
+                        />
                     </div>
 
                     {/* Assigned To */}

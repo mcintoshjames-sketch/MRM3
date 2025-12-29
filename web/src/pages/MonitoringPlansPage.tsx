@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, Fragment } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import api from '../api/client';
@@ -160,6 +160,17 @@ export default function MonitoringPlansPage() {
         is_active: true,
         model_ids: [] as number[]
     });
+    const [dataProviderSearch, setDataProviderSearch] = useState('');
+    const [showDataProviderDropdown, setShowDataProviderDropdown] = useState(false);
+    const [showQuickTeamModal, setShowQuickTeamModal] = useState(false);
+    const [quickTeamFormData, setQuickTeamFormData] = useState({
+        name: '',
+        description: '',
+        is_active: true,
+        member_ids: [] as number[]
+    });
+    const [quickTeamError, setQuickTeamError] = useState<string | null>(null);
+    const [savingQuickTeam, setSavingQuickTeam] = useState(false);
 
     // Reference data
     const [allUsers, setAllUsers] = useState<User[]>([]);
@@ -175,6 +186,14 @@ export default function MonitoringPlansPage() {
     const [showVersionsModal, setShowVersionsModal] = useState(false);
 
     const [error, setError] = useState<string | null>(null);
+    const [peekTeamId, setPeekTeamId] = useState<number | null>(null);
+    const [peekTeamMembers, setPeekTeamMembers] = useState<User[]>([]);
+    const [loadingPeekTeamId, setLoadingPeekTeamId] = useState<number | null>(null);
+    const [peekTeamError, setPeekTeamError] = useState<string | null>(null);
+    const [peekPlanId, setPeekPlanId] = useState<number | null>(null);
+    const [peekPlanModels, setPeekPlanModels] = useState<Model[]>([]);
+    const [loadingPeekPlanId, setLoadingPeekPlanId] = useState<number | null>(null);
+    const [peekPlanError, setPeekPlanError] = useState<string | null>(null);
 
     // URL parameters for pre-population
     const [searchParams, setSearchParams] = useSearchParams();
@@ -211,6 +230,18 @@ export default function MonitoringPlansPage() {
             }
         }
     }, [preselectedModelId, allModels, setSearchParams]);
+
+    useEffect(() => {
+        if (!showPlanForm) return;
+        if (!dataProviderSearch && planFormData.data_provider_user_id && allUsers.length > 0) {
+            const selected = allUsers.find(
+                (u) => u.user_id === planFormData.data_provider_user_id
+            );
+            if (selected) {
+                setDataProviderSearch(selected.full_name || selected.email);
+            }
+        }
+    }, [showPlanForm, dataProviderSearch, planFormData.data_provider_user_id, allUsers]);
 
     const fetchReferenceData = async () => {
         try {
@@ -293,6 +324,48 @@ export default function MonitoringPlansPage() {
         }
     };
 
+    const handlePeekTeam = async (team: MonitoringTeam) => {
+        if (peekTeamId === team.team_id) {
+            setPeekTeamId(null);
+            setPeekTeamMembers([]);
+            setPeekTeamError(null);
+            return;
+        }
+        setPeekTeamId(team.team_id);
+        setPeekTeamMembers([]);
+        setPeekTeamError(null);
+        setLoadingPeekTeamId(team.team_id);
+        try {
+            const response = await api.get(`/monitoring/teams/${team.team_id}`);
+            setPeekTeamMembers(response.data.members || []);
+        } catch (err: any) {
+            setPeekTeamError(err.response?.data?.detail || 'Failed to load team members');
+        } finally {
+            setLoadingPeekTeamId(null);
+        }
+    };
+
+    const handlePeekPlanModels = async (plan: MonitoringPlan) => {
+        if (peekPlanId === plan.plan_id) {
+            setPeekPlanId(null);
+            setPeekPlanModels([]);
+            setPeekPlanError(null);
+            return;
+        }
+        setPeekPlanId(plan.plan_id);
+        setPeekPlanModels([]);
+        setPeekPlanError(null);
+        setLoadingPeekPlanId(plan.plan_id);
+        try {
+            const response = await api.get(`/monitoring/plans/${plan.plan_id}`);
+            setPeekPlanModels(response.data.models || []);
+        } catch (err: any) {
+            setPeekPlanError(err.response?.data?.detail || 'Failed to load models');
+        } finally {
+            setLoadingPeekPlanId(null);
+        }
+    };
+
     // Plans CRUD
     const fetchPlans = async () => {
         setLoadingPlans(true);
@@ -317,6 +390,17 @@ export default function MonitoringPlansPage() {
             is_active: true,
             model_ids: []
         });
+        setDataProviderSearch('');
+        setShowDataProviderDropdown(false);
+        setShowQuickTeamModal(false);
+        setQuickTeamFormData({
+            name: '',
+            description: '',
+            is_active: true,
+            member_ids: []
+        });
+        setQuickTeamError(null);
+        setSavingQuickTeam(false);
         setEditingPlan(null);
         setShowPlanForm(false);
         setError(null);
@@ -343,6 +427,47 @@ export default function MonitoringPlansPage() {
         }
     };
 
+    const handleQuickAddTeam = async () => {
+        const name = quickTeamFormData.name.trim();
+        if (!name) {
+            setQuickTeamError('Team name is required.');
+            return;
+        }
+        const duplicate = teams.some(
+            (team) => team.name.trim().toLowerCase() === name.toLowerCase()
+        );
+        if (duplicate) {
+            setQuickTeamError('A monitoring team with this name already exists.');
+            return;
+        }
+        setSavingQuickTeam(true);
+        setQuickTeamError(null);
+        try {
+            const response = await api.post('/monitoring/teams', {
+                name,
+                description: quickTeamFormData.description.trim() || null,
+                is_active: quickTeamFormData.is_active,
+                member_ids: quickTeamFormData.member_ids
+            });
+            setPlanFormData((prev) => ({
+                ...prev,
+                monitoring_team_id: response.data.team_id
+            }));
+            setQuickTeamFormData({
+                name: '',
+                description: '',
+                is_active: true,
+                member_ids: []
+            });
+            setShowQuickTeamModal(false);
+            fetchTeams();
+        } catch (err: any) {
+            setQuickTeamError(err.response?.data?.detail || 'Failed to add team');
+        } finally {
+            setSavingQuickTeam(false);
+        }
+    };
+
     const handleEditPlan = async (plan: MonitoringPlan) => {
         // Fetch full plan details
         try {
@@ -359,6 +484,10 @@ export default function MonitoringPlansPage() {
                 is_active: fullPlan.is_active,
                 model_ids: fullPlan.models?.map((m: Model) => m.model_id) || []
             });
+            const selectedProvider = allUsers.find(
+                (u) => u.user_id === fullPlan.data_provider_user_id
+            );
+            setDataProviderSearch(selectedProvider?.full_name || selectedProvider?.email || '');
             setShowPlanForm(true);
         } catch (err) {
             console.error('Failed to fetch plan details:', err);
@@ -373,15 +502,6 @@ export default function MonitoringPlansPage() {
             fetchPlans();
         } catch (err: any) {
             alert(err.response?.data?.detail || 'Failed to delete plan');
-        }
-    };
-
-    const handleAdvanceCycle = async (planId: number) => {
-        try {
-            await api.post(`/monitoring/plans/${planId}/advance-cycle`);
-            fetchPlans();
-        } catch (err: any) {
-            alert(err.response?.data?.detail || 'Failed to advance cycle');
         }
     };
 
@@ -411,6 +531,33 @@ export default function MonitoringPlansPage() {
             </Layout>
         );
     }
+
+    const selectedDataProvider = allUsers.find(
+        (u) => u.user_id === planFormData.data_provider_user_id
+    );
+    const normalizedDataProviderSearch = dataProviderSearch.trim().toLowerCase();
+    const filteredDataProviders = allUsers.filter((u) => {
+        if (!normalizedDataProviderSearch) return true;
+        return (
+            u.full_name.toLowerCase().includes(normalizedDataProviderSearch) ||
+            u.email.toLowerCase().includes(normalizedDataProviderSearch)
+        );
+    }).slice(0, 50);
+    const sortedUsers = [...allUsers].sort((a, b) => {
+        const nameA = a.full_name || a.email;
+        const nameB = b.full_name || b.email;
+        return nameA.localeCompare(nameB, undefined, { sensitivity: 'base' });
+    });
+    const sortedPeekMembers = [...peekTeamMembers].sort((a, b) => {
+        const nameA = a.full_name || a.email;
+        const nameB = b.full_name || b.email;
+        return nameA.localeCompare(nameB, undefined, { sensitivity: 'base' });
+    });
+    const sortedPeekModels = [...peekPlanModels].sort((a, b) => {
+        const nameA = a.model_name || '';
+        const nameB = b.model_name || '';
+        return nameA.localeCompare(nameB, undefined, { sensitivity: 'base' });
+    });
 
     return (
         <Layout>
@@ -535,7 +682,7 @@ export default function MonitoringPlansPage() {
                                             setTeamFormData({ ...teamFormData, member_ids: selected });
                                         }}
                                     >
-                                        {allUsers.map(u => (
+                                        {sortedUsers.map(u => (
                                             <option key={u.user_id} value={u.user_id}>
                                                 {u.full_name} ({u.email})
                                             </option>
@@ -580,35 +727,76 @@ export default function MonitoringPlansPage() {
                                         </tr>
                                     ) : (
                                         teams.map((team) => (
-                                            <tr key={team.team_id} className="hover:bg-gray-50">
-                                                <td className="px-6 py-4 font-medium">{team.name}</td>
-                                                <td className="px-6 py-4 text-sm text-gray-600">{team.description || '-'}</td>
-                                                <td className="px-6 py-4">{team.member_count}</td>
-                                                <td className="px-6 py-4">{team.plan_count}</td>
-                                                <td className="px-6 py-4">
-                                                    <span className={`px-2 py-1 text-xs rounded-full ${
-                                                        team.is_active ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'
-                                                    }`}>
-                                                        {team.is_active ? 'Active' : 'Inactive'}
-                                                    </span>
-                                                </td>
-                                                <td className="px-6 py-4 text-right text-sm">
-                                                    <button
-                                                        onClick={() => handleEditTeam(team)}
-                                                        className="text-blue-600 hover:text-blue-800 mr-3"
-                                                    >
-                                                        Edit
-                                                    </button>
-                                                    {team.plan_count === 0 && (
+                                            <Fragment key={team.team_id}>
+                                                <tr className="hover:bg-gray-50">
+                                                    <td className="px-6 py-4 font-medium">{team.name}</td>
+                                                    <td className="px-6 py-4 text-sm text-gray-600">{team.description || '-'}</td>
+                                                    <td className="px-6 py-4">{team.member_count}</td>
+                                                    <td className="px-6 py-4">{team.plan_count}</td>
+                                                    <td className="px-6 py-4">
+                                                        <span className={`px-2 py-1 text-xs rounded-full ${
+                                                            team.is_active ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'
+                                                        }`}>
+                                                            {team.is_active ? 'Active' : 'Inactive'}
+                                                        </span>
+                                                    </td>
+                                                    <td className="px-6 py-4 text-right text-sm">
                                                         <button
-                                                            onClick={() => handleDeleteTeam(team.team_id)}
-                                                            className="text-red-600 hover:text-red-800"
+                                                            onClick={() => handlePeekTeam(team)}
+                                                            className="text-blue-600 hover:text-blue-800 mr-3"
                                                         >
-                                                            Delete
+                                                            {peekTeamId === team.team_id ? 'Hide' : 'Members'}
                                                         </button>
-                                                    )}
-                                                </td>
-                                            </tr>
+                                                        <button
+                                                            onClick={() => handleEditTeam(team)}
+                                                            className="text-blue-600 hover:text-blue-800 mr-3"
+                                                        >
+                                                            Edit
+                                                        </button>
+                                                        {team.plan_count === 0 && (
+                                                            <button
+                                                                onClick={() => handleDeleteTeam(team.team_id)}
+                                                                className="text-red-600 hover:text-red-800"
+                                                            >
+                                                                Delete
+                                                            </button>
+                                                        )}
+                                                    </td>
+                                                </tr>
+                                                {peekTeamId === team.team_id && (
+                                                    <tr className="bg-gray-50">
+                                                        <td colSpan={6} className="px-6 py-3 text-sm text-gray-700">
+                                                            {loadingPeekTeamId === team.team_id && (
+                                                                <div>Loading team members...</div>
+                                                            )}
+                                                            {loadingPeekTeamId !== team.team_id && peekTeamError && (
+                                                                <div className="text-red-600">{peekTeamError}</div>
+                                                            )}
+                                                            {loadingPeekTeamId !== team.team_id && !peekTeamError && (
+                                                                <div>
+                                                                    <div className="font-medium mb-2">
+                                                                        Team members for {team.name}
+                                                                    </div>
+                                                                    {sortedPeekMembers.length === 0 ? (
+                                                                        <div className="text-gray-500">No members assigned.</div>
+                                                                    ) : (
+                                                                        <div className="flex flex-wrap gap-2">
+                                                                            {sortedPeekMembers.map((member) => (
+                                                                                <span
+                                                                                    key={member.user_id}
+                                                                                    className="bg-white border border-gray-200 rounded-full px-3 py-1 text-xs text-gray-700"
+                                                                                >
+                                                                                    {member.full_name} ({member.email})
+                                                                                </span>
+                                                                            ))}
+                                                                        </div>
+                                                                    )}
+                                                                </div>
+                                                            )}
+                                                        </td>
+                                                    </tr>
+                                                )}
+                                            </Fragment>
                                         ))
                                     )}
                                 </tbody>
@@ -695,22 +883,86 @@ export default function MonitoringPlansPage() {
                                                 <option key={t.team_id} value={t.team_id}>{t.name}</option>
                                             ))}
                                         </select>
+                                        <div className="mt-2">
+                                            <button
+                                                type="button"
+                                                className="text-sm text-blue-600 hover:text-blue-800"
+                                                onClick={() => {
+                                                    setQuickTeamError(null);
+                                                    setQuickTeamFormData({
+                                                        name: '',
+                                                        description: '',
+                                                        is_active: true,
+                                                        member_ids: []
+                                                    });
+                                                    setShowQuickTeamModal(true);
+                                                }}
+                                            >
+                                                + Add new team
+                                            </button>
+                                        </div>
                                     </div>
                                     <div>
                                         <label className="block text-sm font-medium mb-2">Data Provider</label>
-                                        <select
-                                            className="input-field"
-                                            value={planFormData.data_provider_user_id || ''}
-                                            onChange={(e) => setPlanFormData({
-                                                ...planFormData,
-                                                data_provider_user_id: e.target.value ? parseInt(e.target.value) : null
-                                            })}
-                                        >
-                                            <option value="">-- Select User --</option>
-                                            {allUsers.map(u => (
-                                                <option key={u.user_id} value={u.user_id}>{u.full_name}</option>
-                                            ))}
-                                        </select>
+                                        <div className="relative">
+                                            <input
+                                                type="text"
+                                                className="input-field"
+                                                placeholder="Type to search users..."
+                                                value={dataProviderSearch}
+                                                onChange={(e) => {
+                                                    const value = e.target.value;
+                                                    setDataProviderSearch(value);
+                                                    setShowDataProviderDropdown(true);
+                                                    if (!value) {
+                                                        setPlanFormData({
+                                                            ...planFormData,
+                                                            data_provider_user_id: null
+                                                        });
+                                                        return;
+                                                    }
+                                                    if (planFormData.data_provider_user_id && selectedDataProvider) {
+                                                        if (value !== selectedDataProvider.full_name && value !== selectedDataProvider.email) {
+                                                            setPlanFormData({
+                                                                ...planFormData,
+                                                                data_provider_user_id: null
+                                                            });
+                                                        }
+                                                    }
+                                                }}
+                                                onFocus={() => setShowDataProviderDropdown(true)}
+                                                autoComplete="off"
+                                            />
+                                            {showDataProviderDropdown && (
+                                                <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg max-h-60 overflow-y-auto">
+                                                    {filteredDataProviders.map((u) => (
+                                                        <div
+                                                            key={u.user_id}
+                                                            className="px-4 py-2 hover:bg-gray-100 cursor-pointer text-sm"
+                                                            onClick={() => {
+                                                                setPlanFormData({
+                                                                    ...planFormData,
+                                                                    data_provider_user_id: u.user_id
+                                                                });
+                                                                setDataProviderSearch(u.full_name);
+                                                                setShowDataProviderDropdown(false);
+                                                            }}
+                                                        >
+                                                            <div className="font-medium">{u.full_name}</div>
+                                                            <div className="text-xs text-gray-500">{u.email}</div>
+                                                        </div>
+                                                    ))}
+                                                    {filteredDataProviders.length === 0 && (
+                                                        <div className="px-4 py-2 text-sm text-gray-500">No users found</div>
+                                                    )}
+                                                </div>
+                                            )}
+                                        </div>
+                                        {planFormData.data_provider_user_id && selectedDataProvider && (
+                                            <p className="mt-1 text-sm text-green-600">
+                                                Selected: {selectedDataProvider.full_name}
+                                            </p>
+                                        )}
                                     </div>
                                     <div>
                                         <label className="block text-sm font-medium mb-2">Reporting Lead Days</label>
@@ -734,7 +986,12 @@ export default function MonitoringPlansPage() {
                                     </label>
                                     <MultiSelectDropdown
                                         placeholder="Select Models"
-                                        options={allModels.map(m => ({ value: m.model_id, label: m.model_name }))}
+                                        options={allModels.map(m => ({
+                                            value: m.model_id,
+                                            label: m.model_name,
+                                            searchText: `${m.model_name} ${m.model_id}`,
+                                            secondaryLabel: `ID: ${m.model_id}`
+                                        }))}
                                         selectedValues={planFormData.model_ids}
                                         onChange={(values) => setPlanFormData({ ...planFormData, model_ids: values as number[] })}
                                     />
@@ -761,6 +1018,119 @@ export default function MonitoringPlansPage() {
                                     </button>
                                 </div>
                             </form>
+                        </div>
+                    )}
+
+                    {showQuickTeamModal && (
+                        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
+                            <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+                                <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+                                    <h4 className="text-lg font-semibold">Create New Team</h4>
+                                    <button
+                                        type="button"
+                                        className="text-gray-400 hover:text-gray-600"
+                                        onClick={() => {
+                                            setShowQuickTeamModal(false);
+                                            setQuickTeamError(null);
+                                        }}
+                                    >
+                                        <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                        </svg>
+                                    </button>
+                                </div>
+                                <form
+                                    className="px-6 py-4 space-y-4"
+                                    onSubmit={(e) => {
+                                        e.preventDefault();
+                                        handleQuickAddTeam();
+                                    }}
+                                >
+                                    {quickTeamError && (
+                                        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded">
+                                            {quickTeamError}
+                                        </div>
+                                    )}
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                        <div>
+                                            <label className="block text-sm font-medium mb-2">Team Name *</label>
+                                            <input
+                                                type="text"
+                                                className="input-field"
+                                                value={quickTeamFormData.name}
+                                                onChange={(e) => {
+                                                    setQuickTeamFormData({ ...quickTeamFormData, name: e.target.value });
+                                                    setQuickTeamError(null);
+                                                }}
+                                                placeholder="e.g., Credit Risk Monitoring Team"
+                                                required
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="block text-sm font-medium mb-2">Status</label>
+                                            <label className="flex items-center">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={quickTeamFormData.is_active}
+                                                    onChange={(e) => {
+                                                        setQuickTeamFormData({ ...quickTeamFormData, is_active: e.target.checked });
+                                                        setQuickTeamError(null);
+                                                    }}
+                                                    className="mr-2"
+                                                />
+                                                <span>Active</span>
+                                            </label>
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-medium mb-2">Description</label>
+                                        <textarea
+                                            className="input-field"
+                                            rows={2}
+                                            value={quickTeamFormData.description}
+                                            onChange={(e) => {
+                                                setQuickTeamFormData({ ...quickTeamFormData, description: e.target.value });
+                                                setQuickTeamError(null);
+                                            }}
+                                            placeholder="Optional description"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-medium mb-2">Team Members</label>
+                                        <select
+                                            multiple
+                                            className="input-field h-32"
+                                            value={quickTeamFormData.member_ids.map(String)}
+                                            onChange={(e) => {
+                                                const selected = Array.from(e.target.selectedOptions, opt => parseInt(opt.value));
+                                                setQuickTeamFormData({ ...quickTeamFormData, member_ids: selected });
+                                            }}
+                                        >
+                                            {sortedUsers.map(u => (
+                                                <option key={u.user_id} value={u.user_id}>
+                                                    {u.full_name} ({u.email})
+                                                </option>
+                                            ))}
+                                        </select>
+                                        <p className="text-xs text-gray-500 mt-1">Hold Ctrl/Cmd to select multiple</p>
+                                    </div>
+                                    <div className="flex gap-2">
+                                        <button type="submit" className="btn-primary" disabled={savingQuickTeam}>
+                                            {savingQuickTeam ? 'Creating...' : 'Create Team'}
+                                        </button>
+                                        <button
+                                            type="button"
+                                            className="btn-secondary"
+                                            onClick={() => {
+                                                setShowQuickTeamModal(false);
+                                                setQuickTeamError(null);
+                                            }}
+                                        >
+                                            Cancel
+                                        </button>
+                                    </div>
+                                </form>
+                            </div>
                         </div>
                     )}
 
@@ -791,71 +1161,106 @@ export default function MonitoringPlansPage() {
                                         </tr>
                                     ) : (
                                         plans.map((plan) => (
-                                            <tr key={plan.plan_id} className="hover:bg-gray-50">
-                                                <td className="px-6 py-4">
-                                                    <Link to={`/monitoring/${plan.plan_id}`} className="font-medium text-blue-600 hover:text-blue-800 hover:underline">
-                                                        {plan.name}
-                                                    </Link>
-                                                    {plan.description && (
-                                                        <div className="text-xs text-gray-500">{plan.description}</div>
-                                                    )}
-                                                </td>
-                                                <td className="px-6 py-4 text-sm">{plan.frequency}</td>
-                                                <td className="px-6 py-4 text-sm">{plan.team_name || '-'}</td>
-                                                <td className="px-6 py-4 text-sm">{plan.model_count}</td>
-                                                <td className="px-6 py-4 text-sm">
-                                                    <button
-                                                        onClick={() => openMetricsModal(plan)}
-                                                        className="text-blue-600 hover:text-blue-800 underline"
-                                                    >
-                                                        {plan.metric_count} KPMs
-                                                    </button>
-                                                </td>
-                                                <td className="px-6 py-4 text-sm">
-                                                    <button
-                                                        onClick={() => openVersionsModal(plan)}
-                                                        className="text-blue-600 hover:text-blue-800 underline"
-                                                    >
-                                                        {plan.active_version_number
-                                                            ? `v${plan.active_version_number}`
-                                                            : 'None'}
-                                                        {plan.version_count && plan.version_count > 0
-                                                            ? ` (${plan.version_count})`
-                                                            : ''}
-                                                    </button>
-                                                </td>
-                                                <td className="px-6 py-4 text-sm">
-                                                    {plan.next_submission_due_date || '-'}
-                                                </td>
-                                                <td className="px-6 py-4">
-                                                    <span className={`px-2 py-1 text-xs rounded-full ${
-                                                        plan.is_active ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'
-                                                    }`}>
-                                                        {plan.is_active ? 'Active' : 'Inactive'}
-                                                    </span>
-                                                </td>
-                                                <td className="px-6 py-4 text-right text-sm space-x-2">
-                                                    <button
-                                                        onClick={() => handleEditPlan(plan)}
-                                                        className="text-blue-600 hover:text-blue-800"
-                                                    >
-                                                        Edit
-                                                    </button>
-                                                    <button
-                                                        onClick={() => handleAdvanceCycle(plan.plan_id)}
-                                                        className="text-green-600 hover:text-green-800"
-                                                        title="Advance to next cycle"
-                                                    >
-                                                        Advance
-                                                    </button>
-                                                    <button
-                                                        onClick={() => handleDeletePlan(plan.plan_id)}
-                                                        className="text-red-600 hover:text-red-800"
-                                                    >
-                                                        Delete
-                                                    </button>
-                                                </td>
-                                            </tr>
+                                            <Fragment key={plan.plan_id}>
+                                                <tr className="hover:bg-gray-50">
+                                                    <td className="px-6 py-4">
+                                                        <Link to={`/monitoring/${plan.plan_id}`} className="font-medium text-blue-600 hover:text-blue-800 hover:underline">
+                                                            {plan.name}
+                                                        </Link>
+                                                        {plan.description && (
+                                                            <div className="text-xs text-gray-500">{plan.description}</div>
+                                                        )}
+                                                    </td>
+                                                    <td className="px-6 py-4 text-sm">{plan.frequency}</td>
+                                                    <td className="px-6 py-4 text-sm">{plan.team_name || '-'}</td>
+                                                    <td className="px-6 py-4 text-sm">
+                                                        <button
+                                                            onClick={() => handlePeekPlanModels(plan)}
+                                                            className="text-blue-600 hover:text-blue-800 underline"
+                                                        >
+                                                            {plan.model_count}
+                                                        </button>
+                                                    </td>
+                                                    <td className="px-6 py-4 text-sm">
+                                                        <button
+                                                            onClick={() => openMetricsModal(plan)}
+                                                            className="text-blue-600 hover:text-blue-800 underline"
+                                                        >
+                                                            {plan.metric_count} KPMs
+                                                        </button>
+                                                    </td>
+                                                    <td className="px-6 py-4 text-sm">
+                                                        <button
+                                                            onClick={() => openVersionsModal(plan)}
+                                                            className="text-blue-600 hover:text-blue-800 underline"
+                                                        >
+                                                            {plan.active_version_number
+                                                                ? `v${plan.active_version_number}`
+                                                                : 'None'}
+                                                            {plan.version_count && plan.version_count > 0
+                                                                ? ` (${plan.version_count})`
+                                                                : ''}
+                                                        </button>
+                                                    </td>
+                                                    <td className="px-6 py-4 text-sm">
+                                                        {plan.next_submission_due_date || '-'}
+                                                    </td>
+                                                    <td className="px-6 py-4">
+                                                        <span className={`px-2 py-1 text-xs rounded-full ${
+                                                            plan.is_active ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'
+                                                        }`}>
+                                                            {plan.is_active ? 'Active' : 'Inactive'}
+                                                        </span>
+                                                    </td>
+                                                    <td className="px-6 py-4 text-right text-sm space-x-2">
+                                                        <button
+                                                            onClick={() => handleEditPlan(plan)}
+                                                            className="text-blue-600 hover:text-blue-800"
+                                                        >
+                                                            Edit
+                                                        </button>
+                                                        <button
+                                                            onClick={() => handleDeletePlan(plan.plan_id)}
+                                                            className="text-red-600 hover:text-red-800"
+                                                        >
+                                                            Delete
+                                                        </button>
+                                                    </td>
+                                                </tr>
+                                                {peekPlanId === plan.plan_id && (
+                                                    <tr className="bg-gray-50">
+                                                        <td colSpan={9} className="px-6 py-3 text-sm text-gray-700">
+                                                            {loadingPeekPlanId === plan.plan_id && (
+                                                                <div>Loading models...</div>
+                                                            )}
+                                                            {loadingPeekPlanId !== plan.plan_id && peekPlanError && (
+                                                                <div className="text-red-600">{peekPlanError}</div>
+                                                            )}
+                                                            {loadingPeekPlanId !== plan.plan_id && !peekPlanError && (
+                                                                <div>
+                                                                    <div className="font-medium mb-2">
+                                                                        Models in {plan.name}
+                                                                    </div>
+                                                                    {sortedPeekModels.length === 0 ? (
+                                                                        <div className="text-gray-500">No models assigned.</div>
+                                                                    ) : (
+                                                                        <div className="flex flex-wrap gap-2">
+                                                                            {sortedPeekModels.map((model) => (
+                                                                                <span
+                                                                                    key={model.model_id}
+                                                                                    className="bg-white border border-gray-200 rounded-full px-3 py-1 text-xs text-gray-700"
+                                                                                >
+                                                                                    {model.model_name} (ID: {model.model_id})
+                                                                                </span>
+                                                                            ))}
+                                                                        </div>
+                                                                    )}
+                                                                </div>
+                                                            )}
+                                                        </td>
+                                                    </tr>
+                                                )}
+                                            </Fragment>
                                         ))
                                     )}
                                 </tbody>

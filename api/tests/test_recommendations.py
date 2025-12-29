@@ -345,7 +345,7 @@ class TestRecommendationLifecycle:
             headers=developer_headers,
             json={
                 "rationale": "The data is within acceptable staleness per policy XYZ",
-                "supporting_evidence": "See attached documentation"
+                "supporting_evidence": "https://example.com/evidence"
             }
         )
         assert response.status_code == 200
@@ -377,7 +377,7 @@ class TestRecommendationLifecycle:
         rebuttal_resp = client.post(
             f"/recommendations/{rec_id}/rebuttal",
             headers=developer_headers,
-            json={"rationale": "Valid reasoning", "supporting_evidence": "Evidence"}
+            json={"rationale": "Valid reasoning", "supporting_evidence": "https://example.com/evidence"}
         )
         rebuttal_id = rebuttal_resp.json()["rebuttal_id"]
 
@@ -416,7 +416,7 @@ class TestRecommendationLifecycle:
         rebuttal_resp = client.post(
             f"/recommendations/{rec_id}/rebuttal",
             headers=developer_headers,
-            json={"rationale": "Invalid reasoning", "supporting_evidence": "Weak evidence"}
+            json={"rationale": "Invalid reasoning", "supporting_evidence": "https://example.com/evidence"}
         )
         rebuttal_id = rebuttal_resp.json()["rebuttal_id"]
 
@@ -455,7 +455,7 @@ class TestRecommendationLifecycle:
         rebuttal_resp = client.post(
             f"/recommendations/{rec_id}/rebuttal",
             headers=developer_headers,
-            json={"rationale": "Reasoning", "supporting_evidence": "Evidence"}
+            json={"rationale": "Reasoning", "supporting_evidence": "https://example.com/evidence"}
         )
         rebuttal_id = rebuttal_resp.json()["rebuttal_id"]
         client.post(
@@ -1260,7 +1260,7 @@ class TestRebuttals:
         rebuttal_resp = client.post(
             f"/recommendations/{rec_id}/rebuttal",
             headers=developer_headers,
-            json={"rationale": "First attempt", "supporting_evidence": "Evidence"}
+            json={"rationale": "First attempt", "supporting_evidence": "https://example.com/evidence"}
         )
         rebuttal_id = rebuttal_resp.json()["rebuttal_id"]
 
@@ -1275,7 +1275,7 @@ class TestRebuttals:
         response = client.post(
             f"/recommendations/{rec_id}/rebuttal",
             headers=developer_headers,
-            json={"rationale": "Second attempt", "supporting_evidence": "More evidence"}
+            json={"rationale": "Second attempt", "supporting_evidence": "https://example.com/evidence"}
         )
         assert response.status_code == 400
         assert "action plan" in response.json()["detail"].lower() or "rebuttal" in response.json()["detail"].lower()
@@ -1306,7 +1306,7 @@ class TestRebuttals:
         rebuttal_resp = client.post(
             f"/recommendations/{rec_id}/rebuttal",
             headers=developer_headers,
-            json={"rationale": "Valid reason", "supporting_evidence": "Evidence"}
+            json={"rationale": "Valid reason", "supporting_evidence": "https://example.com/evidence"}
         )
         rebuttal_id = rebuttal_resp.json()["rebuttal_id"]
 
@@ -1373,11 +1373,11 @@ class TestClosureEvidence:
         assert response.status_code == 201
         assert response.json()["file_name"] == "evidence.pdf"
 
-    def test_closure_submission_blocked_without_evidence(
+    def test_closure_submission_allowed_without_evidence(
         self, client, validator_headers, developer_headers, sample_model,
         developer_user, recommendation_taxonomies
     ):
-        """Evidence required: submitting for closure without evidence returns 400."""
+        """Evidence optional: submitting for closure without evidence returns 200."""
         target_date = (date.today() + timedelta(days=30)).isoformat()
         task_target = (date.today() + timedelta(days=20)).isoformat()
 
@@ -1418,8 +1418,8 @@ class TestClosureEvidence:
             f"/recommendations/{rec_id}/submit-closure",
             headers=developer_headers
         )
-        assert response.status_code == 400
-        assert "evidence" in response.json()["detail"].lower()
+        assert response.status_code == 200
+        assert response.json()["current_status"]["code"] == "REC_PENDING_CLOSURE_REVIEW"
 
 
 # ============================================================================
@@ -1656,7 +1656,7 @@ class TestPermissionsAndRoles:
         rebuttal_resp = client.post(
             f"/recommendations/{rec_id}/rebuttal",
             headers=developer_headers,
-            json={"rationale": "Reason", "supporting_evidence": "Evidence"}
+            json={"rationale": "Reason", "supporting_evidence": "https://example.com/evidence"}
         )
         rebuttal_id = rebuttal_resp.json()["rebuttal_id"]
 
@@ -1693,7 +1693,7 @@ class TestPermissionsAndRoles:
         response = client.post(
             f"/recommendations/{rec_id}/rebuttal",
             headers=validator_headers,
-            json={"rationale": "Reason", "supporting_evidence": "Evidence"}
+            json={"rationale": "Reason", "supporting_evidence": "https://example.com/evidence"}
         )
         assert response.status_code == 403
 
@@ -1728,7 +1728,7 @@ class TestPermissionsAndRoles:
         rebuttal_resp = client.post(
             f"/recommendations/{rec_id}/rebuttal",
             headers=admin_headers,
-            json={"rationale": "Reason", "supporting_evidence": "Evidence"}
+            json={"rationale": "Reason", "supporting_evidence": "https://example.com/evidence"}
         )
         assert rebuttal_resp.status_code == 200
 
@@ -1969,7 +1969,7 @@ class TestNegativeAndEdgeCases:
         rebuttal_resp = client.post(
             f"/recommendations/{rec_id}/rebuttal",
             headers=developer_headers,
-            json={"rationale": "Valid", "supporting_evidence": "Evidence"}
+            json={"rationale": "Valid", "supporting_evidence": "https://example.com/evidence"}
         )
         rebuttal_id = rebuttal_resp.json()["rebuttal_id"]
 
@@ -2069,14 +2069,14 @@ class TestNegativeAndEdgeCases:
         client.post(
             f"/recommendations/{rec_id}/rebuttal",
             headers=developer_headers,
-            json={"rationale": "First", "supporting_evidence": "Evidence"}
+            json={"rationale": "First", "supporting_evidence": "https://example.com/evidence"}
         )
 
         # Second rebuttal while first is pending - should fail
         response = client.post(
             f"/recommendations/{rec_id}/rebuttal",
             headers=developer_headers,
-            json={"rationale": "Second", "supporting_evidence": "More evidence"}
+            json={"rationale": "Second", "supporting_evidence": "https://example.com/evidence"}
         )
         assert response.status_code == 400
 
@@ -2643,6 +2643,68 @@ class TestApprovalAuthorizationAndSecurity:
         rec_resp = client.get(f"/recommendations/{rec_id}", headers=admin_headers)
         assert rec_resp.json()["current_status"]["code"] == "REC_CLOSED"
 
+    def test_admin_approval_requires_evidence_attestation(
+        self, client, validator_headers, developer_headers, admin_headers,
+        model_with_region, developer_user, recommendation_taxonomies, priority_configs
+    ):
+        """Admin approval requires approval_evidence attestation."""
+        target_date = (date.today() + timedelta(days=30)).isoformat()
+        task_target = (date.today() + timedelta(days=20)).isoformat()
+
+        create_resp = client.post(
+            "/recommendations/",
+            headers=validator_headers,
+            json={
+                "model_id": model_with_region.model_id,
+                "title": "High priority rec",
+                "description": "Desc",
+                "priority_id": recommendation_taxonomies["priority"]["high"].value_id,
+                "category_id": recommendation_taxonomies["category"]["data"].value_id,
+                "assigned_to_id": developer_user.user_id,
+                "original_target_date": target_date
+            }
+        )
+        rec_id = create_resp.json()["recommendation_id"]
+
+        client.post(f"/recommendations/{rec_id}/submit", headers=validator_headers)
+        client.post(
+            f"/recommendations/{rec_id}/action-plan",
+            headers=developer_headers,
+            json={"tasks": [{"description": "Task", "owner_id": developer_user.user_id, "target_date": task_target}]}
+        )
+        client.post(f"/recommendations/{rec_id}/finalize", headers=validator_headers)
+        client.post(f"/recommendations/{rec_id}/acknowledge", headers=developer_headers)
+
+        get_resp = client.get(f"/recommendations/{rec_id}", headers=developer_headers)
+        task_id = get_resp.json()["action_plan_tasks"][0]["task_id"]
+        client.patch(
+            f"/recommendations/{rec_id}/tasks/{task_id}",
+            headers=developer_headers,
+            json={"completion_status_id": recommendation_taxonomies["task_status"]["completed"].value_id}
+        )
+        client.post(
+            f"/recommendations/{rec_id}/evidence",
+            headers=developer_headers,
+            json={"file_name": "ev.pdf", "file_path": "/ev.pdf", "description": "Ev"}
+        )
+        client.post(f"/recommendations/{rec_id}/submit-closure", headers=developer_headers)
+        client.post(
+            f"/recommendations/{rec_id}/closure-review",
+            headers=validator_headers,
+            json={"decision": "APPROVE", "comments": "OK", "closure_summary": "Done"}
+        )
+
+        approvals_resp = client.get(f"/recommendations/{rec_id}/approvals", headers=admin_headers)
+        approval_id = approvals_resp.json()[0]["approval_id"]
+
+        response = client.post(
+            f"/recommendations/{rec_id}/approvals/{approval_id}/approve",
+            headers=admin_headers,
+            json={"comments": "Admin approval without evidence"}
+        )
+        assert response.status_code == 400
+        assert "approval_evidence" in response.json()["detail"]
+
     def test_admin_can_approve_any_approval_type(
         self, client, validator_headers, developer_headers, admin_headers,
         model_with_region, developer_user, recommendation_taxonomies, priority_configs
@@ -2704,7 +2766,10 @@ class TestApprovalAuthorizationAndSecurity:
             response = client.post(
                 f"/recommendations/{rec_id}/approvals/{approval['approval_id']}/approve",
                 headers=admin_headers,
-                json={"comments": f"Admin approved {approval['approval_type']}"}
+                json={
+                    "comments": f"Admin approved {approval['approval_type']}",
+                    "approval_evidence": "Approval email retained by Admin"
+                }
             )
             assert response.status_code == 200
 
@@ -3171,7 +3236,7 @@ class TestDashboardAndReports:
         client.post(
             f"/recommendations/{rec_id}/rebuttal",
             headers=developer_headers,
-            json={"rationale": "Not valid", "supporting_evidence": "Evidence"}
+            json={"rationale": "Not valid", "supporting_evidence": "https://example.com/evidence"}
         )
         # Get rebuttal ID
         rec_resp = client.get(f"/recommendations/{rec_id}", headers=admin_headers)

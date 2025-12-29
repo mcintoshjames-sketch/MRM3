@@ -6,10 +6,14 @@ from datetime import date, datetime, timedelta
 from dateutil.relativedelta import relativedelta
 from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form, Query
 from sqlalchemy.orm import Session, joinedload
-from sqlalchemy import func, or_
+from sqlalchemy import func, or_, case
 from app.core.database import get_db
 from app.core.time import utc_now
 from app.core.deps import get_current_user
+from app.core.monitoring_plan_conflicts import (
+    build_monitoring_plan_conflict_message,
+    find_monitoring_plan_frequency_conflicts,
+)
 from app.core.monitoring_constants import (
     QUALITATIVE_OUTCOME_TAXONOMY_NAME,
     OUTCOME_GREEN,
@@ -113,6 +117,65 @@ def create_audit_log(db: Session, entity_type: str, entity_id: int, action: str,
         changes=changes
     )
     db.add(audit_log)
+
+
+def find_teams_with_exact_members(
+    db: Session,
+    member_ids: List[int],
+    exclude_team_id: Optional[int] = None
+) -> List[MonitoringTeam]:
+    """Return monitoring teams that have exactly the same members."""
+    if not member_ids:
+        return []
+
+    unique_member_ids = sorted(set(member_ids))
+    member_count = len(unique_member_ids)
+    if member_count == 0:
+        return []
+
+    member_counts = db.query(
+        monitoring_team_members.c.team_id.label("team_id"),
+        func.count(monitoring_team_members.c.user_id).label("member_count"),
+        func.sum(
+            case(
+                (monitoring_team_members.c.user_id.in_(unique_member_ids), 1),
+                else_=0
+            )
+        ).label("matched_count")
+    ).group_by(monitoring_team_members.c.team_id)
+
+    if exclude_team_id is not None:
+        member_counts = member_counts.filter(
+            monitoring_team_members.c.team_id != exclude_team_id
+        )
+
+    member_counts = member_counts.subquery()
+
+    matching_ids = db.query(member_counts.c.team_id).filter(
+        member_counts.c.member_count == member_count,
+        member_counts.c.matched_count == member_count
+    ).all()
+
+    team_ids = [row.team_id for row in matching_ids]
+    if not team_ids:
+        return []
+
+    return db.query(MonitoringTeam).filter(
+        MonitoringTeam.team_id.in_(team_ids)
+    ).all()
+
+
+def build_team_member_conflict_message(conflicts: List[MonitoringTeam]) -> str:
+    """Build a user-facing message for duplicate member teams."""
+    if not conflicts:
+        return ""
+    details = ", ".join(
+        f"{team.name} (ID: {team.team_id})" for team in conflicts
+    )
+    return (
+        "A monitoring team with the same members already exists: "
+        f"{details}."
+    )
 
 
 def require_admin(current_user: User = Depends(get_current_user)):
@@ -245,6 +308,50 @@ def calculate_report_due_date(submission_date: date, lead_days: int) -> date:
     return submission_date + timedelta(days=lead_days)
 
 
+def auto_advance_plan_due_dates(
+    db: Session,
+    plan: MonitoringPlan,
+    cycle: MonitoringCycle,
+    current_user: User,
+    reason: str
+) -> None:
+    """Advance plan due dates after a cycle completes."""
+    if not plan:
+        return
+
+    old_submission_date = str(
+        plan.next_submission_due_date) if plan.next_submission_due_date else None
+    old_report_date = str(
+        plan.next_report_due_date) if plan.next_report_due_date else None
+
+    base_date = plan.next_submission_due_date or cycle.submission_due_date or date.today()
+    new_submission_date = calculate_next_submission_date(
+        MonitoringFrequency(plan.frequency), base_date
+    )
+    new_report_date = calculate_report_due_date(
+        new_submission_date, plan.reporting_lead_days
+    )
+
+    plan.next_submission_due_date = new_submission_date
+    plan.next_report_due_date = new_report_date
+
+    create_audit_log(
+        db=db,
+        entity_type="MonitoringPlan",
+        entity_id=plan.plan_id,
+        action="AUTO_ADVANCE_CYCLE",
+        user_id=current_user.user_id,
+        changes={
+            "plan_name": plan.name,
+            "cycle_id": cycle.cycle_id,
+            "cycle_status": cycle.status,
+            "reason": reason,
+            "next_submission_due_date": {"old": old_submission_date, "new": str(new_submission_date)},
+            "next_report_due_date": {"old": old_report_date, "new": str(new_report_date)}
+        }
+    )
+
+
 # ============================================================================
 # MONITORING TEAMS ENDPOINTS
 # ============================================================================
@@ -315,6 +422,13 @@ def create_monitoring_team(
             detail=f"Team with name '{team_data.name}' already exists"
         )
 
+    conflicts = find_teams_with_exact_members(db, team_data.member_ids)
+    if conflicts:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=build_team_member_conflict_message(conflicts)
+        )
+
     # Create team
     team = MonitoringTeam(
         name=team_data.name,
@@ -371,6 +485,18 @@ def update_monitoring_team(
     # Track changes for audit log
     changes = {}
     old_member_ids = [m.user_id for m in team.members]
+
+    if update_data.member_ids is not None:
+        conflicts = find_teams_with_exact_members(
+            db,
+            update_data.member_ids,
+            exclude_team_id=team_id
+        )
+        if conflicts:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=build_team_member_conflict_message(conflicts)
+            )
 
     # Update fields
     if update_data.name is not None:
@@ -657,6 +783,21 @@ def create_monitoring_plan(
                 detail="Data provider user not found"
             )
 
+    if plan_data.is_active and plan_data.model_ids:
+        conflicts = find_monitoring_plan_frequency_conflicts(
+            db,
+            plan_data.model_ids,
+            plan_data.frequency
+        )
+        if conflicts:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=build_monitoring_plan_conflict_message(
+                    conflicts,
+                    plan_data.frequency
+                )
+            )
+
     # Calculate due dates
     submission_date = plan_data.next_submission_due_date or calculate_next_submission_date(
         MonitoringFrequency(plan_data.frequency)
@@ -747,6 +888,40 @@ def update_monitoring_plan(
     ).filter(
         MonitoringPlan.plan_id == plan_id
     ).first()
+
+    resulting_frequency = update_data.frequency or plan.frequency
+    resulting_model_ids = (
+        update_data.model_ids if update_data.model_ids is not None
+        else [m.model_id for m in plan.models]
+    )
+    resulting_is_active = (
+        update_data.is_active if update_data.is_active is not None
+        else plan.is_active
+    )
+    requires_conflict_check = (
+        resulting_is_active
+        and bool(resulting_model_ids)
+        and (
+            update_data.frequency is not None
+            or update_data.model_ids is not None
+            or update_data.is_active is True
+        )
+    )
+    if requires_conflict_check:
+        conflicts = find_monitoring_plan_frequency_conflicts(
+            db,
+            resulting_model_ids,
+            resulting_frequency,
+            exclude_plan_id=plan_id
+        )
+        if conflicts:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=build_monitoring_plan_conflict_message(
+                    conflicts,
+                    resulting_frequency
+                )
+            )
 
     recalculate_dates = False
 
@@ -3637,6 +3812,15 @@ def cancel_cycle(
         }
     )
 
+    if old_status != MonitoringCycleStatus.CANCELLED.value:
+        auto_advance_plan_due_dates(
+            db,
+            cycle.plan,
+            cycle,
+            current_user,
+            reason="Cycle cancelled"
+        )
+
     db.commit()
     return get_monitoring_cycle(cycle_id, db, current_user)
 
@@ -3937,6 +4121,9 @@ def _check_and_complete_cycle(db: Session, cycle: MonitoringCycle, current_user:
                        "Approved" for a in required_approvals)
 
     if all_approved and required_approvals:
+        old_status = cycle.status
+        if old_status == MonitoringCycleStatus.APPROVED.value:
+            return
         cycle.status = MonitoringCycleStatus.APPROVED.value
         cycle.completed_at = utc_now()
         cycle.completed_by_user_id = current_user.user_id
@@ -3961,6 +4148,14 @@ def _check_and_complete_cycle(db: Session, cycle: MonitoringCycle, current_user:
             for model in cycle.plan.models:
                 detect_type1_unmitigated_performance(db, model.model_id)
                 detect_type1_persistent_red_for_model(db, model.model_id)
+
+        auto_advance_plan_due_dates(
+            db,
+            cycle.plan,
+            cycle,
+            current_user,
+            reason="Cycle approved"
+        )
 
 
 @router.post("/monitoring/cycles/{cycle_id}/approvals/{approval_id}/approve", response_model=MonitoringCycleApprovalResponse)

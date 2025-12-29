@@ -213,6 +213,22 @@ Model Risk Management inventory system with a FastAPI backend, React/TypeScript 
   - `app/api/validation_workflow.py` - Integrated evaluation and approval submission
 - **Audit Logging**: CONDITIONAL_APPROVAL_SUBMIT and CONDITIONAL_APPROVAL_VOID actions tracked with evidence/reason
 
+## Validation Workflow Model Changes
+- **Purpose**: Allow Admins/Validators to add or remove models from a validation request during INTAKE or PLANNING.
+- **Rules**:
+  - Changes only allowed in INTAKE/PLANNING
+  - CHANGE validations require DRAFT versions for added models
+  - Removal cannot leave zero models on the request
+  - Validator independence is re-checked; conflicts can be auto-unassigned with confirmation
+  - Target completion warnings block on ERROR and return WARNING/INFO in the response
+- **Side Effects**:
+  - Regional/Global approvals and conditional approvals are re-evaluated
+  - Validation plan component expectations/deviation flags refresh based on highest-risk model tier
+  - Model approval status recalculated for affected models
+  - Audit log entry (`UPDATE_MODELS`) records adds/removals and auto-unassigns
+- **API Endpoint**: `PATCH /validation-workflow/requests/{id}/models`
+- **Frontend**: `ValidationRequestDetailPage.tsx` "Manage Models" modal with model search, CHANGE version selector, and warning/conflict handling
+
 ## MAP Applications & Model-Application Relationships
 - **Purpose**: Track supporting applications from the organization's Managed Application Portfolio (MAP) that are integral to a model's end-to-end process.
 - **Data Model**:

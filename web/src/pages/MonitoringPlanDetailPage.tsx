@@ -155,7 +155,11 @@ const BulletChart: React.FC<{
 };
 
 // Mini Sparkline for cycle outcomes
-const CycleSparkline: React.FC<{ cycles: MonitoringCycle[] }> = ({ cycles }) => {
+const CycleSparkline: React.FC<{
+    cycles: MonitoringCycle[];
+    formatPeriod: (startDate: string, endDate: string) => string;
+    frequency: string;
+}> = ({ cycles, formatPeriod, frequency }) => {
     const recentCycles = cycles
         .filter(c => c.status === 'APPROVED')
         .slice(0, 4)
@@ -171,17 +175,17 @@ const CycleSparkline: React.FC<{ cycles: MonitoringCycle[] }> = ({ cycles }) => 
                 const total = cycle.green_count + cycle.yellow_count + cycle.red_count;
                 if (total === 0) {
                     return (
-                        <div key={cycle.cycle_id} className="w-3 h-8 bg-gray-200 rounded-sm" title="No results" />
+                        <div key={cycle.cycle_id} className="w-3 h-[2.75rem] bg-gray-200 rounded-sm" title="No results" />
                     );
                 }
                 const greenPct = (cycle.green_count / total) * 100;
                 const yellowPct = (cycle.yellow_count / total) * 100;
                 const redPct = (cycle.red_count / total) * 100;
-                const periodLabel = `${cycle.period_start_date.split('-').slice(1).join('/')} - ${cycle.period_end_date.split('-').slice(1).join('/')}`;
+                const periodLabel = formatPeriod(cycle.period_start_date, cycle.period_end_date);
                 return (
                     <div
                         key={cycle.cycle_id}
-                        className="w-3 h-8 rounded-sm overflow-hidden flex flex-col"
+                        className="w-3 h-[2.75rem] rounded-sm overflow-hidden flex flex-col"
                         title={`${periodLabel}: ${cycle.green_count}G ${cycle.yellow_count}Y ${cycle.red_count}R`}
                     >
                         {redPct > 0 && <div className="bg-red-500" style={{ height: `${redPct}%` }} />}
@@ -190,9 +194,41 @@ const CycleSparkline: React.FC<{ cycles: MonitoringCycle[] }> = ({ cycles }) => 
                     </div>
                 );
             })}
-            <span className="text-xs text-gray-500 ml-1">Last {recentCycles.length}</span>
+            <span className="text-xs text-gray-500 ml-1">
+                Last {recentCycles.length} {getFrequencyLabel(frequency, recentCycles.length)}
+            </span>
         </div>
     );
+};
+
+const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+const getFrequencyLabel = (frequency: string, count: number): string => {
+    switch (frequency) {
+        case 'Monthly':
+            return count === 1 ? 'Month' : 'Months';
+        case 'Quarterly':
+            return count === 1 ? 'Quarter' : 'Quarters';
+        case 'Semi-Annual':
+            return count === 1 ? 'Semi-Annual Period' : 'Semi-Annual Periods';
+        case 'Annual':
+            return count === 1 ? 'Year' : 'Years';
+        default:
+            return count === 1 ? 'Cycle' : 'Cycles';
+    }
+};
+
+const formatMonthYearRange = (startDate: string, endDate: string): string => {
+    const startParts = startDate.split('T')[0].split('-');
+    const endParts = endDate.split('T')[0].split('-');
+    if (startParts.length < 2 || endParts.length < 2) {
+        return `${startDate} - ${endDate}`;
+    }
+    const [startYear, startMonth] = startParts;
+    const [endYear, endMonth] = endParts;
+    const startLabel = `${MONTH_NAMES[Math.max(0, parseInt(startMonth, 10) - 1)]} ${startYear}`;
+    const endLabel = `${MONTH_NAMES[Math.max(0, parseInt(endMonth, 10) - 1)]} ${endYear}`;
+    return `${startLabel} - ${endLabel}`;
 };
 
 const MonitoringPlanDetailPage: React.FC = () => {
@@ -964,11 +1000,11 @@ const MonitoringPlanDetailPage: React.FC = () => {
                                 <div className="space-y-4">
                                     <div className="bg-white rounded-lg border p-4">
                                         <h4 className="text-sm font-semibold text-gray-500 uppercase mb-3">Recent Performance</h4>
-                                        <CycleSparkline cycles={cycles} />
+                                        <CycleSparkline cycles={cycles} formatPeriod={formatPeriod} frequency={plan.frequency} />
                                         {cycles.filter(c => c.status === 'APPROVED').length > 0 && (
                                             <div className="mt-3 pt-3 border-t">
                                                 <div className="text-sm text-gray-600">
-                                                    Last Completed: <strong>{formatPeriod(
+                                                    Last Completed: <strong>{formatMonthYearRange(
                                                         cycles.filter(c => c.status === 'APPROVED')[0]?.period_start_date || '',
                                                         cycles.filter(c => c.status === 'APPROVED')[0]?.period_end_date || ''
                                                     )}</strong>
