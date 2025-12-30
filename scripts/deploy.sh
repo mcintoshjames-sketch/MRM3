@@ -230,6 +230,25 @@ deploy_to_prod() {
         set -e
         cd /opt/mrm
 
+        # Verify production env file exists (never committed)
+        if [ ! -f .env.prod ]; then
+            echo "ERROR: /opt/mrm/.env.prod not found!"
+            echo "Create it on the server before deploying."
+            exit 1
+        fi
+
+        # If docker-compose.prod.yml exists but is untracked, git pull will fail.
+        # Back it up and remove it so git can manage it.
+        if [ -f docker-compose.prod.yml ]; then
+            if ! git ls-files --error-unmatch docker-compose.prod.yml >/dev/null 2>&1; then
+                if git status --porcelain | grep -q '^?? docker-compose\.prod\.yml$'; then
+                    echo "Backing up untracked docker-compose.prod.yml -> docker-compose.prod.yml.backup"
+                    sudo cp docker-compose.prod.yml docker-compose.prod.yml.backup
+                    sudo rm -f docker-compose.prod.yml
+                fi
+            fi
+        fi
+
         echo "Pulling latest changes..."
         git pull origin main
 

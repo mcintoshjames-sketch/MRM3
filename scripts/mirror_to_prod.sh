@@ -78,8 +78,14 @@ ssh mrm-admin@ssh.mrmqmistest.org "
 echo ""
 echo -e "${GREEN}Step 6: Restoring database dump on production...${NC}"
 ssh mrm-admin@ssh.mrmqmistest.org "
+    DB_CONTAINER=\$(sudo docker compose -f /opt/mrm/docker-compose.prod.yml ps -q db)
+    if [ -z \"\$DB_CONTAINER\" ]; then
+        echo 'Error: Could not determine production db container ID'
+        exit 1
+    fi
+
     # Copy dump into container
-    sudo docker cp /tmp/mrm_dev_dump.sql mrm-db-1:/tmp/mrm_dev_dump.sql
+    sudo docker cp /tmp/mrm_dev_dump.sql \"\$DB_CONTAINER\":/tmp/mrm_dev_dump.sql
 
     # Restore the dump
     sudo docker compose -f /opt/mrm/docker-compose.prod.yml exec -T db \
@@ -93,8 +99,14 @@ ssh mrm-admin@ssh.mrmqmistest.org "
 echo ""
 echo -e "${GREEN}Step 7: Restoring production user passwords...${NC}"
 ssh mrm-admin@ssh.mrmqmistest.org "
+    DB_CONTAINER=\$(sudo docker compose -f /opt/mrm/docker-compose.prod.yml ps -q db)
+    if [ -z \"\$DB_CONTAINER\" ]; then
+        echo 'Error: Could not determine production db container ID'
+        exit 1
+    fi
+
     # Copy password backup file into the container (required for \copy command)
-    sudo docker cp /tmp/prod_passwords_backup.csv mrm-db-1:/tmp/prod_passwords_backup.csv
+    sudo docker cp /tmp/prod_passwords_backup.csv \"\$DB_CONTAINER\":/tmp/prod_passwords_backup.csv
 
     # Create temp table and restore passwords
     sudo docker compose -f /opt/mrm/docker-compose.prod.yml exec -T db psql -U mrm -d mrm << 'EOSQL'
