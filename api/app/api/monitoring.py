@@ -178,6 +178,18 @@ def build_team_member_conflict_message(conflicts: List[MonitoringTeam]) -> str:
     )
 
 
+def validate_plan_lead_days(data_submission_lead_days: int, reporting_lead_days: int) -> None:
+    """Validate lead day ordering for monitoring plans."""
+    if data_submission_lead_days >= reporting_lead_days:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                "Data submission lead days must be less than reporting lead days "
+                f"({data_submission_lead_days} >= {reporting_lead_days})."
+            )
+        )
+
+
 def require_admin(current_user: User = Depends(get_current_user)):
     """Dependency to require admin role."""
     if current_user.role != UserRole.ADMIN:
@@ -639,6 +651,7 @@ def list_monitoring_plans(
             "is_active": plan.is_active,
             "next_submission_due_date": plan.next_submission_due_date,
             "next_report_due_date": plan.next_report_due_date,
+            "data_submission_lead_days": plan.data_submission_lead_days,
             "team_name": plan.team.name if plan.team else None,
             "data_provider_name": plan.data_provider.full_name if plan.data_provider else None,
             "model_count": len(plan.models),
@@ -686,6 +699,7 @@ def get_monitoring_plan(
         "frequency": plan.frequency,
         "monitoring_team_id": plan.monitoring_team_id,
         "data_provider_user_id": plan.data_provider_user_id,
+        "data_submission_lead_days": plan.data_submission_lead_days,
         "reporting_lead_days": plan.reporting_lead_days,
         "next_submission_due_date": plan.next_submission_due_date,
         "next_report_due_date": plan.next_report_due_date,
@@ -783,6 +797,11 @@ def create_monitoring_plan(
                 detail="Data provider user not found"
             )
 
+    validate_plan_lead_days(
+        plan_data.data_submission_lead_days,
+        plan_data.reporting_lead_days
+    )
+
     if plan_data.is_active and plan_data.model_ids:
         conflicts = find_monitoring_plan_frequency_conflicts(
             db,
@@ -812,6 +831,7 @@ def create_monitoring_plan(
         frequency=plan_data.frequency,
         monitoring_team_id=plan_data.monitoring_team_id,
         data_provider_user_id=plan_data.data_provider_user_id,
+        data_submission_lead_days=plan_data.data_submission_lead_days,
         reporting_lead_days=plan_data.reporting_lead_days,
         next_submission_due_date=submission_date,
         next_report_due_date=report_date,
@@ -898,6 +918,18 @@ def update_monitoring_plan(
         update_data.is_active if update_data.is_active is not None
         else plan.is_active
     )
+    if update_data.data_submission_lead_days is not None or update_data.reporting_lead_days is not None:
+        new_submission_lead = (
+            update_data.data_submission_lead_days
+            if update_data.data_submission_lead_days is not None
+            else plan.data_submission_lead_days
+        )
+        new_reporting_lead = (
+            update_data.reporting_lead_days
+            if update_data.reporting_lead_days is not None
+            else plan.reporting_lead_days
+        )
+        validate_plan_lead_days(new_submission_lead, new_reporting_lead)
     requires_conflict_check = (
         resulting_is_active
         and bool(resulting_model_ids)
@@ -986,6 +1018,14 @@ def update_monitoring_plan(
                 "old": plan.reporting_lead_days, "new": update_data.reporting_lead_days}
         plan.reporting_lead_days = update_data.reporting_lead_days
         recalculate_dates = True
+
+    if update_data.data_submission_lead_days is not None:
+        if plan.data_submission_lead_days != update_data.data_submission_lead_days:
+            changes["data_submission_lead_days"] = {
+                "old": plan.data_submission_lead_days,
+                "new": update_data.data_submission_lead_days
+            }
+        plan.data_submission_lead_days = update_data.data_submission_lead_days
 
     if update_data.next_submission_due_date is not None:
         old_date = str(
@@ -2591,8 +2631,8 @@ def create_monitoring_cycle(
         )
 
     # Calculate due dates
-    # Default: 15 days after period end
-    submission_due = period_end + timedelta(days=15)
+    # Default: plan-specific lead days after period end
+    submission_due = period_end + timedelta(days=plan.data_submission_lead_days)
     report_due = calculate_report_due_date(
         submission_due, plan.reporting_lead_days)
 

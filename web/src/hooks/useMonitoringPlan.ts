@@ -134,6 +134,7 @@ export interface MonitoringPlan {
     next_submission_due_date: string | null;
     next_report_due_date: string | null;
     reporting_lead_days: number;
+    data_submission_lead_days: number;
     monitoring_team_id: number | null;
     data_provider_user_id: number | null;
     team?: MonitoringTeam | null;
@@ -215,8 +216,8 @@ interface UseMonitoringPlanReturn {
     // Plan details editing
     editingPlanDetails: boolean;
     setEditingPlanDetails: React.Dispatch<React.SetStateAction<boolean>>;
-    planDetailsForm: { data_provider_user_id: number | null; reporting_lead_days: number };
-    setPlanDetailsForm: React.Dispatch<React.SetStateAction<{ data_provider_user_id: number | null; reporting_lead_days: number }>>;
+    planDetailsForm: { data_provider_user_id: number | null; reporting_lead_days: number; data_submission_lead_days: number };
+    setPlanDetailsForm: React.Dispatch<React.SetStateAction<{ data_provider_user_id: number | null; reporting_lead_days: number; data_submission_lead_days: number }>>;
     savingPlanDetails: boolean;
     setSavingPlanDetails: React.Dispatch<React.SetStateAction<boolean>>;
     availableUsers: { user_id: number; full_name: string }[];
@@ -292,7 +293,8 @@ export function useMonitoringPlan(planId: string | undefined): UseMonitoringPlan
     const [editingPlanDetails, setEditingPlanDetails] = useState(false);
     const [planDetailsForm, setPlanDetailsForm] = useState({
         data_provider_user_id: null as number | null,
-        reporting_lead_days: 5
+        reporting_lead_days: 5,
+        data_submission_lead_days: 15
     });
     const [savingPlanDetails, setSavingPlanDetails] = useState(false);
     const [availableUsers, setAvailableUsers] = useState<{ user_id: number; full_name: string }[]>([]);
@@ -590,7 +592,8 @@ export function useMonitoringPlan(planId: string | undefined): UseMonitoringPlan
         if (plan) {
             setPlanDetailsForm({
                 data_provider_user_id: plan.data_provider_user_id,
-                reporting_lead_days: plan.reporting_lead_days
+                reporting_lead_days: plan.reporting_lead_days,
+                data_submission_lead_days: plan.data_submission_lead_days
             });
             fetchAvailableUsers();
             setEditingPlanDetails(true);
@@ -601,7 +604,8 @@ export function useMonitoringPlan(planId: string | undefined): UseMonitoringPlan
         setEditingPlanDetails(false);
         setPlanDetailsForm({
             data_provider_user_id: null,
-            reporting_lead_days: 5
+            reporting_lead_days: 5,
+            data_submission_lead_days: 15
         });
     }, []);
 
@@ -610,12 +614,18 @@ export function useMonitoringPlan(planId: string | undefined): UseMonitoringPlan
     const handleSavePlanDetails = useCallback(async (_updateCycleAssignee: boolean = false) => {
         if (!plan || !planId) return;
 
+        if (planDetailsForm.data_submission_lead_days >= planDetailsForm.reporting_lead_days) {
+            alert('Data submission lead days must be less than reporting lead days.');
+            return;
+        }
+
         setSavingPlanDetails(true);
 
         try {
             await api.patch(`/monitoring/plans/${plan.plan_id}`, {
                 data_provider_user_id: planDetailsForm.data_provider_user_id || 0,
-                reporting_lead_days: planDetailsForm.reporting_lead_days
+                reporting_lead_days: planDetailsForm.reporting_lead_days,
+                data_submission_lead_days: planDetailsForm.data_submission_lead_days
             });
 
             await fetchPlan();

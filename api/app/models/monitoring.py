@@ -89,6 +89,12 @@ class MonitoringPlan(Base):
         comment="Days between data submission due date and report due date"
     )
 
+    # Data submission lead days - days between period end and submission due date
+    data_submission_lead_days: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=15,
+        comment="Days between period end date and data submission due date"
+    )
+
     # Calculated due dates (updated when cycle completes or plan is created)
     next_submission_due_date: Mapped[Optional[date]] = mapped_column(
         Date, nullable=True,

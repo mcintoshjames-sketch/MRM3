@@ -462,6 +462,17 @@ class TestMonitoringPlans:
         report_date = date.fromisoformat(data["next_report_due_date"])
         assert report_date == submission_date + timedelta(days=30)
 
+    def test_create_plan_rejects_invalid_lead_days(self, client, admin_headers):
+        """Create plan rejects data submission lead days >= reporting lead days."""
+        response = client.post("/monitoring/plans", headers=admin_headers, json={
+            "name": "Invalid Lead Days",
+            "frequency": "Quarterly",
+            "data_submission_lead_days": 10,
+            "reporting_lead_days": 10
+        })
+        assert response.status_code == 400
+        assert "Data submission lead days must be less than reporting lead days" in response.json()["detail"]
+
     def test_get_plan_by_id(self, client, admin_headers):
         """Get a specific plan by ID."""
         create_resp = client.post("/monitoring/plans", headers=admin_headers, json={
@@ -496,6 +507,22 @@ class TestMonitoringPlans:
         assert response.json()["name"] == "Updated Plan Name"
         assert response.json()["frequency"] == "Monthly"
         assert response.json()["is_active"] is False
+
+    def test_update_plan_rejects_invalid_lead_days(self, client, admin_headers):
+        """Update plan rejects data submission lead days >= reporting lead days."""
+        create_resp = client.post("/monitoring/plans", headers=admin_headers, json={
+            "name": "Lead Day Update Plan",
+            "frequency": "Quarterly",
+            "data_submission_lead_days": 10,
+            "reporting_lead_days": 12
+        })
+        plan_id = create_resp.json()["plan_id"]
+
+        response = client.patch(f"/monitoring/plans/{plan_id}", headers=admin_headers, json={
+            "data_submission_lead_days": 12
+        })
+        assert response.status_code == 400
+        assert "Data submission lead days must be less than reporting lead days" in response.json()["detail"]
 
     def test_delete_plan(self, client, admin_headers):
         """Admin can delete a monitoring plan - verifies plan is actually removed."""
@@ -1194,10 +1221,13 @@ class TestCycleWorkflow:
 
     def test_cycle_overdue_fields_past_due_date(self, client, admin_headers):
         """Cycle with past report_due_date in DATA_COLLECTION shows is_overdue=True."""
+        data_submission_lead_days = 10
+        reporting_lead_days = 11
         plan_resp = client.post("/monitoring/plans", headers=admin_headers, json={
             "name": "Plan For Overdue Test",
             "frequency": "Quarterly",
-            "reporting_lead_days": 0  # Simplify: report_due = submission_due = period_end + 15
+            "reporting_lead_days": reporting_lead_days,
+            "data_submission_lead_days": data_submission_lead_days
         })
         plan_id = plan_resp.json()["plan_id"]
 
@@ -1205,10 +1235,12 @@ class TestCycleWorkflow:
         self._publish_version_for_plan(client, admin_headers, plan_id)
 
         # Create cycle with period_end_date that results in past report_due_date
-        # report_due_date = period_end + 15 days (default submission_due) + 0 (no lead days)
-        # To make report_due 7 days ago: period_end = today - 7 - 15 = today - 22
+        # report_due_date = period_end + data_submission_lead_days + reporting_lead_days
+        # To make report_due 7 days ago: period_end = today - 7 - data_submission_lead_days - reporting_lead_days
         today = date.today()
-        period_end = today - timedelta(days=22)
+        period_end = today - timedelta(
+            days=7 + data_submission_lead_days + reporting_lead_days
+        )
         period_start = period_end - timedelta(days=30)
 
         cycle_resp = client.post(f"/monitoring/plans/{plan_id}/cycles", headers=admin_headers, json={
@@ -1232,10 +1264,13 @@ class TestCycleWorkflow:
 
     def test_cycle_overdue_fields_future_due_date(self, client, admin_headers):
         """Cycle with future report_due_date shows is_overdue=False."""
+        data_submission_lead_days = 10
+        reporting_lead_days = 11
         plan_resp = client.post("/monitoring/plans", headers=admin_headers, json={
             "name": "Plan For Future Due Test",
             "frequency": "Quarterly",
-            "reporting_lead_days": 0  # Simplify: report_due = submission_due = period_end + 15
+            "reporting_lead_days": reporting_lead_days,
+            "data_submission_lead_days": data_submission_lead_days
         })
         plan_id = plan_resp.json()["plan_id"]
 
@@ -1243,10 +1278,12 @@ class TestCycleWorkflow:
         self._publish_version_for_plan(client, admin_headers, plan_id)
 
         # Create cycle with period_end_date that results in future report_due_date
-        # report_due = period_end + 15 days
-        # To make report_due 14 days in future: period_end = today + 14 - 15 = today - 1
+        # report_due = period_end + data_submission_lead_days + reporting_lead_days
+        # To make report_due 14 days in future: period_end = today + 14 - data_submission_lead_days - reporting_lead_days
         today = date.today()
-        period_end = today - timedelta(days=1)
+        period_end = today + timedelta(
+            days=14 - data_submission_lead_days - reporting_lead_days
+        )
         period_start = period_end - timedelta(days=30)
 
         cycle_resp = client.post(f"/monitoring/plans/{plan_id}/cycles", headers=admin_headers, json={
@@ -1270,10 +1307,13 @@ class TestCycleWorkflow:
 
     def test_cycle_cancelled_never_overdue(self, client, admin_headers):
         """CANCELLED cycles are never considered overdue, even with past due date."""
+        data_submission_lead_days = 10
+        reporting_lead_days = 11
         plan_resp = client.post("/monitoring/plans", headers=admin_headers, json={
             "name": "Plan For Cancelled Not Overdue",
             "frequency": "Quarterly",
-            "reporting_lead_days": 0  # Simplify: report_due = submission_due = period_end + 15
+            "reporting_lead_days": reporting_lead_days,
+            "data_submission_lead_days": data_submission_lead_days
         })
         plan_id = plan_resp.json()["plan_id"]
 
@@ -1281,10 +1321,12 @@ class TestCycleWorkflow:
         self._publish_version_for_plan(client, admin_headers, plan_id)
 
         # Create cycle with period that results in past due date (30 days ago)
-        # report_due = period_end + 15 days
-        # To make report_due 30 days ago: period_end = today - 30 - 15 = today - 45
+        # report_due = period_end + data_submission_lead_days + reporting_lead_days
+        # To make report_due 30 days ago: period_end = today - 30 - data_submission_lead_days - reporting_lead_days
         today = date.today()
-        period_end = today - timedelta(days=45)
+        period_end = today - timedelta(
+            days=30 + data_submission_lead_days + reporting_lead_days
+        )
         period_start = period_end - timedelta(days=30)
 
         cycle_resp = client.post(f"/monitoring/plans/{plan_id}/cycles", headers=admin_headers, json={

@@ -442,6 +442,11 @@ const MonitoringPlanDetailPage: React.FC = () => {
     const handleSavePlanDetails = async (updateCycleAssignee: boolean = false) => {
         if (!plan) return;
 
+        if (planDetailsForm.data_submission_lead_days >= planDetailsForm.reporting_lead_days) {
+            setActionError('Data submission lead days must be less than reporting lead days.');
+            return;
+        }
+
         // Check if data provider is changing and there's an active cycle
         const dataProviderChanged = planDetailsForm.data_provider_user_id !== plan.data_provider_user_id;
         const activeCycle = getActiveCycleForAssigneeUpdate();
@@ -460,7 +465,8 @@ const MonitoringPlanDetailPage: React.FC = () => {
             // Update plan details
             await api.patch(`/monitoring/plans/${plan.plan_id}`, {
                 data_provider_user_id: planDetailsForm.data_provider_user_id || 0,
-                reporting_lead_days: planDetailsForm.reporting_lead_days
+                reporting_lead_days: planDetailsForm.reporting_lead_days,
+                data_submission_lead_days: planDetailsForm.data_submission_lead_days
             });
 
             // If user chose to update cycle assignee
@@ -1048,10 +1054,25 @@ const MonitoringPlanDetailPage: React.FC = () => {
                                                     </select>
                                                 </div>
                                                 <div>
-                                                    <label className="block text-sm text-gray-500 mb-1">Lead Time (days)</label>
+                                                    <label className="block text-sm text-gray-500 mb-1">Data Submission Lead Days</label>
                                                     <input
                                                         type="number"
                                                         min="0"
+                                                        max={Math.max(0, planDetailsForm.reporting_lead_days - 1)}
+                                                        value={planDetailsForm.data_submission_lead_days}
+                                                        onChange={(e) => setPlanDetailsForm({
+                                                            ...planDetailsForm,
+                                                            data_submission_lead_days: parseInt(e.target.value) || 0
+                                                        })}
+                                                        className="w-full border border-gray-300 rounded px-2 py-1 text-sm"
+                                                        disabled={savingPlanDetails}
+                                                    />
+                                                </div>
+                                                <div>
+                                                    <label className="block text-sm text-gray-500 mb-1">Reporting Lead Days</label>
+                                                    <input
+                                                        type="number"
+                                                        min="1"
                                                         max="90"
                                                         value={planDetailsForm.reporting_lead_days}
                                                         onChange={(e) => setPlanDetailsForm({
@@ -1086,7 +1107,11 @@ const MonitoringPlanDetailPage: React.FC = () => {
                                                     <p className="font-medium">{plan.data_provider?.full_name || '-'}</p>
                                                 </div>
                                                 <div>
-                                                    <span className="text-gray-500">Lead Time</span>
+                                                    <span className="text-gray-500">Submission Lead Days</span>
+                                                    <p className="font-medium">{plan.data_submission_lead_days} days</p>
+                                                </div>
+                                                <div>
+                                                    <span className="text-gray-500">Reporting Lead Days</span>
                                                     <p className="font-medium">{plan.reporting_lead_days} days</p>
                                                 </div>
                                                 <div>

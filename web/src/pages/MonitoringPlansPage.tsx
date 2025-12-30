@@ -70,6 +70,7 @@ interface MonitoringPlan {
     monitoring_team_id?: number | null;
     data_provider_user_id?: number | null;
     reporting_lead_days?: number;
+    data_submission_lead_days?: number;
     team?: MonitoringTeam | null;
     data_provider?: User | null;
     models?: Model[];
@@ -156,6 +157,7 @@ export default function MonitoringPlansPage() {
         frequency: 'Quarterly',
         monitoring_team_id: null as number | null,
         data_provider_user_id: null as number | null,
+        data_submission_lead_days: 15,
         reporting_lead_days: 30,
         is_active: true,
         model_ids: [] as number[]
@@ -386,6 +388,7 @@ export default function MonitoringPlansPage() {
             frequency: 'Quarterly',
             monitoring_team_id: null,
             data_provider_user_id: null,
+            data_submission_lead_days: 15,
             reporting_lead_days: 30,
             is_active: true,
             model_ids: []
@@ -411,6 +414,10 @@ export default function MonitoringPlansPage() {
         setError(null);
 
         try {
+            if (planFormData.data_submission_lead_days >= planFormData.reporting_lead_days) {
+                setError('Data submission lead days must be less than reporting lead days.');
+                return;
+            }
             const payload = {
                 ...planFormData,
                 metrics: [] // Metrics are added separately
@@ -480,6 +487,7 @@ export default function MonitoringPlansPage() {
                 frequency: fullPlan.frequency,
                 monitoring_team_id: fullPlan.monitoring_team_id,
                 data_provider_user_id: fullPlan.data_provider_user_id,
+                data_submission_lead_days: fullPlan.data_submission_lead_days ?? 15,
                 reporting_lead_days: fullPlan.reporting_lead_days,
                 is_active: fullPlan.is_active,
                 model_ids: fullPlan.models?.map((m: Model) => m.model_id) || []
@@ -867,7 +875,7 @@ export default function MonitoringPlansPage() {
                                     />
                                 </div>
 
-                                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+                                <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
                                     <div>
                                         <label className="block text-sm font-medium mb-2">Monitoring Team</label>
                                         <select
@@ -963,6 +971,21 @@ export default function MonitoringPlansPage() {
                                                 Selected: {selectedDataProvider.full_name}
                                             </p>
                                         )}
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-medium mb-2">Data Submission Lead Days</label>
+                                        <input
+                                            type="number"
+                                            className="input-field"
+                                            value={planFormData.data_submission_lead_days}
+                                            onChange={(e) => setPlanFormData({
+                                                ...planFormData,
+                                                data_submission_lead_days: parseInt(e.target.value) || 0
+                                            })}
+                                            min={0}
+                                            max={Math.max(0, planFormData.reporting_lead_days - 1)}
+                                        />
+                                        <p className="text-xs text-gray-500 mt-1">Days after period end for submission</p>
                                     </div>
                                     <div>
                                         <label className="block text-sm font-medium mb-2">Reporting Lead Days</label>

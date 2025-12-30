@@ -183,6 +183,7 @@ class MonitoringPlanBase(BaseModel):
     frequency: MonitoringFrequency = MonitoringFrequency.QUARTERLY
     monitoring_team_id: Optional[int] = None
     data_provider_user_id: Optional[int] = None
+    data_submission_lead_days: int = 15
     reporting_lead_days: int = 30
     is_active: bool = True
 
@@ -202,6 +203,7 @@ class MonitoringPlanUpdate(BaseModel):
     frequency: Optional[MonitoringFrequency] = None
     monitoring_team_id: Optional[int] = None
     data_provider_user_id: Optional[int] = None
+    data_submission_lead_days: Optional[int] = None
     reporting_lead_days: Optional[int] = None
     next_submission_due_date: Optional[date] = None
     is_active: Optional[bool] = None
@@ -236,6 +238,7 @@ class MonitoringPlanListResponse(BaseModel):
     is_active: bool
     next_submission_due_date: Optional[date] = None
     next_report_due_date: Optional[date] = None
+    data_submission_lead_days: int
     team_name: Optional[str] = None
     data_provider_name: Optional[str] = None
     model_count: int = 0
