@@ -843,7 +843,10 @@ class MonitoringCycleReportPDF(FPDF):
             else:
                 date_str = '-'
 
-            comments = approval.get('comments', '')[:15] + ('...' if len(approval.get('comments', '')) > 15 else '')
+            raw_comments = approval.get('comments') or ''
+            if not isinstance(raw_comments, str):
+                raw_comments = str(raw_comments)
+            comments = raw_comments[:15] + ('...' if len(raw_comments) > 15 else '')
 
             # Draw cells
             self.cell(col_widths[0], 7, approver_name, border=1)

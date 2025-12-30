@@ -81,6 +81,7 @@ from app.schemas.monitoring import (
     MonitoringCycleResponse,
     MonitoringCycleListResponse,
     CycleCancelRequest,
+    CyclePostponeRequest,
     CycleRequestApprovalRequest,
     # Result schemas
     MonitoringResultCreate,
@@ -328,7 +329,7 @@ def auto_advance_plan_due_dates(
     reason: str
 ) -> None:
     """Advance plan due dates after a cycle completes."""
-    if not plan:
+    if not plan or not plan.is_active:
         return
 
     old_submission_date = str(
@@ -336,13 +337,22 @@ def auto_advance_plan_due_dates(
     old_report_date = str(
         plan.next_report_due_date) if plan.next_report_due_date else None
 
-    base_date = plan.next_submission_due_date or cycle.submission_due_date or date.today()
-    new_submission_date = calculate_next_submission_date(
-        MonitoringFrequency(plan.frequency), base_date
+    base_period_end = cycle.period_end_date or date.today()
+    next_period_end = calculate_next_submission_date(
+        MonitoringFrequency(plan.frequency), base_period_end
+    )
+    new_submission_date = next_period_end + timedelta(
+        days=plan.data_submission_lead_days
     )
     new_report_date = calculate_report_due_date(
         new_submission_date, plan.reporting_lead_days
     )
+
+    if (
+        plan.next_submission_due_date == new_submission_date
+        and plan.next_report_due_date == new_report_date
+    ):
+        return
 
     plan.next_submission_due_date = new_submission_date
     plan.next_report_due_date = new_report_date
@@ -639,6 +649,19 @@ def list_monitoring_plans(
         plans = [p for p in plans if any(
             m.model_id == model_id for m in p.models)]
 
+    plan_ids = [p.plan_id for p in plans]
+    non_cancelled_cycle_counts = {}
+    if plan_ids:
+        non_cancelled_cycle_counts = dict(
+            db.query(MonitoringCycle.plan_id, func.count(MonitoringCycle.cycle_id))
+            .filter(
+                MonitoringCycle.plan_id.in_(plan_ids),
+                MonitoringCycle.status != MonitoringCycleStatus.CANCELLED.value
+            )
+            .group_by(MonitoringCycle.plan_id)
+            .all()
+        )
+
     result = []
     for plan in plans:
         # Find active version
@@ -658,7 +681,8 @@ def list_monitoring_plans(
             "metric_count": len([m for m in plan.metrics if m.is_active]),
             "version_count": len(plan.versions),
             "active_version_number": active_version.version_number if active_version else None,
-            "has_unpublished_changes": plan.is_dirty
+            "has_unpublished_changes": plan.is_dirty,
+            "non_cancelled_cycle_count": non_cancelled_cycle_counts.get(plan.plan_id, 0)
         })
 
     return result
@@ -817,9 +841,15 @@ def create_monitoring_plan(
                 )
             )
 
-    # Calculate due dates
-    submission_date = plan_data.next_submission_due_date or calculate_next_submission_date(
-        MonitoringFrequency(plan_data.frequency)
+    if not plan_data.initial_period_end_date:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Initial period end date is required to create a monitoring plan"
+        )
+
+    # Calculate due dates from the initial period end date
+    submission_date = plan_data.initial_period_end_date + timedelta(
+        days=plan_data.data_submission_lead_days
     )
     report_date = calculate_report_due_date(
         submission_date, plan_data.reporting_lead_days)
@@ -1088,6 +1118,26 @@ def delete_monitoring_plan(
     """Delete a monitoring plan (Admin or team member)."""
     # Check permission - raises 403 if not authorized
     plan = check_plan_edit_permission(db, plan_id, current_user)
+
+    blocking_statuses = [
+        MonitoringCycleStatus.APPROVED.value,
+        MonitoringCycleStatus.PENDING.value,
+        MonitoringCycleStatus.DATA_COLLECTION.value,
+        MonitoringCycleStatus.ON_HOLD.value,
+        MonitoringCycleStatus.UNDER_REVIEW.value,
+        MonitoringCycleStatus.PENDING_APPROVAL.value,
+    ]
+    blocking_cycles = db.query(func.count(MonitoringCycle.cycle_id)).filter(
+        MonitoringCycle.plan_id == plan_id,
+        MonitoringCycle.status.in_(blocking_statuses)
+    ).scalar() or 0
+
+    if blocking_cycles > 0:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Cannot delete plan with {blocking_cycles} active cycle(s). "
+                   "Cancel or complete them before deleting this plan."
+        )
 
     # Audit log before deletion
     create_audit_log(
@@ -1544,7 +1594,8 @@ def check_active_cycles_warning(
     active_statuses = [
         MonitoringCycleStatus.DATA_COLLECTION.value,
         MonitoringCycleStatus.UNDER_REVIEW.value,
-        MonitoringCycleStatus.PENDING_APPROVAL.value
+        MonitoringCycleStatus.PENDING_APPROVAL.value,
+        MonitoringCycleStatus.ON_HOLD.value
     ]
 
     active_cycles = db.query(MonitoringCycle).filter(
@@ -1938,6 +1989,7 @@ def get_my_monitoring_tasks(
     active_statuses = [
         MonitoringCycleStatus.PENDING.value,
         MonitoringCycleStatus.DATA_COLLECTION.value,
+        MonitoringCycleStatus.ON_HOLD.value,
         MonitoringCycleStatus.UNDER_REVIEW.value,
         MonitoringCycleStatus.PENDING_APPROVAL.value,
     ]
@@ -1954,9 +2006,13 @@ def get_my_monitoring_tasks(
 
     for cycle in data_provider_cycles:
         action = _get_data_provider_action(cycle.status)
-        is_overdue = cycle.submission_due_date < today
-        days_until_due = (cycle.submission_due_date -
-                          today).days if not is_overdue else None
+        if cycle.status == MonitoringCycleStatus.ON_HOLD.value:
+            is_overdue = False
+            days_until_due = None
+        else:
+            is_overdue = cycle.submission_due_date < today
+            days_until_due = (cycle.submission_due_date -
+                              today).days if not is_overdue else None
 
         # Count results
         result_count = db.query(func.count(MonitoringResult.result_id)).filter(
@@ -1996,9 +2052,13 @@ def get_my_monitoring_tasks(
             continue
 
         action = _get_assignee_action(cycle.status)
-        is_overdue = cycle.submission_due_date < today
-        days_until_due = (cycle.submission_due_date -
-                          today).days if not is_overdue else None
+        if cycle.status == MonitoringCycleStatus.ON_HOLD.value:
+            is_overdue = False
+            days_until_due = None
+        else:
+            is_overdue = cycle.submission_due_date < today
+            days_until_due = (cycle.submission_due_date -
+                              today).days if not is_overdue else None
 
         result_count = db.query(func.count(MonitoringResult.result_id)).filter(
             MonitoringResult.cycle_id == cycle.cycle_id
@@ -2049,9 +2109,13 @@ def get_my_monitoring_tasks(
 
             action = _get_team_member_action(cycle.status)
             # Team members care about report due date
-            is_overdue = cycle.report_due_date < today
-            days_until_due = (cycle.report_due_date -
-                              today).days if not is_overdue else None
+            if cycle.status == MonitoringCycleStatus.ON_HOLD.value:
+                is_overdue = False
+                days_until_due = None
+            else:
+                is_overdue = cycle.report_due_date < today
+                days_until_due = (cycle.report_due_date -
+                                  today).days if not is_overdue else None
 
             result_count = db.query(func.count(MonitoringResult.result_id)).filter(
                 MonitoringResult.cycle_id == cycle.cycle_id
@@ -2092,6 +2156,8 @@ def _get_data_provider_action(status: str) -> str:
         return "Waiting for cycle to start"
     elif status == MonitoringCycleStatus.DATA_COLLECTION.value:
         return "Submit Results"
+    elif status == MonitoringCycleStatus.ON_HOLD.value:
+        return "On Hold"
     elif status == MonitoringCycleStatus.UNDER_REVIEW.value:
         return "Results submitted - Under Review"
     elif status == MonitoringCycleStatus.PENDING_APPROVAL.value:
@@ -2105,6 +2171,8 @@ def _get_assignee_action(status: str) -> str:
         return "Start Cycle"
     elif status == MonitoringCycleStatus.DATA_COLLECTION.value:
         return "Submit Results"
+    elif status == MonitoringCycleStatus.ON_HOLD.value:
+        return "On Hold"
     elif status == MonitoringCycleStatus.UNDER_REVIEW.value:
         return "Review Results"
     elif status == MonitoringCycleStatus.PENDING_APPROVAL.value:
@@ -2118,6 +2186,8 @@ def _get_team_member_action(status: str) -> str:
         return "Awaiting Data Collection"
     elif status == MonitoringCycleStatus.DATA_COLLECTION.value:
         return "Awaiting Results"
+    elif status == MonitoringCycleStatus.ON_HOLD.value:
+        return "On Hold"
     elif status == MonitoringCycleStatus.UNDER_REVIEW.value:
         return "Review Results"
     elif status == MonitoringCycleStatus.PENDING_APPROVAL.value:
@@ -2169,6 +2239,8 @@ def get_admin_monitoring_overview(
             pending_approval_count += 1
             if cycle.report_due_date < today:
                 overdue_count += 1
+        elif cycle.status == MonitoringCycleStatus.ON_HOLD.value:
+            in_progress_count += 1
         elif cycle.status in [
             MonitoringCycleStatus.DATA_COLLECTION.value,
             MonitoringCycleStatus.UNDER_REVIEW.value
@@ -2186,6 +2258,7 @@ def get_admin_monitoring_overview(
     active_statuses = [
         MonitoringCycleStatus.PENDING.value,
         MonitoringCycleStatus.DATA_COLLECTION.value,
+        MonitoringCycleStatus.ON_HOLD.value,
         MonitoringCycleStatus.UNDER_REVIEW.value,
         MonitoringCycleStatus.PENDING_APPROVAL.value,
     ]
@@ -2198,14 +2271,21 @@ def get_admin_monitoring_overview(
         # Determine due date based on status
         if cycle.status in [MonitoringCycleStatus.PENDING.value, MonitoringCycleStatus.DATA_COLLECTION.value]:
             due_date = cycle.submission_due_date
+        elif cycle.status == MonitoringCycleStatus.ON_HOLD.value:
+            due_date = cycle.submission_due_date
         else:
             due_date = cycle.report_due_date
 
         # Calculate days overdue (positive = overdue, negative = days remaining)
-        days_overdue = (today - due_date).days
+        if cycle.status == MonitoringCycleStatus.ON_HOLD.value:
+            days_overdue = 0
+        else:
+            days_overdue = (today - due_date).days
 
         # Determine priority
-        if days_overdue > 0:
+        if cycle.status == MonitoringCycleStatus.ON_HOLD.value:
+            priority = "normal"
+        elif days_overdue > 0:
             priority = "overdue"
         elif cycle.status == MonitoringCycleStatus.PENDING_APPROVAL.value:
             priority = "pending_approval"
@@ -2623,8 +2703,13 @@ def create_monitoring_cycle(
             # Next period starts after last period ended
             base_date = last_cycle.period_end_date + timedelta(days=1)
         else:
-            # First cycle - use plan's current dates or today
-            base_date = plan.next_submission_due_date or date.today()
+            # First cycle - anchor to the plan's initial period end date when available
+            if plan.next_submission_due_date:
+                base_date = plan.next_submission_due_date - timedelta(
+                    days=plan.data_submission_lead_days
+                )
+            else:
+                base_date = date.today()
 
         period_start, period_end = calculate_period_dates(
             MonitoringFrequency(plan.frequency), base_date
@@ -2646,6 +2731,7 @@ def create_monitoring_cycle(
         submission_due_date=submission_due,
         report_due_date=report_due,
         status=MonitoringCycleStatus.PENDING.value,
+        original_due_date=submission_due,
         assigned_to_user_id=assigned_to,
         notes=cycle_data.notes
     )
@@ -2721,7 +2807,7 @@ def list_plan_cycles(
         # Calculate overdue status (only non-completed cycles can be overdue)
         status_value = cycle.status.value if hasattr(
             cycle.status, 'value') else cycle.status
-        if status_value in ("APPROVED", "CANCELLED"):
+        if status_value in ("APPROVED", "CANCELLED", MonitoringCycleStatus.ON_HOLD.value):
             is_overdue = False
             days_overdue = 0
         else:
@@ -2736,6 +2822,11 @@ def list_plan_cycles(
             "status": cycle.status,
             "submission_due_date": cycle.submission_due_date,
             "report_due_date": cycle.report_due_date,
+            "hold_reason": cycle.hold_reason,
+            "hold_start_date": cycle.hold_start_date,
+            "original_due_date": cycle.original_due_date,
+            "postponed_due_date": cycle.postponed_due_date,
+            "postponement_count": cycle.postponement_count,
             "assigned_to_name": cycle.assigned_to.full_name if cycle.assigned_to else None,
             # Version info
             "plan_version_id": cycle.plan_version_id,
@@ -2838,6 +2929,11 @@ def get_monitoring_cycle(
         "submission_due_date": cycle.submission_due_date,
         "report_due_date": cycle.report_due_date,
         "status": cycle.status,
+        "hold_reason": cycle.hold_reason,
+        "hold_start_date": cycle.hold_start_date,
+        "original_due_date": cycle.original_due_date,
+        "postponed_due_date": cycle.postponed_due_date,
+        "postponement_count": cycle.postponement_count,
         "assigned_to": {
             "user_id": cycle.assigned_to.user_id,
             "email": cycle.assigned_to.email,
@@ -3789,6 +3885,12 @@ def submit_cycle(
     """
     cycle = check_cycle_edit_permission(db, cycle_id, current_user)
 
+    if cycle.status == MonitoringCycleStatus.ON_HOLD.value:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cycle is on hold. Resume the cycle before submitting results."
+        )
+
     if cycle.status != MonitoringCycleStatus.DATA_COLLECTION.value:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -3852,7 +3954,21 @@ def cancel_cycle(
         }
     )
 
-    if old_status != MonitoringCycleStatus.CANCELLED.value:
+    if cancel_data.deactivate_plan:
+        previous_active = cycle.plan.is_active
+        cycle.plan.is_active = False
+        create_audit_log(
+            db=db,
+            entity_type="MonitoringPlan",
+            entity_id=cycle.plan.plan_id,
+            action="DEACTIVATE",
+            user_id=current_user.user_id,
+            changes={
+                "is_active": {"old": previous_active, "new": False},
+                "cancel_reason": cancel_data.cancel_reason
+            }
+        )
+    elif old_status != MonitoringCycleStatus.CANCELLED.value:
         auto_advance_plan_due_dates(
             db,
             cycle.plan,
@@ -3860,6 +3976,103 @@ def cancel_cycle(
             current_user,
             reason="Cycle cancelled"
         )
+
+    db.commit()
+    return get_monitoring_cycle(cycle_id, db, current_user)
+
+
+# ============================================================================
+# POSTPONE / HOLD / RESUME ENDPOINTS
+# ============================================================================
+
+@router.post("/monitoring/cycles/{cycle_id}/postpone", response_model=MonitoringCycleResponse)
+def postpone_cycle(
+    cycle_id: int,
+    postpone_data: CyclePostponeRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Extend a cycle due date or place it on hold."""
+    cycle = check_cycle_edit_permission(db, cycle_id, current_user)
+
+    if cycle.status != MonitoringCycleStatus.DATA_COLLECTION.value:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Can only postpone a cycle in DATA_COLLECTION status (current: {cycle.status})"
+        )
+
+    if not postpone_data.indefinite_hold and not postpone_data.new_due_date:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="New due date is required when extending a cycle"
+        )
+
+    if cycle.original_due_date is None:
+        cycle.original_due_date = cycle.submission_due_date
+
+    if postpone_data.indefinite_hold:
+        cycle.status = MonitoringCycleStatus.ON_HOLD.value
+        cycle.hold_reason = postpone_data.reason
+        cycle.hold_start_date = date.today()
+    else:
+        cycle.hold_reason = None
+        cycle.hold_start_date = None
+
+    if postpone_data.new_due_date:
+        cycle.postponed_due_date = postpone_data.new_due_date
+        cycle.submission_due_date = postpone_data.new_due_date
+        cycle.report_due_date = calculate_report_due_date(
+            postpone_data.new_due_date, cycle.plan.reporting_lead_days
+        )
+        cycle.plan.next_submission_due_date = cycle.submission_due_date
+        cycle.plan.next_report_due_date = cycle.report_due_date
+
+    cycle.postponement_count = (cycle.postponement_count or 0) + 1
+
+    create_audit_log(
+        db=db,
+        entity_type="MonitoringCycle",
+        entity_id=cycle_id,
+        action="POSTPONE",
+        user_id=current_user.user_id,
+        changes={
+            "status": cycle.status,
+            "reason": postpone_data.reason,
+            "justification": postpone_data.justification,
+            "original_due_date": str(cycle.original_due_date) if cycle.original_due_date else None,
+            "postponed_due_date": str(cycle.postponed_due_date) if cycle.postponed_due_date else None,
+        }
+    )
+
+    db.commit()
+    return get_monitoring_cycle(cycle_id, db, current_user)
+
+
+@router.post("/monitoring/cycles/{cycle_id}/resume", response_model=MonitoringCycleResponse)
+def resume_cycle(
+    cycle_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Resume a cycle that is currently on hold."""
+    cycle = check_cycle_edit_permission(db, cycle_id, current_user)
+
+    if cycle.status != MonitoringCycleStatus.ON_HOLD.value:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Can only resume a cycle in ON_HOLD status (current: {cycle.status})"
+        )
+
+    cycle.status = MonitoringCycleStatus.DATA_COLLECTION.value
+
+    create_audit_log(
+        db=db,
+        entity_type="MonitoringCycle",
+        entity_id=cycle_id,
+        action="RESUME",
+        user_id=current_user.user_id,
+        changes={"status": {"old": MonitoringCycleStatus.ON_HOLD.value, "new": MonitoringCycleStatus.DATA_COLLECTION.value}}
+    )
 
     db.commit()
     return get_monitoring_cycle(cycle_id, db, current_user)
@@ -4821,7 +5034,7 @@ def generate_cycle_report_pdf(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Generate a professional PDF report for a completed monitoring cycle.
+    """Generate a professional PDF report for a monitoring cycle pending approval or approved.
 
     Generates a comprehensive PDF report including:
     - Cover page with branding
@@ -4891,11 +5104,18 @@ def generate_cycle_report_pdf(
             detail="You don't have permission to access this report. Access is limited to Admins, Validators, cycle Approvers, and Monitoring Team members."
         )
 
-    # Verify cycle is APPROVED
-    if cycle.status != MonitoringCycleStatus.APPROVED.value:
+    # Verify cycle is approved or pending approval
+    allowed_statuses = {
+        MonitoringCycleStatus.APPROVED.value,
+        MonitoringCycleStatus.PENDING_APPROVAL.value,
+    }
+    if cycle.status not in allowed_statuses:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"PDF reports can only be generated for APPROVED cycles. Current status: {cycle.status}"
+            detail=(
+                "PDF reports can only be generated for PENDING_APPROVAL or "
+                f"APPROVED cycles. Current status: {cycle.status}"
+            )
         )
 
     # Get all results with metric and model info

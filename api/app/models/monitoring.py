@@ -321,6 +321,7 @@ class MonitoringCycleStatus(str, enum.Enum):
     """Monitoring cycle status workflow states."""
     PENDING = "PENDING"
     DATA_COLLECTION = "DATA_COLLECTION"
+    ON_HOLD = "ON_HOLD"
     UNDER_REVIEW = "UNDER_REVIEW"
     PENDING_APPROVAL = "PENDING_APPROVAL"
     APPROVED = "APPROVED"
@@ -345,6 +346,15 @@ class MonitoringCycle(Base):
     # Workflow status
     status: Mapped[str] = mapped_column(
         String(50), nullable=False, default=MonitoringCycleStatus.PENDING.value
+    )
+
+    # Hold/postpone tracking
+    hold_reason: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    hold_start_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
+    original_due_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
+    postponed_due_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
+    postponement_count: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
     )
 
     # Assignment (optional override of plan's data_provider)

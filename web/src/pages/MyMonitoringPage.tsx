@@ -83,6 +83,8 @@ export default function MyMonitoringPage() {
                 return 'bg-gray-100 text-gray-800';
             case 'DATA_COLLECTION':
                 return 'bg-blue-100 text-blue-800';
+            case 'ON_HOLD':
+                return 'bg-orange-100 text-orange-800';
             case 'UNDER_REVIEW':
                 return 'bg-yellow-100 text-yellow-800';
             case 'PENDING_APPROVAL':
@@ -98,6 +100,8 @@ export default function MyMonitoringPage() {
                 return 'Pending';
             case 'DATA_COLLECTION':
                 return 'Data Collection';
+            case 'ON_HOLD':
+                return 'On Hold';
             case 'UNDER_REVIEW':
                 return 'Under Review';
             case 'PENDING_APPROVAL':

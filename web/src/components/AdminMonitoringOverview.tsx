@@ -44,6 +44,7 @@ export default function AdminMonitoringOverview() {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
+    const [downloadingReportId, setDownloadingReportId] = useState<number | null>(null);
     const [searchParams] = useSearchParams();
 
     useEffect(() => {
@@ -90,6 +91,8 @@ export default function AdminMonitoringOverview() {
                 return 'bg-gray-100 text-gray-800';
             case 'DATA_COLLECTION':
                 return 'bg-blue-100 text-blue-800';
+            case 'ON_HOLD':
+                return 'bg-orange-100 text-orange-800';
             case 'UNDER_REVIEW':
                 return 'bg-yellow-100 text-yellow-800';
             case 'PENDING_APPROVAL':
@@ -105,6 +108,8 @@ export default function AdminMonitoringOverview() {
                 return 'Pending';
             case 'DATA_COLLECTION':
                 return 'Data Collection';
+            case 'ON_HOLD':
+                return 'On Hold';
             case 'UNDER_REVIEW':
                 return 'Under Review';
             case 'PENDING_APPROVAL':
@@ -124,7 +129,7 @@ export default function AdminMonitoringOverview() {
                 return data.cycles.filter(c => c.status === 'PENDING_APPROVAL');
             case 'in_progress':
                 return data.cycles.filter(c =>
-                    c.status === 'DATA_COLLECTION' || c.status === 'UNDER_REVIEW'
+                    c.status === 'DATA_COLLECTION' || c.status === 'UNDER_REVIEW' || c.status === 'ON_HOLD'
                 );
             default:
                 return data.cycles;
@@ -176,6 +181,38 @@ export default function AdminMonitoringOverview() {
         a.download = `monitoring_overview_${new Date().toISOString().split('T')[0]}.csv`;
         a.click();
         URL.revokeObjectURL(url);
+    };
+
+    const getFilenameFromDisposition = (disposition?: string) => {
+        if (!disposition) return null;
+        const match = disposition.match(/filename="?([^"]+)"?/i);
+        return match ? match[1] : null;
+    };
+
+    const handleDownloadReport = async (cycle: CycleSummary) => {
+        try {
+            setDownloadingReportId(cycle.cycle_id);
+            const response = await api.get(
+                `/monitoring/cycles/${cycle.cycle_id}/report/pdf`,
+                { responseType: 'blob' }
+            );
+            const filename =
+                getFilenameFromDisposition(response.headers?.['content-disposition']) ||
+                `monitoring_cycle_${cycle.cycle_id}.pdf`;
+            const url = URL.createObjectURL(response.data);
+            const link = document.createElement('a');
+            link.href = url;
+            link.setAttribute('download', filename);
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+            URL.revokeObjectURL(url);
+        } catch (err: any) {
+            console.error('Failed to download monitoring report:', err);
+            alert(err.response?.data?.detail || 'Failed to download monitoring report.');
+        } finally {
+            setDownloadingReportId(null);
+        }
     };
 
     if (loading) {
@@ -406,16 +443,16 @@ export default function AdminMonitoringOverview() {
                                             >
                                                 View
                                             </Link>
-                                            {cycle.report_url && (
-                                                <a
-                                                    href={cycle.report_url}
-                                                    target="_blank"
-                                                    rel="noopener noreferrer"
-                                                    className="ml-2 inline-flex items-center px-3 py-1.5 border border-gray-300 text-xs font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50"
-                                                    title="View Report"
+                                            {(cycle.status === 'PENDING_APPROVAL' || cycle.status === 'APPROVED') && (
+                                                <button
+                                                    type="button"
+                                                    onClick={() => handleDownloadReport(cycle)}
+                                                    disabled={downloadingReportId === cycle.cycle_id}
+                                                    className="ml-2 inline-flex items-center px-3 py-1.5 border border-gray-300 text-xs font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50"
+                                                    title="Download Report PDF"
                                                 >
-                                                    Report
-                                                </a>
+                                                    {downloadingReportId === cycle.cycle_id ? 'Downloading...' : 'Report'}
+                                                </button>
                                             )}
                                         </td>
                                     </tr>

@@ -139,6 +139,8 @@ const ModelMonitoringTab: React.FC<ModelMonitoringTabProps> = ({ modelId, modelN
                 return 'bg-yellow-100 text-yellow-800';
             case 'DATA_COLLECTION':
                 return 'bg-blue-100 text-blue-800';
+            case 'ON_HOLD':
+                return 'bg-orange-100 text-orange-800';
             case 'UNDER_REVIEW':
                 return 'bg-purple-100 text-purple-800';
             case 'PENDING':

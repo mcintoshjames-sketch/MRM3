@@ -34,6 +34,11 @@ export interface MonitoringCycle {
     period_end_date: string;
     submission_due_date: string;
     report_due_date: string;
+    hold_reason?: string | null;
+    hold_start_date?: string | null;
+    original_due_date?: string | null;
+    postponed_due_date?: string | null;
+    postponement_count?: number;
     status: string;
     assigned_to_name?: string | null;
     report_url?: string | null;
@@ -173,6 +178,13 @@ interface PerformanceSummary {
     by_metric: MetricSummary[];
 }
 
+interface PostponeFormState {
+    new_due_date: string;
+    reason: string;
+    justification: string;
+    indefinite_hold: boolean;
+}
+
 // Helper function for formatting periods
 function formatPeriod(startDate: string, endDate: string): string {
     const startParts = startDate.split('T')[0].split('-');
@@ -228,9 +240,22 @@ interface UseMonitoringCycleReturn {
     setCancelCycleId: React.Dispatch<React.SetStateAction<number | null>>;
     cancelReason: string;
     setCancelReason: (reason: string) => void;
+    deactivatePlanOnCancel: boolean;
+    setDeactivatePlanOnCancel: React.Dispatch<React.SetStateAction<boolean>>;
     openCancelModal: (cycleId: number) => void;
     closeCancelModal: () => void;
     handleCancelCycle: () => Promise<void>;
+
+    // Postpone/hold cycle modal
+    showPostponeModal: boolean;
+    setShowPostponeModal: React.Dispatch<React.SetStateAction<boolean>>;
+    postponeCycleId: number | null;
+    setPostponeCycleId: React.Dispatch<React.SetStateAction<number | null>>;
+    postponeForm: PostponeFormState;
+    setPostponeForm: React.Dispatch<React.SetStateAction<PostponeFormState>>;
+    openPostponeModal: (cycleId: number) => void;
+    closePostponeModal: () => void;
+    handlePostponeCycle: () => Promise<void>;
 
     // Request approval modal
     showRequestApprovalModal: boolean;
@@ -326,6 +351,16 @@ export function useMonitoringCycle(
     const [showCancelModal, setShowCancelModal] = useState(false);
     const [cancelCycleId, setCancelCycleId] = useState<number | null>(null);
     const [cancelReason, setCancelReason] = useState('');
+    const [deactivatePlanOnCancel, setDeactivatePlanOnCancel] = useState(false);
+
+    const [showPostponeModal, setShowPostponeModal] = useState(false);
+    const [postponeCycleId, setPostponeCycleId] = useState<number | null>(null);
+    const [postponeForm, setPostponeForm] = useState<PostponeFormState>({
+        new_due_date: '',
+        reason: '',
+        justification: '',
+        indefinite_hold: false
+    });
 
     // Request approval modal
     const [showRequestApprovalModal, setShowRequestApprovalModal] = useState(false);
@@ -493,6 +528,7 @@ export function useMonitoringCycle(
     const openCancelModal = useCallback((cycleId: number) => {
         setCancelCycleId(cycleId);
         setCancelReason('');
+        setDeactivatePlanOnCancel(false);
         setActionError(null);
         setShowCancelModal(true);
     }, []);
@@ -501,6 +537,7 @@ export function useMonitoringCycle(
         setShowCancelModal(false);
         setCancelCycleId(null);
         setCancelReason('');
+        setDeactivatePlanOnCancel(false);
     }, []);
 
     const handleCancelCycle = useCallback(async () => {
@@ -510,12 +547,15 @@ export function useMonitoringCycle(
 
         try {
             await api.post(`/monitoring/cycles/${cancelCycleId}/cancel`, {
-                cancel_reason: cancelReason.trim()
+                cancel_reason: cancelReason.trim(),
+                deactivate_plan: deactivatePlanOnCancel
             });
             setShowCancelModal(false);
             setCancelCycleId(null);
             setCancelReason('');
+            setDeactivatePlanOnCancel(false);
             fetchCycles();
+            fetchPlan();
             if (selectedCycle?.cycle_id === cancelCycleId) {
                 setSelectedCycle(null);
             }
@@ -524,7 +564,72 @@ export function useMonitoringCycle(
         } finally {
             setActionLoading(false);
         }
-    }, [cancelCycleId, cancelReason, fetchCycles, selectedCycle?.cycle_id]);
+    }, [cancelCycleId, cancelReason, deactivatePlanOnCancel, fetchCycles, fetchPlan, selectedCycle?.cycle_id]);
+
+    // Postpone/hold cycle modal
+    const openPostponeModal = useCallback((cycleId: number) => {
+        setPostponeCycleId(cycleId);
+        setPostponeForm({
+            new_due_date: '',
+            reason: '',
+            justification: '',
+            indefinite_hold: false
+        });
+        setActionError(null);
+        setShowPostponeModal(true);
+    }, []);
+
+    const closePostponeModal = useCallback(() => {
+        setShowPostponeModal(false);
+        setPostponeCycleId(null);
+        setPostponeForm({
+            new_due_date: '',
+            reason: '',
+            justification: '',
+            indefinite_hold: false
+        });
+    }, []);
+
+    const handlePostponeCycle = useCallback(async () => {
+        if (!postponeCycleId) return;
+        if (!postponeForm.reason.trim() || !postponeForm.justification.trim()) {
+            setActionError('Reason and justification are required.');
+            return;
+        }
+        if (!postponeForm.indefinite_hold && !postponeForm.new_due_date) {
+            setActionError('New due date is required to extend a cycle.');
+            return;
+        }
+
+        setActionLoading(true);
+        setActionError(null);
+
+        try {
+            await api.post(`/monitoring/cycles/${postponeCycleId}/postpone`, {
+                new_due_date: postponeForm.new_due_date || null,
+                reason: postponeForm.reason.trim(),
+                justification: postponeForm.justification.trim(),
+                indefinite_hold: postponeForm.indefinite_hold
+            });
+            setShowPostponeModal(false);
+            setPostponeCycleId(null);
+            setPostponeForm({
+                new_due_date: '',
+                reason: '',
+                justification: '',
+                indefinite_hold: false
+            });
+            fetchCycles();
+            fetchPlan();
+            if (selectedCycle?.cycle_id === postponeCycleId) {
+                fetchCycleDetail(postponeCycleId);
+            }
+        } catch (err: any) {
+            setActionError(err.response?.data?.detail || 'Failed to postpone cycle');
+        } finally {
+            setActionLoading(false);
+        }
+    }, [postponeCycleId, postponeForm, fetchCycles, fetchPlan, selectedCycle?.cycle_id, fetchCycleDetail]);
 
     // Request approval modal
     const openRequestApprovalModal = useCallback((cycleId: number) => {
@@ -1090,9 +1195,22 @@ export function useMonitoringCycle(
         setCancelCycleId,
         cancelReason,
         setCancelReason,
+        deactivatePlanOnCancel,
+        setDeactivatePlanOnCancel,
         openCancelModal,
         closeCancelModal,
         handleCancelCycle,
+
+        // Postpone/hold cycle
+        showPostponeModal,
+        setShowPostponeModal,
+        postponeCycleId,
+        setPostponeCycleId,
+        postponeForm,
+        setPostponeForm,
+        openPostponeModal,
+        closePostponeModal,
+        handlePostponeCycle,
 
         // Request approval
         showRequestApprovalModal,

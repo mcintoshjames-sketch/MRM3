@@ -356,6 +356,7 @@ class TestMonitoringTeams:
 
         # Create plan for team
         client.post("/monitoring/plans", headers=admin_headers, json={
+            "initial_period_end_date": date.today().isoformat(),
             "name": "Plan For Team",
             "frequency": "Quarterly",
             "monitoring_team_id": team_id
@@ -378,6 +379,7 @@ class TestMonitoringPlans:
     def test_create_plan_admin(self, client, admin_headers):
         """Admin can create a monitoring plan."""
         response = client.post("/monitoring/plans", headers=admin_headers, json={
+            "initial_period_end_date": date.today().isoformat(),
             "name": "Test Plan",
             "description": "A test monitoring plan",
             "frequency": "Quarterly"
@@ -388,9 +390,19 @@ class TestMonitoringPlans:
         assert data["frequency"] == "Quarterly"
         assert data["next_submission_due_date"] is not None
 
+    def test_create_plan_requires_initial_period_end_date(self, client, admin_headers):
+        """Create plan rejects requests missing initial period end date."""
+        response = client.post("/monitoring/plans", headers=admin_headers, json={
+            "name": "Missing Initial Period End",
+            "frequency": "Quarterly"
+        })
+        assert response.status_code == 400
+        assert "initial period end date" in response.json()["detail"].lower()
+
     def test_create_plan_non_admin_fails(self, client, auth_headers):
         """Non-admin cannot create a monitoring plan."""
         response = client.post("/monitoring/plans", headers=auth_headers, json={
+            "initial_period_end_date": date.today().isoformat(),
             "name": "Should Fail",
             "frequency": "Quarterly"
         })
@@ -405,6 +417,7 @@ class TestMonitoringPlans:
         team_id = team_resp.json()["team_id"]
 
         response = client.post("/monitoring/plans", headers=admin_headers, json={
+            "initial_period_end_date": date.today().isoformat(),
             "name": "Plan With Team",
             "frequency": "Monthly",
             "monitoring_team_id": team_id
@@ -415,6 +428,7 @@ class TestMonitoringPlans:
     def test_create_plan_with_models(self, client, admin_headers, sample_model):
         """Create plan with models in scope."""
         response = client.post("/monitoring/plans", headers=admin_headers, json={
+            "initial_period_end_date": date.today().isoformat(),
             "name": "Plan With Models",
             "frequency": "Quarterly",
             "model_ids": [sample_model.model_id]
@@ -423,36 +437,44 @@ class TestMonitoringPlans:
         assert len(response.json()["models"]) == 1
 
     def test_create_plan_date_calculation_quarterly(self, client, admin_headers):
-        """Quarterly plan calculates next submission date +3 months."""
+        """Plan uses initial period end date to set submission due date."""
+        initial_period_end = date.today()
         response = client.post("/monitoring/plans", headers=admin_headers, json={
+            "initial_period_end_date": initial_period_end.isoformat(),
             "name": "Quarterly Plan",
             "frequency": "Quarterly",
+            "data_submission_lead_days": 7,
             "reporting_lead_days": 14
         })
         assert response.status_code == 201
         data = response.json()
 
-        # Check that submission date is roughly 3 months from now
         submission_date = date.fromisoformat(data["next_submission_due_date"])
-        expected_date = date.today() + relativedelta(months=3)
-        assert submission_date == expected_date
+        expected_submission = initial_period_end + timedelta(days=7)
+        assert submission_date == expected_submission
 
     def test_create_plan_date_calculation_monthly(self, client, admin_headers):
-        """Monthly plan calculates next submission date +1 month."""
+        """Plan uses initial period end date regardless of frequency."""
+        initial_period_end = date.today()
         response = client.post("/monitoring/plans", headers=admin_headers, json={
+            "initial_period_end_date": initial_period_end.isoformat(),
             "name": "Monthly Plan",
-            "frequency": "Monthly"
+            "frequency": "Monthly",
+            "data_submission_lead_days": 5
         })
         assert response.status_code == 201
         submission_date = date.fromisoformat(response.json()["next_submission_due_date"])
-        expected_date = date.today() + relativedelta(months=1)
-        assert submission_date == expected_date
+        expected_submission = initial_period_end + timedelta(days=5)
+        assert submission_date == expected_submission
 
     def test_create_plan_report_due_calculation(self, client, admin_headers):
         """Report due date is submission date + lead days."""
+        initial_period_end = date.today()
         response = client.post("/monitoring/plans", headers=admin_headers, json={
+            "initial_period_end_date": initial_period_end.isoformat(),
             "name": "Report Due Test",
             "frequency": "Quarterly",
+            "data_submission_lead_days": 10,
             "reporting_lead_days": 30
         })
         assert response.status_code == 201
@@ -460,11 +482,13 @@ class TestMonitoringPlans:
 
         submission_date = date.fromisoformat(data["next_submission_due_date"])
         report_date = date.fromisoformat(data["next_report_due_date"])
+        assert submission_date == initial_period_end + timedelta(days=10)
         assert report_date == submission_date + timedelta(days=30)
 
     def test_create_plan_rejects_invalid_lead_days(self, client, admin_headers):
         """Create plan rejects data submission lead days >= reporting lead days."""
         response = client.post("/monitoring/plans", headers=admin_headers, json={
+            "initial_period_end_date": date.today().isoformat(),
             "name": "Invalid Lead Days",
             "frequency": "Quarterly",
             "data_submission_lead_days": 10,
@@ -476,6 +500,7 @@ class TestMonitoringPlans:
     def test_get_plan_by_id(self, client, admin_headers):
         """Get a specific plan by ID."""
         create_resp = client.post("/monitoring/plans", headers=admin_headers, json={
+            "initial_period_end_date": date.today().isoformat(),
             "name": "Get Plan Test",
             "frequency": "Quarterly"
         })
@@ -493,6 +518,7 @@ class TestMonitoringPlans:
     def test_update_plan(self, client, admin_headers):
         """Admin can update a monitoring plan."""
         create_resp = client.post("/monitoring/plans", headers=admin_headers, json={
+            "initial_period_end_date": date.today().isoformat(),
             "name": "Update Plan Test",
             "frequency": "Quarterly"
         })
@@ -511,6 +537,7 @@ class TestMonitoringPlans:
     def test_update_plan_rejects_invalid_lead_days(self, client, admin_headers):
         """Update plan rejects data submission lead days >= reporting lead days."""
         create_resp = client.post("/monitoring/plans", headers=admin_headers, json={
+            "initial_period_end_date": date.today().isoformat(),
             "name": "Lead Day Update Plan",
             "frequency": "Quarterly",
             "data_submission_lead_days": 10,
@@ -527,6 +554,7 @@ class TestMonitoringPlans:
     def test_delete_plan(self, client, admin_headers):
         """Admin can delete a monitoring plan - verifies plan is actually removed."""
         create_resp = client.post("/monitoring/plans", headers=admin_headers, json={
+            "initial_period_end_date": date.today().isoformat(),
             "name": "Delete Plan Test",
             "frequency": "Quarterly"
         })
@@ -539,10 +567,48 @@ class TestMonitoringPlans:
         get_response = client.get(f"/monitoring/plans/{plan_id}", headers=admin_headers)
         assert get_response.status_code == 404
 
+    def test_delete_plan_blocks_active_cycles(self, client, admin_headers):
+        """Cannot delete plan while it has active cycles."""
+        create_resp = client.post("/monitoring/plans", headers=admin_headers, json={
+            "initial_period_end_date": date.today().isoformat(),
+            "name": "Delete Plan Blocked",
+            "frequency": "Quarterly"
+        })
+        plan_id = create_resp.json()["plan_id"]
+
+        cycle_resp = client.post(f"/monitoring/plans/{plan_id}/cycles", headers=admin_headers, json={})
+        assert cycle_resp.status_code == 201
+
+        response = client.delete(f"/monitoring/plans/{plan_id}", headers=admin_headers)
+        assert response.status_code == 409
+        assert "active" in response.json()["detail"].lower()
+
+    def test_delete_plan_allows_cancelled_cycles(self, client, admin_headers):
+        """Can delete plan when all cycles are CANCELLED."""
+        create_resp = client.post("/monitoring/plans", headers=admin_headers, json={
+            "initial_period_end_date": date.today().isoformat(),
+            "name": "Delete Plan Cancelled Only",
+            "frequency": "Quarterly"
+        })
+        plan_id = create_resp.json()["plan_id"]
+
+        cycle_resp = client.post(f"/monitoring/plans/{plan_id}/cycles", headers=admin_headers, json={})
+        cycle_id = cycle_resp.json()["cycle_id"]
+
+        cancel_resp = client.post(f"/monitoring/cycles/{cycle_id}/cancel", headers=admin_headers, json={
+            "cancel_reason": "Cancel before delete",
+            "deactivate_plan": False
+        })
+        assert cancel_resp.status_code == 200
+
+        response = client.delete(f"/monitoring/plans/{plan_id}", headers=admin_headers)
+        assert response.status_code == 204
+
     def test_delete_plan_cascades_related_objects(self, client, admin_headers):
         """Deleting plan removes metrics, versions, and cycles via cascade."""
         # Create plan
         plan_resp = client.post("/monitoring/plans", headers=admin_headers, json={
+            "initial_period_end_date": date.today().isoformat(),
             "name": "Plan With Related Objects",
             "frequency": "Quarterly"
         })
@@ -595,6 +661,7 @@ class TestMonitoringPlans:
         """Advance plan to next monitoring cycle."""
         # Create plan
         create_resp = client.post("/monitoring/plans", headers=admin_headers, json={
+            "initial_period_end_date": date.today().isoformat(),
             "name": "Advance Cycle Test",
             "frequency": "Quarterly"
         })
@@ -615,6 +682,7 @@ class TestMonitoringPlanFrequencyOverlap:
 
     def test_create_plan_blocks_same_frequency_for_model(self, client, admin_headers, sample_model):
         create_resp = client.post("/monitoring/plans", headers=admin_headers, json={
+            "initial_period_end_date": date.today().isoformat(),
             "name": "Monthly Plan A",
             "frequency": "Monthly",
             "model_ids": [sample_model.model_id]
@@ -623,6 +691,7 @@ class TestMonitoringPlanFrequencyOverlap:
         plan_id = create_resp.json()["plan_id"]
 
         response = client.post("/monitoring/plans", headers=admin_headers, json={
+            "initial_period_end_date": date.today().isoformat(),
             "name": "Monthly Plan B",
             "frequency": "Monthly",
             "model_ids": [sample_model.model_id]
@@ -635,6 +704,7 @@ class TestMonitoringPlanFrequencyOverlap:
 
     def test_create_plan_allows_different_frequency(self, client, admin_headers, sample_model):
         create_resp = client.post("/monitoring/plans", headers=admin_headers, json={
+            "initial_period_end_date": date.today().isoformat(),
             "name": "Monthly Plan A",
             "frequency": "Monthly",
             "model_ids": [sample_model.model_id]
@@ -642,6 +712,7 @@ class TestMonitoringPlanFrequencyOverlap:
         assert create_resp.status_code == 201
 
         response = client.post("/monitoring/plans", headers=admin_headers, json={
+            "initial_period_end_date": date.today().isoformat(),
             "name": "Quarterly Plan B",
             "frequency": "Quarterly",
             "model_ids": [sample_model.model_id]
@@ -650,6 +721,7 @@ class TestMonitoringPlanFrequencyOverlap:
 
     def test_update_plan_blocks_adding_model_conflict(self, client, admin_headers, sample_model):
         create_resp = client.post("/monitoring/plans", headers=admin_headers, json={
+            "initial_period_end_date": date.today().isoformat(),
             "name": "Monthly Plan A",
             "frequency": "Monthly",
             "model_ids": [sample_model.model_id]
@@ -658,6 +730,7 @@ class TestMonitoringPlanFrequencyOverlap:
         plan_id = create_resp.json()["plan_id"]
 
         second_resp = client.post("/monitoring/plans", headers=admin_headers, json={
+            "initial_period_end_date": date.today().isoformat(),
             "name": "Monthly Plan B",
             "frequency": "Monthly"
         })
@@ -675,6 +748,7 @@ class TestMonitoringPlanFrequencyOverlap:
 
     def test_update_plan_blocks_frequency_change_conflict(self, client, admin_headers, sample_model):
         quarterly_resp = client.post("/monitoring/plans", headers=admin_headers, json={
+            "initial_period_end_date": date.today().isoformat(),
             "name": "Quarterly Plan A",
             "frequency": "Quarterly",
             "model_ids": [sample_model.model_id]
@@ -683,6 +757,7 @@ class TestMonitoringPlanFrequencyOverlap:
         plan_id = quarterly_resp.json()["plan_id"]
 
         monthly_resp = client.post("/monitoring/plans", headers=admin_headers, json={
+            "initial_period_end_date": date.today().isoformat(),
             "name": "Monthly Plan B",
             "frequency": "Monthly",
             "model_ids": [sample_model.model_id]
@@ -701,6 +776,7 @@ class TestMonitoringPlanFrequencyOverlap:
 
     def test_activate_plan_blocks_frequency_conflict(self, client, admin_headers, sample_model):
         active_resp = client.post("/monitoring/plans", headers=admin_headers, json={
+            "initial_period_end_date": date.today().isoformat(),
             "name": "Monthly Plan A",
             "frequency": "Monthly",
             "model_ids": [sample_model.model_id],
@@ -710,6 +786,7 @@ class TestMonitoringPlanFrequencyOverlap:
         plan_id = active_resp.json()["plan_id"]
 
         inactive_resp = client.post("/monitoring/plans", headers=admin_headers, json={
+            "initial_period_end_date": date.today().isoformat(),
             "name": "Monthly Plan B",
             "frequency": "Monthly",
             "model_ids": [sample_model.model_id],
@@ -748,6 +825,7 @@ class TestMonitoringPlanMetrics:
 
         # Create plan
         plan_resp = client.post("/monitoring/plans", headers=admin_headers, json={
+            "initial_period_end_date": date.today().isoformat(),
             "name": "Plan For Metrics",
             "frequency": "Quarterly"
         })
@@ -785,6 +863,7 @@ class TestMonitoringPlanMetrics:
 
         # Create plan
         plan_resp = client.post("/monitoring/plans", headers=admin_headers, json={
+            "initial_period_end_date": date.today().isoformat(),
             "name": "Plan For Dup Metric",
             "frequency": "Quarterly"
         })
@@ -817,6 +896,7 @@ class TestMonitoringPlanMetrics:
         kpm_id = kpm_resp.json()["kpm_id"]
 
         plan_resp = client.post("/monitoring/plans", headers=admin_headers, json={
+            "initial_period_end_date": date.today().isoformat(),
             "name": "Plan For Update Metric",
             "frequency": "Quarterly"
         })
@@ -854,6 +934,7 @@ class TestMonitoringPlanMetrics:
         kpm_id = kpm_resp.json()["kpm_id"]
 
         plan_resp = client.post("/monitoring/plans", headers=admin_headers, json={
+            "initial_period_end_date": date.today().isoformat(),
             "name": "Plan For Delete Metric",
             "frequency": "Quarterly"
         })
@@ -877,6 +958,7 @@ class TestMonitoringCycles:
         """Admin can create a monitoring cycle."""
         # Create plan first
         plan_resp = client.post("/monitoring/plans", headers=admin_headers, json={
+            "initial_period_end_date": date.today().isoformat(),
             "name": "Plan For Cycles",
             "frequency": "Quarterly"
         })
@@ -896,6 +978,7 @@ class TestMonitoringCycles:
         """List cycles for a plan."""
         # Create plan and cycle
         plan_resp = client.post("/monitoring/plans", headers=admin_headers, json={
+            "initial_period_end_date": date.today().isoformat(),
             "name": "Plan For Cycle List",
             "frequency": "Quarterly"
         })
@@ -911,6 +994,7 @@ class TestMonitoringCycles:
     def test_get_cycle_by_id(self, client, admin_headers):
         """Get a specific cycle by ID."""
         plan_resp = client.post("/monitoring/plans", headers=admin_headers, json={
+            "initial_period_end_date": date.today().isoformat(),
             "name": "Plan For Get Cycle",
             "frequency": "Quarterly"
         })
@@ -931,6 +1015,7 @@ class TestMonitoringCycles:
     def test_update_cycle(self, client, admin_headers, test_user):
         """Admin can update a monitoring cycle."""
         plan_resp = client.post("/monitoring/plans", headers=admin_headers, json={
+            "initial_period_end_date": date.today().isoformat(),
             "name": "Plan For Update Cycle",
             "frequency": "Quarterly"
         })
@@ -949,6 +1034,7 @@ class TestMonitoringCycles:
     def test_delete_pending_cycle(self, client, admin_headers):
         """Can delete a PENDING cycle without results."""
         plan_resp = client.post("/monitoring/plans", headers=admin_headers, json={
+            "initial_period_end_date": date.today().isoformat(),
             "name": "Plan For Delete Cycle",
             "frequency": "Quarterly"
         })
@@ -994,6 +1080,7 @@ class TestCycleWorkflow:
     def test_start_cycle(self, client, admin_headers):
         """Start cycle moves from PENDING to DATA_COLLECTION."""
         plan_resp = client.post("/monitoring/plans", headers=admin_headers, json={
+            "initial_period_end_date": date.today().isoformat(),
             "name": "Plan For Start",
             "frequency": "Quarterly"
         })
@@ -1013,6 +1100,7 @@ class TestCycleWorkflow:
     def test_start_non_pending_cycle_fails(self, client, admin_headers):
         """Cannot start a cycle that's not PENDING."""
         plan_resp = client.post("/monitoring/plans", headers=admin_headers, json={
+            "initial_period_end_date": date.today().isoformat(),
             "name": "Plan For Start Fail",
             "frequency": "Quarterly"
         })
@@ -1034,6 +1122,7 @@ class TestCycleWorkflow:
     def test_submit_cycle(self, client, admin_headers):
         """Submit cycle moves from DATA_COLLECTION to UNDER_REVIEW."""
         plan_resp = client.post("/monitoring/plans", headers=admin_headers, json={
+            "initial_period_end_date": date.today().isoformat(),
             "name": "Plan For Submit",
             "frequency": "Quarterly"
         })
@@ -1059,9 +1148,142 @@ class TestCycleWorkflow:
         assert response.json()["status"] == "UNDER_REVIEW"
         assert response.json()["submitted_at"] is not None
 
+    def test_postpone_cycle_extends_due_date(self, client, admin_headers):
+        """Postpone updates due dates without changing status."""
+        plan_resp = client.post("/monitoring/plans", headers=admin_headers, json={
+            "initial_period_end_date": date.today().isoformat(),
+            "name": "Plan For Postpone",
+            "frequency": "Quarterly",
+            "data_submission_lead_days": 5,
+            "reporting_lead_days": 12
+        })
+        plan_id = plan_resp.json()["plan_id"]
+
+        self._publish_version_for_plan(client, admin_headers, plan_id)
+
+        cycle_resp = client.post(f"/monitoring/plans/{plan_id}/cycles", headers=admin_headers, json={})
+        cycle_id = cycle_resp.json()["cycle_id"]
+        client.post(f"/monitoring/cycles/{cycle_id}/start", headers=admin_headers)
+
+        cycle_before = client.get(f"/monitoring/cycles/{cycle_id}", headers=admin_headers).json()
+        original_submission = date.fromisoformat(cycle_before["submission_due_date"])
+        new_due_date = original_submission + timedelta(days=7)
+
+        response = client.post(f"/monitoring/cycles/{cycle_id}/postpone", headers=admin_headers, json={
+            "new_due_date": new_due_date.isoformat(),
+            "reason": "Data delay",
+            "justification": "Vendor feed late"
+        })
+        assert response.status_code == 200
+        data = response.json()
+        assert data["status"] == "DATA_COLLECTION"
+        assert data["submission_due_date"] == new_due_date.isoformat()
+        assert data["report_due_date"] == (new_due_date + timedelta(days=12)).isoformat()
+        assert data["postponement_count"] == 1
+        assert data["original_due_date"] == original_submission.isoformat()
+        assert data["postponed_due_date"] == new_due_date.isoformat()
+
+        plan_after = client.get(f"/monitoring/plans/{plan_id}", headers=admin_headers).json()
+        assert plan_after["next_submission_due_date"] == new_due_date.isoformat()
+
+    def test_postpone_cycle_requires_data_collection(self, client, admin_headers):
+        """Postpone is only allowed for DATA_COLLECTION cycles."""
+        plan_resp = client.post("/monitoring/plans", headers=admin_headers, json={
+            "initial_period_end_date": date.today().isoformat(),
+            "name": "Plan For Postpone Guard",
+            "frequency": "Quarterly"
+        })
+        plan_id = plan_resp.json()["plan_id"]
+
+        cycle_resp = client.post(f"/monitoring/plans/{plan_id}/cycles", headers=admin_headers, json={})
+        cycle_id = cycle_resp.json()["cycle_id"]
+
+        response = client.post(f"/monitoring/cycles/{cycle_id}/postpone", headers=admin_headers, json={
+            "new_due_date": (date.today() + timedelta(days=5)).isoformat(),
+            "reason": "Not started",
+            "justification": "Waiting for start"
+        })
+        assert response.status_code == 400
+        assert "DATA_COLLECTION" in response.json()["detail"]
+
+    def test_hold_cycle_requires_resume_for_submit(self, client, admin_headers):
+        """Holding a cycle blocks submission until resumed."""
+        plan_resp = client.post("/monitoring/plans", headers=admin_headers, json={
+            "initial_period_end_date": date.today().isoformat(),
+            "name": "Plan For Hold",
+            "frequency": "Quarterly"
+        })
+        plan_id = plan_resp.json()["plan_id"]
+
+        metric_id = self._publish_version_for_plan(client, admin_headers, plan_id)
+
+        cycle_resp = client.post(f"/monitoring/plans/{plan_id}/cycles", headers=admin_headers, json={})
+        cycle_id = cycle_resp.json()["cycle_id"]
+        client.post(f"/monitoring/cycles/{cycle_id}/start", headers=admin_headers)
+
+        hold_until = date.today() + timedelta(days=10)
+        hold_resp = client.post(f"/monitoring/cycles/{cycle_id}/postpone", headers=admin_headers, json={
+            "new_due_date": hold_until.isoformat(),
+            "reason": "Compliance hold",
+            "justification": "Regulator request",
+            "indefinite_hold": True
+        })
+        assert hold_resp.status_code == 200
+        assert hold_resp.json()["status"] == "ON_HOLD"
+        assert hold_resp.json()["hold_reason"] == "Compliance hold"
+        assert hold_resp.json()["hold_start_date"] is not None
+
+        # Attempt submit while ON_HOLD should fail
+        submit_resp = client.post(f"/monitoring/cycles/{cycle_id}/submit", headers=admin_headers)
+        assert submit_resp.status_code == 400
+        assert "resume" in submit_resp.json()["detail"].lower()
+
+        # Resume and then submit should be allowed once results are present
+        resume_resp = client.post(f"/monitoring/cycles/{cycle_id}/resume", headers=admin_headers)
+        assert resume_resp.status_code == 200
+        assert resume_resp.json()["status"] == "DATA_COLLECTION"
+
+        client.post(f"/monitoring/cycles/{cycle_id}/results", headers=admin_headers, json={
+            "plan_metric_id": metric_id,
+            "numeric_value": 0.8,
+            "narrative": "Hold lifted"
+        })
+
+        submit_resp = client.post(f"/monitoring/cycles/{cycle_id}/submit", headers=admin_headers)
+        assert submit_resp.status_code == 200
+        assert submit_resp.json()["status"] == "UNDER_REVIEW"
+
+    def test_delete_plan_blocks_on_hold_cycle(self, client, admin_headers):
+        """Plan delete is blocked while any cycle is ON_HOLD."""
+        plan_resp = client.post("/monitoring/plans", headers=admin_headers, json={
+            "initial_period_end_date": date.today().isoformat(),
+            "name": "Plan For Hold Delete Block",
+            "frequency": "Quarterly"
+        })
+        plan_id = plan_resp.json()["plan_id"]
+
+        self._publish_version_for_plan(client, admin_headers, plan_id)
+
+        cycle_resp = client.post(f"/monitoring/plans/{plan_id}/cycles", headers=admin_headers, json={})
+        cycle_id = cycle_resp.json()["cycle_id"]
+        client.post(f"/monitoring/cycles/{cycle_id}/start", headers=admin_headers)
+
+        hold_resp = client.post(f"/monitoring/cycles/{cycle_id}/postpone", headers=admin_headers, json={
+            "new_due_date": (date.today() + timedelta(days=5)).isoformat(),
+            "reason": "Hold before delete",
+            "justification": "Testing delete guard",
+            "indefinite_hold": True
+        })
+        assert hold_resp.status_code == 200
+        assert hold_resp.json()["status"] == "ON_HOLD"
+
+        delete_resp = client.delete(f"/monitoring/plans/{plan_id}", headers=admin_headers)
+        assert delete_resp.status_code == 409
+
     def test_submit_cycle_fails_without_any_results(self, client, admin_headers):
         """Submit fails if no results have been entered - guards against removed completeness validation."""
         plan_resp = client.post("/monitoring/plans", headers=admin_headers, json={
+            "initial_period_end_date": date.today().isoformat(),
             "name": "Plan For Submit No Results",
             "frequency": "Quarterly"
         })
@@ -1084,6 +1306,7 @@ class TestCycleWorkflow:
     def test_submit_cycle_fails_with_missing_metric_results(self, client, admin_headers):
         """Submit fails when some metrics have no results - guards multi-metric completeness."""
         plan_resp = client.post("/monitoring/plans", headers=admin_headers, json={
+            "initial_period_end_date": date.today().isoformat(),
             "name": "Plan For Submit Missing Metrics",
             "frequency": "Quarterly"
         })
@@ -1143,6 +1366,7 @@ class TestCycleWorkflow:
     def test_submit_cycle_fails_with_na_value_no_narrative(self, client, admin_headers):
         """Submit fails when a metric has no value AND no narrative explanation."""
         plan_resp = client.post("/monitoring/plans", headers=admin_headers, json={
+            "initial_period_end_date": date.today().isoformat(),
             "name": "Plan For Submit NA No Narrative",
             "frequency": "Quarterly"
         })
@@ -1171,6 +1395,7 @@ class TestCycleWorkflow:
     def test_submit_cycle_succeeds_with_na_value_and_narrative(self, client, admin_headers):
         """Submit succeeds when N/A metric has narrative explanation."""
         plan_resp = client.post("/monitoring/plans", headers=admin_headers, json={
+            "initial_period_end_date": date.today().isoformat(),
             "name": "Plan For Submit NA With Narrative",
             "frequency": "Quarterly"
         })
@@ -1198,18 +1423,20 @@ class TestCycleWorkflow:
     def test_cancel_cycle(self, client, admin_headers):
         """Cancel cycle moves to CANCELLED status."""
         plan_resp = client.post("/monitoring/plans", headers=admin_headers, json={
+            "initial_period_end_date": date.today().isoformat(),
             "name": "Plan For Cancel",
             "frequency": "Quarterly"
         })
         plan_id = plan_resp.json()["plan_id"]
         plan_before = client.get(f"/monitoring/plans/{plan_id}", headers=admin_headers).json()
-        old_submission = date.fromisoformat(plan_before["next_submission_due_date"])
 
         cycle_resp = client.post(f"/monitoring/plans/{plan_id}/cycles", headers=admin_headers, json={})
         cycle_id = cycle_resp.json()["cycle_id"]
+        period_end = date.fromisoformat(cycle_resp.json()["period_end_date"])
 
         response = client.post(f"/monitoring/cycles/{cycle_id}/cancel", headers=admin_headers, json={
-            "cancel_reason": "Testing cancellation"
+            "cancel_reason": "Testing cancellation",
+            "deactivate_plan": False
         })
         assert response.status_code == 200
         assert response.json()["status"] == "CANCELLED"
@@ -1217,13 +1444,40 @@ class TestCycleWorkflow:
 
         plan_after = client.get(f"/monitoring/plans/{plan_id}", headers=admin_headers).json()
         new_submission = date.fromisoformat(plan_after["next_submission_due_date"])
-        assert new_submission == old_submission + relativedelta(months=3)
+        expected_period_end = period_end + relativedelta(months=3)
+        expected_submission = expected_period_end + timedelta(days=plan_before["data_submission_lead_days"])
+        assert new_submission == expected_submission
+
+    def test_cancel_cycle_with_plan_deactivation(self, client, admin_headers):
+        """Cancel cycle with plan deactivation skips auto-advance."""
+        plan_resp = client.post("/monitoring/plans", headers=admin_headers, json={
+            "initial_period_end_date": date.today().isoformat(),
+            "name": "Plan For Cancel Deactivate",
+            "frequency": "Quarterly"
+        })
+        plan_id = plan_resp.json()["plan_id"]
+        plan_before = client.get(f"/monitoring/plans/{plan_id}", headers=admin_headers).json()
+
+        cycle_resp = client.post(f"/monitoring/plans/{plan_id}/cycles", headers=admin_headers, json={})
+        cycle_id = cycle_resp.json()["cycle_id"]
+
+        response = client.post(f"/monitoring/cycles/{cycle_id}/cancel", headers=admin_headers, json={
+            "cancel_reason": "Deactivate plan on cancel",
+            "deactivate_plan": True
+        })
+        assert response.status_code == 200
+        assert response.json()["status"] == "CANCELLED"
+
+        plan_after = client.get(f"/monitoring/plans/{plan_id}", headers=admin_headers).json()
+        assert plan_after["is_active"] is False
+        assert plan_after["next_submission_due_date"] == plan_before["next_submission_due_date"]
 
     def test_cycle_overdue_fields_past_due_date(self, client, admin_headers):
         """Cycle with past report_due_date in DATA_COLLECTION shows is_overdue=True."""
         data_submission_lead_days = 10
         reporting_lead_days = 11
         plan_resp = client.post("/monitoring/plans", headers=admin_headers, json={
+            "initial_period_end_date": date.today().isoformat(),
             "name": "Plan For Overdue Test",
             "frequency": "Quarterly",
             "reporting_lead_days": reporting_lead_days,
@@ -1262,11 +1516,60 @@ class TestCycleWorkflow:
         assert cycle["is_overdue"] is True
         assert cycle["days_overdue"] == 7
 
+    def test_cycle_overdue_fields_on_hold(self, client, admin_headers):
+        """ON_HOLD cycles are not treated as overdue."""
+        data_submission_lead_days = 10
+        reporting_lead_days = 11
+        plan_resp = client.post("/monitoring/plans", headers=admin_headers, json={
+            "initial_period_end_date": date.today().isoformat(),
+            "name": "Plan For Hold Overdue Test",
+            "frequency": "Quarterly",
+            "reporting_lead_days": reporting_lead_days,
+            "data_submission_lead_days": data_submission_lead_days
+        })
+        plan_id = plan_resp.json()["plan_id"]
+
+        # Publish version so we can start and hold
+        self._publish_version_for_plan(client, admin_headers, plan_id)
+
+        today = date.today()
+        period_end = today - timedelta(
+            days=7 + data_submission_lead_days + reporting_lead_days
+        )
+        period_start = period_end - timedelta(days=30)
+
+        cycle_resp = client.post(f"/monitoring/plans/{plan_id}/cycles", headers=admin_headers, json={
+            "period_start_date": period_start.isoformat(),
+            "period_end_date": period_end.isoformat()
+        })
+        cycle_id = cycle_resp.json()["cycle_id"]
+
+        client.post(f"/monitoring/cycles/{cycle_id}/start", headers=admin_headers)
+
+        hold_resp = client.post(f"/monitoring/cycles/{cycle_id}/postpone", headers=admin_headers, json={
+            "new_due_date": (today - timedelta(days=5)).isoformat(),
+            "reason": "Hold to pause",
+            "justification": "Waiting on vendor",
+            "indefinite_hold": True
+        })
+        assert hold_resp.status_code == 200
+        assert hold_resp.json()["status"] == "ON_HOLD"
+
+        response = client.get(f"/monitoring/plans/{plan_id}/cycles", headers=admin_headers)
+        assert response.status_code == 200
+        cycles = response.json()
+        cycle = next(c for c in cycles if c["cycle_id"] == cycle_id)
+
+        assert cycle["status"] == "ON_HOLD"
+        assert cycle["is_overdue"] is False
+        assert cycle["days_overdue"] == 0
+
     def test_cycle_overdue_fields_future_due_date(self, client, admin_headers):
         """Cycle with future report_due_date shows is_overdue=False."""
         data_submission_lead_days = 10
         reporting_lead_days = 11
         plan_resp = client.post("/monitoring/plans", headers=admin_headers, json={
+            "initial_period_end_date": date.today().isoformat(),
             "name": "Plan For Future Due Test",
             "frequency": "Quarterly",
             "reporting_lead_days": reporting_lead_days,
@@ -1310,6 +1613,7 @@ class TestCycleWorkflow:
         data_submission_lead_days = 10
         reporting_lead_days = 11
         plan_resp = client.post("/monitoring/plans", headers=admin_headers, json={
+            "initial_period_end_date": date.today().isoformat(),
             "name": "Plan For Cancelled Not Overdue",
             "frequency": "Quarterly",
             "reporting_lead_days": reporting_lead_days,
@@ -1372,6 +1676,7 @@ class TestMonitoringResults:
 
         # Create plan with metric
         plan_resp = client.post("/monitoring/plans", headers=admin_headers, json={
+            "initial_period_end_date": date.today().isoformat(),
             "name": "Plan For Results",
             "frequency": "Quarterly"
         })
@@ -1417,6 +1722,7 @@ class TestMonitoringResults:
         kpm_id = kpm_resp.json()["kpm_id"]
 
         plan_resp = client.post("/monitoring/plans", headers=admin_headers, json={
+            "initial_period_end_date": date.today().isoformat(),
             "name": "Plan For Yellow",
             "frequency": "Quarterly"
         })
@@ -1461,6 +1767,7 @@ class TestMonitoringResults:
         kpm_id = kpm_resp.json()["kpm_id"]
 
         plan_resp = client.post("/monitoring/plans", headers=admin_headers, json={
+            "initial_period_end_date": date.today().isoformat(),
             "name": "Plan For Red",
             "frequency": "Quarterly"
         })
@@ -1503,6 +1810,7 @@ class TestMonitoringResults:
         kpm_id = kpm_resp.json()["kpm_id"]
 
         plan_resp = client.post("/monitoring/plans", headers=admin_headers, json={
+            "initial_period_end_date": date.today().isoformat(),
             "name": "Plan For List Results",
             "frequency": "Quarterly"
         })
@@ -1546,6 +1854,7 @@ class TestMonitoringResults:
         kpm_id = kpm_resp.json()["kpm_id"]
 
         plan_resp = client.post("/monitoring/plans", headers=admin_headers, json={
+            "initial_period_end_date": date.today().isoformat(),
             "name": "Plan For Pending Results",
             "frequency": "Quarterly"
         })
@@ -1588,6 +1897,7 @@ class TestMonitoringPlanVersioning:
 
         # Create plan
         plan_resp = client.post("/monitoring/plans", headers=admin_headers, json={
+            "initial_period_end_date": date.today().isoformat(),
             "name": plan_name,
             "frequency": "Quarterly"
         })
@@ -1841,6 +2151,7 @@ class TestApprovalWorkflow:
         Returns (plan_id, cycle_id) for further testing.
         """
         plan_resp = client.post("/monitoring/plans", headers=admin_headers, json={
+            "initial_period_end_date": date.today().isoformat(),
             "name": plan_name,
             "frequency": "Quarterly"
         })
@@ -1945,7 +2256,8 @@ class TestApprovalWorkflow:
         # Setup cycle in UNDER_REVIEW state
         plan_id, cycle_id = self._setup_cycle_for_approval(client, admin_headers, "Plan For Auto Complete")
         plan_before = client.get(f"/monitoring/plans/{plan_id}", headers=admin_headers).json()
-        old_submission = date.fromisoformat(plan_before["next_submission_due_date"])
+        cycle_before = client.get(f"/monitoring/cycles/{cycle_id}", headers=admin_headers).json()
+        period_end = date.fromisoformat(cycle_before["period_end_date"])
         client.post(f"/monitoring/cycles/{cycle_id}/request-approval", headers=admin_headers,
                    json={"report_url": "https://example.com/reports/test-report.pdf"})
 
@@ -1966,7 +2278,9 @@ class TestApprovalWorkflow:
 
         plan_after = client.get(f"/monitoring/plans/{plan_id}", headers=admin_headers).json()
         new_submission = date.fromisoformat(plan_after["next_submission_due_date"])
-        assert new_submission == old_submission + relativedelta(months=3)
+        expected_period_end = period_end + relativedelta(months=3)
+        expected_submission = expected_period_end + timedelta(days=plan_before["data_submission_lead_days"])
+        assert new_submission == expected_submission
 
     def test_reject_approval_returns_to_under_review(self, client, admin_headers):
         """Rejecting an approval returns cycle to UNDER_REVIEW."""
@@ -2125,6 +2439,7 @@ class TestModelMonitoringPlansLookup:
 
         # Create monitoring plan covering this model
         plan_resp = client.post("/monitoring/plans", headers=admin_headers, json={
+            "initial_period_end_date": date.today().isoformat(),
             "name": "Plan Covering Model",
             "frequency": "Quarterly",
             "model_ids": [model_id]
@@ -2153,6 +2468,7 @@ class TestModelMonitoringPlansLookup:
 
         # Create plan
         plan_resp = client.post("/monitoring/plans", headers=admin_headers, json={
+            "initial_period_end_date": date.today().isoformat(),
             "name": "Versioned Plan",
             "frequency": "Quarterly",
             "model_ids": [model_id]
@@ -2196,6 +2512,7 @@ class TestModelMonitoringPlansLookup:
 
         # Create and then deactivate plan
         plan_resp = client.post("/monitoring/plans", headers=admin_headers, json={
+            "initial_period_end_date": date.today().isoformat(),
             "name": "Plan To Deactivate",
             "frequency": "Quarterly",
             "model_ids": [model_id]
@@ -2277,6 +2594,7 @@ class TestComponent9bFields:
 
         # Create monitoring plan with version
         plan_resp = client.post("/monitoring/plans", headers=admin_headers, json={
+            "initial_period_end_date": date.today().isoformat(),
             "name": "Monitoring Plan for 9b",
             "frequency": "Quarterly",
             "model_ids": [model_id]
@@ -2561,6 +2879,7 @@ class TestComponent9bFields:
 
         # Create monitoring plan with published version
         plan_resp = client.post("/monitoring/plans", headers=admin_headers, json={
+            "initial_period_end_date": date.today().isoformat(),
             "name": "Monitoring Plan for 9b Pass",
             "frequency": "Quarterly",
             "model_ids": [model_id]
@@ -2677,6 +2996,7 @@ class TestCSVImport:
 
         # Create plan with model
         plan_resp = client.post("/monitoring/plans", headers=admin_headers, json={
+            "initial_period_end_date": date.today().isoformat(),
             "name": "CSV Import Test Plan",
             "frequency": "Quarterly",
             "model_ids": [model.model_id]
@@ -2974,6 +3294,7 @@ class TestCSVImport:
         db_session.refresh(model)
 
         plan_resp = client.post("/monitoring/plans", headers=admin_headers, json={
+            "initial_period_end_date": date.today().isoformat(),
             "name": "Qualitative CSV Plan",
             "frequency": "Quarterly",
             "model_ids": [model.model_id]
@@ -3080,6 +3401,7 @@ class TestCSVImport:
         db_session.refresh(model)
 
         plan_resp = client.post("/monitoring/plans", headers=admin_headers, json={
+            "initial_period_end_date": date.today().isoformat(),
             "name": "Quantitative Value ID Plan",
             "frequency": "Quarterly",
             "model_ids": [model.model_id]

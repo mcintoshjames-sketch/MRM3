@@ -188,9 +188,15 @@ Setting up a monitoring plan involves several steps:
 3. Enter the required information:
    - **Plan Name**: Descriptive name (e.g., "Credit Scorecard Monitoring")
    - **Frequency**: How often monitoring occurs
+   - **Initial reporting cycle period end date**: Sets the first cycle period end
+   - **Data Submission Lead Days**: Days after period end for submission
    - **Monitoring Team**: Team responsible for oversight
    - **Data Provider**: Person responsible for submitting results
    - **Reporting Lead Days**: Days between submission due and report due
+
+**Note**: The system calculates the first cycle due dates as:
+- **Submission Due Date** = Period End Date + Data Submission Lead Days
+- **Report Due Date** = Submission Due Date + Reporting Lead Days
 
 #### Step 2: Add Models to Scope
 
@@ -294,6 +300,17 @@ Every monitoring cycle progresses through defined stages:
 
 ---
 
+### Optional Actions During Data Collection
+
+You can adjust timing without changing the core workflow:
+
+- **Extend Due Date**: Keeps the cycle in DATA_COLLECTION and updates the submission/report due dates.
+- **Hold Cycle**: Places the cycle in **ON_HOLD** for an indefinite pause. Overdue alerts are suppressed until the cycle is resumed.
+
+To continue work on a held cycle, use **Resume Cycle** to return it to DATA_COLLECTION.
+
+---
+
 ### Stage 3: Under Review
 
 **Purpose**: Quality assurance and review period
@@ -353,6 +370,9 @@ Cycles can be cancelled from any status except Approved:
 - Requires documented cancellation reason
 - Cannot be undone
 - Preserves history for audit purposes
+ - Optional: Deactivate the monitoring plan on cancel
+   - **If deactivated**: The plan stops auto-advancing to new cycles
+   - **If not deactivated**: The plan auto-advances to the next cycle as usual
 
 ---
 
@@ -860,6 +880,8 @@ Each task card shows:
 | Team Member | UNDER_REVIEW | Review results, Request approval |
 | Assignee | DATA_COLLECTION | Enter results, Submit cycle |
 
+**On Hold**: Cycles in ON_HOLD appear as "On Hold" and do not require action until resumed.
+
 ### Priority Sorting
 
 Tasks are sorted by priority:
@@ -1180,7 +1202,8 @@ A: Navigate to **Model Details** → **Exceptions** tab. A red badge shows the c
 | Status | Description | Who Can Act | Next Statuses |
 |--------|-------------|-------------|---------------|
 | **PENDING** | Cycle created, awaiting start | Team Members | DATA_COLLECTION, CANCELLED |
-| **DATA_COLLECTION** | Active data entry period | Data Provider, Team Members | UNDER_REVIEW, CANCELLED |
+| **DATA_COLLECTION** | Active data entry period | Data Provider, Team Members | UNDER_REVIEW, ON_HOLD, CANCELLED |
+| **ON_HOLD** | Cycle paused; overdue alerts suppressed | Team Members, Data Provider | DATA_COLLECTION, CANCELLED |
 | **UNDER_REVIEW** | Team reviewing results | Team Members | PENDING_APPROVAL, CANCELLED |
 | **PENDING_APPROVAL** | Awaiting approver sign-off | Approvers | APPROVED |
 | **APPROVED** | Cycle complete | (Terminal) | — |
@@ -1283,6 +1306,7 @@ CSV import is only available when the monitoring cycle is in one of these status
 
 Import is blocked when the cycle is in:
 - Pending
+- On Hold
 - Pending Approval
 - Approved
 - Rejected

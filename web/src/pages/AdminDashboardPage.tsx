@@ -1540,6 +1540,7 @@ export default function AdminDashboardPage() {
                                             <span className={`px-2 py-1 text-xs font-semibold rounded ${
                                                 cycle.status === 'PENDING' ? 'bg-gray-100 text-gray-800' :
                                                 cycle.status === 'DATA_COLLECTION' ? 'bg-blue-100 text-blue-800' :
+                                                cycle.status === 'ON_HOLD' ? 'bg-orange-100 text-orange-800' :
                                                 cycle.status === 'UNDER_REVIEW' ? 'bg-yellow-100 text-yellow-800' :
                                                 cycle.status === 'PENDING_APPROVAL' ? 'bg-orange-100 text-orange-800' :
                                                 'bg-gray-100 text-gray-800'

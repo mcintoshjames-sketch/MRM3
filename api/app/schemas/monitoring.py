@@ -192,7 +192,9 @@ class MonitoringPlanCreate(MonitoringPlanBase):
     """Create schema for monitoring plan."""
     model_ids: List[int] = []
     metrics: List[MonitoringPlanMetricCreate] = []
-    # Optional: set initial submission due date (defaults to calculated from frequency)
+    # Required: sets the first cycle period end date
+    initial_period_end_date: Optional[date] = None
+    # Optional: legacy support (ignored in favor of initial_period_end_date)
     next_submission_due_date: Optional[date] = None
 
 
@@ -246,6 +248,7 @@ class MonitoringPlanListResponse(BaseModel):
     version_count: int = 0
     active_version_number: Optional[int] = None
     has_unpublished_changes: bool = False
+    non_cancelled_cycle_count: int = 0
 
     class Config:
         from_attributes = True
@@ -363,6 +366,7 @@ class MonitoringCycleStatusEnum(str, Enum):
     """Monitoring cycle status workflow states."""
     PENDING = "PENDING"
     DATA_COLLECTION = "DATA_COLLECTION"
+    ON_HOLD = "ON_HOLD"
     UNDER_REVIEW = "UNDER_REVIEW"
     PENDING_APPROVAL = "PENDING_APPROVAL"
     APPROVED = "APPROVED"
@@ -416,6 +420,11 @@ class MonitoringCycleResponse(BaseModel):
     submission_due_date: date
     report_due_date: date
     status: MonitoringCycleStatusEnum
+    hold_reason: Optional[str] = None
+    hold_start_date: Optional[date] = None
+    original_due_date: Optional[date] = None
+    postponed_due_date: Optional[date] = None
+    postponement_count: int = 0
     assigned_to: Optional[UserRef] = None
     submitted_at: Optional[datetime] = None
     submitted_by: Optional[UserRef] = None
@@ -451,6 +460,11 @@ class MonitoringCycleListResponse(BaseModel):
     status: MonitoringCycleStatusEnum
     submission_due_date: date
     report_due_date: date
+    hold_reason: Optional[str] = None
+    hold_start_date: Optional[date] = None
+    original_due_date: Optional[date] = None
+    postponed_due_date: Optional[date] = None
+    postponement_count: int = 0
     assigned_to_name: Optional[str] = None
     # Report URL (provided when requesting approval)
     report_url: Optional[str] = None
@@ -644,6 +658,15 @@ class CycleRequestApprovalRequest(BaseModel):
 class CycleCancelRequest(BaseModel):
     """Request schema for cancelling a cycle."""
     cancel_reason: str
+    deactivate_plan: bool = False
+
+
+class CyclePostponeRequest(BaseModel):
+    """Request schema for postponing or holding a cycle."""
+    new_due_date: Optional[date] = None
+    reason: str
+    justification: str
+    indefinite_hold: bool = False
 
 
 # ============================================================================

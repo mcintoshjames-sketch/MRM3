@@ -258,6 +258,7 @@ const MonitoringPlanDetailPage: React.FC = () => {
     const [pendingBreaches, setPendingBreaches] = useState<BreachItem[]>([]);
     const [breachResolutionLoading, setBreachResolutionLoading] = useState(false);
     const [pendingDataProviderChange, setPendingDataProviderChange] = useState<number | null>(null);
+    const [downloadingReportCycleId, setDownloadingReportCycleId] = useState<number | null>(null);
 
     // Use the plan configuration hook
     const {
@@ -366,8 +367,18 @@ const MonitoringPlanDetailPage: React.FC = () => {
         setCancelCycleId,
         cancelReason,
         setCancelReason,
+        deactivatePlanOnCancel,
+        setDeactivatePlanOnCancel,
         openCancelModal,
         handleCancelCycle,
+        // Postpone cycle
+        showPostponeModal,
+        postponeCycleId,
+        postponeForm,
+        setPostponeForm,
+        openPostponeModal,
+        closePostponeModal,
+        handlePostponeCycle,
         // Request approval
         showRequestApprovalModal,
         setShowRequestApprovalModal,
@@ -430,6 +441,37 @@ const MonitoringPlanDetailPage: React.FC = () => {
         a.click();
         document.body.removeChild(a);
         URL.revokeObjectURL(url);
+    };
+
+    const getFilenameFromDisposition = (disposition?: string) => {
+        if (!disposition) return null;
+        const match = disposition.match(/filename="?([^"]+)"?/i);
+        return match ? match[1] : null;
+    };
+
+    const handleDownloadCycleReport = async (cycleId: number) => {
+        try {
+            setDownloadingReportCycleId(cycleId);
+            const response = await api.get(`/monitoring/cycles/${cycleId}/report/pdf`, {
+                responseType: 'blob'
+            });
+            const filename =
+                getFilenameFromDisposition(response.headers?.['content-disposition']) ||
+                `monitoring_cycle_${cycleId}.pdf`;
+            const url = URL.createObjectURL(response.data);
+            const link = document.createElement('a');
+            link.href = url;
+            link.setAttribute('download', filename);
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+            URL.revokeObjectURL(url);
+        } catch (err: any) {
+            console.error('Failed to download monitoring report:', err);
+            alert(err.response?.data?.detail || 'Failed to download monitoring report.');
+        } finally {
+            setDownloadingReportCycleId(null);
+        }
     };
 
     // Get active cycle that could have assignee updated (PENDING or DATA_COLLECTION)
@@ -592,6 +634,8 @@ const MonitoringPlanDetailPage: React.FC = () => {
                 return 'bg-gray-100 text-gray-800';
             case 'DATA_COLLECTION':
                 return 'bg-blue-100 text-blue-800';
+            case 'ON_HOLD':
+                return 'bg-orange-100 text-orange-800';
             case 'UNDER_REVIEW':
                 return 'bg-yellow-100 text-yellow-800';
             case 'PENDING_APPROVAL':
@@ -628,6 +672,10 @@ const MonitoringPlanDetailPage: React.FC = () => {
                 if (permissions?.can_submit_cycle) {
                     actions.push({ label: 'Submit for Review', action: 'submit', variant: 'primary' });
                 }
+                actions.push({ label: 'Extend Due Date', action: 'postpone', variant: 'secondary' });
+                break;
+            case 'ON_HOLD':
+                actions.push({ label: 'Resume Cycle', action: 'resume', variant: 'secondary' });
                 break;
             case 'UNDER_REVIEW':
                 // Only Admin or team members (risk function) can request approval
@@ -659,7 +707,7 @@ const MonitoringPlanDetailPage: React.FC = () => {
                 <div className="text-center py-12">
                     <h2 className="text-2xl font-bold text-red-600">Error</h2>
                     <p className="text-gray-600 mt-2">{error || 'Plan not found'}</p>
-                    <Link to="/monitoring-plans" className="text-blue-600 hover:underline mt-4 inline-block">
+                    <Link to="/monitoring-plans?tab=plans" className="text-blue-600 hover:underline mt-4 inline-block">
                         Back to Monitoring Plans
                     </Link>
                 </div>
@@ -669,6 +717,7 @@ const MonitoringPlanDetailPage: React.FC = () => {
 
     const currentCycle = cycles.find(c => c.status !== 'APPROVED' && c.status !== 'CANCELLED');
     const previousCycles = cycles.filter(c => c.status === 'APPROVED' || c.status === 'CANCELLED');
+    const latestReportCycle = cycles.find(c => c.status === 'PENDING_APPROVAL' || c.status === 'APPROVED');
 
     return (
         <Layout>
@@ -677,7 +726,7 @@ const MonitoringPlanDetailPage: React.FC = () => {
                 <div className="flex justify-between items-start">
                     <div>
                         <div className="flex items-center gap-2 mb-2">
-                            <Link to="/monitoring-plans" className="text-blue-600 hover:underline text-sm">
+                            <Link to="/monitoring-plans?tab=plans" className="text-blue-600 hover:underline text-sm">
                                 Monitoring Plans
                             </Link>
                             <span className="text-gray-400">/</span>
@@ -750,10 +799,12 @@ const MonitoringPlanDetailPage: React.FC = () => {
                                 {tab.key === 'cycles' && currentCycle && (
                                     <span className={`ml-2 px-2 py-0.5 text-xs rounded-full ${
                                         currentCycle.status === 'DATA_COLLECTION' ? 'bg-blue-100 text-blue-700' :
+                                        currentCycle.status === 'ON_HOLD' ? 'bg-orange-100 text-orange-700' :
                                         currentCycle.status === 'PENDING_APPROVAL' ? 'bg-purple-100 text-purple-700' :
                                         'bg-gray-100 text-gray-600'
                                     }`}>
                                         {currentCycle.status === 'DATA_COLLECTION' ? 'Active' :
+                                         currentCycle.status === 'ON_HOLD' ? 'On Hold' :
                                          currentCycle.status === 'PENDING_APPROVAL' ? 'Awaiting' :
                                          currentCycle.status.replace(/_/g, ' ')}
                                     </span>
@@ -834,6 +885,7 @@ const MonitoringPlanDetailPage: React.FC = () => {
                             {currentCycle ? (
                                 <div className={`rounded-lg p-5 ${
                                     currentCycle.status === 'DATA_COLLECTION' ? 'bg-blue-50 border-2 border-blue-300' :
+                                    currentCycle.status === 'ON_HOLD' ? 'bg-orange-50 border-2 border-orange-300' :
                                     currentCycle.status === 'PENDING_APPROVAL' ? 'bg-purple-50 border-2 border-purple-300' :
                                     currentCycle.status === 'UNDER_REVIEW' ? 'bg-yellow-50 border-2 border-yellow-300' :
                                     'bg-gray-50 border border-gray-200'
@@ -843,6 +895,7 @@ const MonitoringPlanDetailPage: React.FC = () => {
                                             <div className="flex items-center gap-3">
                                                 <span className={`text-lg font-bold ${
                                                     currentCycle.status === 'DATA_COLLECTION' ? 'text-blue-800' :
+                                                    currentCycle.status === 'ON_HOLD' ? 'text-orange-800' :
                                                     currentCycle.status === 'PENDING_APPROVAL' ? 'text-purple-800' :
                                                     currentCycle.status === 'UNDER_REVIEW' ? 'text-yellow-800' :
                                                     'text-gray-800'
@@ -857,6 +910,9 @@ const MonitoringPlanDetailPage: React.FC = () => {
                                                 {currentCycle.status === 'DATA_COLLECTION' && (
                                                     <>Data collection in progress. {currentCycle.result_count} / {plan.metrics?.length || 0} metrics entered.</>
                                                 )}
+                                                {currentCycle.status === 'ON_HOLD' && (
+                                                    <>Cycle is on hold. Resume to continue data collection.</>
+                                                )}
                                                 {currentCycle.status === 'PENDING_APPROVAL' && (
                                                     <>Awaiting approvals before cycle can be completed.</>
                                                 )}
@@ -868,11 +924,26 @@ const MonitoringPlanDetailPage: React.FC = () => {
                                                 )}
                                             </p>
                                             <div className="flex items-center gap-4 mt-3 text-sm text-gray-600">
-                                                <span>Due: <strong>{currentCycle.submission_due_date}</strong></span>
+                                                <span>
+                                                    {currentCycle.status === 'ON_HOLD' ? 'Hold Until:' : 'Due:'}{' '}
+                                                    <strong>{currentCycle.postponed_due_date || currentCycle.submission_due_date}</strong>
+                                                </span>
                                                 {currentCycle.version_number && (
                                                     <span>Version: <strong>v{currentCycle.version_number}</strong></span>
                                                 )}
                                             </div>
+                                            {(currentCycle.status === 'ON_HOLD' || (currentCycle.original_due_date && currentCycle.postponed_due_date)) && (
+                                                <div className="mt-3 text-sm text-gray-600 space-y-1">
+                                                    {currentCycle.status === 'ON_HOLD' && currentCycle.hold_reason && (
+                                                        <div>Hold Reason: <strong>{currentCycle.hold_reason}</strong></div>
+                                                    )}
+                                                    {currentCycle.original_due_date && currentCycle.postponed_due_date && (
+                                                        <div>
+                                                            Original Due: <strong>{currentCycle.original_due_date}</strong> &rarr; New Due: <strong>{currentCycle.postponed_due_date}</strong>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            )}
                                         </div>
                                         <div className="flex flex-col gap-2">
                                             {canEnterResults(currentCycle) && (
@@ -894,17 +965,21 @@ const MonitoringPlanDetailPage: React.FC = () => {
                                             {getAvailableActions(currentCycle).slice(0, 1).map((action) => (
                                                 <button
                                                     key={action.action}
-                                                    onClick={() => {
-                                                        if (action.action === 'cancel') {
-                                                            openCancelModal(currentCycle.cycle_id);
-                                                        } else if (action.action === 'request-approval') {
-                                                            openRequestApprovalModal(currentCycle.cycle_id);
-                                                        } else if (action.action === 'start') {
-                                                            openStartCycleModal(currentCycle.cycle_id);
-                                                        } else {
-                                                            handleCycleAction(currentCycle.cycle_id, action.action);
-                                                        }
-                                                    }}
+                                                        onClick={() => {
+                                                            if (action.action === 'cancel') {
+                                                                openCancelModal(currentCycle.cycle_id);
+                                                            } else if (action.action === 'request-approval') {
+                                                                openRequestApprovalModal(currentCycle.cycle_id);
+                                                            } else if (action.action === 'start') {
+                                                                openStartCycleModal(currentCycle.cycle_id);
+                                                            } else if (action.action === 'postpone') {
+                                                                openPostponeModal(currentCycle.cycle_id);
+                                                            } else if (action.action === 'resume') {
+                                                                handleCycleAction(currentCycle.cycle_id, 'resume');
+                                                            } else {
+                                                                handleCycleAction(currentCycle.cycle_id, action.action);
+                                                            }
+                                                        }}
                                                     disabled={actionLoading}
                                                     className={`px-4 py-2 rounded text-sm font-medium ${
                                                         action.variant === 'primary' ? 'bg-blue-600 text-white hover:bg-blue-700' :
@@ -1152,6 +1227,21 @@ const MonitoringPlanDetailPage: React.FC = () => {
                                                     <div className="text-xs text-gray-500">N/A</div>
                                                 </div>
                                             </div>
+                                            {latestReportCycle && (
+                                                <div className="flex items-center justify-between text-xs text-gray-600">
+                                                    <div>
+                                                        Latest report: <span className="font-medium">{formatPeriod(latestReportCycle.period_start_date, latestReportCycle.period_end_date)}</span> ({formatStatus(latestReportCycle.status)})
+                                                    </div>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => handleDownloadCycleReport(latestReportCycle.cycle_id)}
+                                                        disabled={downloadingReportCycleId === latestReportCycle.cycle_id}
+                                                        className="text-blue-600 hover:text-blue-800 disabled:text-gray-400"
+                                                    >
+                                                        {downloadingReportCycleId === latestReportCycle.cycle_id ? 'Downloading...' : 'Report PDF'}
+                                                    </button>
+                                                </div>
+                                            )}
                                             {/* Distribution Bar */}
                                             <div className="flex h-4 rounded-full overflow-hidden bg-gray-200">
                                                 {performanceSummary.green_count > 0 && (
@@ -1644,7 +1734,13 @@ const MonitoringPlanDetailPage: React.FC = () => {
                                         )}
                                     </div>
                                 ) : (
-                                    <div className="border rounded-lg p-6 bg-blue-50 border-blue-200">
+                                    <div className={`border rounded-lg p-6 ${
+                                        currentCycle.status === 'ON_HOLD' ? 'bg-orange-50 border-orange-200' :
+                                        currentCycle.status === 'PENDING_APPROVAL' ? 'bg-purple-50 border-purple-200' :
+                                        currentCycle.status === 'UNDER_REVIEW' ? 'bg-yellow-50 border-yellow-200' :
+                                        currentCycle.status === 'DATA_COLLECTION' ? 'bg-blue-50 border-blue-200' :
+                                        'bg-gray-50 border-gray-200'
+                                    }`}>
                                         <div className="flex justify-between items-start">
                                             <div>
                                                 <div className="flex items-center gap-3 mb-2">
@@ -1657,9 +1753,19 @@ const MonitoringPlanDetailPage: React.FC = () => {
                                                 </div>
                                                 <div className="grid grid-cols-2 gap-4 text-sm">
                                                     <div>
-                                                        <span className="text-gray-500">Submission Due:</span>{' '}
-                                                        <span className="font-medium">{currentCycle.submission_due_date}</span>
+                                                        <span className="text-gray-500">
+                                                            {currentCycle.status === 'ON_HOLD' ? 'Hold Until:' : 'Submission Due:'}
+                                                        </span>{' '}
+                                                        <span className="font-medium">
+                                                            {currentCycle.postponed_due_date || currentCycle.submission_due_date}
+                                                        </span>
                                                     </div>
+                                                    {currentCycle.original_due_date && currentCycle.postponed_due_date && (
+                                                        <div>
+                                                            <span className="text-gray-500">Original Due:</span>{' '}
+                                                            <span className="font-medium">{currentCycle.original_due_date}</span>
+                                                        </div>
+                                                    )}
                                                     <div>
                                                         <span className="text-gray-500">Report Due:</span>{' '}
                                                         <span className="font-medium">{currentCycle.report_due_date}</span>
@@ -1674,6 +1780,12 @@ const MonitoringPlanDetailPage: React.FC = () => {
                                                         <div>
                                                             <span className="text-gray-500">Using:</span>{' '}
                                                             <span className="font-medium">v{currentCycle.version_number} metrics</span>
+                                                        </div>
+                                                    )}
+                                                    {currentCycle.status === 'ON_HOLD' && currentCycle.hold_reason && (
+                                                        <div className="col-span-2">
+                                                            <span className="text-gray-500">Hold Reason:</span>{' '}
+                                                            <span className="font-medium">{currentCycle.hold_reason}</span>
                                                         </div>
                                                     )}
                                                 </div>
@@ -1713,6 +1825,10 @@ const MonitoringPlanDetailPage: React.FC = () => {
                                                                 openRequestApprovalModal(currentCycle.cycle_id);
                                                             } else if (action.action === 'start') {
                                                                 openStartCycleModal(currentCycle.cycle_id);
+                                                            } else if (action.action === 'postpone') {
+                                                                openPostponeModal(currentCycle.cycle_id);
+                                                            } else if (action.action === 'resume') {
+                                                                handleCycleAction(currentCycle.cycle_id, 'resume');
                                                             } else {
                                                                 handleCycleAction(currentCycle.cycle_id, action.action);
                                                             }
@@ -1985,6 +2101,22 @@ const MonitoringPlanDetailPage: React.FC = () => {
                                         placeholder="Please explain why this cycle is being cancelled..."
                                     />
                                 </div>
+                                <div className="rounded-lg border border-gray-200 p-3">
+                                    <label className="flex items-start gap-2">
+                                        <input
+                                            type="checkbox"
+                                            checked={deactivatePlanOnCancel}
+                                            onChange={(e) => setDeactivatePlanOnCancel(e.target.checked)}
+                                            className="mt-1"
+                                        />
+                                        <div>
+                                            <div className="text-sm font-medium text-gray-700">Deactivate monitoring plan</div>
+                                            <div className="text-xs text-gray-500">
+                                                If unchecked, the plan will auto-advance to the next cycle.
+                                            </div>
+                                        </div>
+                                    </label>
+                                </div>
                             </div>
 
                             <div className="p-4 border-t bg-gray-50 flex justify-end gap-2">
@@ -1993,6 +2125,7 @@ const MonitoringPlanDetailPage: React.FC = () => {
                                         setShowCancelModal(false);
                                         setCancelCycleId(null);
                                         setCancelReason('');
+                                        setDeactivatePlanOnCancel(false);
                                         setActionError(null);
                                     }}
                                     disabled={actionLoading}
@@ -2006,6 +2139,103 @@ const MonitoringPlanDetailPage: React.FC = () => {
                                     className="px-4 py-2 rounded text-white font-medium bg-red-600 hover:bg-red-700 disabled:opacity-50"
                                 >
                                     {actionLoading ? 'Cancelling...' : 'Confirm Cancel'}
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                {/* Postpone Cycle Modal */}
+                {showPostponeModal && postponeCycleId && (
+                    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+                        <div className="bg-white rounded-lg shadow-xl w-full max-w-md">
+                            <div className="p-4 border-b bg-orange-50">
+                                <h3 className="text-lg font-bold text-orange-800">Extend Due Date / Hold Cycle</h3>
+                            </div>
+
+                            <div className="p-4 space-y-4">
+                                {actionError && (
+                                    <div className="bg-red-100 border border-red-400 text-red-700 px-3 py-2 rounded text-sm">
+                                        {actionError}
+                                    </div>
+                                )}
+
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                                        New Data Submission Due Date
+                                    </label>
+                                    <input
+                                        type="date"
+                                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                                        value={postponeForm.new_due_date}
+                                        onChange={(e) => setPostponeForm({ ...postponeForm, new_due_date: e.target.value })}
+                                    />
+                                    <p className="text-xs text-gray-500 mt-1">
+                                        Required for date extensions. Optional for holds. Report due date updates automatically.
+                                    </p>
+                                </div>
+
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                                        Reason *
+                                    </label>
+                                    <input
+                                        type="text"
+                                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                                        value={postponeForm.reason}
+                                        onChange={(e) => setPostponeForm({ ...postponeForm, reason: e.target.value })}
+                                        placeholder="e.g., Data delay, Vendor issue"
+                                    />
+                                </div>
+
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                                        Justification *
+                                    </label>
+                                    <textarea
+                                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                                        rows={3}
+                                        value={postponeForm.justification}
+                                        onChange={(e) => setPostponeForm({ ...postponeForm, justification: e.target.value })}
+                                        placeholder="Explain why the deadline needs to move..."
+                                    />
+                                </div>
+
+                                <div className="rounded-lg border border-gray-200 p-3">
+                                    <label className="flex items-start gap-2">
+                                        <input
+                                            type="checkbox"
+                                            checked={postponeForm.indefinite_hold}
+                                            onChange={(e) => setPostponeForm({ ...postponeForm, indefinite_hold: e.target.checked })}
+                                            className="mt-1"
+                                        />
+                                        <div>
+                                            <div className="text-sm font-medium text-gray-700">Place cycle on hold</div>
+                                            <div className="text-xs text-gray-500">
+                                                Holds pause the workflow and suppress overdue alerts until resumed.
+                                            </div>
+                                        </div>
+                                    </label>
+                                </div>
+                            </div>
+
+                            <div className="p-4 border-t bg-gray-50 flex justify-end gap-2">
+                                <button
+                                    onClick={() => {
+                                        closePostponeModal();
+                                        setActionError(null);
+                                    }}
+                                    disabled={actionLoading}
+                                    className="btn-secondary"
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    onClick={handlePostponeCycle}
+                                    disabled={actionLoading || !postponeForm.reason.trim() || !postponeForm.justification.trim()}
+                                    className="px-4 py-2 rounded text-white font-medium bg-orange-600 hover:bg-orange-700 disabled:opacity-50"
+                                >
+                                    {actionLoading ? 'Saving...' : 'Save Changes'}
                                 </button>
                             </div>
                         </div>

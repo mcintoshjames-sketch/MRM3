@@ -48,6 +48,11 @@ interface CycleDetail {
     period_end_date: string;
     submission_due_date: string;
     report_due_date: string;
+    hold_reason?: string | null;
+    hold_start_date?: string | null;
+    original_due_date?: string | null;
+    postponed_due_date?: string | null;
+    postponement_count?: number;
     status: string;
     assigned_to?: UserRef | null;
     assigned_to_name?: string | null;
@@ -247,7 +252,7 @@ const MonitoringCycleDetailPage: React.FC = () => {
                 setPlan(planResp.data);
 
                 // If cycle has results capability, load results data
-                if (['DATA_COLLECTION', 'UNDER_REVIEW', 'PENDING_APPROVAL', 'APPROVED'].includes(cycleResp.data.status)) {
+                if (['DATA_COLLECTION', 'ON_HOLD', 'UNDER_REVIEW', 'PENDING_APPROVAL', 'APPROVED'].includes(cycleResp.data.status)) {
                     loadResultsData(cycleResp.data);
                 }
             } catch (err: any) {
@@ -863,6 +868,7 @@ const MonitoringCycleDetailPage: React.FC = () => {
         switch (status) {
             case 'PENDING': return 'bg-gray-100 text-gray-800';
             case 'DATA_COLLECTION': return 'bg-blue-100 text-blue-800';
+            case 'ON_HOLD': return 'bg-orange-100 text-orange-800';
             case 'UNDER_REVIEW': return 'bg-yellow-100 text-yellow-800';
             case 'PENDING_APPROVAL': return 'bg-purple-100 text-purple-800';
             case 'APPROVED': return 'bg-green-100 text-green-800';
@@ -895,9 +901,9 @@ const MonitoringCycleDetailPage: React.FC = () => {
         <Layout>
             {/* Breadcrumb */}
             <nav className="flex items-center gap-2 text-sm text-gray-600 mb-6">
-                <Link to="/monitoring" className="hover:text-blue-600">Monitoring Plans</Link>
+                <Link to="/monitoring-plans?tab=plans" className="hover:text-blue-600">Monitoring Plans</Link>
                 <span>/</span>
-                <Link to={`/monitoring/plans/${cycle.plan_id}`} className="hover:text-blue-600">
+                <Link to={`/monitoring/${cycle.plan_id}`} className="hover:text-blue-600">
                     {plan?.name || `Plan ${cycle.plan_id}`}
                 </Link>
                 <span>/</span>
@@ -1002,8 +1008,12 @@ const MonitoringCycleDetailPage: React.FC = () => {
                         <p className="font-medium">{cycle.period_start_date} to {cycle.period_end_date}</p>
                     </div>
                     <div>
-                        <span className="text-xs text-gray-500">Submission Due</span>
-                        <p className="font-medium">{cycle.submission_due_date}</p>
+                        <span className="text-xs text-gray-500">
+                            {cycle.status === 'ON_HOLD' ? 'Hold Until' : 'Submission Due'}
+                        </span>
+                        <p className="font-medium">
+                            {cycle.postponed_due_date || cycle.submission_due_date}
+                        </p>
                     </div>
                     <div>
                         <span className="text-xs text-gray-500">Report Due</span>
@@ -1013,6 +1023,24 @@ const MonitoringCycleDetailPage: React.FC = () => {
                         <span className="text-xs text-gray-500">Assigned To</span>
                         <p className="font-medium">{cycle.assigned_to_name || '-'}</p>
                     </div>
+                    {cycle.original_due_date && cycle.postponed_due_date && (
+                        <div>
+                            <span className="text-xs text-gray-500">Original Due</span>
+                            <p className="font-medium">{cycle.original_due_date}</p>
+                        </div>
+                    )}
+                    {typeof cycle.postponement_count === 'number' && (
+                        <div>
+                            <span className="text-xs text-gray-500">Postponements</span>
+                            <p className="font-medium">{cycle.postponement_count}</p>
+                        </div>
+                    )}
+                    {cycle.status === 'ON_HOLD' && cycle.hold_reason && (
+                        <div>
+                            <span className="text-xs text-gray-500">Hold Reason</span>
+                            <p className="font-medium">{cycle.hold_reason}</p>
+                        </div>
+                    )}
                 </div>
             </div>
 

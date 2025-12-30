@@ -67,6 +67,7 @@ interface MonitoringPlan {
     version_count?: number;
     active_version_number?: number | null;
     has_unpublished_changes?: boolean;
+    non_cancelled_cycle_count?: number;
     monitoring_team_id?: number | null;
     data_provider_user_id?: number | null;
     reporting_lead_days?: number;
@@ -155,6 +156,7 @@ export default function MonitoringPlansPage() {
         name: '',
         description: '',
         frequency: 'Quarterly',
+        initial_period_end_date: '',
         monitoring_team_id: null as number | null,
         data_provider_user_id: null as number | null,
         data_submission_lead_days: 15,
@@ -199,8 +201,10 @@ export default function MonitoringPlansPage() {
 
     // URL parameters for pre-population
     const [searchParams, setSearchParams] = useSearchParams();
+    const tabParam = searchParams.get('tab');
     const preselectedModelId = searchParams.get('model');
     const hasProcessedModelParam = useRef(false);
+    const hasProcessedTabParam = useRef(false);
 
     // Fetch data on mount
     useEffect(() => {
@@ -208,6 +212,14 @@ export default function MonitoringPlansPage() {
         fetchPlans();
         fetchReferenceData();
     }, []);
+
+    useEffect(() => {
+        if (hasProcessedTabParam.current || !tabParam) return;
+        if (tabParam === 'overview' || tabParam === 'plans' || tabParam === 'teams') {
+            setActiveTab(tabParam);
+        }
+        hasProcessedTabParam.current = true;
+    }, [tabParam]);
 
     // Handle pre-selected model from URL parameter
     useEffect(() => {
@@ -386,6 +398,7 @@ export default function MonitoringPlansPage() {
             name: '',
             description: '',
             frequency: 'Quarterly',
+            initial_period_end_date: '',
             monitoring_team_id: null,
             data_provider_user_id: null,
             data_submission_lead_days: 15,
@@ -418,13 +431,26 @@ export default function MonitoringPlansPage() {
                 setError('Data submission lead days must be less than reporting lead days.');
                 return;
             }
+            if (!editingPlan && !planFormData.initial_period_end_date) {
+                setError('Initial reporting cycle period end date is required.');
+                return;
+            }
             const payload = {
-                ...planFormData,
+                name: planFormData.name,
+                description: planFormData.description || null,
+                frequency: planFormData.frequency,
+                monitoring_team_id: planFormData.monitoring_team_id,
+                data_provider_user_id: planFormData.data_provider_user_id,
+                data_submission_lead_days: planFormData.data_submission_lead_days,
+                reporting_lead_days: planFormData.reporting_lead_days,
+                is_active: planFormData.is_active,
+                model_ids: planFormData.model_ids,
                 metrics: [] // Metrics are added separately
-            };
+            } as Record<string, any>;
             if (editingPlan) {
                 await api.patch(`/monitoring/plans/${editingPlan.plan_id}`, payload);
             } else {
+                payload.initial_period_end_date = planFormData.initial_period_end_date;
                 await api.post('/monitoring/plans', payload);
             }
             resetPlanForm();
@@ -485,6 +511,7 @@ export default function MonitoringPlansPage() {
                 name: fullPlan.name,
                 description: fullPlan.description || '',
                 frequency: fullPlan.frequency,
+                initial_period_end_date: '',
                 monitoring_team_id: fullPlan.monitoring_team_id,
                 data_provider_user_id: fullPlan.data_provider_user_id,
                 data_submission_lead_days: fullPlan.data_submission_lead_days ?? 15,
@@ -510,6 +537,18 @@ export default function MonitoringPlansPage() {
             fetchPlans();
         } catch (err: any) {
             alert(err.response?.data?.detail || 'Failed to delete plan');
+        }
+    };
+
+    const handleDeactivatePlan = async (plan: MonitoringPlan) => {
+        if (!plan.is_active) return;
+        if (!confirm('Deactivate this monitoring plan? This will stop new cycles and mark the plan inactive.')) return;
+
+        try {
+            await api.patch(`/monitoring/plans/${plan.plan_id}`, { is_active: false });
+            fetchPlans();
+        } catch (err: any) {
+            alert(err.response?.data?.detail || 'Failed to deactivate plan');
         }
     };
 
@@ -862,6 +901,26 @@ export default function MonitoringPlansPage() {
                                             <option value="Annual">Annual</option>
                                         </select>
                                     </div>
+                                    {!editingPlan && (
+                                        <div>
+                                            <label className="block text-sm font-medium mb-2">
+                                                Initial reporting cycle period end date *
+                                            </label>
+                                            <input
+                                                type="date"
+                                                className="input-field"
+                                                value={planFormData.initial_period_end_date}
+                                                onChange={(e) => setPlanFormData({
+                                                    ...planFormData,
+                                                    initial_period_end_date: e.target.value
+                                                })}
+                                                required
+                                            />
+                                            <p className="text-xs text-gray-500 mt-1">
+                                                Sets the first submission and report due dates.
+                                            </p>
+                                        </div>
+                                    )}
                                 </div>
 
                                 <div className="mb-4">
@@ -1242,12 +1301,22 @@ export default function MonitoringPlansPage() {
                                                         >
                                                             Edit
                                                         </button>
-                                                        <button
-                                                            onClick={() => handleDeletePlan(plan.plan_id)}
-                                                            className="text-red-600 hover:text-red-800"
-                                                        >
-                                                            Delete
-                                                        </button>
+                                                        {plan.is_active && (
+                                                            <button
+                                                                onClick={() => handleDeactivatePlan(plan)}
+                                                                className="text-orange-600 hover:text-orange-800"
+                                                            >
+                                                                Deactivate
+                                                            </button>
+                                                        )}
+                                                        {(plan.non_cancelled_cycle_count ?? 0) === 0 && (
+                                                            <button
+                                                                onClick={() => handleDeletePlan(plan.plan_id)}
+                                                                className="text-red-600 hover:text-red-800"
+                                                            >
+                                                                Delete
+                                                            </button>
+                                                        )}
                                                     </td>
                                                 </tr>
                                                 {peekPlanId === plan.plan_id && (

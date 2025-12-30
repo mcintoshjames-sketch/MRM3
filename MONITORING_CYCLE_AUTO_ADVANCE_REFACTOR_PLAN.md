@@ -2,6 +2,7 @@
 
 Goal
 - Make event-driven auto-advance safe and predictable by aligning it with cycle completion and explicit postponement handling.
+- Support simple deadline extensions without unnecessary status changes.
 - Enforce plan creation with a required initial cycle period end date.
 - Add cancellation flow that can optionally deactivate the plan.
 - Prevent deleting plans that have any approved or in-progress cycles.
@@ -15,7 +16,10 @@ Scope
 Decisions (per request)
 - Plan creation must require an "Initial reporting cycle period end date".
 - Cancel cycle flow asks whether to deactivate the plan; if not, auto-advance due dates.
-- Manual overrides happen via cycle postponement with ON_HOLD status and tracking fields.
+- Manual overrides are split:
+  - Extend due date: keep status as DATA_COLLECTION and update due dates.
+  - Hold cycle: set status to ON_HOLD for indefinite pauses.
+- ON_HOLD is reserved for true holds; simple extensions do not require a resume step.
 
 Data Model Changes
 1) MonitoringCycleStatus enum
@@ -29,7 +33,10 @@ Data Model Changes
      - original_due_date: Optional[date]
      - postponed_due_date: Optional[date]
      - postponement_count: int = 0
-   - Migration: add columns with nullable defaults; backfill postponement_count to 0.
+   - Migration:
+     - Add columns with nullable defaults.
+     - Backfill original_due_date = submission_due_date for existing cycles.
+     - Backfill postponement_count to 0.
 
 3) MonitoringPlan create schema
    - Add required field: initial_period_end_date (date).
@@ -39,7 +46,7 @@ Backend Workflow Changes
 1) Create Monitoring Plan
    - Require initial_period_end_date; reject requests missing it (400 with clear error).
    - Compute:
-     - submission_due_date = initial_period_end_date + 15 days (or existing policy).
+     - submission_due_date = initial_period_end_date + data_submission_lead_days.
      - report_due_date = submission_due_date + reporting_lead_days.
    - Set plan.next_*_due_date from these values.
 
@@ -55,17 +62,18 @@ Backend Workflow Changes
 
 3) Auto-advance on APPROVED
    - Keep event-driven auto-advance in _check_and_complete_cycle.
-   - Base date should be cycle.submission_due_date (or period_end_date) rather than plan.next_submission_due_date to keep cadence.
+   - Base cadence should be cycle.period_end_date to avoid schedule drift when submission due dates are extended.
+     - Next period end = current period_end_date + frequency.
+     - Next submission due = next period end + data_submission_lead_days.
    - Skip if plan.is_active == false.
    - Only log when dates actually change.
 
-4) Postpone Submission (Manual Override via ON_HOLD)
+4) Extend Due Date vs Hold Cycle
    - New endpoint: POST /monitoring/cycles/{cycle_id}/postpone
      - Allowed only when status == DATA_COLLECTION.
-     - Input: new_due_date, reason, justification.
-     - Set:
-       - status = ON_HOLD
-       - hold_reason, hold_start_date = today
+     - Input: new_due_date, reason, justification, indefinite_hold: bool = false.
+     - If indefinite_hold == false (default):
+       - Keep status = DATA_COLLECTION.
        - original_due_date (set if null) = cycle.submission_due_date
        - postponed_due_date = new_due_date
        - postponement_count += 1
@@ -73,11 +81,21 @@ Backend Workflow Changes
        - cycle.report_due_date = new_due_date + reporting_lead_days
        - plan.next_submission_due_date = new_due_date (aligns plan)
        - plan.next_report_due_date = new_report_due_date
-     - Audit log: postpone details (old/new dates, reason, justification).
+       - Audit log: extend details (old/new dates, reason, justification).
+     - If indefinite_hold == true:
+       - status = ON_HOLD
+       - hold_reason, hold_start_date = today
+       - original_due_date (set if null) = cycle.submission_due_date
+       - postponed_due_date = new_due_date (optional hold-until date)
+       - cycle.submission_due_date/report_due_date updated if new_due_date provided
+       - Do not treat cycle as overdue while ON_HOLD.
+       - Audit log: hold details (reason, optional hold-until date).
    - New endpoint: POST /monitoring/cycles/{cycle_id}/resume
      - Allowed when status == ON_HOLD.
      - Sets status back to DATA_COLLECTION.
      - Audit log: resume action.
+   - Submission rules:
+     - submit_cycle remains DATA_COLLECTION-only; ON_HOLD requires resume.
 
 5) Delete Monitoring Plan Guard
    - Block delete when any cycles exist with status:
@@ -98,17 +116,19 @@ Frontend UX Changes
    - Show confirm copy describing the impact on due dates.
 
 3) Postpone Submission
-   - Add "Postpone Submission" button when cycle status == DATA_COLLECTION.
+   - Add "Extend Due Date" button when cycle status == DATA_COLLECTION.
    - Modal fields:
      - New date (required)
      - Reason (dropdown + free text)
      - Justification (required text)
+     - Optional checkbox: "Place cycle on hold" (sets indefinite_hold=true).
    - Call /postpone endpoint.
    - Add "Resume Cycle" button when status == ON_HOLD.
 
 4) Cycle Status UI
    - Display ON_HOLD status badge and hold details (reason + new date).
    - Show original vs postponed dates for transparency.
+   - Catch-up logic: if auto-advance creates a past-due cycle, UI should surface it as immediately overdue (expected behavior).
 
 Reporting / Metrics
 - Track postponement_count on each cycle and aggregate per plan/model when needed.
@@ -118,7 +138,7 @@ Audit / Compliance
 - Add audit log entries for:
   - Plan auto-advance on APPROVED/CANCELLED.
   - Plan deactivation on cancel.
-  - Postpone and resume actions.
+  - Extend due date, hold, and resume actions.
 
 Testing Plan
 Backend
@@ -131,8 +151,10 @@ Backend
   - uses cycle due date base; respects plan.is_active.
 - Postpone:
   - only DATA_COLLECTION allowed.
-  - updates cycle + plan due dates, sets ON_HOLD.
+  - extend keeps DATA_COLLECTION and updates due dates.
+  - hold sets ON_HOLD and suppresses overdue.
   - resume returns to DATA_COLLECTION.
+- Submit from ON_HOLD should fail with a clear message (resume required).
 - Delete plan with APPROVED or in-progress cycles -> 409/400.
 - Delete plan with only CANCELLED cycles -> allowed.
 
