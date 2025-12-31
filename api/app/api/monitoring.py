@@ -4502,7 +4502,11 @@ def list_my_pending_monitoring_approvals(
             report_due_date=cycle.report_due_date,
             cycle_status=cycle.status,
             approval_type=approval.approval_type,
-            region=RegionRef.model_validate(approval.region, from_attributes=True) if approval.region else None,
+            region={
+                "region_id": approval.region.region_id,
+                "region_name": approval.region.name,
+                "region_code": approval.region.code
+            } if approval.region else None,
             is_required=approval.is_required,
             approval_status=approval.approval_status,
             days_pending=days_pending,

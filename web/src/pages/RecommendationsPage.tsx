@@ -87,6 +87,8 @@ export default function RecommendationsPage() {
     // My Tasks IDs - fetched from /recommendations/my-tasks endpoint
     // This correctly identifies tasks by workflow status + role, not just assigned_to
     const [myTaskIds, setMyTaskIds] = useState<Set<number>>(new Set());
+    const [currentPage, setCurrentPage] = useState(1);
+    const [pageSize, setPageSize] = useState(50);
 
     // Column customization configuration
     const availableColumns: ColumnDefinition[] = [
@@ -199,15 +201,40 @@ export default function RecommendationsPage() {
     ]);
 
     // Table sorting
-    const { sortedData, requestSort, getSortIcon } = useTableSort<RecommendationListItem>(
+    const { sortedData, requestSort, getSortIcon, sortConfig } = useTableSort<RecommendationListItem>(
         filteredRecommendations,
         'updated_at',
         'desc'
     );
+    const totalPages = Math.max(1, Math.ceil(sortedData.length / pageSize));
+    const paginatedRecommendations = useMemo(() => {
+        const startIndex = (currentPage - 1) * pageSize;
+        return sortedData.slice(startIndex, startIndex + pageSize);
+    }, [sortedData, currentPage, pageSize]);
 
     useEffect(() => {
         fetchData();
     }, [planIdParam, monitoringCycleIdParam]);
+    useEffect(() => {
+        setCurrentPage(1);
+    }, [
+        filterMode,
+        searchQuery,
+        statusFilter,
+        priorityFilter,
+        categoryFilter,
+        modelFilterId,
+        validationRequestId,
+        assignedToId,
+        myTaskIds,
+        sortConfig.key,
+        sortConfig.direction
+    ]);
+    useEffect(() => {
+        if (currentPage > totalPages) {
+            setCurrentPage(totalPages);
+        }
+    }, [currentPage, totalPages]);
 
     const fetchData = async () => {
         try {
@@ -492,6 +519,9 @@ export default function RecommendationsPage() {
                 : filterMode === 'open'
                     ? 'Open'
                     : '';
+    const totalRows = sortedData.length;
+    const startItem = totalRows === 0 ? 0 : (currentPage - 1) * pageSize + 1;
+    const endItem = Math.min(currentPage * pageSize, totalRows);
 
     const clearUrlPrefilters = () => {
         const nextParams = new URLSearchParams(searchParams);
@@ -698,53 +728,98 @@ export default function RecommendationsPage() {
             </div>
 
             {/* Dynamic Table */}
-            <div className="bg-white rounded-lg shadow-md overflow-x-auto">
-                <table className="min-w-full divide-y divide-gray-200">
-                    <thead className="bg-gray-50">
-                        <tr>
-                            {columnPrefs.selectedColumns.map(colKey => {
-                                const renderer = columnRenderers[colKey];
-                                if (!renderer) return null;
-                                return (
-                                    <th
-                                        key={colKey}
-                                        className={`px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase ${renderer.sortKey ? 'cursor-pointer hover:bg-gray-100' : ''}`}
-                                        onClick={() => renderer.sortKey && requestSort(renderer.sortKey)}
-                                    >
-                                        <div className="flex items-center gap-2">
-                                            {renderer.header}
-                                            {renderer.sortKey && getSortIcon(renderer.sortKey)}
-                                        </div>
-                                    </th>
-                                );
-                            })}
-                        </tr>
-                    </thead>
-                    <tbody className="bg-white divide-y divide-gray-200">
-                        {sortedData.length === 0 ? (
+            <div className="bg-white rounded-lg shadow-md">
+                <div className="max-h-[60vh] overflow-auto">
+                    <table className="min-w-full divide-y divide-gray-200">
+                        <thead className="bg-gray-50 sticky top-0 z-10">
                             <tr>
-                                <td colSpan={columnPrefs.selectedColumns.length} className="px-6 py-4 text-center text-gray-500">
-                                    No recommendations found.
-                                    {canCreate && ' Click "New Recommendation" to create one.'}
-                                </td>
+                                {columnPrefs.selectedColumns.map(colKey => {
+                                    const renderer = columnRenderers[colKey];
+                                    if (!renderer) return null;
+                                    return (
+                                        <th
+                                            key={colKey}
+                                            className={`px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase ${renderer.sortKey ? 'cursor-pointer hover:bg-gray-100' : ''}`}
+                                            onClick={() => renderer.sortKey && requestSort(renderer.sortKey)}
+                                        >
+                                            <div className="flex items-center gap-2">
+                                                {renderer.header}
+                                                {renderer.sortKey && getSortIcon(renderer.sortKey)}
+                                            </div>
+                                        </th>
+                                    );
+                                })}
                             </tr>
-                        ) : (
-                            sortedData.map((rec) => (
-                                <tr key={rec.recommendation_id} className="hover:bg-gray-50">
-                                    {columnPrefs.selectedColumns.map(colKey => {
-                                        const renderer = columnRenderers[colKey];
-                                        if (!renderer) return null;
-                                        return (
-                                            <td key={colKey} className="px-6 py-4 whitespace-nowrap text-sm">
-                                                {renderer.cell(rec)}
-                                            </td>
-                                        );
-                                    })}
+                        </thead>
+                        <tbody className="bg-white divide-y divide-gray-200">
+                            {sortedData.length === 0 ? (
+                                <tr>
+                                    <td colSpan={columnPrefs.selectedColumns.length} className="px-6 py-4 text-center text-gray-500">
+                                        No recommendations found.
+                                        {canCreate && ' Click "New Recommendation" to create one.'}
+                                    </td>
                                 </tr>
-                            ))
-                        )}
-                    </tbody>
-                </table>
+                            ) : (
+                                paginatedRecommendations.map((rec) => (
+                                    <tr key={rec.recommendation_id} className="hover:bg-gray-50">
+                                        {columnPrefs.selectedColumns.map(colKey => {
+                                            const renderer = columnRenderers[colKey];
+                                            if (!renderer) return null;
+                                            return (
+                                                <td key={colKey} className="px-6 py-4 whitespace-nowrap text-sm">
+                                                    {renderer.cell(rec)}
+                                                </td>
+                                            );
+                                        })}
+                                    </tr>
+                                ))
+                            )}
+                        </tbody>
+                    </table>
+                </div>
+                <div className="px-4 py-3 border-t flex flex-wrap items-center justify-between gap-3">
+                    <div className="text-sm text-gray-600">
+                        Showing {startItem}-{endItem} of {totalRows}
+                    </div>
+                    <div className="flex flex-wrap items-center gap-3">
+                        <label className="text-sm text-gray-600">
+                            Rows per page
+                            <select
+                                className="ml-2 input-field text-sm"
+                                value={pageSize}
+                                onChange={(e) => {
+                                    setPageSize(parseInt(e.target.value, 10));
+                                    setCurrentPage(1);
+                                }}
+                            >
+                                {[25, 50, 100, 200].map((size) => (
+                                    <option key={size} value={size}>{size}</option>
+                                ))}
+                            </select>
+                        </label>
+                        <div className="flex items-center gap-2 text-sm">
+                            <button
+                                type="button"
+                                onClick={() => setCurrentPage((prev) => Math.max(1, prev - 1))}
+                                disabled={currentPage === 1}
+                                className="px-3 py-1 border rounded disabled:opacity-50"
+                            >
+                                Prev
+                            </button>
+                            <span className="text-gray-600">
+                                Page {currentPage} of {totalPages}
+                            </span>
+                            <button
+                                type="button"
+                                onClick={() => setCurrentPage((prev) => Math.min(totalPages, prev + 1))}
+                                disabled={currentPage >= totalPages}
+                                className="px-3 py-1 border rounded disabled:opacity-50"
+                            >
+                                Next
+                            </button>
+                        </div>
+                    </div>
+                </div>
             </div>
 
             {/* Create Modal */}

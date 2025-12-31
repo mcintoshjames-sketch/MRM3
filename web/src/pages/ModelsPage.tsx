@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import api from '../api/client';
 import { useAuth } from '../contexts/AuthContext';
@@ -451,6 +451,8 @@ export default function ModelsPage() {
         include_sub_models: false,
         is_aiml: '' as '' | 'true' | 'false' | 'null'  // '', 'true', 'false', 'null' (undefined)
     });
+    const [currentPage, setCurrentPage] = useState(1);
+    const [pageSize, setPageSize] = useState(50);
 
     // Apply filters first, then sort
     const filteredModels = models.filter(model => {
@@ -539,7 +541,20 @@ export default function ModelsPage() {
     });
 
     // Table sorting (applied to filtered data)
-    const { sortedData, requestSort, getSortIcon } = useTableSort<Model>(filteredModels, 'model_name');
+    const { sortedData, requestSort, getSortIcon, sortConfig } = useTableSort<Model>(filteredModels, 'model_name');
+    const totalPages = Math.max(1, Math.ceil(sortedData.length / pageSize));
+    const paginatedModels = useMemo(() => {
+        const startIndex = (currentPage - 1) * pageSize;
+        return sortedData.slice(startIndex, startIndex + pageSize);
+    }, [sortedData, currentPage, pageSize]);
+    useEffect(() => {
+        setCurrentPage(1);
+    }, [filters, viewMode, includeNonModels, sortConfig.key, sortConfig.direction]);
+    useEffect(() => {
+        if (currentPage > totalPages) {
+            setCurrentPage(totalPages);
+        }
+    }, [currentPage, totalPages]);
 
     useEffect(() => {
         // On initial mount, check URL directly to avoid race condition with URL parsing effect
@@ -1568,6 +1583,9 @@ export default function ModelsPage() {
             alert('Failed to export CSV. Please try again.');
         }
     };
+    const totalRows = sortedData.length;
+    const startItem = totalRows === 0 ? 0 : (currentPage - 1) * pageSize + 1;
+    const endItem = Math.min(currentPage * pageSize, totalRows);
 
     if (loading) {
         return (
@@ -2687,10 +2705,10 @@ export default function ModelsPage() {
                     </div>
                 </div>
 
-                <div className="bg-white rounded-lg shadow-md overflow-hidden">
-                    <div className="overflow-x-auto">
+                <div className="bg-white rounded-lg shadow-md">
+                    <div className="max-h-[60vh] overflow-auto">
                         <table className="min-w-full divide-y divide-gray-200">
-                            <thead className="bg-gray-50">
+                            <thead className="bg-gray-50 sticky top-0 z-10">
                                 <tr>
                                     {selectedColumns.filter(colKey => columnRenderers[colKey]).map(colKey => {
                                         const renderer = columnRenderers[colKey];
@@ -2721,7 +2739,7 @@ export default function ModelsPage() {
                                         </td>
                                     </tr>
                                 ) : (
-                                    sortedData.map((model) => (
+                                    paginatedModels.map((model) => (
                                         <tr key={model.model_id} className="hover:bg-gray-50">
                                             {selectedColumns.filter(colKey => columnRenderers[colKey]).map(colKey => (
                                                 <td key={colKey} className="px-6 py-4 whitespace-nowrap text-sm">
@@ -2743,6 +2761,49 @@ export default function ModelsPage() {
                                 )}
                             </tbody>
                         </table>
+                    </div>
+                    <div className="px-4 py-3 border-t flex flex-wrap items-center justify-between gap-3">
+                        <div className="text-sm text-gray-600">
+                            Showing {startItem}-{endItem} of {totalRows}
+                        </div>
+                        <div className="flex flex-wrap items-center gap-3">
+                            <label className="text-sm text-gray-600">
+                                Rows per page
+                                <select
+                                    className="ml-2 input-field text-sm"
+                                    value={pageSize}
+                                    onChange={(e) => {
+                                        setPageSize(parseInt(e.target.value, 10));
+                                        setCurrentPage(1);
+                                    }}
+                                >
+                                    {[25, 50, 100, 200].map((size) => (
+                                        <option key={size} value={size}>{size}</option>
+                                    ))}
+                                </select>
+                            </label>
+                            <div className="flex items-center gap-2 text-sm">
+                                <button
+                                    type="button"
+                                    onClick={() => setCurrentPage((prev) => Math.max(1, prev - 1))}
+                                    disabled={currentPage === 1}
+                                    className="px-3 py-1 border rounded disabled:opacity-50"
+                                >
+                                    Prev
+                                </button>
+                                <span className="text-gray-600">
+                                    Page {currentPage} of {totalPages}
+                                </span>
+                                <button
+                                    type="button"
+                                    onClick={() => setCurrentPage((prev) => Math.min(totalPages, prev + 1))}
+                                    disabled={currentPage >= totalPages}
+                                    className="px-3 py-1 border rounded disabled:opacity-50"
+                                >
+                                    Next
+                                </button>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>

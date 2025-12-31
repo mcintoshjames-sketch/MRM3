@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Link, useSearchParams, useLocation } from 'react-router-dom';
 import api from '../api/client';
 import { regionsApi, Region } from '../api/regions';
@@ -110,6 +110,8 @@ export default function ValidationWorkflowPage() {
         unassigned_only: false,
         show_cancelled: false  // Hide cancelled items by default
     });
+    const [currentPage, setCurrentPage] = useState(1);
+    const [pageSize, setPageSize] = useState(50);
 
     // Column customization configuration
     const availableColumns: ColumnDefinition[] = [
@@ -224,11 +226,24 @@ export default function ValidationWorkflowPage() {
     });
 
     // Add table sorting (default to updated_at descending to show most recently modified first)
-    const { sortedData, requestSort, getSortIcon } = useTableSort<ValidationRequest>(
+    const { sortedData, requestSort, getSortIcon, sortConfig } = useTableSort<ValidationRequest>(
         filteredRequests,
         'updated_at',
         'desc'
     );
+    const totalPages = Math.max(1, Math.ceil(sortedData.length / pageSize));
+    const paginatedRequests = useMemo(() => {
+        const startIndex = (currentPage - 1) * pageSize;
+        return sortedData.slice(startIndex, startIndex + pageSize);
+    }, [sortedData, currentPage, pageSize]);
+    useEffect(() => {
+        setCurrentPage(1);
+    }, [filters, sortConfig.key, sortConfig.direction]);
+    useEffect(() => {
+        if (currentPage > totalPages) {
+            setCurrentPage(totalPages);
+        }
+    }, [currentPage, totalPages]);
 
     // Auto-open form and pre-populate model_ids from query params
     useEffect(() => {
@@ -732,6 +747,9 @@ export default function ValidationWorkflowPage() {
         link.download = `validation_requests_${new Date().toISOString().split('T')[0]}.csv`;
         link.click();
     };
+    const totalRows = sortedData.length;
+    const startItem = totalRows === 0 ? 0 : (currentPage - 1) * pageSize + 1;
+    const endItem = Math.min(currentPage * pageSize, totalRows);
 
     if (loading) {
         return (
@@ -1284,52 +1302,97 @@ export default function ValidationWorkflowPage() {
             </div>
 
             {/* Dynamic Table */}
-            <div className="bg-white rounded-lg shadow-md overflow-x-auto">
-                <table className="min-w-full divide-y divide-gray-200">
-                    <thead className="bg-gray-50">
-                        <tr>
-                            {columnPrefs.selectedColumns.map(colKey => {
-                                const renderer = columnRenderers[colKey];
-                                if (!renderer) return null;
-                                return (
-                                    <th
-                                        key={colKey}
-                                        className={`px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase ${renderer.sortKey ? 'cursor-pointer hover:bg-gray-100' : ''}`}
-                                        onClick={() => renderer.sortKey && requestSort(renderer.sortKey)}
-                                    >
-                                        <div className="flex items-center gap-2">
-                                            {renderer.header}
-                                            {renderer.sortKey && getSortIcon(renderer.sortKey)}
-                                        </div>
-                                    </th>
-                                );
-                            })}
-                        </tr>
-                    </thead>
-                    <tbody className="bg-white divide-y divide-gray-200">
-                        {sortedData.length === 0 ? (
+            <div className="bg-white rounded-lg shadow-md">
+                <div className="max-h-[60vh] overflow-auto">
+                    <table className="min-w-full divide-y divide-gray-200">
+                        <thead className="bg-gray-50 sticky top-0 z-10">
                             <tr>
-                                <td colSpan={columnPrefs.selectedColumns.length} className="px-6 py-4 text-center text-gray-500">
-                                    No validation projects found. Click "New Validation Project" to create one.
-                                </td>
+                                {columnPrefs.selectedColumns.map(colKey => {
+                                    const renderer = columnRenderers[colKey];
+                                    if (!renderer) return null;
+                                    return (
+                                        <th
+                                            key={colKey}
+                                            className={`px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase ${renderer.sortKey ? 'cursor-pointer hover:bg-gray-100' : ''}`}
+                                            onClick={() => renderer.sortKey && requestSort(renderer.sortKey)}
+                                        >
+                                            <div className="flex items-center gap-2">
+                                                {renderer.header}
+                                                {renderer.sortKey && getSortIcon(renderer.sortKey)}
+                                            </div>
+                                        </th>
+                                    );
+                                })}
                             </tr>
-                        ) : (
-                            sortedData.map((req) => (
-                                <tr key={req.request_id} className="hover:bg-gray-50">
-                                    {columnPrefs.selectedColumns.map(colKey => {
-                                        const renderer = columnRenderers[colKey];
-                                        if (!renderer) return null;
-                                        return (
-                                            <td key={colKey} className="px-6 py-4 whitespace-nowrap text-sm">
-                                                {renderer.cell(req)}
-                                            </td>
-                                        );
-                                    })}
+                        </thead>
+                        <tbody className="bg-white divide-y divide-gray-200">
+                            {sortedData.length === 0 ? (
+                                <tr>
+                                    <td colSpan={columnPrefs.selectedColumns.length} className="px-6 py-4 text-center text-gray-500">
+                                        No validation projects found. Click "New Validation Project" to create one.
+                                    </td>
                                 </tr>
-                            ))
-                        )}
-                    </tbody>
-                </table>
+                            ) : (
+                                paginatedRequests.map((req) => (
+                                    <tr key={req.request_id} className="hover:bg-gray-50">
+                                        {columnPrefs.selectedColumns.map(colKey => {
+                                            const renderer = columnRenderers[colKey];
+                                            if (!renderer) return null;
+                                            return (
+                                                <td key={colKey} className="px-6 py-4 whitespace-nowrap text-sm">
+                                                    {renderer.cell(req)}
+                                                </td>
+                                            );
+                                        })}
+                                    </tr>
+                                ))
+                            )}
+                        </tbody>
+                    </table>
+                </div>
+                <div className="px-4 py-3 border-t flex flex-wrap items-center justify-between gap-3">
+                    <div className="text-sm text-gray-600">
+                        Showing {startItem}-{endItem} of {totalRows}
+                    </div>
+                    <div className="flex flex-wrap items-center gap-3">
+                        <label className="text-sm text-gray-600">
+                            Rows per page
+                            <select
+                                className="ml-2 input-field text-sm"
+                                value={pageSize}
+                                onChange={(e) => {
+                                    setPageSize(parseInt(e.target.value, 10));
+                                    setCurrentPage(1);
+                                }}
+                            >
+                                {[25, 50, 100, 200].map((size) => (
+                                    <option key={size} value={size}>{size}</option>
+                                ))}
+                            </select>
+                        </label>
+                        <div className="flex items-center gap-2 text-sm">
+                            <button
+                                type="button"
+                                onClick={() => setCurrentPage((prev) => Math.max(1, prev - 1))}
+                                disabled={currentPage === 1}
+                                className="px-3 py-1 border rounded disabled:opacity-50"
+                            >
+                                Prev
+                            </button>
+                            <span className="text-gray-600">
+                                Page {currentPage} of {totalPages}
+                            </span>
+                            <button
+                                type="button"
+                                onClick={() => setCurrentPage((prev) => Math.min(totalPages, prev + 1))}
+                                disabled={currentPage >= totalPages}
+                                className="px-3 py-1 border rounded disabled:opacity-50"
+                            >
+                                Next
+                            </button>
+                        </div>
+                    </div>
+                </div>
             </div>
 
             {/* Column Picker Modal */}

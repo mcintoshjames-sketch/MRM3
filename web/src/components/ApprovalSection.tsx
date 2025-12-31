@@ -23,11 +23,20 @@ export default function ApprovalSection({ recommendation, currentUser, onRefresh
         if (currentStatus !== 'REC_PENDING_APPROVAL') return false;
         if (approval.approval_status !== 'PENDING') return false; // Already decided
 
-        // Check if user is the approver or an admin
+        // Check if user is the approver or has appropriate role
         const isApprover = approval.approver_id === currentUser?.user_id;
         const isAdmin = currentUser?.role === 'Admin';
 
-        return isApprover || isAdmin;
+        // Global Approvers can approve GLOBAL approvals
+        const approvalType = (approval.approval_type || '').toUpperCase();
+        const isGlobalApprover = currentUser?.role === 'Global Approver' && approvalType === 'GLOBAL';
+
+        // Regional Approvers can approve REGIONAL approvals for their region
+        // Note: For now, any Regional Approver can approve any regional approval
+        // In the future, this could be restricted to specific regions
+        const isRegionalApprover = currentUser?.role === 'Regional Approver' && approvalType === 'REGIONAL';
+
+        return isApprover || isAdmin || isGlobalApprover || isRegionalApprover;
     };
 
     // Check if user can void an approval (Admin only, on already decided approvals)
