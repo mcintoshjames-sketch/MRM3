@@ -299,12 +299,11 @@ const EditableCell: React.FC<{
     };
 
     const openBreachPanel = () => {
-        if (currentOutcome === 'RED' && !readOnly) {
-            onOpenBreachAnnotation(
-                { modelId, metricId: metric.original_metric_id!, snapshotId: metric.snapshot_id },
-                result || null
-            );
-        }
+        if (currentOutcome !== 'RED') return;
+        onOpenBreachAnnotation(
+            { modelId, metricId: metric.original_metric_id!, snapshotId: metric.snapshot_id },
+            result || null
+        );
     };
 
     // Handle click - activate cell (focus is handled by useEffect when isActive changes)
@@ -612,8 +611,9 @@ const MonitoringDataGrid: React.FC<MonitoringDataGridProps> = ({
 
                 {/* Grid Instructions */}
                 <div className="text-xs text-gray-500 px-2">
-                    <strong>Keyboard:</strong> Arrow keys to navigate • Enter/F2 to edit • Tab to move right • Escape to cancel •
-                    <strong className="ml-2">Click RED cells</strong> to add breach explanations
+                    <strong>Keyboard:</strong> Arrow keys to navigate • Tab to move right
+                    {!readOnly && <> • Enter/F2 to edit • Escape to cancel</>}
+                    • <strong className="ml-2">Click RED cells</strong> to {readOnly ? 'view breach details' : 'add breach explanations'}
                 </div>
 
                 {/* Data Grid */}

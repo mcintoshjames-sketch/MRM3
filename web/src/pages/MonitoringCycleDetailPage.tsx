@@ -133,6 +133,16 @@ interface MonitoringResult {
     entered_at: string;
 }
 
+interface LinkedRecommendation {
+    recommendation_id: number;
+    recommendation_code: string;
+    title: string;
+    plan_metric_id: number | null;
+    current_status: { code: string; label: string };
+    priority: { code: string; label: string };
+    current_target_date: string;
+}
+
 interface ResultFormData {
     metric_id: number;
     snapshot_id?: number;
@@ -229,6 +239,9 @@ const MonitoringCycleDetailPage: React.FC = () => {
     } | null>(null);
     const [breachPanelNarrative, setBreachPanelNarrative] = useState('');
     const [breachPanelCellIds, setBreachPanelCellIds] = useState<{ modelId: number; metricId: number } | null>(null);
+    const [breachPanelRecommendations, setBreachPanelRecommendations] = useState<LinkedRecommendation[]>([]);
+    const [breachPanelRecommendationsLoading, setBreachPanelRecommendationsLoading] = useState(false);
+    const [breachPanelRecommendationsError, setBreachPanelRecommendationsError] = useState<string | null>(null);
 
     // Recommendation create modal state (triggered from breach panel)
     const [showRecModal, setShowRecModal] = useState(false);
@@ -267,6 +280,7 @@ const MonitoringCycleDetailPage: React.FC = () => {
             (approval) => approval.approver?.user_id === user?.user_id
         ) ?? false;
     }, [user?.role, user?.user_id, plan?.user_permissions?.is_team_member, cycle?.approvals]);
+    const resultsReadOnly = cycle ? !['DATA_COLLECTION', 'UNDER_REVIEW'].includes(cycle.status) : true;
 
     // Fetch cycle and plan details
     useEffect(() => {
@@ -626,21 +640,26 @@ const MonitoringCycleDetailPage: React.FC = () => {
         );
         const model = plan?.models?.find(m => m.model_id === cell.modelId);
 
-        setBreachPanelResultId(result?.result_id || null);
+        setBreachPanelResultId(result?.result_id ?? null);
         setBreachPanelCellIds({ modelId: cell.modelId, metricId: cell.metricId });
         setBreachPanelMetricInfo({
             metricName: metric?.kpm_name || 'Unknown Metric',
             modelName: model?.model_name || 'Unknown Model',
-            numericValue: result?.numeric_value || null,
-            outcome: result?.calculated_outcome || null,
+            numericValue: result?.numeric_value ?? null,
+            outcome: result?.calculated_outcome ?? null,
             thresholds: {
-                yellow_min: metric?.yellow_min || null,
-                yellow_max: metric?.yellow_max || null,
-                red_min: metric?.red_min || null,
-                red_max: metric?.red_max || null,
+                yellow_min: metric?.yellow_min ?? null,
+                yellow_max: metric?.yellow_max ?? null,
+                red_min: metric?.red_min ?? null,
+                red_max: metric?.red_max ?? null,
             },
         });
-        setBreachPanelNarrative(result?.narrative || '');
+        setBreachPanelNarrative(result?.narrative ?? '');
+        if (cycle) {
+            loadBreachRecommendations(cycle.cycle_id, cell.modelId, cell.metricId);
+        } else {
+            setBreachPanelRecommendations([]);
+        }
         setBreachPanelOpen(true);
     };
 
@@ -746,6 +765,32 @@ const MonitoringCycleDetailPage: React.FC = () => {
         setCycle(cycleResp.data);
 
         setShowCSVImport(false);
+    };
+
+    const loadBreachRecommendations = async (cycleIdValue: number, modelId: number, metricId: number) => {
+        setBreachPanelRecommendations([]);
+        setBreachPanelRecommendationsLoading(true);
+        setBreachPanelRecommendationsError(null);
+
+        try {
+            const response = await api.get('/recommendations/', {
+                params: {
+                    monitoring_cycle_id: cycleIdValue,
+                    model_id: modelId,
+                    limit: 200
+                }
+            });
+            const recommendations = (response.data || []).filter(
+                (rec: LinkedRecommendation) => rec.plan_metric_id === metricId
+            );
+            setBreachPanelRecommendations(recommendations);
+        } catch (err: any) {
+            setBreachPanelRecommendationsError(
+                err.response?.data?.detail || 'Failed to load linked recommendations'
+            );
+        } finally {
+            setBreachPanelRecommendationsLoading(false);
+        }
     };
 
     // Approval handlers
@@ -1467,8 +1512,12 @@ const MonitoringCycleDetailPage: React.FC = () => {
                 resultId={breachPanelResultId}
                 metricInfo={breachPanelMetricInfo}
                 existingNarrative={breachPanelNarrative}
+                readOnly={resultsReadOnly}
+                linkedRecommendations={breachPanelRecommendations}
+                linkedRecommendationsLoading={breachPanelRecommendationsLoading}
+                linkedRecommendationsError={breachPanelRecommendationsError}
                 onSave={handleBreachAnnotationSave}
-                onValueChange={handleBreachValueChange}
+                onValueChange={resultsReadOnly ? undefined : handleBreachValueChange}
                 onCreateRecommendation={canCreateRecommendation ? handleCreateRecommendation : undefined}
                 onClose={() => setBreachPanelOpen(false)}
             />
