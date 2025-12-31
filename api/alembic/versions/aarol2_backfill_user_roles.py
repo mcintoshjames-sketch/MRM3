@@ -1,7 +1,7 @@
 """backfill_user_roles
 
-Revision ID: ab2c3d4e5f6
-Revises: aa1b2c3d4e5f
+Revision ID: aarol2
+Revises: aarol1
 Create Date: 2025-12-31 00:10:00.000000
 """
 from typing import Sequence, Union
@@ -12,8 +12,8 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision: str = "ab2c3d4e5f6"
-down_revision: Union[str, None] = "aa1b2c3d4e5f"
+revision: str = "aarol2"
+down_revision: Union[str, None] = "aarol1"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
@@ -60,17 +60,22 @@ def upgrade() -> None:
         sa.Column("legacy_role", sa.String(length=100), nullable=True),
         sa.Column("resolved_role_code", sa.String(length=50), nullable=False),
         sa.Column("role_id", sa.Integer(), nullable=False),
-        sa.Column("was_fallback", sa.Boolean(), nullable=False, server_default=sa.text("false")),
+        sa.Column("was_fallback", sa.Boolean(), nullable=False,
+                  server_default=sa.text("false")),
         sa.Column("created_at", sa.DateTime(), nullable=False)
     )
 
-    allow_fallback = os.getenv("ROLE_BACKFILL_ALLOW_FALLBACK", "").strip().lower() in {"1", "true", "yes"}
+    allow_fallback = os.getenv(
+        "ROLE_BACKFILL_ALLOW_FALLBACK", "").strip().lower() in {"1", "true", "yes"}
 
-    role_rows = conn.execute(sa.text("SELECT role_id, code FROM roles")).fetchall()
+    role_rows = conn.execute(
+        sa.text("SELECT role_id, code FROM roles")).fetchall()
     role_id_map = {row.code: row.role_id for row in role_rows}
 
-    user_rows = conn.execute(sa.text("SELECT user_id, role FROM users")).fetchall()
-    distinct_roles = conn.execute(sa.text("SELECT DISTINCT role FROM users")).fetchall()
+    user_rows = conn.execute(
+        sa.text("SELECT user_id, role FROM users")).fetchall()
+    distinct_roles = conn.execute(
+        sa.text("SELECT DISTINCT role FROM users")).fetchall()
     normalized_role_map: dict[str, str] = {}
     unknown_roles: list[str] = []
     for row in distinct_roles:
@@ -99,7 +104,8 @@ def upgrade() -> None:
                 WHERE lower(trim(role)) = :normalized_key
                 """
             ),
-            {"code": code, "display_name": display_name, "normalized_key": normalized_key}
+            {"code": code, "display_name": display_name,
+                "normalized_key": normalized_key}
         )
 
     if allow_fallback:
@@ -113,12 +119,15 @@ def upgrade() -> None:
                 WHERE role_id IS NULL
                 """
             ),
-            {"code": fallback_code, "display_name": ROLE_CODE_TO_DISPLAY[fallback_code]}
+            {"code": fallback_code,
+                "display_name": ROLE_CODE_TO_DISPLAY[fallback_code]}
         )
 
-    remaining = conn.execute(sa.text("SELECT COUNT(*) FROM users WHERE role_id IS NULL")).scalar()
+    remaining = conn.execute(
+        sa.text("SELECT COUNT(*) FROM users WHERE role_id IS NULL")).scalar()
     if remaining:
-        raise RuntimeError("Role backfill incomplete; users remain with NULL role_id.")
+        raise RuntimeError(
+            "Role backfill incomplete; users remain with NULL role_id.")
 
     now = datetime.now(timezone.utc).replace(tzinfo=None)
     audit_rows = []
@@ -126,7 +135,8 @@ def upgrade() -> None:
         user_id = row.user_id
         legacy_role = row.role
         resolved_code = normalize_role_code(legacy_role) or "USER"
-        fallback_used = resolved_code == "USER" and legacy_role and legacy_role.strip().lower() not in ROLE_DISPLAY_TO_CODE
+        fallback_used = resolved_code == "USER" and legacy_role and legacy_role.strip(
+        ).lower() not in ROLE_DISPLAY_TO_CODE
         audit_rows.append(
             {
                 "user_id": user_id,

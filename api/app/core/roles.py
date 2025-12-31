@@ -100,21 +100,43 @@ def is_privileged(user: "User") -> bool:
 
 
 def build_capabilities(role_code: str | None) -> dict:
+    is_admin = role_code == RoleCode.ADMIN.value
+    is_validator = role_code == RoleCode.VALIDATOR.value
+    is_global_approver = role_code == RoleCode.GLOBAL_APPROVER.value
+    is_regional_approver = role_code == RoleCode.REGIONAL_APPROVER.value
+    is_approver = is_global_approver or is_regional_approver
+    is_admin_or_validator = is_admin or is_validator
+
     return {
-        "is_admin": role_code == RoleCode.ADMIN.value,
-        "is_validator": role_code == RoleCode.VALIDATOR.value,
-        "is_global_approver": role_code == RoleCode.GLOBAL_APPROVER.value,
-        "is_regional_approver": role_code == RoleCode.REGIONAL_APPROVER.value,
-        "can_manage_users": role_code == RoleCode.ADMIN.value,
-        "can_manage_taxonomy": role_code in {RoleCode.ADMIN.value, RoleCode.VALIDATOR.value},
-        "can_manage_regions": role_code == RoleCode.ADMIN.value,
-        "can_view_admin_dashboard": role_code == RoleCode.ADMIN.value,
-        "can_view_validator_dashboard": role_code == RoleCode.VALIDATOR.value,
-        "can_view_approver_dashboard": role_code in {
-            RoleCode.ADMIN.value,
-            RoleCode.GLOBAL_APPROVER.value,
-            RoleCode.REGIONAL_APPROVER.value
-        },
-        "can_proxy_approve": role_code == RoleCode.ADMIN.value,
-        "can_void_approvals": role_code == RoleCode.ADMIN.value
+        "is_admin": is_admin,
+        "is_validator": is_validator,
+        "is_global_approver": is_global_approver,
+        "is_regional_approver": is_regional_approver,
+        "can_manage_users": is_admin,
+        "can_manage_taxonomy": is_admin_or_validator,
+        "can_manage_regions": is_admin,
+        "can_view_admin_dashboard": is_admin,
+        "can_view_validator_dashboard": is_validator,
+        "can_view_approver_dashboard": is_admin or is_approver,
+        "can_proxy_approve": is_admin,
+        "can_void_approvals": is_admin,
+        "can_view_audit_logs": is_admin_or_validator,
+        "can_view_validation_alerts": is_admin,
+        "can_manage_workflow_config": is_admin,
+        "can_manage_delegates": is_admin,
+        "can_manage_validation_policies": is_admin,
+        "can_manage_mrsa_review_policies": is_admin,
+        "can_manage_approver_roles": is_admin,
+        "can_manage_conditional_approvals": is_admin,
+        "can_manage_monitoring_plans": is_admin,
+        "can_edit_monitoring_plan": is_admin,
+        "can_manage_attestations": is_admin,
+        "can_manage_irps": is_admin,
+        "can_manage_models": is_admin,
+        "can_manage_model_relationships": is_admin,
+        "can_manage_lob": is_admin,
+        "can_manage_validations": is_admin_or_validator,
+        "can_manage_recommendations": is_admin_or_validator,
+        "can_manage_decommissioning": is_admin_or_validator,
+        "can_approve_model": is_admin
     }

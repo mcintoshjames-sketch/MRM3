@@ -53,6 +53,22 @@ class TestGetMe:
         assert data["email"] == "test@example.com"
         assert data["full_name"] == "Test User"
         assert data["role"] == "User"
+        assert "capabilities" in data
+        assert data["capabilities"]["can_view_audit_logs"] is False
+        assert data["capabilities"]["can_edit_monitoring_plan"] is False
+        assert data["capabilities"]["can_approve_model"] is False
+
+    def test_get_me_admin_capabilities(self, client, admin_user, admin_headers):
+        """Test admin capabilities are returned for /auth/me."""
+        response = client.get("/auth/me", headers=admin_headers)
+        assert response.status_code == 200
+        data = response.json()
+        assert data["email"] == "admin@example.com"
+        assert data["role"] == "Admin"
+        assert "capabilities" in data
+        assert data["capabilities"]["can_view_audit_logs"] is True
+        assert data["capabilities"]["can_edit_monitoring_plan"] is True
+        assert data["capabilities"]["can_approve_model"] is True
 
     def test_get_me_unauthenticated(self, client):
         """Test getting current user without token fails."""

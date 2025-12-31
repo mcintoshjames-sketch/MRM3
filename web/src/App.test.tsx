@@ -116,7 +116,13 @@ describe('App Routing - Authenticated User', () => {
                 user_id: 1,
                 email: 'user@example.com',
                 full_name: 'Test User',
-                role: 'User'
+                role: 'User',
+                capabilities: {
+                    can_view_admin_dashboard: false,
+                    can_view_validator_dashboard: false,
+                    can_view_approver_dashboard: false,
+                    can_view_audit_logs: false
+                }
             },
             loading: false
         });
@@ -172,9 +178,9 @@ describe('App Routing - Authenticated User', () => {
         expect(screen.getByTestId('taxonomy-page')).toBeInTheDocument();
     });
 
-    it('renders audit page at /audit', () => {
+    it('redirects regular user from /audit to /models', () => {
         renderWithRouter('/audit');
-        expect(screen.getByTestId('audit-page')).toBeInTheDocument();
+        expect(screen.getByTestId('models-page')).toBeInTheDocument();
     });
 
     it('redirects regular user from /dashboard to /models', () => {
@@ -200,7 +206,13 @@ describe('App Routing - Admin User', () => {
                 user_id: 1,
                 email: 'admin@example.com',
                 full_name: 'Admin User',
-                role: 'Admin'
+                role: 'Admin',
+                capabilities: {
+                    can_view_admin_dashboard: true,
+                    can_view_validator_dashboard: false,
+                    can_view_approver_dashboard: true,
+                    can_view_audit_logs: true
+                }
             },
             loading: false
         });
@@ -225,6 +237,11 @@ describe('App Routing - Admin User', () => {
         renderWithRouter('/models');
         expect(screen.getByTestId('models-page')).toBeInTheDocument();
     });
+
+    it('renders audit page at /audit', () => {
+        renderWithRouter('/audit');
+        expect(screen.getByTestId('audit-page')).toBeInTheDocument();
+    });
 });
 
 describe('App Routing - Loading State', () => {
@@ -245,7 +262,13 @@ describe('App Routing - Route Coverage', () => {
                 user_id: 1,
                 email: 'user@example.com',
                 full_name: 'Test User',
-                role: 'User'
+                role: 'User',
+                capabilities: {
+                    can_view_admin_dashboard: false,
+                    can_view_validator_dashboard: false,
+                    can_view_approver_dashboard: false,
+                    can_view_audit_logs: false
+                }
             },
             loading: false
         });
@@ -264,12 +287,12 @@ describe('App Routing - Route Coverage', () => {
         { path: '/users', testId: 'users-page', requiresAuth: true },
         { path: '/users/1', testId: 'user-details-page', requiresAuth: true },
         { path: '/taxonomy', testId: 'taxonomy-page', requiresAuth: true },
-        { path: '/audit', testId: 'audit-page', requiresAuth: true },
+        { path: '/audit', testId: 'audit-page', requiresAuth: true, requiresAuditAccess: true },
     ];
 
     it.each(
         expectedRoutes
-            .filter(r => r.requiresAuth && !r.requiresAdmin)
+            .filter(r => r.requiresAuth && !r.requiresAdmin && !r.requiresAuditAccess)
             .map(r => [r.path, r.testId])
     )('route %s renders %s', (path, testId) => {
         renderWithRouter(path);
@@ -302,7 +325,13 @@ describe('App Routing - Link Targets Validation', () => {
                 user_id: 1,
                 email: 'admin@example.com',
                 full_name: 'Admin User',
-                role: 'Admin'
+                role: 'Admin',
+                capabilities: {
+                    can_view_admin_dashboard: true,
+                    can_view_validator_dashboard: false,
+                    can_view_approver_dashboard: true,
+                    can_view_audit_logs: true
+                }
             },
             loading: false
         });
