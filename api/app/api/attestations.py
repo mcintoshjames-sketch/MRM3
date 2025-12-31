@@ -8,7 +8,8 @@ from app.core.database import get_db
 from app.core.time import utc_now
 from app.core.deps import get_current_user
 from app.core.exception_detection import detect_type2_for_response
-from app.models.user import User, UserRole
+from app.models.user import User
+from app.core.roles import is_admin, is_validator
 from app.models.model import Model
 from app.models.region import Region
 from app.models.taxonomy import Taxonomy, TaxonomyValue
@@ -137,7 +138,7 @@ def is_clean_attestation(responses: list, decision_comment: Optional[str]) -> bo
 
 def require_admin(current_user: User = Depends(get_current_user)):
     """Dependency to require admin role."""
-    if current_user.role != UserRole.ADMIN:
+    if not is_admin(current_user):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Admin access required"
@@ -148,7 +149,7 @@ def require_admin(current_user: User = Depends(get_current_user)):
 def can_attest_for_model(db: Session, user: User, model: Model) -> bool:
     """Check if user can attest for a model."""
     # Admin can always attest
-    if user.role == UserRole.ADMIN:
+    if is_admin(user):
         return True
 
     # Owner can attest
@@ -754,7 +755,7 @@ def list_records(
     current_user: User = Depends(get_current_user)
 ):
     """List attestation records. Admin/Validator can see all."""
-    if current_user.role not in [UserRole.ADMIN, UserRole.VALIDATOR]:
+    if not (is_admin(current_user) or is_validator(current_user)):
         raise HTTPException(
             status_code=403,
             detail="Admin or Validator access required"
@@ -845,7 +846,7 @@ def get_record(
 
     # Check permission
     model = record.model
-    if current_user.role not in [UserRole.ADMIN, UserRole.VALIDATOR]:
+    if not (is_admin(current_user) or is_validator(current_user)):
         if not can_attest_for_model(db, current_user, model):
             raise HTTPException(
                 status_code=403,
@@ -1143,7 +1144,7 @@ def add_evidence(
 
     # Check permission
     model = record.model
-    if current_user.role not in [UserRole.ADMIN, UserRole.VALIDATOR]:
+    if not (is_admin(current_user) or is_validator(current_user)):
         if not can_attest_for_model(db, current_user, model):
             raise HTTPException(
                 status_code=403,
@@ -1213,7 +1214,7 @@ def remove_evidence(
         raise HTTPException(status_code=404, detail="Attestation record not found")
 
     # Check permission - only admin or the person who added it can remove
-    if current_user.role != UserRole.ADMIN and evidence.added_by_user_id != current_user.user_id:
+    if not is_admin(current_user) and evidence.added_by_user_id != current_user.user_id:
         raise HTTPException(
             status_code=403,
             detail="You do not have permission to remove this evidence"
@@ -2230,7 +2231,7 @@ def link_change_to_attestation(
 
     # Check permission
     model = record.model
-    if current_user.role not in [UserRole.ADMIN, UserRole.VALIDATOR]:
+    if not (is_admin(current_user) or is_validator(current_user)):
         if not can_attest_for_model(db, current_user, model):
             raise HTTPException(
                 status_code=403,
@@ -2387,7 +2388,7 @@ def get_linked_changes(
         raise HTTPException(status_code=404, detail="Attestation record not found")
 
     # Check permission - admin/validator can see all, others only their own
-    if current_user.role not in [UserRole.ADMIN, UserRole.VALIDATOR]:
+    if not (is_admin(current_user) or is_validator(current_user)):
         model = record.model
         if not can_attest_for_model(db, current_user, model):
             raise HTTPException(
@@ -2434,7 +2435,7 @@ def get_all_linked_changes(
     Returns linked changes with attestation and model context.
     Admin/Validator only.
     """
-    if current_user.role not in [UserRole.ADMIN, UserRole.VALIDATOR]:
+    if not (is_admin(current_user) or is_validator(current_user)):
         raise HTTPException(status_code=403, detail="Admin or Validator access required")
 
     # Query all linked changes with joins

@@ -12,6 +12,7 @@ import { useTableSort } from '../hooks/useTableSort';
 import { useColumnPreferences, ColumnDefinition } from '../hooks/useColumnPreferences';
 import { ColumnPickerModal, SaveViewModal } from '../components/ColumnPickerModal';
 import { useAuth } from '../contexts/AuthContext';
+import { isAdminOrValidator } from '../utils/roleUtils';
 
 interface Model {
     model_id: number;
@@ -543,7 +544,7 @@ export default function RecommendationsPage() {
         clearUrlPrefilters();
     };
 
-    const canCreate = user?.role === 'Admin' || user?.role === 'Validator';
+    const canCreate = isAdminOrValidator(user);
 
     if (loading) {
         return (

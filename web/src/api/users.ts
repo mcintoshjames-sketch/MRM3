@@ -5,6 +5,8 @@ export interface User {
     email: string;
     full_name: string;
     role: string;
+    role_code?: string | null;
+    capabilities?: Record<string, boolean> | null;
     created_at: string;
 }
 

@@ -4,6 +4,7 @@ import { useAuth } from '../contexts/AuthContext';
 import api from '../api/client';
 import Layout from '../components/Layout';
 import SubmitChangeModal from '../components/SubmitChangeModal';
+import { isAdminOrValidator } from '../utils/roleUtils';
 
 // Interfaces
 interface AttestationQuestion {
@@ -300,7 +301,7 @@ export default function AttestationDetailPage() {
     };
 
     const canEdit = attestation?.status === 'PENDING' || attestation?.status === 'REJECTED';
-    const canReview = (user?.role === 'Admin' || user?.role === 'Validator') && attestation?.status === 'SUBMITTED';
+    const canReview = isAdminOrValidator(user) && attestation?.status === 'SUBMITTED';
     // User is owner if they are the attesting user OR the model owner
     const isOwner = attestation?.attesting_user.user_id === user?.user_id ||
         attestation?.model.owner_id === user?.user_id;

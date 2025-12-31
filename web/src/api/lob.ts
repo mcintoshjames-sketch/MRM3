@@ -83,6 +83,7 @@ export interface LOBUser {
     email: string;
     full_name: string;
     role: string;
+    role_code?: string | null;
 }
 
 export const lobApi = {

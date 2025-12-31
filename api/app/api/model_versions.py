@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import desc
 from app.core.database import get_db
 from app.core.deps import get_current_user
+from app.core.roles import is_admin, is_validator
 from app.core.validation_conflicts import (
     find_active_validation_conflicts,
     build_validation_conflict_message
@@ -96,7 +97,7 @@ def generate_next_version_number(db: Session, model_id: int, change_type: str) -
 def check_version_permission(db: Session, model: Model, user: User) -> bool:
     """Check if user has permission to create/manage versions."""
     # Owner, developer, or admin can create versions
-    if user.role == "Admin":
+    if is_admin(user):
         return True
     if model.owner_id == user.user_id:
         return True
@@ -721,7 +722,7 @@ def approve_version(
 ):
     """Mark a version as APPROVED (requires Validator or Admin role)."""
     # Only validators and admins can approve
-    if current_user.role not in ["Validator", "Admin"]:
+    if not (is_admin(current_user) or is_validator(current_user)):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only Validators and Admins can approve versions"
@@ -1507,7 +1508,7 @@ def update_version(
 
     # If validation has begun, only validators/admins can edit
     if version.validation_request_id is not None:
-        if current_user.role not in ["Validator", "Admin"]:
+        if not (is_admin(current_user) or is_validator(current_user)):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Only validators and admins can edit versions after validation has begun"

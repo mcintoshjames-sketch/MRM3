@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import api from '../api/client';
 import Layout from '../components/Layout';
+import { isAdmin } from '../utils/roleUtils';
 
 interface ApproverRole {
     role_id: number;
@@ -49,6 +50,7 @@ interface ConditionalApprovalRuleDetail {
 
 export default function ConditionalApprovalRulesPage() {
     const { user } = useAuth();
+    const isAdminUser = isAdmin(user);
     const [rules, setRules] = useState<ConditionalApprovalRule[]>([]);
     const [approverRoles, setApproverRoles] = useState<ApproverRole[]>([]);
     const [validationTypes, setValidationTypes] = useState<TaxonomyValue[]>([]);
@@ -257,7 +259,7 @@ export default function ConditionalApprovalRulesPage() {
     };
 
     // Only admins can access this page
-    if (user?.role !== 'Admin') {
+    if (user && !isAdminUser) {
         return (
             <Layout>
                 <div className="text-center py-12">

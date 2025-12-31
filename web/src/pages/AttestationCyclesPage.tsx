@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
+import { isAdmin } from '../utils/roleUtils';
 import api from '../api/client';
 import Layout from '../components/Layout';
 import StatFilterCard from '../components/StatFilterCard';
@@ -915,7 +916,7 @@ export default function AttestationCyclesPage() {
         return dateStr.split('T')[0];
     };
 
-    if (user?.role !== 'Admin') {
+    if (!isAdmin(user)) {
         return (
             <Layout>
                 <div className="text-center text-gray-500 py-8">

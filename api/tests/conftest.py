@@ -10,6 +10,8 @@ from app.core.database import get_db
 from app.core.security import get_password_hash, create_access_token
 from app.models.base import Base
 from app.models.user import User
+from app.models.role import Role
+from app.core.roles import RoleCode, ROLE_CODE_TO_DISPLAY
 from app.models.model import Model
 from app.models.vendor import Vendor
 from app.models.model_pending_edit import ModelPendingEdit  # For pending edit workflow tests
@@ -40,6 +42,9 @@ def db_session():
     """Create a fresh database for each test."""
     Base.metadata.create_all(bind=engine)
     db = TestingSessionLocal()
+    for code, display_name in ROLE_CODE_TO_DISPLAY.items():
+        db.add(Role(code=code, display_name=display_name, is_system=True, is_active=True))
+    db.commit()
     yield db
     db.close()
     Base.metadata.drop_all(bind=engine)
@@ -130,11 +135,12 @@ def lob_hierarchy(db_session):
 @pytest.fixture
 def test_user(db_session, lob_hierarchy):
     """Create a test user."""
+    role_id = db_session.query(Role).filter(Role.code == RoleCode.USER.value).first().role_id
     user = User(
         email="test@example.com",
         full_name="Test User",
         password_hash=get_password_hash("testpass123"),
-        role="User",
+        role_id=role_id,
         lob_id=lob_hierarchy["retail"].lob_id
     )
     db_session.add(user)
@@ -146,11 +152,12 @@ def test_user(db_session, lob_hierarchy):
 @pytest.fixture
 def admin_user(db_session, lob_hierarchy):
     """Create an admin user."""
+    role_id = db_session.query(Role).filter(Role.code == RoleCode.ADMIN.value).first().role_id
     user = User(
         email="admin@example.com",
         full_name="Admin User",
         password_hash=get_password_hash("admin123"),
-        role="Admin",
+        role_id=role_id,
         lob_id=lob_hierarchy["corporate"].lob_id
     )
     db_session.add(user)
@@ -237,11 +244,12 @@ def sample_vendor(db_session):
 @pytest.fixture
 def second_user(db_session, lob_hierarchy):
     """Create a second test user for developer/user relationships."""
+    role_id = db_session.query(Role).filter(Role.code == RoleCode.USER.value).first().role_id
     user = User(
         email="developer@example.com",
         full_name="Developer User",
         password_hash=get_password_hash("devpass123"),
-        role="User",
+        role_id=role_id,
         lob_id=lob_hierarchy["credit"].lob_id
     )
     db_session.add(user)
@@ -260,11 +268,12 @@ def second_user_headers(second_user):
 @pytest.fixture
 def validator_user(db_session, lob_hierarchy):
     """Create a validator user."""
+    role_id = db_session.query(Role).filter(Role.code == RoleCode.VALIDATOR.value).first().role_id
     user = User(
         email="validator@example.com",
         full_name="Validator User",
         password_hash=get_password_hash("validator123"),
-        role="Validator",
+        role_id=role_id,
         lob_id=lob_hierarchy["wholesale"].lob_id
     )
     db_session.add(user)

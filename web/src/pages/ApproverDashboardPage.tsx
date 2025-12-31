@@ -4,6 +4,7 @@ import { useAuth } from '../contexts/AuthContext';
 import api from '../api/client';
 import Layout from '../components/Layout';
 import { useTableSort } from '../hooks/useTableSort';
+import { isAdmin, isGlobalApprover, isRegionalApprover, getRoleDisplay } from '../utils/roleUtils';
 
 interface PendingApproval {
     approval_id: number;
@@ -204,11 +205,11 @@ export default function ApproverDashboardPage() {
         return `${daysUntilDue} days`;
     };
 
-    const getRoleDisplay = () => {
-        if (user?.role === 'Admin') return 'Administrator';
-        if (user?.role === 'Global Approver') return 'Global Approver';
-        if (user?.role === 'Regional Approver') return 'Regional Approver';
-        return user?.role || 'User';
+    const getRoleDisplayLabel = () => {
+        if (isAdmin(user)) return 'Administrator';
+        if (isGlobalApprover(user)) return 'Global Approver';
+        if (isRegionalApprover(user)) return 'Regional Approver';
+        return getRoleDisplay(user);
     };
 
     const isUrgentPriority = (priority?: { code: string; label: string }) => {
@@ -440,7 +441,7 @@ export default function ApproverDashboardPage() {
             <div className="mb-6">
                 <h2 className="text-2xl font-bold">Approver Dashboard</h2>
                 <p className="text-gray-600 mt-1">
-                    Welcome, {user?.full_name}. You are logged in as <span className="font-medium">{getRoleDisplay()}</span>.
+                    Welcome, {user?.full_name}. You are logged in as <span className="font-medium">{getRoleDisplayLabel()}</span>.
                 </p>
                 <p className="text-sm text-gray-500 mt-2">
                     Review and finalize approvals across validation, recommendation, and monitoring workflows.

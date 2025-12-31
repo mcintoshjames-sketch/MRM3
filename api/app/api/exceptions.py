@@ -16,7 +16,8 @@ from app.core.exception_detection import (
     generate_exception_code,
 )
 from app.core.rls import apply_exception_rls, can_access_exception, can_access_model
-from app.models.user import User, UserRole
+from app.models.user import User
+from app.core.roles import is_admin
 from app.models.model import Model
 from app.models.model_region import ModelRegion
 from app.models.audit_log import AuditLog
@@ -136,7 +137,7 @@ def _build_exception_detail_response(exc: ModelException) -> ModelExceptionDetai
 
 def _require_admin(user: User):
     """Raise 403 if user is not an Admin."""
-    if user.role != UserRole.ADMIN:
+    if not is_admin(user):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Admin role required for this operation",
@@ -791,5 +792,4 @@ def get_model_exceptions(
     exceptions = query.order_by(ModelException.detected_at.desc()).all()
 
     return [_build_exception_list_response(exc) for exc in exceptions]
-
 

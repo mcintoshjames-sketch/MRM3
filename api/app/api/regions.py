@@ -4,7 +4,8 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.core.deps import get_current_user
-from app.models import Region as RegionModel, User, UserRole
+from app.models import Region as RegionModel, User
+from app.core.roles import is_admin
 from app.models.audit_log import AuditLog
 from app.schemas.region import Region, RegionCreate, RegionUpdate
 
@@ -53,7 +54,7 @@ def create_region(
     current_user: User = Depends(get_current_user)
 ):
     """Create a new region (Admin only)."""
-    if current_user.role != UserRole.ADMIN:
+    if not is_admin(current_user):
         raise HTTPException(status_code=403, detail="Admin access required")
 
     # Check if code already exists
@@ -91,7 +92,7 @@ def update_region(
     current_user: User = Depends(get_current_user)
 ):
     """Update a region (Admin only)."""
-    if current_user.role != UserRole.ADMIN:
+    if not is_admin(current_user):
         raise HTTPException(status_code=403, detail="Admin access required")
 
     region = db.query(RegionModel).filter(RegionModel.region_id == region_id).first()
@@ -140,7 +141,7 @@ def delete_region(
     current_user: User = Depends(get_current_user)
 ):
     """Delete a region (Admin only)."""
-    if current_user.role != UserRole.ADMIN:
+    if not is_admin(current_user):
         raise HTTPException(status_code=403, detail="Admin access required")
 
     region = db.query(RegionModel).filter(RegionModel.region_id == region_id).first()

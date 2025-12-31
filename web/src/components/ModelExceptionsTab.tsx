@@ -8,6 +8,7 @@ import {
     EXCEPTION_TYPE_LABELS,
     EXCEPTION_STATUS_CONFIG,
 } from '../api/exceptions';
+import { isAdmin } from '../utils/roleUtils';
 
 interface Props {
     modelId: number;
@@ -15,7 +16,7 @@ interface Props {
 
 const ModelExceptionsTab: React.FC<Props> = ({ modelId }) => {
     const { user } = useAuth();
-    const isAdmin = user?.role === 'Admin';
+    const isAdminUser = isAdmin(user);
 
     // List state
     const [exceptions, setExceptions] = useState<ModelExceptionListItem[]>([]);
@@ -250,7 +251,7 @@ const ModelExceptionsTab: React.FC<Props> = ({ modelId }) => {
                             <option value="CLOSED">Closed</option>
                         </select>
                     </div>
-                    {isAdmin && (
+                    {isAdminUser && (
                         <button
                             onClick={() => {
                                 resetCreateForm();
@@ -321,7 +322,7 @@ const ModelExceptionsTab: React.FC<Props> = ({ modelId }) => {
                                             >
                                                 View
                                             </button>
-                                            {isAdmin && exc.status === 'OPEN' && (
+                                            {isAdminUser && exc.status === 'OPEN' && (
                                                 <button
                                                     onClick={() => handleOpenAcknowledge(exc.exception_id)}
                                                     className="text-yellow-600 hover:text-yellow-800 text-sm"
@@ -329,7 +330,7 @@ const ModelExceptionsTab: React.FC<Props> = ({ modelId }) => {
                                                     Acknowledge
                                                 </button>
                                             )}
-                                            {isAdmin && exc.status !== 'CLOSED' && (
+                                            {isAdminUser && exc.status !== 'CLOSED' && (
                                                 <button
                                                     onClick={() => handleOpenClose(exc.exception_id)}
                                                     className="text-green-600 hover:text-green-800 text-sm"

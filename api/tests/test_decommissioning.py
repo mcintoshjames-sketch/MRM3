@@ -11,6 +11,12 @@ from app.models.decommissioning import (
     DecommissioningRequest, DecommissioningStatusHistory, DecommissioningApproval
 )
 from app.core.security import get_password_hash, create_access_token
+from app.core.roles import RoleCode
+from app.models.role import Role
+
+
+def get_role_id(db_session, role_code: str) -> int:
+    return db_session.query(Role).filter(Role.code == role_code).first().role_id
 
 
 class TestDecommissioningAPI:
@@ -110,7 +116,7 @@ class TestDecommissioningAPI:
             email="validator@example.com",
             full_name="Validator User",
             password_hash=get_password_hash("validator123"),
-            role="Validator",
+            role_id=get_role_id(db_session, RoleCode.VALIDATOR.value),
             lob_id=lob_hierarchy["retail"].lob_id
         )
         db_session.add(user)
@@ -515,7 +521,7 @@ class TestDecommissioningAPI:
             email="nonowner@example.com",
             full_name="Non Owner User",
             password_hash=get_password_hash("nonowner123"),
-            role="User",
+            role_id=get_role_id(db_session, RoleCode.USER.value),
             lob_id=lob_hierarchy["retail"].lob_id
         )
         db_session.add(user)
@@ -535,7 +541,7 @@ class TestDecommissioningAPI:
             email="owner@example.com",
             full_name="Model Owner",
             password_hash=get_password_hash("owner123"),
-            role="User",
+            role_id=get_role_id(db_session, RoleCode.USER.value),
             lob_id=lob_hierarchy["retail"].lob_id
         )
         db_session.add(user)

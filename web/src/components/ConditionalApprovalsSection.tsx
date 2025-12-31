@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import api from '../api/client';
+import { isAdmin, UserLike } from '../utils/roleUtils';
 
 interface RequiredApproverRole {
     role_id: number;
@@ -23,11 +24,11 @@ interface ConditionalApprovalsEvaluation {
 
 interface ConditionalApprovalsSectionProps {
     requestId: number;
-    userRole: string;
+    currentUser?: UserLike | null;
     onUpdate: () => void;
 }
 
-export default function ConditionalApprovalsSection({ requestId, userRole, onUpdate }: ConditionalApprovalsSectionProps) {
+export default function ConditionalApprovalsSection({ requestId, currentUser, onUpdate }: ConditionalApprovalsSectionProps) {
     const [evaluation, setEvaluation] = useState<ConditionalApprovalsEvaluation | null>(null);
     const [loading, setLoading] = useState(true);
     const [showApprovalModal, setShowApprovalModal] = useState(false);
@@ -192,7 +193,7 @@ export default function ConditionalApprovalsSection({ requestId, userRole, onUpd
                                     {role.approval_status || 'Not Created'}
                                 </span>
 
-                                {userRole === 'Admin' && (
+                                {isAdmin(currentUser) && (
                                     <>
                                         {(!role.approval_status || role.approval_status === 'Pending') && role.approval_id && (
                                             <>

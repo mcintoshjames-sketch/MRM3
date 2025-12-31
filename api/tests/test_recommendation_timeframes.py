@@ -16,6 +16,12 @@ from app.models.user import User
 from app.models.model import Model
 from app.models.region import Region
 from app.core.security import get_password_hash
+from app.core.roles import RoleCode
+from app.models.role import Role
+
+
+def get_role_id(db_session, role_code: str) -> int:
+    return db_session.query(Role).filter(Role.code == role_code).first().role_id
 
 
 # ============================================================================
@@ -418,7 +424,7 @@ class TestRecommendationTargetDateReason:
             email="validator@test.com",
             full_name="Validator",
             password_hash=get_password_hash("test123"),
-            role="Validator",
+            role_id=get_role_id(db_session, RoleCode.VALIDATOR.value),
             lob_id=lob_hierarchy["retail"].lob_id
         )
         db_session.add(user)
@@ -465,7 +471,7 @@ class TestRecommendationTargetDateReason:
             email="validator2@test.com",
             full_name="Validator 2",
             password_hash=get_password_hash("test123"),
-            role="Validator",
+            role_id=get_role_id(db_session, RoleCode.VALIDATOR.value),
             lob_id=lob_hierarchy["retail"].lob_id
         )
         db_session.add(user)
@@ -512,7 +518,7 @@ class TestRecommendationTargetDateReason:
             email="validator3@test.com",
             full_name="Validator 3",
             password_hash=get_password_hash("test123"),
-            role="Validator",
+            role_id=get_role_id(db_session, RoleCode.VALIDATOR.value),
             lob_id=lob_hierarchy["retail"].lob_id
         )
         db_session.add(user)
@@ -755,7 +761,7 @@ def enforcement_setup(db_session, timeframe_taxonomies, lob_hierarchy):
         email="enforce_test@test.com",
         full_name="Enforce Tester",
         password_hash=get_password_hash("test123"),
-        role="Validator",
+        role_id=get_role_id(db_session, RoleCode.VALIDATOR.value),
         lob_id=lob_hierarchy["retail"].lob_id
     )
     db_session.add(user)
@@ -1592,7 +1598,7 @@ def api_setup(db_session, seed_timeframe_configs, enforcement_setup, lob_hierarc
         email="admin@example.com",
         full_name="Admin User",
         password_hash=get_password_hash("admin123"),
-        role="Admin",
+        role_id=get_role_id(db_session, RoleCode.ADMIN.value),
         lob_id=lob_hierarchy["retail"].lob_id
     )
     db_session.add(admin_user)
@@ -1605,7 +1611,7 @@ def api_setup(db_session, seed_timeframe_configs, enforcement_setup, lob_hierarc
         email="user@example.com",
         full_name="Regular User",
         password_hash=get_password_hash("test123"),
-        role="User",
+        role_id=get_role_id(db_session, RoleCode.USER.value),
         lob_id=lob_hierarchy["retail"].lob_id
     )
     db_session.add(regular_user)
@@ -1831,7 +1837,7 @@ def recommendation_setup(db_session, seed_timeframe_configs, enforcement_setup, 
         email="validator@example.com",
         full_name="Test Validator",
         password_hash=get_password_hash("validator123"),
-        role="Validator",
+        role_id=get_role_id(db_session, RoleCode.VALIDATOR.value),
         lob_id=lob_hierarchy["retail"].lob_id
     )
     db_session.add(validator_user)
@@ -1844,7 +1850,7 @@ def recommendation_setup(db_session, seed_timeframe_configs, enforcement_setup, 
         email="developer@example.com",
         full_name="Test Developer",
         password_hash=get_password_hash("developer123"),
-        role="User",
+        role_id=get_role_id(db_session, RoleCode.USER.value),
         lob_id=lob_hierarchy["retail"].lob_id
     )
     db_session.add(developer_user)

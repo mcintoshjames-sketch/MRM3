@@ -1,9 +1,10 @@
 import { useState } from 'react';
 import { recommendationsApi, Recommendation } from '../api/recommendations';
+import { isAdmin, isGlobalApprover, isRegionalApprover } from '../utils/roleUtils';
 
 interface ApprovalSectionProps {
     recommendation: Recommendation;
-    currentUser: { user_id: number; role: string } | null;
+    currentUser: { user_id: number; role: string; role_code?: string | null; capabilities?: Record<string, boolean> | null } | null;
     onRefresh: () => void;
 }
 
@@ -25,24 +26,24 @@ export default function ApprovalSection({ recommendation, currentUser, onRefresh
 
         // Check if user is the approver or has appropriate role
         const isApprover = approval.approver_id === currentUser?.user_id;
-        const isAdmin = currentUser?.role === 'Admin';
+        const isAdminUser = isAdmin(currentUser);
 
         // Global Approvers can approve GLOBAL approvals
         const approvalType = (approval.approval_type || '').toUpperCase();
-        const isGlobalApprover = currentUser?.role === 'Global Approver' && approvalType === 'GLOBAL';
+        const isGlobalApprovalUser = isGlobalApprover(currentUser) && approvalType === 'GLOBAL';
 
         // Regional Approvers can approve REGIONAL approvals for their region
         // Note: For now, any Regional Approver can approve any regional approval
         // In the future, this could be restricted to specific regions
-        const isRegionalApprover = currentUser?.role === 'Regional Approver' && approvalType === 'REGIONAL';
+        const isRegionalApprovalUser = isRegionalApprover(currentUser) && approvalType === 'REGIONAL';
 
-        return isApprover || isAdmin || isGlobalApprover || isRegionalApprover;
+        return isApprover || isAdminUser || isGlobalApprovalUser || isRegionalApprovalUser;
     };
 
     // Check if user can void an approval (Admin only, on already decided approvals)
     const canVoid = (approval: any) => {
         // Only admins can void
-        if (currentUser?.role !== 'Admin') return false;
+        if (!isAdmin(currentUser)) return false;
         // Can only void approvals that have a decision and are not already voided
         if (approval.approval_status === 'PENDING') return false;
         if (approval.approval_status === 'VOIDED') return false;

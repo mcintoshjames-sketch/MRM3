@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { LOBUnitTreeNode, LOBUnitCreate, LOBUnitUpdate, lobApi } from '../api/lob';
 import { useAuth } from '../contexts/AuthContext';
+import { isAdmin } from '../utils/roleUtils';
 
 interface LOBTreeViewProps {
     onSelectLOB?: (lob: LOBUnitTreeNode | null) => void;
@@ -347,7 +348,7 @@ const LOBTreeView: React.FC<LOBTreeViewProps> = ({
     showInactive = false
 }) => {
     const { user } = useAuth();
-    const isAdmin = user?.role === 'Admin';
+    const isAdminUser = isAdmin(user);
 
     const [tree, setTree] = useState<LOBUnitTreeNode[]>([]);
     const [loading, setLoading] = useState(true);
@@ -505,7 +506,7 @@ const LOBTreeView: React.FC<LOBTreeViewProps> = ({
                         Collapse All
                     </button>
                 </div>
-                {isAdmin && (
+                {isAdminUser && (
                     <button
                         onClick={handleAddRoot}
                         className="px-3 py-1 text-sm text-white bg-blue-600 rounded hover:bg-blue-700"
@@ -519,7 +520,7 @@ const LOBTreeView: React.FC<LOBTreeViewProps> = ({
             <div className="p-2 max-h-[500px] overflow-y-auto">
                 {tree.length === 0 ? (
                     <div className="p-4 text-center text-gray-500">
-                        No LOB units found. {isAdmin && 'Click "Add Root" to create one.'}
+                        No LOB units found. {isAdminUser && 'Click "Add Root" to create one.'}
                     </div>
                 ) : (
                     tree.map((node) => (
@@ -534,7 +535,7 @@ const LOBTreeView: React.FC<LOBTreeViewProps> = ({
                             onEdit={handleEdit}
                             onAddChild={handleAddChild}
                             onDeactivate={handleDeactivate}
-                            isAdmin={isAdmin}
+                            isAdmin={isAdminUser}
                         />
                     ))
                 )}

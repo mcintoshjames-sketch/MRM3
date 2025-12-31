@@ -11,7 +11,7 @@ from datetime import date, timedelta
 from sqlalchemy.orm import Session
 from fastapi.testclient import TestClient
 
-from app.models.user import User, UserRole
+from app.models.user import User
 from app.models.model import Model
 from app.models.model_version import ModelVersion
 from app.models.model_region import ModelRegion

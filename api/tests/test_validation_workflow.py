@@ -5,6 +5,8 @@ from datetime import date, datetime, timedelta
 from decimal import Decimal
 from sqlalchemy import text
 from app.models.taxonomy import Taxonomy, TaxonomyValue
+from app.core.roles import RoleCode
+from app.models.role import Role
 from app.models.validation import (
     ValidationRequest, ValidationStatusHistory, ValidationAssignment,
     ValidationOutcome, ValidationApproval
@@ -20,6 +22,10 @@ from app.models.risk_assessment import (
     QualitativeFactorAssessment
 )
 from app.core.time import utc_now
+
+
+def get_role_id(db_session, role_code: str) -> int:
+    return db_session.query(Role).filter(Role.code == role_code).first().role_id
 
 
 @pytest.fixture
@@ -1901,6 +1907,14 @@ class TestValidationGroupingMemory:
         assert response1.status_code == 201
         request_id_1 = response1.json()["request_id"]
 
+        # Close the first validation so overlap rules allow the next request
+        from app.models.validation import ValidationRequest
+        request1 = db_session.query(ValidationRequest).filter(
+            ValidationRequest.request_id == request_id_1
+        ).first()
+        request1.current_status_id = workflow_taxonomies["status"]["approved"].value_id
+        db_session.commit()
+
         # Check initial memory
         memory1_initial = db_session.query(ValidationGroupingMemory).filter(
             ValidationGroupingMemory.model_id == sample_model.model_id
@@ -2492,14 +2506,14 @@ class TestSmartApproverAssignment:
     ):
         """Test that global validations auto-assign Global Approvers."""
         # Create a Global Approver user
-        from app.models.user import User, UserRole
+        from app.models.user import User
         from app.core.security import get_password_hash
 
         global_approver = User(
             email="global.approver@example.com",
             full_name="Global Approver",
             password_hash=get_password_hash("password123"),
-            role=UserRole.GLOBAL_APPROVER,
+            role_id=get_role_id(db_session, RoleCode.GLOBAL_APPROVER.value),
             lob_id=lob_hierarchy["retail"].lob_id
         )
         db_session.add(global_approver)
@@ -2538,7 +2552,7 @@ class TestSmartApproverAssignment:
         self, client, db_session, admin_headers, sample_model, workflow_taxonomies, lob_hierarchy
     ):
         """Test that regional validations with requires_regional_approval=True assign Regional Approvers."""
-        from app.models.user import User, UserRole, user_regions
+        from app.models.user import User, user_regions
         from app.models.region import Region
         from app.core.security import get_password_hash
 
@@ -2556,7 +2570,7 @@ class TestSmartApproverAssignment:
             email="us.approver@example.com",
             full_name="US Regional Approver",
             password_hash=get_password_hash("password123"),
-            role=UserRole.REGIONAL_APPROVER,
+            role_id=get_role_id(db_session, RoleCode.REGIONAL_APPROVER.value),
             lob_id=lob_hierarchy["retail"].lob_id
         )
         db_session.add(regional_approver)
@@ -2604,7 +2618,7 @@ class TestSmartApproverAssignment:
         self, client, db_session, admin_headers, sample_model, workflow_taxonomies, lob_hierarchy
     ):
         """Test that regional validations with requires_regional_approval=False assign Global Approvers."""
-        from app.models.user import User, UserRole
+        from app.models.user import User
         from app.models.region import Region
         from app.core.security import get_password_hash
 
@@ -2622,7 +2636,7 @@ class TestSmartApproverAssignment:
             email="global.approver2@example.com",
             full_name="Global Approver 2",
             password_hash=get_password_hash("password123"),
-            role=UserRole.GLOBAL_APPROVER,
+            role_id=get_role_id(db_session, RoleCode.GLOBAL_APPROVER.value),
             lob_id=lob_hierarchy["retail"].lob_id
         )
         db_session.add(global_approver)
@@ -2661,7 +2675,7 @@ class TestSmartApproverAssignment:
         self, client, db_session, admin_headers, sample_model, workflow_taxonomies, lob_hierarchy
     ):
         """Test that all Global Approvers are assigned to global validations."""
-        from app.models.user import User, UserRole
+        from app.models.user import User
         from app.core.security import get_password_hash
 
         # Create multiple Global Approvers
@@ -2669,21 +2683,21 @@ class TestSmartApproverAssignment:
             email="global1@example.com",
             full_name="Global Approver 1",
             password_hash=get_password_hash("password123"),
-            role=UserRole.GLOBAL_APPROVER,
+            role_id=get_role_id(db_session, RoleCode.GLOBAL_APPROVER.value),
             lob_id=lob_hierarchy["retail"].lob_id
         )
         approver2 = User(
             email="global2@example.com",
             full_name="Global Approver 2",
             password_hash=get_password_hash("password123"),
-            role=UserRole.GLOBAL_APPROVER,
+            role_id=get_role_id(db_session, RoleCode.GLOBAL_APPROVER.value),
             lob_id=lob_hierarchy["retail"].lob_id
         )
         approver3 = User(
             email="global3@example.com",
             full_name="Global Approver 3",
             password_hash=get_password_hash("password123"),
-            role=UserRole.GLOBAL_APPROVER,
+            role_id=get_role_id(db_session, RoleCode.GLOBAL_APPROVER.value),
             lob_id=lob_hierarchy["retail"].lob_id
         )
         db_session.add_all([approver1, approver2, approver3])
@@ -2725,9 +2739,9 @@ class TestSmartApproverAssignment:
     ):
         """Test that when no approvers exist, no approvals are created (graceful handling)."""
         # Ensure no Global Approvers exist (cleanup any from previous tests)
-        from app.models.user import User, UserRole
+        from app.models.user import User
         db_session.query(User).filter(
-            User.role.in_([UserRole.GLOBAL_APPROVER, UserRole.REGIONAL_APPROVER])
+            User.role_code.in_([RoleCode.GLOBAL_APPROVER.value, RoleCode.REGIONAL_APPROVER.value])
         ).delete(synchronize_session=False)
         db_session.commit()
 
@@ -2759,7 +2773,7 @@ class TestSmartApproverAssignment:
         self, client, db_session, admin_headers, sample_model, workflow_taxonomies, lob_hierarchy
     ):
         """Test that auto-assigning approvers creates an audit log entry."""
-        from app.models.user import User, UserRole
+        from app.models.user import User
         from app.core.security import get_password_hash
         from app.models.audit_log import AuditLog
 
@@ -2768,7 +2782,7 @@ class TestSmartApproverAssignment:
             email="audittest@example.com",
             full_name="Audit Test Approver",
             password_hash=get_password_hash("password123"),
-            role=UserRole.GLOBAL_APPROVER,
+            role_id=get_role_id(db_session, RoleCode.GLOBAL_APPROVER.value),
             lob_id=lob_hierarchy["retail"].lob_id
         )
         db_session.add(global_approver)
@@ -2819,7 +2833,7 @@ class TestRegionalApprovalScopeHierarchy:
         self, client, db_session, admin_headers, sample_model, workflow_taxonomies, lob_hierarchy
     ):
         """Test that validation scoped to APAC does NOT require UK approval even if model deployed to UK."""
-        from app.models.user import User, UserRole, user_regions
+        from app.models.user import User, user_regions
         from app.models.region import Region
         from app.models.model_region import ModelRegion
         from app.core.security import get_password_hash
@@ -2842,14 +2856,14 @@ class TestRegionalApprovalScopeHierarchy:
             email="apac.approver@example.com",
             full_name="APAC Regional Approver",
             password_hash=get_password_hash("password123"),
-            role=UserRole.REGIONAL_APPROVER,
+            role_id=get_role_id(db_session, RoleCode.REGIONAL_APPROVER.value),
             lob_id=lob_hierarchy["retail"].lob_id
         )
         uk_approver = User(
             email="uk.approver@example.com",
             full_name="UK Regional Approver",
             password_hash=get_password_hash("password123"),
-            role=UserRole.REGIONAL_APPROVER,
+            role_id=get_role_id(db_session, RoleCode.REGIONAL_APPROVER.value),
             lob_id=lob_hierarchy["retail"].lob_id
         )
         db_session.add_all([apac_approver, uk_approver])
@@ -2890,7 +2904,7 @@ class TestRegionalApprovalScopeHierarchy:
         self, client, db_session, admin_headers, sample_model, workflow_taxonomies, lob_hierarchy
     ):
         """Test that REGIONAL-scope version triggers approvals only for its affected regions."""
-        from app.models.user import User, UserRole, user_regions
+        from app.models.user import User, user_regions
         from app.models.region import Region
         from app.models.model_region import ModelRegion
         from app.models.model_version import ModelVersion
@@ -2930,14 +2944,14 @@ class TestRegionalApprovalScopeHierarchy:
             email="apac2.approver@example.com",
             full_name="APAC2 Regional Approver",
             password_hash=get_password_hash("password123"),
-            role=UserRole.REGIONAL_APPROVER,
+            role_id=get_role_id(db_session, RoleCode.REGIONAL_APPROVER.value),
             lob_id=lob_hierarchy["retail"].lob_id
         )
         uk_approver = User(
             email="uk2.approver@example.com",
             full_name="UK2 Regional Approver",
             password_hash=get_password_hash("password123"),
-            role=UserRole.REGIONAL_APPROVER,
+            role_id=get_role_id(db_session, RoleCode.REGIONAL_APPROVER.value),
             lob_id=lob_hierarchy["retail"].lob_id
         )
         db_session.add_all([apac_approver, uk_approver])
@@ -2977,7 +2991,7 @@ class TestRegionalApprovalScopeHierarchy:
         self, client, db_session, admin_headers, sample_model, workflow_taxonomies, lob_hierarchy
     ):
         """Test that GLOBAL-scope version triggers approvals for ALL deployment regions."""
-        from app.models.user import User, UserRole, user_regions
+        from app.models.user import User, user_regions
         from app.models.region import Region
         from app.models.model_region import ModelRegion
         from app.models.model_version import ModelVersion
@@ -3012,14 +3026,14 @@ class TestRegionalApprovalScopeHierarchy:
             email="apac3.approver@example.com",
             full_name="APAC3 Regional Approver",
             password_hash=get_password_hash("password123"),
-            role=UserRole.REGIONAL_APPROVER,
+            role_id=get_role_id(db_session, RoleCode.REGIONAL_APPROVER.value),
             lob_id=lob_hierarchy["retail"].lob_id
         )
         uk_approver = User(
             email="uk3.approver@example.com",
             full_name="UK3 Regional Approver",
             password_hash=get_password_hash("password123"),
-            role=UserRole.REGIONAL_APPROVER,
+            role_id=get_role_id(db_session, RoleCode.REGIONAL_APPROVER.value),
             lob_id=lob_hierarchy["retail"].lob_id
         )
         db_session.add_all([apac_approver, uk_approver])
@@ -3059,7 +3073,7 @@ class TestRegionalApprovalScopeHierarchy:
         self, client, db_session, admin_headers, workflow_taxonomies, lob_hierarchy
     ):
         """Test that wholly-owned region approval is always required even in scoped validations."""
-        from app.models.user import User, UserRole, user_regions
+        from app.models.user import User, user_regions
         from app.models.region import Region
         from app.models.model_region import ModelRegion
         from app.models.model import Model
@@ -3094,14 +3108,14 @@ class TestRegionalApprovalScopeHierarchy:
             email="us4.approver@example.com",
             full_name="US4 Regional Approver",
             password_hash=get_password_hash("password123"),
-            role=UserRole.REGIONAL_APPROVER,
+            role_id=get_role_id(db_session, RoleCode.REGIONAL_APPROVER.value),
             lob_id=lob_hierarchy["retail"].lob_id
         )
         apac_approver = User(
             email="apac4.approver@example.com",
             full_name="APAC4 Regional Approver",
             password_hash=get_password_hash("password123"),
-            role=UserRole.REGIONAL_APPROVER,
+            role_id=get_role_id(db_session, RoleCode.REGIONAL_APPROVER.value),
             lob_id=lob_hierarchy["retail"].lob_id
         )
         db_session.add_all([us_approver, apac_approver])
@@ -3141,7 +3155,7 @@ class TestRegionalApprovalScopeHierarchy:
         self, client, db_session, admin_headers, workflow_taxonomies, lob_hierarchy
     ):
         """Test that if validation has both REGIONAL and GLOBAL versions, GLOBAL triggers all regions."""
-        from app.models.user import User, UserRole, user_regions
+        from app.models.user import User, user_regions
         from app.models.region import Region
         from app.models.model_region import ModelRegion
         from app.models.model_version import ModelVersion
@@ -3213,21 +3227,21 @@ class TestRegionalApprovalScopeHierarchy:
             email="eu5.approver@example.com",
             full_name="EU5 Regional Approver",
             password_hash=get_password_hash("password123"),
-            role=UserRole.REGIONAL_APPROVER,
+            role_id=get_role_id(db_session, RoleCode.REGIONAL_APPROVER.value),
             lob_id=lob_hierarchy["retail"].lob_id
         )
         uk_approver = User(
             email="uk5.approver@example.com",
             full_name="UK5 Regional Approver",
             password_hash=get_password_hash("password123"),
-            role=UserRole.REGIONAL_APPROVER,
+            role_id=get_role_id(db_session, RoleCode.REGIONAL_APPROVER.value),
             lob_id=lob_hierarchy["retail"].lob_id
         )
         apac_approver = User(
             email="apac5.approver@example.com",
             full_name="APAC5 Regional Approver",
             password_hash=get_password_hash("password123"),
-            role=UserRole.REGIONAL_APPROVER,
+            role_id=get_role_id(db_session, RoleCode.REGIONAL_APPROVER.value),
             lob_id=lob_hierarchy["retail"].lob_id
         )
         db_session.add_all([eu_approver, uk_approver, apac_approver])
@@ -4321,6 +4335,15 @@ class TestChangeValidationType:
             }
         )
         assert initial_response.status_code == 201
+        initial_request_id = initial_response.json()["request_id"]
+
+        # Close the initial validation to satisfy overlap rules for another non-targeted request
+        from app.models.validation import ValidationRequest
+        initial_request = db_session.query(ValidationRequest).filter(
+            ValidationRequest.request_id == initial_request_id
+        ).first()
+        initial_request.current_status_id = workflow_taxonomies["status"]["approved"].value_id
+        db_session.commit()
 
         # Test TARGETED validation - should succeed without versions
         targeted_response = client.post(
@@ -5237,7 +5260,7 @@ class TestValidationRequestModelChanges:
     def test_stale_regional_approvals_voided_on_model_removal(
         self, client, db_session, admin_headers, admin_user, workflow_taxonomies, lob_hierarchy, usage_frequency
     ):
-        from app.models.user import User, UserRole, user_regions
+        from app.models.user import User, user_regions
         from app.models.validation import ValidationApproval
 
         region_a = Region(code="RA", name="Region A", requires_regional_approval=True)
@@ -5272,7 +5295,7 @@ class TestValidationRequestModelChanges:
             email="regiona.approver@example.com",
             full_name="Region A Approver",
             password_hash="hash",
-            role=UserRole.REGIONAL_APPROVER,
+            role_id=get_role_id(db_session, RoleCode.REGIONAL_APPROVER.value),
             lob_id=lob_hierarchy["retail"].lob_id
         )
         db_session.add(regional_approver)
@@ -5313,7 +5336,7 @@ class TestValidationRequestModelChanges:
     def test_approvals_kept_if_region_still_covered(
         self, client, db_session, admin_headers, admin_user, workflow_taxonomies, lob_hierarchy, usage_frequency
     ):
-        from app.models.user import User, UserRole, user_regions
+        from app.models.user import User, user_regions
         from app.models.validation import ValidationApproval
 
         region_a = Region(code="RC", name="Region C", requires_regional_approval=True)
@@ -5347,7 +5370,7 @@ class TestValidationRequestModelChanges:
             email="regionc.approver@example.com",
             full_name="Region C Approver",
             password_hash="hash",
-            role=UserRole.REGIONAL_APPROVER,
+            role_id=get_role_id(db_session, RoleCode.REGIONAL_APPROVER.value),
             lob_id=lob_hierarchy["retail"].lob_id
         )
         db_session.add(regional_approver)

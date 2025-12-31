@@ -9,6 +9,12 @@ from app.models import (
 )
 from app.models.model_delegate import ModelDelegate
 from app.core.security import get_password_hash, create_access_token
+from app.core.roles import RoleCode
+from app.models.role import Role
+
+
+def get_role_id(db_session, role_code: str) -> int:
+    return db_session.query(Role).filter(Role.code == role_code).first().role_id
 
 
 class TestDashboardCommentaryAPI:
@@ -21,7 +27,7 @@ class TestDashboardCommentaryAPI:
             email="dashboard_admin@example.com",
             password_hash=get_password_hash("admin123"),
             full_name="Dashboard Admin",
-            role="Admin",
+            role_id=get_role_id(db_session, RoleCode.ADMIN.value),
             lob_id=lob_hierarchy["retail"].lob_id
         )
         db_session.add(user)
@@ -41,7 +47,7 @@ class TestDashboardCommentaryAPI:
             email="regular_user@example.com",
             password_hash=get_password_hash("user123"),
             full_name="Regular User",
-            role="User",
+            role_id=get_role_id(db_session, RoleCode.USER.value),
             lob_id=lob_hierarchy["retail"].lob_id
         )
         db_session.add(user)
@@ -61,7 +67,7 @@ class TestDashboardCommentaryAPI:
             email="validator@example.com",
             password_hash=get_password_hash("val123"),
             full_name="Validator User",
-            role="Validator",
+            role_id=get_role_id(db_session, RoleCode.VALIDATOR.value),
             lob_id=lob_hierarchy["retail"].lob_id
         )
         db_session.add(user)
@@ -480,7 +486,7 @@ class TestDashboardCommentaryAPI:
             email="delegate@example.com",
             password_hash=get_password_hash("del123"),
             full_name="Delegate User",
-            role="User",
+            role_id=get_role_id(db_session, RoleCode.USER.value),
             lob_id=lob_hierarchy["retail"].lob_id
         )
         db_session.add(delegate_user)

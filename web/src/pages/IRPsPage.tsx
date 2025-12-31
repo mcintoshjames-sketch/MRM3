@@ -6,6 +6,7 @@ import { useTableSort } from '../hooks/useTableSort';
 import { useAuth } from '../contexts/AuthContext';
 import { irpApi, IRP, IRPCreate, IRPUpdate } from '../api/irp';
 import api from '../api/client';
+import { isAdmin } from '../utils/roleUtils';
 
 interface User {
     user_id: number;
@@ -15,7 +16,7 @@ interface User {
 
 export default function IRPsPage() {
     const { user } = useAuth();
-    const isAdmin = user?.role === 'Admin';
+    const isAdminUser = isAdmin(user);
     type TabType = 'irps' | 'mrsa-review-status';
     const [activeTab, setActiveTab] = useState<TabType>('irps');
 
@@ -174,7 +175,7 @@ export default function IRPsPage() {
                             <button onClick={exportToCsv} className="btn-secondary">
                                 Export CSV
                             </button>
-                            {isAdmin && (
+                            {isAdminUser && (
                                 <button onClick={() => setShowForm(true)} className="btn-primary">
                                     + Add IRP
                                 </button>
@@ -213,7 +214,7 @@ export default function IRPsPage() {
                         <MRSAReviewDashboardWidget
                             title="MRSA Review Status"
                             description="Monitor independent review obligations across MRSAs covered by IRPs."
-                            showPolicyLink={isAdmin}
+                            showPolicyLink={isAdminUser}
                         />
                     </div>
                 )}
@@ -415,7 +416,7 @@ export default function IRPsPage() {
                                                 {getSortIcon('latest_certification_date')}
                                             </div>
                                         </th>
-                                        {isAdmin && (
+                                        {isAdminUser && (
                                             <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
                                                 Actions
                                             </th>
@@ -425,8 +426,8 @@ export default function IRPsPage() {
                                 <tbody className="bg-white divide-y divide-gray-200">
                                     {sortedData.length === 0 ? (
                                         <tr>
-                                            <td colSpan={isAdmin ? 8 : 7} className="px-6 py-4 text-center text-gray-500">
-                                                No IRPs found. {isAdmin && 'Click "Add IRP" to create one.'}
+                                            <td colSpan={isAdminUser ? 8 : 7} className="px-6 py-4 text-center text-gray-500">
+                                                No IRPs found. {isAdminUser && 'Click "Add IRP" to create one.'}
                                             </td>
                                         </tr>
                                     ) : (
@@ -485,7 +486,7 @@ export default function IRPsPage() {
                                                         <span className="text-gray-400">Not certified</span>
                                                     )}
                                                 </td>
-                                                {isAdmin && (
+                                                {isAdminUser && (
                                                     <td className="px-6 py-4 whitespace-nowrap text-sm">
                                                         <div className="flex gap-2">
                                                             <button

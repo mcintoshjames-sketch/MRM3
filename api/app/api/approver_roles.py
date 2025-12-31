@@ -6,6 +6,7 @@ from sqlalchemy import func
 
 from app.core.database import get_db
 from app.core.deps import get_current_user
+from app.core.roles import is_admin
 from app.models import User, ApproverRole, RuleRequiredApprover
 from app.schemas.conditional_approval import (
     ApproverRoleCreate,
@@ -88,7 +89,7 @@ def create_approver_role(
     - is_active: Default true
     """
     # Check Admin permission
-    if current_user.role != "Admin":
+    if not is_admin(current_user):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only Admins can create approver roles"
@@ -134,7 +135,7 @@ def update_approver_role(
     - is_active (to deactivate roles)
     """
     # Check Admin permission
-    if current_user.role != "Admin":
+    if not is_admin(current_user):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only Admins can update approver roles"
@@ -186,7 +187,7 @@ def delete_approver_role(
     Note: Cannot delete roles that are currently used in active rules.
     """
     # Check Admin permission
-    if current_user.role != "Admin":
+    if not is_admin(current_user):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only Admins can delete approver roles"

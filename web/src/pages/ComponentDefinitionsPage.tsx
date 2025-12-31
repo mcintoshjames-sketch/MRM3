@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import Layout from '../components/Layout';
 import client from '../api/client';
 import { useAuth } from '../contexts/AuthContext';
+import { isAdmin } from '../utils/roleUtils';
 
 interface ComponentDefinition {
     component_id: number;
@@ -30,6 +31,7 @@ interface Configuration {
 
 const ComponentDefinitionsPage: React.FC = () => {
     const { user } = useAuth();
+    const isAdminUser = isAdmin(user);
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
     const [components, setComponents] = useState<ComponentDefinition[]>([]);
@@ -46,13 +48,13 @@ const ComponentDefinitionsPage: React.FC = () => {
     });
 
     useEffect(() => {
-        if (user?.role !== 'Admin') {
+        if (user && !isAdminUser) {
             setError('Only administrators can access this page');
             setLoading(false);
             return;
         }
         fetchData();
-    }, [user]);
+    }, [user, isAdminUser]);
 
     const fetchData = async () => {
         setLoading(true);
@@ -174,7 +176,7 @@ const ComponentDefinitionsPage: React.FC = () => {
         );
     }
 
-    if (user?.role !== 'Admin') {
+    if (user && !isAdminUser) {
         return (
             <Layout>
                 <div className="bg-white rounded-lg shadow-md p-6">

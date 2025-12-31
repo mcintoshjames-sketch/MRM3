@@ -11,6 +11,7 @@ from sqlalchemy import func
 
 from app.core.database import get_db
 from app.core.deps import get_current_user
+from app.core.roles import is_admin
 from app.models.user import User
 from app.models.lob import LOBUnit
 from app.models.audit_log import AuditLog
@@ -156,7 +157,7 @@ def build_tree(db: Session, lobs: List[LOBUnit], include_inactive: bool = False)
 
 def check_admin(current_user: User):
     """Verify user is admin."""
-    if current_user.role != "Admin":
+    if not is_admin(current_user):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only administrators can perform this action"
@@ -1024,7 +1025,7 @@ def get_lob_users(
             "user_id": u.user_id,
             "email": u.email,
             "full_name": u.full_name,
-            "role": u.role
+            "role": u.role_display
         }
         for u in users
     ]

@@ -252,12 +252,15 @@ class TestBusinessLineName:
 
         # Create user at level 5
         from app.models.user import User
+        from app.models.role import Role
+        from app.core.roles import RoleCode
         from app.core.security import get_password_hash
+        role_id = db_session.query(Role).filter(Role.code == RoleCode.USER.value).first().role_id
         level5_user = User(
             email="level5user@example.com",
             full_name="Level 5 User",
             password_hash=get_password_hash("test123"),
-            role="User",
+            role_id=role_id,
             lob_id=lob5.lob_id
         )
         db_session.add(level5_user)
@@ -332,12 +335,15 @@ class TestBusinessLineName:
 
         # Create user at level 7
         from app.models.user import User
+        from app.models.role import Role
+        from app.core.roles import RoleCode
         from app.core.security import get_password_hash
+        role_id = db_session.query(Role).filter(Role.code == RoleCode.USER.value).first().role_id
         deep_user = User(
             email="deepuser@example.com",
             full_name="Deep User",
             password_hash=get_password_hash("test123"),
-            role="User",
+            role_id=role_id,
             lob_id=lob7.lob_id
         )
         db_session.add(deep_user)

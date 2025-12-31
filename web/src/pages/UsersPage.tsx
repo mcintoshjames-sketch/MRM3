@@ -6,6 +6,7 @@ import Layout from '../components/Layout';
 import { useTableSort } from '../hooks/useTableSort';
 import type { Region } from '../api/regions';
 import { lobApi, LOBUnit } from '../api/lob';
+import { getRoleDisplay, getUserRoleCode, isAdmin, ROLE_CODE_TO_DISPLAY } from '../utils/roleUtils';
 
 interface LOBBrief {
     lob_id: number;
@@ -20,6 +21,7 @@ interface User {
     email: string;
     full_name: string;
     role: string;
+    role_code?: string | null;
     regions: Region[];
     lob_id: number | null;
     lob: LOBBrief | null;
@@ -39,12 +41,21 @@ interface EntraUser {
     account_enabled: boolean;
 }
 
+interface RoleOption {
+    role_id: number;
+    role_code: string;
+    display_name: string;
+    is_active: boolean;
+}
+
 // Exported content component for use in tabbed pages
 export function UsersContent() {
     const { user: currentUser } = useAuth();
+    const isAdminUser = isAdmin(currentUser);
     const [users, setUsers] = useState<User[]>([]);
     const [regions, setRegions] = useState<Region[]>([]);
     const [lobUnits, setLobUnits] = useState<LOBUnit[]>([]);
+    const [roles, setRoles] = useState<RoleOption[]>([]);
     const [loading, setLoading] = useState(true);
     const [showForm, setShowForm] = useState(false);
     const [editingUser, setEditingUser] = useState<User | null>(null);
@@ -52,7 +63,7 @@ export function UsersContent() {
         email: '',
         full_name: '',
         password: '',
-        role: 'User',
+        role_code: 'USER',
         region_ids: [] as number[],
         lob_id: null as number | null
     });
@@ -67,7 +78,7 @@ export function UsersContent() {
     const [entraUsers, setEntraUsers] = useState<EntraUser[]>([]);
     const [entraLoading, setEntraLoading] = useState(false);
     const [selectedEntraUser, setSelectedEntraUser] = useState<EntraUser | null>(null);
-    const [provisionRole, setProvisionRole] = useState('User');
+    const [provisionRoleCode, setProvisionRoleCode] = useState('USER');
     const [provisionRegionIds, setProvisionRegionIds] = useState<number[]>([]);
     const [provisionLobId, setProvisionLobId] = useState<number | null>(null);
     const [provisionLobSearch, setProvisionLobSearch] = useState('');
@@ -80,6 +91,7 @@ export function UsersContent() {
         fetchUsers();
         fetchRegions();
         fetchLobUnits();
+        fetchRoles();
     }, []);
 
     const fetchLobUnits = async () => {
@@ -111,8 +123,43 @@ export function UsersContent() {
         }
     };
 
+    const fetchRoles = async () => {
+        try {
+            const response = await api.get('/roles');
+            setRoles(response.data);
+        } catch (error) {
+            console.error('Failed to fetch roles:', error);
+        }
+    };
+
+    const fallbackRoleOptions: RoleOption[] = Object.entries(ROLE_CODE_TO_DISPLAY).map(
+        ([role_code, display_name]) => ({
+            role_id: -1,
+            role_code,
+            display_name,
+            is_active: true
+        })
+    );
+    const activeRoleOptions = roles.filter((role) => role.is_active);
+    const roleOptions = activeRoleOptions.length > 0 ? activeRoleOptions : fallbackRoleOptions;
+
+    const getRoleBadgeClass = (roleCode?: string | null) => {
+        switch (roleCode) {
+            case 'ADMIN':
+                return 'bg-purple-100 text-purple-800';
+            case 'VALIDATOR':
+                return 'bg-green-100 text-green-800';
+            case 'GLOBAL_APPROVER':
+                return 'bg-blue-100 text-blue-800';
+            case 'REGIONAL_APPROVER':
+                return 'bg-orange-100 text-orange-800';
+            default:
+                return 'bg-gray-100 text-gray-800';
+        }
+    };
+
     const resetForm = () => {
-        setFormData({ email: '', full_name: '', password: '', role: 'User', region_ids: [], lob_id: null });
+        setFormData({ email: '', full_name: '', password: '', role_code: 'USER', region_ids: [], lob_id: null });
         setLobSearch('');
         setShowLobDropdown(false);
         setEditingUser(null);
@@ -133,11 +180,14 @@ export function UsersContent() {
                 const updatePayload: Record<string, any> = {};
                 if (formData.email !== editingUser.email) updatePayload.email = formData.email;
                 if (formData.full_name !== editingUser.full_name) updatePayload.full_name = formData.full_name;
-                if (formData.role !== editingUser.role) updatePayload.role = formData.role;
+                const editingRoleCode = getUserRoleCode(editingUser) ?? 'USER';
+                if (formData.role_code !== editingRoleCode) {
+                    updatePayload.role_code = formData.role_code;
+                }
                 if (formData.password) updatePayload.password = formData.password;
 
                 // Always include region_ids for Regional Approvers (or to clear regions when changing role)
-                if (formData.role === 'Regional Approver' || editingUser.role === 'Regional Approver') {
+                if (formData.role_code === 'REGIONAL_APPROVER' || editingRoleCode === 'REGIONAL_APPROVER') {
                     updatePayload.region_ids = formData.region_ids;
                 }
 
@@ -163,7 +213,7 @@ export function UsersContent() {
             email: user.email,
             full_name: user.full_name,
             password: '',
-            role: user.role,
+            role_code: getUserRoleCode(user) ?? 'USER',
             region_ids: user.regions?.map(r => r.region_id) || [],
             lob_id: user.lob_id
         });
@@ -220,12 +270,12 @@ export function UsersContent() {
         try {
             const payload: any = {
                 entra_id: selectedEntraUser.entra_id,
-                role: provisionRole,
+                role_code: provisionRoleCode,
                 lob_id: provisionLobId
             };
 
             // Include region_ids for Regional Approvers
-            if (provisionRole === 'Regional Approver') {
+            if (provisionRoleCode === 'REGIONAL_APPROVER') {
                 payload.region_ids = provisionRegionIds;
             }
 
@@ -234,7 +284,7 @@ export function UsersContent() {
             setSelectedEntraUser(null);
             setEntraSearch('');
             setEntraUsers([]);
-            setProvisionRole('User');
+            setProvisionRoleCode('USER');
             setProvisionRegionIds([]);
             setProvisionLobId(null);
             setProvisionLobSearch('');
@@ -251,7 +301,7 @@ export function UsersContent() {
         setSelectedEntraUser(null);
         setEntraSearch('');
         setEntraUsers([]);
-        setProvisionRole('User');
+        setProvisionRoleCode('USER');
         setProvisionRegionIds([]);
         setProvisionLobId(null);
         setProvisionLobSearch('');
@@ -267,7 +317,7 @@ export function UsersContent() {
             <div className="flex justify-between items-center mb-4">
                 <h3 className="text-lg font-semibold">Users</h3>
                 <div className="flex gap-2">
-                    {currentUser?.role === 'Admin' && (
+                    {isAdminUser && (
                         <button
                             onClick={() => setShowEntraModal(true)}
                             className="btn-primary bg-blue-700 hover:bg-blue-800"
@@ -334,14 +384,14 @@ export function UsersContent() {
                                 <select
                                     id="role"
                                     className="input-field"
-                                    value={formData.role}
-                                    onChange={(e) => setFormData({ ...formData, role: e.target.value, region_ids: [] })}
+                                    value={formData.role_code}
+                                    onChange={(e) => setFormData({ ...formData, role_code: e.target.value, region_ids: [] })}
                                 >
-                                    <option value="User">User</option>
-                                    <option value="Validator">Validator</option>
-                                    <option value="Admin">Admin</option>
-                                    <option value="Global Approver">Global Approver</option>
-                                    <option value="Regional Approver">Regional Approver</option>
+                                    {roleOptions.map((role) => (
+                                        <option key={role.role_code} value={role.role_code}>
+                                            {role.display_name}
+                                        </option>
+                                    ))}
                                 </select>
                             </div>
                         </div>
@@ -405,7 +455,7 @@ export function UsersContent() {
                         </div>
 
                         {/* Region Selection for Regional Approvers */}
-                        {formData.role === 'Regional Approver' && (
+                        {formData.role_code === 'REGIONAL_APPROVER' && (
                             <div className="mb-4 p-4 border border-gray-200 rounded-lg">
                                 <label className="block text-sm font-medium mb-2">
                                     Authorized Regions *
@@ -532,18 +582,8 @@ export function UsersContent() {
                                         {user.email}
                                     </td>
                                     <td className="px-6 py-4 whitespace-nowrap">
-                                        <span className={`px-2 py-1 text-xs rounded ${
-                                            user.role === 'Admin'
-                                                ? 'bg-purple-100 text-purple-800'
-                                                : user.role === 'Validator'
-                                                    ? 'bg-green-100 text-green-800'
-                                                    : user.role === 'Global Approver'
-                                                        ? 'bg-blue-100 text-blue-800'
-                                                        : user.role === 'Regional Approver'
-                                                            ? 'bg-orange-100 text-orange-800'
-                                                            : 'bg-gray-100 text-gray-800'
-                                        }`}>
-                                            {user.role}
+                                        <span className={`px-2 py-1 text-xs rounded ${getRoleBadgeClass(getUserRoleCode(user))}`}>
+                                            {getRoleDisplay(user)}
                                         </span>
                                     </td>
                                     <td className="px-6 py-4 text-sm">
@@ -731,17 +771,17 @@ export function UsersContent() {
                                             </label>
                                             <select
                                                 className="input-field w-auto"
-                                                value={provisionRole}
+                                                value={provisionRoleCode}
                                                 onChange={(e) => {
-                                                    setProvisionRole(e.target.value);
+                                                    setProvisionRoleCode(e.target.value);
                                                     setProvisionRegionIds([]);
                                                 }}
                                             >
-                                                <option value="User">User</option>
-                                                <option value="Validator">Validator</option>
-                                                <option value="Admin">Admin</option>
-                                                <option value="Global Approver">Global Approver</option>
-                                                <option value="Regional Approver">Regional Approver</option>
+                                                {roleOptions.map((role) => (
+                                                    <option key={role.role_code} value={role.role_code}>
+                                                        {role.display_name}
+                                                    </option>
+                                                ))}
                                             </select>
                                         </div>
 
@@ -807,7 +847,7 @@ export function UsersContent() {
                                         </div>
 
                                         {/* Region Selection for Regional Approvers */}
-                                        {provisionRole === 'Regional Approver' && (
+                                        {provisionRoleCode === 'REGIONAL_APPROVER' && (
                                             <div className="mt-3 p-3 border border-gray-200 rounded-lg">
                                                 <label className="block text-sm font-medium mb-2">
                                                     Authorized Regions *
@@ -851,7 +891,7 @@ export function UsersContent() {
                                 disabled={
                                     !selectedEntraUser ||
                                     !provisionLobId ||
-                                    (provisionRole === 'Regional Approver' && provisionRegionIds.length === 0)
+                                    (provisionRoleCode === 'REGIONAL_APPROVER' && provisionRegionIds.length === 0)
                                 }
                             >
                                 Add to Application

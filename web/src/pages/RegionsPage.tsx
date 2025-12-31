@@ -3,9 +3,11 @@ import { useAuth } from '../contexts/AuthContext';
 import api from '../api/client';
 import Layout from '../components/Layout';
 import type { Region } from '../api/regions';
+import { isAdmin } from '../utils/roleUtils';
 
 export default function RegionsPage() {
     const { user } = useAuth();
+    const isAdminUser = isAdmin(user);
     const [regions, setRegions] = useState<Region[]>([]);
     const [loading, setLoading] = useState(true);
     const [showForm, setShowForm] = useState(false);
@@ -82,7 +84,7 @@ export default function RegionsPage() {
     };
 
     // Only admins can access this page
-    if (user?.role !== 'Admin') {
+    if (user && !isAdminUser) {
         return (
             <Layout>
                 <div className="text-center py-12">

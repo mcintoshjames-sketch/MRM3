@@ -5,7 +5,8 @@ from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.core.deps import get_current_user
 from app.core.rls import can_manage_model_region
-from app.models import ModelRegion as ModelRegionModel, Model, Region, User, UserRole
+from app.models import ModelRegion as ModelRegionModel, Model, Region, User
+from app.core.roles import is_admin
 from app.models.audit_log import AuditLog
 from app.schemas.model_region import ModelRegion, ModelRegionCreate, ModelRegionUpdate
 
@@ -164,7 +165,7 @@ def delete_model_region(
     current_user: User = Depends(get_current_user)
 ):
     """Delete a model-region link (Admin only)."""
-    if current_user.role != UserRole.ADMIN:
+    if not is_admin(current_user):
         raise HTTPException(status_code=403, detail="Admin access required")
 
     model_region = db.query(ModelRegionModel).filter(ModelRegionModel.id == id).first()

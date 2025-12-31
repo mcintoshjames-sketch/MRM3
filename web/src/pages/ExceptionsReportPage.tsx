@@ -2,6 +2,7 @@ import React, { useEffect, useState, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import Layout from '../components/Layout';
 import { useAuth } from '../contexts/AuthContext';
+import { isAdmin } from '../utils/roleUtils';
 import {
     exceptionsApi,
     ModelExceptionListItem,
@@ -16,7 +17,7 @@ import api from '../api/client';
 
 const ExceptionsReportPage: React.FC = () => {
     const { user } = useAuth();
-    const isAdmin = user?.role === 'Admin';
+    const isAdminUser = isAdmin(user);
 
     // State
     const [loading, setLoading] = useState(true);
@@ -377,7 +378,7 @@ const ExceptionsReportPage: React.FC = () => {
                         </p>
                     </div>
                     <div className="flex gap-2">
-                        {isAdmin && (
+                        {isAdminUser && (
                             <button
                                 onClick={() => {
                                     setDetectResult(null);
@@ -388,7 +389,7 @@ const ExceptionsReportPage: React.FC = () => {
                                 Detect All Exceptions
                             </button>
                         )}
-                        {isAdmin && (
+                        {isAdminUser && (
                             <button
                                 onClick={() => {
                                     resetCreateForm();
@@ -793,7 +794,7 @@ const ExceptionsReportPage: React.FC = () => {
                                         )}
 
                                         {/* Actions */}
-                                        {isAdmin && exceptionDetail.status !== 'CLOSED' && (
+                                        {isAdminUser && exceptionDetail.status !== 'CLOSED' && (
                                             <div className="flex gap-2 pt-4 border-t">
                                                 {exceptionDetail.status === 'OPEN' && (
                                                     <button

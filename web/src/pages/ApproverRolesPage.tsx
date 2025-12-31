@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import api from '../api/client';
 import Layout from '../components/Layout';
+import { isAdmin } from '../utils/roleUtils';
 
 interface ApproverRole {
     role_id: number;
@@ -15,6 +16,7 @@ interface ApproverRole {
 
 export default function ApproverRolesPage() {
     const { user } = useAuth();
+    const isAdminUser = isAdmin(user);
     const [roles, setRoles] = useState<ApproverRole[]>([]);
     const [loading, setLoading] = useState(true);
     const [showForm, setShowForm] = useState(false);
@@ -87,7 +89,7 @@ export default function ApproverRolesPage() {
     };
 
     // Only admins can access this page
-    if (user?.role !== 'Admin') {
+    if (user && !isAdminUser) {
         return (
             <Layout>
                 <div className="text-center py-12">

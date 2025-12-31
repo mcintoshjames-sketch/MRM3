@@ -3,12 +3,14 @@ import { useParams, useNavigate, Link } from 'react-router-dom';
 import api from '../api/client';
 import Layout from '../components/Layout';
 import { useAuth } from '../contexts/AuthContext';
+import { getRoleDisplay, getUserRoleCode, isAdmin, isValidator } from '../utils/roleUtils';
 
 interface User {
     user_id: number;
     email: string;
     full_name: string;
     role: string;
+    role_code?: string | null;
     created_at: string;
     high_fluctuation_flag: boolean;
 }
@@ -64,10 +66,12 @@ export default function UserDetailsPage() {
     const [loading, setLoading] = useState(true);
     const [togglingFlag, setTogglingFlag] = useState(false);
 
-    const isAdmin = currentUser?.role === 'Admin';
+    const isAdminUser = isAdmin(currentUser);
+    const userRoleCode = getUserRoleCode(user);
+    const userRoleDisplay = getRoleDisplay(user);
 
     const handleToggleHighFluctuationFlag = async () => {
-        if (!user || !isAdmin) return;
+        if (!user || !isAdminUser) return;
 
         setTogglingFlag(true);
         try {
@@ -93,7 +97,7 @@ export default function UserDetailsPage() {
             setUser(userRes.data);
 
             // Fetch different data based on role
-            if (userRes.data.role === 'Validator') {
+            if (isValidator(userRes.data)) {
                 // Fetch validation assignments for validators
                 const assignmentsRes = await api.get(`/validation-workflow/validators/${id}/assignments`);
                 setValidationAssignments(assignmentsRes.data);
@@ -202,13 +206,17 @@ export default function UserDetailsPage() {
                     <div>
                         <h4 className="text-sm font-medium text-gray-500 mb-1">Role</h4>
                         <span className={`px-2 py-1 text-sm rounded ${
-                            user.role === 'Admin'
+                            userRoleCode === 'ADMIN'
                                 ? 'bg-purple-100 text-purple-800'
-                                : user.role === 'Validator'
+                                : userRoleCode === 'VALIDATOR'
                                 ? 'bg-green-100 text-green-800'
-                                : 'bg-blue-100 text-blue-800'
+                                : userRoleCode === 'GLOBAL_APPROVER'
+                                ? 'bg-blue-100 text-blue-800'
+                                : userRoleCode === 'REGIONAL_APPROVER'
+                                ? 'bg-orange-100 text-orange-800'
+                                : 'bg-gray-100 text-gray-800'
                         }`}>
-                            {user.role}
+                            {userRoleDisplay}
                         </span>
                     </div>
                     <div>
@@ -225,7 +233,7 @@ export default function UserDetailsPage() {
                             }`}>
                                 {user.high_fluctuation_flag ? 'Enabled' : 'Disabled'}
                             </span>
-                            {isAdmin && (
+                            {isAdminUser && (
                                 <button
                                     onClick={handleToggleHighFluctuationFlag}
                                     disabled={togglingFlag}
@@ -243,7 +251,7 @@ export default function UserDetailsPage() {
                             When enabled, model owners require quarterly attestations
                         </p>
                     </div>
-                    {user.role === 'Validator' ? (
+                    {userRoleCode === 'VALIDATOR' ? (
                         <>
                             <div>
                                 <h4 className="text-sm font-medium text-gray-500 mb-1">Total Assignments</h4>
@@ -286,7 +294,7 @@ export default function UserDetailsPage() {
             </div>
 
             {/* Validation Assignments for Validators OR Related Models for Others */}
-            {user.role === 'Validator' ? (
+            {userRoleCode === 'VALIDATOR' ? (
                 <div className="bg-white p-6 rounded-lg shadow-md">
                     <div className="flex justify-between items-center mb-4">
                         <h3 className="text-lg font-bold">

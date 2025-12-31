@@ -15,6 +15,7 @@ import os
 from app.core.database import get_db
 from app.core.time import utc_now
 from app.core.deps import get_current_user
+from app.core.roles import is_admin, is_validator, is_global_approver, is_regional_approver, RoleCode
 from app.core.rule_evaluation import get_required_approver_roles
 from app.core.exception_detection import autoclose_type3_on_full_validation_approved
 from app.core.validation_conflicts import (
@@ -79,7 +80,7 @@ SCOPE_ONLY_VALIDATION_TYPES = ["TARGETED", "INTERIM"]
 
 def check_validator_or_admin(user: User):
     """Check if user has Validator or Admin role."""
-    if user.role not in ("Validator", "Admin"):
+    if not (is_admin(user) or is_validator(user)):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only Validators and Admins can perform this action"
@@ -88,7 +89,7 @@ def check_validator_or_admin(user: User):
 
 def check_admin(user: User):
     """Check if user has Admin role."""
-    if user.role != "Admin":
+    if not is_admin(user):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only Admins can perform this action"
@@ -1201,7 +1202,8 @@ def auto_assign_approvers(
 
     Creates ValidationApproval records with approval_status="Pending" and is_required=True.
     """
-    from app.models.user import UserRole, user_regions
+    from app.models.user import user_regions
+    from app.core.roles import RoleCode
 
     approvals_to_create = []
     assigned_approver_ids = set()  # Track to avoid duplicates
@@ -1228,7 +1230,7 @@ def auto_assign_approvers(
 
         # 1. ALWAYS assign Global Approvers
         global_approvers = db.query(User).filter(
-            User.role == UserRole.GLOBAL_APPROVER
+            User.role_code == RoleCode.GLOBAL_APPROVER.value
         ).all()
 
         for approver in global_approvers:
@@ -1253,7 +1255,7 @@ def auto_assign_approvers(
                 Region.region_id == region_id).first()
             if region and region.requires_regional_approval:
                 regional_approvers = db.query(User).join(user_regions).filter(
-                    User.role == UserRole.REGIONAL_APPROVER,
+                    User.role_code == RoleCode.REGIONAL_APPROVER.value,
                     user_regions.c.region_id == region_id
                 ).all()
 
@@ -3492,7 +3494,7 @@ def decline_validation_request(
 ):
     """Admin-only: Decline a validation request by changing status to Cancelled."""
     # Admin-only access
-    if current_user.role != "Admin":
+    if not is_admin(current_user):
         raise HTTPException(
             status_code=403,
             detail="Only admins can decline validation requests"
@@ -4058,7 +4060,7 @@ def update_assignment(
 
     # Allow update if: (1) updating own assignment, (2) admin, or (3) primary validator on this request
     if (current_user.user_id != assignment.validator_id and
-        current_user.role != "Admin" and
+        not is_admin(current_user) and
             not is_primary_validator):
         raise HTTPException(
             status_code=403, detail="Only assigned validator or Admin can update assignment")
@@ -4856,7 +4858,7 @@ def submit_approval(
         )
 
     # Only the designated approver or Admin can update approval
-    if current_user.user_id != approval.approver_id and current_user.role != "Admin":
+    if current_user.user_id != approval.approver_id and not is_admin(current_user):
         raise HTTPException(
             status_code=403, detail="Only the designated approver or Admin can update this approval")
 
@@ -4973,7 +4975,7 @@ def submit_approval(
         action = "APPROVAL_SUBMITTED"
 
     # Check if this is a proxy approval (admin approving on behalf)
-    is_proxy_approval = current_user.role == "Admin" and current_user.user_id != approval.approver_id
+    is_proxy_approval = is_admin(current_user) and current_user.user_id != approval.approver_id
 
     changes_dict = {
         "approval_id": approval_id,
@@ -5109,7 +5111,7 @@ def unlink_regional_approval(
 ):
     """Admin-only: Unlink a regional approval to unblock a stalled validation."""
     # Admin-only access
-    if current_user.role != "Admin":
+    if not is_admin(current_user):
         raise HTTPException(
             status_code=403,
             detail="Only admins can unlink approvals"
@@ -5197,7 +5199,8 @@ def get_workload_report(
 
     # Get validators and their assignments
     validators = db.query(User).filter(
-        User.role.in_(["Validator", "Admin"])).all()
+        User.role_code.in_([RoleCode.VALIDATOR.value, RoleCode.ADMIN.value])
+    ).all()
 
     workload_data = []
     for validator in validators:
@@ -5223,7 +5226,7 @@ def get_workload_report(
             "validator_id": validator.user_id,
             "validator_name": validator.full_name,
             "active_assignments": active_assignments,
-            "role": validator.role
+            "role": validator.role_display
         })
 
     return sorted(workload_data, key=lambda x: x["active_assignments"], reverse=True)
@@ -6171,7 +6174,7 @@ def get_my_pending_submissions(
     )
 
     # Admin users see all pending submissions; non-admin users see only their models
-    if current_user.role != 'Admin':
+    if not is_admin(current_user):
         query = query.filter(
             or_(
                 Model.owner_id == current_user.user_id,
@@ -6263,7 +6266,7 @@ def get_my_pending_approvals(
 
     Only returns requests in PENDING_APPROVAL status.
     """
-    from app.models.user import UserRole
+    from app.core.roles import is_admin, is_global_approver, is_regional_approver
 
     # Common joinedload options for all queries
     approval_options = [
@@ -6278,7 +6281,7 @@ def get_my_pending_approvals(
     ]
 
     # Query validation requests with pending approvals assigned to current user
-    if current_user.role == UserRole.ADMIN:
+    if is_admin(current_user):
         # Admin can see all pending approvals
         pending_approvals = db.query(ValidationApproval).options(
             *approval_options
@@ -6288,7 +6291,7 @@ def get_my_pending_approvals(
             ValidationApproval.approval_type.in_(["Global", "Regional"])  # Exclude conditional
         ).all()
 
-    elif current_user.role == UserRole.GLOBAL_APPROVER:
+    elif is_global_approver(current_user):
         # Global approvers see their assigned Global approvals
         pending_approvals = db.query(ValidationApproval).options(
             *approval_options
@@ -6299,7 +6302,7 @@ def get_my_pending_approvals(
             ValidationApproval.approval_type == "Global"
         ).all()
 
-    elif current_user.role == UserRole.REGIONAL_APPROVER:
+    elif is_regional_approver(current_user):
         # Regional approvers see their assigned Regional approvals
         pending_approvals = db.query(ValidationApproval).options(
             *approval_options
@@ -8343,7 +8346,7 @@ def get_recent_approvals(
     )
 
     # For non-Admin users, filter to their models
-    if current_user.role not in ('Admin', 'Validator'):
+    if not (is_admin(current_user) or is_validator(current_user)):
         query = query.filter(
             or_(
                 Model.owner_id == current_user.user_id,
@@ -8356,7 +8359,7 @@ def get_recent_approvals(
         )
 
     # For validators, show models from validations they performed
-    if current_user.role == 'Validator':
+    if is_validator(current_user):
         # Find validation requests where this user was assigned as validator
         validator_requests = db.query(ValidationRequest.request_id).join(
             ValidationAssignment

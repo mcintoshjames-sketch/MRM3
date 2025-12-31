@@ -16,6 +16,7 @@ import ManageModelsModal from '../components/ManageModelsModal';
 import { Region } from '../api/regions';
 import PreTransitionWarningModal from '../components/PreTransitionWarningModal';
 import { validationWorkflowApi, PreTransitionWarningsResponse, ValidationRequestModelUpdateResponse } from '../api/validationWorkflow';
+import { isAdmin, isValidator, isAdminOrValidator, getUserRoleCode } from '../utils/roleUtils';
 
 interface TaxonomyValue {
     value_id: number;
@@ -28,6 +29,7 @@ interface UserSummary {
     full_name: string;
     email: string;
     role: string;
+    role_code?: string | null;
 }
 
 interface ModelSummary {
@@ -178,6 +180,9 @@ export default function ValidationRequestDetailPage() {
     const { id } = useParams<{ id: string }>();
     const navigate = useNavigate();
     const { user } = useAuth();
+    const isAdminUser = isAdmin(user);
+    const isValidatorUser = isValidator(user);
+    const isAdminOrValidatorUser = isAdminOrValidator(user);
     const [searchParams, setSearchParams] = useSearchParams();
     const [request, setRequest] = useState<ValidationRequestDetail | null>(null);
     const [relatedVersions, setRelatedVersions] = useState<ModelVersion[]>([]);
@@ -1254,9 +1259,9 @@ export default function ValidationRequestDetailPage() {
         await fetchData();
     };
 
-    const canEditRequest = user?.role === 'Admin' || user?.role === 'Validator';
+    const canEditRequest = isAdminOrValidatorUser;
     const canEditModels = (
-        (user?.role === 'Admin' || user?.role === 'Validator') &&
+        isAdminOrValidatorUser &&
         (request?.current_status?.code === 'INTAKE' || request?.current_status?.code === 'PLANNING')
     );
     const primaryModel = getPrimaryModel(request?.models);
@@ -1398,7 +1403,7 @@ export default function ValidationRequestDetailPage() {
                     )}
 
                     {/* Admin Mark Submission Received Button (Admin only, when in Planning) */}
-                    {user?.role === 'Admin' && !isPrimaryValidator && request.current_status.code === 'PLANNING' && (
+                    {isAdminUser && !isPrimaryValidator && request.current_status.code === 'PLANNING' && (
                         <button
                             onClick={handleOpenSubmissionModal}
                             disabled={actionLoading}
@@ -1420,7 +1425,7 @@ export default function ValidationRequestDetailPage() {
                     )}
 
                     {/* Admin Progress Work Button (Admin only, when in In Progress) */}
-                    {user?.role === 'Admin' && request.current_status.code === 'IN_PROGRESS' && (
+                    {isAdminUser && request.current_status.code === 'IN_PROGRESS' && (
                         <button
                             onClick={() => handleCompleteWork()}
                             disabled={actionLoading}
@@ -1431,7 +1436,7 @@ export default function ValidationRequestDetailPage() {
                     )}
 
                     {/* Send Back to In Progress Button (Admin only, when in Pending Approval) */}
-                    {user?.role === 'Admin' && request.current_status.code === 'PENDING_APPROVAL' && (
+                    {isAdminUser && request.current_status.code === 'PENDING_APPROVAL' && (
                         <button
                             onClick={handleSendBackToInProgress}
                             disabled={actionLoading}
@@ -2366,7 +2371,7 @@ export default function ValidationRequestDetailPage() {
                                         Track and manage remediation actions from this validation's findings.
                                     </p>
                                 </div>
-                                {(user?.role === 'Admin' || user?.role === 'Validator') && (
+                                {isAdminOrValidatorUser && (
                                     <button
                                         onClick={() => setShowRecommendationModal(true)}
                                         className="bg-orange-600 text-white px-4 py-2 rounded text-sm hover:bg-orange-700"
@@ -2455,7 +2460,7 @@ export default function ValidationRequestDetailPage() {
                         <ValidationScorecardTab
                             requestId={request.request_id}
                             canEdit={
-                                (user?.role === 'Admin' || user?.role === 'Validator') &&
+                                isAdminOrValidatorUser &&
                                 !['APPROVED', 'CANCELLED'].includes(request.current_status.code)
                             }
                             onScorecardChange={fetchData}
@@ -2632,10 +2637,10 @@ export default function ValidationRequestDetailPage() {
                                                     {approval.approval_status}
                                                 </span>
                                                 {approval.approval_status === 'Pending' && approval.approver &&
-                                                    (user?.user_id === approval.approver.user_id || user?.role === 'Admin') && (
+                                                    (user?.user_id === approval.approver.user_id || isAdminUser) && (
                                                         <button
                                                             onClick={() => {
-                                                                const isProxyApproval = user?.role === 'Admin' && user?.user_id !== approval.approver.user_id;
+                                                                const isProxyApproval = isAdminUser && user?.user_id !== approval.approver.user_id;
                                                                 setApprovalUpdate({
                                                                     approval_id: approval.approval_id,
                                                                     status: '',
@@ -2656,11 +2661,11 @@ export default function ValidationRequestDetailPage() {
                                                                 ? `Cannot submit approval until request reaches 'Pending Approval' status (currently: ${request?.current_status?.label || 'Unknown'})`
                                                                 : undefined}
                                                         >
-                                                            {user?.role === 'Admin' && user?.user_id !== approval.approver.user_id ? 'Decision on Behalf' : 'Decision'}
+                                                            {isAdminUser && user?.user_id !== approval.approver.user_id ? 'Decision on Behalf' : 'Decision'}
                                                         </button>
                                                     )}
                                                 {(approval.approval_status === 'Approved' || approval.approval_status === 'Rejected') && approval.approver &&
-                                                    (user?.user_id === approval.approver.user_id || user?.role === 'Admin') && (
+                                                    (user?.user_id === approval.approver.user_id || isAdminUser) && (
                                                         <button
                                                             onClick={async () => {
                                                                 if (window.confirm('Are you sure you want to withdraw this approval? This will reset it to Pending status.')) {
@@ -2763,7 +2768,7 @@ export default function ValidationRequestDetailPage() {
                         {user && (
                             <ConditionalApprovalsSection
                                 requestId={request.request_id}
-                                userRole={user.role}
+                                currentUser={user}
                                 onUpdate={fetchData}
                             />
                         )}
@@ -3193,7 +3198,10 @@ export default function ValidationRequestDetailPage() {
                                 onChange={(e) => setNewAssignment({ ...newAssignment, validator_id: parseInt(e.target.value) })}
                             >
                                 <option value={0}>Select Validator</option>
-                                {users.filter(u => u.role === 'Validator' || u.role === 'Admin').map((u) => (
+                                {users.filter((u) => {
+                                    const roleCode = getUserRoleCode(u);
+                                    return roleCode === 'VALIDATOR' || roleCode === 'ADMIN';
+                                }).map((u) => (
                                     <option key={u.user_id} value={u.user_id}>
                                         {u.full_name} ({u.role})
                                     </option>

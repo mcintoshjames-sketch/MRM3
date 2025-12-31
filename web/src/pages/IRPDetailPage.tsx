@@ -4,6 +4,7 @@ import Layout from '../components/Layout';
 import { useAuth } from '../contexts/AuthContext';
 import { irpApi, IRPDetail, IRPReviewCreate, IRPCertificationCreate } from '../api/irp';
 import api from '../api/client';
+import { isAdmin } from '../utils/roleUtils';
 
 interface TaxonomyValue {
     value_id: number;
@@ -16,7 +17,7 @@ type TabType = 'overview' | 'mrsas' | 'reviews' | 'certifications';
 export default function IRPDetailPage() {
     const { id } = useParams<{ id: string }>();
     const { user } = useAuth();
-    const isAdmin = user?.role === 'Admin';
+    const isAdminUser = isAdmin(user);
 
     const [irp, setIrp] = useState<IRPDetail | null>(null);
     const [loading, setLoading] = useState(true);
@@ -40,7 +41,7 @@ export default function IRPDetailPage() {
 
     useEffect(() => {
         fetchData();
-    }, [id, isAdmin]);
+    }, [id, isAdminUser]);
 
     const fetchData = async () => {
         if (!id) return;
@@ -49,7 +50,7 @@ export default function IRPDetailPage() {
             const irpData = await irpApi.get(parseInt(id));
             setIrp(irpData);
 
-            if (isAdmin) {
+            if (isAdminUser) {
                 const taxonomiesResponse = await api.get('/taxonomies/by-names/?names=IRP%20Review%20Outcome');
                 const outcomeTaxonomy = taxonomiesResponse.data.find(
                     (t: any) => t.name === 'IRP Review Outcome'
@@ -121,8 +122,8 @@ export default function IRPDetailPage() {
         }
     };
 
-    const backLink = isAdmin ? '/irps' : '/my-mrsa-reviews';
-    const backLabel = isAdmin ? 'IRPs' : 'My MRSA Reviews';
+    const backLink = isAdminUser ? '/irps' : '/my-mrsa-reviews';
+    const backLabel = isAdminUser ? 'IRPs' : 'My MRSA Reviews';
 
     if (loading) {
         return (
@@ -358,7 +359,7 @@ export default function IRPDetailPage() {
                         <div className="p-6">
                             <div className="flex justify-between items-center mb-4">
                                 <h3 className="text-lg font-semibold">Review History</h3>
-                                {isAdmin && (
+                                {isAdminUser && (
                                     <button
                                         onClick={() => setShowReviewForm(true)}
                                         className="btn-primary"
@@ -369,7 +370,7 @@ export default function IRPDetailPage() {
                             </div>
 
                             {/* Review Form */}
-                            {showReviewForm && isAdmin && (
+                            {showReviewForm && isAdminUser && (
                                 <div className="bg-gray-50 p-4 rounded-lg mb-4">
                                     <h4 className="font-medium mb-3">New Review</h4>
                                     <form onSubmit={handleCreateReview}>
@@ -501,7 +502,7 @@ export default function IRPDetailPage() {
                         <div className="p-6">
                             <div className="flex justify-between items-center mb-4">
                                 <h3 className="text-lg font-semibold">Certification History</h3>
-                                {isAdmin && (
+                                {isAdminUser && (
                                     <button
                                         onClick={() => setShowCertForm(true)}
                                         className="btn-primary"
@@ -512,7 +513,7 @@ export default function IRPDetailPage() {
                             </div>
 
                             {/* Certification Form (Admin only) */}
-                            {showCertForm && isAdmin && (
+                            {showCertForm && isAdminUser && (
                                 <div className="bg-gray-50 p-4 rounded-lg mb-4">
                                     <h4 className="font-medium mb-3">New Certification</h4>
                                     <form onSubmit={handleCreateCertification}>

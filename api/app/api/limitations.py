@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session, joinedload
 from app.core.database import get_db
 from app.core.deps import get_current_user
 from app.core.time import utc_now
+from app.core.roles import is_admin, is_validator
 from app.models import (
     User, Model, ModelLimitation, ValidationRequest, ModelVersion,
     Recommendation, TaxonomyValue, Taxonomy, AuditLog, Region, ModelRegion
@@ -21,7 +22,7 @@ from app.schemas.limitation import (
 
 def require_admin_or_validator(current_user: User = Depends(get_current_user)) -> User:
     """Require Admin or Validator role for the current user."""
-    if current_user.role not in ["Admin", "Validator"]:
+    if not (is_admin(current_user) or is_validator(current_user)):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Admin or Validator role required"

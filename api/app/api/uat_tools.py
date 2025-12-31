@@ -15,6 +15,7 @@ from app.core.database import get_db
 from app.core.deps import get_current_user
 from app.core.time import utc_now
 from app.models.user import User
+from app.core.roles import is_admin, RoleCode
 
 router = APIRouter()
 
@@ -151,7 +152,7 @@ CLEAR_TABLES_ORDERED = [
 
 def require_admin(current_user: User = Depends(get_current_user)) -> User:
     """Require admin role for UAT tools."""
-    if current_user.role != "Admin":
+    if not is_admin(current_user):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Admin access required for UAT tools"
@@ -663,9 +664,9 @@ def seed_uat_data(
         region = db.query(Region).first()
 
         # Get users for assignments
-        admin_user = db.query(User).filter(User.role == "Admin").first()
-        validator_user = db.query(User).filter(User.role == "Validator").first()
-        regular_user = db.query(User).filter(User.role == "User").first()
+        admin_user = db.query(User).filter(User.role_code == RoleCode.ADMIN.value).first()
+        validator_user = db.query(User).filter(User.role_code == RoleCode.VALIDATOR.value).first()
+        regular_user = db.query(User).filter(User.role_code == RoleCode.USER.value).first()
 
         if not all([status_intake, status_approved, tier_1, admin_user, usage_daily]):
             raise HTTPException(

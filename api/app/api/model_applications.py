@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session, joinedload
 
 from app.core.database import get_db
 from app.core.deps import get_current_user
+from app.core.roles import is_admin, is_validator
 from app.core.rls import can_access_model, can_modify_model
 from app.models.user import User
 from app.models.model import Model
@@ -85,7 +86,7 @@ def add_model_application(
         )
 
     # Check permission - Admin, Validator, or model owner/developer can add applications
-    if current_user.role not in ['Admin', 'Validator']:
+    if not (is_admin(current_user) or is_validator(current_user)):
         if not can_modify_model(model_id, current_user, db):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
@@ -172,7 +173,7 @@ def update_model_application(
         )
 
     # Check permission
-    if current_user.role not in ['Admin', 'Validator']:
+    if not (is_admin(current_user) or is_validator(current_user)):
         if not can_modify_model(model_id, current_user, db):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
@@ -254,7 +255,7 @@ def remove_model_application(
         )
 
     # Check permission
-    if current_user.role not in ['Admin', 'Validator']:
+    if not (is_admin(current_user) or is_validator(current_user)):
         if not can_modify_model(model_id, current_user, db):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,

@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session, joinedload
 
 from app.core.database import get_db
 from app.core.deps import get_current_user
+from app.core.roles import is_admin, is_validator
 from app.core.time import utc_now
 from app.core.pdf_reports import generate_validation_scorecard_pdf
 from app.core.scorecard import (
@@ -83,7 +84,7 @@ def create_audit_log(
 
 def require_admin_or_validator(current_user: User = Depends(get_current_user)) -> User:
     """Require the current user to be an Admin or Validator."""
-    if current_user.role not in ("Admin", "Validator"):
+    if not (is_admin(current_user) or is_validator(current_user)):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Admin or Validator role required"
@@ -736,7 +737,7 @@ def _build_scorecard_response(
 
 def require_admin(current_user: User = Depends(get_current_user)) -> User:
     """Require the current user to be an Admin."""
-    if current_user.role != "Admin":
+    if not is_admin(current_user):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Admin role required"

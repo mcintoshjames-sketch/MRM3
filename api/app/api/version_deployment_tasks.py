@@ -7,8 +7,10 @@ from sqlalchemy import or_
 from app.core.database import get_db
 from app.core.time import utc_now
 from app.core.deps import get_current_user
+from app.core.roles import is_admin
 from app.core.exception_detection import detect_type3_for_deployment_task
-from app.models.user import User, UserRole
+from app.models.user import User
+from app.core.roles import is_admin
 from app.models.version_deployment_task import VersionDeploymentTask
 from app.models.model_version import ModelVersion
 from app.models.model import Model
@@ -57,7 +59,7 @@ def can_manage_task(task: VersionDeploymentTask, user: User, db: Session) -> boo
     - User is an active delegate for the model
     """
     # Admins can manage any task
-    if user.role == UserRole.ADMIN:
+    if is_admin(user):
         return True
 
     # Check if assigned to this user
@@ -106,7 +108,7 @@ def get_my_deployment_tasks(
     )
 
     # Admin users see all tasks; non-admin users see only their assigned tasks
-    if current_user.role != 'Admin':
+    if not is_admin(current_user):
         # Filter to tasks user can access
         # Get all models where user is delegate
         delegate_model_ids = db.query(ModelDelegate.model_id).filter(
@@ -228,7 +230,7 @@ def get_ready_to_deploy(
 
     # Get models user can access for filtering
     accessible_model_ids = None
-    if current_user.role != 'Admin' or my_models_only:
+    if not is_admin(current_user) or my_models_only:
         # Non-admin: Only owned + delegated models
         # my_models_only: Same filter for admins who want to see only their models
         owned_model_ids = db.query(Model.model_id).filter(
@@ -777,7 +779,7 @@ def can_deploy_version(version: ModelVersion, model: Model, user: User, db: Sess
     - User is an active delegate for the model, OR
     - User is Admin
     """
-    if user.role == "Admin":
+    if is_admin(user):
         return True
 
     if model.owner_id == user.user_id:

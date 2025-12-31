@@ -6,6 +6,7 @@ from sqlalchemy import func
 
 from app.core.database import get_db
 from app.core.deps import get_current_user
+from app.core.roles import is_admin
 from app.core.rule_evaluation import generate_rule_translation_preview
 from app.models import (
     User, ConditionalApprovalRule, ApproverRole, RuleRequiredApprover,
@@ -192,7 +193,7 @@ def create_conditional_approval_rule(
     - deployed_region_ids
     """
     # Check Admin permission
-    if current_user.role != "Admin":
+    if not is_admin(current_user):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only Admins can create conditional approval rules"
@@ -269,7 +270,7 @@ def update_conditional_approval_rule(
     - required_approver_role_ids (replaces existing associations)
     """
     # Check Admin permission
-    if current_user.role != "Admin":
+    if not is_admin(current_user):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only Admins can update conditional approval rules"
@@ -360,7 +361,7 @@ def delete_conditional_approval_rule(
     This prevents the rule from being evaluated for new validations.
     """
     # Check Admin permission
-    if current_user.role != "Admin":
+    if not is_admin(current_user):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only Admins can delete conditional approval rules"
@@ -397,7 +398,7 @@ def preview_rule_translation(
     before the user saves it.
     """
     # Check Admin permission
-    if current_user.role != "Admin":
+    if not is_admin(current_user):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only Admins can preview rule translations"

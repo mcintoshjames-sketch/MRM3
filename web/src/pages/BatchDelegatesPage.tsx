@@ -4,6 +4,7 @@ import { usersApi, User } from '../api/users';
 import Layout from '../components/Layout';
 import { useAuth } from '../contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
+import { isAdmin } from '../utils/roleUtils';
 
 export default function BatchDelegatesPage() {
     const { user } = useAuth();
@@ -31,12 +32,14 @@ export default function BatchDelegatesPage() {
     const [canManageRegional, setCanManageRegional] = useState(true);
     const [replaceExisting, setReplaceExisting] = useState(false);
 
+    const isAdminUser = isAdmin(user);
+
     // Redirect if not admin
     useEffect(() => {
-        if (user && user.role !== 'Admin') {
+        if (user && !isAdminUser) {
             navigate('/models');
         }
-    }, [user, navigate]);
+    }, [user, isAdminUser, navigate]);
 
     // Load users
     useEffect(() => {
@@ -153,7 +156,7 @@ export default function BatchDelegatesPage() {
         URL.revokeObjectURL(url);
     };
 
-    if (user?.role !== 'Admin') {
+    if (user && !isAdminUser) {
         return null; // Will redirect
     }
 

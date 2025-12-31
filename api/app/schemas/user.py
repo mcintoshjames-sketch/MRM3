@@ -23,7 +23,8 @@ class UserBase(BaseModel):
 
 class UserCreate(UserBase):
     password: str
-    role: str = "User"
+    role: str | None = "User"
+    role_code: str | None = None
     region_ids: List[int] = []  # For Regional Approvers
     lob_id: int  # User's LOB assignment (required)
 
@@ -32,6 +33,7 @@ class UserUpdate(BaseModel):
     email: EmailStr | None = None
     full_name: str | None = None
     role: str | None = None
+    role_code: str | None = None
     password: str | None = None
     region_ids: Optional[List[int]] = None  # For Regional Approvers
     high_fluctuation_flag: bool | None = None  # For quarterly attestation triggering
@@ -41,6 +43,8 @@ class UserUpdate(BaseModel):
 class UserResponse(UserBase):
     user_id: int
     role: str
+    role_code: str | None = None
+    capabilities: dict | None = None
     regions: List[Region] = []  # Authorized regions for Regional Approvers
     high_fluctuation_flag: bool = False  # For quarterly attestation triggering
     lob_id: int  # User's LOB assignment (required)

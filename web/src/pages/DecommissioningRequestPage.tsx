@@ -4,6 +4,7 @@ import Layout from '../components/Layout';
 import api from '../api/client';
 import { useAuth } from '../contexts/AuthContext';
 import { linkChangeToAttestationIfPresent } from '../api/attestation';
+import { isAdmin, isValidator, isGlobalApprover, isRegionalApprover } from '../utils/roleUtils';
 
 interface Model {
   model_id: number;
@@ -106,6 +107,10 @@ const DecommissioningRequestPage = () => {
   const modelId = parseInt(modelIdParam || '0');
   const navigate = useNavigate();
   const { user } = useAuth();
+  const isAdminUser = isAdmin(user);
+  const isValidatorUser = isValidator(user);
+  const isGlobalApproverUser = isGlobalApprover(user);
+  const isRegionalApproverUser = isRegionalApprover(user);
 
   // State
   const [loading, setLoading] = useState(true);
@@ -429,28 +434,28 @@ const DecommissioningRequestPage = () => {
   // Validator can review if: status is PENDING, validator hasn't reviewed yet, and user is Admin/Validator
   const canValidatorReview = existingRequest?.status === 'PENDING' &&
     !existingRequest?.validator_reviewed_at &&
-    (user?.role === 'Admin' || user?.role === 'Validator');
+    (isAdminUser || isValidatorUser);
 
   // Owner can review if: owner_approval_required is true, status is PENDING, owner hasn't reviewed yet,
   // and current user is the model owner (or Admin)
   const canOwnerReview = existingRequest?.status === 'PENDING' &&
     existingRequest?.owner_approval_required &&
     !existingRequest?.owner_reviewed_at &&
-    (user?.role === 'Admin' || user?.user_id === existingRequest?.model?.owner_id);
+    (isAdminUser || user?.user_id === existingRequest?.model?.owner_id);
 
   const canApprove = (approval: Approval) => {
     if (existingRequest?.status !== 'VALIDATOR_APPROVED') return false;
     if (approval.is_approved !== null) return false;
-    if (user?.role === 'Admin') return true;
-    if (approval.approver_type === 'GLOBAL' && user?.role === 'Global Approver') return true;
+    if (isAdminUser) return true;
+    if (approval.approver_type === 'GLOBAL' && isGlobalApproverUser) return true;
     // Regional approvers would need region assignment check (simplified here)
-    if (approval.approver_type === 'REGIONAL' && user?.role === 'Regional Approver') return true;
+    if (approval.approver_type === 'REGIONAL' && isRegionalApproverUser) return true;
     return false;
   };
 
   const canWithdraw = existingRequest &&
     ['PENDING', 'VALIDATOR_APPROVED'].includes(existingRequest.status) &&
-    (user?.role === 'Admin' || user?.user_id === existingRequest.created_by_id);
+    (isAdminUser || user?.user_id === existingRequest.created_by_id);
 
   const getStatusBadgeColor = (status: string) => {
     switch (status) {

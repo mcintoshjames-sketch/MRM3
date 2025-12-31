@@ -12,6 +12,7 @@ from app.core.database import get_db
 from app.core.deps import get_current_user
 from app.core.time import utc_now
 from app.models.user import User
+from app.core.roles import is_admin
 from app.models.audit_log import AuditLog
 from app.models.residual_risk_map import ResidualRiskMapConfig
 from app.schemas.residual_risk_map import (
@@ -29,7 +30,7 @@ router = APIRouter(prefix="/residual-risk-map")
 
 def require_admin(current_user: User = Depends(get_current_user)) -> User:
     """Require the current user to be an Admin."""
-    if current_user.role != "Admin":
+    if not is_admin(current_user):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Admin role required"

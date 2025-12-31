@@ -12,13 +12,16 @@ from app.models import ModelLimitation, Taxonomy, TaxonomyValue, Region, ModelRe
 def validator_user(db_session, lob_hierarchy):
     """Create a validator user."""
     from app.models.user import User
+    from app.models.role import Role
+    from app.core.roles import RoleCode
     from app.core.security import get_password_hash
 
+    role_id = db_session.query(Role).filter(Role.code == RoleCode.VALIDATOR.value).first().role_id
     user = User(
         email="validator@example.com",
         full_name="Validator User",
         password_hash=get_password_hash("validator123"),
-        role="Validator",
+        role_id=role_id,
         lob_id=lob_hierarchy["retail"].lob_id
     )
     db_session.add(user)

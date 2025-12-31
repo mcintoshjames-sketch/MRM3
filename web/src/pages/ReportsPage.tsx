@@ -2,6 +2,7 @@ import React, { useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import Layout from '../components/Layout';
 import { useAuth } from '../contexts/AuthContext';
+import { isAdminOrValidator } from '../utils/roleUtils';
 
 interface Report {
     id: string;
@@ -99,14 +100,14 @@ const ReportsPage: React.FC = () => {
     // Admins and Validators see all reports
     // Basic Users only see their personal portfolio report
     const availableReports = useMemo(() => {
-        const isAdminOrValidator = user?.role === 'Admin' || user?.role === 'Validator';
-        if (isAdminOrValidator) {
+        const isAdminOrValidatorUser = isAdminOrValidator(user);
+        if (isAdminOrValidatorUser) {
             // Admins/Validators see all reports including My Portfolio
             return [...adminReports, ...userReports];
         }
         // Basic users only see their portfolio report
         return userReports;
-    }, [user?.role]);
+    }, [user]);
 
     // Group reports by category
     const reportsByCategory = availableReports.reduce((acc, report) => {

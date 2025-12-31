@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import Layout from '../components/Layout';
 import api from '../api/client';
+import { isAdmin } from '../utils/roleUtils';
 
 interface WorkflowSLA {
     sla_id: number;
@@ -15,6 +16,7 @@ interface WorkflowSLA {
 
 export default function WorkflowConfigurationPage() {
     const { user } = useAuth();
+    const isAdminUser = isAdmin(user);
     const [sla, setSla] = useState<WorkflowSLA | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -220,12 +222,12 @@ export default function WorkflowConfigurationPage() {
                         <div className="mt-6 flex gap-2">
                             <button
                                 type="submit"
-                                disabled={saving || user?.role !== 'Admin'}
+                                disabled={saving || !isAdminUser}
                                 className="btn-primary disabled:opacity-50"
                             >
                                 {saving ? 'Saving...' : 'Save Configuration'}
                             </button>
-                            {user?.role !== 'Admin' && (
+                            {!isAdminUser && (
                                 <p className="text-sm text-gray-500 flex items-center">
                                     Only administrators can modify workflow configuration
                                 </p>

@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import api from '../api/client';
 import { useAuth } from '../contexts/AuthContext';
 import ModelHierarchyModal from './ModelHierarchyModal';
+import { isAdmin } from '../utils/roleUtils';
 
 interface HierarchyRelation {
     id: number;
@@ -119,7 +120,7 @@ export default function ModelHierarchySection({ modelId, modelName }: Props) {
         document.body.removeChild(link);
     };
 
-    const isAdmin = user?.role === 'Admin';
+    const isAdminUser = isAdmin(user);
     const hasActiveParent = parents.length > 0;
 
     if (loading) {
@@ -144,7 +145,7 @@ export default function ModelHierarchySection({ modelId, modelName }: Props) {
                     <p className="mt-1 text-sm text-gray-500">
                         This model has no parent or child relationships defined.
                     </p>
-                    {isAdmin && (
+                    {isAdminUser && (
                         <div className="mt-6 flex justify-center space-x-3">
                             <button
                                 onClick={handleAddParent}
@@ -204,7 +205,7 @@ export default function ModelHierarchySection({ modelId, modelName }: Props) {
                                     </svg>
                                     Export CSV
                                 </button>
-                                {isAdmin && (
+                                {isAdminUser && (
                                     <div className="flex flex-col items-end">
                                         <button
                                             onClick={handleAddParent}
@@ -241,7 +242,7 @@ export default function ModelHierarchySection({ modelId, modelName }: Props) {
                                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                                             Notes
                                         </th>
-                                        {isAdmin && (
+                                        {isAdminUser && (
                                             <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
                                                 Actions
                                             </th>
@@ -273,7 +274,7 @@ export default function ModelHierarchySection({ modelId, modelName }: Props) {
                                             <td className="px-6 py-4 text-sm text-gray-500">
                                                 {relation.notes || '-'}
                                             </td>
-                                            {isAdmin && (
+                                            {isAdminUser && (
                                                 <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                                                     <button
                                                         onClick={() => handleEdit(relation, 'parent')}
@@ -312,7 +313,7 @@ export default function ModelHierarchySection({ modelId, modelName }: Props) {
                                     </svg>
                                     Export CSV
                                 </button>
-                                {isAdmin && (
+                                {isAdminUser && (
                                     <button
                                         onClick={handleAddChild}
                                         className="inline-flex items-center px-3 py-1.5 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50"
@@ -344,7 +345,7 @@ export default function ModelHierarchySection({ modelId, modelName }: Props) {
                                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                                             Notes
                                         </th>
-                                        {isAdmin && (
+                                        {isAdminUser && (
                                             <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
                                                 Actions
                                             </th>
@@ -376,7 +377,7 @@ export default function ModelHierarchySection({ modelId, modelName }: Props) {
                                             <td className="px-6 py-4 text-sm text-gray-500">
                                                 {relation.notes || '-'}
                                             </td>
-                                            {isAdmin && (
+                                            {isAdminUser && (
                                                 <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                                                     <button
                                                         onClick={() => handleEdit(relation, 'child')}

@@ -7,6 +7,12 @@ from app.models.model import Model
 from app.models.user import User
 from app.models.taxonomy import Taxonomy, TaxonomyValue
 from app.core.security import get_password_hash, create_access_token
+from app.core.roles import RoleCode
+from app.models.role import Role
+
+
+def get_role_id(db_session, role_code: str) -> int:
+    return db_session.query(Role).filter(Role.code == role_code).first().role_id
 
 
 class TestMapApplicationsAPI:
@@ -306,7 +312,7 @@ class TestModelApplicationsAPI:
             email="other_map@example.com",
             password_hash=get_password_hash("testpass"),
             full_name="Other User",
-            role="User",
+            role_id=get_role_id(db_session, RoleCode.USER.value),
             lob_id=lob_hierarchy["retail"].lob_id
         )
         db_session.add(other_user)

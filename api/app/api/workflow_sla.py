@@ -6,6 +6,7 @@ from app.core.database import get_db
 from app.core.time import utc_now
 from app.core.deps import get_current_user
 from app.models.user import User
+from app.core.roles import is_admin
 from app.models.validation import ValidationWorkflowSLA
 from app.models.audit_log import AuditLog
 from app.schemas.workflow_sla import WorkflowSLAResponse, WorkflowSLAUpdate
@@ -52,7 +53,7 @@ def update_validation_sla(
 ):
     """Update validation workflow SLA configuration (Admin only)."""
     # Check if user is admin
-    if current_user.role != "Admin":
+    if not is_admin(current_user):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only administrators can update workflow SLA configuration"

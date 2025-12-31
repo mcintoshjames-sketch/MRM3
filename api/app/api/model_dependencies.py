@@ -5,6 +5,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session, joinedload
 from app.core.database import get_db
 from app.core.deps import get_current_user
+from app.core.roles import is_admin
 from app.models.user import User
 from app.models.model import Model
 from app.models.model_feed_dependency import ModelFeedDependency
@@ -39,7 +40,7 @@ def create_audit_log(db: Session, entity_type: str, entity_id: int, action: str,
 
 def check_admin(user: User):
     """Check if user is admin."""
-    if user.role != "Admin":
+    if not is_admin(user):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Admin access required for dependency management"

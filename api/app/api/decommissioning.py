@@ -10,11 +10,12 @@ from app.core.time import utc_now
 from app.core.deps import get_current_user
 from app.core.rls import can_submit_owner_actions
 from app.models import (
-    User, UserRole, Model, ModelVersion, ModelRegion, Region,
+    User, Model, ModelVersion, ModelRegion, Region,
     Taxonomy, TaxonomyValue,
     DecommissioningRequest, DecommissioningStatusHistory, DecommissioningApproval,
     AuditLog
 )
+from app.core.roles import is_admin, is_validator, is_global_approver, is_regional_approver
 from app.schemas.decommissioning import (
     DecommissioningRequestCreate,
     DecommissioningRequestUpdate,
@@ -409,7 +410,7 @@ def get_pending_validator_review(
     current_user: User = Depends(get_current_user)
 ):
     """Get decommissioning requests pending validator review (for Validator dashboard)."""
-    if current_user.role not in [UserRole.ADMIN, UserRole.VALIDATOR]:
+    if not (is_admin(current_user) or is_validator(current_user)):
         raise HTTPException(status_code=403, detail="Only Validators and Admins can view this")
 
     requests = db.query(DecommissioningRequest).options(
@@ -444,7 +445,7 @@ def get_my_pending_approvals(
 ):
     """Get decommissioning requests pending approval by current user (Global/Regional approver)."""
     # Build filter based on user role
-    if current_user.role == UserRole.ADMIN:
+    if is_admin(current_user):
         # Admin can see all pending approvals
         pending_requests = db.query(DecommissioningRequest).options(
             joinedload(DecommissioningRequest.model),
@@ -458,7 +459,7 @@ def get_my_pending_approvals(
         # Filter to those with pending approvals
         requests = [r for r in pending_requests if any(a.is_approved is None for a in r.approvals)]
 
-    elif current_user.role == UserRole.GLOBAL_APPROVER:
+    elif is_global_approver(current_user):
         # Can approve GLOBAL approvals
         requests = db.query(DecommissioningRequest).join(
             DecommissioningApproval
@@ -472,7 +473,7 @@ def get_my_pending_approvals(
             DecommissioningApproval.is_approved.is_(None)
         ).all()
 
-    elif current_user.role == UserRole.REGIONAL_APPROVER:
+    elif is_regional_approver(current_user):
         # Can approve REGIONAL approvals for their regions
         user_region_ids = [r.region_id for r in current_user.user_region_assignments]
         requests = db.query(DecommissioningRequest).join(
@@ -613,7 +614,7 @@ def update_decommissioning_request(
         )
 
     # Permission check - only creator or Admin
-    if current_user.role != UserRole.ADMIN and current_user.user_id != request.created_by_id:
+    if not is_admin(current_user) and current_user.user_id != request.created_by_id:
         raise HTTPException(
             status_code=403,
             detail="Only the request creator or Admin can update this request"
@@ -774,7 +775,7 @@ def submit_validator_review(
     - Otherwise (owner not required OR owner already approved):
       - Status moves to VALIDATOR_APPROVED and Stage 2 approvals are created
     """
-    if current_user.role not in [UserRole.ADMIN, UserRole.VALIDATOR]:
+    if not (is_admin(current_user) or is_validator(current_user)):
         raise HTTPException(status_code=403, detail="Only Validators and Admins can review decommissioning requests")
 
     request = db.query(DecommissioningRequest).options(
@@ -995,11 +996,11 @@ def submit_approval(
 
     # Permission check
     can_approve = False
-    if current_user.role == UserRole.ADMIN:
+    if is_admin(current_user):
         can_approve = True
-    elif approval.approver_type == "GLOBAL" and current_user.role == UserRole.GLOBAL_APPROVER:
+    elif approval.approver_type == "GLOBAL" and is_global_approver(current_user):
         can_approve = True
-    elif approval.approver_type == "REGIONAL" and current_user.role == UserRole.REGIONAL_APPROVER:
+    elif approval.approver_type == "REGIONAL" and is_regional_approver(current_user):
         user_region_ids = [r.region_id for r in current_user.user_region_assignments]
         can_approve = approval.region_id in user_region_ids
 
@@ -1097,7 +1098,7 @@ def withdraw_request(
         raise HTTPException(status_code=404, detail="Decommissioning request not found")
 
     # Permission check
-    if current_user.role != UserRole.ADMIN and current_user.user_id != request.created_by_id:
+    if not is_admin(current_user) and current_user.user_id != request.created_by_id:
         raise HTTPException(status_code=403, detail="Only the creator or Admin can withdraw this request")
 
     if request.status not in ["PENDING", "VALIDATOR_APPROVED"]:

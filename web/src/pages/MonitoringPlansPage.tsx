@@ -5,6 +5,7 @@ import api from '../api/client';
 import Layout from '../components/Layout';
 import MultiSelectDropdown from '../components/MultiSelectDropdown';
 import AdminMonitoringOverview from '../components/AdminMonitoringOverview';
+import { isAdmin } from '../utils/roleUtils';
 
 // Interfaces
 interface User {
@@ -134,6 +135,7 @@ type TabType = 'overview' | 'plans' | 'teams';
 
 export default function MonitoringPlansPage() {
     const { user } = useAuth();
+    const isAdminUser = isAdmin(user);
     const [activeTab, setActiveTab] = useState<TabType>('overview');
 
     // Teams state
@@ -609,7 +611,7 @@ export default function MonitoringPlansPage() {
     };
 
     // Admin check
-    if (user?.role !== 'Admin') {
+    if (user && !isAdminUser) {
         return (
             <Layout>
                 <div className="text-center py-12">

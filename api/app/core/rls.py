@@ -2,6 +2,7 @@
 from sqlalchemy.orm import Session, Query
 from sqlalchemy import or_
 from app.models.user import User
+from app.core.roles import is_admin, is_privileged
 from app.models.model import Model
 from app.models.model_delegate import ModelDelegate
 from app.models.validation import ValidationRequest, ValidationRequestModelVersion
@@ -18,9 +19,7 @@ def can_see_all_data(user: User) -> bool:
     - Global Approver
     - Regional Approver
     """
-    privileged_roles = ['Admin', 'Validator',
-                        'Global Approver', 'Regional Approver']
-    return user.role in privileged_roles
+    return is_privileged(user)
 
 
 def apply_model_rls(query: Query, user: User, db: Session) -> Query:
@@ -166,7 +165,7 @@ def can_modify_model(model_id: int, user: User, db: Session) -> bool:
     - Model is Draft/needs_revision AND user is the submitter
     """
     # Admin can always modify
-    if user.role == "Admin":
+    if is_admin(user):
         return True
 
     model = db.query(Model).filter(Model.model_id == model_id).first()
@@ -303,7 +302,7 @@ def is_owner_or_delegate_with_permission(
         True if user is Admin, model owner, or delegate with the specified permission
     """
     # Admin can always act
-    if user.role == "Admin":
+    if is_admin(user):
         return True
 
     model = db.query(Model).filter(Model.model_id == model_id).first()

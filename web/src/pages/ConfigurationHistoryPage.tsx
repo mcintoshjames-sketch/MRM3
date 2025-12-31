@@ -3,6 +3,7 @@ import Layout from '../components/Layout';
 import client from '../api/client';
 import { useAuth } from '../contexts/AuthContext';
 import { Navigate } from 'react-router-dom';
+import { isAdmin } from '../utils/roleUtils';
 
 interface ConfigurationItem {
     config_item_id: number;
@@ -38,7 +39,7 @@ const ConfigurationHistoryPage: React.FC = () => {
     const [error, setError] = useState<string | null>(null);
 
     // Admin check
-    if (!user || user.role !== 'Admin') {
+    if (!user || !isAdmin(user)) {
         return <Navigate to="/models" />;
     }
 

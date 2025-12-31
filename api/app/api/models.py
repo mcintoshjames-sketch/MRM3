@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session, joinedload, selectinload
 from app.core.database import get_db
 from app.core.time import utc_now
 from app.core.deps import get_current_user
+from app.core.roles import is_admin
 from app.core.validation_conflicts import (
     find_active_validation_conflicts,
     build_validation_conflict_message
@@ -557,10 +558,10 @@ def create_model(
 ):
     """Create a new model."""
     # Check if user is Admin
-    is_admin = current_user.role == "Admin"
+    is_admin_user = is_admin(current_user)
 
     # Non-Admin users must include themselves as owner, developer, or model user
-    if not is_admin:
+    if not is_admin_user:
         user_ids = model_data.user_ids or []
         is_owner = model_data.owner_id == current_user.user_id
         is_developer = model_data.developer_id == current_user.user_id
@@ -672,7 +673,7 @@ def create_model(
     model = Model(**model_dict)
 
     # Set row approval status for non-Admin users
-    if not is_admin:
+    if not is_admin_user:
         model.row_approval_status = "Draft"
         model.submitted_by_user_id = current_user.user_id
         model.submitted_at = utc_now()
@@ -781,7 +782,7 @@ def create_model(
     )
 
     # Create initial submission comment for non-Admin users
-    if not is_admin:
+    if not is_admin_user:
         from app.models import ModelSubmissionComment
         initial_comment = ModelSubmissionComment(
             model_id=model.model_id,
@@ -1043,7 +1044,7 @@ def get_pending_submissions(
 
     Admin only. Returns models with row_approval_status IN ('Draft', 'needs_revision').
     """
-    if current_user.role != "Admin":
+    if not is_admin(current_user):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only admins can view pending submissions"
@@ -1179,7 +1180,7 @@ def backfill_approval_status(
     - message: Summary of the operation
     """
     # Admin only
-    if current_user.role != "Admin":
+    if not is_admin(current_user):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only administrators can run the backfill"
@@ -1323,7 +1324,7 @@ def get_model_roles_with_lob(
             user_id=user.user_id,
             email=user.email,
             full_name=user.full_name,
-            role=user.role,
+            role=user.role_display,
             lob_id=user.lob_id,
             lob_name=user.lob.name if user.lob else None,
             lob_rollup_name=get_user_lob_rollup_name(user)
@@ -1608,10 +1609,10 @@ def update_model(
             detail="Model not found"
         )
 
-    is_admin = current_user.role == "Admin"
+    is_admin_user = is_admin(current_user)
 
     # For non-admins editing APPROVED models, create a pending edit instead
-    if not is_admin and model.row_approval_status is None:
+    if not is_admin_user and model.row_approval_status is None:
         update_data = model_data.model_dump(exclude_unset=True)
 
         if not update_data:
@@ -2183,7 +2184,7 @@ def approve_model_submission(
 
     Optionally creates a validation request for the approved model.
     """
-    if current_user.role != "Admin":
+    if not is_admin(current_user):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only admins can approve models"
@@ -2327,7 +2328,7 @@ def send_back_model_submission(
     current_user: User = Depends(get_current_user)
 ):
     """Send a model submission back to submitter with feedback (Admin only)."""
-    if current_user.role != "Admin":
+    if not is_admin(current_user):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only admins can send back models"
@@ -3105,7 +3106,7 @@ def list_all_pending_edits(
 
     Used for admin dashboard to review pending changes.
     """
-    if current_user.role != "Admin":
+    if not is_admin(current_user):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Admin access required"
@@ -3227,7 +3228,7 @@ def approve_pending_edit(
 
     Admin only.
     """
-    if current_user.role != "Admin":
+    if not is_admin(current_user):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Admin access required"
@@ -3339,7 +3340,7 @@ def reject_pending_edit(
 
     Admin only. The proposed changes are NOT applied.
     """
-    if current_user.role != "Admin":
+    if not is_admin(current_user):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Admin access required"

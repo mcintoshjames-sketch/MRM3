@@ -14,6 +14,7 @@ from app.core.risk_calculation import (
     RATING_SCORES
 )
 from app.models.user import User
+from app.core.roles import is_admin, is_validator
 from app.models.model import Model
 from app.models.taxonomy import Taxonomy, TaxonomyValue
 from app.models.audit_log import AuditLog
@@ -56,7 +57,7 @@ def create_audit_log(
 
 def require_admin_or_validator(current_user: User = Depends(get_current_user)) -> User:
     """Require the current user to be an Admin or Validator."""
-    if current_user.role not in ("Admin", "Validator"):
+    if not (is_admin(current_user) or is_validator(current_user)):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Admin or Validator role required"

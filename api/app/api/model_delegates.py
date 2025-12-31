@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session, joinedload
 from app.core.database import get_db
 from app.core.time import utc_now
 from app.core.deps import get_current_user
+from app.core.roles import is_admin, is_validator
 from app.models.user import User
 from app.models.model import Model
 from app.models.model_delegate import ModelDelegate
@@ -42,7 +43,7 @@ def can_manage_delegates(model: Model, user: User) -> bool:
     - Validators (any model)
     - Model owners (their own models)
     """
-    if user.role in ("Admin", "Validator"):
+    if is_admin(user) or is_validator(user):
         return True
     if model.owner_id == user.user_id:
         return True
@@ -311,7 +312,7 @@ def delete_delegate(
 ):
     """Delete a delegation permanently (admin only, use revoke instead for audit trail)."""
     # Only admins can permanently delete
-    if current_user.role != "Admin":
+    if not is_admin(current_user):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only admins can permanently delete delegations. Use revoke instead."
@@ -350,7 +351,7 @@ def batch_add_delegates(
     Admin only operation.
     """
     # Only admins can perform batch operations
-    if current_user.role != "Admin":
+    if not is_admin(current_user):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only administrators can perform batch delegate operations"

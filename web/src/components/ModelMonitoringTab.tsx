@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import api from '../api/client';
 import { useAuth } from '../contexts/AuthContext';
+import { isAdmin } from '../utils/roleUtils';
 
 interface MonitoringPlanVersion {
     version_id: number;
@@ -54,7 +55,7 @@ const ModelMonitoringTab: React.FC<ModelMonitoringTabProps> = ({ modelId, modelN
     const [addingToPlan, setAddingToPlan] = useState(false);
     const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
-    const isAdmin = user?.role === 'Admin';
+    const isAdminUser = isAdmin(user);
 
     const fetchMonitoringPlans = async () => {
         try {
@@ -81,10 +82,10 @@ const ModelMonitoringTab: React.FC<ModelMonitoringTabProps> = ({ modelId, modelN
 
     useEffect(() => {
         fetchMonitoringPlans();
-        if (isAdmin) {
+        if (isAdminUser) {
             fetchAllPlans();
         }
-    }, [modelId, isAdmin]);
+    }, [modelId, isAdminUser]);
 
     // Get plans that don't already include this model
     const availablePlans = allPlans.filter(
@@ -196,7 +197,7 @@ const ModelMonitoringTab: React.FC<ModelMonitoringTabProps> = ({ modelId, modelN
                     Performance monitoring tracks key metrics over time to ensure the model
                     continues to perform as expected.
                 </p>
-                {isAdmin && (
+                {isAdminUser && (
                     <div className="mt-6 flex flex-col sm:flex-row gap-3 justify-center">
                         <Link
                             to={`/monitoring-plans?model=${modelId}`}
@@ -289,7 +290,7 @@ const ModelMonitoringTab: React.FC<ModelMonitoringTabProps> = ({ modelId, modelN
                 <h3 className="text-lg font-medium text-gray-900">
                     Monitoring Plans ({plans.length})
                 </h3>
-                {isAdmin && (
+                {isAdminUser && (
                     <div className="flex items-center gap-3">
                         {availablePlans.length > 0 && (
                             <div className="relative">

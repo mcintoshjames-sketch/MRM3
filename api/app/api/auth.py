@@ -10,11 +10,13 @@ from app.core.database import get_db
 from app.core.security import verify_password, create_access_token, get_password_hash
 from app.core.deps import get_current_user
 from app.models.user import User
+from app.models.role import Role
 from app.models.model import Model
 from app.models.entra_user import EntraUser
 from app.models.region import Region
 from app.models.lob import LOBUnit
 from app.models.audit_log import AuditLog
+from app.core.roles import RoleCode, resolve_role_code, get_user_role_code, build_capabilities, get_role_display
 from app.schemas.user import LoginRequest, Token, UserResponse, UserCreate, UserUpdate, LOBUnitBrief
 from app.schemas.entra_user import EntraUserResponse, EntraUserProvisionRequest
 from app.schemas.model import ModelDetailResponse
@@ -49,11 +51,14 @@ def get_lob_full_path(db: Session, lob: LOBUnit) -> str:
 
 def get_user_with_lob(db: Session, user: User) -> dict:
     """Convert user to response dict with LOB info."""
+    role_code = get_user_role_code(user)
     user_dict = {
         "user_id": user.user_id,
         "email": user.email,
         "full_name": user.full_name,
-        "role": user.role,
+        "role": user.role_display or get_role_display(role_code),
+        "role_code": role_code,
+        "capabilities": build_capabilities(role_code),
         "high_fluctuation_flag": user.high_fluctuation_flag,
         "regions": user.regions,
         "lob_id": user.lob_id,
@@ -68,6 +73,19 @@ def get_user_with_lob(db: Session, user: User) -> dict:
             full_path=get_lob_full_path(db, user.lob)
         )
     return user_dict
+
+
+def resolve_role_for_write(db: Session, role_code: str | None, role_display: str | None) -> Role:
+    resolved_code = resolve_role_code(role_code, role_display)
+    if not resolved_code:
+        resolved_code = RoleCode.USER.value
+    role = db.query(Role).filter(Role.code == resolved_code, Role.is_active == True).first()
+    if not role:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid or inactive role"
+        )
+    return role
 
 
 @router.post("/login", response_model=Token)
@@ -94,7 +112,8 @@ def get_me(
     # Reload with LOB relationship to compute full_path
     user = db.query(User).options(
         joinedload(User.regions),
-        joinedload(User.lob)
+        joinedload(User.lob),
+        joinedload(User.role_ref)
     ).filter(User.user_id == current_user.user_id).first()
     return get_user_with_lob(db, user)
 
@@ -107,7 +126,8 @@ def list_users(
     """List all users."""
     users = db.query(User).options(
         joinedload(User.regions),
-        joinedload(User.lob)
+        joinedload(User.lob),
+        joinedload(User.role_ref)
     ).all()
     return [get_user_with_lob(db, u) for u in users]
 
@@ -121,7 +141,8 @@ def get_user(
     """Get a specific user by ID."""
     user = db.query(User).options(
         joinedload(User.regions),
-        joinedload(User.lob)
+        joinedload(User.lob),
+        joinedload(User.role_ref)
     ).filter(User.user_id == user_id).first()
     if not user:
         raise HTTPException(
@@ -187,12 +208,15 @@ def register(user_data: UserCreate, db: Session = Depends(get_db)):
             detail="Invalid or inactive LOB unit"
         )
 
+    # Resolve role (role_code preferred, role display fallback)
+    role = resolve_role_for_write(db, user_data.role_code, user_data.role)
+
     # Create user
     user = User(
         email=user_data.email,
         full_name=user_data.full_name,
         password_hash=get_password_hash(user_data.password),
-        role=user_data.role,
+        role_id=role.role_id,
         lob_id=user_data.lob_id
     )
 
@@ -215,7 +239,7 @@ def register(user_data: UserCreate, db: Session = Depends(get_db)):
         changes={
             "email": user_data.email,
             "full_name": user_data.full_name,
-            "role": user_data.role,
+            "role": role.display_name,
             "region_ids": user_data.region_ids or [],
             "lob_id": user_data.lob_id
         }
@@ -246,6 +270,7 @@ def update_user(
         )
 
     update_data = user_data.model_dump(exclude_unset=True)
+    role_code = update_data.pop("role_code", None)
 
     # Check for email uniqueness if email is being updated
     if 'email' in update_data and update_data['email'] != user.email:
@@ -296,17 +321,22 @@ def update_user(
             }
             region_ids_changed = True
 
+    # Handle role updates (role_code preferred, role display fallback)
+    if role_code is not None or "role" in update_data:
+        role = resolve_role_for_write(db, role_code, update_data.get("role"))
+        if user.role_display != role.display_name:
+            changes["role"] = {
+                "old": user.role_display,
+                "new": role.display_name
+            }
+        user.role_id = role.role_id
+        update_data.pop("role", None)
+
     # Track other field changes
     for field, value in update_data.items():
         old_value = getattr(user, field, None)
         if old_value != value:
-            # CRITICAL: Role changes affect permissions and access control
-            if field == "role":
-                changes["role"] = {
-                    "old": old_value,
-                    "new": value
-                }
-            elif field == "email":
+            if field == "email":
                 changes["email"] = {
                     "old": old_value,
                     "new": value
@@ -370,7 +400,7 @@ def delete_user(
         changes={
             "email": user.email,
             "full_name": user.full_name,
-            "role": user.role
+            "role": user.role_display
         }
     )
 
@@ -420,7 +450,7 @@ def provision_entra_user(
     password since they would authenticate via Entra ID in production.
     """
     # Check if current user is admin
-    if current_user.role != "Admin":
+    if get_user_role_code(current_user) != RoleCode.ADMIN.value:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only administrators can provision users from directory"
@@ -452,7 +482,8 @@ def provision_entra_user(
         )
 
     # Validate region_ids for Regional Approvers
-    if provision_data.role == "Regional Approver":
+    requested_role_code = resolve_role_code(provision_data.role_code, provision_data.role)
+    if requested_role_code == RoleCode.REGIONAL_APPROVER.value:
         if not provision_data.region_ids or len(provision_data.region_ids) == 0:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -470,20 +501,22 @@ def provision_entra_user(
             detail="Invalid or inactive LOB unit"
         )
 
+    role = resolve_role_for_write(db, provision_data.role_code, provision_data.role)
+
     # Create application user from Entra data
     # In production, password would not be used as auth goes through Entra ID
     user = User(
         email=entra_user.mail,
         full_name=entra_user.display_name,
         password_hash=get_password_hash("entra_sso_placeholder"),  # Placeholder for SSO
-        role=provision_data.role,
+        role_id=role.role_id,
         lob_id=provision_data.lob_id
     )
     db.add(user)
     db.flush()  # Flush to get user_id before attaching regions
 
     # Attach regions for Regional Approvers
-    if provision_data.role == "Regional Approver" and provision_data.region_ids:
+    if role.code == RoleCode.REGIONAL_APPROVER.value and provision_data.region_ids:
         from app.models.region import Region
         regions = db.query(Region).filter(Region.region_id.in_(provision_data.region_ids)).all()
         if len(regions) != len(provision_data.region_ids):
@@ -503,7 +536,7 @@ def provision_entra_user(
         changes={
             "email": entra_user.mail,
             "full_name": entra_user.display_name,
-            "role": provision_data.role,
+            "role": role.display_name,
             "entra_id": provision_data.entra_id,
             "provisioned_from": "Microsoft Entra ID",
             "region_ids": provision_data.region_ids or []
@@ -513,7 +546,7 @@ def provision_entra_user(
     db.commit()
     db.refresh(user)
 
-    return user
+    return get_user_with_lob(db, user)
 
 
 @router.get("/users/export/csv")
@@ -544,11 +577,12 @@ def export_users_csv(
         lob_code = user.lob.code if user.lob else ""
         lob_name = user.lob.name if user.lob else ""
         lob_path = get_lob_full_path(db, user.lob) if user.lob else ""
+        role_display = user.role_display or get_role_display(get_user_role_code(user))
         writer.writerow([
             user.user_id,
             user.email,
             user.full_name,
-            user.role,
+            role_display,
             lob_code,
             lob_name,
             lob_path

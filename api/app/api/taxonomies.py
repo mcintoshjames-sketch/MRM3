@@ -7,6 +7,7 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session, joinedload
 from app.core.database import get_db
 from app.core.deps import get_current_user
+from app.core.roles import is_admin
 from app.models.user import User
 from app.models.taxonomy import Taxonomy, TaxonomyValue
 from app.models.audit_log import AuditLog
@@ -61,7 +62,7 @@ def require_admin_for_bucket_taxonomy(user: User, taxonomy: Taxonomy, action: st
     Raises:
         HTTPException: If user is not admin and taxonomy is a bucket type
     """
-    if taxonomy.taxonomy_type == "bucket" and user.role != "Admin":
+    if taxonomy.taxonomy_type == "bucket" and not is_admin(user):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail=f"Only administrators can {action} bucket taxonomy values"
@@ -294,7 +295,7 @@ def update_taxonomy(
     # Require admin role when changing taxonomy_type to or from 'bucket'
     if 'taxonomy_type' in update_data:
         new_type = update_data['taxonomy_type']
-        if (new_type == 'bucket' or taxonomy.taxonomy_type == 'bucket') and current_user.role != "Admin":
+        if (new_type == 'bucket' or taxonomy.taxonomy_type == 'bucket') and not is_admin(current_user):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Only administrators can change taxonomy type to or from 'bucket'"

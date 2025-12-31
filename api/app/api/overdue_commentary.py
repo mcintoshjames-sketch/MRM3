@@ -7,6 +7,7 @@ from sqlalchemy import desc
 
 from app.core.database import get_db
 from app.core.deps import get_current_user
+from app.core.roles import is_admin
 from app.models import (
     User, Model, ValidationRequest, ValidationRequestModelVersion,
     ValidationAssignment, OverdueRevalidationComment
@@ -109,7 +110,7 @@ def can_user_create_commentary(
     - VALIDATION_IN_PROGRESS: Assigned validator
     """
     # Admins can always submit on anyone's behalf
-    if user.role == "Admin":
+    if is_admin(user):
         return True
 
     # Get first model from validation request

@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { versionsApi, ModelVersion, VersionStatus } from '../api/versions';
 import { useAuth } from '../contexts/AuthContext';
 import { Link } from 'react-router-dom';
+import { isAdminOrValidator } from '../utils/roleUtils';
 import DeployModal from './DeployModal';
 
 interface VersionsListProps {
@@ -127,7 +128,7 @@ const VersionsList: React.FC<VersionsListProps> = ({ modelId, refreshTrigger, on
         }
     };
 
-    const canEdit = user?.role === 'Validator' || user?.role === 'Admin';
+    const canEdit = isAdminOrValidator(user);
 
     // Editable validation statuses (before REVIEW stage)
     const editableValidationStatuses = ['INTAKE', 'PLANNING', 'IN_PROGRESS'];

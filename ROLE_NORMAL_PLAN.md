@@ -1,5 +1,17 @@
 ## Plan: Normalize User Roles (DB + API + UI) With Minimal Refactor Risk
 
+### Progress Log
+- [x] Phase 0: Canonical role mapping finalized
+- [x] Phase 1: Roles table + users.role_id (additive) + seed/test updates
+- [x] Phase 2: Backfill + role_code/capabilities + /roles endpoint
+- [x] Phase 3: Backend role helpers + centralized auth checks
+- [x] Phase 4: Frontend role_code migration + helper-based gates
+- [x] Phase 5: Enforce constraints + remove legacy users.role
+
+Notes:
+- 2025-12-31: Completed Phases 0-5 (roles table + role_id, backfill, helpers, frontend role_code migration, legacy role removal).
+- 2025-12-31: Tests: `python3 -m pytest tests/test_validation_workflow.py -k "SmartApproverAssignment"` (api) passed; `python3 -m pytest tests/test_decommissioning.py -k "non_owner"` selected 0 tests (exit code 5).
+
 ### Goals
 - Make user roles normalized and constrained at the database layer.
 - Eliminate brittle string comparisons in backend/frontend authorization logic.
@@ -217,4 +229,3 @@ This migration is designed to keep rollback cheap by keeping early phases additi
    - Decision: default strictness—unknown roles should block constraint hardening (and ideally the backfill) so data issues are not silently normalized away.
    - Decision: provide an explicit override path to map unknowns to `USER` and generate an audit report.
    - Why: preserves data integrity and auditability, while maintaining operational flexibility.
-

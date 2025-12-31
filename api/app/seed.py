@@ -9,7 +9,8 @@ from app.core.database import SessionLocal
 from app.core.time import utc_now
 from app.core.config import settings
 from app.core.security import get_password_hash, verify_password
-from app.models import User, UserRole, Vendor, EntraUser, Taxonomy, TaxonomyValue, ValidationWorkflowSLA, ValidationPolicy, Region, ValidationComponentDefinition, ComponentDefinitionConfiguration, ComponentDefinitionConfigItem, ModelTypeCategory, ModelType, ValidationRequest, ValidationOutcome, ValidationRequestModelVersion, ApproverRole, ConditionalApprovalRule, RuleRequiredApprover, MapApplication, ValidationAssignment, ValidationStatusHistory
+from app.core.roles import RoleCode, ROLE_CODE_TO_DISPLAY
+from app.models import User, Vendor, EntraUser, Taxonomy, TaxonomyValue, ValidationWorkflowSLA, ValidationPolicy, Region, ValidationComponentDefinition, ComponentDefinitionConfiguration, ComponentDefinitionConfigItem, ModelTypeCategory, ModelType, ValidationRequest, ValidationOutcome, ValidationRequestModelVersion, ApproverRole, ConditionalApprovalRule, RuleRequiredApprover, MapApplication, ValidationAssignment, ValidationStatusHistory, Role
 from app.models.lob import LOBUnit
 from app.models.recommendation import RecommendationPriorityConfig, RecommendationTimeframeConfig
 from app.models.attestation import AttestationSchedulingRule, AttestationSchedulingRuleType, AttestationFrequency, CoverageTarget, AttestationQuestionConfig
@@ -205,6 +206,26 @@ MODEL_TYPE_VALUES = [
     {"code": "MRM_SCORING", "label": "Model Risk Scoring / Model Tiering Model",
         "description": "Scores models to determine tiering and validation intensity."},
 ]
+
+
+def seed_roles(db: Session) -> dict[str, int]:
+    """Seed canonical roles and return mapping of role_code -> role_id."""
+    role_id_map: dict[str, int] = {}
+    for code, display_name in ROLE_CODE_TO_DISPLAY.items():
+        role = db.query(Role).filter(Role.code == code).first()
+        if not role:
+            role = Role(
+                code=code,
+                display_name=display_name,
+                is_system=True,
+                is_active=True
+            )
+            db.add(role)
+            db.flush()
+            print(f"✓ Created role: {display_name}")
+        role_id_map[code] = role.role_id
+    db.commit()
+    return role_id_map
 
 
 # Qualitative Outcome values for qualitative KPM assessments
@@ -1122,6 +1143,7 @@ def seed_database():
 
         # Seed LOB hierarchy first (users need LOB assignment)
         default_lob_id = seed_lob_units(db)
+        role_id_map = seed_roles(db)
         seed_demo_data = should_seed_demo_data()
         admin_password = get_seed_admin_password()
 
@@ -1129,6 +1151,15 @@ def seed_database():
         def ensure_user_lob(user):
             if user.lob_id is None:
                 user.lob_id = default_lob_id
+                db.add(user)
+                return True
+            return False
+
+        # Helper to assign role_id to existing users if not set
+        def ensure_user_role_id(user, role_code: str) -> bool:
+            expected_role_id = role_id_map[role_code]
+            if user.role_id != expected_role_id:
+                user.role_id = expected_role_id
                 db.add(user)
                 return True
             return False
@@ -1144,16 +1175,21 @@ def seed_database():
                 email="admin@example.com",
                 full_name="Admin User",
                 password_hash=get_password_hash(admin_password),
-                role=UserRole.ADMIN,
+                role_id=role_id_map[RoleCode.ADMIN.value],
                 lob_id=default_lob_id
             )
             db.add(admin)
             db.commit()
             print("✓ Created admin user (admin@example.com)")
         else:
+            updated = False
+            if ensure_user_role_id(admin, RoleCode.ADMIN.value):
+                updated = True
             if ensure_user_lob(admin):
+                updated = True
+            if updated:
                 db.commit()
-                print("✓ Updated admin user with LOB assignment")
+                print("✓ Updated admin user with role/LOB assignment")
             else:
                 print("✓ Admin user already exists")
             if is_production_env() and verify_password("admin123", admin.password_hash):
@@ -1168,16 +1204,21 @@ def seed_database():
                     email="validator@example.com",
                     full_name="Sarah Chen",
                     password_hash=get_password_hash("validator123"),
-                    role=UserRole.VALIDATOR,
+                    role_id=role_id_map[RoleCode.VALIDATOR.value],
                     lob_id=default_lob_id
                 )
                 db.add(validator)
                 db.commit()
                 print("✓ Created validator user (validator@example.com)")
             else:
+                updated = False
+                if ensure_user_role_id(validator, RoleCode.VALIDATOR.value):
+                    updated = True
                 if ensure_user_lob(validator):
+                    updated = True
+                if updated:
                     db.commit()
-                    print("✓ Updated validator user with LOB assignment")
+                    print("✓ Updated validator user with role/LOB assignment")
                 else:
                     print("✓ Validator user already exists")
 
@@ -1189,16 +1230,21 @@ def seed_database():
                     email="user@example.com",
                     full_name="Model Owner User",
                     password_hash=get_password_hash("user123"),
-                    role=UserRole.USER,
+                    role_id=role_id_map[RoleCode.USER.value],
                     lob_id=default_lob_id
                 )
                 db.add(regular_user)
                 db.commit()
                 print("✓ Created regular user (user@example.com)")
             else:
+                updated = False
+                if ensure_user_role_id(regular_user, RoleCode.USER.value):
+                    updated = True
                 if ensure_user_lob(regular_user):
+                    updated = True
+                if updated:
                     db.commit()
-                    print("✓ Updated regular user with LOB assignment")
+                    print("✓ Updated regular user with role/LOB assignment")
                 else:
                     print("✓ Regular user already exists")
 
@@ -1210,16 +1256,21 @@ def seed_database():
                     email="globalapprover@example.com",
                     full_name="Global Approver",
                     password_hash=get_password_hash("approver123"),
-                    role=UserRole.GLOBAL_APPROVER,
+                    role_id=role_id_map[RoleCode.GLOBAL_APPROVER.value],
                     lob_id=default_lob_id
                 )
                 db.add(global_approver)
                 db.commit()
                 print("✓ Created global approver (globalapprover@example.com)")
             else:
+                updated = False
+                if ensure_user_role_id(global_approver, RoleCode.GLOBAL_APPROVER.value):
+                    updated = True
                 if ensure_user_lob(global_approver):
+                    updated = True
+                if updated:
                     db.commit()
-                    print("✓ Updated global approver with LOB assignment")
+                    print("✓ Updated global approver with role/LOB assignment")
                 else:
                     print("✓ Global approver already exists")
 
@@ -1231,7 +1282,7 @@ def seed_database():
                     email="john.smith@contoso.com",
                     full_name="John Smith",
                     password_hash=get_password_hash("john123"),
-                    role=UserRole.USER,
+                    role_id=role_id_map[RoleCode.USER.value],
                     lob_id=default_lob_id
                 )
                 db.add(john_smith)
@@ -1239,8 +1290,7 @@ def seed_database():
                 print("✓ Created John Smith (john.smith@contoso.com)")
             else:
                 updated = False
-                if john_smith.role != UserRole.USER:
-                    john_smith.role = UserRole.USER
+                if ensure_user_role_id(john_smith, RoleCode.USER.value):
                     updated = True
                 if ensure_user_lob(john_smith):
                     updated = True
@@ -1310,7 +1360,7 @@ def seed_database():
                 email="usapprover@example.com",
                 full_name="US Regional Approver",
                 password_hash=get_password_hash("approver123"),
-                role=UserRole.REGIONAL_APPROVER,
+                role_id=role_id_map[RoleCode.REGIONAL_APPROVER.value],
                 lob_id=default_lob_id
             )
             # Associate with US region
@@ -1321,9 +1371,14 @@ def seed_database():
             db.commit()
             print("✓ Created US regional approver (usapprover@example.com / approver123)")
         else:
+            updated = False
+            if ensure_user_role_id(us_approver, RoleCode.REGIONAL_APPROVER.value):
+                updated = True
             if ensure_user_lob(us_approver):
+                updated = True
+            if updated:
                 db.commit()
-                print("✓ Updated US regional approver with LOB assignment")
+                print("✓ Updated US regional approver with role/LOB assignment")
             else:
                 print("✓ US regional approver already exists")
 
@@ -1335,7 +1390,7 @@ def seed_database():
                 email="euapprover@example.com",
                 full_name="EU Regional Approver",
                 password_hash=get_password_hash("approver123"),
-                role=UserRole.REGIONAL_APPROVER,
+                role_id=role_id_map[RoleCode.REGIONAL_APPROVER.value],
                 lob_id=default_lob_id
             )
             # Associate with EU and UK regions
@@ -1349,9 +1404,14 @@ def seed_database():
             db.commit()
             print("✓ Created EU regional approver (euapprover@example.com / approver123)")
         else:
+            updated = False
+            if ensure_user_role_id(eu_approver, RoleCode.REGIONAL_APPROVER.value):
+                updated = True
             if ensure_user_lob(eu_approver):
+                updated = True
+            if updated:
                 db.commit()
-                print("✓ Updated EU regional approver with LOB assignment")
+                print("✓ Updated EU regional approver with role/LOB assignment")
             else:
                 print("✓ EU regional approver already exists")
 

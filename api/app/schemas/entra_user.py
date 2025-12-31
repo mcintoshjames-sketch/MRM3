@@ -23,6 +23,7 @@ class EntraUserResponse(BaseModel):
 class EntraUserProvisionRequest(BaseModel):
     """Request to provision an Entra user as an application user."""
     entra_id: str
-    role: str = "User"
+    role: str | None = "User"
+    role_code: str | None = None
     region_ids: list[int] = []
     lob_id: int  # Required: User's LOB assignment

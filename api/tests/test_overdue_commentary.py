@@ -11,6 +11,12 @@ from app.models.validation import (
 from app.models.taxonomy import Taxonomy, TaxonomyValue
 from app.models.model_delegate import ModelDelegate
 from app.core.security import get_password_hash, create_access_token
+from app.core.roles import RoleCode
+from app.models.role import Role
+
+
+def get_role_id(db_session, role_code: str) -> int:
+    return db_session.query(Role).filter(Role.code == role_code).first().role_id
 
 
 class TestOverdueCommentaryAPI:
@@ -404,7 +410,7 @@ class TestOverdueCommentaryAPI:
             email="owner_commentary@example.com",
             password_hash=get_password_hash("testpass"),
             full_name="Model Owner",
-            role="User",
+            role_id=get_role_id(db_session, RoleCode.USER.value),
             lob_id=lob_hierarchy["retail"].lob_id
         )
         db_session.add(owner)
@@ -437,7 +443,7 @@ class TestOverdueCommentaryAPI:
             email="other_commentary@example.com",
             password_hash=get_password_hash("testpass"),
             full_name="Other User",
-            role="User",
+            role_id=get_role_id(db_session, RoleCode.USER.value),
             lob_id=lob_hierarchy["retail"].lob_id
         )
         db_session.add(other_user)
@@ -466,7 +472,7 @@ class TestOverdueCommentaryAPI:
             email="delegate_commentary@example.com",
             password_hash=get_password_hash("testpass"),
             full_name="Delegate User",
-            role="User",
+            role_id=get_role_id(db_session, RoleCode.USER.value),
             lob_id=lob_hierarchy["retail"].lob_id
         )
         db_session.add(delegate_user)
@@ -504,7 +510,7 @@ class TestOverdueCommentaryAPI:
             email="validator_commentary@example.com",
             password_hash=get_password_hash("testpass"),
             full_name="Validator User",
-            role="Validator",
+            role_id=get_role_id(db_session, RoleCode.VALIDATOR.value),
             lob_id=lob_hierarchy["retail"].lob_id
         )
         db_session.add(validator)
@@ -543,7 +549,7 @@ class TestOverdueCommentaryAPI:
             email="unassigned_validator@example.com",
             password_hash=get_password_hash("testpass"),
             full_name="Unassigned Validator",
-            role="Validator",
+            role_id=get_role_id(db_session, RoleCode.VALIDATOR.value),
             lob_id=lob_hierarchy["retail"].lob_id
         )
         db_session.add(validator)
@@ -630,7 +636,7 @@ class TestOverdueCommentaryAPI:
             email="other_owner_admin_test@example.com",
             password_hash=get_password_hash("testpass"),
             full_name="Other Owner",
-            role="User",
+            role_id=get_role_id(db_session, RoleCode.USER.value),
             lob_id=lob_hierarchy["retail"].lob_id
         )
         db_session.add(other_owner)

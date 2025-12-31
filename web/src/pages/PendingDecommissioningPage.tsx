@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import api from '../api/client';
 import Layout from '../components/Layout';
 import { useAuth } from '../contexts/AuthContext';
+import { isAdminOrValidator } from '../utils/roleUtils';
 
 interface DecommissioningRequest {
   request_id: number;
@@ -21,7 +22,7 @@ export default function PendingDecommissioningPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const isValidatorOrAdmin = user?.role === 'Admin' || user?.role === 'Validator';
+  const isValidatorOrAdmin = isAdminOrValidator(user);
 
   useEffect(() => {
     const fetchPendingRequests = async () => {

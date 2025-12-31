@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { delegatesApi, ModelDelegate } from '../api/delegates';
 import { usersApi, User } from '../api/users';
 import { useAuth } from '../contexts/AuthContext';
+import { isAdminOrValidator } from '../utils/roleUtils';
 
 interface DelegatesSectionProps {
     modelId: number;
@@ -25,7 +26,7 @@ const DelegatesSection: React.FC<DelegatesSectionProps> = ({ modelId, modelOwner
     const [selectedUser, setSelectedUser] = useState<User | null>(null);
 
     // Admins, validators, and model owners can manage delegates
-    const canManageDelegates = currentUserId === modelOwnerId || user?.role === 'Admin' || user?.role === 'Validator';
+    const canManageDelegates = currentUserId === modelOwnerId || isAdminOrValidator(user);
 
     const loadDelegates = async () => {
         try {

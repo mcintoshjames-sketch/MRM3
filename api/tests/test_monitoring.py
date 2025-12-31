@@ -641,6 +641,12 @@ class TestMonitoringPlans:
         assert cycle_resp.status_code == 201
         cycle_id = cycle_resp.json()["cycle_id"]
 
+        cancel_resp = client.post(f"/monitoring/cycles/{cycle_id}/cancel", headers=admin_headers, json={
+            "cancel_reason": "Cancel before delete cascade",
+            "deactivate_plan": False
+        })
+        assert cancel_resp.status_code == 200
+
         # Delete plan
         delete_resp = client.delete(f"/monitoring/plans/{plan_id}", headers=admin_headers)
         assert delete_resp.status_code == 204
@@ -2024,8 +2030,8 @@ class TestMonitoringResults:
         assert response.status_code == 400
 
 
-class TestMonitoringPlanVersioning:
-    """Tests for Monitoring Plan Versioning operations."""
+class MonitoringPlanVersioningHelpers:
+    """Shared helpers for monitoring plan versioning tests."""
 
     def _create_plan_with_metrics(self, client, admin_headers, plan_name="Versioned Plan"):
         """Helper to create a plan with metrics for versioning tests."""
@@ -2062,6 +2068,10 @@ class TestMonitoringPlanVersioning:
         metric_id = metric_resp.json()["metric_id"]
 
         return plan_id, kpm_id, metric_id
+
+
+class TestMonitoringPlanVersioning(MonitoringPlanVersioningHelpers):
+    """Tests for Monitoring Plan Versioning operations."""
 
     def test_list_versions_empty(self, client, admin_headers):
         """List versions returns empty list for plan with no published versions."""
@@ -2208,7 +2218,7 @@ class TestMonitoringPlanVersioning:
         assert data["version_locked_at"] is not None
 
 
-class TestMonitoringReportPDF:
+class TestMonitoringReportPDF(MonitoringPlanVersioningHelpers):
     """Tests for monitoring cycle PDF report generation."""
 
     def test_pdf_uses_snapshot_thresholds(self, client, admin_headers, db_session, monkeypatch):
@@ -3114,13 +3124,16 @@ class TestComponent9bFields:
     ):
         """Component 9b marked as Planned without version fails validation on status transition to REVIEW."""
         from app.models.user import User
+        from app.core.roles import RoleCode
+        from app.models.role import Role
 
         # Create a separate validator user (not the model owner)
+        role_id = db_session.query(Role).filter(Role.code == RoleCode.VALIDATOR.value).first().role_id
         validator = User(
             email="validator_9b@test.com",
             password_hash="$2b$12$test",
             full_name="Validator User",
-            role="Validator",
+            role_id=role_id,
             lob_id=lob_hierarchy["wholesale"].lob_id
         )
         db_session.add(validator)

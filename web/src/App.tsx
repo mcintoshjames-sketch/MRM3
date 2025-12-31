@@ -59,6 +59,7 @@ import PublicGuidesIndexPage from './pages/PublicGuidesIndexPage';
 import PublicGuidePage from './pages/PublicGuidePage';
 import PrivacyPolicyPage from './pages/PrivacyPolicyPage';
 import AboutPage from './pages/AboutPage';
+import { isAdmin, isValidator, isApprover, isAdminOrValidator } from './utils/roleUtils';
 
 function App() {
     const { user, loading } = useAuth();
@@ -69,9 +70,9 @@ function App() {
 
     const getDefaultRoute = () => {
         if (!user) return '/login';
-        if (user.role === 'Admin') return '/dashboard';
-        if (user.role === 'Validator') return '/validator-dashboard';
-        if (user.role === 'Global Approver' || user.role === 'Regional Approver') return '/approver-dashboard';
+        if (isAdmin(user)) return '/dashboard';
+        if (isValidator(user)) return '/validator-dashboard';
+        if (isApprover(user)) return '/approver-dashboard';
         return '/my-dashboard';
     };
 
@@ -84,14 +85,14 @@ function App() {
             <Route path="/privacy-policy" element={<PrivacyPolicyPage />} />
             <Route path="/about" element={<AboutPage />} />
             <Route path="/login" element={!user ? <LoginPage /> : <Navigate to={getDefaultRoute()} />} />
-            <Route path="/dashboard" element={user?.role === 'Admin' ? <AdminDashboardPage /> : <Navigate to="/models" />} />
-            <Route path="/validator-dashboard" element={user?.role === 'Validator' ? <ValidatorDashboardPage /> : <Navigate to="/models" />} />
-            <Route path="/approver-dashboard" element={user?.role === 'Admin' || user?.role === 'Global Approver' || user?.role === 'Regional Approver' ? <ApproverDashboardPage /> : <Navigate to="/models" />} />
+            <Route path="/dashboard" element={isAdmin(user) ? <AdminDashboardPage /> : <Navigate to="/models" />} />
+            <Route path="/validator-dashboard" element={isValidator(user) ? <ValidatorDashboardPage /> : <Navigate to="/models" />} />
+            <Route path="/approver-dashboard" element={isAdmin(user) || isApprover(user) ? <ApproverDashboardPage /> : <Navigate to="/models" />} />
             <Route path="/my-dashboard" element={
                 user
-                    ? (user.role === 'Global Approver' || user.role === 'Regional Approver'
+                    ? (isApprover(user)
                         ? <Navigate to="/approver-dashboard" />
-                        : (user.role !== 'Admin' && user.role !== 'Validator'
+                        : (!isAdminOrValidator(user)
                             ? <ModelOwnerDashboardPage />
                             : <Navigate to={getDefaultRoute()} />))
                     : <Navigate to="/login" />
@@ -103,36 +104,36 @@ function App() {
             <Route path="/validation-workflow" element={user ? <ValidationWorkflowPage /> : <Navigate to="/login" />} />
             <Route path="/validation-workflow/new" element={user ? <ValidationWorkflowPage /> : <Navigate to="/login" />} />
             <Route path="/validation-workflow/:id" element={user ? <ValidationRequestDetailPage /> : <Navigate to="/login" />} />
-            <Route path="/validation-alerts" element={user?.role === 'Admin' ? <ValidationAlertsPage /> : <Navigate to="/models" />} />
+            <Route path="/validation-alerts" element={isAdmin(user) ? <ValidationAlertsPage /> : <Navigate to="/models" />} />
             <Route path="/recommendations" element={user ? <RecommendationsPage /> : <Navigate to="/login" />} />
             <Route path="/recommendations/:id" element={user ? <RecommendationDetailPage /> : <Navigate to="/login" />} />
             <Route path="/my-pending-submissions" element={user ? <MyPendingSubmissionsPage /> : <Navigate to="/login" />} />
             <Route path="/my-deployment-tasks" element={user ? <MyDeploymentTasksPage /> : <Navigate to="/login" />} />
             <Route path="/my-mrsa-reviews" element={user ? <MyMRSAReviewsPage /> : <Navigate to="/login" />} />
-            <Route path="/my-monitoring" element={user?.role === 'Admin' ? <Navigate to="/monitoring-plans" /> : (user ? <MyMonitoringPage /> : <Navigate to="/login" />)} />
+            <Route path="/my-monitoring" element={isAdmin(user) ? <Navigate to="/monitoring-plans" /> : (user ? <MyMonitoringPage /> : <Navigate to="/login" />)} />
             <Route path="/my-monitoring-tasks" element={user ? <MyMonitoringTasksPage /> : <Navigate to="/login" />} />
             <Route path="/pending-decommissioning" element={user ? <PendingDecommissioningPage /> : <Navigate to="/login" />} />
-            <Route path="/reference-data" element={user?.role === 'Admin' || user?.role === 'Validator' ? <ReferenceDataPage /> : <Navigate to="/models" />} />
+            <Route path="/reference-data" element={isAdminOrValidator(user) ? <ReferenceDataPage /> : <Navigate to="/models" />} />
             <Route path="/vendors" element={<Navigate to="/reference-data" />} />
-            <Route path="/vendors/:id" element={user?.role === 'Admin' || user?.role === 'Validator' ? <VendorDetailsPage /> : <Navigate to="/models" />} />
+            <Route path="/vendors/:id" element={isAdminOrValidator(user) ? <VendorDetailsPage /> : <Navigate to="/models" />} />
             <Route path="/users" element={<Navigate to="/reference-data" />} />
-            <Route path="/users/:id" element={user?.role === 'Admin' || user?.role === 'Validator' ? <UserDetailsPage /> : <Navigate to="/models" />} />
-            <Route path="/taxonomy" element={user?.role === 'Admin' || user?.role === 'Validator' ? <TaxonomyPage /> : <Navigate to="/models" />} />
-            <Route path="/audit" element={user?.role === 'Admin' || user?.role === 'Validator' ? <AuditPage /> : <Navigate to="/models" />} />
-            <Route path="/workflow-config" element={user?.role === 'Admin' ? <WorkflowConfigurationPage /> : <Navigate to="/models" />} />
-            <Route path="/batch-delegates" element={user?.role === 'Admin' ? <BatchDelegatesPage /> : <Navigate to="/models" />} />
-            <Route path="/regions" element={user?.role === 'Admin' ? <RegionsPage /> : <Navigate to="/models" />} />
-            <Route path="/validation-policies" element={user?.role === 'Admin' ? <ValidationPoliciesPage /> : <Navigate to="/models" />} />
-            <Route path="/mrsa-review-policies" element={user?.role === 'Admin' ? <MRSAReviewPoliciesPage /> : <Navigate to="/models" />} />
+            <Route path="/users/:id" element={isAdminOrValidator(user) ? <UserDetailsPage /> : <Navigate to="/models" />} />
+            <Route path="/taxonomy" element={isAdminOrValidator(user) ? <TaxonomyPage /> : <Navigate to="/models" />} />
+            <Route path="/audit" element={isAdminOrValidator(user) ? <AuditPage /> : <Navigate to="/models" />} />
+            <Route path="/workflow-config" element={isAdmin(user) ? <WorkflowConfigurationPage /> : <Navigate to="/models" />} />
+            <Route path="/batch-delegates" element={isAdmin(user) ? <BatchDelegatesPage /> : <Navigate to="/models" />} />
+            <Route path="/regions" element={isAdmin(user) ? <RegionsPage /> : <Navigate to="/models" />} />
+            <Route path="/validation-policies" element={isAdmin(user) ? <ValidationPoliciesPage /> : <Navigate to="/models" />} />
+            <Route path="/mrsa-review-policies" element={isAdmin(user) ? <MRSAReviewPoliciesPage /> : <Navigate to="/models" />} />
             <Route path="/component-definitions" element={<Navigate to="/taxonomy?tab=component-definitions" />} />
             <Route
                 path="/configuration-history"
-                element={user?.role === 'Admin' ? <Navigate to="/taxonomy?tab=component-definitions&componentTab=version-history" /> : <Navigate to="/models" />}
+                element={isAdmin(user) ? <Navigate to="/taxonomy?tab=component-definitions&componentTab=version-history" /> : <Navigate to="/models" />}
             />
-            <Route path="/approver-roles" element={user?.role === 'Admin' ? <ApproverRolesPage /> : <Navigate to="/models" />} />
-            <Route path="/additional-approval-rules" element={user?.role === 'Admin' ? <ConditionalApprovalRulesPage /> : <Navigate to="/models" />} />
+            <Route path="/approver-roles" element={isAdmin(user) ? <ApproverRolesPage /> : <Navigate to="/models" />} />
+            <Route path="/additional-approval-rules" element={isAdmin(user) ? <ConditionalApprovalRulesPage /> : <Navigate to="/models" />} />
             <Route path="/fry-config" element={<Navigate to="/taxonomy" />} />
-            <Route path="/monitoring-plans" element={user?.role === 'Admin' ? <MonitoringPlansPage /> : <Navigate to="/models" />} />
+            <Route path="/monitoring-plans" element={isAdmin(user) ? <MonitoringPlansPage /> : <Navigate to="/models" />} />
             <Route path="/monitoring/:id" element={user ? <MonitoringPlanDetailPage /> : <Navigate to="/login" />} />
             <Route path="/monitoring/cycles/:cycleId" element={user ? <MonitoringCycleDetailPage /> : <Navigate to="/login" />} />
             <Route path="/reports" element={user ? <ReportsPage /> : <Navigate to="/login" />} />
@@ -146,11 +147,11 @@ function App() {
             <Route path="/reports/exceptions" element={user ? <ExceptionsReportPage /> : <Navigate to="/login" />} />
             <Route path="/reports/ready-to-deploy" element={user ? <ReadyToDeployPage /> : <Navigate to="/login" />} />
             <Route path="/analytics" element={user ? <AnalyticsPage /> : <Navigate to="/login" />} />
-            <Route path="/attestations" element={user?.role === 'Admin' ? <AttestationCyclesPage /> : <Navigate to="/models" />} />
+            <Route path="/attestations" element={isAdmin(user) ? <AttestationCyclesPage /> : <Navigate to="/models" />} />
             <Route path="/my-attestations" element={user ? <MyAttestationsPage /> : <Navigate to="/login" />} />
             <Route path="/attestations/:id" element={user ? <AttestationDetailPage /> : <Navigate to="/login" />} />
             <Route path="/attestations/bulk/:cycleId" element={user ? <BulkAttestationPage /> : <Navigate to="/login" />} />
-            <Route path="/irps" element={user?.role === 'Admin' ? <IRPsPage /> : <Navigate to="/models" />} />
+            <Route path="/irps" element={isAdmin(user) ? <IRPsPage /> : <Navigate to="/models" />} />
             <Route path="/irps/:id" element={user ? <IRPDetailPage /> : <Navigate to="/login" />} />
             <Route path="*" element={<Navigate to={user ? getDefaultRoute() : '/'} />} />
         </Routes>

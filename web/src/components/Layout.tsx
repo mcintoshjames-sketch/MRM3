@@ -2,6 +2,7 @@ import { Link, useLocation, useMatch, useNavigate, useResolvedPath } from 'react
 import { useAuth } from '../contexts/AuthContext';
 import { useState, useEffect } from 'react';
 import api from '../api/client';
+import { isAdmin, isValidator, isApprover, isAdminOrValidator, getRoleDisplay } from '../utils/roleUtils';
 
 interface LayoutProps {
     children: React.ReactNode;
@@ -42,6 +43,10 @@ const requiresMonitoringAction = (task: { status?: string; user_role?: string })
 
 export default function Layout({ children }: LayoutProps) {
     const { user, logout } = useAuth();
+    const isAdminUser = isAdmin(user);
+    const isValidatorUser = isValidator(user);
+    const isApproverUser = isApprover(user);
+    const isAdminOrValidatorUser = isAdminOrValidator(user);
     const navigate = useNavigate();
     const location = useLocation();
     const [pendingCounts, setPendingCounts] = useState({
@@ -95,7 +100,7 @@ export default function Layout({ children }: LayoutProps) {
 
                 // Fetch pending decommissioning requests
                 let pendingDecommissioning = 0;
-                if (user?.role === 'Admin' || user?.role === 'Validator') {
+                if (isAdminOrValidatorUser) {
                     try {
                         const decomRes = await api.get('/decommissioning/pending-validator-review');
                         pendingDecommissioning = decomRes.data.length;
@@ -151,7 +156,7 @@ export default function Layout({ children }: LayoutProps) {
 
                 // Fetch MRSA reviews needing attention (Admin only - matches nav visibility)
                 let irpAttention = 0;
-                if (user?.role === 'Admin') {
+                if (isAdminUser) {
                     try {
                         const mrsaRes = await api.get('/dashboard/mrsa-reviews/summary');
                         irpAttention = (mrsaRes.data.overdue_count || 0) + (mrsaRes.data.no_irp_count || 0);
@@ -162,7 +167,7 @@ export default function Layout({ children }: LayoutProps) {
 
                 // Fetch MRSA reviews needing attention for model owners/delegates
                 let mrsaAttention = 0;
-                if (user?.role !== 'Admin' && user?.role !== 'Validator') {
+                if (!isAdminOrValidatorUser) {
                     try {
                         const mrsaRes = await api.get('/dashboard/mrsa-reviews/summary');
                         mrsaAttention = (mrsaRes.data.overdue_count || 0)
@@ -203,9 +208,9 @@ export default function Layout({ children }: LayoutProps) {
 
     // Calculate total tasks badge
     const totalTasksBadge = pendingCounts.submissions + pendingCounts.deployments +
-        pendingCounts.decommissioning + (user?.role !== 'Admin' ? pendingCounts.attestations : 0) +
+        pendingCounts.decommissioning + (!isAdminUser ? pendingCounts.attestations : 0) +
         pendingCounts.approvals + pendingCounts.recommendations +
-        (user?.role !== 'Admin' && user?.role !== 'Validator' ? pendingCounts.mrsaAttention : 0);
+        (!isAdminOrValidatorUser ? pendingCounts.mrsaAttention : 0);
     const isApproverDashboard = location.pathname === '/approver-dashboard';
     const isApproverQueue = isApproverDashboard && location.hash === '#approval-queue';
 
@@ -303,12 +308,12 @@ export default function Layout({ children }: LayoutProps) {
                         ══════════════════════════════════════════════════════════ */}
 
                         {/* Dashboard - role-specific */}
-                        {(user?.role === 'Admin' || user?.role === 'Validator') && (
-                            <NavItem to={user?.role === 'Admin' ? '/dashboard' : '/validator-dashboard'}>
+                        {isAdminOrValidatorUser && (
+                            <NavItem to={isAdminUser ? '/dashboard' : '/validator-dashboard'}>
                                 Dashboard
                             </NavItem>
                         )}
-                        {(user?.role === 'Global Approver' || user?.role === 'Regional Approver') && (
+                        {isApproverUser && (
                             <NavItem
                                 to="/approver-dashboard"
                                 isActiveOverride={isApproverDashboard && !isApproverQueue}
@@ -316,7 +321,7 @@ export default function Layout({ children }: LayoutProps) {
                                 Approver Dashboard
                             </NavItem>
                         )}
-                        {(user?.role !== 'Admin' && user?.role !== 'Validator' && user?.role !== 'Global Approver' && user?.role !== 'Regional Approver') && (
+                        {(!isAdminOrValidatorUser && !isApproverUser) && (
                             <NavItem to="/my-dashboard">My Dashboard</NavItem>
                         )}
 
@@ -324,13 +329,13 @@ export default function Layout({ children }: LayoutProps) {
                         <NavItem to={pendingCounts.recommendations > 0 ? "/recommendations?my_tasks=true" : "/recommendations"} badge={pendingCounts.recommendations} badgeColor="purple">Recommendations</NavItem>
                         <NavItem to="/models">Models</NavItem>
                         <NavItem to="/validation-workflow">Validations</NavItem>
-                        {user?.role === 'Admin' && (
+                        {isAdminUser && (
                             <NavItem to="/attestations">Attestation Management</NavItem>
                         )}
-                        {user?.role === 'Admin' && (
+                        {isAdminUser && (
                             <NavItem to="/irps" badge={pendingCounts.irpAttention} badgeColor="red">IRP Management</NavItem>
                         )}
-                        {(user?.role === 'Admin' || user?.role === 'Validator') && (
+                        {isAdminOrValidatorUser && (
                             <NavItem to="/reports/exceptions">Model Exceptions</NavItem>
                         )}
 
@@ -355,7 +360,7 @@ export default function Layout({ children }: LayoutProps) {
                                 <NavItem to="/pending-decommissioning" badge={pendingCounts.decommissioning} badgeColor="purple">
                                     Pending Decommissioning
                                 </NavItem>
-                                {(user?.role === 'Admin' || user?.role === 'Global Approver' || user?.role === 'Regional Approver') && (
+                                {(isAdminUser || isApproverUser) && (
                                     <NavItem
                                         to="/approver-dashboard#approval-queue"
                                         badge={pendingCounts.approvals}
@@ -365,12 +370,12 @@ export default function Layout({ children }: LayoutProps) {
                                         Pending Approvals
                                     </NavItem>
                                 )}
-                                {user?.role !== 'Admin' && (
+                                {!isAdminUser && (
                                     <NavItem to="/my-attestations" badge={pendingCounts.attestations} badgeColor="orange">
                                         My Attestations
                                     </NavItem>
                                 )}
-                                {user?.role !== 'Admin' && user?.role !== 'Validator' && (
+                                {!isAdminOrValidatorUser && (
                                     <NavItem to="/my-mrsa-reviews" badge={pendingCounts.mrsaAttention} badgeColor="red">
                                         My MRSA Reviews
                                     </NavItem>
@@ -385,15 +390,15 @@ export default function Layout({ children }: LayoutProps) {
                             title="Monitoring"
                             isCollapsed={collapsed.monitoring}
                             onToggle={() => toggleSection('monitoring')}
-                            badge={user?.role !== 'Admin' ? pendingCounts.monitoring : undefined}
+                            badge={!isAdminUser ? pendingCounts.monitoring : undefined}
                         />
 
                         {!collapsed.monitoring && (
                             <>
-                                {user?.role === 'Admin' && (
+                                {isAdminUser && (
                                     <NavItem to="/monitoring-plans">Performance Monitoring</NavItem>
                                 )}
-                                {user?.role !== 'Admin' && (
+                                {!isAdminUser && (
                                     <NavItem to="/my-monitoring-tasks" badge={pendingCounts.monitoring} badgeColor="green">
                                         My Monitoring Tasks
                                     </NavItem>
@@ -413,10 +418,10 @@ export default function Layout({ children }: LayoutProps) {
                         {!collapsed.reportsAudit && (
                             <>
                                 <NavItem to="/reports" end>Reports</NavItem>
-                                {user?.role === 'Admin' && (
+                                {isAdminUser && (
                                     <NavItem to="/analytics">Advanced Analytics</NavItem>
                                 )}
-                                {(user?.role === 'Admin' || user?.role === 'Validator') && (
+                                {isAdminOrValidatorUser && (
                                     <NavItem to="/audit">Audit Logs</NavItem>
                                 )}
                             </>
@@ -425,7 +430,7 @@ export default function Layout({ children }: LayoutProps) {
                         {/* ══════════════════════════════════════════════════════════
                             CONFIGURATION SECTION - Admin only
                         ══════════════════════════════════════════════════════════ */}
-                        {user?.role === 'Admin' && (
+                        {isAdminUser && (
                             <>
                                 <SectionHeader
                                     title="Configuration"
@@ -474,7 +479,7 @@ export default function Layout({ children }: LayoutProps) {
                         )}
 
                         {/* Validator-specific: Reference Data & Taxonomy access */}
-                        {user?.role === 'Validator' && (
+                        {isValidatorUser && (
                             <>
                                 <SectionHeader
                                     title="Reference"
@@ -495,7 +500,7 @@ export default function Layout({ children }: LayoutProps) {
                     <div className="text-sm text-gray-700 mb-2">
                         {user?.full_name}
                         <br />
-                        <span className="text-xs text-gray-500">({user?.role})</span>
+                        <span className="text-xs text-gray-500">({getRoleDisplay(user)})</span>
                     </div>
                     <button
                         onClick={handleLogout}

@@ -15,6 +15,7 @@ import MonitoringDataGrid, {
 import BreachAnnotationPanel from '../components/BreachAnnotationPanel';
 import MonitoringCSVImport from '../components/MonitoringCSVImport';
 import RecommendationCreateModal from '../components/RecommendationCreateModal';
+import { isAdmin, isAdminOrValidator } from '../utils/roleUtils';
 
 // Types
 interface UserRef {
@@ -171,8 +172,10 @@ type TabType = 'results' | 'approvals';
 const MonitoringCycleDetailPage: React.FC = () => {
     const { cycleId } = useParams<{ cycleId: string }>();
     const { user } = useAuth();
-    const monitoringHomePath = user?.role === 'Admin' ? '/monitoring-plans?tab=plans' : '/my-monitoring-tasks';
-    const monitoringHomeLabel = user?.role === 'Admin' ? 'Monitoring Plans' : 'My Monitoring Tasks';
+    const isAdminUser = isAdmin(user);
+    const isAdminOrValidatorUser = isAdminOrValidator(user);
+    const monitoringHomePath = isAdminUser ? '/monitoring-plans?tab=plans' : '/my-monitoring-tasks';
+    const monitoringHomeLabel = isAdminUser ? 'Monitoring Plans' : 'My Monitoring Tasks';
 
     // Basic state
     const [loading, setLoading] = useState(true);
@@ -264,13 +267,13 @@ const MonitoringCycleDetailPage: React.FC = () => {
         (category) => category.code === 'MONITORING' || category.label === 'Monitoring'
     )?.value_id ?? null;
     const canCreateRecommendation = useMemo(() => {
-        if (user?.role === 'Admin' || user?.role === 'Validator') {
+        if (isAdminOrValidatorUser) {
             return true;
         }
         return !!plan?.user_permissions?.is_team_member;
-    }, [user?.role, plan?.user_permissions?.is_team_member]);
+    }, [isAdminOrValidatorUser, plan?.user_permissions?.is_team_member]);
     const canDownloadReport = useMemo(() => {
-        if (user?.role === 'Admin' || user?.role === 'Validator') {
+        if (isAdminOrValidatorUser) {
             return true;
         }
         if (plan?.user_permissions?.is_team_member) {
@@ -279,7 +282,7 @@ const MonitoringCycleDetailPage: React.FC = () => {
         return cycle?.approvals?.some(
             (approval) => approval.approver?.user_id === user?.user_id
         ) ?? false;
-    }, [user?.role, user?.user_id, plan?.user_permissions?.is_team_member, cycle?.approvals]);
+    }, [isAdminOrValidatorUser, user?.user_id, plan?.user_permissions?.is_team_member, cycle?.approvals]);
     const resultsReadOnly = cycle ? !['DATA_COLLECTION', 'UNDER_REVIEW'].includes(cycle.status) : true;
 
     // Fetch cycle and plan details
@@ -799,7 +802,7 @@ const MonitoringCycleDetailPage: React.FC = () => {
     };
 
     const canVoid = (approval: CycleApproval): boolean => {
-        if (user?.role !== 'Admin') return false;
+        if (!isAdminUser) return false;
         if (approval.approval_status === 'Approved') return false;
         if (approval.voided_at) return false;
         return true;

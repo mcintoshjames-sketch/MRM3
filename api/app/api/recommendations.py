@@ -14,6 +14,7 @@ from sqlalchemy import desc, func, or_, exists
 from app.core.database import get_db
 from app.core.time import utc_now
 from app.core.deps import get_current_user
+from app.core.roles import is_admin, is_validator, is_global_approver, is_regional_approver
 from app.core.rls import can_see_all_data, can_see_recommendation
 from app.models import (
     User, Model, TaxonomyValue, Taxonomy, AuditLog, Region, ModelRegion,
@@ -62,7 +63,7 @@ router = APIRouter(prefix="/recommendations")
 
 def check_validator_or_admin(user: User):
     """Check if user has Validator or Admin role."""
-    if user.role not in ("Validator", "Admin"):
+    if not (is_admin(user) or is_validator(user)):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only Validators and Admins can perform this action"
@@ -71,7 +72,7 @@ def check_validator_or_admin(user: User):
 
 def check_admin(user: User):
     """Check if user has Admin role."""
-    if user.role != "Admin":
+    if not is_admin(user):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only Admins can perform this action"
@@ -80,7 +81,7 @@ def check_admin(user: User):
 
 def check_developer_or_admin(user: User, recommendation: Recommendation):
     """Check if user is the assigned developer or Admin."""
-    if user.role != "Admin" and user.user_id != recommendation.assigned_to_id:
+    if not is_admin(user) and user.user_id != recommendation.assigned_to_id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only the assigned developer or Admins can perform this action"
@@ -1314,15 +1315,15 @@ def get_my_tasks(
     )
 
     # Filter based on user's role
-    if current_user.role == "Admin":
+    if is_admin(current_user):
         # Admin can see all pending approvals
         pending_approvals = approval_query.all()
-    elif current_user.role == "Global Approver":
+    elif is_global_approver(current_user):
         # Global approvers see GLOBAL type approvals
         pending_approvals = approval_query.filter(
             RecommendationApproval.approval_type == "GLOBAL"
         ).all()
-    elif current_user.role == "Regional Approver" and user_region_ids:
+    elif is_regional_approver(current_user) and user_region_ids:
         # Regional approvers see REGIONAL approvals for their regions
         pending_approvals = approval_query.filter(
             RecommendationApproval.approval_type == "REGIONAL",
@@ -1896,7 +1897,7 @@ def submit_rebuttal(
     check_developer_or_admin(current_user, recommendation)
 
     # Block validator from submitting rebuttal (unless admin)
-    if current_user.role == "Validator":
+    if is_validator(current_user):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Validators cannot submit rebuttals"
@@ -2425,7 +2426,7 @@ def update_task(
         )
 
     # Check permission - task owner, assigned developer, or admin
-    if (current_user.role != "Admin" and
+    if (not is_admin(current_user) and
         current_user.user_id != task.owner_id and
             current_user.user_id != recommendation.assigned_to_id):
         raise HTTPException(
@@ -2703,17 +2704,17 @@ def check_approval_authorization(user: User, approval: RecommendationApproval):
     - Regional Approver can approve REGIONAL approvals for their assigned regions
     """
     # Admin can approve anything
-    if user.role == "Admin":
+    if is_admin(user):
         return
 
     if approval.approval_type == "GLOBAL":
-        if user.role != "Global Approver":
+        if not is_global_approver(user):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Only Global Approvers or Admins can approve Global approvals"
             )
     elif approval.approval_type == "REGIONAL":
-        if user.role != "Regional Approver":
+        if not is_regional_approver(user):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Only Regional Approvers or Admins can approve Regional approvals"
@@ -2769,7 +2770,7 @@ def approve_recommendation(
     check_approval_authorization(current_user, approval)
 
     approval_evidence = (approval_data.approval_evidence or "").strip()
-    if current_user.role == "Admin" and not approval_evidence:
+    if is_admin(current_user) and not approval_evidence:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Admin approvals require approval_evidence attestation"

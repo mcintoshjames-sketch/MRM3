@@ -21,6 +21,12 @@ from app.models.model import Model
 from app.models.region import Region
 from app.models.model_region import ModelRegion
 from app.core.security import get_password_hash, create_access_token
+from app.core.roles import RoleCode
+from app.models.role import Role
+
+
+def get_role_id(db_session, role_code: str) -> int:
+    return db_session.query(Role).filter(Role.code == role_code).first().role_id
 
 
 # ============================================================================
@@ -153,7 +159,7 @@ def developer_user(db_session, lob_hierarchy):
         email="developer@example.com",
         full_name="Developer User",
         password_hash=get_password_hash("developer123"),
-        role="User",
+        role_id=get_role_id(db_session, RoleCode.USER.value),
         lob_id=lob_hierarchy["retail"].lob_id
     )
     db_session.add(user)
@@ -176,7 +182,7 @@ def global_approver_user(db_session, lob_hierarchy):
         email="global_approver@example.com",
         full_name="Global Approver",
         password_hash=get_password_hash("approver123"),
-        role="Global Approver",
+        role_id=get_role_id(db_session, RoleCode.GLOBAL_APPROVER.value),
         lob_id=lob_hierarchy["retail"].lob_id
     )
     db_session.add(user)
@@ -199,7 +205,7 @@ def regional_approver_user(db_session, lob_hierarchy):
         email="regional_approver@example.com",
         full_name="Regional Approver",
         password_hash=get_password_hash("approver123"),
-        role="Regional Approver",
+        role_id=get_role_id(db_session, RoleCode.REGIONAL_APPROVER.value),
         lob_id=lob_hierarchy["retail"].lob_id
     )
     db_session.add(user)
@@ -3195,7 +3201,7 @@ class TestDashboardAndReports:
             email="newuser@example.com",
             full_name="New User",
             password_hash=get_password_hash("pass123"),
-            role="User",
+            role_id=get_role_id(db_session, RoleCode.USER.value),
             lob_id=lob_hierarchy["retail"].lob_id
         )
         db_session.add(new_user)

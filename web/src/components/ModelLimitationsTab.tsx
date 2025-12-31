@@ -14,6 +14,7 @@ import {
 } from '../api/limitations';
 import { recommendationsApi, RecommendationListItem, RecommendationCreate } from '../api/recommendations';
 import api from '../api/client';
+import { isAdminOrValidator } from '../utils/roleUtils';
 
 interface TaxonomyValue {
     value_id: number;
@@ -48,7 +49,7 @@ const ModelLimitationsTab: React.FC<ModelLimitationsTabProps> = ({ modelId }) =>
     const [showDetailModal, setShowDetailModal] = useState(false);
     const [selectedLimitation, setSelectedLimitation] = useState<LimitationDetail | null>(null);
 
-    const canEdit = user?.role === 'Admin' || user?.role === 'Validator';
+    const canEdit = isAdminOrValidator(user);
 
     const fetchLimitations = async () => {
         try {

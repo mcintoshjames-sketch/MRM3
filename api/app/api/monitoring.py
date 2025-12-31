@@ -24,7 +24,8 @@ from app.core.monitoring_constants import (
     OUTCOME_UNCONFIGURED,
     VALID_OUTCOME_CODES,
 )
-from app.models.user import User, UserRole
+from app.models.user import User
+from app.core.roles import is_admin, is_global_approver, is_regional_approver, is_validator
 from app.models.model import Model
 from app.models.kpm import Kpm
 from app.models.audit_log import AuditLog
@@ -229,7 +230,7 @@ def validate_plan_lead_days(data_submission_lead_days: int, reporting_lead_days:
 
 def require_admin(current_user: User = Depends(get_current_user)):
     """Dependency to require admin role."""
-    if current_user.role != UserRole.ADMIN:
+    if not is_admin(current_user):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Admin access required"
@@ -257,7 +258,7 @@ def check_plan_edit_permission(db: Session, plan_id: int, current_user: User) ->
         )
 
     # Admins always have permission
-    if current_user.role == UserRole.ADMIN:
+    if is_admin(current_user):
         return plan
 
     # Check if user is a member of the plan's monitoring team
@@ -989,13 +990,13 @@ def get_monitoring_plan(
         } if plan.team else None,
         # User permission indicators for frontend
         "user_permissions": {
-            "is_admin": current_user.role == UserRole.ADMIN,
+            "is_admin": is_admin(current_user),
             "is_team_member": plan.team and current_user.user_id in [m.user_id for m in plan.team.members] if plan.team else False,
             "is_data_provider": plan.data_provider and plan.data_provider.user_id == current_user.user_id if plan.data_provider else False,
-            "can_start_cycle": current_user.role == UserRole.ADMIN or (plan.team and current_user.user_id in [m.user_id for m in plan.team.members]),
+            "can_start_cycle": is_admin(current_user) or (plan.team and current_user.user_id in [m.user_id for m in plan.team.members]),
             "can_submit_cycle": True,  # Anyone with view access can submit results
-            "can_request_approval": current_user.role == UserRole.ADMIN or (plan.team and current_user.user_id in [m.user_id for m in plan.team.members]),
-            "can_cancel_cycle": current_user.role == UserRole.ADMIN or (plan.team and current_user.user_id in [m.user_id for m in plan.team.members]),
+            "can_request_approval": is_admin(current_user) or (plan.team and current_user.user_id in [m.user_id for m in plan.team.members]),
+            "can_cancel_cycle": is_admin(current_user) or (plan.team and current_user.user_id in [m.user_id for m in plan.team.members]),
         },
         "data_provider": {
             "user_id": plan.data_provider.user_id,
@@ -2833,7 +2834,7 @@ def check_cycle_edit_permission(db: Session, cycle_id: int, current_user: User) 
         )
 
     # Admins always have permission
-    if current_user.role == UserRole.ADMIN:
+    if is_admin(current_user):
         return cycle
 
     # Check if user is assigned to this cycle
@@ -2878,7 +2879,7 @@ def check_team_member_or_admin(db: Session, cycle_id: int, current_user: User) -
         )
 
     # Admins always have permission
-    if current_user.role == UserRole.ADMIN:
+    if is_admin(current_user):
         return cycle
 
     # Check if user is a member of the plan's monitoring team (risk function)
@@ -4442,10 +4443,8 @@ def list_my_pending_monitoring_approvals(
     current_user: User = Depends(get_current_user)
 ):
     """List pending monitoring approvals assigned to the current user."""
-    if current_user.role not in (
-        UserRole.ADMIN,
-        UserRole.GLOBAL_APPROVER,
-        UserRole.REGIONAL_APPROVER
+    if not (
+        is_admin(current_user) or is_global_approver(current_user) or is_regional_approver(current_user)
     ):
         return []
 
@@ -4465,11 +4464,11 @@ def list_my_pending_monitoring_approvals(
         MonitoringCycle.status == MonitoringCycleStatus.PENDING_APPROVAL.value
     )
 
-    if current_user.role == UserRole.GLOBAL_APPROVER:
+    if is_global_approver(current_user):
         approvals_query = approvals_query.filter(
             MonitoringCycleApproval.approval_type == "Global"
         )
-    elif current_user.role == UserRole.REGIONAL_APPROVER:
+    elif is_regional_approver(current_user):
         if not user_region_ids:
             return []
         approvals_query = approvals_query.filter(
@@ -4536,15 +4535,15 @@ def _can_user_approve_approval(
         return False
 
     # Admin can always approve (on behalf of the appropriate role with evidence)
-    if current_user.role == UserRole.ADMIN:
+    if is_admin(current_user):
         return True
 
     if approval.approval_type == "Global":
         # User must have Global Approver role
-        return current_user.role == UserRole.GLOBAL_APPROVER
+        return is_global_approver(current_user)
     elif approval.approval_type == "Regional":
         # User must have Regional Approver role AND be authorized for this region
-        if current_user.role != UserRole.REGIONAL_APPROVER:
+        if not is_regional_approver(current_user):
             return False
         return approval.region_id in user_region_ids
 
@@ -4557,7 +4556,7 @@ def _build_approval_response(approval: MonitoringCycleApproval, can_approve: boo
     is_proxy_approval = (
         approval.approval_evidence is not None and
         approval.approver is not None and
-        approval.approver.role == UserRole.ADMIN
+        is_admin(approval.approver)
     )
 
     return {
@@ -4901,7 +4900,7 @@ def approve_cycle(
 
     if approval.approval_type == "Global":
         # User must have Global Approver role OR be Admin
-        if current_user.role == UserRole.ADMIN:
+        if is_admin(current_user):
             # Admin approving on behalf - require evidence
             if not approval_data.approval_evidence:
                 raise HTTPException(
@@ -4909,7 +4908,7 @@ def approve_cycle(
                     detail="Admin must provide approval_evidence when approving on behalf (e.g., meeting minutes, email confirmation)"
                 )
             is_proxy_approval = True
-        elif current_user.role == UserRole.GLOBAL_APPROVER:
+        elif is_global_approver(current_user):
             # Global Approver has direct authority
             pass
         else:
@@ -4920,7 +4919,7 @@ def approve_cycle(
 
     elif approval.approval_type == "Regional":
         # User must have Regional Approver role AND be authorized for this region, OR be Admin
-        if current_user.role == UserRole.ADMIN:
+        if is_admin(current_user):
             # Admin approving on behalf - require evidence
             if not approval_data.approval_evidence:
                 raise HTTPException(
@@ -4928,7 +4927,7 @@ def approve_cycle(
                     detail="Admin must provide approval_evidence when approving on behalf (e.g., meeting minutes, email confirmation)"
                 )
             is_proxy_approval = True
-        elif current_user.role == UserRole.REGIONAL_APPROVER:
+        elif is_regional_approver(current_user):
             # Check if user is authorized for this region
             user_region_ids = [r.region_id for r in current_user.regions]
             if approval.region_id not in user_region_ids:
@@ -5025,7 +5024,7 @@ def reject_cycle_approval(
 
     # Check permission (same as approve)
     if approval.approval_type == "Global":
-        if current_user.role != UserRole.ADMIN:
+        if not is_admin(current_user):
             plan = db.query(MonitoringPlan).options(
                 joinedload(MonitoringPlan.team).joinedload(
                     MonitoringTeam.members)
@@ -5045,7 +5044,7 @@ def reject_cycle_approval(
                 )
 
     elif approval.approval_type == "Regional":
-        if current_user.role != UserRole.ADMIN:
+        if not is_admin(current_user):
             user_region_ids = [r.region_id for r in current_user.regions]
             if approval.region_id not in user_region_ids:
                 raise HTTPException(
@@ -5517,7 +5516,7 @@ def generate_cycle_report_pdf(
     has_access = False
 
     # Admin or Validator
-    if current_user.role in (UserRole.ADMIN.value, "Admin", UserRole.VALIDATOR.value, "Validator"):
+    if is_admin(current_user) or is_validator(current_user):
         has_access = True
 
     # Global or Regional Approver on this cycle

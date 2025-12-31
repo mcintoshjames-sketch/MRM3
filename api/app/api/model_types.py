@@ -4,7 +4,8 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session, joinedload
 from app.core.database import get_db
 from app.core.deps import get_current_user
-from app.models.user import User, UserRole
+from app.models.user import User
+from app.core.roles import is_admin
 from app.models.model_type_taxonomy import ModelTypeCategory, ModelType
 from app.models.audit_log import AuditLog
 from app.schemas.model_type_taxonomy import (
@@ -30,7 +31,7 @@ def create_audit_log(db: Session, entity_type: str, entity_id: int, action: str,
 
 def require_admin(current_user: User = Depends(get_current_user)):
     """Dependency to require admin role."""
-    if current_user.role != UserRole.ADMIN:
+    if not is_admin(current_user):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Admin access required"
