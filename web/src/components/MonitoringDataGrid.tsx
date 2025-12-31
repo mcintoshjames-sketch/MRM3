@@ -153,6 +153,7 @@ const EditableCell: React.FC<{
 
     const onActivate = () => setActiveCell({ row: rowIndex, col: colIndex });
     const onNavigate = (direction: 'up' | 'down' | 'left' | 'right') => navigate(rowIndex, colIndex, direction);
+    const isEnterKey = (key: string) => key === 'Enter' || key === 'NumpadEnter';
 
     const [isEditing, setIsEditing] = useState(false);
     const [editValue, setEditValue] = useState('');
@@ -261,7 +262,7 @@ const EditableCell: React.FC<{
     // Handle keyboard navigation
     const handleKeyDown = (e: React.KeyboardEvent) => {
         if (isEditing) {
-            if (e.key === 'Enter') {
+            if (isEnterKey(e.key)) {
                 e.preventDefault();
                 saveAndExit();
             } else if (e.key === 'Escape') {
@@ -272,7 +273,7 @@ const EditableCell: React.FC<{
                 onNavigate(e.shiftKey ? 'left' : 'right');
             }
         } else {
-            if (e.key === 'Enter' || e.key === 'F2') {
+            if (isEnterKey(e.key) || e.key === 'F2') {
                 e.preventDefault();
                 startEditing();
             } else if (e.key === 'ArrowUp') {
@@ -297,16 +298,21 @@ const EditableCell: React.FC<{
         }
     };
 
+    const openBreachPanel = () => {
+        if (currentOutcome === 'RED' && !readOnly) {
+            onOpenBreachAnnotation(
+                { modelId, metricId: metric.original_metric_id!, snapshotId: metric.snapshot_id },
+                result || null
+            );
+        }
+    };
+
     // Handle click - activate cell (focus is handled by useEffect when isActive changes)
     const handleClick = () => {
         if (!isEditing) {
             onActivate();
-            // If RED outcome, clicking opens breach annotation
-            if (currentOutcome === 'RED' && !readOnly) {
-                onOpenBreachAnnotation(
-                    { modelId, metricId: metric.original_metric_id!, snapshotId: metric.snapshot_id },
-                    result || null
-                );
+            if (cellRef.current) {
+                cellRef.current.focus();
             }
         }
     };
@@ -338,9 +344,22 @@ const EditableCell: React.FC<{
     const hasNarrative = result?.narrative && result.narrative.trim() !== '';
 
     // Handle mouse down - focus the cell
-    const handleMouseDown = () => {
-        if (!isEditing && cellRef.current) {
-            cellRef.current.focus();
+    const handleMouseDown = (e: React.MouseEvent) => {
+        if (!isEditing) {
+            e.preventDefault();
+            onActivate();
+            if (cellRef.current) {
+                cellRef.current.focus();
+            }
+            if (e.button === 0) {
+                openBreachPanel();
+            }
+        }
+    };
+
+    const handleFocus = () => {
+        if (!isActive) {
+            onActivate();
         }
     };
 
@@ -351,6 +370,7 @@ const EditableCell: React.FC<{
             onMouseDown={handleMouseDown}
             onClick={handleClick}
             onDoubleClick={handleDoubleClick}
+            onFocus={handleFocus}
             onKeyDown={handleKeyDown}
             onPaste={handlePaste}
             tabIndex={0}

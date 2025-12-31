@@ -39,6 +39,7 @@ class TaxonomyValueResponse(TaxonomyValueBase):
     """Response schema for taxonomy value."""
     value_id: int
     taxonomy_id: int
+    is_system_protected: bool = False
     created_at: datetime
 
     class Config:

@@ -44,7 +44,7 @@ const getDaysOverdue = (rec: RecommendationListItem) => {
 
 export default function RecommendationsPage() {
     const { user } = useAuth();
-    const [searchParams] = useSearchParams();
+    const [searchParams, setSearchParams] = useSearchParams();
     const [recommendations, setRecommendations] = useState<RecommendationListItem[]>([]);
     const [models, setModels] = useState<Model[]>([]);
     const [users, setUsers] = useState<User[]>([]);
@@ -60,6 +60,13 @@ export default function RecommendationsPage() {
     const urlValidationRequestId = searchParams.get('validation_request_id');
     const urlMyTasks = searchParams.get('my_tasks') === 'true';
     const urlOpenOnly = searchParams.get('open_only') === 'true';
+    const urlPlanId = searchParams.get('plan_id');
+    const urlMonitoringCycleId = searchParams.get('monitoring_cycle_id');
+
+    const planIdParam = urlPlanId ? parseInt(urlPlanId, 10) : null;
+    const monitoringCycleIdParam = urlMonitoringCycleId ? parseInt(urlMonitoringCycleId, 10) : null;
+    const hasPlanIdParam = planIdParam !== null && !Number.isNaN(planIdParam);
+    const hasMonitoringCycleIdParam = monitoringCycleIdParam !== null && !Number.isNaN(monitoringCycleIdParam);
 
     type FilterMode = 'all' | 'open' | 'my_tasks' | 'overdue' | 'high_priority';
     const [filterMode, setFilterMode] = useState<FilterMode>(
@@ -200,7 +207,7 @@ export default function RecommendationsPage() {
 
     useEffect(() => {
         fetchData();
-    }, []);
+    }, [planIdParam, monitoringCycleIdParam]);
 
     const fetchData = async () => {
         try {
@@ -213,7 +220,10 @@ export default function RecommendationsPage() {
             const taxonomyQueryString = taxonomyNames.map(n => `names=${encodeURIComponent(n)}`).join('&');
 
             const [recs, modelsRes, usersRes, taxonomiesRes, myTasksRes] = await Promise.all([
-                recommendationsApi.list(),
+                recommendationsApi.list({
+                    plan_id: hasPlanIdParam ? planIdParam : undefined,
+                    monitoring_cycle_id: hasMonitoringCycleIdParam ? monitoringCycleIdParam : undefined
+                }),
                 api.get('/models/'),
                 api.get('/auth/users'),
                 api.get(`/taxonomies/by-names/?${taxonomyQueryString}`),
@@ -483,6 +493,14 @@ export default function RecommendationsPage() {
                     ? 'Open'
                     : '';
 
+    const clearUrlPrefilters = () => {
+        const nextParams = new URLSearchParams(searchParams);
+        ['model_id', 'validation_request_id', 'my_tasks', 'open_only', 'plan_id', 'monitoring_cycle_id'].forEach(
+            (key) => nextParams.delete(key)
+        );
+        setSearchParams(nextParams, { replace: true });
+    };
+
     const resetAllFilters = () => {
         setFilterMode('all');
         setSearchQuery('');
@@ -492,6 +510,7 @@ export default function RecommendationsPage() {
         setModelFilterId(null);
         setValidationRequestId(null);
         setAssignedToId(null);
+        clearUrlPrefilters();
     };
 
     const canCreate = user?.role === 'Admin' || user?.role === 'Validator';
@@ -568,10 +587,18 @@ export default function RecommendationsPage() {
                 />
             </div>
 
+            {hasPlanIdParam && (
+                <div className="mb-3">
+                    <span className="inline-flex items-center rounded-full bg-blue-100 text-blue-800 px-3 py-1 text-xs font-medium">
+                        Filtered by plan #{planIdParam}
+                    </span>
+                </div>
+            )}
+
             {filterMode !== 'all' && (
                 <FilterStatusBar
                     activeFilterLabel={activeFilterLabel}
-                    onClear={() => setFilterMode('all')}
+                    onClear={resetAllFilters}
                     entityName="recommendations"
                 />
             )}

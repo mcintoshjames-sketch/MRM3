@@ -21,17 +21,33 @@ interface MonitoringTask {
     days_until_due: number | null;
 }
 
+const requiresMonitoringAction = (task: MonitoringTask) => {
+    switch (task.user_role) {
+        case 'data_provider':
+            return task.status === 'DATA_COLLECTION';
+        case 'assignee':
+            return ['PENDING', 'DATA_COLLECTION', 'UNDER_REVIEW'].includes(task.status);
+        case 'team_member':
+            return ['UNDER_REVIEW', 'PENDING_APPROVAL'].includes(task.status);
+        default:
+            return false;
+    }
+};
+
 const MyMonitoringTasksPage: React.FC = () => {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [tasks, setTasks] = useState<MonitoringTask[]>([]);
+    const [includeClosed, setIncludeClosed] = useState(false);
 
     useEffect(() => {
         const fetchTasks = async () => {
             setLoading(true);
             setError(null);
             try {
-                const response = await api.get('/monitoring/my-tasks');
+                const response = await api.get('/monitoring/my-tasks', {
+                    params: { include_closed: includeClosed }
+                });
                 setTasks(response.data);
             } catch (err: any) {
                 setError(err.response?.data?.detail || 'Failed to load monitoring tasks');
@@ -41,22 +57,11 @@ const MyMonitoringTasksPage: React.FC = () => {
         };
 
         fetchTasks();
-    }, []);
+    }, [includeClosed]);
 
     // Separate tasks into action required and informational
-    const actionRequired = tasks.filter(t =>
-        t.is_overdue ||
-        t.action_needed.includes('Submit') ||
-        t.action_needed.includes('Approve') ||
-        t.status === 'PENDING_APPROVAL'
-    );
-
-    const informational = tasks.filter(t =>
-        !t.is_overdue &&
-        !t.action_needed.includes('Submit') &&
-        !t.action_needed.includes('Approve') &&
-        t.status !== 'PENDING_APPROVAL'
-    );
+    const actionRequired = tasks.filter((task) => requiresMonitoringAction(task));
+    const informational = tasks.filter((task) => !requiresMonitoringAction(task));
 
     const formatPeriod = (start: string, end: string) => {
         const startDate = new Date(start);
@@ -89,9 +94,10 @@ const MyMonitoringTasksPage: React.FC = () => {
 
     const TaskCard: React.FC<{ task: MonitoringTask }> = ({ task }) => {
         const roleBadge = getRoleBadge(task.user_role);
+        const showOverdue = requiresMonitoringAction(task) && task.is_overdue;
 
         return (
-            <div className={`bg-white rounded-lg border ${task.is_overdue ? 'border-red-300' : 'border-gray-200'} p-4 hover:shadow-md transition-shadow`}>
+            <div className={`bg-white rounded-lg border ${showOverdue ? 'border-red-300' : 'border-gray-200'} p-4 hover:shadow-md transition-shadow`}>
                 <div className="flex items-start justify-between">
                     <div className="flex-1">
                         <div className="flex items-center gap-2 mb-1">
@@ -121,7 +127,7 @@ const MyMonitoringTasksPage: React.FC = () => {
                         </svg>
                         <span className="text-gray-600">Due: {task.submission_due_date}</span>
                     </div>
-                    {task.is_overdue && (
+                    {showOverdue && (
                         <span className="text-red-600 font-medium">Overdue</span>
                     )}
                     {!task.is_overdue && task.days_until_due !== null && task.days_until_due <= 7 && (
@@ -170,6 +176,19 @@ const MyMonitoringTasksPage: React.FC = () => {
                 <p className="text-gray-600 mt-1">
                     View and manage your monitoring cycle responsibilities
                 </p>
+            </div>
+            <div className="flex items-center justify-between mb-6">
+                <div className="text-sm text-gray-500">
+                    {includeClosed ? 'Showing active and past cycles.' : 'Showing active cycles only.'}
+                </div>
+                <label className="flex items-center gap-2 text-sm text-gray-700">
+                    <input
+                        type="checkbox"
+                        checked={includeClosed}
+                        onChange={(e) => setIncludeClosed(e.target.checked)}
+                    />
+                    Show completed/cancelled cycles
+                </label>
             </div>
 
             {error && (

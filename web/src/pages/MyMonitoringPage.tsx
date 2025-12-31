@@ -22,11 +22,25 @@ interface MonitoringTask {
     days_until_due: number | null;
 }
 
+const requiresMonitoringAction = (task: MonitoringTask) => {
+    switch (task.user_role) {
+        case 'data_provider':
+            return task.status === 'DATA_COLLECTION';
+        case 'assignee':
+            return ['PENDING', 'DATA_COLLECTION', 'UNDER_REVIEW'].includes(task.status);
+        case 'team_member':
+            return ['UNDER_REVIEW', 'PENDING_APPROVAL'].includes(task.status);
+        default:
+            return false;
+    }
+};
+
 export default function MyMonitoringPage() {
     const { user } = useAuth();
     const [tasks, setTasks] = useState<MonitoringTask[]>([]);
     const [loading, setLoading] = useState(true);
     const [filter, setFilter] = useState<'all' | 'data_provider' | 'team_member' | 'assignee'>('all');
+    const [includeClosed, setIncludeClosed] = useState(false);
 
     // Check if user is Admin - they see the governance overview instead
     const isAdmin = user?.role === 'Admin';
@@ -38,11 +52,13 @@ export default function MyMonitoringPage() {
         } else {
             setLoading(false);
         }
-    }, [isAdmin]);
+    }, [isAdmin, includeClosed]);
 
     const fetchTasks = async () => {
         try {
-            const response = await api.get('/monitoring/my-tasks');
+            const response = await api.get('/monitoring/my-tasks', {
+                params: { include_closed: includeClosed }
+            });
             setTasks(response.data);
         } catch (error) {
             console.error('Failed to fetch monitoring tasks:', error);
@@ -140,11 +156,7 @@ export default function MyMonitoringPage() {
     }
 
     // Split tasks into Action Required and Information
-    const actionRequiredTasks = tasks.filter(t =>
-        t.is_overdue ||
-        t.action_needed.toLowerCase().includes('approve') ||
-        t.status === 'PENDING_APPROVAL'
-    );
+    const actionRequiredTasks = tasks.filter((task) => requiresMonitoringAction(task));
 
     // Note: Can use for two-section layout if needed
     // const informationalTasks = tasks.filter(t =>
@@ -160,6 +172,19 @@ export default function MyMonitoringPage() {
                 <p className="mt-2 text-gray-600">
                     Monitoring cycles that require your attention
                 </p>
+            </div>
+            <div className="flex items-center justify-between mb-6">
+                <div className="text-sm text-gray-500">
+                    {includeClosed ? 'Showing active and past cycles.' : 'Showing active cycles only.'}
+                </div>
+                <label className="flex items-center gap-2 text-sm text-gray-700">
+                    <input
+                        type="checkbox"
+                        checked={includeClosed}
+                        onChange={(e) => setIncludeClosed(e.target.checked)}
+                    />
+                    Show completed/cancelled cycles
+                </label>
             </div>
 
             {/* Quick Stats Cards */}
@@ -263,7 +288,7 @@ export default function MyMonitoringPage() {
                         </thead>
                         <tbody className="bg-white divide-y divide-gray-200">
                             {filteredTasks.map((task) => (
-                                <tr key={task.cycle_id} className={`hover:bg-gray-50 ${task.is_overdue ? 'bg-red-50' : ''}`}>
+                                <tr key={task.cycle_id} className={`hover:bg-gray-50 ${requiresMonitoringAction(task) && task.is_overdue ? 'bg-red-50' : ''}`}>
                                     <td className="px-6 py-4 whitespace-nowrap">
                                         <span className={`px-2 py-1 text-xs font-semibold rounded ${getRoleBadge(task.user_role)}`}>
                                             {getRoleLabel(task.user_role)}
@@ -292,7 +317,7 @@ export default function MyMonitoringPage() {
                                                 : task.submission_due_date.split('T')[0]
                                             }
                                         </div>
-                                        {task.is_overdue ? (
+                                        {requiresMonitoringAction(task) && task.is_overdue ? (
                                             <div className="text-xs font-medium text-red-600">
                                                 Overdue
                                             </div>

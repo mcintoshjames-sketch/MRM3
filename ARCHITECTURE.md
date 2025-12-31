@@ -384,7 +384,7 @@ Model Risk Management inventory system with a FastAPI backend, React/TypeScript 
   - Cycles: `POST /plans/{id}/cycles`, `GET /plans/{id}/cycles`, `GET /cycles/{id}`, `PATCH /cycles/{id}`, `DELETE /cycles/{id}`
   - Workflow: `POST /cycles/{id}/start`, `POST /cycles/{id}/submit`, `POST /cycles/{id}/cancel`, `POST /cycles/{id}/request-approval`
   - Results: `POST /cycles/{id}/results`, `GET /cycles/{id}/results`, `PATCH /results/{id}`, `DELETE /results/{id}`
-  - Approvals: `GET /cycles/{id}/approvals`, `POST /cycles/{id}/approvals/{approval_id}/approve`, `POST /cycles/{id}/approvals/{approval_id}/reject`, `POST /cycles/{id}/approvals/{approval_id}/void`
+  - Approvals: `GET /cycles/{id}/approvals`, `GET /approvals/my-pending`, `POST /cycles/{id}/approvals/{approval_id}/approve`, `POST /cycles/{id}/approvals/{approval_id}/reject`, `POST /cycles/{id}/approvals/{approval_id}/void`
 - **Permission Model**:
   | Role | Cycles | Results | Approvals |
   |------|--------|---------|-----------|

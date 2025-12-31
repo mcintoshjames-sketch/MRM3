@@ -70,7 +70,8 @@ export default function ModelSearchSelect({
     }, []);
 
     const disabledSet = new Set(disabledValues);
-    const normalizedSearch = searchTerm.trim().toLowerCase();
+    const effectiveSearchTerm = isOpen && !isEditing ? '' : searchTerm;
+    const normalizedSearch = effectiveSearchTerm.trim().toLowerCase();
     const filteredModels = models.filter((model) => {
         if (!normalizedSearch) return true;
         return (
@@ -119,7 +120,7 @@ export default function ModelSearchSelect({
                 onFocus={() => {
                     if (disabled) return;
                     setIsOpen(true);
-                    setIsEditing(true);
+                    setIsEditing(false);
                 }}
                 placeholder={placeholder}
                 className={inputClassName}

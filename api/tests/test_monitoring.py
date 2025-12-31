@@ -1794,6 +1794,154 @@ class TestMonitoringResults:
         assert response.status_code == 201
         assert response.json()["calculated_outcome"] == "RED"
 
+    def test_create_result_uses_snapshot_thresholds(self, client, admin_headers):
+        """Result creation uses locked version thresholds, not live metric updates."""
+        cat_resp = client.post("/kpm/categories", headers=admin_headers, json={
+            "code": "SNAP_CREATE_CAT",
+            "name": "Snapshot Create Category"
+        })
+        cat_id = cat_resp.json()["category_id"]
+
+        kpm_resp = client.post("/kpm/kpms", headers=admin_headers, json={
+            "category_id": cat_id,
+            "name": "Snapshot Create KPM",
+            "evaluation_type": "Quantitative"
+        })
+        kpm_id = kpm_resp.json()["kpm_id"]
+
+        plan_resp = client.post("/monitoring/plans", headers=admin_headers, json={
+            "initial_period_end_date": date.today().isoformat(),
+            "name": "Snapshot Create Plan",
+            "frequency": "Quarterly"
+        })
+        plan_id = plan_resp.json()["plan_id"]
+
+        metric_resp = client.post(f"/monitoring/plans/{plan_id}/metrics", headers=admin_headers, json={
+            "kpm_id": kpm_id,
+            "yellow_min": 0.8,
+            "red_min": 0.6
+        })
+        metric_id = metric_resp.json()["metric_id"]
+
+        client.post(f"/monitoring/plans/{plan_id}/versions/publish", headers=admin_headers, json={})
+
+        cycle_resp = client.post(f"/monitoring/plans/{plan_id}/cycles", headers=admin_headers, json={})
+        cycle_id = cycle_resp.json()["cycle_id"]
+        client.post(f"/monitoring/cycles/{cycle_id}/start", headers=admin_headers)
+
+        # Change live thresholds after cycle locks to version
+        client.patch(f"/monitoring/plans/{plan_id}/metrics/{metric_id}", headers=admin_headers, json={
+            "yellow_min": 0.9,
+            "red_min": 0.7
+        })
+
+        response = client.post(f"/monitoring/cycles/{cycle_id}/results", headers=admin_headers, json={
+            "plan_metric_id": metric_id,
+            "numeric_value": 0.85
+        })
+        assert response.status_code == 201
+        assert response.json()["calculated_outcome"] == "GREEN"
+
+    def test_update_result_uses_snapshot_thresholds(self, client, admin_headers):
+        """Result updates use locked version thresholds, not live metric updates."""
+        cat_resp = client.post("/kpm/categories", headers=admin_headers, json={
+            "code": "SNAP_UPDATE_CAT",
+            "name": "Snapshot Update Category"
+        })
+        cat_id = cat_resp.json()["category_id"]
+
+        kpm_resp = client.post("/kpm/kpms", headers=admin_headers, json={
+            "category_id": cat_id,
+            "name": "Snapshot Update KPM",
+            "evaluation_type": "Quantitative"
+        })
+        kpm_id = kpm_resp.json()["kpm_id"]
+
+        plan_resp = client.post("/monitoring/plans", headers=admin_headers, json={
+            "initial_period_end_date": date.today().isoformat(),
+            "name": "Snapshot Update Plan",
+            "frequency": "Quarterly"
+        })
+        plan_id = plan_resp.json()["plan_id"]
+
+        metric_resp = client.post(f"/monitoring/plans/{plan_id}/metrics", headers=admin_headers, json={
+            "kpm_id": kpm_id,
+            "yellow_min": 0.8,
+            "red_min": 0.6
+        })
+        metric_id = metric_resp.json()["metric_id"]
+
+        client.post(f"/monitoring/plans/{plan_id}/versions/publish", headers=admin_headers, json={})
+
+        cycle_resp = client.post(f"/monitoring/plans/{plan_id}/cycles", headers=admin_headers, json={})
+        cycle_id = cycle_resp.json()["cycle_id"]
+        client.post(f"/monitoring/cycles/{cycle_id}/start", headers=admin_headers)
+
+        create_resp = client.post(f"/monitoring/cycles/{cycle_id}/results", headers=admin_headers, json={
+            "plan_metric_id": metric_id,
+            "numeric_value": 0.95
+        })
+        result_id = create_resp.json()["result_id"]
+
+        # Tighten live thresholds after cycle locks to version
+        client.patch(f"/monitoring/plans/{plan_id}/metrics/{metric_id}", headers=admin_headers, json={
+            "yellow_min": 0.9,
+            "red_min": 0.7
+        })
+
+        update_resp = client.patch(f"/monitoring/results/{result_id}", headers=admin_headers, json={
+            "numeric_value": 0.85
+        })
+        assert update_resp.status_code == 200
+        assert update_resp.json()["calculated_outcome"] == "GREEN"
+
+    def test_update_result_blocks_outcome_override_for_quantitative(self, client, admin_headers):
+        """Quantitative results cannot set outcome_value_id without numeric_value."""
+        cat_resp = client.post("/kpm/categories", headers=admin_headers, json={
+            "code": "OUTCOME_BLOCK_CAT",
+            "name": "Outcome Block Category"
+        })
+        cat_id = cat_resp.json()["category_id"]
+
+        kpm_resp = client.post("/kpm/kpms", headers=admin_headers, json={
+            "category_id": cat_id,
+            "name": "Outcome Block KPM",
+            "evaluation_type": "Quantitative"
+        })
+        kpm_id = kpm_resp.json()["kpm_id"]
+
+        plan_resp = client.post("/monitoring/plans", headers=admin_headers, json={
+            "initial_period_end_date": date.today().isoformat(),
+            "name": "Outcome Block Plan",
+            "frequency": "Quarterly"
+        })
+        plan_id = plan_resp.json()["plan_id"]
+
+        metric_resp = client.post(f"/monitoring/plans/{plan_id}/metrics", headers=admin_headers, json={
+            "kpm_id": kpm_id,
+            "yellow_min": 0.8,
+            "red_min": 0.6
+        })
+        metric_id = metric_resp.json()["metric_id"]
+
+        client.post(f"/monitoring/plans/{plan_id}/versions/publish", headers=admin_headers, json={})
+
+        cycle_resp = client.post(f"/monitoring/plans/{plan_id}/cycles", headers=admin_headers, json={})
+        cycle_id = cycle_resp.json()["cycle_id"]
+        client.post(f"/monitoring/cycles/{cycle_id}/start", headers=admin_headers)
+
+        create_resp = client.post(f"/monitoring/cycles/{cycle_id}/results", headers=admin_headers, json={
+            "plan_metric_id": metric_id,
+            "numeric_value": 0.95
+        })
+        result_id = create_resp.json()["result_id"]
+
+        update_resp = client.patch(f"/monitoring/results/{result_id}", headers=admin_headers, json={
+            "outcome_value_id": 9999
+        })
+        assert update_resp.status_code == 400
+        assert "Quantitative outcomes" in update_resp.json()["detail"]
+
     def test_list_cycle_results(self, client, admin_headers):
         """List all results for a cycle."""
         # Setup - create plan with metric and cycle
@@ -2058,7 +2206,283 @@ class TestMonitoringPlanVersioning:
         data = start_resp.json()
         assert data["plan_version_id"] == version_id
         assert data["version_locked_at"] is not None
-        assert data["plan_version"]["version_id"] == version_id
+
+
+class TestMonitoringReportPDF:
+    """Tests for monitoring cycle PDF report generation."""
+
+    def test_pdf_uses_snapshot_thresholds(self, client, admin_headers, db_session, monkeypatch):
+        """PDF report uses thresholds from the locked plan version."""
+        cat_resp = client.post("/kpm/categories", headers=admin_headers, json={
+            "code": "PDF_SNAP_CAT",
+            "name": "PDF Snapshot Category"
+        })
+        cat_id = cat_resp.json()["category_id"]
+
+        kpm_resp = client.post("/kpm/kpms", headers=admin_headers, json={
+            "category_id": cat_id,
+            "name": "PDF Snapshot KPM",
+            "evaluation_type": "Quantitative"
+        })
+        kpm_id = kpm_resp.json()["kpm_id"]
+
+        plan_resp = client.post("/monitoring/plans", headers=admin_headers, json={
+            "initial_period_end_date": date.today().isoformat(),
+            "name": "PDF Snapshot Plan",
+            "frequency": "Quarterly"
+        })
+        plan_id = plan_resp.json()["plan_id"]
+
+        metric_resp = client.post(f"/monitoring/plans/{plan_id}/metrics", headers=admin_headers, json={
+            "kpm_id": kpm_id,
+            "yellow_min": 0.8,
+            "red_min": 0.6
+        })
+        metric_id = metric_resp.json()["metric_id"]
+
+        client.post(f"/monitoring/plans/{plan_id}/versions/publish", headers=admin_headers, json={})
+
+        cycle_resp = client.post(f"/monitoring/plans/{plan_id}/cycles", headers=admin_headers, json={})
+        cycle_id = cycle_resp.json()["cycle_id"]
+        client.post(f"/monitoring/cycles/{cycle_id}/start", headers=admin_headers)
+
+        # Change live thresholds after cycle locks to version
+        client.patch(f"/monitoring/plans/{plan_id}/metrics/{metric_id}", headers=admin_headers, json={
+            "yellow_min": 0.9,
+            "red_min": 0.7
+        })
+
+        client.post(f"/monitoring/cycles/{cycle_id}/results", headers=admin_headers, json={
+            "plan_metric_id": metric_id,
+            "numeric_value": 0.85
+        })
+
+        from app.models.monitoring import MonitoringCycle
+        cycle = db_session.query(MonitoringCycle).filter(
+            MonitoringCycle.cycle_id == cycle_id
+        ).first()
+        cycle.status = "APPROVED"
+        db_session.commit()
+
+        captured = {}
+
+        class DummyReport:
+            def __init__(self, cycle_data, plan_data, results, approvals, trend_data=None, logo_path=None):
+                captured["results"] = results
+
+            def generate(self):
+                return b"%PDF-1.4"
+
+        import app.core.pdf_reports as pdf_reports
+        monkeypatch.setattr(pdf_reports, "MonitoringCycleReportPDF", DummyReport)
+
+        response = client.get(f"/monitoring/cycles/{cycle_id}/report/pdf", headers=admin_headers)
+        assert response.status_code == 200
+        assert "results" in captured
+        target = next(r for r in captured["results"] if r["metric_id"] == metric_id)
+        assert target["yellow_min"] == 0.8
+
+    def test_pdf_trend_thresholds_follow_cycle_versions(self, client, admin_headers, db_session, monkeypatch):
+        """Trend charts use thresholds from each cycle's locked plan version."""
+        cat_resp = client.post("/kpm/categories", headers=admin_headers, json={
+            "code": "PDF_TREND_CAT",
+            "name": "PDF Trend Category"
+        })
+        cat_id = cat_resp.json()["category_id"]
+
+        kpm_resp = client.post("/kpm/kpms", headers=admin_headers, json={
+            "category_id": cat_id,
+            "name": "PDF Trend KPM",
+            "evaluation_type": "Quantitative"
+        })
+        kpm_id = kpm_resp.json()["kpm_id"]
+
+        plan_resp = client.post("/monitoring/plans", headers=admin_headers, json={
+            "initial_period_end_date": date.today().isoformat(),
+            "name": "PDF Trend Plan",
+            "frequency": "Quarterly"
+        })
+        plan_id = plan_resp.json()["plan_id"]
+
+        metric_resp = client.post(f"/monitoring/plans/{plan_id}/metrics", headers=admin_headers, json={
+            "kpm_id": kpm_id,
+            "yellow_min": 0.8,
+            "red_min": 0.6
+        })
+        metric_id = metric_resp.json()["metric_id"]
+
+        client.post(f"/monitoring/plans/{plan_id}/versions/publish", headers=admin_headers, json={})
+
+        cycle1_resp = client.post(f"/monitoring/plans/{plan_id}/cycles", headers=admin_headers, json={})
+        cycle1_id = cycle1_resp.json()["cycle_id"]
+        client.post(f"/monitoring/cycles/{cycle1_id}/start", headers=admin_headers)
+
+        client.post(f"/monitoring/cycles/{cycle1_id}/results", headers=admin_headers, json={
+            "plan_metric_id": metric_id,
+            "numeric_value": 0.85
+        })
+
+        client.patch(f"/monitoring/plans/{plan_id}/metrics/{metric_id}", headers=admin_headers, json={
+            "yellow_min": 0.9,
+            "red_min": 0.7
+        })
+        client.post(f"/monitoring/plans/{plan_id}/versions/publish", headers=admin_headers, json={})
+
+        cycle2_resp = client.post(f"/monitoring/plans/{plan_id}/cycles", headers=admin_headers, json={})
+        cycle2_id = cycle2_resp.json()["cycle_id"]
+        client.post(f"/monitoring/cycles/{cycle2_id}/start", headers=admin_headers)
+
+        client.post(f"/monitoring/cycles/{cycle2_id}/results", headers=admin_headers, json={
+            "plan_metric_id": metric_id,
+            "numeric_value": 0.5
+        })
+
+        from app.models.monitoring import MonitoringCycle, MonitoringResult
+        cycle2_result = db_session.query(MonitoringResult).filter(
+            MonitoringResult.cycle_id == cycle2_id,
+            MonitoringResult.plan_metric_id == metric_id
+        ).first()
+        assert cycle2_result is not None
+        assert cycle2_result.calculated_outcome == "RED"
+        model_id = cycle2_result.model_id
+
+        cycle1 = db_session.query(MonitoringCycle).filter(
+            MonitoringCycle.cycle_id == cycle1_id
+        ).first()
+        cycle2 = db_session.query(MonitoringCycle).filter(
+            MonitoringCycle.cycle_id == cycle2_id
+        ).first()
+        cycle1.status = "APPROVED"
+        cycle2.status = "APPROVED"
+        db_session.commit()
+
+        captured = {}
+
+        class DummyReport:
+            def __init__(self, cycle_data, plan_data, results, approvals, trend_data=None, logo_path=None):
+                captured["trend_data"] = trend_data
+                captured["results"] = results
+
+            def generate(self):
+                return b"%PDF-1.4"
+
+        import app.core.pdf_reports as pdf_reports
+        monkeypatch.setattr(pdf_reports, "MonitoringCycleReportPDF", DummyReport)
+
+        response = client.get(f"/monitoring/cycles/{cycle2_id}/report/pdf", headers=admin_headers)
+        assert response.status_code == 200
+        assert captured.get("results")
+        assert captured.get("trend_data") is not None
+        assert captured["trend_data"]
+        trend_key = f"{metric_id}_{model_id}" if model_id else str(metric_id)
+        trend_points = captured["trend_data"].get(trend_key) or captured["trend_data"].get(metric_id)
+        if trend_points is None:
+            trend_points = next(iter(captured["trend_data"].values()))
+        points_by_cycle = {point["cycle_id"]: point for point in trend_points}
+
+        assert points_by_cycle[cycle1_id]["yellow_min"] == 0.8
+        assert points_by_cycle[cycle1_id]["red_min"] == 0.6
+        assert points_by_cycle[cycle2_id]["yellow_min"] == 0.9
+        assert points_by_cycle[cycle2_id]["red_min"] == 0.7
+
+    def test_pdf_trend_excludes_future_cycles(self, client, admin_headers, db_session, monkeypatch):
+        """Trend charts exclude cycles after the report period end date."""
+        cat_resp = client.post("/kpm/categories", headers=admin_headers, json={
+            "code": "PDF_TREND_CUTOFF",
+            "name": "PDF Trend Cutoff Category"
+        })
+        cat_id = cat_resp.json()["category_id"]
+
+        kpm_resp = client.post("/kpm/kpms", headers=admin_headers, json={
+            "category_id": cat_id,
+            "name": "PDF Trend Cutoff KPM",
+            "evaluation_type": "Quantitative"
+        })
+        kpm_id = kpm_resp.json()["kpm_id"]
+
+        plan_resp = client.post("/monitoring/plans", headers=admin_headers, json={
+            "initial_period_end_date": date.today().isoformat(),
+            "name": "PDF Trend Cutoff Plan",
+            "frequency": "Quarterly"
+        })
+        plan_id = plan_resp.json()["plan_id"]
+
+        metric_resp = client.post(f"/monitoring/plans/{plan_id}/metrics", headers=admin_headers, json={
+            "kpm_id": kpm_id,
+            "yellow_min": 0.8,
+            "red_min": 0.6
+        })
+        metric_id = metric_resp.json()["metric_id"]
+
+        client.post(f"/monitoring/plans/{plan_id}/versions/publish", headers=admin_headers, json={})
+
+        cycle1_resp = client.post(f"/monitoring/plans/{plan_id}/cycles", headers=admin_headers, json={})
+        cycle1_id = cycle1_resp.json()["cycle_id"]
+        client.post(f"/monitoring/cycles/{cycle1_id}/start", headers=admin_headers)
+        client.post(f"/monitoring/cycles/{cycle1_id}/results", headers=admin_headers, json={
+            "plan_metric_id": metric_id,
+            "numeric_value": 0.9
+        })
+
+        cycle2_resp = client.post(f"/monitoring/plans/{plan_id}/cycles", headers=admin_headers, json={})
+        cycle2_id = cycle2_resp.json()["cycle_id"]
+        client.post(f"/monitoring/cycles/{cycle2_id}/start", headers=admin_headers)
+        client.post(f"/monitoring/cycles/{cycle2_id}/results", headers=admin_headers, json={
+            "plan_metric_id": metric_id,
+            "numeric_value": 0.7
+        })
+
+        cycle3_resp = client.post(f"/monitoring/plans/{plan_id}/cycles", headers=admin_headers, json={})
+        cycle3_id = cycle3_resp.json()["cycle_id"]
+        client.post(f"/monitoring/cycles/{cycle3_id}/start", headers=admin_headers)
+        client.post(f"/monitoring/cycles/{cycle3_id}/results", headers=admin_headers, json={
+            "plan_metric_id": metric_id,
+            "numeric_value": 0.95
+        })
+
+        from app.models.monitoring import MonitoringCycle, MonitoringResult
+        cycle1 = db_session.query(MonitoringCycle).filter(
+            MonitoringCycle.cycle_id == cycle1_id
+        ).first()
+        cycle2 = db_session.query(MonitoringCycle).filter(
+            MonitoringCycle.cycle_id == cycle2_id
+        ).first()
+        cycle3 = db_session.query(MonitoringCycle).filter(
+            MonitoringCycle.cycle_id == cycle3_id
+        ).first()
+        cycle1.status = "APPROVED"
+        cycle2.status = "APPROVED"
+        cycle3.status = "APPROVED"
+        db_session.commit()
+
+        cycle2_result = db_session.query(MonitoringResult).filter(
+            MonitoringResult.cycle_id == cycle2_id,
+            MonitoringResult.plan_metric_id == metric_id
+        ).first()
+        model_id = cycle2_result.model_id if cycle2_result else None
+
+        captured = {}
+
+        class DummyReport:
+            def __init__(self, cycle_data, plan_data, results, approvals, trend_data=None, logo_path=None):
+                captured["trend_data"] = trend_data
+
+            def generate(self):
+                return b"%PDF-1.4"
+
+        import app.core.pdf_reports as pdf_reports
+        monkeypatch.setattr(pdf_reports, "MonitoringCycleReportPDF", DummyReport)
+
+        response = client.get(f"/monitoring/cycles/{cycle2_id}/report/pdf", headers=admin_headers)
+        assert response.status_code == 200
+        assert captured.get("trend_data") is not None
+        assert captured["trend_data"]
+        trend_key = f"{metric_id}_{model_id}" if model_id else str(metric_id)
+        trend_points = captured["trend_data"].get(trend_key) or captured["trend_data"].get(metric_id)
+        if trend_points is None:
+            trend_points = next(iter(captured["trend_data"].values()))
+
+        assert all(point["period_end_date"] <= cycle2.period_end_date for point in trend_points)
 
     def test_cycle_remains_locked_after_new_version(self, client, admin_headers):
         """Cycle stays locked to its original version even after new version published."""

@@ -59,6 +59,7 @@ interface TaxonomyValue {
     min_days: number | null;
     max_days: number | null;
     downgrade_notches: number | null;  // Scorecard penalty for Final Risk Ranking
+    is_system_protected?: boolean;
     created_at: string;
 }
 
@@ -1370,9 +1371,25 @@ export default function TaxonomyPage() {
         }
     };
 
-    const isSystemProtectedValue = (value: TaxonomyValue): boolean => {
-        return selectedTaxonomy?.name === 'Validation Type' && value.code === 'TARGETED';
+    const isMonitoringCategoryValue = (value: TaxonomyValue): boolean => {
+        if (selectedTaxonomy?.name !== 'Recommendation Category') return false;
+        return value.code === 'MONITORING' || value.label === 'Monitoring';
     };
+
+    const isDeleteProtectedValue = (value: TaxonomyValue): boolean => {
+        return isMonitoringCategoryValue(value)
+            || !!value.is_system_protected
+            || (selectedTaxonomy?.name === 'Validation Type' && value.code === 'TARGETED');
+    };
+
+    const isDeactivationProtectedValue = (value: TaxonomyValue): boolean => {
+        return isMonitoringCategoryValue(value) || !!value.is_system_protected;
+    };
+
+    const isEditingDeactivationProtected = editingValue
+        ? isDeactivationProtectedValue(editingValue)
+        : false;
+    const disableActiveToggle = isEditingDeactivationProtected && valueFormData.is_active;
 
     const handleDeleteTaxonomy = async (taxonomyId: number) => {
         if (!confirm('Are you sure you want to delete this taxonomy and all its values?')) return;
@@ -2537,10 +2554,20 @@ export default function TaxonomyPage() {
                                                         <input
                                                             type="checkbox"
                                                             checked={valueFormData.is_active}
-                                                            onChange={(e) => setValueFormData({ ...valueFormData, is_active: e.target.checked })}
+                                                            onChange={(e) => {
+                                                                if (!disableActiveToggle) {
+                                                                    setValueFormData({ ...valueFormData, is_active: e.target.checked });
+                                                                }
+                                                            }}
+                                                            disabled={disableActiveToggle}
                                                         />
                                                         <span className="text-sm font-medium">Active</span>
                                                     </label>
+                                                    {disableActiveToggle && (
+                                                        <p className="text-xs text-gray-500 mt-1">
+                                                            System-protected values cannot be deactivated.
+                                                        </p>
+                                                    )}
                                                 </div>
                                                 <div className="flex gap-2">
                                                     <button type="submit" className="btn-primary text-sm">
@@ -2647,11 +2674,11 @@ export default function TaxonomyPage() {
                                                                                 </svg>
                                                                                 Edit
                                                                             </button>
-                                                                            {isSystemProtectedValue(value) ? (
+                                                                            {isDeleteProtectedValue(value) ? (
                                                                                 <button
                                                                                     disabled
                                                                                     className="inline-flex items-center px-3 py-1 bg-gray-100 text-gray-400 rounded text-sm font-medium cursor-not-allowed"
-                                                                                    title="This value is used by the system for auto-generated validation projects and cannot be deleted"
+                                                                                    title="This value is system-protected and cannot be deleted"
                                                                                 >
                                                                                     <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />

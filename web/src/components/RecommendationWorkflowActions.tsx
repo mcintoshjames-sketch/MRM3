@@ -63,7 +63,7 @@ export default function RecommendationWorkflowActions({
             case 'REC_PENDING_CLOSURE_REVIEW':
                 return 'Closure submitted. Waiting for validator review.';
             case 'REC_PENDING_APPROVAL':
-                return 'Closure approved. Waiting for final approval(s).';
+                return 'Closure review passed. Awaiting final approval before closing.';
             default:
                 return '';
         }

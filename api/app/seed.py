@@ -2005,7 +2005,8 @@ def seed_database():
                         "code": "MONITORING",
                         "label": "Monitoring",
                         "description": "Issues with ongoing performance monitoring or controls",
-                        "sort_order": 5
+                        "sort_order": 5,
+                        "is_system_protected": True
                     },
                     {
                         "code": "GOVERNANCE",

@@ -22,6 +22,21 @@ from app.schemas.taxonomy import (
 
 router = APIRouter()
 
+SYSTEM_PROTECTED_TAXONOMY_VALUES = {
+    "Recommendation Category": {"MONITORING"},
+}
+
+
+def is_system_protected_override(value: TaxonomyValue) -> bool:
+    """Return True when a value must be protected even if not flagged in the DB."""
+    taxonomy_name = value.taxonomy.name if value.taxonomy else None
+    if not taxonomy_name:
+        return False
+    protected_codes = SYSTEM_PROTECTED_TAXONOMY_VALUES.get(taxonomy_name)
+    if not protected_codes:
+        return False
+    return value.code in protected_codes
+
 
 def create_audit_log(db: Session, entity_type: str, entity_id: int, action: str, user_id: int, changes: dict = None):
     """Create an audit log entry for taxonomy operations."""
@@ -471,6 +486,12 @@ def update_taxonomy_value(
     if taxonomy.taxonomy_type == "bucket" and ('min_days' in update_data or 'max_days' in update_data):
         require_admin_for_bucket_taxonomy(current_user, taxonomy, "modify range values in")
 
+    if (value.is_system_protected or is_system_protected_override(value)) and 'is_active' in update_data and update_data['is_active'] is not True:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="System-protected taxonomy values cannot be deactivated."
+        )
+
     # Prevent code changes for data integrity
     if 'code' in update_data and update_data['code'] != value.code:
         raise HTTPException(
@@ -547,6 +568,12 @@ def delete_taxonomy_value(
     # Require admin role for bucket taxonomy modifications
     taxonomy = value.taxonomy
     require_admin_for_bucket_taxonomy(current_user, taxonomy, "delete values from")
+
+    if value.is_system_protected or is_system_protected_override(value):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="System-protected taxonomy values cannot be deleted."
+        )
 
     # For bucket taxonomies, validate that deletion won't create gaps
     if taxonomy.taxonomy_type == "bucket":

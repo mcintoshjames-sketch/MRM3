@@ -71,6 +71,7 @@ function App() {
         if (!user) return '/login';
         if (user.role === 'Admin') return '/dashboard';
         if (user.role === 'Validator') return '/validator-dashboard';
+        if (user.role === 'Global Approver' || user.role === 'Regional Approver') return '/approver-dashboard';
         return '/my-dashboard';
     };
 
@@ -86,7 +87,15 @@ function App() {
             <Route path="/dashboard" element={user?.role === 'Admin' ? <AdminDashboardPage /> : <Navigate to="/models" />} />
             <Route path="/validator-dashboard" element={user?.role === 'Validator' ? <ValidatorDashboardPage /> : <Navigate to="/models" />} />
             <Route path="/approver-dashboard" element={user?.role === 'Admin' || user?.role === 'Global Approver' || user?.role === 'Regional Approver' ? <ApproverDashboardPage /> : <Navigate to="/models" />} />
-            <Route path="/my-dashboard" element={user && user.role !== 'Admin' && user.role !== 'Validator' ? <ModelOwnerDashboardPage /> : <Navigate to={getDefaultRoute()} />} />
+            <Route path="/my-dashboard" element={
+                user
+                    ? (user.role === 'Global Approver' || user.role === 'Regional Approver'
+                        ? <Navigate to="/approver-dashboard" />
+                        : (user.role !== 'Admin' && user.role !== 'Validator'
+                            ? <ModelOwnerDashboardPage />
+                            : <Navigate to={getDefaultRoute()} />))
+                    : <Navigate to="/login" />
+            } />
             <Route path="/models" element={user ? <ModelsPage /> : <Navigate to="/login" />} />
             <Route path="/models/:model_id/versions/:version_id" element={user ? <ModelChangeRecordPage /> : <Navigate to="/login" />} />
             <Route path="/models/:id" element={user ? <ModelDetailsPage /> : <Navigate to="/login" />} />

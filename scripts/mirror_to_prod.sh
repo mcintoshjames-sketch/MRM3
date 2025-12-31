@@ -54,10 +54,8 @@ ssh mrm-admin@ssh.mrmqmistest.org "
     sudo docker compose -f /opt/mrm/docker-compose.prod.yml exec -T db \
         psql -U mrm -d mrm -c \"COPY (SELECT user_id, email, password_hash FROM users) TO STDOUT WITH CSV HEADER\" \
         > /tmp/prod_passwords_backup.csv
-    echo 'Password backup created:'
-    head -5 /tmp/prod_passwords_backup.csv
-    echo '...'
-    echo \"Total users: \$(wc -l < /tmp/prod_passwords_backup.csv)\"
+    echo 'Password backup created: /tmp/prod_passwords_backup.csv'
+    echo \"Total users (including header): \$(wc -l < /tmp/prod_passwords_backup.csv)\"
 "
 
 # Step 4: Transfer dump to production

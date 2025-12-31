@@ -1,6 +1,7 @@
 """Monitoring Plans and Teams routes."""
 import csv
 import io
+import logging
 from typing import List, Optional, Union
 from datetime import date, datetime, timedelta
 from dateutil.relativedelta import relativedelta
@@ -29,6 +30,7 @@ from app.models.kpm import Kpm
 from app.models.audit_log import AuditLog
 from app.models.region import Region
 from app.models.taxonomy import Taxonomy, TaxonomyValue
+from app.models.recommendation import Recommendation, RecommendationStatusHistory
 from app.models.monitoring import (
     MonitoringTeam,
     MonitoringPlan,
@@ -63,6 +65,9 @@ from app.schemas.monitoring import (
     MonitoringPlanVersionListResponse,
     MetricSnapshotResponse,
     ActiveCyclesWarning,
+    MonitoringPlanDeactivationSummary,
+    MonitoringPlanDeactivateRequest,
+    RegionRef,
     # Component 9b lookup
     ModelMonitoringPlanResponse,
     # Phase 7: Reporting & Trends
@@ -71,6 +76,7 @@ from app.schemas.monitoring import (
     PerformanceSummary,
     # My Tasks endpoint
     MyMonitoringTaskResponse,
+    MonitoringApprovalQueueItem,
     # Admin Overview endpoint
     AdminMonitoringCycleSummary,
     AdminMonitoringOverviewSummary,
@@ -106,6 +112,9 @@ from app.core.exception_detection import (
 )
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
+
+TERMINAL_RECOMMENDATION_STATUS_CODES = ("REC_DROPPED", "REC_CLOSED")
 
 
 def create_audit_log(db: Session, entity_type: str, entity_id: int, action: str, user_id: int, changes: dict = None):
@@ -118,6 +127,33 @@ def create_audit_log(db: Session, entity_type: str, entity_id: int, action: str,
         changes=changes
     )
     db.add(audit_log)
+
+
+def get_non_terminal_recommendation_status_ids(db: Session) -> List[int]:
+    """Return recommendation status IDs that are considered open."""
+    status_taxonomy = db.query(Taxonomy).filter(
+        Taxonomy.name == "Recommendation Status"
+    ).first()
+    if not status_taxonomy:
+        return []
+    statuses = db.query(TaxonomyValue).filter(
+        TaxonomyValue.taxonomy_id == status_taxonomy.taxonomy_id,
+        ~TaxonomyValue.code.in_(TERMINAL_RECOMMENDATION_STATUS_CODES)
+    ).all()
+    return [status.value_id for status in statuses]
+
+
+def get_recommendation_status_by_code(db: Session, code: str) -> Optional[TaxonomyValue]:
+    """Lookup a recommendation status taxonomy value by code."""
+    status_taxonomy = db.query(Taxonomy).filter(
+        Taxonomy.name == "Recommendation Status"
+    ).first()
+    if not status_taxonomy:
+        return None
+    return db.query(TaxonomyValue).filter(
+        TaxonomyValue.taxonomy_id == status_taxonomy.taxonomy_id,
+        TaxonomyValue.code == code
+    ).first()
 
 
 def find_teams_with_exact_members(
@@ -651,6 +687,7 @@ def list_monitoring_plans(
 
     plan_ids = [p.plan_id for p in plans]
     non_cancelled_cycle_counts = {}
+    open_recommendation_counts = {}
     if plan_ids:
         non_cancelled_cycle_counts = dict(
             db.query(MonitoringCycle.plan_id, func.count(MonitoringCycle.cycle_id))
@@ -661,6 +698,24 @@ def list_monitoring_plans(
             .group_by(MonitoringCycle.plan_id)
             .all()
         )
+        non_terminal_status_ids = get_non_terminal_recommendation_status_ids(db)
+        if non_terminal_status_ids:
+            open_recommendation_counts = dict(
+                db.query(
+                    MonitoringCycle.plan_id,
+                    func.count(Recommendation.recommendation_id)
+                )
+                .join(
+                    MonitoringCycle,
+                    Recommendation.monitoring_cycle_id == MonitoringCycle.cycle_id
+                )
+                .filter(
+                    MonitoringCycle.plan_id.in_(plan_ids),
+                    Recommendation.current_status_id.in_(non_terminal_status_ids)
+                )
+                .group_by(MonitoringCycle.plan_id)
+                .all()
+            )
 
     result = []
     for plan in plans:
@@ -682,10 +737,196 @@ def list_monitoring_plans(
             "version_count": len(plan.versions),
             "active_version_number": active_version.version_number if active_version else None,
             "has_unpublished_changes": plan.is_dirty,
-            "non_cancelled_cycle_count": non_cancelled_cycle_counts.get(plan.plan_id, 0)
+            "non_cancelled_cycle_count": non_cancelled_cycle_counts.get(plan.plan_id, 0),
+            "open_recommendation_count": open_recommendation_counts.get(plan.plan_id, 0)
         })
 
     return result
+
+
+@router.get(
+    "/monitoring/plans/{plan_id}/deactivation-summary",
+    response_model=MonitoringPlanDeactivationSummary
+)
+def get_plan_deactivation_summary(
+    plan_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Summarize pending approvals and open recommendations before deactivation."""
+    check_plan_edit_permission(db, plan_id, current_user)
+
+    pending_approval_query = db.query(MonitoringCycleApproval).join(
+        MonitoringCycle, MonitoringCycleApproval.cycle_id == MonitoringCycle.cycle_id
+    ).filter(
+        MonitoringCycle.plan_id == plan_id,
+        MonitoringCycleApproval.is_required == True,
+        MonitoringCycleApproval.voided_at.is_(None),
+        MonitoringCycleApproval.approval_status == "Pending"
+    )
+    pending_approval_count = pending_approval_query.count()
+    pending_approval_cycle_count = db.query(
+        func.count(func.distinct(MonitoringCycleApproval.cycle_id))
+    ).join(
+        MonitoringCycle, MonitoringCycleApproval.cycle_id == MonitoringCycle.cycle_id
+    ).filter(
+        MonitoringCycle.plan_id == plan_id,
+        MonitoringCycleApproval.is_required == True,
+        MonitoringCycleApproval.voided_at.is_(None),
+        MonitoringCycleApproval.approval_status == "Pending"
+    ).scalar() or 0
+
+    non_terminal_status_ids = get_non_terminal_recommendation_status_ids(db)
+    open_recommendation_count = 0
+    if non_terminal_status_ids:
+        open_recommendation_count = db.query(
+            func.count(Recommendation.recommendation_id)
+        ).join(
+            MonitoringCycle, Recommendation.monitoring_cycle_id == MonitoringCycle.cycle_id
+        ).filter(
+            MonitoringCycle.plan_id == plan_id,
+            Recommendation.current_status_id.in_(non_terminal_status_ids)
+        ).scalar() or 0
+
+    return MonitoringPlanDeactivationSummary(
+        pending_approval_count=pending_approval_count,
+        pending_approval_cycle_count=pending_approval_cycle_count,
+        open_recommendation_count=open_recommendation_count
+    )
+
+
+@router.post(
+    "/monitoring/plans/{plan_id}/deactivate",
+    response_model=MonitoringPlanResponse
+)
+def deactivate_monitoring_plan(
+    plan_id: int,
+    deactivate_data: MonitoringPlanDeactivateRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Deactivate a monitoring plan with optional cleanup."""
+    plan = check_plan_edit_permission(db, plan_id, current_user)
+    if not plan.is_active:
+        return get_monitoring_plan(plan_id, db, current_user)
+
+    cancel_reason = "Plan deactivated"
+
+    if deactivate_data.cancel_pending_approvals:
+        cycles_to_cancel = db.query(MonitoringCycle).options(
+            joinedload(MonitoringCycle.approvals)
+        ).filter(
+            MonitoringCycle.plan_id == plan_id,
+            MonitoringCycle.status == MonitoringCycleStatus.PENDING_APPROVAL.value
+        ).all()
+
+        for cycle in cycles_to_cancel:
+            old_status = cycle.status
+            cycle.status = MonitoringCycleStatus.CANCELLED.value
+            cycle.notes = f"[CANCELLED] {cancel_reason}" + (
+                f"\n\n{cycle.notes}" if cycle.notes else ""
+            )
+
+            create_audit_log(
+                db=db,
+                entity_type="MonitoringCycle",
+                entity_id=cycle.cycle_id,
+                action="STATUS_CHANGE",
+                user_id=current_user.user_id,
+                changes={
+                    "status": {"old": old_status, "new": "CANCELLED"},
+                    "cancel_reason": cancel_reason,
+                    "plan_deactivated": True
+                }
+            )
+
+            for approval in cycle.approvals:
+                if (
+                    approval.is_required
+                    and approval.approval_status == "Pending"
+                    and approval.voided_at is None
+                ):
+                    approval.approval_status = "Voided"
+                    approval.voided_by_id = current_user.user_id
+                    approval.voided_at = utc_now()
+                    approval.void_reason = cancel_reason
+                    create_audit_log(
+                        db=db,
+                        entity_type="MonitoringCycleApproval",
+                        entity_id=approval.approval_id,
+                        action="VOID",
+                        user_id=current_user.user_id,
+                        changes={
+                            "cycle_id": approval.cycle_id,
+                            "approval_type": approval.approval_type,
+                            "region": approval.region.name if approval.region else None,
+                            "void_reason": cancel_reason,
+                            "plan_deactivated": True
+                        }
+                    )
+
+    if deactivate_data.cancel_open_recommendations:
+        non_terminal_status_ids = get_non_terminal_recommendation_status_ids(db)
+        dropped_status = get_recommendation_status_by_code(db, "REC_DROPPED")
+        if non_terminal_status_ids and not dropped_status:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Recommendation status 'REC_DROPPED' not found"
+            )
+        if non_terminal_status_ids and dropped_status:
+            recommendations = db.query(Recommendation).join(
+                MonitoringCycle, Recommendation.monitoring_cycle_id == MonitoringCycle.cycle_id
+            ).filter(
+                MonitoringCycle.plan_id == plan_id,
+                Recommendation.current_status_id.in_(non_terminal_status_ids)
+            ).all()
+
+            for recommendation in recommendations:
+                history = RecommendationStatusHistory(
+                    recommendation_id=recommendation.recommendation_id,
+                    old_status_id=recommendation.current_status_id,
+                    new_status_id=dropped_status.value_id,
+                    changed_by_id=current_user.user_id,
+                    change_reason=cancel_reason
+                )
+                db.add(history)
+                recommendation.current_status_id = dropped_status.value_id
+                recommendation.closed_at = utc_now()
+                recommendation.closed_by_id = current_user.user_id
+                recommendation.closure_summary = cancel_reason
+
+                create_audit_log(
+                    db=db,
+                    entity_type="Recommendation",
+                    entity_id=recommendation.recommendation_id,
+                    action="CANCEL",
+                    user_id=current_user.user_id,
+                    changes={
+                        "status": "REC_DROPPED",
+                        "reason": cancel_reason,
+                        "plan_deactivated": True
+                    }
+                )
+
+    previous_active = plan.is_active
+    plan.is_active = False
+    create_audit_log(
+        db=db,
+        entity_type="MonitoringPlan",
+        entity_id=plan.plan_id,
+        action="DEACTIVATE",
+        user_id=current_user.user_id,
+        changes={
+            "is_active": {"old": previous_active, "new": False},
+            "cancel_reason": cancel_reason,
+            "cancel_pending_approvals": deactivate_data.cancel_pending_approvals,
+            "cancel_open_recommendations": deactivate_data.cancel_open_recommendations
+        }
+    )
+
+    db.commit()
+
+    return get_monitoring_plan(plan_id, db, current_user)
 
 
 @router.get("/monitoring/plans/{plan_id}", response_model=MonitoringPlanResponse)
@@ -1968,7 +2209,8 @@ def advance_plan_cycle(
 @router.get("/monitoring/my-tasks", response_model=List[MyMonitoringTaskResponse])
 def get_my_monitoring_tasks(
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    include_closed: bool = Query(default=False)
 ):
     """Get monitoring tasks for the current user.
 
@@ -1977,7 +2219,8 @@ def get_my_monitoring_tasks(
     - team_member: User is on the monitoring team (risk function - review/approve)
     - assignee: User is specifically assigned to the cycle
 
-    Only returns active cycles (not APPROVED or CANCELLED).
+    By default, returns only active cycles (not APPROVED or CANCELLED).
+    Set include_closed=true to include completed or cancelled cycles.
     """
     # Import locally to avoid circular imports
     from app.models.monitoring import MonitoringCycle, MonitoringCycleStatus
@@ -1993,6 +2236,11 @@ def get_my_monitoring_tasks(
         MonitoringCycleStatus.UNDER_REVIEW.value,
         MonitoringCycleStatus.PENDING_APPROVAL.value,
     ]
+    closed_statuses = [
+        MonitoringCycleStatus.APPROVED.value,
+        MonitoringCycleStatus.CANCELLED.value,
+    ]
+    cycle_statuses = active_statuses + closed_statuses if include_closed else active_statuses
 
     # Query 1: Cycles where user is the data provider for the plan
     data_provider_cycles = db.query(MonitoringCycle).options(
@@ -2001,12 +2249,15 @@ def get_my_monitoring_tasks(
         MonitoringPlan, MonitoringCycle.plan_id == MonitoringPlan.plan_id
     ).filter(
         MonitoringPlan.data_provider_user_id == current_user.user_id,
-        MonitoringCycle.status.in_(active_statuses)
+        MonitoringCycle.status.in_(cycle_statuses)
     ).all()
 
     for cycle in data_provider_cycles:
         action = _get_data_provider_action(cycle.status)
-        if cycle.status == MonitoringCycleStatus.ON_HOLD.value:
+        if cycle.status in closed_statuses:
+            is_overdue = False
+            days_until_due = None
+        elif cycle.status == MonitoringCycleStatus.ON_HOLD.value:
             is_overdue = False
             days_until_due = None
         else:
@@ -2041,7 +2292,7 @@ def get_my_monitoring_tasks(
         joinedload(MonitoringCycle.plan)
     ).filter(
         MonitoringCycle.assigned_to_user_id == current_user.user_id,
-        MonitoringCycle.status.in_(active_statuses)
+        MonitoringCycle.status.in_(cycle_statuses)
     ).all()
 
     # Track cycle_ids we've already added to avoid duplicates
@@ -2052,7 +2303,10 @@ def get_my_monitoring_tasks(
             continue
 
         action = _get_assignee_action(cycle.status)
-        if cycle.status == MonitoringCycleStatus.ON_HOLD.value:
+        if cycle.status in closed_statuses:
+            is_overdue = False
+            days_until_due = None
+        elif cycle.status == MonitoringCycleStatus.ON_HOLD.value:
             is_overdue = False
             days_until_due = None
         else:
@@ -2100,7 +2354,7 @@ def get_my_monitoring_tasks(
             joinedload(MonitoringCycle.plan)
         ).filter(
             MonitoringCycle.plan_id.in_(team_plan_ids),
-            MonitoringCycle.status.in_(active_statuses)
+            MonitoringCycle.status.in_(cycle_statuses)
         ).all()
 
         for cycle in team_cycles:
@@ -2109,7 +2363,10 @@ def get_my_monitoring_tasks(
 
             action = _get_team_member_action(cycle.status)
             # Team members care about report due date
-            if cycle.status == MonitoringCycleStatus.ON_HOLD.value:
+            if cycle.status in closed_statuses:
+                is_overdue = False
+                days_until_due = None
+            elif cycle.status == MonitoringCycleStatus.ON_HOLD.value:
                 is_overdue = False
                 days_until_due = None
             else:
@@ -2162,6 +2419,10 @@ def _get_data_provider_action(status: str) -> str:
         return "Results submitted - Under Review"
     elif status == MonitoringCycleStatus.PENDING_APPROVAL.value:
         return "Pending Approval"
+    elif status == MonitoringCycleStatus.APPROVED.value:
+        return "Completed"
+    elif status == MonitoringCycleStatus.CANCELLED.value:
+        return "Cancelled"
     return "No action required"
 
 
@@ -2177,6 +2438,10 @@ def _get_assignee_action(status: str) -> str:
         return "Review Results"
     elif status == MonitoringCycleStatus.PENDING_APPROVAL.value:
         return "Pending Approval"
+    elif status == MonitoringCycleStatus.APPROVED.value:
+        return "Completed"
+    elif status == MonitoringCycleStatus.CANCELLED.value:
+        return "Cancelled"
     return "No action required"
 
 
@@ -2192,6 +2457,10 @@ def _get_team_member_action(status: str) -> str:
         return "Review Results"
     elif status == MonitoringCycleStatus.PENDING_APPROVAL.value:
         return "Approve Results"
+    elif status == MonitoringCycleStatus.APPROVED.value:
+        return "Completed"
+    elif status == MonitoringCycleStatus.CANCELLED.value:
+        return "Cancelled"
     return "No action required"
 
 
@@ -2453,7 +2722,10 @@ def calculate_period_dates(frequency: MonitoringFrequency, from_date: date = Non
     return period_start, period_end
 
 
-def calculate_outcome(value: float, metric: MonitoringPlanMetric) -> str:
+def calculate_outcome(
+    value: float,
+    metric: Union[MonitoringPlanMetric, MonitoringPlanMetricSnapshot]
+) -> str:
     """Calculate outcome (GREEN, YELLOW, RED, UNCONFIGURED) based on thresholds."""
     if value is None:
         return OUTCOME_NA
@@ -2482,6 +2754,27 @@ def calculate_outcome(value: float, metric: MonitoringPlanMetric) -> str:
 
     # If passed all threshold checks, it's green
     return OUTCOME_GREEN
+
+
+def resolve_threshold_source(
+    db: Session,
+    cycle: MonitoringCycle,
+    metric: MonitoringPlanMetric
+) -> tuple[Union[MonitoringPlanMetric, MonitoringPlanMetricSnapshot], bool]:
+    """Return snapshot thresholds if available for the cycle, otherwise live plan metric."""
+    if cycle.plan_version_id:
+        snapshot = db.query(MonitoringPlanMetricSnapshot).filter(
+            MonitoringPlanMetricSnapshot.version_id == cycle.plan_version_id,
+            MonitoringPlanMetricSnapshot.original_metric_id == metric.metric_id
+        ).first()
+        if snapshot:
+            return snapshot, True
+        logger.warning(
+            "Missing metric snapshot for plan_version_id=%s metric_id=%s; using live thresholds.",
+            cycle.plan_version_id,
+            metric.metric_id
+        )
+    return metric, False
 
 
 def resolve_outcome_value_id(db: Session, outcome_code: str) -> int | None:
@@ -2641,26 +2934,70 @@ def validate_results_completeness(db: Session, cycle: MonitoringCycle) -> None:
             detail="Cannot submit: No results have been entered. Enter at least one metric result before submitting."
         )
 
-    # Build map of results by metric_id for easy lookup
-    results_by_metric = {r.plan_metric_id: r for r in existing_results}
+    has_plan_level_results = any(r.model_id is None for r in existing_results)
+    has_model_specific_results = any(r.model_id is not None for r in existing_results)
+
+    if has_plan_level_results and has_model_specific_results:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cannot submit: plan-level and model-specific results are mixed. Use only one approach."
+        )
 
     # Check which metrics are missing entirely or have no value without explanation
     metrics_missing_entirely = []
     metrics_missing_explanation = []
 
-    for snapshot in metric_snapshots:
-        if not snapshot.original_metric_id:
-            continue
+    if has_model_specific_results:
+        if cycle.plan_version_id:
+            model_snapshots = db.query(MonitoringPlanModelSnapshot).filter(
+                MonitoringPlanModelSnapshot.version_id == cycle.plan_version_id
+            ).all()
+            model_names = {m.model_id: m.model_name for m in model_snapshots}
+        else:
+            models = db.query(Model).join(
+                monitoring_plan_models,
+                monitoring_plan_models.c.model_id == Model.model_id
+            ).filter(
+                monitoring_plan_models.c.plan_id == cycle.plan_id
+            ).all()
+            model_names = {m.model_id: m.model_name for m in models}
 
-        result = results_by_metric.get(snapshot.original_metric_id)
+        results_by_metric_model = {
+            (r.plan_metric_id, r.model_id): r
+            for r in existing_results
+            if r.model_id is not None
+        }
 
-        if not result:
-            # Metric has no result record at all
-            metrics_missing_entirely.append(snapshot.kpm_name)
-        elif result.numeric_value is None and result.outcome_value_id is None:
-            # Result exists but has no value - must have narrative
-            if not result.narrative or not result.narrative.strip():
-                metrics_missing_explanation.append(snapshot.kpm_name)
+        for snapshot in metric_snapshots:
+            if not snapshot.original_metric_id:
+                continue
+
+            for model_id, model_name in model_names.items():
+                result = results_by_metric_model.get((snapshot.original_metric_id, model_id))
+                label = f"{snapshot.kpm_name} ({model_name})"
+                if not result:
+                    metrics_missing_entirely.append(label)
+                elif result.numeric_value is None and result.outcome_value_id is None:
+                    if not result.narrative or not result.narrative.strip():
+                        metrics_missing_explanation.append(label)
+    else:
+        # Plan-level results (no model-specific entries)
+        results_by_metric = {
+            r.plan_metric_id: r
+            for r in existing_results
+            if r.model_id is None
+        }
+        for snapshot in metric_snapshots:
+            if not snapshot.original_metric_id:
+                continue
+
+            result = results_by_metric.get(snapshot.original_metric_id)
+
+            if not result:
+                metrics_missing_entirely.append(snapshot.kpm_name)
+            elif result.numeric_value is None and result.outcome_value_id is None:
+                if not result.narrative or not result.narrative.strip():
+                    metrics_missing_explanation.append(snapshot.kpm_name)
 
     # Report issues
     issues = []
@@ -3135,8 +3472,9 @@ def create_monitoring_result(
     calculated_outcome = None
     resolved_outcome_value_id = result_data.outcome_value_id  # Default: use provided value
     if metric.kpm.evaluation_type == "Quantitative" and result_data.numeric_value is not None:
+        threshold_source, _ = resolve_threshold_source(db, cycle, metric)
         calculated_outcome = calculate_outcome(
-            result_data.numeric_value, metric)
+            result_data.numeric_value, threshold_source)
         # Auto-resolve outcome_value_id from calculated outcome (links to taxonomy)
         resolved_outcome_value_id = resolve_outcome_value_id(db, calculated_outcome)
     elif result_data.outcome_value_id:
@@ -3265,6 +3603,7 @@ def list_cycle_results(
     results = db.query(MonitoringResult).options(
         joinedload(MonitoringResult.model),
         joinedload(MonitoringResult.entered_by),
+        joinedload(MonitoringResult.outcome_value),
         joinedload(MonitoringResult.plan_metric).joinedload(
             MonitoringPlanMetric.kpm)
     ).filter(MonitoringResult.cycle_id == cycle_id).all()
@@ -3278,7 +3617,13 @@ def list_cycle_results(
             "model_name": r.model.model_name if r.model else None,
             "metric_name": r.plan_metric.kpm.name if r.plan_metric and r.plan_metric.kpm else "Unknown",
             "numeric_value": r.numeric_value,
+            "outcome_value": {
+                "value_id": r.outcome_value.value_id,
+                "code": r.outcome_value.code,
+                "label": r.outcome_value.label
+            } if r.outcome_value else None,
             "calculated_outcome": r.calculated_outcome,
+            "narrative": r.narrative,
             "entered_by_name": r.entered_by.full_name,
             "entered_at": r.entered_at
         }
@@ -3318,6 +3663,14 @@ def update_monitoring_result(
 
     # Use model_fields_set to check which fields were explicitly provided (including null)
     provided_fields = update_data.model_fields_set
+    is_quantitative = result.plan_metric.kpm.evaluation_type == "Quantitative"
+
+    if is_quantitative and "outcome_value_id" in provided_fields:
+        if "numeric_value" not in provided_fields or update_data.numeric_value is None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Quantitative outcomes are derived from numeric values; update numeric_value instead."
+            )
 
     if "numeric_value" in provided_fields:
         if result.numeric_value != update_data.numeric_value:
@@ -3325,17 +3678,18 @@ def update_monitoring_result(
                 "old": result.numeric_value, "new": update_data.numeric_value}
         result.numeric_value = update_data.numeric_value
         # Recalculate outcome AND outcome_value_id (or clear if value is now null)
-        if result.plan_metric.kpm.evaluation_type == "Quantitative":
+        if is_quantitative:
             if update_data.numeric_value is not None:
+                threshold_source, _ = resolve_threshold_source(db, result.cycle, result.plan_metric)
                 result.calculated_outcome = calculate_outcome(
-                    update_data.numeric_value, result.plan_metric)
+                    update_data.numeric_value, threshold_source)
                 # Auto-resolve outcome_value_id from calculated outcome (links to taxonomy)
                 result.outcome_value_id = resolve_outcome_value_id(db, result.calculated_outcome)
             else:
                 result.calculated_outcome = None
                 result.outcome_value_id = None
 
-    if "outcome_value_id" in provided_fields:
+    if "outcome_value_id" in provided_fields and not is_quantitative:
         if result.outcome_value_id != update_data.outcome_value_id:
             changes["outcome_value_id"] = {
                 "old": result.outcome_value_id, "new": update_data.outcome_value_id}
@@ -3993,7 +4347,7 @@ def postpone_cycle(
     current_user: User = Depends(get_current_user)
 ):
     """Extend a cycle due date or place it on hold."""
-    cycle = check_cycle_edit_permission(db, cycle_id, current_user)
+    cycle = check_team_member_or_admin(db, cycle_id, current_user)
 
     if cycle.status != MonitoringCycleStatus.DATA_COLLECTION.value:
         raise HTTPException(
@@ -4055,7 +4409,7 @@ def resume_cycle(
     current_user: User = Depends(get_current_user)
 ):
     """Resume a cycle that is currently on hold."""
-    cycle = check_cycle_edit_permission(db, cycle_id, current_user)
+    cycle = check_team_member_or_admin(db, cycle_id, current_user)
 
     if cycle.status != MonitoringCycleStatus.ON_HOLD.value:
         raise HTTPException(
@@ -4081,6 +4435,83 @@ def resume_cycle(
 # ============================================================================
 # APPROVAL WORKFLOW ENDPOINTS
 # ============================================================================
+
+@router.get("/monitoring/approvals/my-pending", response_model=List[MonitoringApprovalQueueItem])
+def list_my_pending_monitoring_approvals(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """List pending monitoring approvals assigned to the current user."""
+    if current_user.role not in (
+        UserRole.ADMIN,
+        UserRole.GLOBAL_APPROVER,
+        UserRole.REGIONAL_APPROVER
+    ):
+        return []
+
+    user_region_ids = [r.region_id for r in current_user.regions]
+
+    approvals_query = db.query(MonitoringCycleApproval).join(
+        MonitoringCycle, MonitoringCycleApproval.cycle_id == MonitoringCycle.cycle_id
+    ).join(
+        MonitoringPlan, MonitoringCycle.plan_id == MonitoringPlan.plan_id
+    ).options(
+        joinedload(MonitoringCycleApproval.cycle).joinedload(MonitoringCycle.plan),
+        joinedload(MonitoringCycleApproval.region)
+    ).filter(
+        MonitoringCycleApproval.is_required == True,
+        MonitoringCycleApproval.approval_status == "Pending",
+        MonitoringCycleApproval.voided_at.is_(None),
+        MonitoringCycle.status == MonitoringCycleStatus.PENDING_APPROVAL.value
+    )
+
+    if current_user.role == UserRole.GLOBAL_APPROVER:
+        approvals_query = approvals_query.filter(
+            MonitoringCycleApproval.approval_type == "Global"
+        )
+    elif current_user.role == UserRole.REGIONAL_APPROVER:
+        if not user_region_ids:
+            return []
+        approvals_query = approvals_query.filter(
+            MonitoringCycleApproval.approval_type == "Regional",
+            MonitoringCycleApproval.region_id.in_(user_region_ids)
+        )
+
+    approvals = approvals_query.order_by(MonitoringCycleApproval.created_at.asc()).all()
+
+    now_date = utc_now().date()
+    items: List[MonitoringApprovalQueueItem] = []
+
+    for approval in approvals:
+        cycle = approval.cycle
+        if not cycle or not cycle.plan:
+            continue
+
+        days_pending = (now_date - approval.created_at.date()).days
+        if days_pending < 0:
+            days_pending = 0
+
+        items.append(MonitoringApprovalQueueItem(
+            approval_id=approval.approval_id,
+            cycle_id=cycle.cycle_id,
+            plan_id=cycle.plan_id,
+            plan_name=cycle.plan.name,
+            period_start_date=cycle.period_start_date,
+            period_end_date=cycle.period_end_date,
+            submission_due_date=cycle.submission_due_date,
+            report_due_date=cycle.report_due_date,
+            cycle_status=cycle.status,
+            approval_type=approval.approval_type,
+            region=RegionRef.model_validate(approval.region, from_attributes=True) if approval.region else None,
+            is_required=approval.is_required,
+            approval_status=approval.approval_status,
+            days_pending=days_pending,
+            created_at=approval.created_at,
+            can_approve=_can_user_approve_approval(approval, current_user, [], user_region_ids)
+        ))
+
+    return items
+
 
 def _can_user_approve_approval(
     approval: MonitoringCycleApproval,
@@ -5129,6 +5560,20 @@ def generate_cycle_report_pdf(
         MonitoringResult.cycle_id == cycle_id
     ).order_by(MonitoringResult.plan_metric_id).all()
 
+    # Preload metric snapshots for this cycle's locked version (if any)
+    snapshot_by_metric_id = {}
+    if cycle.plan_version_id and results:
+        metric_ids = {r.plan_metric_id for r in results}
+        snapshots = db.query(MonitoringPlanMetricSnapshot).filter(
+            MonitoringPlanMetricSnapshot.version_id == cycle.plan_version_id,
+            MonitoringPlanMetricSnapshot.original_metric_id.in_(metric_ids)
+        ).all()
+        snapshot_by_metric_id = {
+            s.original_metric_id: s
+            for s in snapshots
+            if s.original_metric_id is not None
+        }
+
     # Build results list for PDF
     results_data = []
     breached_metric_ids = set()
@@ -5137,20 +5582,21 @@ def generate_cycle_report_pdf(
         metric = result.plan_metric
         kpm = metric.kpm if metric else None
         category = kpm.category if kpm else None
+        snapshot = snapshot_by_metric_id.get(result.plan_metric_id)
 
         result_dict = {
             'result_id': result.result_id,
             'metric_id': result.plan_metric_id,
             'model_id': result.model_id,  # Include model_id for composite trend key
-            'metric_name': kpm.name if kpm else f"Metric {result.plan_metric_id}",
-            'category_name': category.name if category else 'Uncategorized',
+            'metric_name': snapshot.kpm_name if snapshot else (kpm.name if kpm else f"Metric {result.plan_metric_id}"),
+            'category_name': snapshot.kpm_category_name if snapshot else (category.name if category else 'Uncategorized'),
             'numeric_value': result.numeric_value,
             'calculated_outcome': result.calculated_outcome,
             'narrative': result.narrative,
-            'yellow_min': metric.yellow_min if metric else None,
-            'yellow_max': metric.yellow_max if metric else None,
-            'red_min': metric.red_min if metric else None,
-            'red_max': metric.red_max if metric else None,
+            'yellow_min': snapshot.yellow_min if snapshot else (metric.yellow_min if metric else None),
+            'yellow_max': snapshot.yellow_max if snapshot else (metric.yellow_max if metric else None),
+            'red_min': snapshot.red_min if snapshot else (metric.red_min if metric else None),
+            'red_max': snapshot.red_max if snapshot else (metric.red_max if metric else None),
             'model_name': result.model.model_name if result.model else None,
             'outcome_value': {
                 'code': result.outcome_value.code,
@@ -5175,13 +5621,15 @@ def generate_cycle_report_pdf(
             ).filter(
                 MonitoringResult.plan_metric_id == metric_id,
                 MonitoringResult.model_id == model_id,  # Filter by model too!
+                MonitoringCycle.period_end_date <= cycle.period_end_date,
                 MonitoringCycle.status.in_([
                     MonitoringCycleStatus.APPROVED.value,
                     MonitoringCycleStatus.PENDING_APPROVAL.value,
                     MonitoringCycleStatus.UNDER_REVIEW.value
                 ])
             ).options(
-                joinedload(MonitoringResult.cycle)
+                joinedload(MonitoringResult.cycle),
+                joinedload(MonitoringResult.plan_metric)
             ).order_by(
                 MonitoringCycle.period_end_date.desc()
             ).limit(trend_periods).all()
@@ -5190,11 +5638,18 @@ def generate_cycle_report_pdf(
             trend_points = []
             for tr in reversed(trend_query):
                 if tr.numeric_value is not None:
+                    threshold_source = None
+                    if tr.plan_metric:
+                        threshold_source, _ = resolve_threshold_source(db, tr.cycle, tr.plan_metric)
                     trend_points.append({
                         'cycle_id': tr.cycle_id,
                         'period_end_date': tr.cycle.period_end_date,
                         'numeric_value': tr.numeric_value,
-                        'calculated_outcome': tr.calculated_outcome
+                        'calculated_outcome': tr.calculated_outcome,
+                        'yellow_min': threshold_source.yellow_min if threshold_source else None,
+                        'yellow_max': threshold_source.yellow_max if threshold_source else None,
+                        'red_min': threshold_source.red_min if threshold_source else None,
+                        'red_max': threshold_source.red_max if threshold_source else None
                     })
 
             if trend_points:
@@ -5231,6 +5686,9 @@ def generate_cycle_report_pdf(
         'period_end_date': cycle.period_end_date,
         'status': cycle.status,
         'completed_at': cycle.completed_at,
+        'plan_version_id': cycle.plan_version_id,
+        'plan_version_number': cycle.plan_version.version_number if cycle.plan_version else None,
+        'plan_version_effective_date': cycle.plan_version.effective_date if cycle.plan_version else None,
         'completed_by': {
             'user_id': cycle.completed_by.user_id,
             'email': cycle.completed_by.email,

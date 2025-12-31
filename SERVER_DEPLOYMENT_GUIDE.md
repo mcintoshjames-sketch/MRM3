@@ -6,18 +6,20 @@ This guide documents how to deploy, update, and manage the MRM application on th
 
 | Property | Value |
 |----------|-------|
-| **Host** | 192.168.0.67 |
+| **SSH Host** | ssh.mrmqmistest.org |
 | **SSH User** | mrm-admin |
-| **Auth** | SSH key only (no password) |
+| **Auth** | Cloudflare Access (service token for automation or browser login) |
 | **OS** | Ubuntu 24.04 LTS |
 | **Public URL** | https://app.mrmqmistest.org |
-| **Access Method** | Cloudflare Tunnel |
+| **Access Method** | Cloudflare Tunnel (SSH + HTTP) |
 
 ## SSH Connection
 
 ```bash
-ssh mrm-admin@192.168.0.67
+ssh mrm-admin@ssh.mrmqmistest.org
 ```
+
+See REMOTE_ACCESS.md for Cloudflare Access setup (service token / browser login).
 
 ## Architecture Overview
 
@@ -56,11 +58,23 @@ Internet → Cloudflare Tunnel → Nginx (port 80) → Docker Containers
 
 ### Deploying Code Updates
 
-When you push changes to GitHub, deploy them to the server:
+Preferred: use the repo deployment script from your local machine (repeatable and includes health checks).
+
+```bash
+# Full flow (commit + push + deploy)
+./scripts/deploy.sh
+
+# Deploy to prod only (skip git operations)
+./scripts/deploy.sh --prod-only
+```
+
+The deployment will fail fast if `/opt/mrm/.env.prod` is missing. Ensure the production env file exists and is locked down (mode 600, root-owned).
+
+Fallback/manual deployment (if needed):
 
 ```bash
 # 1. SSH into server
-ssh mrm-admin@192.168.0.67
+ssh mrm-admin@ssh.mrmqmistest.org
 
 # 2. Navigate to app directory
 cd /opt/mrm
@@ -136,8 +150,11 @@ sudo docker compose -f docker-compose.prod.yml up -d --build
 # Connect to PostgreSQL
 sudo docker compose -f docker-compose.prod.yml exec db psql -U mrm -d mrm
 
-# Create database backup
-sudo docker compose -f docker-compose.prod.yml exec db pg_dump -U mrm mrm > backup_$(date +%Y%m%d).sql
+# Create database backup (recommended: custom format)
+sudo docker compose -f docker-compose.prod.yml exec -T db pg_dump -U mrm -d mrm -Fc > /tmp/mrm_backup_$(date +%Y%m%d_%H%M%S).dump
+
+# Create database backup (plain SQL)
+sudo docker compose -f docker-compose.prod.yml exec -T db pg_dump -U mrm -d mrm > /tmp/mrm_backup_$(date +%Y%m%d_%H%M%S).sql
 
 # Restore from backup
 cat backup_file.sql | sudo docker compose -f docker-compose.prod.yml exec -T db psql -U mrm -d mrm
@@ -145,6 +162,23 @@ cat backup_file.sql | sudo docker compose -f docker-compose.prod.yml exec -T db 
 # Run seed script (WARNING: may reset data)
 sudo docker compose -f docker-compose.prod.yml exec api python -m app.seed
 ```
+
+### Mirroring Dev → Production Database (preserve passwords)
+
+Preferred: run the mirror script from your local machine:
+
+```bash
+./scripts/mirror_to_prod.sh
+```
+
+What it does:
+- Dumps the local dev DB.
+- Backs up production user password hashes to a CSV.
+- Restores the dev dump into production.
+- Restores production password hashes (users keep their prod passwords).
+- Verifies services (expects HTTP 200 from frontend and API).
+
+Recommended safety step: take a full production DB dump before mirroring (for rollback).
 
 ### Nginx Management
 
@@ -175,11 +209,36 @@ Location: `/opt/mrm/docker-compose.prod.yml`
 
 Contains:
 - PostgreSQL database configuration
-- API backend configuration with DATABASE_URL and SECRET_KEY
+- API backend configuration
 - Web frontend configuration
 - Container port mappings (internal only - 127.0.0.1)
 
-**Important**: Credentials are stored in this file. Do not commit to public repos.
+Production secrets are NOT stored in this file.
+
+- `docker-compose.prod.yml` is tracked in git.
+- Secrets are loaded via `env_file: .env.prod`.
+
+### /opt/mrm/.env.prod (Production secrets)
+
+Location: `/opt/mrm/.env.prod`
+
+Requirements:
+- Must exist on the server before deployment.
+- Must not be committed to git.
+- Permissions should be restricted (recommended: `600`, owned by `root:root`).
+
+Expected variables (example shape; values are secrets):
+```
+POSTGRES_USER=...
+POSTGRES_PASSWORD=...
+POSTGRES_DB=...
+
+DATABASE_URL=postgresql://...@db:5432/...
+SECRET_KEY=...
+ENVIRONMENT=production
+CORS_ORIGINS=https://app.mrmqmistest.org,https://mrmqmistest.org
+ENABLE_UAT_TOOLS=false
+```
 
 ### Nginx Configuration
 

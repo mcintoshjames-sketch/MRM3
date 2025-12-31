@@ -121,9 +121,10 @@ def generate_trend_chart(
 
     Args:
         metric_name: Name of the metric for chart title
-        data_points: List of dicts with keys: period_end_date, numeric_value, calculated_outcome
-        yellow_min/max: Yellow threshold boundaries
-        red_min/max: Red threshold boundaries
+        data_points: List of dicts with keys: period_end_date, numeric_value, calculated_outcome.
+            Optionally includes per-point thresholds: yellow_min/yellow_max/red_min/red_max.
+        yellow_min/max: Yellow threshold boundaries (used when per-point values not provided)
+        red_min/max: Red threshold boundaries (used when per-point values not provided)
         width/height: Figure size in inches
 
     Returns:
@@ -136,6 +137,10 @@ def generate_trend_chart(
     dates = []
     values = []
     colors = []
+    yellow_min_series = []
+    yellow_max_series = []
+    red_min_series = []
+    red_max_series = []
 
     for dp in data_points:
         if dp.get('numeric_value') is not None:
@@ -145,6 +150,10 @@ def generate_trend_chart(
             dates.append(date)
             values.append(dp['numeric_value'])
             colors.append(outcome_to_chart_color(dp.get('calculated_outcome')))
+            yellow_min_series.append(dp.get('yellow_min'))
+            yellow_max_series.append(dp.get('yellow_max'))
+            red_min_series.append(dp.get('red_min'))
+            red_max_series.append(dp.get('red_max'))
 
     if not dates:
         return b''
@@ -159,16 +168,32 @@ def generate_trend_chart(
     for i, (d, v, c) in enumerate(zip(dates, values, colors)):
         ax.scatter([d], [v], c=[c], s=60, zorder=3, edgecolors='white', linewidths=1)
 
-    # Calculate y-axis range for threshold bands
+    def has_series_values(series: List[Optional[float]]) -> bool:
+        return any(value is not None for value in series)
+
+    has_dynamic_thresholds = any([
+        has_series_values(yellow_min_series),
+        has_series_values(yellow_max_series),
+        has_series_values(red_min_series),
+        has_series_values(red_max_series),
+    ])
+
+    # Calculate y-axis range for threshold bands/lines
     all_values = values.copy()
-    if yellow_min is not None:
-        all_values.append(yellow_min)
-    if yellow_max is not None:
-        all_values.append(yellow_max)
-    if red_min is not None:
-        all_values.append(red_min)
-    if red_max is not None:
-        all_values.append(red_max)
+    if has_dynamic_thresholds:
+        for series in (yellow_min_series, yellow_max_series, red_min_series, red_max_series):
+            for value in series:
+                if value is not None:
+                    all_values.append(value)
+    else:
+        if yellow_min is not None:
+            all_values.append(yellow_min)
+        if yellow_max is not None:
+            all_values.append(yellow_max)
+        if red_min is not None:
+            all_values.append(red_min)
+        if red_max is not None:
+            all_values.append(red_max)
 
     y_min = min(all_values) * 0.9 if all_values else 0
     y_max = max(all_values) * 1.1 if all_values else 1
@@ -178,22 +203,54 @@ def generate_trend_chart(
 
     ax.set_ylim(y_min, y_max)
 
-    # Draw threshold lines
-    if yellow_max is not None:
-        ax.axhline(y=yellow_max, color='#EAB308', linestyle='--', linewidth=1.5,
-                   label=f'Yellow Max ({yellow_max:.2f})', zorder=1)
-    if yellow_min is not None:
-        ax.axhline(y=yellow_min, color='#EAB308', linestyle=':', linewidth=1.5,
-                   label=f'Yellow Min ({yellow_min:.2f})', zorder=1)
-    if red_max is not None:
-        ax.axhline(y=red_max, color='#EF4444', linestyle='--', linewidth=1.5,
-                   label=f'Red Max ({red_max:.2f})', zorder=1)
-    if red_min is not None:
-        ax.axhline(y=red_min, color='#EF4444', linestyle=':', linewidth=1.5,
-                   label=f'Red Min ({red_min:.2f})', zorder=1)
+    def latest_threshold_value(series: List[Optional[float]]) -> Optional[float]:
+        for value in reversed(series):
+            if value is not None:
+                return value
+        return None
+
+    def normalize_series(series: List[Optional[float]]) -> List[float]:
+        return [float(value) if value is not None else float('nan') for value in series]
+
+    def add_dynamic_line(series: List[Optional[float]], color: str, linestyle: str, label_prefix: str) -> None:
+        if not has_series_values(series):
+            return
+        latest_value = latest_threshold_value(series)
+        if latest_value is None:
+            return
+        label = f"{label_prefix} ({latest_value:.2f})"
+        ax.plot(
+            dates,
+            normalize_series(series),
+            color=color,
+            linestyle=linestyle,
+            linewidth=1.4,
+            zorder=1,
+            drawstyle='steps-post',
+            label=label
+        )
+
+    # Draw threshold lines (dynamic per-period when available)
+    if has_dynamic_thresholds:
+        add_dynamic_line(yellow_max_series, '#EAB308', '--', 'Yellow Max')
+        add_dynamic_line(yellow_min_series, '#EAB308', ':', 'Yellow Min')
+        add_dynamic_line(red_max_series, '#EF4444', '--', 'Red Max')
+        add_dynamic_line(red_min_series, '#EF4444', ':', 'Red Min')
+    else:
+        if yellow_max is not None:
+            ax.axhline(y=yellow_max, color='#EAB308', linestyle='--', linewidth=1.5,
+                       label=f'Yellow Max ({yellow_max:.2f})', zorder=1)
+        if yellow_min is not None:
+            ax.axhline(y=yellow_min, color='#EAB308', linestyle=':', linewidth=1.5,
+                       label=f'Yellow Min ({yellow_min:.2f})', zorder=1)
+        if red_max is not None:
+            ax.axhline(y=red_max, color='#EF4444', linestyle='--', linewidth=1.5,
+                       label=f'Red Max ({red_max:.2f})', zorder=1)
+        if red_min is not None:
+            ax.axhline(y=red_min, color='#EF4444', linestyle=':', linewidth=1.5,
+                       label=f'Red Min ({red_min:.2f})', zorder=1)
 
     # Styling
-    ax.set_title(metric_name, fontsize=11, fontweight='bold', pad=10)
     ax.set_xlabel('Period End Date', fontsize=9)
     ax.set_ylabel('Value', fontsize=9)
     ax.grid(True, alpha=0.3, linestyle='-', linewidth=0.5)
@@ -204,15 +261,25 @@ def generate_trend_chart(
     plt.yticks(fontsize=8)
 
     # Add legend if we have threshold lines
-    if any([yellow_min, yellow_max, red_min, red_max]):
-        ax.legend(loc='upper right', fontsize=7, framealpha=0.9)
+    if has_dynamic_thresholds or any([yellow_min, yellow_max, red_min, red_max]):
+        handles, labels = ax.get_legend_handles_labels()
+        if handles:
+            ax.legend(
+                loc='center left',
+                bbox_to_anchor=(1.02, 0.5),
+                fontsize=7,
+                framealpha=0.9,
+                ncol=1,
+                borderaxespad=0.0,
+                handlelength=1.6
+            )
 
-    # Tight layout
-    plt.tight_layout()
+    # Tight layout with room on the right for the legend
+    fig.tight_layout(rect=[0.0, 0.02, 0.78, 0.98])
 
     # Export to bytes
     buffer = io.BytesIO()
-    plt.savefig(buffer, format='png', bbox_inches='tight', facecolor='white', edgecolor='none')
+    plt.savefig(buffer, format='png', facecolor='white', edgecolor='none')
     plt.close(fig)
     buffer.seek(0)
     return buffer.getvalue()
@@ -634,6 +701,26 @@ class MonitoringCycleReportPDF(FPDF):
             f'The following {len(breaches)} metric(s) exceeded threshold boundaries and require attention.')
         self.ln(5)
 
+        version_number = self.cycle_data.get('plan_version_number')
+        if version_number:
+            effective_date = self.cycle_data.get('plan_version_effective_date')
+            if isinstance(effective_date, datetime):
+                effective_date = effective_date.date().isoformat()
+            elif effective_date:
+                effective_date = str(effective_date)
+            else:
+                effective_date = 'unknown date'
+            self.set_font('helvetica', 'I', 8)
+            self.set_text_color(100, 100, 100)
+            self.cell(
+                0,
+                5,
+                f'Thresholds reflect plan version v{version_number} (effective {effective_date}).',
+                ln=True
+            )
+            self.set_text_color(*SECTION_TEXT)
+            self.ln(2)
+
         for i, breach in enumerate(breaches, 1):
             # Check for page break - need ~120mm for breach + chart
             if self.get_y() > 160:
@@ -760,15 +847,15 @@ class MonitoringCycleReportPDF(FPDF):
             yellow_max=breach.get('yellow_max'),
             red_min=breach.get('red_min'),
             red_max=breach.get('red_max'),
-            width=6,  # Slightly smaller for inline display
-            height=2.5
+            width=6.2,  # Wider for readability with side legend
+            height=2.0
         )
 
         if chart_bytes:
             try:
                 self.ln(3)
                 img_buffer = io.BytesIO(chart_bytes)
-                self.image(img_buffer, x=20, w=170)
+                self.image(img_buffer, x=16, w=178)
                 self.ln(3)
             except Exception:
                 pass  # Skip chart if it fails to render

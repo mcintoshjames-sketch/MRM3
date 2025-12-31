@@ -27,6 +27,19 @@ const ChevronRight = ({ className = "w-4 h-4" }: { className?: string }) => (
     </svg>
 );
 
+const requiresMonitoringAction = (task: { status?: string; user_role?: string }) => {
+    switch (task.user_role) {
+        case 'data_provider':
+            return task.status === 'DATA_COLLECTION';
+        case 'assignee':
+            return ['PENDING', 'DATA_COLLECTION', 'UNDER_REVIEW'].includes(task.status ?? '');
+        case 'team_member':
+            return ['UNDER_REVIEW', 'PENDING_APPROVAL'].includes(task.status ?? '');
+        default:
+            return false;
+    }
+};
+
 export default function Layout({ children }: LayoutProps) {
     const { user, logout } = useAuth();
     const navigate = useNavigate();
@@ -102,8 +115,8 @@ export default function Layout({ children }: LayoutProps) {
                 let pendingMonitoring = 0;
                 try {
                     const monitoringRes = await api.get('/monitoring/my-tasks');
-                    pendingMonitoring = monitoringRes.data.filter((t: any) =>
-                        t.is_overdue || t.action_needed.includes('Submit') || t.action_needed.includes('Review') || t.action_needed.includes('Approve')
+                    pendingMonitoring = monitoringRes.data.filter((task: any) =>
+                        requiresMonitoringAction(task)
                     ).length;
                 } catch {
                     // Silently fail
@@ -193,6 +206,8 @@ export default function Layout({ children }: LayoutProps) {
         pendingCounts.decommissioning + (user?.role !== 'Admin' ? pendingCounts.attestations : 0) +
         pendingCounts.approvals + pendingCounts.recommendations +
         (user?.role !== 'Admin' && user?.role !== 'Validator' ? pendingCounts.mrsaAttention : 0);
+    const isApproverDashboard = location.pathname === '/approver-dashboard';
+    const isApproverQueue = isApproverDashboard && location.hash === '#approval-queue';
 
     // Reusable nav link component
     const NavItem = ({ to, children, badge, badgeColor = 'red', end = false, isActiveOverride }: {
@@ -293,7 +308,15 @@ export default function Layout({ children }: LayoutProps) {
                                 Dashboard
                             </NavItem>
                         )}
-                        {(user?.role !== 'Admin' && user?.role !== 'Validator') && (
+                        {(user?.role === 'Global Approver' || user?.role === 'Regional Approver') && (
+                            <NavItem
+                                to="/approver-dashboard"
+                                isActiveOverride={isApproverDashboard && !isApproverQueue}
+                            >
+                                Approver Dashboard
+                            </NavItem>
+                        )}
+                        {(user?.role !== 'Admin' && user?.role !== 'Validator' && user?.role !== 'Global Approver' && user?.role !== 'Regional Approver') && (
                             <NavItem to="/my-dashboard">My Dashboard</NavItem>
                         )}
 
@@ -333,7 +356,12 @@ export default function Layout({ children }: LayoutProps) {
                                     Pending Decommissioning
                                 </NavItem>
                                 {(user?.role === 'Admin' || user?.role === 'Global Approver' || user?.role === 'Regional Approver') && (
-                                    <NavItem to="/approver-dashboard" badge={pendingCounts.approvals} badgeColor="orange">
+                                    <NavItem
+                                        to="/approver-dashboard#approval-queue"
+                                        badge={pendingCounts.approvals}
+                                        badgeColor="orange"
+                                        isActiveOverride={isApproverQueue}
+                                    >
                                         Pending Approvals
                                     </NavItem>
                                 )}

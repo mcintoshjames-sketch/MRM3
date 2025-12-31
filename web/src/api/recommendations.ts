@@ -345,6 +345,8 @@ export const recommendationsApi = {
         status_id?: number;
         priority_id?: number;
         assigned_to_id?: number;
+        plan_id?: number;
+        monitoring_cycle_id?: number;
         offset?: number;
         limit?: number;
     }): Promise<RecommendationListItem[]> => {

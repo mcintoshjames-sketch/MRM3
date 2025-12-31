@@ -249,9 +249,23 @@ class MonitoringPlanListResponse(BaseModel):
     active_version_number: Optional[int] = None
     has_unpublished_changes: bool = False
     non_cancelled_cycle_count: int = 0
+    open_recommendation_count: int = 0
 
     class Config:
         from_attributes = True
+
+
+class MonitoringPlanDeactivationSummary(BaseModel):
+    """Summary of pending items to warn on plan deactivation."""
+    pending_approval_count: int = 0
+    pending_approval_cycle_count: int = 0
+    open_recommendation_count: int = 0
+
+
+class MonitoringPlanDeactivateRequest(BaseModel):
+    """Request to deactivate a plan with optional cleanup."""
+    cancel_pending_approvals: bool = False
+    cancel_open_recommendations: bool = False
 
 
 # ============================================================================
@@ -537,6 +551,29 @@ class MonitoringCycleApprovalResponse(BaseModel):
         from_attributes = True
 
 
+class MonitoringApprovalQueueItem(BaseModel):
+    """Summary item for pending monitoring approvals assigned to the current user."""
+    approval_id: int
+    cycle_id: int
+    plan_id: int
+    plan_name: str
+    period_start_date: date
+    period_end_date: date
+    submission_due_date: date
+    report_due_date: date
+    cycle_status: str
+    approval_type: str
+    region: Optional[RegionRef] = None
+    is_required: bool
+    approval_status: str
+    days_pending: int
+    created_at: datetime
+    can_approve: bool = False
+
+    class Config:
+        from_attributes = True
+
+
 class ApproveRequest(BaseModel):
     """Request schema for approving a cycle.
 
@@ -628,7 +665,9 @@ class MonitoringResultListResponse(BaseModel):
     model_name: Optional[str] = None
     metric_name: str
     numeric_value: Optional[float] = None
+    outcome_value: Optional[OutcomeValueRef] = None
     calculated_outcome: Optional[str] = None
+    narrative: Optional[str] = None
     entered_by_name: str
     entered_at: datetime
 

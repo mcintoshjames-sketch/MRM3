@@ -68,6 +68,7 @@ interface MonitoringPlan {
     active_version_number?: number | null;
     has_unpublished_changes?: boolean;
     non_cancelled_cycle_count?: number;
+    open_recommendation_count?: number;
     monitoring_team_id?: number | null;
     data_provider_user_id?: number | null;
     reporting_lead_days?: number;
@@ -190,6 +191,18 @@ export default function MonitoringPlansPage() {
     const [showVersionsModal, setShowVersionsModal] = useState(false);
 
     const [error, setError] = useState<string | null>(null);
+    const [showDeactivateModal, setShowDeactivateModal] = useState(false);
+    const [deactivatePlanTarget, setDeactivatePlanTarget] = useState<MonitoringPlan | null>(null);
+    const [deactivationSummary, setDeactivationSummary] = useState<{
+        pending_approval_count: number;
+        pending_approval_cycle_count: number;
+        open_recommendation_count: number;
+    } | null>(null);
+    const [loadingDeactivationSummary, setLoadingDeactivationSummary] = useState(false);
+    const [deactivateError, setDeactivateError] = useState<string | null>(null);
+    const [cancelPendingApprovals, setCancelPendingApprovals] = useState(false);
+    const [cancelOpenRecommendations, setCancelOpenRecommendations] = useState(false);
+    const [deactivatingPlan, setDeactivatingPlan] = useState(false);
     const [peekTeamId, setPeekTeamId] = useState<number | null>(null);
     const [peekTeamMembers, setPeekTeamMembers] = useState<User[]>([]);
     const [loadingPeekTeamId, setLoadingPeekTeamId] = useState<number | null>(null);
@@ -542,13 +555,41 @@ export default function MonitoringPlansPage() {
 
     const handleDeactivatePlan = async (plan: MonitoringPlan) => {
         if (!plan.is_active) return;
-        if (!confirm('Deactivate this monitoring plan? This will stop new cycles and mark the plan inactive.')) return;
+        setDeactivatePlanTarget(plan);
+        setShowDeactivateModal(true);
+        setDeactivationSummary(null);
+        setDeactivateError(null);
+        setCancelPendingApprovals(false);
+        setCancelOpenRecommendations(false);
+        setLoadingDeactivationSummary(true);
 
         try {
-            await api.patch(`/monitoring/plans/${plan.plan_id}`, { is_active: false });
+            const response = await api.get(`/monitoring/plans/${plan.plan_id}/deactivation-summary`);
+            setDeactivationSummary(response.data);
+        } catch (err: any) {
+            setDeactivateError(err.response?.data?.detail || 'Failed to load deactivation details');
+        } finally {
+            setLoadingDeactivationSummary(false);
+        }
+    };
+
+    const confirmDeactivatePlan = async () => {
+        if (!deactivatePlanTarget) return;
+        setDeactivatingPlan(true);
+        setDeactivateError(null);
+        try {
+            await api.post(`/monitoring/plans/${deactivatePlanTarget.plan_id}/deactivate`, {
+                cancel_pending_approvals: cancelPendingApprovals,
+                cancel_open_recommendations: cancelOpenRecommendations
+            });
+            setShowDeactivateModal(false);
+            setDeactivatePlanTarget(null);
+            setDeactivationSummary(null);
             fetchPlans();
         } catch (err: any) {
-            alert(err.response?.data?.detail || 'Failed to deactivate plan');
+            setDeactivateError(err.response?.data?.detail || 'Failed to deactivate plan');
+        } finally {
+            setDeactivatingPlan(false);
         }
     };
 
@@ -1216,6 +1257,96 @@ export default function MonitoringPlansPage() {
                         </div>
                     )}
 
+                    {showDeactivateModal && deactivatePlanTarget && (
+                        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
+                            <div className="bg-white rounded-lg shadow-xl w-full max-w-md">
+                                <div className="px-6 py-4 border-b border-gray-200">
+                                    <h4 className="text-lg font-semibold">Deactivate Monitoring Plan</h4>
+                                </div>
+                                <div className="px-6 py-4 space-y-4">
+                                    <p className="text-sm text-gray-600">
+                                        Deactivating this plan stops new cycles and pauses auto-advance.
+                                    </p>
+                                    {loadingDeactivationSummary && (
+                                        <div className="text-sm text-gray-500">Checking pending approvals and recommendations...</div>
+                                    )}
+                                    {deactivateError && (
+                                        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded text-sm">
+                                            {deactivateError}
+                                        </div>
+                                    )}
+                                    {deactivationSummary && (
+                                        <div className="space-y-3">
+                                            {(deactivationSummary.pending_approval_count > 0 || deactivationSummary.open_recommendation_count > 0) ? (
+                                                <div className="bg-amber-50 border border-amber-200 text-amber-900 px-4 py-3 rounded text-sm">
+                                                    <div>
+                                                        Pending approvals: {deactivationSummary.pending_approval_count} across {deactivationSummary.pending_approval_cycle_count} cycle(s).
+                                                    </div>
+                                                    <div>
+                                                        Open recommendations: {deactivationSummary.open_recommendation_count}.
+                                                    </div>
+                                                </div>
+                                            ) : (
+                                                <div className="text-sm text-gray-500">
+                                                    No pending approvals or open recommendations found.
+                                                </div>
+                                            )}
+                                            {deactivationSummary.pending_approval_count > 0 && (
+                                                <label className="flex items-start gap-2 text-sm text-gray-700">
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={cancelPendingApprovals}
+                                                        onChange={(e) => setCancelPendingApprovals(e.target.checked)}
+                                                        className="mt-1"
+                                                    />
+                                                    <span>
+                                                        Cancel pending approvals (cycles awaiting approval will be cancelled).
+                                                    </span>
+                                                </label>
+                                            )}
+                                            {deactivationSummary.open_recommendation_count > 0 && (
+                                                <label className="flex items-start gap-2 text-sm text-gray-700">
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={cancelOpenRecommendations}
+                                                        onChange={(e) => setCancelOpenRecommendations(e.target.checked)}
+                                                        className="mt-1"
+                                                    />
+                                                    <span>
+                                                        Cancel open recommendations tied to this plan's cycles.
+                                                    </span>
+                                                </label>
+                                            )}
+                                        </div>
+                                    )}
+                                </div>
+                                <div className="px-6 py-4 border-t border-gray-200 flex justify-end gap-2">
+                                    <button
+                                        type="button"
+                                        className="btn-secondary"
+                                        onClick={() => {
+                                            setShowDeactivateModal(false);
+                                            setDeactivatePlanTarget(null);
+                                            setDeactivationSummary(null);
+                                            setDeactivateError(null);
+                                        }}
+                                        disabled={deactivatingPlan}
+                                    >
+                                        Cancel
+                                    </button>
+                                    <button
+                                        type="button"
+                                        className="btn-primary"
+                                        onClick={confirmDeactivatePlan}
+                                        disabled={deactivatingPlan || loadingDeactivationSummary || !!deactivateError}
+                                    >
+                                        {deactivatingPlan ? 'Deactivating...' : 'Deactivate Plan'}
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
                     <div className="bg-white rounded-lg shadow-md overflow-hidden">
                         {loadingPlans ? (
                             <div className="p-4 text-center">Loading plans...</div>
@@ -1229,6 +1360,7 @@ export default function MonitoringPlansPage() {
                                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Models</th>
                                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Metrics</th>
                                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Versions</th>
+                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Open Recs</th>
                                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Next Submission</th>
                                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
                                         <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">Actions</th>
@@ -1237,7 +1369,7 @@ export default function MonitoringPlansPage() {
                                 <tbody className="bg-white divide-y divide-gray-200">
                                     {plans.length === 0 ? (
                                         <tr>
-                                            <td colSpan={9} className="px-6 py-4 text-center text-gray-500">
+                                            <td colSpan={10} className="px-6 py-4 text-center text-gray-500">
                                                 No monitoring plans. Click "Add Plan" to create one.
                                             </td>
                                         </tr>
@@ -1285,6 +1417,14 @@ export default function MonitoringPlansPage() {
                                                         </button>
                                                     </td>
                                                     <td className="px-6 py-4 text-sm">
+                                                        <Link
+                                                            to={`/recommendations?open_only=true&plan_id=${plan.plan_id}`}
+                                                            className="text-blue-600 hover:text-blue-800 underline"
+                                                        >
+                                                            {plan.open_recommendation_count ?? 0}
+                                                        </Link>
+                                                    </td>
+                                                    <td className="px-6 py-4 text-sm">
                                                         {plan.next_submission_due_date || '-'}
                                                     </td>
                                                     <td className="px-6 py-4">
@@ -1321,7 +1461,7 @@ export default function MonitoringPlansPage() {
                                                 </tr>
                                                 {peekPlanId === plan.plan_id && (
                                                     <tr className="bg-gray-50">
-                                                        <td colSpan={9} className="px-6 py-3 text-sm text-gray-700">
+                                                        <td colSpan={10} className="px-6 py-3 text-sm text-gray-700">
                                                             {loadingPeekPlanId === plan.plan_id && (
                                                                 <div>Loading models...</div>
                                                             )}

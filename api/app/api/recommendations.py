@@ -19,7 +19,7 @@ from app.models import (
     User, Model, TaxonomyValue, Taxonomy, AuditLog, Region, ModelRegion,
     Recommendation, ActionPlanTask, RecommendationRebuttal,
     ClosureEvidence, RecommendationStatusHistory, RecommendationApproval,
-    RecommendationPriorityConfig, ModelLimitation, ModelDelegate
+    RecommendationPriorityConfig, ModelLimitation, ModelDelegate, MonitoringCycle
 )
 from app.models.recommendation import RecommendationPriorityRegionalOverride, RecommendationTimeframeConfig
 from app.schemas.recommendation import (
@@ -1096,6 +1096,8 @@ def list_recommendations(
     status_id: Optional[int] = None,
     priority_id: Optional[int] = None,
     assigned_to_id: Optional[int] = None,
+    plan_id: Optional[int] = None,
+    monitoring_cycle_id: Optional[int] = None,
     limit: int = Query(100, ge=1, le=500),
     offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
@@ -1156,6 +1158,13 @@ def list_recommendations(
 
     if model_id:
         query = query.filter(Recommendation.model_id == model_id)
+    if monitoring_cycle_id:
+        query = query.filter(Recommendation.monitoring_cycle_id == monitoring_cycle_id)
+    if plan_id:
+        query = query.join(
+            MonitoringCycle,
+            Recommendation.monitoring_cycle_id == MonitoringCycle.cycle_id
+        ).filter(MonitoringCycle.plan_id == plan_id)
     if status_id:
         query = query.filter(Recommendation.current_status_id == status_id)
     if priority_id:

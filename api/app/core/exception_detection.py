@@ -442,6 +442,89 @@ def autoclose_type1_on_improved_result(
     return closed_exceptions
 
 
+def close_type1_exception_for_result(
+    db: Session,
+    result: MonitoringResult,
+    new_outcome: str,
+) -> int:
+    """Close Type 1 exceptions tied to a specific monitoring result."""
+    if not result.result_id:
+        return 0
+
+    exceptions = db.query(ModelException).filter(
+        ModelException.monitoring_result_id == result.result_id,
+        ModelException.exception_type == EXCEPTION_TYPE_UNMITIGATED_PERFORMANCE,
+        ModelException.status.in_([STATUS_OPEN, STATUS_ACKNOWLEDGED])
+    ).all()
+
+    closed_count = 0
+    for exception in exceptions:
+        closed = _close_exception(
+            db=db,
+            exception=exception,
+            closure_narrative=f"Monitoring result updated to {new_outcome} for cycle {result.cycle_id}",
+            closure_reason_code=CLOSURE_REASON_NO_LONGER_EXCEPTION,
+            auto_closed=True,
+        )
+        if closed:
+            closed_count += 1
+
+    return closed_count
+
+
+def ensure_type1_exception_for_result(
+    db: Session,
+    result: MonitoringResult,
+) -> Optional[ModelException]:
+    """Create a Type 1 exception for a RED monitoring result if none exists."""
+    if result.calculated_outcome != "RED":
+        return None
+    if not result.model_id:
+        return None
+
+    cycle = result.cycle
+    if not cycle:
+        cycle = db.query(MonitoringCycle).filter(
+            MonitoringCycle.cycle_id == result.cycle_id
+        ).first()
+    if not cycle or cycle.status != "APPROVED":
+        return None
+
+    existing = db.query(ModelException).filter(
+        ModelException.monitoring_result_id == result.result_id
+    ).first()
+    if existing:
+        return None
+
+    active_rec_statuses_subq = db.query(TaxonomyValue.value_id).join(Taxonomy).filter(
+        Taxonomy.name == "Recommendation Status",
+        TaxonomyValue.code.notin_(['CLOSED', 'CANCELLED', 'COMPLETED'])
+    ).subquery()
+
+    has_active_recommendation = db.query(exists().where(
+        and_(
+            Recommendation.model_id == result.model_id,
+            Recommendation.monitoring_cycle_id == result.cycle_id,
+            Recommendation.plan_metric_id == result.plan_metric_id,
+            Recommendation.current_status_id.in_(select(active_rec_statuses_subq))
+        )
+    )).scalar()
+
+    if has_active_recommendation:
+        return None
+
+    return _create_exception(
+        db=db,
+        model_id=result.model_id,
+        exception_type=EXCEPTION_TYPE_UNMITIGATED_PERFORMANCE,
+        description=(
+            "RED monitoring result detected for metric without a linked recommendation. "
+            f"Monitoring result ID: {result.result_id}, Cycle ID: {result.cycle_id}"
+        ),
+        monitoring_result_id=result.result_id,
+    )
+
+
 # =============================================================================
 # Type 2: Outside Intended Purpose Detection
 # =============================================================================

@@ -32,6 +32,15 @@ interface MonitoringPlan {
     plan_id: number;
     name: string;
     models?: Model[];
+    user_permissions?: {
+        is_admin: boolean;
+        is_team_member: boolean;
+        is_data_provider: boolean;
+        can_start_cycle: boolean;
+        can_submit_cycle: boolean;
+        can_request_approval: boolean;
+        can_cancel_cycle: boolean;
+    };
 }
 
 interface PlanVersion {
@@ -152,6 +161,8 @@ type TabType = 'results' | 'approvals';
 const MonitoringCycleDetailPage: React.FC = () => {
     const { cycleId } = useParams<{ cycleId: string }>();
     const { user } = useAuth();
+    const monitoringHomePath = user?.role === 'Admin' ? '/monitoring-plans?tab=plans' : '/my-monitoring-tasks';
+    const monitoringHomeLabel = user?.role === 'Admin' ? 'Monitoring Plans' : 'My Monitoring Tasks';
 
     // Basic state
     const [loading, setLoading] = useState(true);
@@ -194,6 +205,9 @@ const MonitoringCycleDetailPage: React.FC = () => {
     const [submittingCycle, setSubmittingCycle] = useState(false);
     const [submitCycleError, setSubmitCycleError] = useState<string | null>(null);
 
+    // Report download state
+    const [downloadingReport, setDownloadingReport] = useState(false);
+
     // View mode and data grid state
     const [viewMode, setViewMode] = useState<'grid' | 'card'>('card');
     const [showCSVImport, setShowCSVImport] = useState(false);
@@ -233,6 +247,26 @@ const MonitoringCycleDetailPage: React.FC = () => {
         if (hasModelSpecific && !hasPlanLevel) return 'model-specific';
         return hasModelSpecific ? 'model-specific' : 'plan-level';
     }, [allCycleResults]);
+    const monitoringCategoryId = recModalData?.categories.find(
+        (category) => category.code === 'MONITORING' || category.label === 'Monitoring'
+    )?.value_id ?? null;
+    const canCreateRecommendation = useMemo(() => {
+        if (user?.role === 'Admin' || user?.role === 'Validator') {
+            return true;
+        }
+        return !!plan?.user_permissions?.is_team_member;
+    }, [user?.role, plan?.user_permissions?.is_team_member]);
+    const canDownloadReport = useMemo(() => {
+        if (user?.role === 'Admin' || user?.role === 'Validator') {
+            return true;
+        }
+        if (plan?.user_permissions?.is_team_member) {
+            return true;
+        }
+        return cycle?.approvals?.some(
+            (approval) => approval.approver?.user_id === user?.user_id
+        ) ?? false;
+    }, [user?.role, user?.user_id, plan?.user_permissions?.is_team_member, cycle?.approvals]);
 
     // Fetch cycle and plan details
     useEffect(() => {
@@ -394,7 +428,7 @@ const MonitoringCycleDetailPage: React.FC = () => {
     };
 
     // Handle model change for results
-    const handleResultsModelChange = (modelId: number | null) => {
+    const handleResultsModelChange = React.useCallback((modelId: number | null) => {
         setSelectedResultsModel(modelId);
         // Reload forms for the selected model
         if (cycle) {
@@ -413,7 +447,24 @@ const MonitoringCycleDetailPage: React.FC = () => {
                 };
             }));
         }
-    };
+    }, [allCycleResults, cycle]);
+
+    useEffect(() => {
+        if (!plan?.models || resultForms.length === 0) return;
+
+        if (existingResultsMode === 'model-specific') {
+            const modelIds = plan.models.map(model => model.model_id);
+            const hasValidSelection = selectedResultsModel !== null && modelIds.includes(selectedResultsModel);
+            if (!hasValidSelection) {
+                handleResultsModelChange(modelIds[0]);
+            }
+            return;
+        }
+
+        if (existingResultsMode === 'plan-level' && selectedResultsModel !== null) {
+            handleResultsModelChange(null);
+        }
+    }, [existingResultsMode, plan?.models, resultForms.length, selectedResultsModel, handleResultsModelChange]);
 
     // Save result
     const saveResult = async (index: number) => {
@@ -637,6 +688,9 @@ const MonitoringCycleDetailPage: React.FC = () => {
 
     // Handler for creating recommendation from breach panel
     const handleCreateRecommendation = async () => {
+        if (!canCreateRecommendation) {
+            return;
+        }
         // Close the breach panel first
         setBreachPanelOpen(false);
 
@@ -877,6 +931,40 @@ const MonitoringCycleDetailPage: React.FC = () => {
         }
     };
 
+    const getFilenameFromDisposition = (disposition?: string) => {
+        if (!disposition) return null;
+        const match = disposition.match(/filename="?([^"]+)"?/i);
+        return match ? match[1] : null;
+    };
+
+    const handleDownloadReport = async () => {
+        if (!cycle) return;
+
+        try {
+            setDownloadingReport(true);
+            const response = await api.get(
+                `/monitoring/cycles/${cycle.cycle_id}/report/pdf`,
+                { responseType: 'blob' }
+            );
+            const filename =
+                getFilenameFromDisposition(response.headers?.['content-disposition']) ||
+                `monitoring_cycle_${cycle.cycle_id}.pdf`;
+            const url = URL.createObjectURL(response.data);
+            const link = document.createElement('a');
+            link.href = url;
+            link.setAttribute('download', filename);
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+            URL.revokeObjectURL(url);
+        } catch (err: any) {
+            console.error('Failed to download monitoring report:', err);
+            alert(err.response?.data?.detail || 'Failed to download monitoring report.');
+        } finally {
+            setDownloadingReport(false);
+        }
+    };
+
     if (loading) {
         return (
             <Layout>
@@ -901,7 +989,7 @@ const MonitoringCycleDetailPage: React.FC = () => {
         <Layout>
             {/* Breadcrumb */}
             <nav className="flex items-center gap-2 text-sm text-gray-600 mb-6">
-                <Link to="/monitoring-plans?tab=plans" className="hover:text-blue-600">Monitoring Plans</Link>
+                <Link to={monitoringHomePath} className="hover:text-blue-600">{monitoringHomeLabel}</Link>
                 <span>/</span>
                 <Link to={`/monitoring/${cycle.plan_id}`} className="hover:text-blue-600">
                     {plan?.name || `Plan ${cycle.plan_id}`}
@@ -938,20 +1026,15 @@ const MonitoringCycleDetailPage: React.FC = () => {
 
                     {/* Results summary and actions */}
                     <div className="flex items-center gap-6">
-                        <div className="flex items-center gap-4">
-                            <div className="text-center">
-                                <div className="text-2xl font-bold text-green-600">{cycle.green_count}</div>
-                                <div className="text-xs text-gray-500">Green</div>
-                            </div>
-                            <div className="text-center">
-                                <div className="text-2xl font-bold text-yellow-600">{cycle.yellow_count}</div>
-                                <div className="text-xs text-gray-500">Yellow</div>
-                            </div>
-                            <div className="text-center">
-                                <div className="text-2xl font-bold text-red-600">{cycle.red_count}</div>
-                                <div className="text-xs text-gray-500">Red</div>
-                            </div>
-                        </div>
+                        {['PENDING_APPROVAL', 'APPROVED'].includes(cycle.status) && canDownloadReport && (
+                            <button
+                                onClick={handleDownloadReport}
+                                disabled={downloadingReport}
+                                className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 disabled:opacity-50"
+                            >
+                                {downloadingReport ? 'Downloading...' : 'Report PDF'}
+                            </button>
+                        )}
 
                         {/* Submit Cycle Button - only when DATA_COLLECTION */}
                         {cycle.status === 'DATA_COLLECTION' && (
@@ -1386,7 +1469,7 @@ const MonitoringCycleDetailPage: React.FC = () => {
                 existingNarrative={breachPanelNarrative}
                 onSave={handleBreachAnnotationSave}
                 onValueChange={handleBreachValueChange}
-                onCreateRecommendation={handleCreateRecommendation}
+                onCreateRecommendation={canCreateRecommendation ? handleCreateRecommendation : undefined}
                 onClose={() => setBreachPanelOpen(false)}
             />
 
@@ -1402,6 +1485,7 @@ const MonitoringCycleDetailPage: React.FC = () => {
                     preselectedModelId={breachPanelCellIds.modelId}
                     preselectedMonitoringCycleId={cycle.cycle_id}
                     preselectedPlanMetricId={breachPanelCellIds.metricId}
+                    preselectedCategoryId={monitoringCategoryId || undefined}
                     preselectedTitle={`Address RED monitoring result for ${breachPanelMetricInfo?.metricName || 'metric'}`}
                     preselectedDescription={
                         `This recommendation was created to track remediation of a RED monitoring result.\n\n` +

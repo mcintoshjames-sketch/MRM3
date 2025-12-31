@@ -334,6 +334,12 @@ const MonitoringPlanDetailPage: React.FC = () => {
         setShowUpdateCycleAssigneePrompt,
         // Note: handleCycleAssigneePromptResponse is defined locally to use local handleSavePlanDetails
     } = useMonitoringPlan(id);
+    const canPublishPlan = !!plan?.user_permissions?.is_admin || !!plan?.user_permissions?.is_team_member;
+    const canViewUnpublishedChanges = !!plan?.has_unpublished_changes && (
+        user?.role === 'Admin' || user?.role === 'Validator' || !!plan?.user_permissions?.is_team_member
+    );
+    const monitoringHomePath = user?.role === 'Admin' ? '/monitoring-plans?tab=plans' : '/my-monitoring-tasks';
+    const monitoringHomeLabel = user?.role === 'Admin' ? 'Monitoring Plans' : 'My Monitoring Tasks';
 
     // Use the cycle management hook
     const {
@@ -672,10 +678,14 @@ const MonitoringPlanDetailPage: React.FC = () => {
                 if (permissions?.can_submit_cycle) {
                     actions.push({ label: 'Submit for Review', action: 'submit', variant: 'primary' });
                 }
-                actions.push({ label: 'Extend Due Date', action: 'postpone', variant: 'secondary' });
+                if (permissions?.can_cancel_cycle) {
+                    actions.push({ label: 'Extend Due Date', action: 'postpone', variant: 'secondary' });
+                }
                 break;
             case 'ON_HOLD':
-                actions.push({ label: 'Resume Cycle', action: 'resume', variant: 'secondary' });
+                if (permissions?.can_cancel_cycle) {
+                    actions.push({ label: 'Resume Cycle', action: 'resume', variant: 'secondary' });
+                }
                 break;
             case 'UNDER_REVIEW':
                 // Only Admin or team members (risk function) can request approval
@@ -707,8 +717,8 @@ const MonitoringPlanDetailPage: React.FC = () => {
                 <div className="text-center py-12">
                     <h2 className="text-2xl font-bold text-red-600">Error</h2>
                     <p className="text-gray-600 mt-2">{error || 'Plan not found'}</p>
-                    <Link to="/monitoring-plans?tab=plans" className="text-blue-600 hover:underline mt-4 inline-block">
-                        Back to Monitoring Plans
+                    <Link to={monitoringHomePath} className="text-blue-600 hover:underline mt-4 inline-block">
+                        Back to {monitoringHomeLabel}
                     </Link>
                 </div>
             </Layout>
@@ -726,8 +736,8 @@ const MonitoringPlanDetailPage: React.FC = () => {
                 <div className="flex justify-between items-start">
                     <div>
                         <div className="flex items-center gap-2 mb-2">
-                            <Link to="/monitoring-plans?tab=plans" className="text-blue-600 hover:underline text-sm">
-                                Monitoring Plans
+                            <Link to={monitoringHomePath} className="text-blue-600 hover:underline text-sm">
+                                {monitoringHomeLabel}
                             </Link>
                             <span className="text-gray-400">/</span>
                             <span className="text-gray-600">{plan.name}</span>
@@ -815,7 +825,7 @@ const MonitoringPlanDetailPage: React.FC = () => {
                 </div>
 
                 {/* Unpublished Changes Warning Banner - Above all tabs */}
-                {plan?.has_unpublished_changes && (plan.user_permissions?.is_admin || plan.user_permissions?.is_team_member) && (
+                {canViewUnpublishedChanges && (
                     <div className="bg-amber-50 border border-amber-300 rounded-lg p-4 mt-4">
                         <div className="flex items-start gap-3">
                             <svg className="w-5 h-5 text-amber-500 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -828,15 +838,17 @@ const MonitoringPlanDetailPage: React.FC = () => {
                                     Publish a new version to make these changes available for future cycles.
                                 </p>
                             </div>
-                            <button
-                                onClick={() => setShowPublishModal(true)}
-                                className="px-3 py-1.5 bg-amber-600 text-white rounded-lg hover:bg-amber-700 text-sm font-medium flex items-center gap-1.5"
-                            >
-                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
-                                </svg>
-                                Publish Now
-                            </button>
+                            {canPublishPlan && (
+                                <button
+                                    onClick={() => setShowPublishModal(true)}
+                                    className="px-3 py-1.5 bg-amber-600 text-white rounded-lg hover:bg-amber-700 text-sm font-medium flex items-center gap-1.5"
+                                >
+                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                                    </svg>
+                                    Publish Now
+                                </button>
+                            )}
                         </div>
                     </div>
                 )}

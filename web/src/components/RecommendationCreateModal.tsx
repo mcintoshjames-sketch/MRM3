@@ -51,6 +51,7 @@ interface RecommendationCreateModalProps {
     preselectedValidationRequestId?: number;
     preselectedMonitoringCycleId?: number;
     preselectedPlanMetricId?: number;
+    preselectedCategoryId?: number;
     preselectedTitle?: string;
     preselectedDescription?: string;
 }
@@ -66,6 +67,7 @@ export default function RecommendationCreateModal({
     preselectedValidationRequestId,
     preselectedMonitoringCycleId,
     preselectedPlanMetricId,
+    preselectedCategoryId,
     preselectedTitle,
     preselectedDescription
 }: RecommendationCreateModalProps) {
@@ -77,7 +79,7 @@ export default function RecommendationCreateModal({
         title: preselectedTitle || '',
         description: preselectedDescription || '',
         priority_id: 0,
-        category_id: null as number | null,
+        category_id: preselectedCategoryId || null as number | null,
         assigned_to_id: 0,
         original_target_date: '',
         target_date_change_reason: ''
