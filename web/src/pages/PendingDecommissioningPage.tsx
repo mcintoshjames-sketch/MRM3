@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import api from '../api/client';
 import Layout from '../components/Layout';
 import { useAuth } from '../contexts/AuthContext';
-import { isAdminOrValidator } from '../utils/roleUtils';
+import { canManageDecommissioning, isApprover } from '../utils/roleUtils';
 
 interface DecommissioningRequest {
   request_id: number;
@@ -22,16 +22,19 @@ export default function PendingDecommissioningPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const isValidatorOrAdmin = isAdminOrValidator(user);
+  const canManageDecommissioningFlag = canManageDecommissioning(user);
+  const isApproverUser = isApprover(user);
 
   useEffect(() => {
     const fetchPendingRequests = async () => {
       try {
         setLoading(true);
         // Use different endpoints based on user role
-        const endpoint = isValidatorOrAdmin
+        const endpoint = canManageDecommissioningFlag
           ? '/decommissioning/pending-validator-review'
-          : '/decommissioning/my-pending-owner-reviews';
+          : (isApproverUser
+            ? '/decommissioning/my-pending-approvals'
+            : '/decommissioning/my-pending-owner-reviews');
         const response = await api.get(endpoint);
         setRequests(response.data);
         setError(null);
@@ -43,7 +46,7 @@ export default function PendingDecommissioningPage() {
     };
 
     fetchPendingRequests();
-  }, [isValidatorOrAdmin]);
+  }, [canManageDecommissioningFlag, isApproverUser]);
 
   const getDaysUntilProduction = (lastProductionDate: string) => {
     const today = new Date();
@@ -71,9 +74,11 @@ export default function PendingDecommissioningPage() {
         <div>
           <h1 className="text-3xl font-bold text-gray-900">Pending Decommissioning</h1>
           <p className="mt-2 text-sm text-gray-600">
-            {isValidatorOrAdmin
+            {canManageDecommissioningFlag
               ? 'Review and approve model decommissioning requests'
-              : 'Model decommissioning requests requiring your approval as model owner'}
+              : (isApproverUser
+                ? 'Model decommissioning requests requiring your approval'
+                : 'Model decommissioning requests requiring your approval as model owner')}
           </p>
         </div>
 
@@ -92,7 +97,7 @@ export default function PendingDecommissioningPage() {
             </svg>
             <h3 className="mt-4 text-lg font-medium text-gray-900">No pending requests</h3>
             <p className="mt-2 text-sm text-gray-500">
-              {isValidatorOrAdmin
+              {canManageDecommissioningFlag
                 ? 'All decommissioning requests have been reviewed.'
                 : 'No decommissioning requests require your approval.'}
             </p>

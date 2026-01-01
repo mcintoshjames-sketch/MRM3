@@ -12,7 +12,7 @@ import { useTableSort } from '../hooks/useTableSort';
 import { useColumnPreferences, ColumnDefinition } from '../hooks/useColumnPreferences';
 import { ColumnPickerModal, SaveViewModal } from '../components/ColumnPickerModal';
 import { useAuth } from '../contexts/AuthContext';
-import { isAdminOrValidator } from '../utils/roleUtils';
+import { canManageRecommendations } from '../utils/roleUtils';
 
 interface Model {
     model_id: number;
@@ -134,23 +134,8 @@ export default function RecommendationsPage() {
         defaultViews,
     });
 
-    const filteredRecommendations = useMemo(() => {
+    const scopedRecommendations = useMemo(() => {
         let result = recommendations;
-
-        switch (filterMode) {
-            case 'open':
-                result = result.filter(rec => !TERMINAL_STATUS_CODES.includes(rec.current_status?.code || ''));
-                break;
-            case 'my_tasks':
-                result = result.filter(rec => myTaskIds.has(rec.recommendation_id));
-                break;
-            case 'overdue':
-                result = result.filter(rec => isOverdue(rec));
-                break;
-            case 'high_priority':
-                result = result.filter(rec => rec.priority?.code === 'HIGH');
-                break;
-        }
 
         if (searchQuery) {
             const searchLower = searchQuery.toLowerCase();
@@ -190,8 +175,6 @@ export default function RecommendationsPage() {
         return result;
     }, [
         recommendations,
-        filterMode,
-        myTaskIds,
         searchQuery,
         statusFilter,
         priorityFilter,
@@ -200,6 +183,27 @@ export default function RecommendationsPage() {
         validationRequestId,
         assignedToId,
     ]);
+
+    const filteredRecommendations = useMemo(() => {
+        let result = scopedRecommendations;
+
+        switch (filterMode) {
+            case 'open':
+                result = result.filter(rec => !TERMINAL_STATUS_CODES.includes(rec.current_status?.code || ''));
+                break;
+            case 'my_tasks':
+                result = result.filter(rec => myTaskIds.has(rec.recommendation_id));
+                break;
+            case 'overdue':
+                result = result.filter(rec => isOverdue(rec));
+                break;
+            case 'high_priority':
+                result = result.filter(rec => rec.priority?.code === 'HIGH');
+                break;
+        }
+
+        return result;
+    }, [scopedRecommendations, filterMode, myTaskIds]);
 
     // Table sorting
     const { sortedData, requestSort, getSortIcon, sortConfig } = useTableSort<RecommendationListItem>(
@@ -497,19 +501,19 @@ export default function RecommendationsPage() {
     };
 
     const { openCount, myTasksCount, overdueCount, highPriorityCount } = useMemo(() => {
-        const open = recommendations.filter(
+        const open = scopedRecommendations.filter(
             r => !TERMINAL_STATUS_CODES.includes(r.current_status?.code || '')
         ).length;
-        const myTasks = recommendations.filter(r => myTaskIds.has(r.recommendation_id)).length;
-        const overdue = recommendations.filter(rec => isOverdue(rec)).length;
-        const highPriority = recommendations.filter(rec => rec.priority?.code === 'HIGH').length;
+        const myTasks = scopedRecommendations.filter(r => myTaskIds.has(r.recommendation_id)).length;
+        const overdue = scopedRecommendations.filter(rec => isOverdue(rec)).length;
+        const highPriority = scopedRecommendations.filter(rec => rec.priority?.code === 'HIGH').length;
         return {
             openCount: open,
             myTasksCount: myTasks,
             overdueCount: overdue,
             highPriorityCount: highPriority,
         };
-    }, [recommendations, myTaskIds]);
+    }, [scopedRecommendations, myTaskIds]);
 
     const activeFilterLabel = filterMode === 'my_tasks'
         ? 'My Tasks'
@@ -544,7 +548,7 @@ export default function RecommendationsPage() {
         clearUrlPrefilters();
     };
 
-    const canCreate = isAdminOrValidator(user);
+    const canCreate = canManageRecommendations(user);
 
     if (loading) {
         return (

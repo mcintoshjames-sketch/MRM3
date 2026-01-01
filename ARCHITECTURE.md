@@ -81,7 +81,7 @@ Model Risk Management inventory system with a FastAPI backend, React/TypeScript 
   - IRP (Independent Review Process): `irp.py` (IRP, IRPReview, IRPCertification, mrsa_irp association table for many-to-many MRSA coverage).
   - MRSA review scheduling: `mrsa_review_policy.py` (MRSAReviewPolicy, MRSAReviewException) for risk-based review frequencies and approved due date overrides.
 - Schemas: mirrored Pydantic models in `app/schemas/` for requests/responses.
-- Authn/z: HTTP Bearer JWT tokens; `get_current_user` dependency enforces auth; role checks per endpoint; RLS utilities narrow visibility for non-privileged users.
+- Authn/z: HTTP Bearer JWT tokens; `/auth/me` returns `role_code` + `capabilities` for UI gating; `get_current_user` enforces auth; backend still uses role checks and RLS utilities to narrow visibility for non-privileged users.
 - Audit logging: `AuditLog` persisted on key workflows (model changes, approvals, component config publishes, etc.).
 - Reporting: Dedicated routers plus endpoints in `validation_workflow.py` for dashboard metrics and compliance reports (aging, workload, deviation trends).
 
@@ -915,7 +915,7 @@ Model Risk Management inventory system with a FastAPI backend, React/TypeScript 
 ## Security, Error Handling, Logging
 - JWT auth with token expiry; passwords hashed with bcrypt.
 - 401 handling: frontend interceptor removes token and redirects to `/login`.
-- Authorization enforced in routers via role checks (Admin/Validator/etc.) and row-level security filters for users.
+- Authorization enforced in routers via role checks and row-level security filters; frontend gates routes/actions using `capabilities` from `/auth/me`.
 - Audit logging stored in `audit_logs` table; endpoints allow filtered retrieval.
 - Errors surfaced as FastAPI HTTPExceptions with detail; frontend shows inline errors or toasts per page implementations.
 

@@ -18,7 +18,12 @@ import ModelLimitationsTab from '../components/ModelLimitationsTab';
 import ModelExceptionsTab from '../components/ModelExceptionsTab';
 import OverdueCommentaryModal, { OverdueType } from '../components/OverdueCommentaryModal';
 import { useAuth } from '../contexts/AuthContext';
-import { isAdmin, isValidator, isAdminOrValidator } from '../utils/roleUtils';
+import {
+    canApproveModel,
+    canManageIrps,
+    canManageModels,
+    canManageRecommendations
+} from '../utils/roleUtils';
 import { ModelVersion } from '../api/versions';
 import { overdueCommentaryApi, CurrentOverdueCommentaryResponse } from '../api/overdueCommentary';
 import { getResidualRiskBadgeClass } from '../api/residualRiskMap';
@@ -306,8 +311,10 @@ export default function ModelDetailsPage() {
     const navigate = useNavigate();
     const [searchParams, setSearchParams] = useSearchParams();
     const { user } = useAuth();
-    const isAdminUser = isAdmin(user);
-    const isAdminOrValidatorUser = isAdminOrValidator(user);
+    const canApproveModelFlag = canApproveModel(user);
+    const canManageIrpsFlag = canManageIrps(user);
+    const canManageModelsFlag = canManageModels(user);
+    const canManageRecommendationsFlag = canManageRecommendations(user);
     const [model, setModel] = useState<Model | null>(null);
     const [users, setUsers] = useState<User[]>([]);
     const [vendors, setVendors] = useState<Vendor[]>([]);
@@ -444,7 +451,7 @@ export default function ModelDetailsPage() {
 
                 // Check if URL has reviewEdit parameter
                 const reviewEditId = searchParams.get('reviewEdit');
-                if (reviewEditId && isAdminUser) {
+                if (reviewEditId && canApproveModelFlag) {
                     const editId = parseInt(reviewEditId, 10);
                     const editExists = response.data.some((e: PendingEdit) => e.pending_edit_id === editId);
                     if (editExists) {
@@ -1279,7 +1286,7 @@ export default function ModelDetailsPage() {
                             <button onClick={() => { setEditError(null); setEditing(true); }} className="btn-primary">
                                 Edit Model
                             </button>
-                            {isAdminOrValidatorUser && (
+                            {canManageModelsFlag && (
                                 <button onClick={handleDelete} className="btn-secondary text-red-600">
                                     Delete
                                 </button>
@@ -1327,7 +1334,7 @@ export default function ModelDetailsPage() {
                         </div>
 
                         {/* Admin Actions */}
-                        {isAdminUser && model.row_approval_status === 'Draft' && (
+                        {canApproveModelFlag && model.row_approval_status === 'Draft' && (
                             <div className="flex gap-2 flex-shrink-0">
                                 <button
                                     onClick={() => setShowApprovalActions(!showApprovalActions)}
@@ -1352,7 +1359,7 @@ export default function ModelDetailsPage() {
                     </div>
 
                     {/* Approval Actions Panel */}
-                    {showApprovalActions && isAdminUser && (
+                    {showApprovalActions && canApproveModelFlag && (
                         <div className="mt-4 pt-4 border-t border-blue-200 space-y-4">
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                 {/* Approve Section */}
@@ -1506,7 +1513,7 @@ export default function ModelDetailsPage() {
             )}
 
             {/* Pending Edits Banner (Admin only) */}
-            {isAdminUser && pendingEdits.length > 0 && (
+            {canApproveModelFlag && pendingEdits.length > 0 && (
                 <div className="mb-6 p-4 rounded-lg border-l-4 bg-amber-50 border-amber-500">
                     <div className="flex items-start justify-between gap-4">
                         <div className="flex items-start gap-3 flex-1">
@@ -2676,7 +2683,7 @@ export default function ModelDetailsPage() {
                                                 >
                                                     {irpCoverage.irp_names[index] || `IRP #${irpId}`}
                                                 </Link>
-                                                {isAdminUser && (
+                                                {canManageIrpsFlag && (
                                                     <button
                                                         onClick={() => handleUnlinkIrp(irpId)}
                                                         className="text-red-600 hover:text-red-800 text-sm"
@@ -2692,7 +2699,7 @@ export default function ModelDetailsPage() {
                                     <p className="text-sm text-gray-500 italic">No IRP coverage assigned</p>
                                 )}
                                 {/* Link to IRP button - Admin only */}
-                                {isAdminUser && (
+                                {canManageIrpsFlag && (
                                     <button
                                         onClick={() => {
                                             setShowIrpLinkModal(true);
@@ -3594,7 +3601,7 @@ export default function ModelDetailsPage() {
                         <ModelApplicationsSection
                             modelId={model.model_id}
                             canEdit={
-                                isAdminOrValidatorUser ||
+                                canManageModelsFlag ||
                                 user?.user_id === model.owner_id ||
                                 user?.user_id === model.developer_id
                             }
@@ -3673,7 +3680,7 @@ export default function ModelDetailsPage() {
                 <div className="bg-white p-6 rounded-lg shadow-md">
                     <div className="flex justify-between items-center mb-6">
                         <h3 className="text-xl font-bold">Recommendations</h3>
-                        {isAdminOrValidatorUser && (
+                        {canManageRecommendationsFlag && (
                             <Link
                                 to={`/recommendations?model_id=${model.model_id}`}
                                 className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 text-sm"

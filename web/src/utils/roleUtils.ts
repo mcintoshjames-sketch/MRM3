@@ -111,7 +111,7 @@ export const canManageUsers = (user?: UserLike | null): boolean =>
     hasCapability(user, 'can_manage_users', () => isAdmin(user));
 
 export const canManageTaxonomy = (user?: UserLike | null): boolean =>
-    hasCapability(user, 'can_manage_taxonomy', () => isAdminOrValidator(user));
+    hasCapability(user, 'can_manage_taxonomy', () => isAdmin(user));
 
 export const canManageRegions = (user?: UserLike | null): boolean =>
     hasCapability(user, 'can_manage_regions', () => isAdmin(user));
@@ -120,7 +120,7 @@ export const canManageWorkflowConfig = (user?: UserLike | null): boolean =>
     hasCapability(user, 'can_manage_workflow_config', () => isAdmin(user));
 
 export const canManageDelegates = (user?: UserLike | null): boolean =>
-    hasCapability(user, 'can_manage_delegates', () => isAdmin(user));
+    hasCapability(user, 'can_manage_delegates', () => isAdminOrValidator(user));
 
 export const canManageValidationPolicies = (user?: UserLike | null): boolean =>
     hasCapability(user, 'can_manage_validation_policies', () => isAdmin(user));
@@ -147,7 +147,7 @@ export const canManageIrps = (user?: UserLike | null): boolean =>
     hasCapability(user, 'can_manage_irps', () => isAdmin(user));
 
 export const canManageModels = (user?: UserLike | null): boolean =>
-    hasCapability(user, 'can_manage_models', () => isAdmin(user));
+    hasCapability(user, 'can_manage_models', () => isAdminOrValidator(user));
 
 export const canManageModelRelationships = (user?: UserLike | null): boolean =>
     hasCapability(user, 'can_manage_model_relationships', () => isAdmin(user));
@@ -166,6 +166,12 @@ export const canManageDecommissioning = (user?: UserLike | null): boolean =>
 
 export const canApproveModel = (user?: UserLike | null): boolean =>
     hasCapability(user, 'can_approve_model', () => isAdmin(user));
+
+export const canProxyApprove = (user?: UserLike | null): boolean =>
+    hasCapability(user, 'can_proxy_approve', () => isAdmin(user));
+
+export const canVoidApprovals = (user?: UserLike | null): boolean =>
+    hasCapability(user, 'can_void_approvals', () => isAdmin(user));
 
 export const getRoleDisplay = (user?: UserLike | null): string => {
     const roleCode = getUserRoleCode(user);

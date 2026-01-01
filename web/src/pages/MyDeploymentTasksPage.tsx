@@ -3,7 +3,7 @@ import Layout from '../components/Layout';
 import api from '../api/client';
 import { useAuth } from '../contexts/AuthContext';
 import { deploymentsApi, BulkConfirmRequest, BulkAdjustRequest, BulkCancelRequest } from '../api/deployments';
-import { isAdmin } from '../utils/roleUtils';
+import { canViewAdminDashboard } from '../utils/roleUtils';
 
 interface DeploymentTask {
   task_id: number;
@@ -31,7 +31,7 @@ interface ConfirmModalData {
 
 const MyDeploymentTasksPage = () => {
   const { user } = useAuth();
-  const isAdminUser = isAdmin(user);
+  const canViewAdminDashboardFlag = canViewAdminDashboard(user);
   const [tasks, setTasks] = useState<DeploymentTask[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -605,7 +605,7 @@ const MyDeploymentTasksPage = () => {
             <div className="text-sm text-blue-800">
               <p className="font-medium">About Deployment Confirmations</p>
               <p className="mt-1">
-                {isAdminUser ? (
+                {canViewAdminDashboardFlag ? (
                   <>
                     This page shows all pending deployment confirmations across the organization.
                     Model owners and developers are responsible for confirming when model versions are deployed to production.

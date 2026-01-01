@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import api from '../api/client';
 import { useAuth } from '../contexts/AuthContext';
-import { isAdminOrValidator } from '../utils/roleUtils';
+import { canManageModels } from '../utils/roleUtils';
 import Layout from '../components/Layout';
 import { useTableSort } from '../hooks/useTableSort';
 import MultiSelectDropdown from '../components/MultiSelectDropdown';
@@ -175,7 +175,7 @@ export default function ModelsPage() {
     const navigate = useNavigate();
     const [searchParams, setSearchParams] = useSearchParams();
     const { user } = useAuth();
-    const isAdminOrValidatorUser = isAdminOrValidator(user);
+    const canManageModelsFlag = canManageModels(user);
     const [models, setModels] = useState<Model[]>([]);
     const [users, setUsers] = useState<User[]>([]);
     const [vendors, setVendors] = useState<Vendor[]>([]);
@@ -2728,7 +2728,7 @@ export default function ModelsPage() {
                                             </th>
                                         );
                                     })}
-                                    {isAdminOrValidatorUser && (
+                                    {canManageModelsFlag && (
                                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
                                     )}
                                 </tr>
@@ -2736,7 +2736,7 @@ export default function ModelsPage() {
                             <tbody className="bg-white divide-y divide-gray-200">
                                 {sortedData.length === 0 ? (
                                     <tr>
-                                        <td colSpan={selectedColumns.length + (isAdminOrValidatorUser ? 1 : 0)} className="px-6 py-4 text-center text-gray-500">
+                                        <td colSpan={selectedColumns.length + (canManageModelsFlag ? 1 : 0)} className="px-6 py-4 text-center text-gray-500">
                                             No models yet. Click "Add Model" to create one.
                                         </td>
                                     </tr>
@@ -2748,7 +2748,7 @@ export default function ModelsPage() {
                                                     {columnRenderers[colKey].cell(model)}
                                                 </td>
                                             ))}
-                                            {isAdminOrValidatorUser && (
+                                            {canManageModelsFlag && (
                                                 <td className="px-6 py-4 whitespace-nowrap">
                                                     <button
                                                         onClick={() => handleDelete(model.model_id)}

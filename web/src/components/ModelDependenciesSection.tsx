@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import api from '../api/client';
 import { useAuth } from '../contexts/AuthContext';
-import { isAdmin } from '../utils/roleUtils';
+import { canManageModelRelationships } from '../utils/roleUtils';
 import ModelDependencyModal from './ModelDependencyModal';
 
 interface DependencyRelation {
@@ -122,7 +122,7 @@ export default function ModelDependenciesSection({ modelId, modelName }: Props) 
         document.body.removeChild(link);
     };
 
-    const isAdminUser = isAdmin(user);
+    const canManageModelRelationshipsFlag = canManageModelRelationships(user);
 
     if (loading) {
         return (
@@ -146,7 +146,7 @@ export default function ModelDependenciesSection({ modelId, modelName }: Props) 
                     <p className="mt-1 text-sm text-gray-500">
                         This model has no inbound or outbound data dependencies defined.
                     </p>
-                    {isAdminUser && (
+                    {canManageModelRelationshipsFlag && (
                         <div className="mt-6 flex justify-center space-x-3">
                             <button
                                 onClick={handleAddInbound}
@@ -208,7 +208,7 @@ export default function ModelDependenciesSection({ modelId, modelName }: Props) 
                                     </svg>
                                     Export CSV
                                 </button>
-                                {isAdminUser && (
+                                {canManageModelRelationshipsFlag && (
                                     <button
                                         onClick={handleAddInbound}
                                         className="inline-flex items-center px-3 py-1.5 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50"
@@ -240,7 +240,7 @@ export default function ModelDependenciesSection({ modelId, modelName }: Props) 
                                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                                             Effective Date
                                         </th>
-                                        {isAdminUser && (
+                                        {canManageModelRelationshipsFlag && (
                                             <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
                                                 Actions
                                             </th>
@@ -280,7 +280,7 @@ export default function ModelDependenciesSection({ modelId, modelName }: Props) 
                                             <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                                                 {dep.effective_date || '-'}
                                             </td>
-                                            {isAdminUser && (
+                                            {canManageModelRelationshipsFlag && (
                                                 <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                                                     <button
                                                         onClick={() => handleEdit(dep, 'inbound')}
@@ -326,7 +326,7 @@ export default function ModelDependenciesSection({ modelId, modelName }: Props) 
                                     </svg>
                                     Export CSV
                                 </button>
-                                {isAdminUser && (
+                                {canManageModelRelationshipsFlag && (
                                     <button
                                         onClick={handleAddOutbound}
                                         className="inline-flex items-center px-3 py-1.5 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50"
@@ -358,7 +358,7 @@ export default function ModelDependenciesSection({ modelId, modelName }: Props) 
                                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                                             Effective Date
                                         </th>
-                                        {isAdminUser && (
+                                        {canManageModelRelationshipsFlag && (
                                             <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
                                                 Actions
                                             </th>
@@ -398,7 +398,7 @@ export default function ModelDependenciesSection({ modelId, modelName }: Props) 
                                             <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                                                 {dep.effective_date || '-'}
                                             </td>
-                                            {isAdminUser && (
+                                            {canManageModelRelationshipsFlag && (
                                                 <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                                                     <button
                                                         onClick={() => handleEdit(dep, 'outbound')}

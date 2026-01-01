@@ -3,7 +3,7 @@ import { useSearchParams } from 'react-router-dom';
 import api from '../api/client';
 import Layout from '../components/Layout';
 import { useAuth } from '../contexts/AuthContext';
-import { isAdmin } from '../utils/roleUtils';
+import { canManageTaxonomy } from '../utils/roleUtils';
 import LOBTreeView from '../components/LOBTreeView';
 import LOBImportPanel from '../components/LOBImportPanel';
 import { LOBUnitTreeNode } from '../api/lob';
@@ -295,7 +295,7 @@ export default function TaxonomyPage() {
     // URL search params for direct tab linking
     const [searchParams, setSearchParams] = useSearchParams();
     const { user } = useAuth();
-    const isAdminUser = isAdmin(user);
+    const canManageTaxonomyFlag = canManageTaxonomy(user);
 
     // Tab management - initialize from URL param or default to 'general'
     const tabParam = searchParams.get('tab');
@@ -2463,7 +2463,7 @@ export default function TaxonomyPage() {
                                                     <div className="mb-4 p-3 bg-blue-50 rounded border border-blue-200">
                                                         <div className="flex items-center gap-2 mb-2">
                                                             <span className="text-sm font-medium text-blue-800">Range (Days)</span>
-                                                            {!isAdminUser && (
+                                                            {!canManageTaxonomyFlag && (
                                                                 <span className="text-xs text-blue-600">(Admin only)</span>
                                                             )}
                                                         </div>
@@ -2478,13 +2478,13 @@ export default function TaxonomyPage() {
                                                                 <input
                                                                     id="val_min_days"
                                                                     type="number"
-                                                                    className={`input-field ${!isAdminUser ? 'bg-gray-100 cursor-not-allowed' : ''}`}
+                                                                    className={`input-field ${!canManageTaxonomyFlag ? 'bg-gray-100 cursor-not-allowed' : ''}`}
                                                                     value={valueFormData.min_days ?? ''}
                                                                     onChange={(e) => setValueFormData({
                                                                         ...valueFormData,
                                                                         min_days: e.target.value === '' ? null : parseInt(e.target.value)
                                                                     })}
-                                                                    disabled={!isAdminUser}
+                                                                    disabled={!canManageTaxonomyFlag}
                                                                     placeholder="null (unbounded)"
                                                                 />
                                                             </div>
@@ -2495,13 +2495,13 @@ export default function TaxonomyPage() {
                                                                 <input
                                                                     id="val_max_days"
                                                                     type="number"
-                                                                    className={`input-field ${!isAdminUser ? 'bg-gray-100 cursor-not-allowed' : ''}`}
+                                                                    className={`input-field ${!canManageTaxonomyFlag ? 'bg-gray-100 cursor-not-allowed' : ''}`}
                                                                     value={valueFormData.max_days ?? ''}
                                                                     onChange={(e) => setValueFormData({
                                                                         ...valueFormData,
                                                                         max_days: e.target.value === '' ? null : parseInt(e.target.value)
                                                                     })}
-                                                                    disabled={!isAdminUser}
+                                                                    disabled={!canManageTaxonomyFlag}
                                                                     placeholder="null (unbounded)"
                                                                 />
                                                             </div>
@@ -2525,13 +2525,13 @@ export default function TaxonomyPage() {
                                                                     type="number"
                                                                     min="0"
                                                                     max="5"
-                                                                    className={`input-field ${!isAdminUser ? 'bg-gray-100 cursor-not-allowed' : ''}`}
+                                                                    className={`input-field ${!canManageTaxonomyFlag ? 'bg-gray-100 cursor-not-allowed' : ''}`}
                                                                     value={valueFormData.downgrade_notches ?? ''}
                                                                     onChange={(e) => setValueFormData({
                                                                         ...valueFormData,
                                                                         downgrade_notches: e.target.value === '' ? null : Math.min(5, Math.max(0, parseInt(e.target.value)))
                                                                     })}
-                                                                    disabled={!isAdminUser}
+                                                                    disabled={!canManageTaxonomyFlag}
                                                                     placeholder="0"
                                                                 />
                                                             </div>
@@ -3337,7 +3337,7 @@ export default function TaxonomyPage() {
                             Reference library of modeling methodologies organized by category.
                             Click a category to expand/collapse its methodologies.
                         </p>
-                        {isAdminUser && (
+                        {canManageTaxonomyFlag && (
                             <button onClick={() => setShowMethodologyCategoryForm(true)} className="btn-primary">
                                 + New Category
                             </button>
@@ -3345,7 +3345,7 @@ export default function TaxonomyPage() {
                     </div>
 
                     {/* Category Form */}
-                    {showMethodologyCategoryForm && isAdminUser && (
+                    {showMethodologyCategoryForm && canManageTaxonomyFlag && (
                         <div className="bg-white p-6 rounded-lg shadow-md mb-6">
                             <h3 className="text-lg font-bold mb-4">
                                 {editingMethodologyCategory ? 'Edit Category' : 'Create New Category'}
@@ -3418,7 +3418,7 @@ export default function TaxonomyPage() {
                     )}
 
                     {/* Methodology Form */}
-                    {showMethodologyForm && isAdminUser && (
+                    {showMethodologyForm && canManageTaxonomyFlag && (
                         <div className="bg-white p-6 rounded-lg shadow-md mb-6">
                             <h3 className="text-lg font-bold mb-4">
                                 {editingMethodology ? 'Edit Methodology' : 'Add New Methodology'}
@@ -3555,7 +3555,7 @@ export default function TaxonomyPage() {
                                                     ({category.methodologies?.length || 0} methodologies)
                                                 </span>
                                             </div>
-                                            {isAdminUser && (
+                                            {canManageTaxonomyFlag && (
                                                 <button
                                                     onClick={(e) => {
                                                         e.stopPropagation();
@@ -3570,7 +3570,7 @@ export default function TaxonomyPage() {
 
                                         {expandedMethodologyCategories.has(category.category_id) && (
                                             <div className="border-t bg-gray-50">
-                                                {isAdminUser && (
+                                                {canManageTaxonomyFlag && (
                                                     <div className="px-4 py-2 bg-gray-100 border-b">
                                                         <button
                                                             onClick={() => handleAddMethodologyToCategory(category.category_id)}
@@ -3588,7 +3588,7 @@ export default function TaxonomyPage() {
                                                                 <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Description</th>
                                                                 <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Variants</th>
                                                                 <th className="px-4 py-2 text-center text-xs font-medium text-gray-500 uppercase w-20">Status</th>
-                                                                {isAdminUser && (
+                                                                {canManageTaxonomyFlag && (
                                                                     <th className="px-4 py-2 text-center text-xs font-medium text-gray-500 uppercase w-28">Actions</th>
                                                                 )}
                                                             </tr>
@@ -3612,7 +3612,7 @@ export default function TaxonomyPage() {
                                                                                 {methodology.is_active ? 'Active' : 'Inactive'}
                                                                             </span>
                                                                         </td>
-                                                                        {isAdminUser && (
+                                                                        {canManageTaxonomyFlag && (
                                                                             <td className="px-4 py-3 text-center">
                                                                                 <div className="flex justify-center gap-2">
                                                                                     <button
@@ -6379,7 +6379,7 @@ export default function TaxonomyPage() {
                             )}
 
                             {/* Import Panel - Admin only */}
-                            {isAdminUser && (
+                            {canManageTaxonomyFlag && (
                                 <LOBImportPanel
                                     onImportComplete={() => {
                                         // Force re-render of tree by toggling a key
@@ -6390,7 +6390,7 @@ export default function TaxonomyPage() {
                             )}
 
                             {/* Help text for non-admins when nothing is selected */}
-                            {!isAdminUser && !selectedLOB && (
+                            {!canManageTaxonomyFlag && !selectedLOB && (
                                 <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
                                     <h3 className="text-lg font-semibold mb-2">LOB Structure</h3>
                                     <p className="text-sm text-gray-600">

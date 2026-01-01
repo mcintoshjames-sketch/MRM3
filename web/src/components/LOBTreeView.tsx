@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { LOBUnitTreeNode, LOBUnitCreate, LOBUnitUpdate, lobApi } from '../api/lob';
 import { useAuth } from '../contexts/AuthContext';
-import { isAdmin } from '../utils/roleUtils';
+import { canManageLob } from '../utils/roleUtils';
 
 interface LOBTreeViewProps {
     onSelectLOB?: (lob: LOBUnitTreeNode | null) => void;
@@ -19,7 +19,7 @@ interface TreeNodeProps {
     onEdit: (node: LOBUnitTreeNode) => void;
     onAddChild: (parent: LOBUnitTreeNode) => void;
     onDeactivate: (node: LOBUnitTreeNode) => void;
-    isAdmin: boolean;
+    canManageLob: boolean;
 }
 
 const TreeNode: React.FC<TreeNodeProps> = ({
@@ -32,7 +32,7 @@ const TreeNode: React.FC<TreeNodeProps> = ({
     onEdit,
     onAddChild,
     onDeactivate,
-    isAdmin
+    canManageLob
 }) => {
     const hasChildren = node.children && node.children.length > 0;
     const isExpanded = expandedNodes.has(node.lob_id);
@@ -101,7 +101,7 @@ const TreeNode: React.FC<TreeNodeProps> = ({
                 </div>
 
                 {/* Action buttons (Admin only) */}
-                {isAdmin && (
+                {canManageLob && (
                     <div className="flex gap-1 opacity-0 group-hover:opacity-100 hover:opacity-100">
                         <button
                             className="p-1 text-gray-400 hover:text-blue-600"
@@ -151,7 +151,7 @@ const TreeNode: React.FC<TreeNodeProps> = ({
                             onEdit={onEdit}
                             onAddChild={onAddChild}
                             onDeactivate={onDeactivate}
-                            isAdmin={isAdmin}
+                            canManageLob={canManageLob}
                         />
                     ))}
                 </div>
@@ -348,7 +348,7 @@ const LOBTreeView: React.FC<LOBTreeViewProps> = ({
     showInactive = false
 }) => {
     const { user } = useAuth();
-    const isAdminUser = isAdmin(user);
+    const canManageLobFlag = canManageLob(user);
 
     const [tree, setTree] = useState<LOBUnitTreeNode[]>([]);
     const [loading, setLoading] = useState(true);
@@ -506,7 +506,7 @@ const LOBTreeView: React.FC<LOBTreeViewProps> = ({
                         Collapse All
                     </button>
                 </div>
-                {isAdminUser && (
+                {canManageLobFlag && (
                     <button
                         onClick={handleAddRoot}
                         className="px-3 py-1 text-sm text-white bg-blue-600 rounded hover:bg-blue-700"
@@ -520,7 +520,7 @@ const LOBTreeView: React.FC<LOBTreeViewProps> = ({
             <div className="p-2 max-h-[500px] overflow-y-auto">
                 {tree.length === 0 ? (
                     <div className="p-4 text-center text-gray-500">
-                        No LOB units found. {isAdminUser && 'Click "Add Root" to create one.'}
+                        No LOB units found. {canManageLobFlag && 'Click "Add Root" to create one.'}
                     </div>
                 ) : (
                     tree.map((node) => (
@@ -535,7 +535,7 @@ const LOBTreeView: React.FC<LOBTreeViewProps> = ({
                             onEdit={handleEdit}
                             onAddChild={handleAddChild}
                             onDeactivate={handleDeactivate}
-                            isAdmin={isAdminUser}
+                            canManageLob={canManageLobFlag}
                         />
                     ))
                 )}

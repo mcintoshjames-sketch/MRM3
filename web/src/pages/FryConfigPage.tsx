@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import Layout from '../components/Layout';
 import client from '../api/client';
 import { useAuth } from '../contexts/AuthContext';
-import { isAdmin } from '../utils/roleUtils';
+import { canManageWorkflowConfig } from '../utils/roleUtils';
 
 interface FryLineItem {
   line_item_id: number;
@@ -46,7 +46,7 @@ const FryConfigPage: React.FC = () => {
   const [editingItem, setEditingItem] = useState<any>(null);
   const [editMode, setEditMode] = useState<'report' | 'schedule' | 'metric_group' | 'line_item' | null>(null);
 
-  const isAdminUser = isAdmin(user);
+  const canManageWorkflowConfigFlag = canManageWorkflowConfig(user);
 
   useEffect(() => {
     fetchReports();
@@ -272,7 +272,7 @@ const FryConfigPage: React.FC = () => {
                                               </span>
                                             </div>
                                           </div>
-                                          {isAdminUser && (
+                                          {canManageWorkflowConfigFlag && (
                                             <button
                                               onClick={() => handleEditMetricGroup(metricGroup)}
                                               className="ml-2 text-blue-600 hover:text-blue-800 text-sm"

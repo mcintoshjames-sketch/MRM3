@@ -2,7 +2,7 @@ import React, { useEffect, useState, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import Layout from '../components/Layout';
 import { useAuth } from '../contexts/AuthContext';
-import { isAdmin } from '../utils/roleUtils';
+import { canViewAdminDashboard } from '../utils/roleUtils';
 import {
     exceptionsApi,
     ModelExceptionListItem,
@@ -17,7 +17,7 @@ import api from '../api/client';
 
 const ExceptionsReportPage: React.FC = () => {
     const { user } = useAuth();
-    const isAdminUser = isAdmin(user);
+    const canViewAdminDashboardFlag = canViewAdminDashboard(user);
 
     // State
     const [loading, setLoading] = useState(true);
@@ -378,7 +378,7 @@ const ExceptionsReportPage: React.FC = () => {
                         </p>
                     </div>
                     <div className="flex gap-2">
-                        {isAdminUser && (
+                        {canViewAdminDashboardFlag && (
                             <button
                                 onClick={() => {
                                     setDetectResult(null);
@@ -389,7 +389,7 @@ const ExceptionsReportPage: React.FC = () => {
                                 Detect All Exceptions
                             </button>
                         )}
-                        {isAdminUser && (
+                        {canViewAdminDashboardFlag && (
                             <button
                                 onClick={() => {
                                     resetCreateForm();
@@ -794,7 +794,7 @@ const ExceptionsReportPage: React.FC = () => {
                                         )}
 
                                         {/* Actions */}
-                                        {isAdminUser && exceptionDetail.status !== 'CLOSED' && (
+                                        {canViewAdminDashboardFlag && exceptionDetail.status !== 'CLOSED' && (
                                             <div className="flex gap-2 pt-4 border-t">
                                                 {exceptionDetail.status === 'OPEN' && (
                                                     <button

@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { versionsApi, ModelVersion, ChangeType } from '../api/versions';
 import { changeTaxonomyApi, ModelChangeCategory } from '../api/changeTaxonomy';
 import { useAuth } from '../contexts/AuthContext';
-import { isAdminOrValidator } from '../utils/roleUtils';
+import { canManageValidations } from '../utils/roleUtils';
 
 interface VersionDetailModalProps {
     version: ModelVersion;
@@ -31,7 +31,7 @@ const VersionDetailModal: React.FC<VersionDetailModalProps> = ({ version, onClos
 
         // If validation has begun, only validators/admins can edit
         if (version.validation_request_id) {
-            return isAdminOrValidator(user);
+            return canManageValidations(user);
         }
 
         // Otherwise, assume owner/developer/delegates can edit (backend will verify)

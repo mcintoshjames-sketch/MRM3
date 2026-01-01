@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import api from '../api/client';
 import Layout from '../components/Layout';
 import { useAuth } from '../contexts/AuthContext';
-import { isAdmin } from '../utils/roleUtils';
+import { canViewAdminDashboard } from '../utils/roleUtils';
 
 interface PendingSubmission {
     request_id: number;
@@ -24,7 +24,7 @@ interface PendingSubmission {
 
 export default function MyPendingSubmissionsPage() {
     const { user } = useAuth();
-    const isAdminUser = isAdmin(user);
+    const canViewAdminDashboardFlag = canViewAdminDashboard(user);
     const [submissions, setSubmissions] = useState<PendingSubmission[]>([]);
     const [loading, setLoading] = useState(true);
     const [filter, setFilter] = useState<'all' | 'overdue' | 'in_grace_period' | 'due_soon' | 'upcoming'>('all');
@@ -280,7 +280,7 @@ export default function MyPendingSubmissionsPage() {
                     <div className="text-sm text-blue-800">
                         <p className="font-medium">About Revalidation Submissions</p>
                         <p className="mt-1">
-                            {isAdminUser ? (
+                            {canViewAdminDashboardFlag ? (
                                 <>
                                     This page shows all pending revalidation submissions across the organization.
                                     Model owners are responsible for submitting documentation when a revalidation is due.

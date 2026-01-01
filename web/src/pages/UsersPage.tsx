@@ -6,7 +6,7 @@ import Layout from '../components/Layout';
 import { useTableSort } from '../hooks/useTableSort';
 import type { Region } from '../api/regions';
 import { lobApi, LOBUnit } from '../api/lob';
-import { getRoleDisplay, getUserRoleCode, isAdmin, ROLE_CODE_TO_DISPLAY } from '../utils/roleUtils';
+import { canManageUsers, getRoleDisplay, getUserRoleCode, ROLE_CODE_TO_DISPLAY } from '../utils/roleUtils';
 
 interface LOBBrief {
     lob_id: number;
@@ -51,7 +51,7 @@ interface RoleOption {
 // Exported content component for use in tabbed pages
 export function UsersContent() {
     const { user: currentUser } = useAuth();
-    const isAdminUser = isAdmin(currentUser);
+    const canManageUsersFlag = canManageUsers(currentUser);
     const [users, setUsers] = useState<User[]>([]);
     const [regions, setRegions] = useState<Region[]>([]);
     const [lobUnits, setLobUnits] = useState<LOBUnit[]>([]);
@@ -317,7 +317,7 @@ export function UsersContent() {
             <div className="flex justify-between items-center mb-4">
                 <h3 className="text-lg font-semibold">Users</h3>
                 <div className="flex gap-2">
-                    {isAdminUser && (
+                    {canManageUsersFlag && (
                         <button
                             onClick={() => setShowEntraModal(true)}
                             className="btn-primary bg-blue-700 hover:bg-blue-800"

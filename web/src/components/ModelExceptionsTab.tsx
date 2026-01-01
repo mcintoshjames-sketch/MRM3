@@ -8,7 +8,7 @@ import {
     EXCEPTION_TYPE_LABELS,
     EXCEPTION_STATUS_CONFIG,
 } from '../api/exceptions';
-import { isAdmin } from '../utils/roleUtils';
+import { canViewAdminDashboard } from '../utils/roleUtils';
 
 interface Props {
     modelId: number;
@@ -16,7 +16,7 @@ interface Props {
 
 const ModelExceptionsTab: React.FC<Props> = ({ modelId }) => {
     const { user } = useAuth();
-    const isAdminUser = isAdmin(user);
+    const canViewAdminDashboardFlag = canViewAdminDashboard(user);
 
     // List state
     const [exceptions, setExceptions] = useState<ModelExceptionListItem[]>([]);
@@ -251,7 +251,7 @@ const ModelExceptionsTab: React.FC<Props> = ({ modelId }) => {
                             <option value="CLOSED">Closed</option>
                         </select>
                     </div>
-                    {isAdminUser && (
+                    {canViewAdminDashboardFlag && (
                         <button
                             onClick={() => {
                                 resetCreateForm();
@@ -322,7 +322,7 @@ const ModelExceptionsTab: React.FC<Props> = ({ modelId }) => {
                                             >
                                                 View
                                             </button>
-                                            {isAdminUser && exc.status === 'OPEN' && (
+                                            {canViewAdminDashboardFlag && exc.status === 'OPEN' && (
                                                 <button
                                                     onClick={() => handleOpenAcknowledge(exc.exception_id)}
                                                     className="text-yellow-600 hover:text-yellow-800 text-sm"
@@ -330,7 +330,7 @@ const ModelExceptionsTab: React.FC<Props> = ({ modelId }) => {
                                                     Acknowledge
                                                 </button>
                                             )}
-                                            {isAdminUser && exc.status !== 'CLOSED' && (
+                                            {canViewAdminDashboardFlag && exc.status !== 'CLOSED' && (
                                                 <button
                                                     onClick={() => handleOpenClose(exc.exception_id)}
                                                     className="text-green-600 hover:text-green-800 text-sm"

@@ -4,7 +4,7 @@ import api from '../api/client';
 import Layout from '../components/Layout';
 import { useAuth } from '../contexts/AuthContext';
 import AdminMonitoringOverview from '../components/AdminMonitoringOverview';
-import { isAdmin } from '../utils/roleUtils';
+import { canManageMonitoringPlans } from '../utils/roleUtils';
 
 interface MonitoringTask {
     cycle_id: number;
@@ -44,16 +44,16 @@ export default function MyMonitoringPage() {
     const [includeClosed, setIncludeClosed] = useState(false);
 
     // Check if user is Admin - they see the governance overview instead
-    const isAdminUser = isAdmin(user);
+    const canManageMonitoringPlansFlag = canManageMonitoringPlans(user);
 
     useEffect(() => {
         // Only fetch tasks if not admin (admin has their own component)
-        if (!isAdminUser) {
+        if (!canManageMonitoringPlansFlag) {
             fetchTasks();
         } else {
             setLoading(false);
         }
-    }, [isAdminUser, includeClosed]);
+    }, [canManageMonitoringPlansFlag, includeClosed]);
 
     const fetchTasks = async () => {
         try {
@@ -138,7 +138,7 @@ export default function MyMonitoringPage() {
     const filteredTasks = getFilteredTasks();
 
     // Admin users see the governance overview
-    if (isAdminUser) {
+    if (canManageMonitoringPlansFlag) {
         return (
             <Layout>
                 <AdminMonitoringOverview />

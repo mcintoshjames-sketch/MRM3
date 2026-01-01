@@ -2,7 +2,7 @@ import React, { useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import Layout from '../components/Layout';
 import { useAuth } from '../contexts/AuthContext';
-import { isAdminOrValidator } from '../utils/roleUtils';
+import { canViewAdminDashboard, canViewValidatorDashboard } from '../utils/roleUtils';
 
 interface Report {
     id: string;
@@ -100,8 +100,9 @@ const ReportsPage: React.FC = () => {
     // Admins and Validators see all reports
     // Basic Users only see their personal portfolio report
     const availableReports = useMemo(() => {
-        const isAdminOrValidatorUser = isAdminOrValidator(user);
-        if (isAdminOrValidatorUser) {
+        const canViewAdminDashboardFlag = canViewAdminDashboard(user);
+        const canViewValidatorDashboardFlag = canViewValidatorDashboard(user);
+        if (canViewAdminDashboardFlag || canViewValidatorDashboardFlag) {
             // Admins/Validators see all reports including My Portfolio
             return [...adminReports, ...userReports];
         }

@@ -52,3 +52,6 @@ mrm-service-token
 
 # Screenshots
 screenshots/
+
+# Local DB backups
+backups/

@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { delegatesApi, ModelDelegate } from '../api/delegates';
 import { usersApi, User } from '../api/users';
 import { useAuth } from '../contexts/AuthContext';
-import { isAdminOrValidator } from '../utils/roleUtils';
+import { canManageDelegates } from '../utils/roleUtils';
 
 interface DelegatesSectionProps {
     modelId: number;
@@ -26,7 +26,7 @@ const DelegatesSection: React.FC<DelegatesSectionProps> = ({ modelId, modelOwner
     const [selectedUser, setSelectedUser] = useState<User | null>(null);
 
     // Admins, validators, and model owners can manage delegates
-    const canManageDelegates = currentUserId === modelOwnerId || isAdminOrValidator(user);
+    const canManageDelegatesFlag = currentUserId === modelOwnerId || canManageDelegates(user);
 
     const loadDelegates = async () => {
         try {
@@ -106,7 +106,7 @@ const DelegatesSection: React.FC<DelegatesSectionProps> = ({ modelId, modelOwner
         <div className="bg-white p-6 rounded-lg shadow">
             <div className="flex justify-between items-center mb-4">
                 <h3 className="text-lg font-semibold">Model Delegates</h3>
-                {canManageDelegates && !showAddForm && (
+                {canManageDelegatesFlag && !showAddForm && (
                     <button
                         onClick={() => setShowAddForm(true)}
                         className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
@@ -116,7 +116,7 @@ const DelegatesSection: React.FC<DelegatesSectionProps> = ({ modelId, modelOwner
                 )}
             </div>
 
-            {!canManageDelegates && (
+            {!canManageDelegatesFlag && (
                 <p className="text-sm text-gray-500 mb-4">Only the model owner, validators, or administrators can manage delegates</p>
             )}
 
@@ -233,7 +233,7 @@ const DelegatesSection: React.FC<DelegatesSectionProps> = ({ modelId, modelOwner
                             <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Permissions</th>
                             <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Delegated By</th>
                             <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Date</th>
-                            {canManageDelegates && (
+                            {canManageDelegatesFlag && (
                                 <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
                             )}
                         </tr>
@@ -263,7 +263,7 @@ const DelegatesSection: React.FC<DelegatesSectionProps> = ({ modelId, modelOwner
                                 <td className="px-4 py-3 text-sm text-gray-600">
                                     {delegate.delegated_at.split('T')[0]}
                                 </td>
-                                {canManageDelegates && (
+                                {canManageDelegatesFlag && (
                                     <td className="px-4 py-3 text-sm">
                                         <button
                                             onClick={() => handleRevoke(delegate.delegate_id)}

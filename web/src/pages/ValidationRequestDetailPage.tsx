@@ -16,7 +16,7 @@ import ManageModelsModal from '../components/ManageModelsModal';
 import { Region } from '../api/regions';
 import PreTransitionWarningModal from '../components/PreTransitionWarningModal';
 import { validationWorkflowApi, PreTransitionWarningsResponse, ValidationRequestModelUpdateResponse } from '../api/validationWorkflow';
-import { isAdmin, isValidator, isAdminOrValidator, getUserRoleCode } from '../utils/roleUtils';
+import { canManageRecommendations, canManageValidations, canProxyApprove, canViewAdminDashboard, getUserRoleCode } from '../utils/roleUtils';
 
 interface TaxonomyValue {
     value_id: number;
@@ -180,9 +180,10 @@ export default function ValidationRequestDetailPage() {
     const { id } = useParams<{ id: string }>();
     const navigate = useNavigate();
     const { user } = useAuth();
-    const isAdminUser = isAdmin(user);
-    const isValidatorUser = isValidator(user);
-    const isAdminOrValidatorUser = isAdminOrValidator(user);
+    const canViewAdminDashboardFlag = canViewAdminDashboard(user);
+    const canManageValidationsFlag = canManageValidations(user);
+    const canManageRecommendationsFlag = canManageRecommendations(user);
+    const canProxyApproveFlag = canProxyApprove(user);
     const [searchParams, setSearchParams] = useSearchParams();
     const [request, setRequest] = useState<ValidationRequestDetail | null>(null);
     const [relatedVersions, setRelatedVersions] = useState<ModelVersion[]>([]);
@@ -1259,9 +1260,9 @@ export default function ValidationRequestDetailPage() {
         await fetchData();
     };
 
-    const canEditRequest = isAdminOrValidatorUser;
+    const canEditRequest = canManageValidationsFlag;
     const canEditModels = (
-        isAdminOrValidatorUser &&
+        canManageValidationsFlag &&
         (request?.current_status?.code === 'INTAKE' || request?.current_status?.code === 'PLANNING')
     );
     const primaryModel = getPrimaryModel(request?.models);
@@ -1403,7 +1404,7 @@ export default function ValidationRequestDetailPage() {
                     )}
 
                     {/* Admin Mark Submission Received Button (Admin only, when in Planning) */}
-                    {isAdminUser && !isPrimaryValidator && request.current_status.code === 'PLANNING' && (
+                    {canViewAdminDashboardFlag && !isPrimaryValidator && request.current_status.code === 'PLANNING' && (
                         <button
                             onClick={handleOpenSubmissionModal}
                             disabled={actionLoading}
@@ -1425,7 +1426,7 @@ export default function ValidationRequestDetailPage() {
                     )}
 
                     {/* Admin Progress Work Button (Admin only, when in In Progress) */}
-                    {isAdminUser && request.current_status.code === 'IN_PROGRESS' && (
+                    {canViewAdminDashboardFlag && request.current_status.code === 'IN_PROGRESS' && (
                         <button
                             onClick={() => handleCompleteWork()}
                             disabled={actionLoading}
@@ -1436,7 +1437,7 @@ export default function ValidationRequestDetailPage() {
                     )}
 
                     {/* Send Back to In Progress Button (Admin only, when in Pending Approval) */}
-                    {isAdminUser && request.current_status.code === 'PENDING_APPROVAL' && (
+                    {canViewAdminDashboardFlag && request.current_status.code === 'PENDING_APPROVAL' && (
                         <button
                             onClick={handleSendBackToInProgress}
                             disabled={actionLoading}
@@ -2371,7 +2372,7 @@ export default function ValidationRequestDetailPage() {
                                         Track and manage remediation actions from this validation's findings.
                                     </p>
                                 </div>
-                                {isAdminOrValidatorUser && (
+                                {canManageRecommendationsFlag && (
                                     <button
                                         onClick={() => setShowRecommendationModal(true)}
                                         className="bg-orange-600 text-white px-4 py-2 rounded text-sm hover:bg-orange-700"
@@ -2460,7 +2461,7 @@ export default function ValidationRequestDetailPage() {
                         <ValidationScorecardTab
                             requestId={request.request_id}
                             canEdit={
-                                isAdminOrValidatorUser &&
+                                canManageValidationsFlag &&
                                 !['APPROVED', 'CANCELLED'].includes(request.current_status.code)
                             }
                             onScorecardChange={fetchData}
@@ -2637,10 +2638,10 @@ export default function ValidationRequestDetailPage() {
                                                     {approval.approval_status}
                                                 </span>
                                                 {approval.approval_status === 'Pending' && approval.approver &&
-                                                    (user?.user_id === approval.approver.user_id || isAdminUser) && (
+                                                    (user?.user_id === approval.approver.user_id || canProxyApproveFlag) && (
                                                         <button
                                                             onClick={() => {
-                                                                const isProxyApproval = isAdminUser && user?.user_id !== approval.approver.user_id;
+                                                                const isProxyApproval = canProxyApproveFlag && user?.user_id !== approval.approver.user_id;
                                                                 setApprovalUpdate({
                                                                     approval_id: approval.approval_id,
                                                                     status: '',
@@ -2661,11 +2662,11 @@ export default function ValidationRequestDetailPage() {
                                                                 ? `Cannot submit approval until request reaches 'Pending Approval' status (currently: ${request?.current_status?.label || 'Unknown'})`
                                                                 : undefined}
                                                         >
-                                                            {isAdminUser && user?.user_id !== approval.approver.user_id ? 'Decision on Behalf' : 'Decision'}
+                                                            {canProxyApproveFlag && user?.user_id !== approval.approver.user_id ? 'Decision on Behalf' : 'Decision'}
                                                         </button>
                                                     )}
                                                 {(approval.approval_status === 'Approved' || approval.approval_status === 'Rejected') && approval.approver &&
-                                                    (user?.user_id === approval.approver.user_id || isAdminUser) && (
+                                                    (user?.user_id === approval.approver.user_id || canProxyApproveFlag) && (
                                                         <button
                                                             onClick={async () => {
                                                                 if (window.confirm('Are you sure you want to withdraw this approval? This will reset it to Pending status.')) {

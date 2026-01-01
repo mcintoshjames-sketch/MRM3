@@ -5,7 +5,7 @@ import { recommendationsApi, Recommendation, TaxonomyValue } from '../api/recomm
 import { listRecommendationLimitations, LimitationListItem } from '../api/limitations';
 import { useAuth } from '../contexts/AuthContext';
 import api from '../api/client';
-import { isAdmin, isValidator } from '../utils/roleUtils';
+import { canManageRecommendations, canViewAdminDashboard } from '../utils/roleUtils';
 
 // Import sub-components
 import RecommendationWorkflowActions from '../components/RecommendationWorkflowActions';
@@ -118,32 +118,32 @@ export default function RecommendationDetailPage() {
     };
 
     // Permission helpers
-    const isAdminUser = isAdmin(user);
-    const isValidatorUser = isValidator(user);
+    const canManageRecommendationsFlag = canManageRecommendations(user);
+    const canViewAdminDashboardFlag = canViewAdminDashboard(user);
     const isAssignedDeveloper = recommendation?.assigned_to_id === user?.user_id;
     const currentStatus = recommendation?.current_status?.code || '';
 
     // Status-based permissions
-    const canFinalize = (isValidatorUser || isAdminUser) && currentStatus === 'REC_DRAFT';
-    const canSubmitRebuttal = (isAssignedDeveloper || isAdminUser) && currentStatus === 'REC_PENDING_RESPONSE';
-    const canSubmitActionPlan = (isAssignedDeveloper || isAdminUser) &&
+    const canFinalize = canManageRecommendationsFlag && currentStatus === 'REC_DRAFT';
+    const canSubmitRebuttal = (isAssignedDeveloper || canViewAdminDashboardFlag) && currentStatus === 'REC_PENDING_RESPONSE';
+    const canSubmitActionPlan = (isAssignedDeveloper || canViewAdminDashboardFlag) &&
         (currentStatus === 'REC_PENDING_RESPONSE' || currentStatus === 'REC_PENDING_ACTION_PLAN');
-    const canReviewRebuttal = (isValidatorUser || isAdminUser) && currentStatus === 'REC_IN_REBUTTAL';
-    const canReviewActionPlan = (isValidatorUser || isAdminUser) && currentStatus === 'REC_PENDING_VALIDATOR_REVIEW';
-    const canAcknowledge = (isAssignedDeveloper || isAdminUser) && currentStatus === 'REC_PENDING_ACKNOWLEDGEMENT';
-    const canSubmitForClosure = (isAssignedDeveloper || isAdminUser) &&
+    const canReviewRebuttal = canManageRecommendationsFlag && currentStatus === 'REC_IN_REBUTTAL';
+    const canReviewActionPlan = canManageRecommendationsFlag && currentStatus === 'REC_PENDING_VALIDATOR_REVIEW';
+    const canAcknowledge = (isAssignedDeveloper || canViewAdminDashboardFlag) && currentStatus === 'REC_PENDING_ACKNOWLEDGEMENT';
+    const canSubmitForClosure = (isAssignedDeveloper || canViewAdminDashboardFlag) &&
         (currentStatus === 'REC_OPEN' || currentStatus === 'REC_REWORK_REQUIRED');
-    const canReviewClosure = (isValidatorUser || isAdminUser) && currentStatus === 'REC_PENDING_CLOSURE_REVIEW';
-    const canUploadEvidence = (isAssignedDeveloper || isAdminUser) &&
+    const canReviewClosure = canManageRecommendationsFlag && currentStatus === 'REC_PENDING_CLOSURE_REVIEW';
+    const canUploadEvidence = (isAssignedDeveloper || canViewAdminDashboardFlag) &&
         ['REC_OPEN', 'REC_REWORK_REQUIRED'].includes(currentStatus);
     // Skip action plan - must be assigned dev/admin and backend must confirm skip is allowed
-    const canSkipActionPlan = (isAssignedDeveloper || isAdminUser) && canSkipActionPlanState;
+    const canSkipActionPlan = (isAssignedDeveloper || canViewAdminDashboardFlag) && canSkipActionPlanState;
     // Edit recommendation - validators/admins can edit in certain statuses
     const editableStatuses = [
         'REC_DRAFT', 'REC_PENDING_RESPONSE', 'REC_PENDING_VALIDATOR_REVIEW',
         'REC_PENDING_ACKNOWLEDGEMENT', 'REC_OPEN', 'REC_REWORK_REQUIRED'
     ];
-    const canEdit = (isValidatorUser || isAdminUser) && editableStatuses.includes(currentStatus);
+    const canEdit = canManageRecommendationsFlag && editableStatuses.includes(currentStatus);
 
     const getStatusColor = (code: string) => {
         switch (code) {
@@ -608,7 +608,7 @@ export default function RecommendationDetailPage() {
                                             </div>
                                             {/* Task status update dropdown - only for task owner or admin when in OPEN status */}
                                             {(currentStatus === 'REC_OPEN' || currentStatus === 'REC_REWORK_REQUIRED') &&
-                                             (task.owner?.user_id === user?.user_id || isAdminUser) && (
+                                             (task.owner?.user_id === user?.user_id || canViewAdminDashboardFlag) && (
                                                 <select
                                                     className="ml-4 text-sm border rounded px-2 py-1"
                                                     value={task.completion_status?.value_id ?? task.completion_status_id}

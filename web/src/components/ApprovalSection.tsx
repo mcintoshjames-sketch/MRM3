@@ -1,6 +1,11 @@
 import { useState } from 'react';
 import { recommendationsApi, Recommendation } from '../api/recommendations';
-import { isAdmin, isGlobalApprover, isRegionalApprover } from '../utils/roleUtils';
+import {
+    canProxyApprove,
+    canVoidApprovals,
+    isGlobalApprover,
+    isRegionalApprover
+} from '../utils/roleUtils';
 
 interface ApprovalSectionProps {
     recommendation: Recommendation;
@@ -26,7 +31,7 @@ export default function ApprovalSection({ recommendation, currentUser, onRefresh
 
         // Check if user is the approver or has appropriate role
         const isApprover = approval.approver_id === currentUser?.user_id;
-        const isAdminUser = isAdmin(currentUser);
+        const canProxyApproveFlag = canProxyApprove(currentUser);
 
         // Global Approvers can approve GLOBAL approvals
         const approvalType = (approval.approval_type || '').toUpperCase();
@@ -37,13 +42,13 @@ export default function ApprovalSection({ recommendation, currentUser, onRefresh
         // In the future, this could be restricted to specific regions
         const isRegionalApprovalUser = isRegionalApprover(currentUser) && approvalType === 'REGIONAL';
 
-        return isApprover || isAdminUser || isGlobalApprovalUser || isRegionalApprovalUser;
+        return isApprover || canProxyApproveFlag || isGlobalApprovalUser || isRegionalApprovalUser;
     };
 
     // Check if user can void an approval (Admin only, on already decided approvals)
     const canVoid = (approval: any) => {
         // Only admins can void
-        if (!isAdmin(currentUser)) return false;
+        if (!canVoidApprovals(currentUser)) return false;
         // Can only void approvals that have a decision and are not already voided
         if (approval.approval_status === 'PENDING') return false;
         if (approval.approval_status === 'VOIDED') return false;

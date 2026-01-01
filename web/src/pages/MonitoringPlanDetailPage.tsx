@@ -8,7 +8,11 @@ import api from '../api/client';
 import { useAuth } from '../contexts/AuthContext';
 import { useMonitoringPlan, VersionDetail as HookVersionDetail } from '../hooks/useMonitoringPlan';
 import { useMonitoringCycle, MonitoringCycle, CycleDetail } from '../hooks/useMonitoringCycle';
-import { isAdmin, isAdminOrValidator } from '../utils/roleUtils';
+import {
+    canManageMonitoringPlans,
+    canViewAdminDashboard,
+    canViewValidatorDashboard
+} from '../utils/roleUtils';
 
 // Types - only page-specific types needed here
 // Most types are imported from hooks: MonitoringCycle, CycleDetail
@@ -236,8 +240,9 @@ const MonitoringPlanDetailPage: React.FC = () => {
     const { id } = useParams<{ id: string }>();
     const [searchParams] = useSearchParams();
     const { user } = useAuth();
-    const isAdminUser = isAdmin(user);
-    const isAdminOrValidatorUser = isAdminOrValidator(user);
+    const canViewAdminDashboardFlag = canViewAdminDashboard(user);
+    const canViewValidatorDashboardFlag = canViewValidatorDashboard(user);
+    const canManageMonitoringPlansFlag = canManageMonitoringPlans(user);
     const planId = id ? parseInt(id, 10) : null;
 
     // Read initial tab from URL query param if valid
@@ -339,10 +344,10 @@ const MonitoringPlanDetailPage: React.FC = () => {
     } = useMonitoringPlan(id);
     const canPublishPlan = !!plan?.user_permissions?.is_admin || !!plan?.user_permissions?.is_team_member;
     const canViewUnpublishedChanges = !!plan?.has_unpublished_changes && (
-        isAdminOrValidatorUser || !!plan?.user_permissions?.is_team_member
+        canViewAdminDashboardFlag || canViewValidatorDashboardFlag || !!plan?.user_permissions?.is_team_member
     );
-    const monitoringHomePath = isAdminUser ? '/monitoring-plans?tab=plans' : '/my-monitoring-tasks';
-    const monitoringHomeLabel = isAdminUser ? 'Monitoring Plans' : 'My Monitoring Tasks';
+    const monitoringHomePath = canViewAdminDashboardFlag ? '/monitoring-plans?tab=plans' : '/my-monitoring-tasks';
+    const monitoringHomeLabel = canViewAdminDashboardFlag ? 'Monitoring Plans' : 'My Monitoring Tasks';
 
     // Use the cycle management hook
     const {
@@ -664,7 +669,7 @@ const MonitoringPlanDetailPage: React.FC = () => {
 
     // Permission checks based on user_permissions from API
     const permissions = plan?.user_permissions;
-    const canCreateCycle = permissions?.can_start_cycle ?? isAdminUser;
+    const canCreateCycle = permissions?.can_start_cycle ?? canManageMonitoringPlansFlag;
 
     const getAvailableActions = (cycle: MonitoringCycle | CycleDetail) => {
         const actions: { label: string; action: string; variant: string; requiresConfirm?: boolean }[] = [];

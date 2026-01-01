@@ -15,7 +15,12 @@ import MonitoringDataGrid, {
 import BreachAnnotationPanel from '../components/BreachAnnotationPanel';
 import MonitoringCSVImport from '../components/MonitoringCSVImport';
 import RecommendationCreateModal from '../components/RecommendationCreateModal';
-import { isAdmin, isAdminOrValidator } from '../utils/roleUtils';
+import {
+    canManageRecommendations,
+    canViewAdminDashboard,
+    canViewValidatorDashboard,
+    canVoidApprovals
+} from '../utils/roleUtils';
 
 // Types
 interface UserRef {
@@ -172,10 +177,13 @@ type TabType = 'results' | 'approvals';
 const MonitoringCycleDetailPage: React.FC = () => {
     const { cycleId } = useParams<{ cycleId: string }>();
     const { user } = useAuth();
-    const isAdminUser = isAdmin(user);
-    const isAdminOrValidatorUser = isAdminOrValidator(user);
-    const monitoringHomePath = isAdminUser ? '/monitoring-plans?tab=plans' : '/my-monitoring-tasks';
-    const monitoringHomeLabel = isAdminUser ? 'Monitoring Plans' : 'My Monitoring Tasks';
+    const canViewAdminDashboardFlag = canViewAdminDashboard(user);
+    const canViewValidatorDashboardFlag = canViewValidatorDashboard(user);
+    const canManageRecommendationsFlag = canManageRecommendations(user);
+    const canVoidApprovalsFlag = canVoidApprovals(user);
+    const isMonitoringGovernance = canViewAdminDashboardFlag || canViewValidatorDashboardFlag;
+    const monitoringHomePath = canViewAdminDashboardFlag ? '/monitoring-plans?tab=plans' : '/my-monitoring-tasks';
+    const monitoringHomeLabel = canViewAdminDashboardFlag ? 'Monitoring Plans' : 'My Monitoring Tasks';
 
     // Basic state
     const [loading, setLoading] = useState(true);
@@ -267,13 +275,13 @@ const MonitoringCycleDetailPage: React.FC = () => {
         (category) => category.code === 'MONITORING' || category.label === 'Monitoring'
     )?.value_id ?? null;
     const canCreateRecommendation = useMemo(() => {
-        if (isAdminOrValidatorUser) {
+        if (canManageRecommendationsFlag) {
             return true;
         }
         return !!plan?.user_permissions?.is_team_member;
-    }, [isAdminOrValidatorUser, plan?.user_permissions?.is_team_member]);
+    }, [canManageRecommendationsFlag, plan?.user_permissions?.is_team_member]);
     const canDownloadReport = useMemo(() => {
-        if (isAdminOrValidatorUser) {
+        if (isMonitoringGovernance) {
             return true;
         }
         if (plan?.user_permissions?.is_team_member) {
@@ -282,7 +290,7 @@ const MonitoringCycleDetailPage: React.FC = () => {
         return cycle?.approvals?.some(
             (approval) => approval.approver?.user_id === user?.user_id
         ) ?? false;
-    }, [isAdminOrValidatorUser, user?.user_id, plan?.user_permissions?.is_team_member, cycle?.approvals]);
+    }, [isMonitoringGovernance, user?.user_id, plan?.user_permissions?.is_team_member, cycle?.approvals]);
     const resultsReadOnly = cycle ? !['DATA_COLLECTION', 'UNDER_REVIEW'].includes(cycle.status) : true;
 
     // Fetch cycle and plan details
@@ -802,7 +810,7 @@ const MonitoringCycleDetailPage: React.FC = () => {
     };
 
     const canVoid = (approval: CycleApproval): boolean => {
-        if (!isAdminUser) return false;
+        if (!canVoidApprovalsFlag) return false;
         if (approval.approval_status === 'Approved') return false;
         if (approval.voided_at) return false;
         return true;

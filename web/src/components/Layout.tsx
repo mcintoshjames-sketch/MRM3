@@ -2,7 +2,20 @@ import { Link, useLocation, useMatch, useNavigate, useResolvedPath } from 'react
 import { useAuth } from '../contexts/AuthContext';
 import { useState, useEffect } from 'react';
 import api from '../api/client';
-import { isAdmin, isValidator, isApprover, isAdminOrValidator, getRoleDisplay } from '../utils/roleUtils';
+import {
+    canManageAttestations,
+    canManageDecommissioning,
+    canManageIrps,
+    canManageMonitoringPlans,
+    canManageTaxonomy,
+    canManageValidations,
+    canViewAdminDashboard,
+    canViewApproverDashboard,
+    canViewAuditLogs,
+    canViewValidatorDashboard,
+    getRoleDisplay,
+    isApprover
+} from '../utils/roleUtils';
 
 interface LayoutProps {
     children: React.ReactNode;
@@ -43,10 +56,21 @@ const requiresMonitoringAction = (task: { status?: string; user_role?: string })
 
 export default function Layout({ children }: LayoutProps) {
     const { user, logout } = useAuth();
-    const isAdminUser = isAdmin(user);
-    const isValidatorUser = isValidator(user);
-    const isApproverUser = isApprover(user);
-    const isAdminOrValidatorUser = isAdminOrValidator(user);
+    const canViewAdminDashboardFlag = canViewAdminDashboard(user);
+    const canViewValidatorDashboardFlag = canViewValidatorDashboard(user);
+    const canViewApproverDashboardFlag = canViewApproverDashboard(user);
+    const canManageMonitoringPlansFlag = canManageMonitoringPlans(user);
+    const canManageAttestationsFlag = canManageAttestations(user);
+    const canManageIrpsFlag = canManageIrps(user);
+    const canViewAuditLogsFlag = canViewAuditLogs(user);
+    const canManageDecommissioningFlag = canManageDecommissioning(user);
+    const canManageValidationsFlag = canManageValidations(user);
+    const canManageTaxonomyFlag = canManageTaxonomy(user);
+    const isAdminUser = canViewAdminDashboardFlag;
+    const isAdminOrValidatorUser = canViewAdminDashboardFlag || canViewValidatorDashboardFlag;
+    const showApproverDashboard = canViewApproverDashboardFlag
+        && !canViewAdminDashboardFlag
+        && !canViewValidatorDashboardFlag;
     const navigate = useNavigate();
     const location = useLocation();
     const [pendingCounts, setPendingCounts] = useState({
@@ -100,12 +124,19 @@ export default function Layout({ children }: LayoutProps) {
 
                 // Fetch pending decommissioning requests
                 let pendingDecommissioning = 0;
-                if (isAdminOrValidatorUser) {
+                if (canManageDecommissioningFlag) {
                     try {
                         const decomRes = await api.get('/decommissioning/pending-validator-review');
                         pendingDecommissioning = decomRes.data.length;
                     } catch {
                         // User may not have permission
+                    }
+                } else if (isApprover(user)) {
+                    try {
+                        const approverRes = await api.get('/decommissioning/my-pending-approvals');
+                        pendingDecommissioning += approverRes.data.length;
+                    } catch {
+                        // Silently fail
                     }
                 } else {
                     try {
@@ -238,16 +269,14 @@ export default function Layout({ children }: LayoutProps) {
                 <Link
                     to={to}
                     aria-current={isActive ? 'page' : undefined}
-                    className={`block px-4 py-2 rounded transition-colors ${
-                        isActive ? 'bg-blue-600 text-white' : 'text-gray-700 hover:bg-gray-100'
-                    }`}
+                    className={`block px-4 py-2 rounded transition-colors ${isActive ? 'bg-blue-600 text-white' : 'text-gray-700 hover:bg-gray-100'
+                        }`}
                 >
                     <div className="flex items-center justify-between">
                         <span>{children}</span>
                         {badge !== undefined && badge > 0 && (
-                            <span className={`ml-2 px-2 py-0.5 text-xs font-bold rounded-full ${
-                                isActive ? 'bg-white text-blue-600' : `${colorClasses[badgeColor]} text-white`
-                            }`}>
+                            <span className={`ml-2 px-2 py-0.5 text-xs font-bold rounded-full ${isActive ? 'bg-white text-blue-600' : `${colorClasses[badgeColor]} text-white`
+                                }`}>
                                 {badge}
                             </span>
                         )}
@@ -308,12 +337,12 @@ export default function Layout({ children }: LayoutProps) {
                         ══════════════════════════════════════════════════════════ */}
 
                         {/* Dashboard - role-specific */}
-                        {isAdminOrValidatorUser && (
-                            <NavItem to={isAdminUser ? '/dashboard' : '/validator-dashboard'}>
+                        {(canViewAdminDashboardFlag || canViewValidatorDashboardFlag) && (
+                            <NavItem to={canViewAdminDashboardFlag ? '/dashboard' : '/validator-dashboard'}>
                                 Dashboard
                             </NavItem>
                         )}
-                        {isApproverUser && (
+                        {showApproverDashboard && (
                             <NavItem
                                 to="/approver-dashboard"
                                 isActiveOverride={isApproverDashboard && !isApproverQueue}
@@ -321,7 +350,7 @@ export default function Layout({ children }: LayoutProps) {
                                 Approver Dashboard
                             </NavItem>
                         )}
-                        {(!isAdminOrValidatorUser && !isApproverUser) && (
+                        {(!canManageValidationsFlag && !canViewApproverDashboardFlag) && (
                             <NavItem to="/my-dashboard">My Dashboard</NavItem>
                         )}
 
@@ -329,13 +358,13 @@ export default function Layout({ children }: LayoutProps) {
                         <NavItem to={pendingCounts.recommendations > 0 ? "/recommendations?my_tasks=true" : "/recommendations"} badge={pendingCounts.recommendations} badgeColor="purple">Recommendations</NavItem>
                         <NavItem to="/models">Models</NavItem>
                         <NavItem to="/validation-workflow">Validations</NavItem>
-                        {isAdminUser && (
+                        {canManageAttestationsFlag && (
                             <NavItem to="/attestations">Attestation Management</NavItem>
                         )}
-                        {isAdminUser && (
+                        {canManageIrpsFlag && (
                             <NavItem to="/irps" badge={pendingCounts.irpAttention} badgeColor="red">IRP Management</NavItem>
                         )}
-                        {isAdminOrValidatorUser && (
+                        {canManageValidationsFlag && (
                             <NavItem to="/reports/exceptions">Model Exceptions</NavItem>
                         )}
 
@@ -360,7 +389,7 @@ export default function Layout({ children }: LayoutProps) {
                                 <NavItem to="/pending-decommissioning" badge={pendingCounts.decommissioning} badgeColor="purple">
                                     Pending Decommissioning
                                 </NavItem>
-                                {(isAdminUser || isApproverUser) && (
+                                {(canViewAdminDashboardFlag || canViewApproverDashboardFlag) && (
                                     <NavItem
                                         to="/approver-dashboard#approval-queue"
                                         badge={pendingCounts.approvals}
@@ -370,12 +399,12 @@ export default function Layout({ children }: LayoutProps) {
                                         Pending Approvals
                                     </NavItem>
                                 )}
-                                {!isAdminUser && (
+                                {!canViewAdminDashboardFlag && (
                                     <NavItem to="/my-attestations" badge={pendingCounts.attestations} badgeColor="orange">
                                         My Attestations
                                     </NavItem>
                                 )}
-                                {!isAdminOrValidatorUser && (
+                                {!canManageValidationsFlag && (
                                     <NavItem to="/my-mrsa-reviews" badge={pendingCounts.mrsaAttention} badgeColor="red">
                                         My MRSA Reviews
                                     </NavItem>
@@ -390,15 +419,15 @@ export default function Layout({ children }: LayoutProps) {
                             title="Monitoring"
                             isCollapsed={collapsed.monitoring}
                             onToggle={() => toggleSection('monitoring')}
-                            badge={!isAdminUser ? pendingCounts.monitoring : undefined}
+                            badge={!canManageMonitoringPlansFlag ? pendingCounts.monitoring : undefined}
                         />
 
                         {!collapsed.monitoring && (
                             <>
-                                {isAdminUser && (
+                                {canManageMonitoringPlansFlag && (
                                     <NavItem to="/monitoring-plans">Performance Monitoring</NavItem>
                                 )}
-                                {!isAdminUser && (
+                                {!canManageMonitoringPlansFlag && (
                                     <NavItem to="/my-monitoring-tasks" badge={pendingCounts.monitoring} badgeColor="green">
                                         My Monitoring Tasks
                                     </NavItem>
@@ -418,10 +447,10 @@ export default function Layout({ children }: LayoutProps) {
                         {!collapsed.reportsAudit && (
                             <>
                                 <NavItem to="/reports" end>Reports</NavItem>
-                                {isAdminUser && (
+                                {canViewAdminDashboardFlag && (
                                     <NavItem to="/analytics">Advanced Analytics</NavItem>
                                 )}
-                                {isAdminOrValidatorUser && (
+                                {canViewAuditLogsFlag && (
                                     <NavItem to="/audit">Audit Logs</NavItem>
                                 )}
                             </>
@@ -430,7 +459,7 @@ export default function Layout({ children }: LayoutProps) {
                         {/* ══════════════════════════════════════════════════════════
                             CONFIGURATION SECTION - Admin only
                         ══════════════════════════════════════════════════════════ */}
-                        {isAdminUser && (
+                        {canViewAdminDashboardFlag && (
                             <>
                                 <SectionHeader
                                     title="Configuration"
@@ -442,14 +471,14 @@ export default function Layout({ children }: LayoutProps) {
                                     <>
                                         {/* Reference Data subsection */}
                                         <SubsectionLabel label="Reference Data" />
-                                    <NavItem to="/reference-data">Reference Data</NavItem>
-                                    <NavItem
-                                        to="/taxonomy"
-                                        isActiveOverride={location.pathname === '/taxonomy'
-                                            && new URLSearchParams(location.search).get('tab') !== 'component-definitions'}
-                                    >
-                                        Taxonomy
-                                    </NavItem>
+                                        <NavItem to="/reference-data">Reference Data</NavItem>
+                                        <NavItem
+                                            to="/taxonomy"
+                                            isActiveOverride={location.pathname === '/taxonomy'
+                                                && new URLSearchParams(location.search).get('tab') !== 'component-definitions'}
+                                        >
+                                            Taxonomy
+                                        </NavItem>
 
                                         {/* Workflow & Policies subsection */}
                                         <SubsectionLabel label="Workflow & Policies" />
@@ -466,20 +495,20 @@ export default function Layout({ children }: LayoutProps) {
 
                                         {/* Components subsection */}
                                         <SubsectionLabel label="Validation Components" />
-                                    <NavItem
-                                        to="/taxonomy?tab=component-definitions"
-                                        isActiveOverride={location.pathname === '/taxonomy'
-                                            && new URLSearchParams(location.search).get('tab') === 'component-definitions'}
-                                    >
-                                        Component Definitions
-                                    </NavItem>
+                                        <NavItem
+                                            to="/taxonomy?tab=component-definitions"
+                                            isActiveOverride={location.pathname === '/taxonomy'
+                                                && new URLSearchParams(location.search).get('tab') === 'component-definitions'}
+                                        >
+                                            Component Definitions
+                                        </NavItem>
                                     </>
                                 )}
                             </>
                         )}
 
                         {/* Validator-specific: Reference Data & Taxonomy access */}
-                        {isValidatorUser && (
+                        {canManageTaxonomyFlag && !canViewAdminDashboardFlag && (
                             <>
                                 <SectionHeader
                                     title="Reference"

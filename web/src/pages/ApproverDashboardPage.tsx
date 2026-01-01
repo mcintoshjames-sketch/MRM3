@@ -4,7 +4,7 @@ import { useAuth } from '../contexts/AuthContext';
 import api from '../api/client';
 import Layout from '../components/Layout';
 import { useTableSort } from '../hooks/useTableSort';
-import { isAdmin, isGlobalApprover, isRegionalApprover, getRoleDisplay } from '../utils/roleUtils';
+import { getRoleDisplay, getUserRoleCode } from '../utils/roleUtils';
 
 interface PendingApproval {
     approval_id: number;
@@ -58,7 +58,18 @@ interface MonitoringApprovalQueueItem {
     can_approve: boolean;
 }
 
-type DashboardTab = 'validation' | 'recommendations' | 'monitoring';
+interface DecommissioningApprovalQueueItem {
+    request_id: number;
+    model_id: number;
+    model_name: string;
+    status: string;
+    reason: string | null;
+    last_production_date: string;
+    created_at: string;
+    created_by_name: string | null;
+}
+
+type DashboardTab = 'validation' | 'recommendations' | 'monitoring' | 'decommissioning';
 type ValidationFilterMode = 'all' | 'overdue' | 'needs_attention' | 'new' | 'urgent';
 type RecommendationFilterMode = 'all' | 'overdue' | 'due_soon' | 'on_track' | 'urgent';
 type MonitoringFilterMode = 'all' | 'overdue' | 'needs_attention' | 'new' | 'global' | 'regional';
@@ -68,6 +79,7 @@ type DashboardErrors = {
     validation: string | null;
     recommendations: string | null;
     monitoring: string | null;
+    decommissioning: string | null;
 };
 
 export default function ApproverDashboardPage() {
@@ -76,11 +88,13 @@ export default function ApproverDashboardPage() {
     const [validationApprovals, setValidationApprovals] = useState<PendingApproval[]>([]);
     const [recommendationApprovals, setRecommendationApprovals] = useState<RecommendationApprovalTask[]>([]);
     const [monitoringApprovals, setMonitoringApprovals] = useState<MonitoringApprovalQueueItem[]>([]);
+    const [decommissioningApprovals, setDecommissioningApprovals] = useState<DecommissioningApprovalQueueItem[]>([]);
     const [loading, setLoading] = useState(true);
     const [errors, setErrors] = useState<DashboardErrors>({
         validation: null,
         recommendations: null,
-        monitoring: null
+        monitoring: null,
+        decommissioning: null
     });
     const [validationFilterMode, setValidationFilterMode] = useState<ValidationFilterMode>('all');
     const [recommendationFilterMode, setRecommendationFilterMode] = useState<RecommendationFilterMode>('all');
@@ -92,12 +106,13 @@ export default function ApproverDashboardPage() {
 
     const fetchDashboardData = async () => {
         setLoading(true);
-        setErrors({ validation: null, recommendations: null, monitoring: null });
+        setErrors({ validation: null, recommendations: null, monitoring: null, decommissioning: null });
 
-        const [validationResult, recommendationsResult, monitoringResult] = await Promise.allSettled([
+        const [validationResult, recommendationsResult, monitoringResult, decommissioningResult] = await Promise.allSettled([
             api.get('/validation-workflow/my-pending-approvals'),
             api.get('/recommendations/my-tasks'),
-            api.get('/monitoring/approvals/my-pending')
+            api.get('/monitoring/approvals/my-pending'),
+            api.get('/decommissioning/my-pending-approvals')
         ]);
 
         if (validationResult.status === 'fulfilled') {
@@ -129,6 +144,16 @@ export default function ApproverDashboardPage() {
             setErrors((prev) => ({
                 ...prev,
                 monitoring: monitoringResult.reason?.response?.data?.detail || monitoringResult.reason?.message || 'Failed to load monitoring approvals'
+            }));
+        }
+
+        if (decommissioningResult.status === 'fulfilled') {
+            setDecommissioningApprovals(decommissioningResult.value.data || []);
+        } else {
+            setDecommissioningApprovals([]);
+            setErrors((prev) => ({
+                ...prev,
+                decommissioning: decommissioningResult.reason?.response?.data?.detail || decommissioningResult.reason?.message || 'Failed to load decommissioning approvals'
             }));
         }
 
@@ -206,9 +231,10 @@ export default function ApproverDashboardPage() {
     };
 
     const getRoleDisplayLabel = () => {
-        if (isAdmin(user)) return 'Administrator';
-        if (isGlobalApprover(user)) return 'Global Approver';
-        if (isRegionalApprover(user)) return 'Regional Approver';
+        const roleCode = getUserRoleCode(user);
+        if (roleCode === 'ADMIN') return 'Administrator';
+        if (roleCode === 'GLOBAL_APPROVER') return 'Global Approver';
+        if (roleCode === 'REGIONAL_APPROVER') return 'Regional Approver';
         return getRoleDisplay(user);
     };
 
@@ -367,13 +393,15 @@ export default function ApproverDashboardPage() {
     const errorMessages = [
         errors.validation ? `Validation approvals: ${errors.validation}` : null,
         errors.recommendations ? `Recommendation approvals: ${errors.recommendations}` : null,
-        errors.monitoring ? `Monitoring approvals: ${errors.monitoring}` : null
+        errors.monitoring ? `Monitoring approvals: ${errors.monitoring}` : null,
+        errors.decommissioning ? `Decommissioning approvals: ${errors.decommissioning}` : null
     ].filter(Boolean) as string[];
 
     const tabs = [
         { id: 'validation', label: 'Validation', count: validationApprovals.length },
         { id: 'recommendations', label: 'Recommendations', count: recommendationApprovals.length },
-        { id: 'monitoring', label: 'Monitoring', count: monitoringApprovals.length }
+        { id: 'monitoring', label: 'Monitoring', count: monitoringApprovals.length },
+        { id: 'decommissioning', label: 'Decommissioning', count: decommissioningApprovals.length }
     ] as const;
 
     const exportValidationCsv = () => {
@@ -444,7 +472,7 @@ export default function ApproverDashboardPage() {
                     Welcome, {user?.full_name}. You are logged in as <span className="font-medium">{getRoleDisplayLabel()}</span>.
                 </p>
                 <p className="text-sm text-gray-500 mt-2">
-                    Review and finalize approvals across validation, recommendation, and monitoring workflows.
+                    Review and finalize approvals across validation, recommendation, monitoring, and decommissioning workflows.
                 </p>
             </div>
 
@@ -466,16 +494,14 @@ export default function ApproverDashboardPage() {
                         type="button"
                         aria-pressed={activeTab === tab.id}
                         onClick={() => setActiveTab(tab.id)}
-                        className={`flex items-center gap-2 px-4 py-2 rounded-full border transition-colors ${
-                            activeTab === tab.id
-                                ? 'bg-blue-600 text-white border-blue-600'
-                                : 'bg-white text-gray-600 border-gray-200 hover:border-blue-300'
-                        }`}
+                        className={`flex items-center gap-2 px-4 py-2 rounded-full border transition-colors ${activeTab === tab.id
+                            ? 'bg-blue-600 text-white border-blue-600'
+                            : 'bg-white text-gray-600 border-gray-200 hover:border-blue-300'
+                            }`}
                     >
                         <span className="font-medium">{tab.label}</span>
-                        <span className={`text-xs px-2 py-0.5 rounded-full ${
-                            activeTab === tab.id ? 'bg-white/20 text-white' : 'bg-gray-100 text-gray-700'
-                        }`}>
+                        <span className={`text-xs px-2 py-0.5 rounded-full ${activeTab === tab.id ? 'bg-white/20 text-white' : 'bg-gray-100 text-gray-700'
+                            }`}>
                             {tab.count}
                         </span>
                     </button>
@@ -488,9 +514,8 @@ export default function ApproverDashboardPage() {
                         <button
                             type="button"
                             aria-pressed={validationFilterMode === 'all'}
-                            className={`w-full text-left bg-white p-4 rounded-lg shadow cursor-pointer transition-shadow hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${
-                                validationFilterMode === 'all' ? 'ring-2 ring-blue-500' : ''
-                            }`}
+                            className={`w-full text-left bg-white p-4 rounded-lg shadow cursor-pointer transition-shadow hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${validationFilterMode === 'all' ? 'ring-2 ring-blue-500' : ''
+                                }`}
                             onClick={() => setValidationFilterMode('all')}
                         >
                             <div className="text-sm text-gray-500">Awaiting Your Decision</div>
@@ -499,9 +524,8 @@ export default function ApproverDashboardPage() {
                         <button
                             type="button"
                             aria-pressed={validationFilterMode === 'urgent'}
-                            className={`w-full text-left bg-white p-4 rounded-lg shadow cursor-pointer transition-shadow hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 ${
-                                validationFilterMode === 'urgent' ? 'ring-2 ring-red-500' : ''
-                            }`}
+                            className={`w-full text-left bg-white p-4 rounded-lg shadow cursor-pointer transition-shadow hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 ${validationFilterMode === 'urgent' ? 'ring-2 ring-red-500' : ''
+                                }`}
                             onClick={() => setValidationFilterMode(validationFilterMode === 'urgent' ? 'all' : 'urgent')}
                         >
                             <div className="text-sm text-gray-500">Urgent Priority</div>
@@ -510,9 +534,8 @@ export default function ApproverDashboardPage() {
                         <button
                             type="button"
                             aria-pressed={validationFilterMode === 'overdue'}
-                            className={`w-full text-left bg-white p-4 rounded-lg shadow cursor-pointer transition-shadow hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500 ${
-                                validationFilterMode === 'overdue' ? 'ring-2 ring-rose-500' : ''
-                            }`}
+                            className={`w-full text-left bg-white p-4 rounded-lg shadow cursor-pointer transition-shadow hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500 ${validationFilterMode === 'overdue' ? 'ring-2 ring-rose-500' : ''
+                                }`}
                             onClick={() => setValidationFilterMode(validationFilterMode === 'overdue' ? 'all' : 'overdue')}
                         >
                             <div className="text-sm text-gray-500">Overdue (7+ days)</div>
@@ -521,9 +544,8 @@ export default function ApproverDashboardPage() {
                         <button
                             type="button"
                             aria-pressed={validationFilterMode === 'needs_attention'}
-                            className={`w-full text-left bg-white p-4 rounded-lg shadow cursor-pointer transition-shadow hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-yellow-500 ${
-                                validationFilterMode === 'needs_attention' ? 'ring-2 ring-yellow-500' : ''
-                            }`}
+                            className={`w-full text-left bg-white p-4 rounded-lg shadow cursor-pointer transition-shadow hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-yellow-500 ${validationFilterMode === 'needs_attention' ? 'ring-2 ring-yellow-500' : ''
+                                }`}
                             onClick={() => setValidationFilterMode(validationFilterMode === 'needs_attention' ? 'all' : 'needs_attention')}
                         >
                             <div className="text-sm text-gray-500">Needs Attention (3-6 days)</div>
@@ -532,9 +554,8 @@ export default function ApproverDashboardPage() {
                         <button
                             type="button"
                             aria-pressed={validationFilterMode === 'new'}
-                            className={`w-full text-left bg-white p-4 rounded-lg shadow cursor-pointer transition-shadow hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500 ${
-                                validationFilterMode === 'new' ? 'ring-2 ring-green-500' : ''
-                            }`}
+                            className={`w-full text-left bg-white p-4 rounded-lg shadow cursor-pointer transition-shadow hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500 ${validationFilterMode === 'new' ? 'ring-2 ring-green-500' : ''
+                                }`}
                             onClick={() => setValidationFilterMode(validationFilterMode === 'new' ? 'all' : 'new')}
                         >
                             <div className="text-sm text-gray-500">New (&lt;3 days)</div>
@@ -556,7 +577,7 @@ export default function ApproverDashboardPage() {
                         </div>
                     )}
 
-                    <div id="approval-queue" className="bg-white rounded-lg shadow-md">
+                    <div id="approval-queue-validation" className="bg-white rounded-lg shadow-md">
                         <div className="p-4 border-b bg-blue-50 flex flex-col md:flex-row md:items-center md:justify-between gap-3">
                             <div>
                                 <h3 className="text-lg font-bold">Validation Approval Queue</h3>
@@ -705,7 +726,7 @@ export default function ApproverDashboardPage() {
                                                         </div>
                                                     )}
                                                 </td>
-                                                <td className="px-6 py-4 w-36 whitespace-nowrap text-sm">
+                                                <td className="px-6 py-4 w-36 whitespace-normal break-words text-sm">
                                                     {approval.validation_type}
                                                 </td>
                                                 <td className="px-6 py-4 w-24 whitespace-nowrap">
@@ -755,15 +776,96 @@ export default function ApproverDashboardPage() {
                 </>
             )}
 
+            {activeTab === 'decommissioning' && (
+                <>
+                    <div id="approval-queue-decommissioning" className="bg-white rounded-lg shadow-md">
+                        <div className="p-6 border-b border-gray-200 flex items-center justify-between">
+                            <div>
+                                <h3 className="text-lg font-bold">Decommissioning Approval Queue</h3>
+                                <p className="text-sm text-gray-500 mt-1">
+                                    Requests awaiting your Global/Regional approval.
+                                </p>
+                            </div>
+                            <Link
+                                to="/pending-decommissioning"
+                                className="text-sm text-blue-600 hover:text-blue-800 font-medium"
+                            >
+                                Open Pending Decommissioning
+                            </Link>
+                        </div>
+
+                        {decommissioningApprovals.length === 0 ? (
+                            <div className="p-8 text-center text-gray-500">
+                                No decommissioning requests require your approval.
+                            </div>
+                        ) : (
+                            <div className="overflow-x-auto">
+                                <table className="min-w-full divide-y divide-gray-200">
+                                    <thead className="bg-gray-50">
+                                        <tr>
+                                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Model</th>
+                                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Reason</th>
+                                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Last Production Date</th>
+                                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Requested By</th>
+                                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Requested On</th>
+                                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="bg-white divide-y divide-gray-200">
+                                        {decommissioningApprovals.map((req) => (
+                                            <tr key={req.request_id} className="hover:bg-gray-50">
+                                                <td className="px-6 py-4 whitespace-nowrap">
+                                                    <Link
+                                                        to={`/models/${req.model_id}/decommission`}
+                                                        className="text-blue-600 hover:text-blue-800 font-medium"
+                                                    >
+                                                        {req.model_name}
+                                                    </Link>
+                                                </td>
+                                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                                    {req.reason || '-'}
+                                                </td>
+                                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                                    {req.last_production_date}
+                                                </td>
+                                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                                    {req.created_by_name || '-'}
+                                                </td>
+                                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                                    {req.created_at ? req.created_at.split('T')[0] : '-'}
+                                                </td>
+                                                <td className="px-6 py-4 whitespace-nowrap">
+                                                    <span className="px-2 py-1 text-xs font-medium rounded-full bg-orange-100 text-orange-800">
+                                                        {req.status}
+                                                    </span>
+                                                </td>
+                                                <td className="px-6 py-4 whitespace-nowrap text-sm">
+                                                    <Link
+                                                        to={`/models/${req.model_id}/decommission`}
+                                                        className="text-blue-600 hover:text-blue-800 font-medium"
+                                                    >
+                                                        Review
+                                                    </Link>
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        )}
+                    </div>
+                </>
+            )}
+
             {activeTab === 'recommendations' && (
                 <>
                     <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4 mb-6">
                         <button
                             type="button"
                             aria-pressed={recommendationFilterMode === 'all'}
-                            className={`w-full text-left bg-white p-4 rounded-lg shadow cursor-pointer transition-shadow hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${
-                                recommendationFilterMode === 'all' ? 'ring-2 ring-blue-500' : ''
-                            }`}
+                            className={`w-full text-left bg-white p-4 rounded-lg shadow cursor-pointer transition-shadow hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${recommendationFilterMode === 'all' ? 'ring-2 ring-blue-500' : ''
+                                }`}
                             onClick={() => setRecommendationFilterMode('all')}
                         >
                             <div className="text-sm text-gray-500">Awaiting Your Approval</div>
@@ -772,9 +874,8 @@ export default function ApproverDashboardPage() {
                         <button
                             type="button"
                             aria-pressed={recommendationFilterMode === 'urgent'}
-                            className={`w-full text-left bg-white p-4 rounded-lg shadow cursor-pointer transition-shadow hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 ${
-                                recommendationFilterMode === 'urgent' ? 'ring-2 ring-red-500' : ''
-                            }`}
+                            className={`w-full text-left bg-white p-4 rounded-lg shadow cursor-pointer transition-shadow hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 ${recommendationFilterMode === 'urgent' ? 'ring-2 ring-red-500' : ''
+                                }`}
                             onClick={() => setRecommendationFilterMode(recommendationFilterMode === 'urgent' ? 'all' : 'urgent')}
                         >
                             <div className="text-sm text-gray-500">Urgent Priority</div>
@@ -783,9 +884,8 @@ export default function ApproverDashboardPage() {
                         <button
                             type="button"
                             aria-pressed={recommendationFilterMode === 'overdue'}
-                            className={`w-full text-left bg-white p-4 rounded-lg shadow cursor-pointer transition-shadow hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500 ${
-                                recommendationFilterMode === 'overdue' ? 'ring-2 ring-rose-500' : ''
-                            }`}
+                            className={`w-full text-left bg-white p-4 rounded-lg shadow cursor-pointer transition-shadow hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500 ${recommendationFilterMode === 'overdue' ? 'ring-2 ring-rose-500' : ''
+                                }`}
                             onClick={() => setRecommendationFilterMode(recommendationFilterMode === 'overdue' ? 'all' : 'overdue')}
                         >
                             <div className="text-sm text-gray-500">Overdue</div>
@@ -794,9 +894,8 @@ export default function ApproverDashboardPage() {
                         <button
                             type="button"
                             aria-pressed={recommendationFilterMode === 'due_soon'}
-                            className={`w-full text-left bg-white p-4 rounded-lg shadow cursor-pointer transition-shadow hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-yellow-500 ${
-                                recommendationFilterMode === 'due_soon' ? 'ring-2 ring-yellow-500' : ''
-                            }`}
+                            className={`w-full text-left bg-white p-4 rounded-lg shadow cursor-pointer transition-shadow hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-yellow-500 ${recommendationFilterMode === 'due_soon' ? 'ring-2 ring-yellow-500' : ''
+                                }`}
                             onClick={() => setRecommendationFilterMode(recommendationFilterMode === 'due_soon' ? 'all' : 'due_soon')}
                         >
                             <div className="text-sm text-gray-500">Due Soon (0-7 days)</div>
@@ -805,9 +904,8 @@ export default function ApproverDashboardPage() {
                         <button
                             type="button"
                             aria-pressed={recommendationFilterMode === 'on_track'}
-                            className={`w-full text-left bg-white p-4 rounded-lg shadow cursor-pointer transition-shadow hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500 ${
-                                recommendationFilterMode === 'on_track' ? 'ring-2 ring-green-500' : ''
-                            }`}
+                            className={`w-full text-left bg-white p-4 rounded-lg shadow cursor-pointer transition-shadow hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500 ${recommendationFilterMode === 'on_track' ? 'ring-2 ring-green-500' : ''
+                                }`}
                             onClick={() => setRecommendationFilterMode(recommendationFilterMode === 'on_track' ? 'all' : 'on_track')}
                         >
                             <div className="text-sm text-gray-500">On Track (8+ days)</div>
@@ -829,7 +927,7 @@ export default function ApproverDashboardPage() {
                         </div>
                     )}
 
-                    <div id="approval-queue" className="bg-white rounded-lg shadow-md">
+                    <div id="approval-queue-recommendations" className="bg-white rounded-lg shadow-md">
                         <div className="p-4 border-b bg-blue-50 flex flex-col md:flex-row md:items-center md:justify-between gap-3">
                             <div>
                                 <h3 className="text-lg font-bold">Recommendation Approval Queue</h3>
@@ -1005,9 +1103,8 @@ export default function ApproverDashboardPage() {
                         <button
                             type="button"
                             aria-pressed={monitoringFilterMode === 'all'}
-                            className={`w-full text-left bg-white p-4 rounded-lg shadow cursor-pointer transition-shadow hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${
-                                monitoringFilterMode === 'all' ? 'ring-2 ring-blue-500' : ''
-                            }`}
+                            className={`w-full text-left bg-white p-4 rounded-lg shadow cursor-pointer transition-shadow hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${monitoringFilterMode === 'all' ? 'ring-2 ring-blue-500' : ''
+                                }`}
                             onClick={() => setMonitoringFilterMode('all')}
                         >
                             <div className="text-sm text-gray-500">Awaiting Your Approval</div>
@@ -1016,9 +1113,8 @@ export default function ApproverDashboardPage() {
                         <button
                             type="button"
                             aria-pressed={monitoringFilterMode === 'global'}
-                            className={`w-full text-left bg-white p-4 rounded-lg shadow cursor-pointer transition-shadow hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 ${
-                                monitoringFilterMode === 'global' ? 'ring-2 ring-indigo-500' : ''
-                            }`}
+                            className={`w-full text-left bg-white p-4 rounded-lg shadow cursor-pointer transition-shadow hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 ${monitoringFilterMode === 'global' ? 'ring-2 ring-indigo-500' : ''
+                                }`}
                             onClick={() => setMonitoringFilterMode(monitoringFilterMode === 'global' ? 'all' : 'global')}
                         >
                             <div className="text-sm text-gray-500">Global Approvals</div>
@@ -1027,9 +1123,8 @@ export default function ApproverDashboardPage() {
                         <button
                             type="button"
                             aria-pressed={monitoringFilterMode === 'regional'}
-                            className={`w-full text-left bg-white p-4 rounded-lg shadow cursor-pointer transition-shadow hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-purple-500 ${
-                                monitoringFilterMode === 'regional' ? 'ring-2 ring-purple-500' : ''
-                            }`}
+                            className={`w-full text-left bg-white p-4 rounded-lg shadow cursor-pointer transition-shadow hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-purple-500 ${monitoringFilterMode === 'regional' ? 'ring-2 ring-purple-500' : ''
+                                }`}
                             onClick={() => setMonitoringFilterMode(monitoringFilterMode === 'regional' ? 'all' : 'regional')}
                         >
                             <div className="text-sm text-gray-500">Regional Approvals</div>
@@ -1038,9 +1133,8 @@ export default function ApproverDashboardPage() {
                         <button
                             type="button"
                             aria-pressed={monitoringFilterMode === 'overdue'}
-                            className={`w-full text-left bg-white p-4 rounded-lg shadow cursor-pointer transition-shadow hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500 ${
-                                monitoringFilterMode === 'overdue' ? 'ring-2 ring-rose-500' : ''
-                            }`}
+                            className={`w-full text-left bg-white p-4 rounded-lg shadow cursor-pointer transition-shadow hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500 ${monitoringFilterMode === 'overdue' ? 'ring-2 ring-rose-500' : ''
+                                }`}
                             onClick={() => setMonitoringFilterMode(monitoringFilterMode === 'overdue' ? 'all' : 'overdue')}
                         >
                             <div className="text-sm text-gray-500">Overdue (7+ days)</div>
@@ -1049,9 +1143,8 @@ export default function ApproverDashboardPage() {
                         <button
                             type="button"
                             aria-pressed={monitoringFilterMode === 'needs_attention'}
-                            className={`w-full text-left bg-white p-4 rounded-lg shadow cursor-pointer transition-shadow hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-yellow-500 ${
-                                monitoringFilterMode === 'needs_attention' ? 'ring-2 ring-yellow-500' : ''
-                            }`}
+                            className={`w-full text-left bg-white p-4 rounded-lg shadow cursor-pointer transition-shadow hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-yellow-500 ${monitoringFilterMode === 'needs_attention' ? 'ring-2 ring-yellow-500' : ''
+                                }`}
                             onClick={() => setMonitoringFilterMode(monitoringFilterMode === 'needs_attention' ? 'all' : 'needs_attention')}
                         >
                             <div className="text-sm text-gray-500">Needs Attention (3-6 days)</div>
@@ -1060,9 +1153,8 @@ export default function ApproverDashboardPage() {
                         <button
                             type="button"
                             aria-pressed={monitoringFilterMode === 'new'}
-                            className={`w-full text-left bg-white p-4 rounded-lg shadow cursor-pointer transition-shadow hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500 ${
-                                monitoringFilterMode === 'new' ? 'ring-2 ring-green-500' : ''
-                            }`}
+                            className={`w-full text-left bg-white p-4 rounded-lg shadow cursor-pointer transition-shadow hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500 ${monitoringFilterMode === 'new' ? 'ring-2 ring-green-500' : ''
+                                }`}
                             onClick={() => setMonitoringFilterMode(monitoringFilterMode === 'new' ? 'all' : 'new')}
                         >
                             <div className="text-sm text-gray-500">New (&lt;3 days)</div>
@@ -1084,7 +1176,7 @@ export default function ApproverDashboardPage() {
                         </div>
                     )}
 
-                    <div id="approval-queue" className="bg-white rounded-lg shadow-md">
+                    <div id="approval-queue-monitoring" className="bg-white rounded-lg shadow-md">
                         <div className="p-4 border-b bg-blue-50 flex flex-col md:flex-row md:items-center md:justify-between gap-3">
                             <div>
                                 <h3 className="text-lg font-bold">Monitoring Approval Queue</h3>
@@ -1223,14 +1315,6 @@ export default function ApproverDashboardPage() {
             <div className="mt-6 bg-white rounded-lg shadow-md p-4">
                 <h3 className="text-lg font-bold mb-3">Quick Actions</h3>
                 <div className="flex flex-wrap gap-4">
-                    <button
-                        onClick={() => {
-                            document.getElementById('approval-queue')?.scrollIntoView({ behavior: 'smooth' });
-                        }}
-                        className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700"
-                    >
-                        Go to Approval Queue
-                    </button>
                     {activeTab === 'validation' && (
                         <Link
                             to="/validation-workflow"

@@ -11,6 +11,63 @@
 Notes:
 - 2025-12-31: Completed Phases 0-5 (roles table + role_id, backfill, helpers, frontend role_code migration, legacy role removal).
 - 2025-12-31: Tests: `python3 -m pytest tests/test_validation_workflow.py -k "SmartApproverAssignment"` (api) passed; `python3 -m pytest tests/test_decommissioning.py -k "non_owner"` selected 0 tests (exit code 5).
+- 2025-12-31: **Alembic migrations completed** (see Migration History section below for rollback instructions).
+- 2025-12-31: Future Phase A in progress: added granular capabilities in `/auth/me`, refactored frontend gating to capability helpers, and ran `python3 -m pytest tests/test_auth.py` + `npx tsc --noEmit`.
+
+### Migration History and Rollback Instructions
+
+**Migration Files Created (commit: 986f432):**
+- `aa1b2c3d4e5f_create_roles_table.py` - Initial attempt (conflicted with existing migration)
+- `ab2c3d4e5f6_backfill_user_roles.py` - Backfill logic
+- `ac3d4e5f6g7_enforce_role_fk_drop_legacy_role.py` - Constraint enforcement + column drop
+
+**Issue Found:**
+- Revision ID `aa1b2c3d4e5f` already existed in `aa1b2c3d4e5f_add_model_limitations_table.py`
+- Caused "Multiple head revisions" error preventing migration execution
+
+**Resolution Applied (commit: a84cb9f):**
+Renamed all three migration files and updated their revision IDs:
+- `aa1b2c3d4e5f_create_roles_table.py` → **`aarol1_create_roles_table.py`** (revision: `aarol1`)
+- `ab2c3d4e5f6_backfill_user_roles.py` → **`aarol2_backfill_user_roles.py`** (revision: `aarol2`)
+- `ac3d4e5f6g7_enforce_role_fk_drop_legacy_role.py` → **`aarol3_enforce_role_fk_drop_legacy_role.py`** (revision: `aarol3`)
+
+Updated parent references:
+- `aarol1` revises: `47a5f0da1687` (last merge point before role work)
+- `aarol2` revises: `aarol1`
+- `aarol3` revises: `aarol2`
+
+**Current Database State:**
+- Alembic head: `aarol3`
+- `roles` table exists with 5 canonical roles
+- `users.role_id` is NOT NULL with FK to `roles.role_id`
+- `users.role` (string column) has been **dropped**
+
+**Rollback Procedure (if needed):**
+
+If you need to restore the pre-migration database state:
+
+1. **Code Rollback:** Revert to commit `986f432` (before migration ID fixes):
+   ```bash
+   git checkout 986f432
+   ```
+
+2. **Database Rollback:** Run Alembic downgrade to the revision before role work:
+   ```bash
+   docker-compose exec api alembic downgrade 47a5f0da1687
+   ```
+   This will:
+   - Restore `users.role` string column from `roles.display_name`
+   - Drop FK constraint
+   - Make `users.role_id` nullable
+   - Drop `roles` table
+   - Drop `role_backfill_audit` table
+
+3. **Alternative (Nuclear Option):** Restore from database backup taken before 2025-12-31.
+
+**Important Notes:**
+- Downgrading will **lose** the `role_id` normalization but preserve user role assignments via the restored `users.role` column
+- The downgrade migrations reconstruct `users.role` from the `roles` table before dropping it
+- Frontend code in commit `986f432` still has role helper functions that gracefully fall back to legacy `user.role` string checks
 
 ### Goals
 - Make user roles normalized and constrained at the database layer.

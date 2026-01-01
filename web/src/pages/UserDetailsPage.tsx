@@ -3,7 +3,7 @@ import { useParams, useNavigate, Link } from 'react-router-dom';
 import api from '../api/client';
 import Layout from '../components/Layout';
 import { useAuth } from '../contexts/AuthContext';
-import { getRoleDisplay, getUserRoleCode, isAdmin, isValidator } from '../utils/roleUtils';
+import { canManageUsers, getRoleDisplay, getUserRoleCode } from '../utils/roleUtils';
 
 interface User {
     user_id: number;
@@ -66,12 +66,12 @@ export default function UserDetailsPage() {
     const [loading, setLoading] = useState(true);
     const [togglingFlag, setTogglingFlag] = useState(false);
 
-    const isAdminUser = isAdmin(currentUser);
+    const canManageUsersFlag = canManageUsers(currentUser);
     const userRoleCode = getUserRoleCode(user);
     const userRoleDisplay = getRoleDisplay(user);
 
     const handleToggleHighFluctuationFlag = async () => {
-        if (!user || !isAdminUser) return;
+        if (!user || !canManageUsersFlag) return;
 
         setTogglingFlag(true);
         try {
@@ -97,7 +97,7 @@ export default function UserDetailsPage() {
             setUser(userRes.data);
 
             // Fetch different data based on role
-            if (isValidator(userRes.data)) {
+            if (getUserRoleCode(userRes.data) === 'VALIDATOR') {
                 // Fetch validation assignments for validators
                 const assignmentsRes = await api.get(`/validation-workflow/validators/${id}/assignments`);
                 setValidationAssignments(assignmentsRes.data);
@@ -233,7 +233,7 @@ export default function UserDetailsPage() {
                             }`}>
                                 {user.high_fluctuation_flag ? 'Enabled' : 'Disabled'}
                             </span>
-                            {isAdminUser && (
+                            {canManageUsersFlag && (
                                 <button
                                     onClick={handleToggleHighFluctuationFlag}
                                     disabled={togglingFlag}

@@ -27,7 +27,7 @@ import {
 } from '../api/riskAssessment';
 import { listFactors, FactorResponse } from '../api/qualitativeFactors';
 import { useAuth } from '../contexts/AuthContext';
-import { isAdminOrValidator } from '../utils/roleUtils';
+import { canManageModels } from '../utils/roleUtils';
 
 interface Props {
     modelId: number;
@@ -42,7 +42,7 @@ const INHERENT_RATINGS: ('HIGH' | 'MEDIUM' | 'LOW' | 'VERY_LOW')[] = ['HIGH', 'M
 
 const ModelRiskAssessmentTab: React.FC<Props> = ({ modelId, regions = [] }) => {
     const { user } = useAuth();
-    const isAdminOrValidatorUser = isAdminOrValidator(user);
+    const canManageModelsFlag = canManageModels(user);
 
     // State
     const [assessments, setAssessments] = useState<RiskAssessmentResponse[]>([]);
@@ -226,7 +226,7 @@ const ModelRiskAssessmentTab: React.FC<Props> = ({ modelId, regions = [] }) => {
 
     // Handle save with tier change warning check
     const handleSave = async () => {
-        if (!isAdminOrValidatorUser) return;
+        if (!canManageModelsFlag) return;
 
         // Validate overrides: must change the value and have justification
         const overrideErrors: string[] = [];
@@ -311,7 +311,7 @@ const ModelRiskAssessmentTab: React.FC<Props> = ({ modelId, regions = [] }) => {
 
     // Handle delete
     const handleDelete = async () => {
-        if (!isAdminOrValidatorUser || !currentAssessment) return;
+        if (!canManageModelsFlag || !currentAssessment) return;
         if (!window.confirm('Are you sure you want to delete this assessment?')) return;
 
         setSaving(true);
@@ -470,7 +470,7 @@ const ModelRiskAssessmentTab: React.FC<Props> = ({ modelId, regions = [] }) => {
                         <RatingSelect
                             value={quantitativeRating}
                             onChange={setQuantitativeRating}
-                            disabled={!isAdminOrValidatorUser}
+                            disabled={!canManageModelsFlag}
                         />
                     </div>
                     <div>
@@ -478,7 +478,7 @@ const ModelRiskAssessmentTab: React.FC<Props> = ({ modelId, regions = [] }) => {
                         <textarea
                             value={quantitativeComment}
                             onChange={e => setQuantitativeComment(e.target.value)}
-                            disabled={!isAdminOrValidatorUser}
+                            disabled={!canManageModelsFlag}
                             rows={2}
                             className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm disabled:bg-gray-100 resize-y"
                             placeholder="Optional comment"
@@ -517,7 +517,7 @@ const ModelRiskAssessmentTab: React.FC<Props> = ({ modelId, regions = [] }) => {
                                             setQuantitativeOverrideComment('');
                                         }
                                     }}
-                                    disabled={!isAdminOrValidatorUser}
+                                    disabled={!canManageModelsFlag}
                                     className="w-4 h-4 rounded border-gray-300 text-amber-600 focus:ring-amber-500"
                                 />
                                 <span className={`text-sm font-medium ${quantitativeOverride !== null ? 'text-amber-800' : 'text-gray-600'}`}>
@@ -530,14 +530,14 @@ const ModelRiskAssessmentTab: React.FC<Props> = ({ modelId, regions = [] }) => {
                                         <RatingSelect
                                             value={quantitativeOverride}
                                             onChange={setQuantitativeOverride}
-                                            disabled={!isAdminOrValidatorUser}
+                                            disabled={!canManageModelsFlag}
                                             includeEmpty={false}
                                         />
                                     </div>
                                     <textarea
                                         value={quantitativeOverrideComment}
                                         onChange={e => setQuantitativeOverrideComment(e.target.value)}
-                                        disabled={!isAdminOrValidatorUser}
+                                        disabled={!canManageModelsFlag}
                                         rows={1}
                                         className="flex-1 px-3 py-2 border border-amber-300 rounded-md shadow-sm focus:outline-none focus:ring-amber-500 focus:border-amber-500 sm:text-sm bg-white resize-y"
                                         placeholder="Justification required"
@@ -581,7 +581,7 @@ const ModelRiskAssessmentTab: React.FC<Props> = ({ modelId, regions = [] }) => {
                                             ...prev,
                                             [factor.factor_id]: { ...prev[factor.factor_id], rating: v }
                                         }))}
-                                        disabled={!isAdminOrValidatorUser}
+                                        disabled={!canManageModelsFlag}
                                     />
                                 </td>
                                 <td className="px-4 py-3">
@@ -591,7 +591,7 @@ const ModelRiskAssessmentTab: React.FC<Props> = ({ modelId, regions = [] }) => {
                                             ...prev,
                                             [factor.factor_id]: { ...prev[factor.factor_id], comment: e.target.value }
                                         }))}
-                                        disabled={!isAdminOrValidatorUser}
+                                        disabled={!canManageModelsFlag}
                                         rows={1}
                                         className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm disabled:bg-gray-100 resize-y"
                                         placeholder="Optional comment"
@@ -637,7 +637,7 @@ const ModelRiskAssessmentTab: React.FC<Props> = ({ modelId, regions = [] }) => {
                                             setQualitativeOverrideComment('');
                                         }
                                     }}
-                                    disabled={!isAdminOrValidatorUser}
+                                    disabled={!canManageModelsFlag}
                                     className="w-4 h-4 rounded border-gray-300 text-amber-600 focus:ring-amber-500"
                                 />
                                 <span className={`text-sm font-medium ${qualitativeOverride !== null ? 'text-amber-800' : 'text-gray-600'}`}>
@@ -650,14 +650,14 @@ const ModelRiskAssessmentTab: React.FC<Props> = ({ modelId, regions = [] }) => {
                                         <RatingSelect
                                             value={qualitativeOverride}
                                             onChange={setQualitativeOverride}
-                                            disabled={!isAdminOrValidatorUser}
+                                            disabled={!canManageModelsFlag}
                                             includeEmpty={false}
                                         />
                                     </div>
                                     <textarea
                                         value={qualitativeOverrideComment}
                                         onChange={e => setQualitativeOverrideComment(e.target.value)}
-                                        disabled={!isAdminOrValidatorUser}
+                                        disabled={!canManageModelsFlag}
                                         rows={1}
                                         className="flex-1 px-3 py-2 border border-amber-300 rounded-md shadow-sm focus:outline-none focus:ring-amber-500 focus:border-amber-500 sm:text-sm bg-white resize-y"
                                         placeholder="Justification required"
@@ -739,7 +739,7 @@ const ModelRiskAssessmentTab: React.FC<Props> = ({ modelId, regions = [] }) => {
                                             setDerivedOverrideComment('');
                                         }
                                     }}
-                                    disabled={!isAdminOrValidatorUser}
+                                    disabled={!canManageModelsFlag}
                                     className="w-4 h-4 rounded border-gray-300 text-amber-600 focus:ring-amber-500"
                                 />
                                 <span className={`text-sm font-medium ${derivedOverride !== null ? 'text-amber-800' : 'text-gray-600'}`}>
@@ -752,7 +752,7 @@ const ModelRiskAssessmentTab: React.FC<Props> = ({ modelId, regions = [] }) => {
                                         <select
                                             value={derivedOverride || ''}
                                             onChange={e => setDerivedOverride(e.target.value as InherentRating)}
-                                            disabled={!isAdminOrValidatorUser}
+                                            disabled={!canManageModelsFlag}
                                             className="block w-full px-3 py-2 border border-amber-300 rounded-md shadow-sm focus:outline-none focus:ring-amber-500 focus:border-amber-500 sm:text-sm bg-white"
                                         >
                                             {INHERENT_RATINGS.map(r => (
@@ -763,7 +763,7 @@ const ModelRiskAssessmentTab: React.FC<Props> = ({ modelId, regions = [] }) => {
                                     <textarea
                                         value={derivedOverrideComment}
                                         onChange={e => setDerivedOverrideComment(e.target.value)}
-                                        disabled={!isAdminOrValidatorUser}
+                                        disabled={!canManageModelsFlag}
                                         rows={1}
                                         className="flex-1 px-3 py-2 border border-amber-300 rounded-md shadow-sm focus:outline-none focus:ring-amber-500 focus:border-amber-500 sm:text-sm bg-white resize-y"
                                         placeholder="Justification required"
@@ -794,7 +794,7 @@ const ModelRiskAssessmentTab: React.FC<Props> = ({ modelId, regions = [] }) => {
             </div>
 
             {/* Action Buttons */}
-            {isAdminOrValidatorUser && (
+            {canManageModelsFlag && (
                 <div className="flex justify-end space-x-4">
                     {currentAssessment && (
                         <button

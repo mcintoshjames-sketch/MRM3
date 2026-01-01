@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import api from '../api/client';
-import { isAdmin, UserLike } from '../utils/roleUtils';
+import { canManageConditionalApprovals, UserLike } from '../utils/roleUtils';
 
 interface RequiredApproverRole {
     role_id: number;
@@ -193,7 +193,7 @@ export default function ConditionalApprovalsSection({ requestId, currentUser, on
                                     {role.approval_status || 'Not Created'}
                                 </span>
 
-                                {isAdmin(currentUser) && (
+                                {canManageConditionalApprovals(currentUser) && (
                                     <>
                                         {(!role.approval_status || role.approval_status === 'Pending') && role.approval_id && (
                                             <>
