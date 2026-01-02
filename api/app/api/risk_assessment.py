@@ -927,7 +927,7 @@ def export_risk_assessment_pdf(
         "model": {
             "name": model.model_name,
             "id": model.model_id,
-            "project_id": "2072",  # Placeholder
+            "project_id": str(validation_request.request_id) if validation_request else "",
             "product": model.products_covered or "",
             "category": model.model_type.category.name if model.model_type and model.model_type.category else "",
             "subcategory": model.model_type.name if model.model_type else "",
