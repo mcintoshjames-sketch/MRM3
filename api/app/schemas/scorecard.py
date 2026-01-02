@@ -8,7 +8,8 @@ from pydantic import BaseModel, Field, ConfigDict
 # Valid Rating Values
 # ============================================================================
 
-VALID_RATINGS = ["Green", "Green-", "Yellow+", "Yellow", "Yellow-", "Red", "N/A"]
+VALID_RATINGS = ["Green", "Green-", "Yellow+",
+                 "Yellow", "Yellow-", "Red", "N/A"]
 RATING_PATTERN = "^(Green|Green-|Yellow\\+|Yellow|Yellow-|Red|N/A)$"
 
 
@@ -162,6 +163,7 @@ class SectionSummaryResponse(BaseModel):
     """Section summary with computed score."""
     section_code: str
     section_name: str
+    description: Optional[str] = None
     criteria_count: int
     rated_count: int
     unrated_count: int
@@ -277,7 +279,8 @@ class ScorecardConfigVersionResponse(BaseModel):
     criteria_count: int
     scorecards_count: int
     created_at: datetime
-    has_unpublished_changes: bool = False  # True if config changed since this version was published
+    # True if config changed since this version was published
+    has_unpublished_changes: bool = False
 
 
 class ScorecardConfigVersionDetailResponse(ScorecardConfigVersionResponse):
@@ -288,5 +291,7 @@ class ScorecardConfigVersionDetailResponse(ScorecardConfigVersionResponse):
 
 class PublishScorecardVersionRequest(BaseModel):
     """Request schema for publishing a new scorecard configuration version."""
-    version_name: Optional[str] = Field(None, max_length=200, description="Optional display name for this version")
-    description: Optional[str] = Field(None, description="Changelog or notes for this version")
+    version_name: Optional[str] = Field(
+        None, max_length=200, description="Optional display name for this version")
+    description: Optional[str] = Field(
+        None, description="Changelog or notes for this version")

@@ -135,6 +135,14 @@ def _get_section_name(section_code: str, config: dict) -> str:
     return f"Section {section_code}"
 
 
+def _get_section_description(section_code: str, config: dict) -> Optional[str]:
+    """Get the description for a section code from config."""
+    for section in config.get("sections", []):
+        if section["code"] == section_code:
+            return section.get("description")
+    return None
+
+
 def compute_section_summary(
     section_code: str,
     criteria_ratings: dict[str, Optional[str]],
@@ -168,7 +176,8 @@ def compute_section_summary(
     """
     # Get all criteria for this section
     criteria = config.get("criteria", [])
-    section_criteria = [c for c in criteria if c.get("section") == section_code]
+    section_criteria = [c for c in criteria if c.get(
+        "section") == section_code]
 
     criteria_count = len(section_criteria)
 
@@ -190,6 +199,7 @@ def compute_section_summary(
         return {
             "section_code": section_code,
             "section_name": _get_section_name(section_code, config),
+            "description": _get_section_description(section_code, config),
             "criteria_count": criteria_count,
             "rated_count": 0,
             "unrated_count": unrated_count,
@@ -198,7 +208,8 @@ def compute_section_summary(
         }
 
     # Compute weighted mean
-    total_weighted_score = sum(score * weight for score, weight in weighted_scores)
+    total_weighted_score = sum(
+        score * weight for score, weight in weighted_scores)
     total_weight = sum(weight for _, weight in weighted_scores)
     weighted_mean = total_weighted_score / total_weight
 
@@ -208,6 +219,7 @@ def compute_section_summary(
     return {
         "section_code": section_code,
         "section_name": _get_section_name(section_code, config),
+        "description": _get_section_description(section_code, config),
         "criteria_count": criteria_count,
         "rated_count": rated_count,
         "unrated_count": unrated_count,
@@ -378,7 +390,8 @@ def load_scorecard_config(config_path: Optional[str] = None) -> dict:
 # Valid Rating Values (for API validation)
 # ============================================================================
 
-VALID_RATINGS = ["Green", "Green-", "Yellow+", "Yellow", "Yellow-", "Red", "N/A"]
+VALID_RATINGS = ["Green", "Green-", "Yellow+",
+                 "Yellow", "Yellow-", "Red", "N/A"]
 
 
 def is_valid_rating(rating: Optional[str]) -> bool:

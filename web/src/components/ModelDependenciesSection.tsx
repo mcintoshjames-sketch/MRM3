@@ -187,18 +187,18 @@ export default function ModelDependenciesSection({ modelId, modelName }: Props) 
         <>
             <div className="space-y-6">
                 {/* Inbound Dependencies (Feeders) Section */}
-                {hasInbound && (
-                    <div>
-                        <div className="flex justify-between items-center mb-4">
-                            <div>
-                                <h3 className="text-lg font-medium text-gray-900">
-                                    Inbound Dependencies (Feeder Models)
-                                </h3>
-                                <p className="text-sm text-gray-600 mt-1">
-                                    Models that provide data to this model.
-                                </p>
-                            </div>
-                            <div className="flex space-x-2">
+                <div>
+                    <div className="flex justify-between items-center mb-4">
+                        <div>
+                            <h3 className="text-lg font-medium text-gray-900">
+                                Inbound Dependencies (Feeder Models)
+                            </h3>
+                            <p className="text-sm text-gray-600 mt-1">
+                                Models that provide data to this model.
+                            </p>
+                        </div>
+                        <div className="flex space-x-2">
+                            {hasInbound && (
                                 <button
                                     onClick={() => exportToCSV(inbound, 'inbound')}
                                     className="inline-flex items-center px-3 py-1.5 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50"
@@ -208,19 +208,21 @@ export default function ModelDependenciesSection({ modelId, modelName }: Props) 
                                     </svg>
                                     Export CSV
                                 </button>
-                                {canManageModelRelationshipsFlag && (
-                                    <button
-                                        onClick={handleAddInbound}
-                                        className="inline-flex items-center px-3 py-1.5 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50"
-                                    >
-                                        <svg className="-ml-0.5 mr-1.5 h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                                        </svg>
-                                        Add Inbound
-                                    </button>
-                                )}
-                            </div>
+                            )}
+                            {canManageModelRelationshipsFlag && (
+                                <button
+                                    onClick={handleAddInbound}
+                                    className="inline-flex items-center px-3 py-1.5 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50"
+                                >
+                                    <svg className="-ml-0.5 mr-1.5 h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                                    </svg>
+                                    Add Inbound
+                                </button>
+                            )}
                         </div>
+                    </div>
+                    {hasInbound ? (
                         <div className="bg-white shadow overflow-hidden sm:rounded-md">
                             <table className="min-w-full divide-y divide-gray-200">
                                 <thead className="bg-gray-50">
@@ -301,22 +303,26 @@ export default function ModelDependenciesSection({ modelId, modelName }: Props) 
                                 </tbody>
                             </table>
                         </div>
-                    </div>
-                )}
+                    ) : (
+                        <div className="bg-gray-50 border border-gray-200 rounded-md p-4 text-sm text-gray-500">
+                            No inbound dependencies defined yet.
+                        </div>
+                    )}
+                </div>
 
                 {/* Outbound Dependencies (Consumers) Section */}
-                {hasOutbound && (
-                    <div>
-                        <div className="flex justify-between items-center mb-4">
-                            <div>
-                                <h3 className="text-lg font-medium text-gray-900">
-                                    Outbound Dependencies (Consumer Models)
-                                </h3>
-                                <p className="text-sm text-gray-600 mt-1">
-                                    Models that consume data from this model.
-                                </p>
-                            </div>
-                            <div className="flex space-x-2">
+                <div>
+                    <div className="flex justify-between items-center mb-4">
+                        <div>
+                            <h3 className="text-lg font-medium text-gray-900">
+                                Outbound Dependencies (Consumer Models)
+                            </h3>
+                            <p className="text-sm text-gray-600 mt-1">
+                                Models that consume data from this model.
+                            </p>
+                        </div>
+                        <div className="flex space-x-2">
+                            {hasOutbound && (
                                 <button
                                     onClick={() => exportToCSV(outbound, 'outbound')}
                                     className="inline-flex items-center px-3 py-1.5 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50"
@@ -326,19 +332,21 @@ export default function ModelDependenciesSection({ modelId, modelName }: Props) 
                                     </svg>
                                     Export CSV
                                 </button>
-                                {canManageModelRelationshipsFlag && (
-                                    <button
-                                        onClick={handleAddOutbound}
-                                        className="inline-flex items-center px-3 py-1.5 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50"
-                                    >
-                                        <svg className="-ml-0.5 mr-1.5 h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                                        </svg>
-                                        Add Outbound
-                                    </button>
-                                )}
-                            </div>
+                            )}
+                            {canManageModelRelationshipsFlag && (
+                                <button
+                                    onClick={handleAddOutbound}
+                                    className="inline-flex items-center px-3 py-1.5 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50"
+                                >
+                                    <svg className="-ml-0.5 mr-1.5 h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                                    </svg>
+                                    Add Outbound
+                                </button>
+                            )}
                         </div>
+                    </div>
+                    {hasOutbound ? (
                         <div className="bg-white shadow overflow-hidden sm:rounded-md">
                             <table className="min-w-full divide-y divide-gray-200">
                                 <thead className="bg-gray-50">
@@ -419,8 +427,12 @@ export default function ModelDependenciesSection({ modelId, modelName }: Props) 
                                 </tbody>
                             </table>
                         </div>
-                    </div>
-                )}
+                    ) : (
+                        <div className="bg-gray-50 border border-gray-200 rounded-md p-4 text-sm text-gray-500">
+                            No outbound dependencies defined yet.
+                        </div>
+                    )}
+                </div>
             </div>
 
             <ModelDependencyModal

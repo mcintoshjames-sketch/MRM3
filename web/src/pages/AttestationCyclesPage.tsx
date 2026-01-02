@@ -838,6 +838,37 @@ export default function AttestationCyclesPage() {
                 setError('Owner Threshold rules must have at least one criterion (minimum models or high fluctuation flag)');
                 return;
             }
+            if (ruleFormData.owner_model_count_min !== null && ruleFormData.owner_model_count_min < 1) {
+                setError('Minimum models owned must be at least 1');
+                return;
+            }
+        }
+
+        if (ruleFormData.end_date && ruleFormData.end_date < ruleFormData.effective_date) {
+            setError('End date cannot be earlier than the effective date');
+            return;
+        }
+
+        if (!editingRule && ruleFormData.rule_type === 'MODEL_OVERRIDE' && !ruleFormData.model_id) {
+            setError('Model Override rules require a selected model');
+            return;
+        }
+
+        if (!editingRule && ruleFormData.rule_type === 'REGIONAL_OVERRIDE' && !ruleFormData.region_id) {
+            setError('Regional Override rules require a selected region');
+            return;
+        }
+
+        if (ruleFormData.rule_type === 'GLOBAL_DEFAULT') {
+            const otherActiveGlobal = rules.find((rule) =>
+                rule.rule_type === 'GLOBAL_DEFAULT'
+                && rule.is_active
+                && (!editingRule || rule.rule_id !== editingRule.rule_id)
+            );
+            if (otherActiveGlobal && (!editingRule || ruleFormData.is_active)) {
+                setError(`An active Global Default rule already exists: "${otherActiveGlobal.rule_name}". Deactivate it first or edit the existing rule.`);
+                return;
+            }
         }
 
         // Build the payload based on rule type
@@ -1420,7 +1451,7 @@ export default function AttestationCyclesPage() {
                                             onChange={(e) => setRuleFormData({ ...ruleFormData, priority: parseInt(e.target.value) })}
                                             className="mt-1 input-field"
                                         />
-                                        <p className="text-xs text-gray-400 mt-1">Higher priority rules win (1-100)</p>
+                                        <p className="text-xs text-gray-400 mt-1">Higher priority wins within the same rule type (1-100)</p>
                                     </div>
                                     <div>
                                         <label className="block text-sm font-medium text-gray-700">Effective Date *</label>
@@ -1599,7 +1630,7 @@ export default function AttestationCyclesPage() {
                             <table className="min-w-full divide-y divide-gray-200">
                                 <thead className="bg-gray-50">
                                     <tr>
-                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Rule Name</th>
+                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase w-56">Rule Name</th>
                                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Type</th>
                                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Frequency</th>
                                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Priority</th>
@@ -1612,7 +1643,11 @@ export default function AttestationCyclesPage() {
                                 <tbody className="bg-white divide-y divide-gray-200">
                                     {rules.map((rule) => (
                                         <tr key={rule.rule_id} className="hover:bg-gray-50">
-                                            <td className="px-6 py-4 whitespace-nowrap font-medium">{rule.rule_name}</td>
+                                            <td className="px-6 py-4 font-medium">
+                                                <div className="max-w-[220px] truncate" title={rule.rule_name}>
+                                                    {rule.rule_name}
+                                                </div>
+                                            </td>
                                             <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                                                 {rule.rule_type.replace(/_/g, ' ')}
                                             </td>

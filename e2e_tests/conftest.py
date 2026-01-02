@@ -8,7 +8,7 @@ API_URL = os.getenv("API_URL", "http://localhost:8001")
 
 # Default credentials from CLAUDE.md
 ADMIN_EMAIL = "admin@example.com"
-ADMIN_PASSWORD = "admin123"
+ADMIN_PASSWORD = "user123"
 
 
 @pytest.fixture(scope="session")

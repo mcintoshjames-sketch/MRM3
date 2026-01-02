@@ -3,6 +3,7 @@ import pytest
 from datetime import date, timedelta
 from app.models.taxonomy import Taxonomy, TaxonomyValue
 from app.models.model import Model
+from app.models.region import Region
 from app.models.attestation import (
     AttestationCycle,
     AttestationCycleStatus,
@@ -143,6 +144,61 @@ class TestAttestationCycles:
         )
         assert response.status_code == 200
         assert response.json()["status"] == "OPEN"
+
+    def test_open_cycle_sets_applied_frequency(self, client, admin_headers, attestation_cycle, sample_model, scheduling_rule, db_session):
+        """Opening a cycle stamps the applied rule/frequency on records."""
+        sample_model.row_approval_status = None
+        sample_model.status = "Active"
+        db_session.commit()
+
+        response = client.post(
+            f"/attestations/cycles/{attestation_cycle.cycle_id}/open",
+            headers=admin_headers
+        )
+        assert response.status_code == 200
+
+        record = db_session.query(AttestationRecord).filter(
+            AttestationRecord.cycle_id == attestation_cycle.cycle_id,
+            AttestationRecord.model_id == sample_model.model_id
+        ).first()
+        assert record is not None
+        assert record.applied_frequency == AttestationFrequency.ANNUAL.value
+        assert record.applied_rule_id == scheduling_rule.rule_id
+
+    def test_model_override_precedence_over_global_default(self, client, admin_headers, admin_user, attestation_cycle, sample_model, scheduling_rule, db_session):
+        """Model Override rules should win over Global Default regardless of priority."""
+        sample_model.row_approval_status = None
+        sample_model.status = "Active"
+        scheduling_rule.priority = 100
+        db_session.commit()
+
+        model_override = AttestationSchedulingRule(
+            rule_name="Critical Model Override",
+            rule_type=AttestationSchedulingRuleType.MODEL_OVERRIDE.value,
+            frequency=AttestationFrequency.QUARTERLY.value,
+            priority=1,
+            is_active=True,
+            model_id=sample_model.model_id,
+            effective_date=date.today() - timedelta(days=10),
+            created_by_user_id=admin_user.user_id
+        )
+        db_session.add(model_override)
+        db_session.commit()
+        db_session.refresh(model_override)
+
+        response = client.post(
+            f"/attestations/cycles/{attestation_cycle.cycle_id}/open",
+            headers=admin_headers
+        )
+        assert response.status_code == 200
+
+        record = db_session.query(AttestationRecord).filter(
+            AttestationRecord.cycle_id == attestation_cycle.cycle_id,
+            AttestationRecord.model_id == sample_model.model_id
+        ).first()
+        assert record is not None
+        assert record.applied_rule_id == model_override.rule_id
+        assert record.applied_frequency == AttestationFrequency.QUARTERLY.value
 
     def test_cannot_update_open_cycle(self, client, admin_headers, attestation_cycle, db_session):
         """Cannot update cycle after it's opened."""
@@ -541,6 +597,100 @@ class TestSchedulingRules:
         assert response.status_code == 200
         assert response.json()["rule_name"] == "High Volume Owners"
         assert response.json()["frequency"] == "QUARTERLY"
+
+    def test_model_override_requires_model_id(self, client, admin_headers):
+        """MODEL_OVERRIDE rules require a model_id."""
+        rule_data = {
+            "rule_name": "Critical Model Override",
+            "rule_type": "MODEL_OVERRIDE",
+            "frequency": "QUARTERLY",
+            "priority": 50,
+            "is_active": True,
+            "effective_date": str(date.today())
+        }
+
+        response = client.post("/attestations/rules", json=rule_data, headers=admin_headers)
+        assert response.status_code == 400
+
+    def test_prevent_overlapping_model_override_rules(self, client, admin_headers, sample_model):
+        """Cannot create overlapping MODEL_OVERRIDE rules for the same model."""
+        rule_data = {
+            "rule_name": "Model Override A",
+            "rule_type": "MODEL_OVERRIDE",
+            "frequency": "QUARTERLY",
+            "priority": 50,
+            "is_active": True,
+            "model_id": sample_model.model_id,
+            "effective_date": str(date.today() - timedelta(days=30))
+        }
+        response = client.post("/attestations/rules", json=rule_data, headers=admin_headers)
+        assert response.status_code == 200
+
+        overlap_data = {
+            "rule_name": "Model Override B",
+            "rule_type": "MODEL_OVERRIDE",
+            "frequency": "ANNUAL",
+            "priority": 60,
+            "is_active": True,
+            "model_id": sample_model.model_id,
+            "effective_date": str(date.today() - timedelta(days=10))
+        }
+        response = client.post("/attestations/rules", json=overlap_data, headers=admin_headers)
+        assert response.status_code == 400
+
+    def test_prevent_overlapping_regional_override_rules(self, client, admin_headers, db_session):
+        """Cannot create overlapping REGIONAL_OVERRIDE rules for the same region."""
+        region = Region(code="NA", name="North America", requires_regional_approval=False)
+        db_session.add(region)
+        db_session.commit()
+        db_session.refresh(region)
+
+        rule_data = {
+            "rule_name": "Regional Override A",
+            "rule_type": "REGIONAL_OVERRIDE",
+            "frequency": "QUARTERLY",
+            "priority": 50,
+            "is_active": True,
+            "region_id": region.region_id,
+            "effective_date": str(date.today() - timedelta(days=30))
+        }
+        response = client.post("/attestations/rules", json=rule_data, headers=admin_headers)
+        assert response.status_code == 200
+
+        overlap_data = {
+            "rule_name": "Regional Override B",
+            "rule_type": "REGIONAL_OVERRIDE",
+            "frequency": "ANNUAL",
+            "priority": 60,
+            "is_active": True,
+            "region_id": region.region_id,
+            "effective_date": str(date.today() - timedelta(days=10))
+        }
+        response = client.post("/attestations/rules", json=overlap_data, headers=admin_headers)
+        assert response.status_code == 400
+
+    def test_prevent_multiple_active_global_default_rules(self, client, admin_headers, scheduling_rule, db_session, admin_user):
+        """Cannot activate a second GLOBAL_DEFAULT rule when one is already active."""
+        secondary_rule = AttestationSchedulingRule(
+            rule_name="Secondary Global Default",
+            rule_type=AttestationSchedulingRuleType.GLOBAL_DEFAULT.value,
+            frequency=AttestationFrequency.ANNUAL.value,
+            priority=2,
+            is_active=False,
+            effective_date=date.today(),
+            created_by_user_id=admin_user.user_id
+        )
+        db_session.add(secondary_rule)
+        db_session.commit()
+        db_session.refresh(secondary_rule)
+
+        response = client.patch(
+            f"/attestations/rules/{secondary_rule.rule_id}",
+            json={"is_active": True},
+            headers=admin_headers
+        )
+        assert response.status_code == 400
+        assert "GLOBAL_DEFAULT" in response.json()["detail"]
 
     def test_deactivate_rule(self, client, admin_headers, scheduling_rule):
         """Can deactivate a scheduling rule."""

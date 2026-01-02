@@ -60,6 +60,7 @@ interface AttestationRecord {
     model: ModelRef;
     attesting_user: { user_id: number; email: string; full_name: string };
     due_date: string;
+    applied_frequency?: 'ANNUAL' | 'QUARTERLY' | null;
     status: 'PENDING' | 'SUBMITTED' | 'ADMIN_REVIEW' | 'ACCEPTED' | 'REJECTED';
     attested_at: string | null;
     decision: string | null;
@@ -109,10 +110,11 @@ export default function AttestationDetailPage() {
     const fetchData = async () => {
         setLoading(true);
         try {
-            const [attestationRes, questionsRes] = await Promise.all([
-                api.get(`/attestations/records/${id}`),
-                api.get('/attestations/questions')
-            ]);
+            const attestationRes = await api.get(`/attestations/records/${id}`);
+            const frequency = attestationRes.data.applied_frequency;
+            const questionsRes = await api.get('/attestations/questions', {
+                params: frequency ? { frequency } : undefined
+            });
 
             setAttestation(attestationRes.data);
             setQuestions(questionsRes.data);

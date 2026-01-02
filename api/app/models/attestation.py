@@ -173,6 +173,15 @@ class AttestationRecord(Base):
     # Due date (calculated when cycle opens based on scheduling rules)
     due_date: Mapped[date] = mapped_column(Date, nullable=False)
 
+    # Applied scheduling rule snapshot (set at cycle open)
+    applied_rule_id: Mapped[Optional[int]] = mapped_column(
+        Integer, ForeignKey("attestation_scheduling_rules.rule_id", ondelete="SET NULL"),
+        nullable=True
+    )
+    applied_frequency: Mapped[Optional[str]] = mapped_column(
+        String(20), nullable=True
+    )
+
     # Submission status
     status: Mapped[str] = mapped_column(
         String(20), nullable=False, default=AttestationRecordStatus.PENDING.value

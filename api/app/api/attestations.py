@@ -433,7 +433,7 @@ def open_cycle(
     records_created = 0
     for model in models:
         # Check if model is due in this cycle based on scheduling rules
-        frequency = _resolve_attestation_frequency(db, model.model_id, model.owner_id)
+        frequency, applied_rule = _resolve_attestation_rule(db, model.model_id, model.owner_id)
 
         if _is_model_due_in_cycle(db, model, frequency, cycle):
             record = AttestationRecord(
@@ -441,6 +441,8 @@ def open_cycle(
                 model_id=model.model_id,
                 attesting_user_id=model.owner_id,
                 due_date=cycle.submission_due_date,
+                applied_rule_id=applied_rule.rule_id if applied_rule else None,
+                applied_frequency=frequency,
                 status=AttestationRecordStatus.PENDING.value
             )
             db.add(record)
@@ -902,7 +904,12 @@ def submit_attestation(
         )
 
     # Determine the attestation frequency for this model/owner to filter questions
-    model_frequency = _resolve_attestation_frequency(db, model.model_id, model.owner_id)
+    model_frequency = record.applied_frequency
+    if not model_frequency:
+        resolved_frequency, applied_rule = _resolve_attestation_rule(db, model.model_id, model.owner_id)
+        model_frequency = resolved_frequency
+        record.applied_frequency = resolved_frequency
+        record.applied_rule_id = applied_rule.rule_id if applied_rule else None
 
     # Validate question responses - filter by frequency
     questions = get_attestation_questions(db, model_frequency)
@@ -1278,6 +1285,14 @@ def _build_record_response(record: AttestationRecord, db: Session) -> Attestatio
         "full_name": attesting_user.full_name
     }
 
+    applied_frequency = record.applied_frequency
+    applied_rule_id = record.applied_rule_id
+    if not applied_frequency:
+        resolved_frequency, applied_rule = _resolve_attestation_rule(db, model.model_id, model.owner_id)
+        applied_frequency = resolved_frequency
+        if applied_rule and not applied_rule_id:
+            applied_rule_id = applied_rule.rule_id
+
     reviewed_by_ref = None
     if record.reviewed_by_user_id:
         reviewer = db.query(User).filter(User.user_id == record.reviewed_by_user_id).first()
@@ -1364,6 +1379,8 @@ def _build_record_response(record: AttestationRecord, db: Session) -> Attestatio
         model=model_ref,
         attesting_user=attesting_user_ref,
         due_date=record.due_date,
+        applied_rule_id=applied_rule_id,
+        applied_frequency=applied_frequency,
         status=AttestationRecordStatusEnum(record.status),
         attested_at=record.attested_at,
         decision=record.decision,
@@ -1535,6 +1552,97 @@ def list_rules(
     return [_build_rule_response(rule, db) for rule in rules]
 
 
+def _validate_rule_date_window(effective_date: date, end_date: Optional[date]) -> None:
+    if end_date and end_date < effective_date:
+        raise HTTPException(
+            status_code=400,
+            detail="End date cannot be earlier than effective date"
+        )
+
+
+def _validate_owner_model_count(owner_model_count_min: Optional[int]) -> None:
+    if owner_model_count_min is not None and owner_model_count_min < 1:
+        raise HTTPException(
+            status_code=400,
+            detail="Owner model count minimum must be at least 1"
+        )
+
+
+def _find_overlapping_override_rule(
+    db: Session,
+    rule_type: str,
+    target_id: int,
+    effective_date: date,
+    end_date: Optional[date],
+    exclude_rule_id: Optional[int] = None
+) -> Optional[AttestationSchedulingRule]:
+    query = db.query(AttestationSchedulingRule).filter(
+        AttestationSchedulingRule.rule_type == rule_type,
+        AttestationSchedulingRule.is_active == True
+    )
+
+    if rule_type == AttestationSchedulingRuleType.MODEL_OVERRIDE.value:
+        query = query.filter(AttestationSchedulingRule.model_id == target_id)
+    elif rule_type == AttestationSchedulingRuleType.REGIONAL_OVERRIDE.value:
+        query = query.filter(AttestationSchedulingRule.region_id == target_id)
+    else:
+        return None
+
+    if exclude_rule_id:
+        query = query.filter(AttestationSchedulingRule.rule_id != exclude_rule_id)
+
+    if end_date:
+        query = query.filter(
+            AttestationSchedulingRule.effective_date <= end_date,
+            or_(
+                AttestationSchedulingRule.end_date == None,
+                AttestationSchedulingRule.end_date >= effective_date
+            )
+        )
+    else:
+        query = query.filter(
+            or_(
+                AttestationSchedulingRule.end_date == None,
+                AttestationSchedulingRule.end_date >= effective_date
+            )
+        )
+
+    return query.first()
+
+
+def _find_overlapping_global_default_rule(
+    db: Session,
+    effective_date: date,
+    end_date: Optional[date],
+    exclude_rule_id: Optional[int] = None
+) -> Optional[AttestationSchedulingRule]:
+    query = db.query(AttestationSchedulingRule).filter(
+        AttestationSchedulingRule.rule_type == AttestationSchedulingRuleType.GLOBAL_DEFAULT,
+        AttestationSchedulingRule.is_active == True
+    )
+
+    if exclude_rule_id:
+        query = query.filter(AttestationSchedulingRule.rule_id != exclude_rule_id)
+
+    if end_date:
+        query = query.filter(
+            AttestationSchedulingRule.effective_date <= end_date,
+            or_(
+                AttestationSchedulingRule.end_date == None,
+                AttestationSchedulingRule.end_date >= effective_date
+            )
+        )
+    else:
+        query = query.filter(
+            or_(
+                AttestationSchedulingRule.end_date == None,
+                AttestationSchedulingRule.end_date >= effective_date
+            )
+        )
+
+    return query.first()
+
+
 @router.post("/rules", response_model=AttestationSchedulingRuleResponse)
 def create_rule(
     rule_in: AttestationSchedulingRuleCreate,
@@ -1542,6 +1650,9 @@ def create_rule(
     current_user: User = Depends(require_admin)
 ):
     """Create a scheduling rule. Admin only."""
+    _validate_rule_date_window(rule_in.effective_date, rule_in.end_date)
+    _validate_owner_model_count(rule_in.owner_model_count_min)
+
     # Validate OWNER_THRESHOLD rules have at least one criterion
     if rule_in.rule_type == AttestationSchedulingRuleType.OWNER_THRESHOLD:
         if rule_in.owner_model_count_min is None and not rule_in.owner_high_fluctuation_flag:
@@ -1549,18 +1660,74 @@ def create_rule(
                 status_code=400,
                 detail="OWNER_THRESHOLD rules must have at least one criterion (owner_model_count_min or owner_high_fluctuation_flag)"
             )
+        if rule_in.model_id or rule_in.region_id:
+            raise HTTPException(
+                status_code=400,
+                detail="OWNER_THRESHOLD rules cannot target a specific model or region"
+            )
+
+    if rule_in.rule_type == AttestationSchedulingRuleType.MODEL_OVERRIDE:
+        if not rule_in.model_id:
+            raise HTTPException(status_code=400, detail="MODEL_OVERRIDE rules require a model_id")
+        if rule_in.region_id or rule_in.owner_model_count_min is not None or rule_in.owner_high_fluctuation_flag:
+            raise HTTPException(
+                status_code=400,
+                detail="MODEL_OVERRIDE rules cannot include region or owner threshold criteria"
+            )
+        if rule_in.is_active:
+            existing = _find_overlapping_override_rule(
+                db,
+                AttestationSchedulingRuleType.MODEL_OVERRIDE.value,
+                rule_in.model_id,
+                rule_in.effective_date,
+                rule_in.end_date
+            )
+            if existing:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"An active MODEL_OVERRIDE rule already overlaps for this model: '{existing.rule_name}'. Adjust dates or deactivate the existing rule."
+                )
+
+    if rule_in.rule_type == AttestationSchedulingRuleType.REGIONAL_OVERRIDE:
+        if not rule_in.region_id:
+            raise HTTPException(status_code=400, detail="REGIONAL_OVERRIDE rules require a region_id")
+        if rule_in.model_id or rule_in.owner_model_count_min is not None or rule_in.owner_high_fluctuation_flag:
+            raise HTTPException(
+                status_code=400,
+                detail="REGIONAL_OVERRIDE rules cannot include model or owner threshold criteria"
+            )
+        if rule_in.is_active:
+            existing = _find_overlapping_override_rule(
+                db,
+                AttestationSchedulingRuleType.REGIONAL_OVERRIDE.value,
+                rule_in.region_id,
+                rule_in.effective_date,
+                rule_in.end_date
+            )
+            if existing:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"An active REGIONAL_OVERRIDE rule already overlaps for this region: '{existing.rule_name}'. Adjust dates or deactivate the existing rule."
+                )
 
     # Validate only one active GLOBAL_DEFAULT rule exists
     if rule_in.rule_type == AttestationSchedulingRuleType.GLOBAL_DEFAULT:
-        existing = db.query(AttestationSchedulingRule).filter(
-            AttestationSchedulingRule.rule_type == AttestationSchedulingRuleType.GLOBAL_DEFAULT,
-            AttestationSchedulingRule.is_active == True
-        ).first()
-        if existing:
+        if rule_in.model_id or rule_in.region_id or rule_in.owner_model_count_min is not None or rule_in.owner_high_fluctuation_flag:
             raise HTTPException(
                 status_code=400,
-                detail=f"An active GLOBAL_DEFAULT rule already exists: '{existing.rule_name}'. Deactivate it first or edit the existing rule."
+                detail="GLOBAL_DEFAULT rules cannot include model, region, or owner threshold criteria"
             )
+        if rule_in.is_active:
+            existing = _find_overlapping_global_default_rule(
+                db,
+                rule_in.effective_date,
+                rule_in.end_date
+            )
+            if existing:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"An active GLOBAL_DEFAULT rule already overlaps: '{existing.rule_name}'. Adjust dates or deactivate the existing rule."
+                )
 
     rule = AttestationSchedulingRule(
         **rule_in.model_dump(),
@@ -1601,6 +1768,12 @@ def update_rule(
 
     update_data = rule_in.model_dump(exclude_unset=True)
 
+    if "end_date" in update_data:
+        _validate_rule_date_window(rule.effective_date, update_data.get("end_date"))
+
+    if "owner_model_count_min" in update_data:
+        _validate_owner_model_count(update_data.get("owner_model_count_min"))
+
     # Validate OWNER_THRESHOLD rules won't become criterion-less after update
     if rule.rule_type == AttestationSchedulingRuleType.OWNER_THRESHOLD:
         new_count = update_data.get('owner_model_count_min', rule.owner_model_count_min)
@@ -1610,6 +1783,56 @@ def update_rule(
                 status_code=400,
                 detail="OWNER_THRESHOLD rules must have at least one criterion (owner_model_count_min or owner_high_fluctuation_flag)"
             )
+
+    if rule.rule_type in [
+        AttestationSchedulingRuleType.MODEL_OVERRIDE,
+        AttestationSchedulingRuleType.REGIONAL_OVERRIDE,
+        AttestationSchedulingRuleType.GLOBAL_DEFAULT
+    ]:
+        if "owner_model_count_min" in update_data or "owner_high_fluctuation_flag" in update_data:
+            raise HTTPException(
+                status_code=400,
+                detail="Only OWNER_THRESHOLD rules can include owner threshold criteria"
+            )
+
+    # Validate overlapping overrides for MODEL_OVERRIDE/REGIONAL_OVERRIDE
+    next_active = update_data.get('is_active', rule.is_active)
+    next_end_date = update_data.get('end_date', rule.end_date)
+    if next_active and rule.rule_type in [
+        AttestationSchedulingRuleType.MODEL_OVERRIDE,
+        AttestationSchedulingRuleType.REGIONAL_OVERRIDE
+    ]:
+        target_id = rule.model_id if rule.rule_type == AttestationSchedulingRuleType.MODEL_OVERRIDE else rule.region_id
+        if target_id:
+            existing = _find_overlapping_override_rule(
+                db,
+                rule.rule_type,
+                target_id,
+                rule.effective_date,
+                next_end_date,
+                exclude_rule_id=rule_id
+            )
+            if existing:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"An active {rule.rule_type} rule already overlaps for this target: '{existing.rule_name}'. Adjust dates or deactivate the existing rule."
+                )
+
+    # Validate only one active GLOBAL_DEFAULT rule exists
+    if rule.rule_type == AttestationSchedulingRuleType.GLOBAL_DEFAULT:
+        next_active = update_data.get('is_active', rule.is_active)
+        if next_active:
+            existing = _find_overlapping_global_default_rule(
+                db,
+                rule.effective_date,
+                next_end_date,
+                exclude_rule_id=rule_id
+            )
+            if existing:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"An active GLOBAL_DEFAULT rule already overlaps: '{existing.rule_name}'. Adjust dates or deactivate the existing rule."
+                )
 
     for field, value in update_data.items():
         setattr(rule, field, value)
@@ -2052,8 +2275,30 @@ def get_dashboard_stats(
 # SCHEDULING RULE HELPERS
 # ============================================================================
 
-def _resolve_attestation_frequency(db: Session, model_id: int, owner_id: int) -> str:
-    """Resolve the effective attestation frequency for a model."""
+RULE_TYPE_PRECEDENCE = {
+    AttestationSchedulingRuleType.MODEL_OVERRIDE.value: 0,
+    AttestationSchedulingRuleType.REGIONAL_OVERRIDE.value: 1,
+    AttestationSchedulingRuleType.OWNER_THRESHOLD.value: 2,
+    AttestationSchedulingRuleType.GLOBAL_DEFAULT.value: 3,
+}
+
+
+def _rule_sort_key(rule: AttestationSchedulingRule) -> tuple:
+    """Sort rules deterministically by type precedence, priority, date, then ID."""
+    return (
+        RULE_TYPE_PRECEDENCE.get(rule.rule_type, 99),
+        -(rule.priority or 0),
+        -rule.effective_date.toordinal(),
+        -rule.rule_id
+    )
+
+
+def _resolve_attestation_rule(
+    db: Session,
+    model_id: int,
+    owner_id: int
+) -> tuple[str, Optional[AttestationSchedulingRule]]:
+    """Resolve the effective attestation rule and frequency for a model."""
     today = date.today()
 
     # Get model and owner
@@ -2061,7 +2306,7 @@ def _resolve_attestation_frequency(db: Session, model_id: int, owner_id: int) ->
     owner = db.query(User).filter(User.user_id == owner_id).first()
 
     if not model or not owner:
-        return AttestationFrequency.ANNUAL.value
+        return AttestationFrequency.ANNUAL.value, None
 
     # Get all active rules, ordered by priority DESC
     rules = db.query(AttestationSchedulingRule).filter(
@@ -2071,13 +2316,19 @@ def _resolve_attestation_frequency(db: Session, model_id: int, owner_id: int) ->
             AttestationSchedulingRule.end_date == None,
             AttestationSchedulingRule.end_date >= today
         )
-    ).order_by(AttestationSchedulingRule.priority.desc()).all()
+    ).all()
 
-    for rule in rules:
+    for rule in sorted(rules, key=_rule_sort_key):
         if _rule_applies(db, rule, model, owner):
-            return rule.frequency
+            return rule.frequency, rule
 
-    return AttestationFrequency.ANNUAL.value
+    return AttestationFrequency.ANNUAL.value, None
+
+
+def _resolve_attestation_frequency(db: Session, model_id: int, owner_id: int) -> str:
+    """Resolve the effective attestation frequency for a model."""
+    frequency, _ = _resolve_attestation_rule(db, model_id, owner_id)
+    return frequency
 
 
 def _rule_applies(db: Session, rule: AttestationSchedulingRule, model: Model, owner: User) -> bool:

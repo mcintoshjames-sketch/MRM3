@@ -13,6 +13,12 @@ Features:
 - Approvals section
 """
 
+from app.core.monitoring_constants import (
+    OUTCOME_GREEN, OUTCOME_YELLOW, OUTCOME_RED, OUTCOME_NA, OUTCOME_UNCONFIGURED
+)
+from matplotlib.patches import Rectangle
+import matplotlib.dates as mdates
+import matplotlib.pyplot as plt
 import io
 import os
 from datetime import datetime
@@ -22,13 +28,6 @@ from fpdf import FPDF
 # Import matplotlib with Agg backend for server-side rendering
 import matplotlib
 matplotlib.use('Agg')
-import matplotlib.pyplot as plt
-import matplotlib.dates as mdates
-from matplotlib.patches import Rectangle
-
-from app.core.monitoring_constants import (
-    OUTCOME_GREEN, OUTCOME_YELLOW, OUTCOME_RED, OUTCOME_NA, OUTCOME_UNCONFIGURED
-)
 
 
 # Color constants (RGB tuples)
@@ -146,7 +145,8 @@ def generate_trend_chart(
         if dp.get('numeric_value') is not None:
             date = dp.get('period_end_date')
             if isinstance(date, str):
-                date = datetime.fromisoformat(date.replace('Z', '+00:00')).date()
+                date = datetime.fromisoformat(
+                    date.replace('Z', '+00:00')).date()
             dates.append(date)
             values.append(dp['numeric_value'])
             colors.append(outcome_to_chart_color(dp.get('calculated_outcome')))
@@ -162,11 +162,13 @@ def generate_trend_chart(
     fig, ax = plt.subplots(figsize=(width, height), dpi=100)
 
     # Plot line and points
-    ax.plot(dates, values, linestyle='-', color='#6B7280', linewidth=1.5, zorder=2)
+    ax.plot(dates, values, linestyle='-',
+            color='#6B7280', linewidth=1.5, zorder=2)
 
     # Scatter points with outcome colors
     for i, (d, v, c) in enumerate(zip(dates, values, colors)):
-        ax.scatter([d], [v], c=[c], s=60, zorder=3, edgecolors='white', linewidths=1)
+        ax.scatter([d], [v], c=[c], s=60, zorder=3,
+                   edgecolors='white', linewidths=1)
 
     def has_series_values(series: List[Optional[float]]) -> bool:
         return any(value is not None for value in series)
@@ -402,7 +404,8 @@ class MonitoringCycleReportPDF(FPDF):
             period_end = period_end.strftime('%Y-%m-%d')
 
         self.set_font('helvetica', '', 12)
-        self.cell(0, 8, f'Monitoring Period: {period_start} to {period_end}', align='C')
+        self.cell(
+            0, 8, f'Monitoring Period: {period_start} to {period_end}', align='C')
         self.ln(10)
 
         # Completion info
@@ -412,9 +415,11 @@ class MonitoringCycleReportPDF(FPDF):
 
         completed_by = self.cycle_data.get('completed_by', {})
         if isinstance(completed_by, dict):
-            completed_by_name = completed_by.get('full_name', completed_by.get('email', 'Unknown'))
+            completed_by_name = completed_by.get(
+                'full_name', completed_by.get('email', 'Unknown'))
         else:
-            completed_by_name = str(completed_by) if completed_by else 'Unknown'
+            completed_by_name = str(
+                completed_by) if completed_by else 'Unknown'
 
         self.cell(0, 8, f'Completed: {completed_at}', align='C')
         self.ln(8)
@@ -459,7 +464,8 @@ class MonitoringCycleReportPDF(FPDF):
 
         # Row 1: Labels
         labels = ['GREEN', 'YELLOW', 'RED', 'N/A']
-        counts = [self.summary['green'], self.summary['yellow'], self.summary['red'], self.summary['na']]
+        counts = [self.summary['green'], self.summary['yellow'],
+                  self.summary['red'], self.summary['na']]
         colors = [BG_GREEN, BG_YELLOW, BG_RED, BG_GRAY]
 
         for i, (label, count, color) in enumerate(zip(labels, counts, colors)):
@@ -537,15 +543,18 @@ class MonitoringCycleReportPDF(FPDF):
             pct = (count / total) * 100
 
             self.cell(col_widths[0], 7, label, border=1, fill=True)
-            self.cell(col_widths[1], 7, str(count), border=1, align='C', fill=True)
-            self.cell(col_widths[2], 7, f'{pct:.1f}%', border=1, align='C', fill=True)
+            self.cell(col_widths[1], 7, str(count),
+                      border=1, align='C', fill=True)
+            self.cell(col_widths[2], 7, f'{pct:.1f}%',
+                      border=1, align='C', fill=True)
             self.ln()
 
         # Total row
         self.set_font('helvetica', 'B', 9)
         self.set_fill_color(*SECTION_BG)
         self.cell(col_widths[0], 7, 'TOTAL', border=1, fill=True)
-        self.cell(col_widths[1], 7, str(self.summary['total']), border=1, align='C', fill=True)
+        self.cell(col_widths[1], 7, str(
+            self.summary['total']), border=1, align='C', fill=True)
         self.cell(col_widths[2], 7, '100%', border=1, align='C', fill=True)
         self.ln(10)
 
@@ -556,7 +565,8 @@ class MonitoringCycleReportPDF(FPDF):
             self.cell(0, 8, f'Models in Scope ({len(models)}):', ln=True)
             self.set_font('helvetica', '', 9)
             for model in models[:10]:  # Limit to first 10
-                model_name = model.get('model_name', 'Unknown') if isinstance(model, dict) else str(model)
+                model_name = model.get('model_name', 'Unknown') if isinstance(
+                    model, dict) else str(model)
                 self.cell(0, 6, f'  - {model_name}', ln=True)
             if len(models) > 10:
                 self.cell(0, 6, f'  ... and {len(models) - 10} more', ln=True)
@@ -567,7 +577,8 @@ class MonitoringCycleReportPDF(FPDF):
         if self.summary['breaches'] > 0:
             self.set_font('helvetica', 'B', 10)
             self.set_text_color(*COLOR_RED)
-            self.cell(0, 8, f'Attention Required: {self.summary["breaches"]} metric(s) breached thresholds', ln=True)
+            self.cell(
+                0, 8, f'Attention Required: {self.summary["breaches"]} metric(s) breached thresholds', ln=True)
             self.set_text_color(*SECTION_TEXT)
 
     def add_results_table(self):
@@ -584,16 +595,19 @@ class MonitoringCycleReportPDF(FPDF):
             return
 
         # Check if we have multiple models (need Model column)
-        unique_models = set(r.get('model_name') for r in self.results if r.get('model_name'))
+        unique_models = set(r.get('model_name')
+                            for r in self.results if r.get('model_name'))
         has_multiple_models = len(unique_models) > 1
 
         # Table setup - add Model column if multi-model plan
         if has_multiple_models:
             col_widths = [28, 35, 35, 22, 25, 25, 15]
-            headers = ['Category', 'Metric', 'Model', 'Value', 'Yellow', 'Red', 'Result']
+            headers = ['Category', 'Metric', 'Model',
+                       'Value', 'Yellow', 'Red', 'Result']
         else:
             col_widths = [35, 50, 25, 30, 30, 18]
-            headers = ['Category', 'Metric', 'Value', 'Yellow Range', 'Red Range', 'Result']
+            headers = ['Category', 'Metric', 'Value',
+                       'Yellow Range', 'Red Range', 'Result']
 
         # Table header
         self.set_fill_color(*HEADER_BG)
@@ -633,17 +647,21 @@ class MonitoringCycleReportPDF(FPDF):
                 self.set_text_color(*SECTION_TEXT)
 
             # Get data
-            category = result.get('category_name', result.get('kpm_category', 'N/A'))[:18]
-            metric = result.get('metric_name', result.get('kpm_name', 'Unknown'))
+            category = result.get(
+                'category_name', result.get('kpm_category', 'N/A'))[:18]
+            metric = result.get(
+                'metric_name', result.get('kpm_name', 'Unknown'))
             model_name = result.get('model_name', '-') or '-'
 
             value = result.get('numeric_value')
             if value is not None:
-                value_str = f'{value:.3f}' if isinstance(value, float) else str(value)
+                value_str = f'{value:.3f}' if isinstance(
+                    value, float) else str(value)
             else:
                 outcome_value = result.get('outcome_value', {})
                 if isinstance(outcome_value, dict):
-                    value_str = outcome_value.get('label', outcome_value.get('code', '-'))
+                    value_str = outcome_value.get(
+                        'label', outcome_value.get('code', '-'))
                 else:
                     value_str = '-'
 
@@ -666,18 +684,27 @@ class MonitoringCycleReportPDF(FPDF):
             if has_multiple_models:
                 self.cell(col_widths[0], 7, category, border=1, fill=True)
                 self.cell(col_widths[1], 7, metric[:22], border=1, fill=True)
-                self.cell(col_widths[2], 7, model_name[:22], border=1, fill=True)
-                self.cell(col_widths[3], 7, value_str[:10], border=1, align='R', fill=True)
-                self.cell(col_widths[4], 7, yellow_range[:12], border=1, align='C', fill=True)
-                self.cell(col_widths[5], 7, red_range[:12], border=1, align='C', fill=True)
-                self.cell(col_widths[6], 7, outcome[:8], border=1, align='C', fill=True)
+                self.cell(col_widths[2], 7,
+                          model_name[:22], border=1, fill=True)
+                self.cell(col_widths[3], 7, value_str[:10],
+                          border=1, align='R', fill=True)
+                self.cell(col_widths[4], 7, yellow_range[:12],
+                          border=1, align='C', fill=True)
+                self.cell(col_widths[5], 7, red_range[:12],
+                          border=1, align='C', fill=True)
+                self.cell(col_widths[6], 7, outcome[:8],
+                          border=1, align='C', fill=True)
             else:
                 self.cell(col_widths[0], 7, category, border=1, fill=True)
                 self.cell(col_widths[1], 7, metric[:30], border=1, fill=True)
-                self.cell(col_widths[2], 7, value_str[:12], border=1, align='R', fill=True)
-                self.cell(col_widths[3], 7, yellow_range, border=1, align='C', fill=True)
-                self.cell(col_widths[4], 7, red_range, border=1, align='C', fill=True)
-                self.cell(col_widths[5], 7, outcome[:8], border=1, align='C', fill=True)
+                self.cell(col_widths[2], 7, value_str[:12],
+                          border=1, align='R', fill=True)
+                self.cell(col_widths[3], 7, yellow_range,
+                          border=1, align='C', fill=True)
+                self.cell(col_widths[4], 7, red_range,
+                          border=1, align='C', fill=True)
+                self.cell(col_widths[5], 7, outcome[:8],
+                          border=1, align='C', fill=True)
             self.ln()
 
     def add_breach_analysis(self):
@@ -698,7 +725,7 @@ class MonitoringCycleReportPDF(FPDF):
         self.set_font('helvetica', '', 9)
         self.set_text_color(*SECTION_TEXT)
         self.multi_cell(0, 5,
-            f'The following {len(breaches)} metric(s) exceeded threshold boundaries and require attention.')
+                        f'The following {len(breaches)} metric(s) exceeded threshold boundaries and require attention.')
         self.ln(5)
 
         version_number = self.cycle_data.get('plan_version_number')
@@ -730,8 +757,10 @@ class MonitoringCycleReportPDF(FPDF):
             outcome = breach.get('calculated_outcome', 'YELLOW')
             bg_color = outcome_to_bg_color(outcome)
 
-            metric_name = breach.get('metric_name', breach.get('kpm_name', 'Unknown'))
-            category = breach.get('category_name', breach.get('kpm_category', ''))
+            metric_name = breach.get(
+                'metric_name', breach.get('kpm_name', 'Unknown'))
+            category = breach.get(
+                'category_name', breach.get('kpm_category', ''))
             model_name = breach.get('model_name', '')
 
             # Include model name in header if present
@@ -833,7 +862,8 @@ class MonitoringCycleReportPDF(FPDF):
             self.add_page()
 
         # Generate chart with model name in title if applicable
-        metric_name = breach.get('metric_name', breach.get('kpm_name', 'Unknown'))
+        metric_name = breach.get(
+            'metric_name', breach.get('kpm_name', 'Unknown'))
         model_name = breach.get('model_name', '')
         if model_name:
             chart_title = f"Trend: {metric_name} - {model_name}"
@@ -898,7 +928,8 @@ class MonitoringCycleReportPDF(FPDF):
             # Get approver name
             approver = approval.get('approver', {})
             if isinstance(approver, dict):
-                approver_name = approver.get('full_name', approver.get('email', 'Unknown'))[:22]
+                approver_name = approver.get(
+                    'full_name', approver.get('email', 'Unknown'))[:22]
             else:
                 approver_name = str(approver)[:22] if approver else 'Pending'
 
@@ -933,7 +964,8 @@ class MonitoringCycleReportPDF(FPDF):
             raw_comments = approval.get('comments') or ''
             if not isinstance(raw_comments, str):
                 raw_comments = str(raw_comments)
-            comments = raw_comments[:15] + ('...' if len(raw_comments) > 15 else '')
+            comments = raw_comments[:15] + \
+                ('...' if len(raw_comments) > 15 else '')
 
             # Draw cells
             self.cell(col_widths[0], 7, approver_name, border=1)
@@ -990,7 +1022,10 @@ class ValidationScorecardPDF(FPDF):
         model: Dict[str, Any],
         scorecard_data: Dict[str, Any],
         dependencies: Optional[Dict[str, List[Dict[str, Any]]]] = None,
-        logo_path: Optional[str] = None
+        logo_path: Optional[str] = None,
+        all_regions: Optional[List[str]] = None,
+        all_categories: Optional[List[str]] = None,
+        all_validation_types: Optional[List[str]] = None
     ):
         """Initialize the Validation Scorecard PDF.
 
@@ -1000,6 +1035,9 @@ class ValidationScorecardPDF(FPDF):
             scorecard_data: Scorecard response with criteria_details, section_summaries, overall_assessment
             dependencies: Optional dict with 'upstream' and 'downstream' lists
             logo_path: Optional path to company logo
+            all_regions: Optional list of all available region names
+            all_categories: Optional list of all available model type categories
+            all_validation_types: Optional list of all available validation types
         """
         super().__init__(orientation='P', unit='mm', format='A4')
         self.validation_request = validation_request
@@ -1007,10 +1045,16 @@ class ValidationScorecardPDF(FPDF):
         self.scorecard_data = scorecard_data
         self.dependencies = dependencies or {'upstream': [], 'downstream': []}
         self.logo_path = logo_path
+        self.all_regions = all_regions or [
+            'United States', 'United Kingdom', 'EMEA', 'APAC', 'Canada']
+        self.all_categories = all_categories or [
+            'Scoring', 'Pricing', 'Risk Management', 'Forecasting', 'Regulatory', 'Other']
+        self.all_validation_types = all_validation_types or [
+            'New Model', 'New/Modified Payoff', 'Changes to Existing Model', 'Re-validation']
 
         # Page settings
         self.set_auto_page_break(auto=True, margin=15)
-        self.set_margins(15, 15, 15)
+        self.set_margins(10, 10, 10)
 
         # Group criteria by section
         self._group_criteria_by_section()
@@ -1033,64 +1077,94 @@ class ValidationScorecardPDF(FPDF):
         for summary in self.scorecard_data.get('section_summaries', []):
             section_code = summary.get('section_code')
             if section_code in self.sections:
-                self.sections[section_code]['name'] = summary.get('section_name', section_code)
+                self.sections[section_code]['name'] = summary.get(
+                    'section_name', section_code)
 
     def header(self):
         """Add minimal header - logo only."""
         if self.logo_path and os.path.exists(self.logo_path):
             try:
-                self.image(self.logo_path, x=15, y=8, h=10)
+                self.image(self.logo_path, x=10, y=8, h=10)
             except Exception:
                 pass
+
+        # Add Title
+        self.set_font('helvetica', 'B', 16)
+        self.set_xy(0, 10)
+        self.cell(0, 10, 'Scorecard', align='C', ln=True)
         self.ln(5)
 
     def footer(self):
         """Add page footer."""
-        self.set_y(-12)
+        self.set_y(-15)
         self.set_font('helvetica', 'I', 8)
         self.set_text_color(128, 128, 128)
 
         # Request reference
         request_id = self.validation_request.get('request_id', '')
         model_name = self.model.get('model_name', '')
-        self.cell(0, 5, f'Validation Request #{request_id} - {model_name}', align='C')
+        self.cell(
+            0, 5, f'Validation Request #{request_id} - {model_name}', align='C')
 
     def add_header_section(self):
         """Add the header section with model metadata and checkboxes."""
-        self.set_font('helvetica', 'B', 14)
-        self.set_text_color(*SECTION_TEXT)
-        self.cell(0, 8, 'Validation Scorecard', align='C', ln=True)
-        self.ln(3)
+        self.set_font('helvetica', '', 9)
+        self.set_text_color(0, 0, 0)
 
-        # Draw metadata box
-        box_y = self.get_y()
-        self.set_draw_color(200, 200, 200)
-        self.rect(15, box_y, 180, 35)
+        start_y = self.get_y()
 
-        # Left column
-        self.set_xy(18, box_y + 3)
-        self._add_metadata_row('Model Developer/Owner:', self._get_owner_name())
-        self._add_metadata_row('Model Name:', self.model.get('model_name', 'Unknown'))
-        self._add_metadata_row('Related Models:', self._get_related_models_text())
-
-        # Right column - Submission Type checkboxes
-        self.set_xy(115, box_y + 3)
+        # Left side: Model Info
+        self.set_xy(10, start_y)
         self.set_font('helvetica', 'B', 9)
-        self.cell(0, 5, 'Submission Type:', ln=True)
+        self.cell(40, 5, 'Model Developer/Owner:')
+        self.set_xy(50, start_y)
+        self.set_font('helvetica', '', 9)
+        self.cell(80, 5, self._get_owner_name())
+
+        # Business Line (under Owner)
+        self.set_xy(10, start_y + 6)
+        self.set_font('helvetica', 'B', 9)
+        self.cell(40, 5, 'Business Line:')
+        self.set_xy(50, start_y + 6)
+        self.set_font('helvetica', '', 9)
+        self.cell(80, 5, self.model.get('business_line', '') or 'Unknown')
+
+        self.set_xy(10, start_y + 12)
+        self.set_font('helvetica', 'B', 9)
+        self.cell(40, 5, 'Model Name:')
+        self.set_xy(50, start_y + 12)
+        self.set_font('helvetica', '', 9)
+        self.cell(80, 5, self.model.get('model_name', 'Unknown'))
+
+        self.set_xy(10, start_y + 18)
+        self.set_font('helvetica', 'B', 9)
+        self.cell(40, 5, 'Related Models:')
+        self.set_xy(50, start_y + 18)
+        self.set_font('helvetica', '', 9)
+        self.multi_cell(80, 5, self._get_related_models_text())
+
+        # Right side: Submission Type
+        right_x = 140
+        self.set_xy(right_x, start_y)
+        self.set_font('helvetica', 'B', 9)
+        self.cell(30, 5, 'Submission Type:')
+        self.set_font('helvetica', '', 9)
 
         validation_type = self._get_validation_type()
-        submission_types = ['Initial Validation', 'Annual Review', 'Model Change', 'Ad-Hoc', 'Other']
+        submission_types = self.all_validation_types
 
-        self.set_font('helvetica', '', 8)
+        curr_y = start_y + 6
         for stype in submission_types:
-            self.set_x(117)
-            checked = '1' if validation_type and stype.lower() in validation_type.lower() else '0'
-            # Draw checkbox
-            self._draw_checkbox(self.get_x(), self.get_y() + 1, checked == '1')
-            self.set_x(self.get_x() + 5)
-            self.cell(0, 4.5, stype, ln=True)
+            self.set_xy(right_x, curr_y)
+            # Check if type matches exactly (case-insensitive)
+            is_checked = (validation_type.lower() == stype.lower())
 
-        self.set_y(box_y + 38)
+            self._draw_checkbox(right_x, curr_y + 1, is_checked)
+            self.set_xy(right_x + 5, curr_y)
+            self.cell(50, 5, stype)
+            curr_y += 5
+
+        self.ln(10)
 
     def _add_metadata_row(self, label: str, value: str):
         """Add a label-value row in metadata section."""
@@ -1100,7 +1174,8 @@ class ValidationScorecardPDF(FPDF):
         self.set_font('helvetica', '', 9)
         # Truncate long values
         max_len = 40
-        display_value = value[:max_len] + '...' if len(value) > max_len else value
+        display_value = value[:max_len] + \
+            '...' if len(value) > max_len else value
         self.cell(55, 5, display_value, ln=True)
         self.set_x(x)
 
@@ -1114,6 +1189,9 @@ class ValidationScorecardPDF(FPDF):
 
     def _get_owner_name(self) -> str:
         """Get model owner name."""
+        if 'owner_name' in self.model:
+            return self.model['owner_name'] or 'Unknown'
+
         owner = self.model.get('owner', {})
         if isinstance(owner, dict):
             return owner.get('full_name', owner.get('email', 'Unknown'))
@@ -1126,11 +1204,22 @@ class ValidationScorecardPDF(FPDF):
 
         related = []
         for dep in upstream[:2]:  # Limit to 2 upstream
-            name = dep.get('feeder_model', {}).get('model_name', '')
+            # Handle both nested (feeder_model) and flat (model_name) structures
+            if 'feeder_model' in dep:
+                name = dep.get('feeder_model', {}).get('model_name', '')
+            else:
+                name = dep.get('model_name', '')
+
             if name:
                 related.append(name)
+
         for dep in downstream[:2]:  # Limit to 2 downstream
-            name = dep.get('consumer_model', {}).get('model_name', '')
+            # Handle both nested (consumer_model) and flat (model_name) structures
+            if 'consumer_model' in dep:
+                name = dep.get('consumer_model', {}).get('model_name', '')
+            else:
+                name = dep.get('model_name', '')
+
             if name:
                 related.append(name)
 
@@ -1161,9 +1250,10 @@ class ValidationScorecardPDF(FPDF):
         self.set_text_color(*SECTION_TEXT)
 
         badge_width = 35
-        badge_x = 15
+        badge_x = 10
         self.set_x(badge_x)
-        self.cell(badge_width, 10, rating or 'N/A', border=1, align='C', fill=True)
+        self.cell(badge_width, 10, rating or 'N/A',
+                  border=1, align='C', fill=True)
 
         # Score info
         numeric_score = overall.get('numeric_score', 0)
@@ -1172,7 +1262,8 @@ class ValidationScorecardPDF(FPDF):
 
         self.set_font('helvetica', '', 9)
         self.set_x(badge_x + badge_width + 5)
-        self.cell(0, 10, f'Score: {numeric_score} | Sections Rated: {rated_sections}/{total_sections}')
+        self.cell(
+            0, 10, f'Score: {numeric_score} | Sections Rated: {rated_sections}/{total_sections}')
         self.ln(12)
 
         # Narrative
@@ -1181,7 +1272,7 @@ class ValidationScorecardPDF(FPDF):
             self.cell(0, 5, 'Summary:', ln=True)
             self.set_font('helvetica', '', 9)
             self.set_fill_color(250, 250, 250)
-            self.multi_cell(180, 5, narrative, border=0, fill=True)
+            self.multi_cell(190, 5, narrative, border=1, fill=True)
         else:
             self.set_font('helvetica', 'I', 9)
             self.set_text_color(128, 128, 128)
@@ -1195,14 +1286,15 @@ class ValidationScorecardPDF(FPDF):
         self._add_section_header('Scorecard Assessment')
         self.ln(3)
 
-        # Column widths (total = 180mm)
-        col_widths = [45, 18, 45, 72]  # Criteria, Rating, Description, Comments
+        # Column widths (total = 190mm)
+        # Criteria, Rating, Description, Comments
+        col_widths = [60, 18, 56, 56]
         headers = ['Criteria', 'Rating', 'Description', 'Comments']
 
         # Table header
         self.set_fill_color(*HEADER_BG)
         self.set_text_color(*HEADER_TEXT)
-        self.set_font('helvetica', 'B', 8)
+        self.set_font('helvetica', 'B', 7)
 
         for header, width in zip(headers, col_widths):
             self.cell(width, 7, header, border=1, align='C', fill=True)
@@ -1211,8 +1303,14 @@ class ValidationScorecardPDF(FPDF):
         # Sort sections by code (1.0, 2.0, 3.0, etc.)
         sorted_sections = sorted(self.sections.items(), key=lambda x: x[0])
 
-        self.set_font('helvetica', '', 8)
+        self.set_font('helvetica', '', 7)
         self.set_text_color(*SECTION_TEXT)
+
+        # Create a lookup for section summaries
+        section_summaries = {
+            s.get('section_code'): s
+            for s in self.scorecard_data.get('section_summaries', [])
+        }
 
         for section_code, section_data in sorted_sections:
             # Check for page break
@@ -1221,19 +1319,40 @@ class ValidationScorecardPDF(FPDF):
                 # Repeat header
                 self.set_fill_color(*HEADER_BG)
                 self.set_text_color(*HEADER_TEXT)
-                self.set_font('helvetica', 'B', 8)
+                self.set_font('helvetica', 'B', 7)
                 for header, width in zip(headers, col_widths):
                     self.cell(width, 7, header, border=1, align='C', fill=True)
                 self.ln()
-                self.set_font('helvetica', '', 8)
+                self.set_font('helvetica', '', 7)
                 self.set_text_color(*SECTION_TEXT)
 
-            # Section header row
+            # Get section summary data
+            summary = section_summaries.get(section_code, {})
             section_name = section_data.get('name', section_code)
+            section_description = section_data.get('description') or ''
+            section_rating = summary.get('rating', 'N/A')
+
+            # Section header row
             self.set_fill_color(*SECTION_BG)
-            self.set_font('helvetica', 'B', 8)
-            self.cell(sum(col_widths), 6, f'{section_code} - {section_name}', border=1, fill=True, ln=True)
-            self.set_font('helvetica', '', 8)
+            self.set_font('helvetica', 'B', 7)
+
+            # 1. Section Name (spans first column)
+            self.cell(
+                col_widths[0], 6, f'{section_code} - {section_name}', border=1, fill=True)
+
+            # 2. Section Rating (spans Rating column)
+            rating_bg = scorecard_rating_to_color(section_rating)
+            self.set_fill_color(*rating_bg)
+            self.cell(col_widths[1], 6, section_rating,
+                      border=1, align='C', fill=True)
+
+            # 3. Remaining columns (Description + Comments)
+            self.set_fill_color(*SECTION_BG)
+            self.cell(sum(col_widths[2:]), 6,
+                      section_description, border=1, fill=True)
+
+            self.ln()
+            self.set_font('helvetica', '', 7)
 
             # Criteria rows
             for criterion in section_data['criteria']:
@@ -1243,32 +1362,37 @@ class ValidationScorecardPDF(FPDF):
                     # Repeat header
                     self.set_fill_color(*HEADER_BG)
                     self.set_text_color(*HEADER_TEXT)
-                    self.set_font('helvetica', 'B', 8)
+                    self.set_font('helvetica', 'B', 7)
                     for header, width in zip(headers, col_widths):
-                        self.cell(width, 7, header, border=1, align='C', fill=True)
+                        self.cell(width, 7, header, border=1,
+                                  align='C', fill=True)
                     self.ln()
-                    self.set_font('helvetica', '', 8)
+                    self.set_font('helvetica', '', 7)
                     self.set_text_color(*SECTION_TEXT)
 
                 self._draw_criterion_row(criterion, col_widths)
 
     def _draw_criterion_row(self, criterion: Dict[str, Any], col_widths: List[int]):
         """Draw a single criterion row with wrapped text."""
-        criterion_name = criterion.get('criterion_name', criterion.get('criterion_code', ''))
+        criterion_name = criterion.get(
+            'criterion_name', criterion.get('criterion_code', ''))
         rating = criterion.get('rating', '')
         description = criterion.get('description', '') or ''
         comments = criterion.get('comments', '') or ''
 
         # Calculate row height based on content
         # Estimate characters per line
-        chars_per_line_desc = max(1, int(col_widths[2] / 1.8))
-        chars_per_line_comm = max(1, int(col_widths[3] / 1.8))
+        chars_per_line_desc = max(1, int(col_widths[2] / 1.6))
+        chars_per_line_comm = max(1, int(col_widths[3] / 1.6))
 
-        desc_lines = max(1, len(description) // chars_per_line_desc + 1) if description else 1
-        comm_lines = max(1, len(comments) // chars_per_line_comm + 1) if comments else 1
-        name_lines = max(1, len(criterion_name) // 25 + 1)
+        desc_lines = max(1, len(description) //
+                         chars_per_line_desc + 1) if description else 1
+        comm_lines = max(1, len(comments) //
+                         chars_per_line_comm + 1) if comments else 1
+        name_lines = max(1, len(criterion_name) // 35 + 1)
 
-        max_lines = min(4, max(desc_lines, comm_lines, name_lines))  # Cap at 4 lines
+        max_lines = min(4, max(desc_lines, comm_lines,
+                        name_lines))  # Cap at 4 lines
         row_height = max(6, max_lines * 4)
 
         # Rating color
@@ -1282,16 +1406,17 @@ class ValidationScorecardPDF(FPDF):
         self.set_fill_color(255, 255, 255)
         self.rect(x_start, y_start, col_widths[0], row_height)
         self.set_xy(x_start + 1, y_start + 1)
-        self.multi_cell(col_widths[0] - 2, 4, criterion_name[:60], border=0)
+        self.set_font('helvetica', '', 7)
+        self.multi_cell(col_widths[0] - 2, 4, criterion_name[:80], border=0)
 
         # Rating cell (centered, colored)
         self.set_fill_color(*rating_color)
         x_rating = x_start + col_widths[0]
         self.rect(x_rating, y_start, col_widths[1], row_height, 'DF')
         self.set_xy(x_rating, y_start + (row_height - 4) / 2)
-        self.set_font('helvetica', 'B', 8)
+        self.set_font('helvetica', 'B', 7)
         self.cell(col_widths[1], 4, rating or '-', align='C')
-        self.set_font('helvetica', '', 8)
+        self.set_font('helvetica', '', 7)
 
         # Description cell
         self.set_fill_color(255, 255, 255)
@@ -1300,7 +1425,8 @@ class ValidationScorecardPDF(FPDF):
         self.set_xy(x_desc + 1, y_start + 1)
         # Truncate description
         max_desc_chars = chars_per_line_desc * max_lines
-        truncated_desc = description[:max_desc_chars] + '...' if len(description) > max_desc_chars else description
+        truncated_desc = description[:max_desc_chars] + \
+            '...' if len(description) > max_desc_chars else description
         self.multi_cell(col_widths[2] - 2, 4, truncated_desc, border=0)
 
         # Comments cell
@@ -1309,13 +1435,15 @@ class ValidationScorecardPDF(FPDF):
         self.set_xy(x_comm + 1, y_start + 1)
         # Truncate comments
         max_comm_chars = chars_per_line_comm * max_lines
-        truncated_comm = comments[:max_comm_chars] + '...' if len(comments) > max_comm_chars else comments
+        truncated_comm = comments[:max_comm_chars] + \
+            '...' if len(comments) > max_comm_chars else comments
         self.multi_cell(col_widths[3] - 2, 4, truncated_comm, border=0)
 
         # Draw all borders
         self.set_draw_color(200, 200, 200)
         self.line(x_start, y_start, x_start + sum(col_widths), y_start)
-        self.line(x_start, y_start + row_height, x_start + sum(col_widths), y_start + row_height)
+        self.line(x_start, y_start + row_height, x_start +
+                  sum(col_widths), y_start + row_height)
         for i, w in enumerate(col_widths):
             x = x_start + sum(col_widths[:i+1])
             self.line(x, y_start, x, y_start + row_height)
@@ -1334,42 +1462,73 @@ class ValidationScorecardPDF(FPDF):
         self._add_section_header('Model Classification')
         self.ln(3)
 
-        # Two column layout
-        col_width = 90
+        # Two column layout - wider left column for Model Usage + Type
+        left_col_width = 115
+        right_col_x = 135
+        right_col_width = 60
 
         # Model Usage (left column)
-        self.set_font('helvetica', 'B', 9)
-        self.cell(col_width, 5, 'Model Usage:', ln=False)
+        self.set_font('helvetica', 'B', 8)
+        self.cell(left_col_width, 5, 'Model Usage:', ln=False)
 
         # Region of Usage (right column header)
-        self.cell(col_width, 5, 'Region of Usage:', ln=True)
+        self.set_x(right_col_x)
+        self.cell(right_col_width, 5, 'Region of Usage:', ln=True)
 
-        model_type = self._get_model_type()
+        model_category = self._get_model_category()
         deployed_regions = self._get_deployed_regions()
 
-        # Model usage options
-        usage_types = ['Scoring', 'Pricing', 'Risk Management', 'Forecasting', 'Regulatory', 'Other']
+        # Model usage options (from ModelTypeCategory)
+        usage_types = self.all_categories
 
-        self.set_font('helvetica', '', 8)
+        self.set_font('helvetica', '', 7)
 
-        for i, usage in enumerate(usage_types):
-            self.set_x(15)
-            checked = model_type and usage.lower() in model_type.lower()
-            self._draw_checkbox(self.get_x(), self.get_y() + 1, checked)
-            self.set_x(self.get_x() + 5)
-            self.cell(col_width - 5, 4.5, usage, ln=False)
+        # Determine max rows needed (max of usage types or regions)
+        regions = self.all_regions
+        num_rows = max(len(usage_types), len(regions))
 
-            # Region checkbox (right column)
-            regions = ['United States', 'United Kingdom', 'EMEA', 'APAC', 'LATAM', 'Global']
-            if i < len(regions):
-                region = regions[i]
-                self.set_x(15 + col_width)
-                checked = any(region.lower() in r.lower() for r in deployed_regions)
+        for i in range(num_rows):
+            # Model Usage (left column)
+            if i < len(usage_types):
+                usage = usage_types[i]
+                self.set_x(15)
+                checked = model_category and usage.lower() == model_category.lower()
+
+                # Append specific model type if checked
+                if checked:
+                    specific_type = self._get_model_type()
+                    if specific_type:
+                        usage = f"{usage} ({specific_type})"
+
                 self._draw_checkbox(self.get_x(), self.get_y() + 1, checked)
                 self.set_x(self.get_x() + 5)
-                self.cell(col_width - 5, 4.5, region)
+                self.cell(left_col_width - 5, 4, usage, ln=False)
+
+            # Region checkbox (right column)
+            if i < len(regions):
+                region = regions[i]
+                self.set_x(right_col_x)
+
+                checked = any(region.lower() in r.lower()
+                              for r in deployed_regions)
+                self._draw_checkbox(self.get_x(), self.get_y() + 1, checked)
+                self.set_x(self.get_x() + 5)
+                self.cell(right_col_width - 5, 4, region)
 
             self.ln()
+
+        # Regulatory Categories (below columns)
+        self.ln(2)
+        self.set_font('helvetica', 'B', 8)
+        self.cell(35, 5, 'Regulatory Categories:', ln=False)
+        self.set_font('helvetica', '', 8)
+        reg_cats = self._get_regulatory_categories()
+        self.cell(0, 5, reg_cats if reg_cats else 'None', ln=True)
+
+    def _get_regulatory_categories(self) -> str:
+        """Get comma-separated list of regulatory categories."""
+        cats = self.model.get('regulatory_categories', [])
+        return ', '.join(cats)
 
     def _get_model_type(self) -> str:
         """Get model type label."""
@@ -1377,6 +1536,10 @@ class ValidationScorecardPDF(FPDF):
         if isinstance(model_type, dict):
             return model_type.get('label', model_type.get('code', ''))
         return str(model_type) if model_type else ''
+
+    def _get_model_category(self) -> str:
+        """Get model category name."""
+        return self.model.get('model_category', '') or ''
 
     def _get_deployed_regions(self) -> List[str]:
         """Get list of deployed region names."""
@@ -1421,7 +1584,10 @@ def generate_validation_scorecard_pdf(
     model: Dict[str, Any],
     scorecard_data: Dict[str, Any],
     dependencies: Optional[Dict[str, List[Dict[str, Any]]]] = None,
-    logo_path: Optional[str] = None
+    logo_path: Optional[str] = None,
+    all_regions: Optional[List[str]] = None,
+    all_categories: Optional[List[str]] = None,
+    all_validation_types: Optional[List[str]] = None
 ) -> bytes:
     """Generate a Validation Scorecard PDF.
 
@@ -1431,6 +1597,9 @@ def generate_validation_scorecard_pdf(
         scorecard_data: Scorecard response from API
         dependencies: Optional upstream/downstream dependencies
         logo_path: Optional path to company logo
+        all_regions: Optional list of all available region names
+        all_categories: Optional list of all available model type categories
+        all_validation_types: Optional list of all available validation types
 
     Returns:
         PDF file as bytes
@@ -1440,6 +1609,9 @@ def generate_validation_scorecard_pdf(
         model=model,
         scorecard_data=scorecard_data,
         dependencies=dependencies,
-        logo_path=logo_path
+        logo_path=logo_path,
+        all_regions=all_regions,
+        all_categories=all_categories,
+        all_validation_types=all_validation_types
     )
     return pdf.generate()

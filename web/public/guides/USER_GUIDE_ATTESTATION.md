@@ -207,7 +207,7 @@ The cycle starts in "Pending" status and doesn't affect model owners until opene
 When a cycle opens, the system evaluates each active model against the configured scheduling rules:
 
 1. For each model, the system finds the highest-priority applicable rule
-2. Rules are evaluated in priority order: Model Override > Regional Override > Owner Threshold > Global Default
+2. Rules are evaluated by type precedence first (Model Override > Regional Override > Owner Threshold > Global Default), then by priority within the same type
 3. The rule determines the attestation frequency (Annual or Quarterly)
 4. If the model is due based on its frequency and last attestation date, an attestation record is created
 5. The attestation is assigned to the model's owner with the cycle's submission due date
@@ -355,9 +355,9 @@ Scheduling rules determine attestation frequency for model owners. By default, a
 
 ### Rule Priority
 
-When multiple rules could apply, the highest priority rule wins:
-- Higher priority number = higher precedence
-- Example: A Model Override (priority 50) beats Global Default (priority 10)
+When multiple rules could apply, type precedence is evaluated first, then priority within that type:
+- Higher priority number = higher precedence within the same rule type
+- Example: A Model Override (priority 10) still beats Global Default (priority 100)
 
 ### Managing Rules
 
@@ -392,7 +392,9 @@ To change these fields, deactivate the existing rule and create a new one.
 ### Validation Requirements
 
 - **Owner Threshold rules** must have at least one criterion (minimum model count or high fluctuation flag)
-- **Global Default rules**: Only one active Global Default rule can exist at a time
+- **Global Default rules**: Only one active overlapping Global Default rule can exist at a time
+- **Model/Regional Override rules**: Only one active overlapping rule per model/region is allowed
+- **Date windows**: End date cannot be earlier than the effective date
 
 ### High Fluctuation Flag
 

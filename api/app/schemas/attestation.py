@@ -328,6 +328,8 @@ class AttestationRecordResponse(BaseModel):
     model: ModelRef
     attesting_user: UserRef
     due_date: date
+    applied_rule_id: Optional[int] = None
+    applied_frequency: Optional[AttestationFrequencyEnum] = None
     status: AttestationRecordStatusEnum
     attested_at: Optional[datetime] = None
     decision: Optional[AttestationDecisionEnum] = None

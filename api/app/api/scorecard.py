@@ -32,7 +32,10 @@ from app.models.scorecard import (
 )
 from app.models.validation import ValidationRequest
 from app.models.model import Model
+from app.models.region import Region
+from app.models.model_type_taxonomy import ModelTypeCategory, ModelType
 from app.models.model_feed_dependency import ModelFeedDependency
+from app.models.taxonomy import Taxonomy, TaxonomyValue
 from app.schemas.scorecard import (
     ScorecardSectionResponse,
     ScorecardSectionWithCriteria,
@@ -104,7 +107,8 @@ def get_request_or_404(db: Session, request_id: int) -> ValidationRequest:
         .first()
     )
     if not validation_request:
-        raise HTTPException(status_code=404, detail="Validation request not found")
+        raise HTTPException(
+            status_code=404, detail="Validation request not found")
     return validation_request
 
 
@@ -127,7 +131,7 @@ def get_scorecard_config_from_db(db: Session) -> dict:
     # Build config dict matching SCORE_CRITERIA.json format
     config = {
         "sections": [
-            {"code": s.code, "name": s.name}
+            {"code": s.code, "name": s.name, "description": s.description}
             for s in sections
         ],
         "criteria": [
@@ -397,7 +401,8 @@ def export_validation_scorecard_pdf(
     )
 
     if not validation_request:
-        raise HTTPException(status_code=404, detail="Validation request not found")
+        raise HTTPException(
+            status_code=404, detail="Validation request not found")
 
     # Get the primary model (first model in the request)
     if not validation_request.models:
@@ -412,27 +417,40 @@ def export_validation_scorecard_pdf(
         db.query(Model)
         .options(
             joinedload(Model.owner),
-            joinedload(Model.model_type),
+            joinedload(Model.model_type).joinedload(ModelType.category),
             joinedload(Model.model_regions),
-            joinedload(Model.inbound_dependencies).joinedload(ModelFeedDependency.feeder_model),
-            joinedload(Model.outbound_dependencies).joinedload(ModelFeedDependency.consumer_model),
+            joinedload(Model.regulatory_categories),
+            joinedload(Model.inbound_dependencies).joinedload(
+                ModelFeedDependency.feeder_model),
+            joinedload(Model.outbound_dependencies).joinedload(
+                ModelFeedDependency.consumer_model),
         )
         .filter(Model.model_id == model.model_id)
         .first()
     )
 
     # Get scorecard configuration and data
-    config = get_scorecard_config_from_db(db)
-    if not config["criteria"]:
+    # Prefer snapshot from result to ensure historical accuracy
+    config = None
+    if validation_request.scorecard_result and validation_request.scorecard_result.config_snapshot:
+        config = validation_request.scorecard_result.config_snapshot
+
+    if not config:
+        config = get_scorecard_config_from_db(db)
+
+    if not config.get("criteria"):
         config = load_scorecard_config()
 
     # Ensure scorecard result exists
     if not validation_request.scorecard_result:
         compute_and_store_result(db, validation_request, config)
         db.commit()
+        # Refresh to ensure we have the result object
+        db.refresh(validation_request)
 
     # Build scorecard response data
-    scorecard_response = _build_scorecard_response(db, validation_request, config)
+    scorecard_response = _build_scorecard_response(
+        db, validation_request, config)
 
     # Build validation request dict for PDF
     validation_request_dict = {
@@ -448,9 +466,14 @@ def export_validation_scorecard_pdf(
         "model_id": model.model_id,
         "model_name": model.model_name,
         "owner_name": model.owner.full_name if model.owner else None,
-        "model_type": model.model_type.label if model.model_type else None,
-        "regions": [
-            {"region_name": mr.region.name}
+        "business_line": model.business_line_name,
+        "model_type": model.model_type.name if model.model_type else None,
+        "model_category": model.model_type.category.name if model.model_type and model.model_type.category else None,
+        "regulatory_categories": [
+            rc.label for rc in model.regulatory_categories
+        ] if model.regulatory_categories else [],
+        "deployed_regions": [
+            {"name": mr.region.name}
             for mr in model.model_regions
             if mr.region
         ] if model.model_regions else [],
@@ -505,9 +528,29 @@ def export_validation_scorecard_pdf(
             "numeric_score": scorecard_response.overall_assessment.numeric_score,
             "rating": scorecard_response.overall_assessment.rating,
             "overall_assessment_narrative": scorecard_response.overall_assessment.overall_assessment_narrative,
+            "sections_count": scorecard_response.overall_assessment.sections_count,
+            "rated_sections_count": scorecard_response.overall_assessment.rated_sections_count,
         },
         "computed_at": scorecard_response.computed_at.isoformat() if scorecard_response.computed_at else None,
     }
+
+    # Fetch all regions for the footer
+    all_regions = db.query(Region).order_by(Region.name).all()
+    all_regions_list = [r.name for r in all_regions]
+
+    # Fetch all model type categories for the footer
+    all_categories = db.query(ModelTypeCategory).order_by(
+        ModelTypeCategory.sort_order).all()
+    all_categories_list = [c.name for c in all_categories]
+
+    # Fetch all validation types for the header
+    validation_type_taxonomy = db.query(Taxonomy).filter(
+        Taxonomy.name == "Validation Type").first()
+    if validation_type_taxonomy:
+        all_validation_types_list = [
+            v.label for v in validation_type_taxonomy.values if v.is_active]
+    else:
+        all_validation_types_list = []
 
     # Generate PDF
     pdf_bytes = generate_validation_scorecard_pdf(
@@ -515,6 +558,9 @@ def export_validation_scorecard_pdf(
         model=model_dict,
         scorecard_data=scorecard_dict,
         dependencies=dependencies_dict,
+        all_regions=all_regions_list,
+        all_categories=all_categories_list,
+        all_validation_types=all_validation_types_list,
     )
 
     # Build filename
@@ -857,7 +903,8 @@ def create_section(
 ):
     """Create a new scorecard section. Admin only."""
     # Check for duplicate code
-    existing = db.query(ScorecardSection).filter(ScorecardSection.code == data.code).first()
+    existing = db.query(ScorecardSection).filter(
+        ScorecardSection.code == data.code).first()
     if existing:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -896,7 +943,8 @@ def update_section(
     current_user: User = Depends(require_admin)
 ):
     """Update a scorecard section. Admin only."""
-    section = db.query(ScorecardSection).filter(ScorecardSection.section_id == section_id).first()
+    section = db.query(ScorecardSection).filter(
+        ScorecardSection.section_id == section_id).first()
     if not section:
         raise HTTPException(status_code=404, detail="Section not found")
 
@@ -905,13 +953,16 @@ def update_section(
         changes["name"] = {"old": section.name, "new": data.name}
         section.name = data.name
     if data.description is not None and data.description != section.description:
-        changes["description"] = {"old": section.description, "new": data.description}
+        changes["description"] = {
+            "old": section.description, "new": data.description}
         section.description = data.description
     if data.sort_order is not None and data.sort_order != section.sort_order:
-        changes["sort_order"] = {"old": section.sort_order, "new": data.sort_order}
+        changes["sort_order"] = {
+            "old": section.sort_order, "new": data.sort_order}
         section.sort_order = data.sort_order
     if data.is_active is not None and data.is_active != section.is_active:
-        changes["is_active"] = {"old": section.is_active, "new": data.is_active}
+        changes["is_active"] = {
+            "old": section.is_active, "new": data.is_active}
         section.is_active = data.is_active
 
     if changes:
@@ -942,7 +993,8 @@ def delete_section(
     This will also delete all criteria belonging to this section.
     Use with caution - consider deactivating instead.
     """
-    section = db.query(ScorecardSection).filter(ScorecardSection.section_id == section_id).first()
+    section = db.query(ScorecardSection).filter(
+        ScorecardSection.section_id == section_id).first()
     if not section:
         raise HTTPException(status_code=404, detail="Section not found")
 
@@ -1044,7 +1096,8 @@ def create_criterion(
 ):
     """Create a new scorecard criterion. Admin only."""
     # Verify section exists
-    section = db.query(ScorecardSection).filter(ScorecardSection.section_id == data.section_id).first()
+    section = db.query(ScorecardSection).filter(
+        ScorecardSection.section_id == data.section_id).first()
     if not section:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -1052,7 +1105,8 @@ def create_criterion(
         )
 
     # Check for duplicate code
-    existing = db.query(ScorecardCriterion).filter(ScorecardCriterion.code == data.code).first()
+    existing = db.query(ScorecardCriterion).filter(
+        ScorecardCriterion.code == data.code).first()
     if existing:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -1080,7 +1134,8 @@ def create_criterion(
         entity_id=criterion.criterion_id,
         action="CREATE",
         user_id=current_user.user_id,
-        changes={"code": data.code, "name": data.name, "section_id": data.section_id}
+        changes={"code": data.code, "name": data.name,
+                 "section_id": data.section_id}
     )
 
     db.commit()
@@ -1122,25 +1177,32 @@ def update_criterion(
         changes["name"] = {"old": criterion.name, "new": data.name}
         criterion.name = data.name
     if data.description_prompt is not None and data.description_prompt != criterion.description_prompt:
-        changes["description_prompt"] = {"old": criterion.description_prompt, "new": data.description_prompt}
+        changes["description_prompt"] = {
+            "old": criterion.description_prompt, "new": data.description_prompt}
         criterion.description_prompt = data.description_prompt
     if data.comments_prompt is not None and data.comments_prompt != criterion.comments_prompt:
-        changes["comments_prompt"] = {"old": criterion.comments_prompt, "new": data.comments_prompt}
+        changes["comments_prompt"] = {
+            "old": criterion.comments_prompt, "new": data.comments_prompt}
         criterion.comments_prompt = data.comments_prompt
     if data.include_in_summary is not None and data.include_in_summary != criterion.include_in_summary:
-        changes["include_in_summary"] = {"old": criterion.include_in_summary, "new": data.include_in_summary}
+        changes["include_in_summary"] = {
+            "old": criterion.include_in_summary, "new": data.include_in_summary}
         criterion.include_in_summary = data.include_in_summary
     if data.allow_zero is not None and data.allow_zero != criterion.allow_zero:
-        changes["allow_zero"] = {"old": criterion.allow_zero, "new": data.allow_zero}
+        changes["allow_zero"] = {
+            "old": criterion.allow_zero, "new": data.allow_zero}
         criterion.allow_zero = data.allow_zero
     if data.weight is not None and data.weight != float(criterion.weight):
-        changes["weight"] = {"old": float(criterion.weight), "new": data.weight}
+        changes["weight"] = {"old": float(
+            criterion.weight), "new": data.weight}
         criterion.weight = data.weight
     if data.sort_order is not None and data.sort_order != criterion.sort_order:
-        changes["sort_order"] = {"old": criterion.sort_order, "new": data.sort_order}
+        changes["sort_order"] = {
+            "old": criterion.sort_order, "new": data.sort_order}
         criterion.sort_order = data.sort_order
     if data.is_active is not None and data.is_active != criterion.is_active:
-        changes["is_active"] = {"old": criterion.is_active, "new": data.is_active}
+        changes["is_active"] = {
+            "old": criterion.is_active, "new": data.is_active}
         criterion.is_active = data.is_active
 
     if changes:
@@ -1229,7 +1291,8 @@ def list_config_versions(
 
     # Find the active version and check for unpublished changes
     active_version = next((v for v in versions if v.is_active), None)
-    active_has_changes = _check_unpublished_changes(db, active_version) if active_version else False
+    active_has_changes = _check_unpublished_changes(
+        db, active_version) if active_version else False
 
     return [
         ScorecardConfigVersionResponse(
@@ -1305,7 +1368,8 @@ def get_config_version(
         raise HTTPException(status_code=404, detail="Version not found")
 
     # Only check unpublished changes for active version
-    has_changes = _check_unpublished_changes(db, version) if version.is_active else False
+    has_changes = _check_unpublished_changes(
+        db, version) if version.is_active else False
 
     return _build_version_detail_response(version, db, has_changes)
 
@@ -1325,7 +1389,8 @@ def publish_config_version(
     Admin only.
     """
     # Get next version number
-    max_version = db.query(func.max(ScorecardConfigVersion.version_number)).scalar() or 0
+    max_version = db.query(
+        func.max(ScorecardConfigVersion.version_number)).scalar() or 0
     new_version_number = max_version + 1
 
     # Deactivate previous active version

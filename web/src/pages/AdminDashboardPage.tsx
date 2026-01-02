@@ -494,7 +494,7 @@ export default function AdminDashboardPage() {
                             )}
                             <div className="mt-3">
                                 <Link
-                                    to="/attestations/cycles"
+                                    to="/attestations?tab=cycles"
                                     className="inline-flex items-center px-3 py-1.5 text-sm font-medium text-white bg-blue-600 rounded hover:bg-blue-700"
                                 >
                                     Open Attestation Cycles

@@ -10,6 +10,7 @@ interface TaxonomyValue {
 interface Model {
     model_id: number;
     model_name: string;
+    is_mrsa?: boolean;
 }
 
 interface DependencyRelation {
@@ -82,13 +83,13 @@ export default function ModelDependencyModal({
     const fetchData = async (currentEditData?: DependencyRelation) => {
         try {
             const [modelsRes, taxonomiesRes] = await Promise.all([
-                api.get('/models'),
+                api.get('/models', { params: { is_mrsa: false } }),
                 api.get('/taxonomies')
             ]);
 
             // Filter out current model from selection
             const availableModels = modelsRes.data.filter(
-                (m: Model) => m.model_id !== currentModelId
+                (m: Model) => m.model_id !== currentModelId && !m.is_mrsa
             );
             setModels(availableModels);
 
