@@ -12,6 +12,7 @@ from app.core.security import get_password_hash, verify_password
 from app.core.roles import RoleCode, ROLE_CODE_TO_DISPLAY
 from app.models import User, Vendor, EntraUser, Taxonomy, TaxonomyValue, ValidationWorkflowSLA, ValidationPolicy, Region, ValidationComponentDefinition, ComponentDefinitionConfiguration, ComponentDefinitionConfigItem, ModelTypeCategory, ModelType, ValidationRequest, ValidationOutcome, ValidationRequestModelVersion, ApproverRole, ConditionalApprovalRule, RuleRequiredApprover, MapApplication, ValidationAssignment, ValidationStatusHistory, Role
 from app.models.lob import LOBUnit
+from app.models.team import Team
 from app.models.recommendation import RecommendationPriorityConfig, RecommendationTimeframeConfig
 from app.models.attestation import AttestationSchedulingRule, AttestationSchedulingRuleType, AttestationFrequency, CoverageTarget, AttestationQuestionConfig
 from app.models.kpm import KpmCategory, Kpm
@@ -1134,6 +1135,47 @@ def seed_lob_units(db) -> int:
     return mrm.lob_id
 
 
+def seed_teams(db) -> None:
+    """Seed sample teams and assign them to matching LOB subtrees when available."""
+    team_definitions = [
+        {
+            "name": "Credit Risk Team",
+            "description": "Credit risk reporting team",
+            "lob_match": "Credit Risk",
+        },
+        {
+            "name": "Market Risk Team",
+            "description": "Market risk reporting team",
+            "lob_match": "Market Risk",
+        },
+        {
+            "name": "Operations Team",
+            "description": "Operations reporting team",
+            "lob_match": "Operations",
+        },
+    ]
+
+    for definition in team_definitions:
+        team = db.query(Team).filter(Team.name == definition["name"]).first()
+        if not team:
+            team = Team(
+                name=definition["name"],
+                description=definition["description"],
+                is_active=True,
+            )
+            db.add(team)
+            db.flush()
+
+        lob = db.query(LOBUnit).filter(
+            LOBUnit.name.ilike(f"%{definition['lob_match']}%")
+        ).order_by(LOBUnit.level).first()
+        if lob and (lob.team_id is None or lob.team_id == team.team_id):
+            lob.team_id = team.team_id
+            db.add(lob)
+
+    db.commit()
+
+
 def seed_database():
     """Seed essential data."""
     db = SessionLocal()
@@ -1143,6 +1185,7 @@ def seed_database():
 
         # Seed LOB hierarchy first (users need LOB assignment)
         default_lob_id = seed_lob_units(db)
+        seed_teams(db)
         role_id_map = seed_roles(db)
         seed_demo_data = should_seed_demo_data()
         admin_password = get_seed_admin_password()

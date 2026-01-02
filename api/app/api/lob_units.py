@@ -14,7 +14,9 @@ from app.core.deps import get_current_user
 from app.core.roles import is_admin
 from app.models.user import User
 from app.models.lob import LOBUnit
+from app.models.team import Team
 from app.models.audit_log import AuditLog
+from app.core.team_utils import build_lob_team_map
 from app.schemas.lob import (
     LOBUnitCreate,
     LOBUnitUpdate,
@@ -23,6 +25,8 @@ from app.schemas.lob import (
     LOBUnitWithAncestors,
     LOBImportResult,
     LOBImportPreview,
+    LOBTreeWithTeamsResponse,
+    LOBUnitTeamTreeNode,
 )
 
 router = APIRouter()
@@ -257,6 +261,58 @@ def get_lob_tree(
     """Get hierarchical tree structure of LOB units."""
     lobs = db.query(LOBUnit).all()
     return build_tree(db, lobs, include_inactive)
+
+
+@router.get("/tree-with-teams", response_model=LOBTreeWithTeamsResponse)
+def get_lob_tree_with_teams(
+    include_inactive: bool = Query(False, description="Include inactive LOB units"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Get the full LOB hierarchy with direct and effective team assignments."""
+    lobs = db.query(LOBUnit).order_by(
+        LOBUnit.level, LOBUnit.sort_order, LOBUnit.name
+    ).all()
+    if not include_inactive:
+        lobs = [lob for lob in lobs if lob.is_active]
+
+    teams = db.query(Team).order_by(Team.name).all()
+    team_name_map = {team.team_id: team.name for team in teams}
+    active_teams = [{"team_id": team.team_id, "name": team.name} for team in teams if team.is_active]
+
+    lob_team_map = build_lob_team_map(db)
+
+    lob_dict: Dict[int, dict] = {}
+    for lob in lobs:
+        direct_team_id = lob.team_id
+        effective_team_id = lob_team_map.get(lob.lob_id)
+        lob_dict[lob.lob_id] = {
+            "lob_id": lob.lob_id,
+            "parent_id": lob.parent_id,
+            "code": lob.code,
+            "name": lob.name,
+            "org_unit": lob.org_unit,
+            "level": lob.level,
+            "is_active": lob.is_active,
+            "direct_team_id": direct_team_id,
+            "direct_team_name": team_name_map.get(direct_team_id),
+            "effective_team_id": effective_team_id,
+            "effective_team_name": team_name_map.get(effective_team_id),
+            "children": [],
+        }
+
+    roots: List[dict] = []
+    for lob_id, lob_data in lob_dict.items():
+        parent_id = lob_data["parent_id"]
+        if parent_id and parent_id in lob_dict:
+            lob_dict[parent_id]["children"].append(lob_data)
+        else:
+            roots.append(lob_data)
+
+    return {
+        "lob_units": roots,
+        "teams": active_teams,
+    }
 
 
 @router.get("/export-csv")

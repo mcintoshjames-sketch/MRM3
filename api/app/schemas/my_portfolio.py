@@ -99,6 +99,8 @@ class MyPortfolioResponse(BaseModel):
     """Complete portfolio report response."""
     report_generated_at: datetime = Field(..., description="Timestamp when report was generated")
     as_of_date: date = Field(..., description="Date the metrics are calculated as of")
+    team_id: Optional[int] = Field(None, description="Team ID if filtered, 0 for Unassigned, None for all")
+    team_name: str = Field("All Teams", description="Team name or 'All Teams' if no filter")
 
     summary: PortfolioSummary = Field(..., description="Summary statistics")
     action_items: List[ActionItem] = Field(..., description="Items requiring action, sorted by urgency")

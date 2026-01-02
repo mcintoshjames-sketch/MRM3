@@ -135,6 +135,7 @@ def build_capabilities(role_code: str | None) -> dict:
         "can_manage_models": is_admin_or_validator,
         "can_manage_model_relationships": is_admin,
         "can_manage_lob": is_admin,
+        "can_manage_teams": is_admin,
         "can_manage_validations": is_admin_or_validator,
         "can_manage_recommendations": is_admin_or_validator,
         "can_manage_decommissioning": is_admin_or_validator,

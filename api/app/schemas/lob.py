@@ -5,6 +5,8 @@ from typing import List, Optional
 from datetime import datetime
 import re
 
+from app.schemas.team import TeamBasic
+
 
 class LOBUnitBase(BaseModel):
     """Base schema for LOB unit."""
@@ -150,6 +152,34 @@ class LOBUnitTreeNode(BaseModel):
 
 # Enable self-referential model
 LOBUnitTreeNode.model_rebuild()
+
+
+class LOBUnitTeamTreeNode(BaseModel):
+    """LOB unit tree node with team assignment metadata."""
+    lob_id: int
+    parent_id: Optional[int] = None
+    code: str
+    name: str
+    org_unit: str
+    level: int
+    is_active: bool
+    direct_team_id: Optional[int] = None
+    direct_team_name: Optional[str] = None
+    effective_team_id: Optional[int] = None
+    effective_team_name: Optional[str] = None
+    children: List["LOBUnitTeamTreeNode"] = Field(default_factory=list)
+
+    class Config:
+        from_attributes = True
+
+
+LOBUnitTeamTreeNode.model_rebuild()
+
+
+class LOBTreeWithTeamsResponse(BaseModel):
+    """Response schema for LOB tree with team assignments."""
+    lob_units: List[LOBUnitTeamTreeNode] = Field(default_factory=list)
+    teams: List[TeamBasic] = Field(default_factory=list)
 
 
 class LOBImportPreview(BaseModel):

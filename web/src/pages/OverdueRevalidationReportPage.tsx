@@ -6,6 +6,7 @@ import OverdueCommentaryModal, { OverdueType } from '../components/OverdueCommen
 import { getResidualRiskBadgeClass } from '../api/residualRiskMap';
 import FilterStatusBar from '../components/FilterStatusBar';
 import StatFilterCard from '../components/StatFilterCard';
+import { getTeams, Team as TeamOption } from '../api/teams';
 
 interface RegionInfo {
     region_id: number;
@@ -84,6 +85,8 @@ interface OverdueRevalidationReportResponse {
         region_name: string | null;
         comment_status: string | null;
         owner_id: number | null;
+        team_id?: number | null;
+        team_name?: string | null;
         days_overdue_min: number | null;
         past_due_level: string | null;
         needs_update_only: boolean;
@@ -105,10 +108,12 @@ const OverdueRevalidationReportPage: React.FC = () => {
     const [loading, setLoading] = useState(true);
     const [reportData, setReportData] = useState<OverdueRevalidationReportResponse | null>(null);
     const [regions, setRegions] = useState<RegionInfo[]>([]);
+    const [teams, setTeams] = useState<TeamOption[]>([]);
 
     // Filters
     const [overdueTypeFilter, setOverdueTypeFilter] = useState<string>(initialOverdueTypeFilter);
     const [regionFilter, setRegionFilter] = useState<string>('');
+    const [teamFilter, setTeamFilter] = useState<string>('');
     const [commentStatusFilter, setCommentStatusFilter] = useState<string>('');
     const [pastDueLevelFilter, setPastDueLevelFilter] = useState<string>('');
     const [needsUpdateOnly, setNeedsUpdateOnly] = useState(false);
@@ -131,11 +136,12 @@ const OverdueRevalidationReportPage: React.FC = () => {
 
     useEffect(() => {
         fetchRegions();
+        getTeams().then((res) => setTeams(res.data)).catch(console.error);
     }, []);
 
     useEffect(() => {
         fetchReport();
-    }, [overdueTypeFilter, regionFilter, commentStatusFilter, pastDueLevelFilter, needsUpdateOnly, daysOverdueMin]);
+    }, [overdueTypeFilter, regionFilter, teamFilter, commentStatusFilter, pastDueLevelFilter, needsUpdateOnly, daysOverdueMin]);
 
     const fetchRegions = async () => {
         try {
@@ -152,6 +158,11 @@ const OverdueRevalidationReportPage: React.FC = () => {
             const params = new URLSearchParams();
             if (overdueTypeFilter) params.append('overdue_type', overdueTypeFilter);
             if (regionFilter) params.append('region_id', regionFilter);
+            if (teamFilter === 'unassigned') {
+                params.append('team_id', '0');
+            } else if (teamFilter) {
+                params.append('team_id', teamFilter);
+            }
             if (commentStatusFilter) params.append('comment_status', commentStatusFilter);
             if (pastDueLevelFilter) params.append('past_due_level', pastDueLevelFilter);
             if (needsUpdateOnly) params.append('needs_update_only', 'true');
@@ -537,6 +548,22 @@ const OverdueRevalidationReportPage: React.FC = () => {
                                 {regions.map(region => (
                                     <option key={region.region_id} value={region.region_id}>
                                         {region.region_name}
+                                    </option>
+                                ))}
+                            </select>
+                        </div>
+                        <div>
+                            <label className="block text-xs font-medium text-gray-500 mb-1">Team</label>
+                            <select
+                                value={teamFilter}
+                                onChange={(e) => setTeamFilter(e.target.value)}
+                                className="block w-40 rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 text-sm"
+                            >
+                                <option value="">All Teams</option>
+                                <option value="unassigned">Unassigned</option>
+                                {teams.filter(team => team.is_active).map(team => (
+                                    <option key={team.team_id} value={String(team.team_id)}>
+                                        {team.name}
                                     </option>
                                 ))}
                             </select>

@@ -88,10 +88,10 @@ const ModelRiskAssessmentTab: React.FC<Props> = ({ modelId, regions = [] }) => {
         || qualitativeOverrideComment.trim() !== ''
         || derivedOverride !== null
         || derivedOverrideComment.trim() !== '';
-    const canCopyFromGlobal = selectedRegionId !== null
+    const showCopyFromGlobal = selectedRegionId !== null
         && !currentAssessment
-        && globalAssessment?.is_complete === true
         && canManageModelsFlag;
+    const canCopyFromGlobal = showCopyFromGlobal && globalAssessment?.is_complete === true;
     const formHasUnsavedChanges = (() => {
         const normalize = (value: string | null | undefined) => value ?? '';
 
@@ -205,7 +205,7 @@ const ModelRiskAssessmentTab: React.FC<Props> = ({ modelId, regions = [] }) => {
     }, [currentAssessment, factors, selectedRegionId]);
 
     const handleCopyFromGlobal = () => {
-        if (!globalAssessment) return;
+        if (!globalAssessment?.is_complete) return;
 
         setQuantitativeRating(globalAssessment.quantitative_rating);
         setQuantitativeComment(globalAssessment.quantitative_comment || '');
@@ -670,13 +670,29 @@ const ModelRiskAssessmentTab: React.FC<Props> = ({ modelId, regions = [] }) => {
                             <option key={r.region_id} value={r.region_id}>{r.name}</option>
                         ))}
                     </select>
-                    {canCopyFromGlobal && (
-                        <button
-                            onClick={() => hasFormData ? setShowCopyFromGlobalModal(true) : handleCopyFromGlobal()}
-                            className="px-3 py-2 text-sm font-medium text-blue-700 bg-blue-100 border border-blue-200 rounded-md hover:bg-blue-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                    {showCopyFromGlobal && (
+                        <span
+                            title={
+                                canCopyFromGlobal
+                                    ? ''
+                                    : globalAssessment
+                                        ? 'Global assessment must be complete before copying.'
+                                        : 'No global assessment available to copy.'
+                            }
                         >
-                            Copy from Global
-                        </button>
+                            <button
+                                type="button"
+                                onClick={() => hasFormData ? setShowCopyFromGlobalModal(true) : handleCopyFromGlobal()}
+                                disabled={!canCopyFromGlobal}
+                                className={`px-3 py-2 text-sm font-medium border rounded-md focus:outline-none focus:ring-2 focus:ring-offset-2 ${
+                                    canCopyFromGlobal
+                                        ? 'text-blue-700 bg-blue-100 border-blue-200 hover:bg-blue-200 focus:ring-blue-500'
+                                        : 'text-gray-400 bg-gray-100 border-gray-200 cursor-not-allowed'
+                                }`}
+                            >
+                                Copy from Global
+                            </button>
+                        </span>
                     )}
                 </div>
             </div>

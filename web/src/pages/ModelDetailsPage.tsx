@@ -146,6 +146,10 @@ interface Model {
     mrsa_risk_rationale: string | null;
     mrsa_risk_level: TaxonomyValue | null;
     business_line_name: string | null;
+    team?: {
+        team_id: number;
+        name: string;
+    } | null;
     // Computed approval status fields
     approval_status: string | null;
     approval_status_label: string | null;
@@ -2828,6 +2832,16 @@ export default function ModelDetailsPage() {
                                 </span>
                             ) : (
                                 <p className="text-lg text-gray-400">-</p>
+                            )}
+                        </div>
+                        <div>
+                            <h4 className="text-sm font-medium text-gray-500 mb-1">Team</h4>
+                            {model.team ? (
+                                <span className="px-2 py-1 text-sm rounded bg-emerald-100 text-emerald-800">
+                                    {model.team.name}
+                                </span>
+                            ) : (
+                                <p className="text-lg text-gray-400">Unassigned</p>
                             )}
                         </div>
                         <div>

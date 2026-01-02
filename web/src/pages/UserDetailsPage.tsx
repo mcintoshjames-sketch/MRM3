@@ -3,7 +3,10 @@ import { useParams, useNavigate, Link } from 'react-router-dom';
 import api from '../api/client';
 import Layout from '../components/Layout';
 import { useAuth } from '../contexts/AuthContext';
-import { canManageUsers, getRoleDisplay, getUserRoleCode } from '../utils/roleUtils';
+import { canManageUsers, getRoleDisplay, getUserRoleCode, ROLE_CODE_TO_DISPLAY } from '../utils/roleUtils';
+import { Region } from '../api/regions';
+import { lobApi, LOBUnit } from '../api/lob';
+import UserForm from '../components/UserForm';
 
 interface User {
     user_id: number;
@@ -11,8 +14,19 @@ interface User {
     full_name: string;
     role: string;
     role_code?: string | null;
+    regions: Region[];
+    lob_id: number | null;
+    lob: LOBBrief | null;
     created_at: string;
     high_fluctuation_flag: boolean;
+}
+
+interface LOBBrief {
+    lob_id: number;
+    code: string;
+    name: string;
+    level: number;
+    full_path: string;
 }
 
 interface Vendor {
@@ -56,6 +70,13 @@ interface ValidationAssignment {
     created_at: string;
 }
 
+interface RoleOption {
+    role_id: number;
+    role_code: string;
+    display_name: string;
+    is_active: boolean;
+}
+
 export default function UserDetailsPage() {
     const { id } = useParams<{ id: string }>();
     const navigate = useNavigate();
@@ -63,12 +84,26 @@ export default function UserDetailsPage() {
     const [user, setUser] = useState<User | null>(null);
     const [models, setModels] = useState<Model[]>([]);
     const [validationAssignments, setValidationAssignments] = useState<ValidationAssignment[]>([]);
+    const [regions, setRegions] = useState<Region[]>([]);
+    const [lobUnits, setLobUnits] = useState<LOBUnit[]>([]);
+    const [roles, setRoles] = useState<RoleOption[]>([]);
+    const [showEditForm, setShowEditForm] = useState(false);
     const [loading, setLoading] = useState(true);
     const [togglingFlag, setTogglingFlag] = useState(false);
 
     const canManageUsersFlag = canManageUsers(currentUser);
     const userRoleCode = getUserRoleCode(user);
     const userRoleDisplay = getRoleDisplay(user);
+    const fallbackRoleOptions: RoleOption[] = Object.entries(ROLE_CODE_TO_DISPLAY).map(
+        ([role_code, display_name]) => ({
+            role_id: -1,
+            role_code,
+            display_name,
+            is_active: true
+        })
+    );
+    const activeRoleOptions = roles.filter((role) => role.is_active);
+    const roleOptions = activeRoleOptions.length > 0 ? activeRoleOptions : fallbackRoleOptions;
 
     const handleToggleHighFluctuationFlag = async () => {
         if (!user || !canManageUsersFlag) return;
@@ -105,6 +140,17 @@ export default function UserDetailsPage() {
                 // Fetch models for non-validators
                 const modelsRes = await api.get(`/auth/users/${id}/models`);
                 setModels(modelsRes.data);
+            }
+
+            if (canManageUsersFlag) {
+                const [regionsRes, lobUnitsData, rolesRes] = await Promise.all([
+                    api.get('/regions/'),
+                    lobApi.getLOBUnits(true),
+                    api.get('/roles')
+                ]);
+                setRegions(regionsRes.data);
+                setLobUnits(lobUnitsData);
+                setRoles(rolesRes.data);
             }
         } catch (error) {
             console.error('Failed to fetch user:', error);
@@ -193,7 +239,17 @@ export default function UserDetailsPage() {
 
             {/* User Information */}
             <div className="bg-white p-6 rounded-lg shadow-md mb-6">
-                <h3 className="text-lg font-bold mb-4">User Information</h3>
+                <div className="flex items-center justify-between mb-4">
+                    <h3 className="text-lg font-bold">User Information</h3>
+                    {canManageUsersFlag && (
+                        <button
+                            onClick={() => setShowEditForm(true)}
+                            className="btn-secondary"
+                        >
+                            Edit User
+                        </button>
+                    )}
+                </div>
                 <div className="grid grid-cols-2 gap-6">
                     <div>
                         <h4 className="text-sm font-medium text-gray-500 mb-1">User ID</h4>
@@ -218,6 +274,17 @@ export default function UserDetailsPage() {
                         }`}>
                             {userRoleDisplay}
                         </span>
+                    </div>
+                    <div>
+                        <h4 className="text-sm font-medium text-gray-500 mb-1">Organization Hierarchy (LOB)</h4>
+                        {user.lob ? (
+                            <div className="text-sm text-gray-700">
+                                <div className="font-medium">{user.lob.full_path}</div>
+                                <div className="text-xs text-gray-500">Code: {user.lob.code}</div>
+                            </div>
+                        ) : (
+                            <p className="text-sm text-gray-400">Not set</p>
+                        )}
                     </div>
                     <div>
                         <h4 className="text-sm font-medium text-gray-500 mb-1">Created</h4>
@@ -292,6 +359,20 @@ export default function UserDetailsPage() {
                     )}
                 </div>
             </div>
+
+            {showEditForm && canManageUsersFlag && (
+                <UserForm
+                    editingUser={user}
+                    regions={regions}
+                    lobUnits={lobUnits}
+                    roleOptions={roleOptions}
+                    onSaved={() => {
+                        setShowEditForm(false);
+                        fetchData();
+                    }}
+                    onCancel={() => setShowEditForm(false)}
+                />
+            )}
 
             {/* Validation Assignments for Validators OR Related Models for Others */}
             {userRoleCode === 'VALIDATOR' ? (

@@ -10,6 +10,7 @@ import MRSAReviewStatusBadge, { MRSAReviewStatusCode } from '../components/MRSAR
 import { Region } from '../api/regions';
 import { exportViewsApi, ExportView } from '../api/exportViews';
 import { linkChangeToAttestationIfPresent } from '../api/attestation';
+import { getTeams, Team as TeamOption } from '../api/teams';
 
 interface User {
     user_id: number;
@@ -148,6 +149,10 @@ interface Model {
     shared_developer: UserWithLOB | null;
     monitoring_manager: UserWithLOB | null;
     business_line_name: string | null;
+    team?: {
+        team_id: number;
+        name: string;
+    } | null;
     risk_tier: TaxonomyValue | null;
     methodology: Methodology | null;
     ownership_type: TaxonomyValue | null;
@@ -181,6 +186,7 @@ export default function ModelsPage() {
     const [users, setUsers] = useState<User[]>([]);
     const [vendors, setVendors] = useState<Vendor[]>([]);
     const [regions, setRegions] = useState<Region[]>([]);
+    const [teams, setTeams] = useState<TeamOption[]>([]);
     const [modelTypes, setModelTypes] = useState<ModelTypeCategory[]>([]);
     const [loading, setLoading] = useState(true);
     const [showForm, setShowForm] = useState(false);
@@ -346,6 +352,7 @@ export default function ModelsPage() {
         { key: 'shared_developer', label: 'Shared Developer', default: false },
         { key: 'monitoring_manager', label: 'Monitoring Manager', default: false },
         { key: 'business_line_name', label: 'Business Line', default: false },
+        { key: 'team', label: 'Team', default: true },
         { key: 'vendor', label: 'Vendor', default: true },
         { key: 'regions', label: 'Regions', default: true },
         { key: 'users', label: 'Users', default: true },
@@ -454,6 +461,7 @@ export default function ModelsPage() {
         owner_ids: [] as number[],
         vendor_ids: [] as number[],
         region_ids: [] as number[],
+        team_id: '' as '' | 'unassigned' | string,
         mrsa_review_statuses: [] as MRSAReviewStatusCode[],
         include_sub_models: false,
         is_aiml: '' as '' | 'true' | 'false' | 'null'  // '', 'true', 'false', 'null' (undefined)
@@ -490,6 +498,20 @@ export default function ModelsPage() {
             // For in-house models (vendor_id is null), exclude them
             if (model.vendor_id === null || !filters.vendor_ids.includes(model.vendor_id)) {
                 return false;
+            }
+        }
+
+        // Team filter (single select)
+        if (filters.team_id) {
+            if (filters.team_id === 'unassigned') {
+                if (model.team) {
+                    return false;
+                }
+            } else {
+                const teamId = parseInt(filters.team_id, 10);
+                if (!model.team || model.team.team_id !== teamId) {
+                    return false;
+                }
             }
         }
 
@@ -645,6 +667,7 @@ export default function ModelsPage() {
                 usersRes,
                 vendorsRes,
                 regionsRes,
+                teamsRes,
                 taxonomiesRes,
                 modelTypesRes,
                 mrsaReviewRes
@@ -653,6 +676,7 @@ export default function ModelsPage() {
                 api.get('/auth/users'),
                 api.get('/vendors/'),
                 api.get('/regions/'),
+                getTeams(),
                 api.get(`/taxonomies/by-names/?${taxonomyQueryString}`),
                 api.get('/model-types/categories'),
                 api.get('/irps/mrsa-review-status').catch(() => ({ data: [] }))
@@ -688,6 +712,7 @@ export default function ModelsPage() {
             setUsers(usersRes.data);
             setVendors(vendorsRes.data);
             setRegions(regionsRes.data);
+            setTeams(teamsRes.data);
             setModelTypes(modelTypesRes.data);
 
             // Extract taxonomy values from batch response
@@ -974,11 +999,10 @@ export default function ModelsPage() {
             header: 'MRSA Risk Level',
             sortKey: 'mrsa_risk_level.label',
             cell: (model) => model.mrsa_risk_level ? (
-                <span className={`px-2 py-1 text-xs rounded font-medium ${
-                    model.mrsa_risk_level.code === 'HIGH_RISK' ? 'bg-red-100 text-red-800' :
+                <span className={`px-2 py-1 text-xs rounded font-medium ${model.mrsa_risk_level.code === 'HIGH_RISK' ? 'bg-red-100 text-red-800' :
                     model.mrsa_risk_level.code === 'LOW_RISK' ? 'bg-green-100 text-green-800' :
-                    'bg-gray-100 text-gray-700'
-                }`}>
+                        'bg-gray-100 text-gray-700'
+                    }`}>
                     {model.mrsa_risk_level.label}
                 </span>
             ) : (
@@ -1139,6 +1163,12 @@ export default function ModelsPage() {
             cell: (model) => model.business_line_name || '-',
             csvValue: (model) => model.business_line_name || ''
         },
+        team: {
+            header: 'Team',
+            sortKey: 'team.name',
+            cell: (model) => model.team?.name || 'Unassigned',
+            csvValue: (model) => model.team?.name || 'Unassigned'
+        },
         vendor: {
             header: 'Vendor',
             sortKey: 'vendor.name',
@@ -1242,15 +1272,14 @@ export default function ModelsPage() {
             header: 'Scorecard Outcome',
             sortKey: 'scorecard_outcome',
             cell: (model) => model.scorecard_outcome ? (
-                <span className={`px-2 py-1 text-xs rounded font-medium ${
-                    model.scorecard_outcome === 'Green' ? 'bg-green-100 text-green-800' :
+                <span className={`px-2 py-1 text-xs rounded font-medium ${model.scorecard_outcome === 'Green' ? 'bg-green-100 text-green-800' :
                     model.scorecard_outcome === 'Green-' ? 'bg-green-100 text-green-700' :
-                    model.scorecard_outcome === 'Yellow+' ? 'bg-yellow-100 text-yellow-800' :
-                    model.scorecard_outcome === 'Yellow' ? 'bg-yellow-100 text-yellow-700' :
-                    model.scorecard_outcome === 'Yellow-' ? 'bg-orange-100 text-orange-800' :
-                    model.scorecard_outcome === 'Red' ? 'bg-red-100 text-red-800' :
-                    'bg-gray-100 text-gray-700'
-                }`}>
+                        model.scorecard_outcome === 'Yellow+' ? 'bg-yellow-100 text-yellow-800' :
+                            model.scorecard_outcome === 'Yellow' ? 'bg-yellow-100 text-yellow-700' :
+                                model.scorecard_outcome === 'Yellow-' ? 'bg-orange-100 text-orange-800' :
+                                    model.scorecard_outcome === 'Red' ? 'bg-red-100 text-red-800' :
+                                        'bg-gray-100 text-gray-700'
+                    }`}>
                     {model.scorecard_outcome}
                 </span>
             ) : (
@@ -1262,12 +1291,11 @@ export default function ModelsPage() {
             header: 'Residual Risk',
             sortKey: 'residual_risk',
             cell: (model) => model.residual_risk ? (
-                <span className={`px-2 py-1 text-xs rounded font-medium ${
-                    model.residual_risk === 'High' ? 'bg-red-100 text-red-800' :
+                <span className={`px-2 py-1 text-xs rounded font-medium ${model.residual_risk === 'High' ? 'bg-red-100 text-red-800' :
                     model.residual_risk === 'Medium' ? 'bg-yellow-100 text-yellow-800' :
-                    model.residual_risk === 'Low' ? 'bg-green-100 text-green-800' :
-                    'bg-gray-100 text-gray-700'
-                }`}>
+                        model.residual_risk === 'Low' ? 'bg-green-100 text-green-800' :
+                            'bg-gray-100 text-gray-700'
+                    }`}>
                     {model.residual_risk}
                 </span>
             ) : (
@@ -1769,14 +1797,14 @@ export default function ModelsPage() {
                                                 {formData.mrsa_risk_level_id && mrsaRiskLevels.find(
                                                     l => l.value_id === formData.mrsa_risk_level_id && l.requires_irp
                                                 ) && (
-                                                    <div className="mb-3 p-2 bg-amber-50 border border-amber-200 rounded flex items-start gap-2">
-                                                        <span className="text-amber-600">⚠️</span>
-                                                        <p className="text-xs text-amber-800">
-                                                            High-Risk MRSAs require Independent Review Process (IRP) coverage.
-                                                            After creation, assign this MRSA to an IRP via the IRPs management page.
-                                                        </p>
-                                                    </div>
-                                                )}
+                                                        <div className="mb-3 p-2 bg-amber-50 border border-amber-200 rounded flex items-start gap-2">
+                                                            <span className="text-amber-600">⚠️</span>
+                                                            <p className="text-xs text-amber-800">
+                                                                High-Risk MRSAs require Independent Review Process (IRP) coverage.
+                                                                After creation, assign this MRSA to an IRP via the IRPs management page.
+                                                            </p>
+                                                        </div>
+                                                    )}
 
                                                 <div className="mb-3">
                                                     <label htmlFor="mrsa_risk_rationale" className="block text-sm font-medium mb-1">
@@ -2004,28 +2032,28 @@ export default function ModelsPage() {
                                 </div>
                             </div>
 
-                        <div className="mb-4">
-                            <label htmlFor="description" className="block text-sm font-medium mb-2">Description and Purpose</label>
-                            <textarea
-                                id="description"
-                                className="input-field"
-                                rows={3}
-                                placeholder="Describe what this model does and its business purpose..."
-                                value={formData.description}
-                                onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                            />
-                        </div>
-                        <div className="mb-4">
-                            <label htmlFor="products_covered" className="block text-sm font-medium mb-2">Products Covered</label>
-                            <textarea
-                                id="products_covered"
-                                className="input-field"
-                                rows={2}
-                                placeholder="List products, portfolios, or lines of business covered by this model..."
-                                value={formData.products_covered}
-                                onChange={(e) => setFormData({ ...formData, products_covered: e.target.value })}
-                            />
-                        </div>
+                            <div className="mb-4">
+                                <label htmlFor="description" className="block text-sm font-medium mb-2">Description and Purpose</label>
+                                <textarea
+                                    id="description"
+                                    className="input-field"
+                                    rows={3}
+                                    placeholder="Describe what this model does and its business purpose..."
+                                    value={formData.description}
+                                    onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                                />
+                            </div>
+                            <div className="mb-4">
+                                <label htmlFor="products_covered" className="block text-sm font-medium mb-2">Products Covered</label>
+                                <textarea
+                                    id="products_covered"
+                                    className="input-field"
+                                    rows={2}
+                                    placeholder="List products, portfolios, or lines of business covered by this model..."
+                                    value={formData.products_covered}
+                                    onChange={(e) => setFormData({ ...formData, products_covered: e.target.value })}
+                                />
+                            </div>
 
                             <div className="mb-4">
                                 <label className="block text-sm font-medium mb-2">
@@ -2539,7 +2567,7 @@ export default function ModelsPage() {
 
                 {/* Filters */}
                 <div className="bg-white p-4 rounded-lg shadow-md mb-6">
-                    <div className="grid grid-cols-1 md:grid-cols-6 gap-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
                         {/* Search */}
                         <div>
                             <label htmlFor="filter-search" className="block text-xs font-medium text-gray-700 mb-1">
@@ -2607,6 +2635,24 @@ export default function ModelsPage() {
                             onChange={(values) => setFilters({ ...filters, region_ids: values as number[] })}
                         />
 
+                        {/* Team */}
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">Team</label>
+                            <select
+                                value={filters.team_id}
+                                onChange={(e) => setFilters({ ...filters, team_id: e.target.value })}
+                                className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 text-sm"
+                            >
+                                <option value="">All Teams</option>
+                                <option value="unassigned">Unassigned</option>
+                                {teams.filter(team => team.is_active).map((team) => (
+                                    <option key={team.team_id} value={String(team.team_id)}>
+                                        {team.name}
+                                    </option>
+                                ))}
+                            </select>
+                        </div>
+
                         {/* AI/ML Classification */}
                         <div>
                             <label className="block text-sm font-medium text-gray-700 mb-1">AI/ML Classification</label>
@@ -2639,33 +2685,30 @@ export default function ModelsPage() {
                                 <button
                                     type="button"
                                     onClick={() => setViewMode('models')}
-                                    className={`px-3 py-2 text-xs font-medium rounded-l-md border ${
-                                        viewMode === 'models'
-                                            ? 'bg-blue-600 text-white border-blue-600'
-                                            : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
-                                    }`}
+                                    className={`px-3 py-2 text-xs font-medium rounded-l-md border ${viewMode === 'models'
+                                        ? 'bg-blue-600 text-white border-blue-600'
+                                        : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+                                        }`}
                                 >
                                     Models
                                 </button>
                                 <button
                                     type="button"
                                     onClick={() => setViewMode('mrsas')}
-                                    className={`px-3 py-2 text-xs font-medium border-t border-b ${
-                                        viewMode === 'mrsas'
-                                            ? 'bg-amber-600 text-white border-amber-600'
-                                            : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
-                                    }`}
+                                    className={`px-3 py-2 text-xs font-medium border-t border-b ${viewMode === 'mrsas'
+                                        ? 'bg-amber-600 text-white border-amber-600'
+                                        : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+                                        }`}
                                 >
                                     MRSAs
                                 </button>
                                 <button
                                     type="button"
                                     onClick={() => setViewMode('all')}
-                                    className={`px-3 py-2 text-xs font-medium rounded-r-md border ${
-                                        viewMode === 'all'
-                                            ? 'bg-gray-600 text-white border-gray-600'
-                                            : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
-                                    }`}
+                                    className={`px-3 py-2 text-xs font-medium rounded-r-md border ${viewMode === 'all'
+                                        ? 'bg-gray-600 text-white border-gray-600'
+                                        : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+                                        }`}
                                 >
                                     All
                                 </button>
@@ -2674,32 +2717,38 @@ export default function ModelsPage() {
 
                         {/* Include Non-Models Toggle - only show in 'models' view */}
                         {viewMode === 'models' && (
-                            <div className="flex items-center space-x-2 pt-5">
-                                <input
-                                    type="checkbox"
-                                    id="include-non-models"
-                                    checked={includeNonModels}
-                                    onChange={(e) => setIncludeNonModels(e.target.checked)}
-                                    className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                                />
-                                <label htmlFor="include-non-models" className="text-sm font-medium text-gray-700 whitespace-nowrap">
-                                    Include Non-Models
-                                </label>
+                            <div>
+                                <label className="block text-sm font-medium text-transparent mb-1 select-none">Option</label>
+                                <div className="flex items-center space-x-2 h-[38px]">
+                                    <input
+                                        type="checkbox"
+                                        id="include-non-models"
+                                        checked={includeNonModels}
+                                        onChange={(e) => setIncludeNonModels(e.target.checked)}
+                                        className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                                    />
+                                    <label htmlFor="include-non-models" className="text-sm font-medium text-gray-700 whitespace-nowrap">
+                                        Include Non-Models
+                                    </label>
+                                </div>
                             </div>
                         )}
 
                         {/* Include Sub-Models Toggle */}
-                        <div className="flex items-center space-x-2 pt-5">
-                            <input
-                                type="checkbox"
-                                id="include-sub-models"
-                                checked={filters.include_sub_models}
-                                onChange={(e) => setFilters({ ...filters, include_sub_models: e.target.checked })}
-                                className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                            />
-                            <label htmlFor="include-sub-models" className="text-sm font-medium text-gray-700 whitespace-nowrap">
-                                Include Sub-Models
-                            </label>
+                        <div>
+                            <label className="block text-sm font-medium text-transparent mb-1 select-none">Option</label>
+                            <div className="flex items-center space-x-2 h-[38px]">
+                                <input
+                                    type="checkbox"
+                                    id="include-sub-models"
+                                    checked={filters.include_sub_models}
+                                    onChange={(e) => setFilters({ ...filters, include_sub_models: e.target.checked })}
+                                    className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                                />
+                                <label htmlFor="include-sub-models" className="text-sm font-medium text-gray-700 whitespace-nowrap">
+                                    Include Sub-Models
+                                </label>
+                            </div>
                         </div>
                     </div>
 
@@ -2719,6 +2768,7 @@ export default function ModelsPage() {
                                     owner_ids: [],
                                     vendor_ids: [],
                                     region_ids: [],
+                                    team_id: '',
                                     mrsa_review_statuses: [],
                                     include_sub_models: false,
                                     is_aiml: ''

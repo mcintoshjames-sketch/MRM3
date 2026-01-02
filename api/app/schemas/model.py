@@ -9,6 +9,7 @@ from app.schemas.region import Region
 from app.schemas.model_submission_comment import ModelSubmissionCommentResponse
 from app.schemas.model_type_taxonomy import ModelTypeResponse
 from app.schemas.methodology import MethodologyResponse
+from app.schemas.team import TeamBasic
 
 if TYPE_CHECKING:
     from app.schemas.irp import IRPResponse
@@ -170,6 +171,8 @@ class ModelResponse(ModelBase):
     submitted_at: Optional[datetime] = None
     # Computed field: Owner's LOB rolled up to LOB4 level
     business_line_name: Optional[str] = None
+    # Computed field: Owner's effective team
+    team: Optional[TeamBasic] = None
     # Computed field: Production date of latest ACTIVE version
     model_last_updated: Optional[date] = None
 
@@ -282,6 +285,7 @@ class ModelListResponse(BaseModel):
     is_aiml: Optional[bool] = None
     row_approval_status: Optional[str] = None
     business_line_name: Optional[str] = None
+    team: Optional[TeamBasic] = None
     model_last_updated: Optional[date] = None
     # MRSA fields
     is_mrsa: bool = False
@@ -425,6 +429,8 @@ class ModelCreateResponse(BaseModel):
     submitted_at: Optional[datetime] = None
     # Computed field: Owner's LOB rolled up to LOB4 level
     business_line_name: Optional[str] = None
+    # Computed field: Owner's effective team
+    team: Optional[TeamBasic] = None
     # Relationships
     owner: UserResponse
     usage_frequency: TaxonomyValueResponse  # Required field

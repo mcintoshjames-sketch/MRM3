@@ -56,14 +56,15 @@ Model Risk Management inventory system with a FastAPI backend, React/TypeScript 
   - `fry.py`: FR Y-14 regulatory reporting structure - reports, schedules, metric groups, and line items CRUD for regulatory compliance mapping.
   - `validation_policies.py`: Validation policy configuration (frequency, grace period, lead time) per risk tier with admin CRUD.
   - `overdue_revalidation_report.py`: Overdue revalidation report with bucket classification and commentary status filtering.
-  - `lob_units.py`: LOB (Line of Business) hierarchy CRUD, tree retrieval, CSV import/export with dry-run preview.
+  - `lob_units.py`: LOB (Line of Business) hierarchy CRUD, tree retrieval (including `/tree-with-teams`), CSV import/export with dry-run preview.
+  - `teams.py`: Team CRUD and LOB assignment endpoints for reporting groupings (includes model lists and LOB tree helpers).
   - `irp.py`: IRP (Independent Review Process) management - CRUD for IRPs, MRSA coverage relationships, review and certification tracking, coverage compliance checks.
   - `mrsa_review_policy.py`: MRSA review policy and exception CRUD plus review status endpoints for independent review tracking.
 - Core services:
   - DB session management (`core/database.py`), auth dependency (`core/deps.py`), security utilities (`core/security.py`), row-level security filters (`core/rls.py`).
   - PDF/report helpers in `validation_workflow.py` (FPDF) for generated artifacts.
 - Models (`app/models/`):
-  - Users & directory: `user.py`, `entra_user.py`, `lob.py` (LOBUnit hierarchy with levels 1-6: SBU→LOB1→LOB2→LOB3→LOB4→LOB5+), roles include Admin/Validator/Global Approver/Regional Approver/User. **LOB Rollup**: `core/lob_utils.py` provides `get_lob_rollup_name()` to roll up deep LOB levels (LOB5+) to LOB4 for display purposes.
+  - Users & directory: `user.py`, `entra_user.py`, `lob.py` (LOBUnit hierarchy with levels 1-6: SBU→LOB1→LOB2→LOB3→LOB4→LOB5+), `team.py` (reporting teams assigned to LOB units), roles include Admin/Validator/Global Approver/Regional Approver/User. **LOB Rollup**: `core/lob_utils.py` provides `get_lob_rollup_name()` to roll up deep LOB levels (LOB5+) to LOB4 for display purposes.
   - Catalog: `model.py`, `vendor.py`, `taxonomy.py`, `region.py`, `model_version.py`, `model_region.py`, `model_delegate.py`, `model_change_taxonomy.py`, `model_version_region.py`, `model_type.py` (ModelType, ModelTypeCategory), `methodology.py` (MethodologyCategory, Methodology).
   - Model relationships: `model_hierarchy.py` (parent-child links with effective/end dates), `model_feed_dependency.py` (feeder-consumer data flows with active status tracking), `model_dependency_metadata.py` (extended metadata for dependencies, not yet exposed in UI).
   - Validation workflow: `validation.py` (ValidationRequest, ValidationStatusHistory, ValidationAssignment, ValidationOutcome, ValidationApproval, ValidationReviewOutcome, ValidationPlan, ValidationPlanComponent, ValidationComponentDefinition, ComponentDefinitionConfiguration/ConfigItem, ValidationPolicy, ValidationWorkflowSLA).
@@ -87,7 +88,7 @@ Model Risk Management inventory system with a FastAPI backend, React/TypeScript 
 
 ## Frontend Architecture
 - Entry: `src/main.tsx` mounts App within `AuthProvider` and `BrowserRouter`.
-- Routing (`src/App.tsx`): guarded routes for login, role-specific dashboards (`/dashboard` Admin, `/validator-dashboard`, `/my-dashboard` Model Owner, `/approver-dashboard`), models (list/detail/change records/decommissioning), validation workflow (list/detail/new), recommendations (list/detail), monitoring (plans/cycles/my-tasks), attestation (cycles/my-attestations/bulk), vendors (list/detail), users (list/detail), taxonomy (with KPM Library tab), audit logs, workflow configuration, batch delegates, regions, validation policies, MRSA review policies, component definitions, configuration history, approver roles, additional approval rules, reports hub (`/reports`), report detail pages (regional compliance, deviation trends, overdue revalidation, critical limitations, name changes, KPI report), analytics, deployment tasks, pending submissions, reference data, FR Y-14 config.
+- Routing (`src/App.tsx`): guarded routes for login, role-specific dashboards (`/dashboard` Admin, `/validator-dashboard`, `/my-dashboard` Model Owner, `/approver-dashboard`), models (list/detail/change records/decommissioning), validation workflow (list/detail/new), recommendations (list/detail), monitoring (plans/cycles/my-tasks), attestation (cycles/my-attestations/bulk), vendors (list/detail), users (list/detail), taxonomy (with KPM Library tab), audit logs, workflow configuration, batch delegates, regions, teams, validation policies, MRSA review policies, component definitions, configuration history, approver roles, additional approval rules, reports hub (`/reports`), report detail pages (regional compliance, deviation trends, overdue revalidation, critical limitations, name changes, KPI report), analytics, deployment tasks, pending submissions, reference data, FR Y-14 config.
 - Shared pieces:
   - Auth context (`src/contexts/AuthContext.tsx`) manages token/user; Axios client (`src/api/client.ts`) injects Bearer tokens and redirects on 401.
   - Layout (`src/components/Layout.tsx`) provides navigation shell.
@@ -104,7 +105,7 @@ Model Risk Management inventory system with a FastAPI backend, React/TypeScript 
   - **Reports**: `ReportsPage.tsx`, `RegionalComplianceReportPage.tsx`, `DeviationTrendsReportPage.tsx`, `OverdueRevalidationReportPage.tsx`, `CriticalLimitationsReportPage.tsx`, `NameChangesReportPage.tsx`, `KPIReportPage.tsx`
   - **Dashboards**: `AdminDashboardPage.tsx`, `ValidatorDashboardPage.tsx`, `ModelOwnerDashboardPage.tsx`, `ApproverDashboardPage.tsx`
   - **IRP Management**: `IRPsPage.tsx` (list with CRUD, table sorting, filtering, CSV export), `IRPDetailPage.tsx` (detail view with covered MRSAs, review history, certification history tabs)
-  - **Other**: `ModelChangeRecordPage.tsx`, `BatchDelegatesPage.tsx`, `RegionsPage.tsx`, `MyDeploymentTasksPage.tsx`, `MyPendingSubmissionsPage.tsx`, `AnalyticsPage.tsx`, `ReferenceDataPage.tsx`, `FryConfigPage.tsx`
+  - **Other**: `ModelChangeRecordPage.tsx`, `BatchDelegatesPage.tsx`, `RegionsPage.tsx`, `TeamsPage.tsx`, `MyDeploymentTasksPage.tsx`, `MyPendingSubmissionsPage.tsx`, `AnalyticsPage.tsx`, `ReferenceDataPage.tsx`, `FryConfigPage.tsx`
   - **DecommissioningRequestPage**: Includes downstream dependency warning (fetches outbound dependencies from model relationships API and displays amber warning banner listing consumer models before submission).
   - **ModelDetailsPage**: Decommissioning tab always visible with "Initiate Decommissioning" button (shown when model not retired and no active request exists).
   - **PendingDecommissioningPage**: Accessible by all authenticated users; shows role-specific pending requests (validators see pending reviews, model owners see requests awaiting their approval).
@@ -113,6 +114,7 @@ Model Risk Management inventory system with a FastAPI backend, React/TypeScript 
 ## Data Model (conceptual)
 - User & EntraUser directory entries; roles drive permissions.
 - Model with vendor, owner/developer, **shared_owner** (co-owner), **shared_developer** (co-developer), **monitoring_manager** (responsible for ongoing monitoring), taxonomy links (risk tier, model type, etc.), regulatory categories, delegates, and region assignments via ModelRegion. **Required fields**: `usage_frequency_id` (taxonomy reference). **Validation rules**: shared_owner ≠ owner, shared_developer ≠ developer. **Note**: Validation Type is associated with ValidationRequest, not Model (deprecated from Model UI). **MRSA fields**: `is_mrsa` (bool), `mrsa_risk_level_id` (taxonomy FK), `mrsa_risk_rationale` (text) - for Model Risk-Sensitive Application classification.
+- **Teams**: `Team` provides reporting groupings; LOB units can have an optional direct `team_id`. Effective team is computed by walking the LOB hierarchy with “closest ancestor wins” (direct assignment overrides parent). Models inherit team via Owner → LOB → Team and display as “Unassigned” when no team is found.
 - **IRP (Independent Review Process)**: Governance mechanism covering high-risk MRSAs. Fields: irp_id, process_name, description, contact_user_id, is_active. Relationships: covered_mrsas (many-to-many via mrsa_irp), reviews (one-to-many), certifications (one-to-many). **IRPReview**: Periodic assessment with review_date, outcome_id (taxonomy), notes, reviewed_by_user_id. **IRPCertification**: MRM sign-off with certification_date, certified_by_user_id, conclusion_summary.
 - **MRSA Review Policies**: Risk-level scheduling rules for independent reviews (frequency, initial review window, warning thresholds) with MRSAReviewException overrides for approved due date extensions.
 - **ModelPendingEdit**: Edit approval workflow for approved models. When non-admin users edit an already-approved model, a pending edit record is created with `proposed_changes` and `original_values` (JSON). Admin reviews the changes via dashboard widget or model details page and can approve (applies changes) or reject (with comment). Includes `requested_by_id`, `reviewed_by_id`, `status` (pending/approved/rejected), `review_comment`, and timestamps.
@@ -137,7 +139,7 @@ Model Risk Management inventory system with a FastAPI backend, React/TypeScript 
 - SavedQuery/ExportView for analytics/reporting reuse.
 
 ## Request & Data Flow
-1. Frontend calls Axios client -> FastAPI routes under `/auth`, `/models`, `/validation-workflow`, `/decommissioning`, `/vendors`, `/taxonomies`, `/model-types`, `/audit-logs`, `/regions`, `/model-versions`, `/model-change-taxonomy`, `/analytics`, `/saved-queries`, `/regional-compliance-report`, `/validation-workflow/compliance-report/*`, `/models/{id}/hierarchy/*`, `/models/{id}/dependencies/*`, `/scorecard/*`, etc.
+1. Frontend calls Axios client -> FastAPI routes under `/auth`, `/models`, `/validation-workflow`, `/decommissioning`, `/vendors`, `/taxonomies`, `/model-types`, `/audit-logs`, `/regions`, `/teams`, `/lob-units`, `/model-versions`, `/model-change-taxonomy`, `/analytics`, `/saved-queries`, `/regional-compliance-report`, `/validation-workflow/compliance-report/*`, `/models/{id}/hierarchy/*`, `/models/{id}/dependencies/*`, `/scorecard/*`, etc.
 2. `get_current_user` decodes JWT, routes apply role checks and RLS filters.
 3. SQLAlchemy ORM persists/fetches entities; Alembic manages schema migrations. **Model relationships enforce business rules**: cycle detection prevents circular dependencies, self-reference constraints prevent invalid links, date range validation ensures data integrity.
 4. Responses serialized via Pydantic schemas; frontend renders tables/cards with sorting/export.
@@ -149,14 +151,15 @@ Model Risk Management inventory system with a FastAPI backend, React/TypeScript 
   - `GET /validation-workflow/compliance-report/deviation-trends` - Deviation trends
   - `GET /overdue-revalidation-report/` - Overdue items with commentary status (supports filters: overdue_type, comment_status, risk_tier, days_overdue_min, needs_update_only)
   - `GET /reports/critical-limitations` - Critical model limitations report with region filtering
-  - `GET /kpi-report/` - KPI Report with 21 model risk management metrics (optional region_id filter)
+  - `GET /kpi-report/` - KPI Report with 21 model risk management metrics (optional region_id, team_id filters)
   - Dashboard reports (`/validation-workflow/dashboard/*`) and analytics aggregations (`/analytics`, saved queries)
+- Team filtering: Regional Compliance, Overdue Revalidation, KPI Report, and My Portfolio accept `team_id` (0 = Unassigned) to scope results by effective team.
 - Export views in `export_views.py` provide CSV-friendly datasets.
 
 ## KPI Report
 - **Purpose**: Centralized KPI reporting for model risk management metrics, providing executive-level visibility into inventory, validation, monitoring, recommendations, and risk indicators.
 - **Metrics** (21 total, organized by category):
-  - **Model Inventory** (4.1-4.5): Total active models, breakdown by risk tier, breakdown by business line, % vendor models, % AI/ML models
+  - **Model Inventory** (4.1-4.5, 4.29): Total active models, breakdown by risk tier, breakdown by business line, breakdown by team, % vendor models, % AI/ML models
   - **Validation** (4.6, 4.8, 4.9): % validated on time, average time to complete by risk tier, models with interim approval
   - **Key Risk Indicators** (4.7, 4.27): % overdue for validation (KRI), % high residual risk (KRI) - flagged with `is_kri: true`
   - **Monitoring** (4.10-4.12): % timely monitoring submissions, % breaching thresholds (RED), % with open performance issues
@@ -171,7 +174,8 @@ Model Risk Management inventory system with a FastAPI backend, React/TypeScript 
   - **breakdown**: Distribution across categories with counts and percentages
 - **Drill-Down Support**: Ratio metrics include `numerator_model_ids` array enabling click-through to filtered models list
 - **Region Filtering**: Optional `region_id` query parameter scopes all metrics to models deployed in that region
-- **API Endpoint**: `GET /kpi-report/?region_id={optional}`
+- **Team Filtering**: Optional `team_id` query parameter scopes all metrics to models in an effective team (0 = Unassigned)
+- **API Endpoint**: `GET /kpi-report/?region_id={optional}&team_id={optional}`
 - **Frontend**: `/reports/kpi` page with:
   - Region filter dropdown
   - Metrics grouped by category in expandable cards

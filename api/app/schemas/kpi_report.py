@@ -52,4 +52,8 @@ class KPIReportResponse(BaseModel):
     region_id: Optional[int] = Field(None, description="Region ID if filtering by region, None for all regions")
     region_name: str = Field("All Regions", description="Region name or 'All Regions' if no filter")
 
+    # Team filter context
+    team_id: Optional[int] = Field(None, description="Team ID if filtering by team, 0 for Unassigned, None for all")
+    team_name: str = Field("All Teams", description="Team name or 'All Teams' if no filter")
+
     model_config = {"from_attributes": True}

@@ -7,6 +7,7 @@ import {
     canManageDecommissioning,
     canManageIrps,
     canManageMonitoringPlans,
+    canManageTeams,
     canManageTaxonomy,
     canManageValidations,
     canViewAdminDashboard,
@@ -62,6 +63,7 @@ export default function Layout({ children }: LayoutProps) {
     const canManageMonitoringPlansFlag = canManageMonitoringPlans(user);
     const canManageAttestationsFlag = canManageAttestations(user);
     const canManageIrpsFlag = canManageIrps(user);
+    const canManageTeamsFlag = canManageTeams(user);
     const canViewAuditLogsFlag = canViewAuditLogs(user);
     const canManageDecommissioningFlag = canManageDecommissioning(user);
     const canManageValidationsFlag = canManageValidations(user);
@@ -491,6 +493,9 @@ export default function Layout({ children }: LayoutProps) {
                                         {/* Governance subsection */}
                                         <SubsectionLabel label="Governance" />
                                         <NavItem to="/regions">Regions</NavItem>
+                                        {canManageTeamsFlag && (
+                                            <NavItem to="/teams">Teams</NavItem>
+                                        )}
                                         <NavItem to="/batch-delegates">Batch Delegates</NavItem>
 
                                         {/* Components subsection */}

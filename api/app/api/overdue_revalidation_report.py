@@ -31,6 +31,8 @@ from app.models.model import Model
 from app.models.model_region import ModelRegion
 from app.models.region import Region
 from app.models.taxonomy import Taxonomy, TaxonomyValue
+from app.models.team import Team
+from app.core.team_utils import build_lob_team_map
 from app.models.validation import (
     ValidationRequest, ValidationRequestModelVersion,
     ValidationAssignment
@@ -319,6 +321,7 @@ def get_overdue_revalidation_report(
     region_id: Optional[int] = Query(None, description="Filter by region ID (models deployed in this region)"),
     comment_status: Optional[str] = Query(None, description="Filter: CURRENT, STALE, or MISSING"),
     owner_id: Optional[int] = Query(None, description="Filter by model owner ID"),
+    team_id: Optional[int] = Query(None, description="Filter by team ID (0 = Unassigned)"),
     days_overdue_min: Optional[int] = Query(None, description="Minimum days overdue"),
     past_due_level: Optional[str] = Query(None, description="Filter by past due level code (e.g., CRITICAL, OBSOLETE)"),
     needs_update_only: bool = Query(False, description="Show only items needing commentary update"),
@@ -346,6 +349,7 @@ def get_overdue_revalidation_report(
     check_admin(current_user)
 
     today = date.today()
+    lob_team_map = build_lob_team_map(db)
     results = []
 
     # NOTE: Lead time is now computed per-request based on models' risk tier policies
@@ -400,6 +404,12 @@ def get_overdue_revalidation_report(
             # Region filter - check if model is deployed in the specified region
             if region_id and not model_in_region(model, region_id):
                 continue
+            if team_id is not None:
+                effective_team_id = lob_team_map.get(model.owner.lob_id) if model.owner else None
+                if team_id == 0 and effective_team_id is not None:
+                    continue
+                if team_id != 0 and effective_team_id != team_id:
+                    continue
 
             # Calculate days overdue and urgency
             if is_past_grace:
@@ -520,6 +530,12 @@ def get_overdue_revalidation_report(
             # Region filter - check if model is deployed in the specified region
             if region_id and not model_in_region(model, region_id):
                 continue
+            if team_id is not None:
+                effective_team_id = lob_team_map.get(model.owner.lob_id) if model.owner else None
+                if team_id == 0 and effective_team_id is not None:
+                    continue
+                if team_id != 0 and effective_team_id != team_id:
+                    continue
 
             days_overdue = (today - req.model_validation_due_date).days
 
@@ -689,6 +705,14 @@ def get_overdue_revalidation_report(
         region = db.query(Region).filter(Region.region_id == region_id).first()
         region_name_for_filter = region.name if region else str(region_id)
 
+    team_name_for_filter = None
+    if team_id is not None:
+        if team_id == 0:
+            team_name_for_filter = "Unassigned"
+        else:
+            team = db.query(Team).filter(Team.team_id == team_id).first()
+            team_name_for_filter = team.name if team else str(team_id)
+
     return OverdueRevalidationReportResponse(
         report_generated_at=datetime.now(),
         filters_applied={
@@ -698,6 +722,8 @@ def get_overdue_revalidation_report(
             "region_name": region_name_for_filter,
             "comment_status": comment_status,
             "owner_id": owner_id,
+            "team_id": team_id,
+            "team_name": team_name_for_filter,
             "days_overdue_min": days_overdue_min,
             "past_due_level": past_due_level,
             "needs_update_only": needs_update_only

@@ -1,5 +1,6 @@
 """Models package."""
 from app.models.lob import LOBUnit
+from app.models.team import Team
 from app.models.user import User, user_regions
 from app.models.role import Role
 from app.models.model import Model, ModelStatus, DevelopmentType, model_users, model_regulatory_categories
@@ -121,6 +122,7 @@ from app.models.model_exception import ModelException, ModelExceptionStatusHisto
 __all__ = [
     # LOB (Line of Business) hierarchy
     "LOBUnit",
+    "Team",
     "User", "user_regions", "Role",
     "Model", "ModelStatus", "DevelopmentType", "model_users", "model_regulatory_categories",
     "Vendor",

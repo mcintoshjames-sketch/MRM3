@@ -155,6 +155,9 @@ export const canManageModelRelationships = (user?: UserLike | null): boolean =>
 export const canManageLob = (user?: UserLike | null): boolean =>
     hasCapability(user, 'can_manage_lob', () => isAdmin(user));
 
+export const canManageTeams = (user?: UserLike | null): boolean =>
+    hasCapability(user, 'can_manage_teams', () => isAdmin(user));
+
 export const canManageValidations = (user?: UserLike | null): boolean =>
     hasCapability(user, 'can_manage_validations', () => isAdminOrValidator(user));
 

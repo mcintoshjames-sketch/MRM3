@@ -31,6 +31,8 @@ from app.models.attestation import (
 from app.models.limitation import ModelLimitation
 from app.models.residual_risk_map import ResidualRiskMapConfig
 from app.models.methodology import Methodology
+from app.models.team import Team
+from app.core.team_utils import build_lob_team_map
 from app.schemas.kpi_report import (
     KPIDecomposition,
     KPIBreakdown,
@@ -61,6 +63,13 @@ METRIC_DEFINITIONS = {
         "name": "% of Models by Business Line/Region",
         "definition": "Proportion of models allocated to each business line or geographic region; supports risk localization.",
         "calculation": "(# models in Business Line) / (Total models) × 100%",
+        "category": "Model Inventory",
+        "type": "breakdown",
+    },
+    "4.29": {
+        "name": "% of Models by Team",
+        "definition": "Proportion of models allocated to each reporting team.",
+        "calculation": "(# models in Team) / (Total models) × 100%",
         "category": "Model Inventory",
         "type": "breakdown",
     },
@@ -281,6 +290,34 @@ def _compute_metric_4_3(db: Session, active_models: List[Model]) -> KPIMetric:
     ]
 
     return _create_metric("4.3", breakdown_value=breakdown)
+
+
+def _compute_metric_4_29(
+    active_models: List[Model],
+    lob_team_map: Dict[int, Optional[int]],
+    team_name_map: Dict[int, str],
+) -> KPIMetric:
+    """4.29 - % of Models by Team (computed from owner's effective team)."""
+    total = len(active_models)
+    breakdown_dict: Dict[str, int] = {}
+
+    for model in active_models:
+        team_id = None
+        if model.owner:
+            team_id = lob_team_map.get(model.owner.lob_id)
+        team_name = team_name_map.get(team_id) if team_id else "Unassigned"
+        breakdown_dict[team_name] = breakdown_dict.get(team_name, 0) + 1
+
+    breakdown = [
+        KPIBreakdown(
+            category=team_name,
+            count=count,
+            percentage=_safe_percentage(count, total)
+        )
+        for team_name, count in sorted(breakdown_dict.items())
+    ]
+
+    return _create_metric("4.29", breakdown_value=breakdown)
 
 
 def _compute_metric_4_4(db: Session, active_models: List[Model]) -> KPIMetric:
@@ -750,6 +787,7 @@ def get_kpi_report(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
     region_id: Optional[int] = Query(None, description="Filter metrics by region (models deployed to this region)"),
+    team_id: Optional[int] = Query(None, description="Filter metrics by team ID (0 = Unassigned)"),
 ):
     """
     Generate the KPI Report with all model risk management metrics.
@@ -763,6 +801,7 @@ def get_kpi_report(
     Two metrics are flagged as Key Risk Indicators (KRI): 4.7 and 4.27.
 
     Optionally filter by region_id to scope metrics to models deployed in that region.
+    Optionally filter by team_id to scope metrics to models owned within a team.
     """
     # Handle region filtering
     region_name = "All Regions"
@@ -797,12 +836,34 @@ def get_kpi_report(
 
     active_models = active_models_query.all()
 
+    # Build team mapping for filtering and breakdowns
+    lob_team_map = build_lob_team_map(db)
+    teams = db.query(Team).all()
+    team_name_map = {team.team_id: team.name for team in teams}
+
+    team_name = "All Teams"
+    if team_id is not None:
+        if team_id == 0:
+            active_models = [
+                model for model in active_models
+                if not (model.owner and lob_team_map.get(model.owner.lob_id))
+            ]
+            team_name = "Unassigned"
+        else:
+            active_models = [
+                model for model in active_models
+                if model.owner and lob_team_map.get(model.owner.lob_id) == team_id
+            ]
+            team = team_name_map.get(team_id)
+            team_name = team if team else f"Team {team_id}"
+
     metrics: List[KPIMetric] = []
 
     # Model Inventory metrics
     metrics.append(_compute_metric_4_1(db, active_models))
     metrics.append(_compute_metric_4_2(db, active_models))
     metrics.append(_compute_metric_4_3(db, active_models))
+    metrics.append(_compute_metric_4_29(active_models, lob_team_map, team_name_map))
     metrics.append(_compute_metric_4_4(db, active_models))
     metrics.append(_compute_metric_4_5(db, active_models))
 
@@ -858,4 +919,6 @@ def get_kpi_report(
         total_active_models=len(active_models),
         region_id=region_id,
         region_name=region_name,
+        team_id=team_id,
+        team_name=team_name,
     )

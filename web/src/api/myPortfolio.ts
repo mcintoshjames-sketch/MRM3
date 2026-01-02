@@ -73,6 +73,8 @@ export interface PortfolioModel {
 export interface MyPortfolioResponse {
     report_generated_at: string;
     as_of_date: string;
+    team_id: number | null;
+    team_name: string;
     summary: PortfolioSummary;
     action_items: ActionItem[];
     monitoring_alerts: MonitoringAlert[];
@@ -80,8 +82,13 @@ export interface MyPortfolioResponse {
     models: PortfolioModel[];
 }
 
-export async function getMyPortfolio(): Promise<MyPortfolioResponse> {
-    const response = await client.get<MyPortfolioResponse>('/reports/my-portfolio');
+export async function getMyPortfolio(teamId?: number): Promise<MyPortfolioResponse> {
+    const params = new URLSearchParams();
+    if (teamId !== undefined) {
+        params.append('team_id', String(teamId));
+    }
+    const suffix = params.toString() ? `?${params.toString()}` : '';
+    const response = await client.get<MyPortfolioResponse>(`/reports/my-portfolio${suffix}`);
     return response.data;
 }
 

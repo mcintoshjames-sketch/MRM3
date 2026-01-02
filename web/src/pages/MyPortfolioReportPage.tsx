@@ -21,6 +21,7 @@ import {
     CalendarItem,
     PortfolioModel,
 } from '../api/myPortfolio';
+import { getTeams, Team as TeamOption } from '../api/teams';
 
 type ViewMode = 'list' | 'calendar';
 
@@ -32,16 +33,27 @@ const MyPortfolioReportPage: React.FC = () => {
     const [selectedMonth, setSelectedMonth] = useState(new Date());
     const [modelFilter, setModelFilter] = useState('');
     const [riskTierFilter, setRiskTierFilter] = useState('all');
+    const [teams, setTeams] = useState<TeamOption[]>([]);
+    const [selectedTeam, setSelectedTeam] = useState<string>('');
 
     useEffect(() => {
         fetchReport();
+    }, [selectedTeam]);
+
+    useEffect(() => {
+        getTeams().then((res) => setTeams(res.data)).catch(console.error);
     }, []);
 
     const fetchReport = async () => {
         setLoading(true);
         setError(null);
         try {
-            const data = await getMyPortfolio();
+            const teamId = selectedTeam === 'unassigned'
+                ? 0
+                : selectedTeam
+                    ? parseInt(selectedTeam)
+                    : undefined;
+            const data = await getMyPortfolio(teamId);
             setReport(data);
         } catch (err: unknown) {
             const errorMessage = err instanceof Error ? err.message : 'Failed to load portfolio report';
@@ -222,6 +234,22 @@ const MyPortfolioReportPage: React.FC = () => {
                         </p>
                     </div>
                     <div className="flex gap-2 print:hidden">
+                        <div className="flex items-center gap-2">
+                            <label className="text-sm font-medium text-gray-700">Team</label>
+                            <select
+                                value={selectedTeam}
+                                onChange={(e) => setSelectedTeam(e.target.value)}
+                                className="px-3 py-2 border rounded-lg text-sm"
+                            >
+                                <option value="">All Teams</option>
+                                <option value="unassigned">Unassigned</option>
+                                {teams.filter(team => team.is_active).map((team) => (
+                                    <option key={team.team_id} value={String(team.team_id)}>
+                                        {team.name}
+                                    </option>
+                                ))}
+                            </select>
+                        </div>
                         {/* View Toggle */}
                         <div className="flex rounded-lg border border-gray-300 overflow-hidden">
                             <button

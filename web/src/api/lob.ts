@@ -28,6 +28,26 @@ export interface LOBUnitTreeNode extends LOBUnit {
     children: LOBUnitTreeNode[];
 }
 
+export interface LOBUnitTeamTreeNode {
+    lob_id: number;
+    parent_id: number | null;
+    code: string;
+    name: string;
+    org_unit: string;
+    level: number;
+    is_active: boolean;
+    direct_team_id: number | null;
+    direct_team_name: string | null;
+    effective_team_id: number | null;
+    effective_team_name: string | null;
+    children: LOBUnitTeamTreeNode[];
+}
+
+export interface LOBTreeWithTeamsResponse {
+    lob_units: LOBUnitTeamTreeNode[];
+    teams: Array<{ team_id: number; name: string }>;
+}
+
 export interface LOBUnitCreate {
     code: string;
     name: string;
@@ -98,6 +118,14 @@ export const lobApi = {
     // Get LOB units as tree structure
     getLOBTree: async (activeOnly: boolean = true): Promise<LOBUnitTreeNode[]> => {
         const response = await api.get('/lob-units/tree', {
+            params: { include_inactive: !activeOnly }
+        });
+        return response.data;
+    },
+
+    // Get LOB tree with team assignments
+    getLOBTreeWithTeams: async (activeOnly: boolean = true): Promise<LOBTreeWithTeamsResponse> => {
+        const response = await api.get('/lob-units/tree-with-teams', {
             params: { include_inactive: !activeOnly }
         });
         return response.data;

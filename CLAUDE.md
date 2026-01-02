@@ -167,10 +167,13 @@ cd api && python -m pytest && cd ../web && pnpm test:run
   - `app/models/` - SQLAlchemy ORM models (User, Model, Vendor, EntraUser, Taxonomy, TaxonomyValue, AuditLog, Validation, ValidationPolicy)
   - `app/schemas/` - Pydantic request/response schemas
   - `alembic/` - Database migrations
-- **User Roles**: Admin, Validator, User
-  - **Admin**: Full access, can configure validation policies, view dashboard
-  - **Validator**: Can create/edit validations (independent review)
-  - **User**: Basic access to view models and data
+- **User Roles & Authorization**:
+  - **Architecture**: Normalized `roles` table with `role_code` (stable ID) and `display_name`.
+  - **Security Pattern**: Endpoints must be secured by checking `role_code` (e.g., `ADMIN`), NEVER by checking the legacy `role` string.
+  - **Standard Roles**:
+    - `ADMIN`: Full system access.
+    - `VALIDATOR`: Validation workflow management.
+    - `USER`: Standard model owner access.
 - **Key API Endpoints**:
   - `/auth/` - Login, register, get current user, list/update/delete users
   - `/auth/users/{id}` - Get specific user details

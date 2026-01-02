@@ -8,6 +8,7 @@ from app.core.time import utc_now
 
 if TYPE_CHECKING:
     from app.models.user import User
+    from app.models.team import Team
 
 
 class LOBUnit(Base):
@@ -22,6 +23,12 @@ class LOBUnit(Base):
     parent_id: Mapped[Optional[int]] = mapped_column(
         Integer,
         ForeignKey("lob_units.lob_id", ondelete="RESTRICT"),
+        nullable=True,
+        index=True
+    )
+    team_id: Mapped[Optional[int]] = mapped_column(
+        Integer,
+        ForeignKey("teams.team_id", ondelete="SET NULL"),
         nullable=True,
         index=True
     )
@@ -75,6 +82,12 @@ class LOBUnit(Base):
         "User",
         back_populates="lob",
         foreign_keys="User.lob_id"
+    )
+
+    # Direct team assignment (optional)
+    team: Mapped[Optional["Team"]] = relationship(
+        "Team",
+        back_populates="lob_units"
     )
 
     __table_args__ = (

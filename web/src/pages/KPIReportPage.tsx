@@ -13,6 +13,7 @@ import {
     KPIMetric,
 } from '../api/kpiReport';
 import { regionsApi, Region } from '../api/regions';
+import { getTeams, Team as TeamOption } from '../api/teams';
 
 const KPIReportPage: React.FC = () => {
     const [report, setReport] = useState<KPIReportResponse | null>(null);
@@ -22,13 +23,20 @@ const KPIReportPage: React.FC = () => {
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [regions, setRegions] = useState<Region[]>([]);
     const [selectedRegion, setSelectedRegion] = useState<string>('');
+    const [teams, setTeams] = useState<TeamOption[]>([]);
+    const [selectedTeam, setSelectedTeam] = useState<string>('');
 
     const fetchReport = async () => {
         setLoading(true);
         setError(null);
         try {
             const regionId = selectedRegion ? parseInt(selectedRegion) : undefined;
-            const data = await getKPIReport(regionId);
+            const teamId = selectedTeam === 'unassigned'
+                ? 0
+                : selectedTeam
+                    ? parseInt(selectedTeam)
+                    : undefined;
+            const data = await getKPIReport(regionId, teamId);
             setReport(data);
         } catch (err) {
             console.error('Failed to fetch KPI report:', err);
@@ -41,12 +49,13 @@ const KPIReportPage: React.FC = () => {
     // Fetch regions on mount
     useEffect(() => {
         regionsApi.getRegions().then(setRegions).catch(console.error);
+        getTeams().then((res) => setTeams(res.data)).catch(console.error);
     }, []);
 
     // Re-fetch report when region changes
     useEffect(() => {
         fetchReport();
-    }, [selectedRegion]);
+    }, [selectedRegion, selectedTeam]);
 
     const handleInfoClick = (metric: KPIMetric) => {
         setSelectedMetric(metric);
@@ -65,7 +74,10 @@ const KPIReportPage: React.FC = () => {
         const regionSuffix = report.region_name !== 'All Regions'
             ? `_${report.region_name.replace(/\s+/g, '_')}`
             : '';
-        link.download = `kpi_report${regionSuffix}_${report.as_of_date}.csv`;
+        const teamSuffix = report.team_name !== 'All Teams'
+            ? `_${report.team_name.replace(/\s+/g, '_')}`
+            : '';
+        link.download = `kpi_report${regionSuffix}${teamSuffix}_${report.as_of_date}.csv`;
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
@@ -130,6 +142,11 @@ const KPIReportPage: React.FC = () => {
                                     ({report.region_name})
                                 </span>
                             )}
+                            {report && report.team_name !== 'All Teams' && (
+                                <span className="ml-2 text-lg text-emerald-600">
+                                    ({report.team_name})
+                                </span>
+                            )}
                         </h1>
                         {report && (
                             <p className="text-sm text-gray-500 mt-1">
@@ -137,11 +154,11 @@ const KPIReportPage: React.FC = () => {
                             </p>
                         )}
                     </div>
-                    <div className="flex items-center gap-3">
-                        <div className="flex items-center gap-2">
-                            <label htmlFor="region-filter" className="text-sm font-medium text-gray-700">
-                                Region:
-                            </label>
+                        <div className="flex items-center gap-3">
+                            <div className="flex items-center gap-2">
+                                <label htmlFor="region-filter" className="text-sm font-medium text-gray-700">
+                                    Region:
+                                </label>
                             <select
                                 id="region-filter"
                                 value={selectedRegion}
@@ -154,8 +171,27 @@ const KPIReportPage: React.FC = () => {
                                         {region.name}
                                     </option>
                                 ))}
-                            </select>
-                        </div>
+                                </select>
+                            </div>
+                            <div className="flex items-center gap-2">
+                                <label htmlFor="team-filter" className="text-sm font-medium text-gray-700">
+                                    Team:
+                                </label>
+                                <select
+                                    id="team-filter"
+                                    value={selectedTeam}
+                                    onChange={(e) => setSelectedTeam(e.target.value)}
+                                    className="border border-gray-300 rounded-md px-3 py-2 text-sm focus:ring-blue-500 focus:border-blue-500"
+                                >
+                                    <option value="">All Teams</option>
+                                    <option value="unassigned">Unassigned</option>
+                                    {teams.filter(team => team.is_active).map((team) => (
+                                        <option key={team.team_id} value={team.team_id}>
+                                            {team.name}
+                                        </option>
+                                    ))}
+                                </select>
+                            </div>
                         <button
                             onClick={handleExportCSV}
                             disabled={loading || !report}

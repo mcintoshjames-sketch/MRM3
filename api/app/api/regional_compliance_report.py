@@ -34,6 +34,8 @@ from app.models.model_region import ModelRegion
 from app.models.model_version import ModelVersion
 from app.models.validation import ValidationRequest, ValidationApproval, validation_request_regions
 from app.models.taxonomy import TaxonomyValue
+from app.core.team_utils import get_models_team_map
+from app.models.team import Team
 
 router = APIRouter(prefix="/regional-compliance-report", tags=["Reports"])
 
@@ -80,6 +82,7 @@ class RegionalComplianceReportResponse(BaseModel):
     """Complete regional compliance report."""
     report_generated_at: datetime
     region_filter: Optional[str]
+    team_filter: Optional[str] = None
     total_records: int
     records: List[RegionalDeploymentRecord]
 
@@ -88,6 +91,7 @@ class RegionalComplianceReportResponse(BaseModel):
 async def get_regional_deployment_compliance_report(
     region_code: Optional[str] = Query(None, description="Filter by region code (e.g., 'US')"),
     model_id: Optional[int] = Query(None, description="Filter by specific model"),
+    team_id: Optional[int] = Query(None, description="Filter by team ID (0 = Unassigned)"),
     only_deployed: bool = Query(True, description="Show only models with deployed versions"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
@@ -163,6 +167,22 @@ async def get_regional_deployment_compliance_report(
     # Execute query
     results = db.execute(query).all()
 
+    model_ids = list({row.model_id for row in results})
+    model_team_map = get_models_team_map(db, model_ids)
+
+    team_filter_name = None
+    if team_id is not None:
+        if team_id == 0:
+            results = [row for row in results if model_team_map.get(row.model_id) is None]
+            team_filter_name = "Unassigned"
+        else:
+            results = [
+                row for row in results
+                if model_team_map.get(row.model_id) and model_team_map[row.model_id]["team_id"] == team_id
+            ]
+            team = db.query(Team).filter(Team.team_id == team_id).first()
+            team_filter_name = team.name if team else f"Team {team_id}"
+
     # Now we need to get region-specific approval information
     records = []
     for row in results:
@@ -232,6 +252,7 @@ async def get_regional_deployment_compliance_report(
     return RegionalComplianceReportResponse(
         report_generated_at=utc_now(),
         region_filter=region_code,
+        team_filter=team_filter_name,
         total_records=len(records),
         records=records
     )

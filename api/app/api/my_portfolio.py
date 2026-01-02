@@ -1,7 +1,7 @@
 """My Portfolio Report - Consolidated dashboard for model owners."""
 from datetime import date, timedelta
 from typing import List, Optional
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Query
 from fastapi.responses import Response
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import or_, and_, func
@@ -28,6 +28,8 @@ from app.models.monitoring import (
     monitoring_plan_models,
 )
 from app.models.model_exception import ModelException
+from app.models.team import Team
+from app.core.team_utils import get_models_team_map
 from app.schemas.my_portfolio import (
     MyPortfolioResponse,
     PortfolioSummary,
@@ -110,6 +112,7 @@ def calculate_urgency(due_date: Optional[date], grace_end: Optional[date] = None
 
 @router.get("/reports/my-portfolio", response_model=MyPortfolioResponse)
 def get_my_portfolio(
+    team_id: Optional[int] = Query(None, description="Filter portfolio by team ID (0 = Unassigned)"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
@@ -130,11 +133,30 @@ def get_my_portfolio(
     # Get models owned by this user (Option C: primary + shared + delegate with can_submit_changes)
     owned_model_ids = get_owned_model_ids(db, current_user)
 
+    team_name = "All Teams"
+    if team_id is not None and owned_model_ids:
+        model_team_map = get_models_team_map(db, owned_model_ids)
+        if team_id == 0:
+            owned_model_ids = [
+                model_id for model_id in owned_model_ids
+                if model_team_map.get(model_id) is None
+            ]
+            team_name = "Unassigned"
+        else:
+            owned_model_ids = [
+                model_id for model_id in owned_model_ids
+                if model_team_map.get(model_id) and model_team_map[model_id]["team_id"] == team_id
+            ]
+            team = db.query(Team).filter(Team.team_id == team_id).first()
+            team_name = team.name if team else f"Team {team_id}"
+
     if not owned_model_ids:
         # Return empty portfolio
         return MyPortfolioResponse(
             report_generated_at=utc_now(),
             as_of_date=today,
+            team_id=team_id,
+            team_name=team_name,
             summary=PortfolioSummary(
                 total_models=0,
                 action_items_count=0,
@@ -565,6 +587,8 @@ def get_my_portfolio(
     return MyPortfolioResponse(
         report_generated_at=utc_now(),
         as_of_date=today,
+        team_id=team_id,
+        team_name=team_name,
         summary=summary,
         action_items=all_action_items,
         monitoring_alerts=monitoring_alerts,

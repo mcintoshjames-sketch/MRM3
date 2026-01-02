@@ -57,15 +57,25 @@ export interface KPIReportResponse {
     // Region filter context
     region_id: number | null;
     region_name: string;
+    // Team filter context
+    team_id: number | null;
+    team_name: string;
 }
 
 /**
  * Fetch the KPI Report with all metrics.
  * @param regionId - Optional region ID to filter metrics by models deployed to that region
  */
-export const getKPIReport = async (regionId?: number): Promise<KPIReportResponse> => {
-    const params = regionId !== undefined ? `?region_id=${regionId}` : '';
-    const response = await client.get<KPIReportResponse>(`/kpi-report/${params}`);
+export const getKPIReport = async (regionId?: number, teamId?: number): Promise<KPIReportResponse> => {
+    const params = new URLSearchParams();
+    if (regionId !== undefined) {
+        params.append('region_id', String(regionId));
+    }
+    if (teamId !== undefined) {
+        params.append('team_id', String(teamId));
+    }
+    const suffix = params.toString() ? `?${params.toString()}` : '';
+    const response = await client.get<KPIReportResponse>(`/kpi-report/${suffix}`);
     return response.data;
 };
 
@@ -118,6 +128,9 @@ export const exportKPIReportToCSV = (report: KPIReportResponse): string => {
 
     // Report metadata header
     lines.push(`# KPI Report - ${report.region_name}`);
+    if (report.team_name && report.team_name !== 'All Teams') {
+        lines.push(`# Team: ${report.team_name}`);
+    }
     lines.push(`# As of: ${report.as_of_date}`);
     lines.push(`# Total Active Models: ${report.total_active_models}`);
     lines.push('');

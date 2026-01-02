@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import Layout from '../components/Layout';
 import client from '../api/client';
+import { getTeams, Team as TeamOption } from '../api/teams';
 
 interface RegionalDeploymentRecord {
     region_code: string;
@@ -28,6 +29,7 @@ interface RegionalDeploymentRecord {
 interface RegionalComplianceReportResponse {
     report_generated_at: string;
     region_filter: string | null;
+    team_filter?: string | null;
     total_records: number;
     records: RegionalDeploymentRecord[];
 }
@@ -36,16 +38,19 @@ const RegionalComplianceReportPage: React.FC = () => {
     const [loading, setLoading] = useState(true);
     const [reportData, setReportData] = useState<RegionalComplianceReportResponse | null>(null);
     const [regionFilter, setRegionFilter] = useState<string>('');
+    const [teamFilter, setTeamFilter] = useState<string>('');
     const [onlyDeployed, setOnlyDeployed] = useState(true);
     const [availableRegions, setAvailableRegions] = useState<{code: string, name: string}[]>([]);
+    const [teams, setTeams] = useState<TeamOption[]>([]);
 
     useEffect(() => {
         fetchRegions();
+        getTeams().then((res) => setTeams(res.data)).catch(console.error);
     }, []);
 
     useEffect(() => {
         fetchReport();
-    }, [regionFilter, onlyDeployed]);
+    }, [regionFilter, teamFilter, onlyDeployed]);
 
     const fetchRegions = async () => {
         try {
@@ -61,6 +66,11 @@ const RegionalComplianceReportPage: React.FC = () => {
             setLoading(true);
             const params = new URLSearchParams();
             if (regionFilter) params.append('region_code', regionFilter);
+            if (teamFilter === 'unassigned') {
+                params.append('team_id', '0');
+            } else if (teamFilter) {
+                params.append('team_id', teamFilter);
+            }
             params.append('only_deployed', String(onlyDeployed));
 
             const response = await client.get(
@@ -214,7 +224,7 @@ const RegionalComplianceReportPage: React.FC = () => {
 
                 {/* Filters */}
                 <div className="bg-white p-4 rounded-lg shadow-md">
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                         <div>
                             <label className="block text-sm font-medium text-gray-700 mb-1">
                                 Filter by Region
@@ -228,6 +238,24 @@ const RegionalComplianceReportPage: React.FC = () => {
                                 {availableRegions.map((region) => (
                                     <option key={region.code} value={region.code}>
                                         {region.name} ({region.code})
+                                    </option>
+                                ))}
+                            </select>
+                        </div>
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">
+                                Filter by Team
+                            </label>
+                            <select
+                                value={teamFilter}
+                                onChange={(e) => setTeamFilter(e.target.value)}
+                                className="input-field"
+                            >
+                                <option value="">All Teams</option>
+                                <option value="unassigned">Unassigned</option>
+                                {teams.filter(team => team.is_active).map((team) => (
+                                    <option key={team.team_id} value={String(team.team_id)}>
+                                        {team.name}
                                     </option>
                                 ))}
                             </select>
@@ -249,7 +277,7 @@ const RegionalComplianceReportPage: React.FC = () => {
                 {/* Report Summary */}
                 {reportData && (
                     <div className="bg-white p-4 rounded-lg shadow-md">
-                        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                        <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
                             <div>
                                 <p className="text-sm text-gray-600">Report Generated</p>
                                 <p className="text-lg font-semibold">
@@ -264,6 +292,12 @@ const RegionalComplianceReportPage: React.FC = () => {
                                 <p className="text-sm text-gray-600">Region Filter</p>
                                 <p className="text-lg font-semibold">
                                     {reportData.region_filter || 'All Regions'}
+                                </p>
+                            </div>
+                            <div>
+                                <p className="text-sm text-gray-600">Team Filter</p>
+                                <p className="text-lg font-semibold">
+                                    {reportData.team_filter || 'All Teams'}
                                 </p>
                             </div>
                             <div>

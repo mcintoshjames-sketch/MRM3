@@ -3,7 +3,7 @@ import csv
 import io
 import json
 from datetime import datetime, date, timedelta
-from typing import List, Optional
+from typing import List, Optional, Dict
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from pydantic import BaseModel
 from fastapi.responses import StreamingResponse
@@ -32,6 +32,7 @@ from app.models.methodology import Methodology
 from app.models.risk_assessment import ModelRiskAssessment
 from app.models.irp import IRP
 from app.models.model_exception import ModelException, ModelExceptionStatusHistory
+from app.models.team import Team
 from app.schemas.model_exception import ModelExceptionListResponse
 from app.schemas.model import (
     ModelCreate, ModelUpdate, ModelDetailResponse, ValidationGroupingSuggestion, ModelCreateResponse,
@@ -43,6 +44,7 @@ from app.schemas.model import (
     ModelTypeListItem, ModelRegionListItem
 )
 from app.core.lob_utils import get_user_lob_rollup_name
+from app.core.team_utils import build_lob_team_map
 from app.schemas.submission_action import SubmissionAction, SubmissionFeedback, SubmissionCommentCreate
 from app.schemas.activity_timeline import ActivityTimelineItem, ActivityTimelineResponse
 from app.models.model_name_history import ModelNameHistory
@@ -295,7 +297,12 @@ def _build_user_list_item(user: User) -> dict:
     }
 
 
-def _build_model_list_response(model: Model, include_computed_fields: bool, db: Session) -> dict:
+def _build_model_list_response(
+    model: Model,
+    include_computed_fields: bool,
+    db: Session,
+    team_map: Optional[Dict[int, Optional[dict]]] = None
+) -> dict:
     """Build lightweight model response dict without Pydantic validation overhead."""
     # Build lightweight nested objects directly
     owner_dict = _build_user_list_item(model.owner)
@@ -416,6 +423,7 @@ def _build_model_list_response(model: Model, include_computed_fields: bool, db: 
         "row_approval_status": model.row_approval_status,
         "business_line_name": business_line,
         "model_last_updated": get_model_last_updated(model),
+        "team": team_map.get(model.model_id) if team_map else None,
         "owner_id": model.owner_id,
         "developer_id": model.developer_id,
         "vendor_id": model.vendor_id,
@@ -473,6 +481,7 @@ def list_models(
     include_computed_fields: bool = False,
     model_ids: Optional[str] = Query(None, description="Comma-separated model IDs to filter (for KPI drill-down)"),
     is_mrsa: Optional[bool] = Query(None, description="Filter by MRSA status: True=MRSAs only, False=Models only, None=All"),
+    team_id: Optional[int] = Query(None, description="Filter by team ID (0 = Unassigned)"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
@@ -489,6 +498,7 @@ def list_models(
       residual_risk, approval_status). Default False for better performance.
     - model_ids: Comma-separated model IDs to filter (for KPI drill-down links)
     - is_mrsa: Filter by MRSA status - True shows only MRSAs, False shows only models, None shows all
+    - team_id: Filter by effective team ID (0 = Unassigned)
     """
     from app.core.rls import apply_model_rls
     from app.models.lob import LOBUnit
@@ -531,6 +541,22 @@ def list_models(
 
     models = query.all()
 
+    # Build LOB → Team map once for this request
+    lob_team_map = build_lob_team_map(db)
+
+    # Apply team filter if requested
+    if team_id is not None:
+        if team_id == 0:
+            models = [
+                model for model in models
+                if not (model.owner and lob_team_map.get(model.owner.lob_id))
+            ]
+        else:
+            models = [
+                model for model in models
+                if model.owner and lob_team_map.get(model.owner.lob_id) == team_id
+            ]
+
     # Filter out sub-models if requested
     if exclude_sub_models:
         from sqlalchemy import func
@@ -542,7 +568,26 @@ def list_models(
         models = [m for m in models if m.model_id not in sub_model_ids]
 
     # Build lightweight responses without Pydantic validation overhead
-    results = [_build_model_list_response(m, include_computed_fields, db) for m in models]
+    team_ids = set()
+    model_team_ids: Dict[int, Optional[int]] = {}
+    for model in models:
+        owner_lob_id = model.owner.lob_id if model.owner else None
+        effective_team_id = lob_team_map.get(owner_lob_id) if owner_lob_id else None
+        model_team_ids[model.model_id] = effective_team_id
+        if effective_team_id:
+            team_ids.add(effective_team_id)
+
+    team_info = {}
+    if team_ids:
+        teams = db.query(Team).filter(Team.team_id.in_(team_ids)).all()
+        team_info = {team.team_id: {"team_id": team.team_id, "name": team.name} for team in teams}
+
+    model_team_map = {
+        model_id: team_info.get(team_id) if team_id else None
+        for model_id, team_id in model_team_ids.items()
+    }
+
+    results = [_build_model_list_response(m, include_computed_fields, db, model_team_map) for m in models]
 
     # Batch compute revalidation fields (only when include_computed_fields is True)
     if include_computed_fields and models:
@@ -934,6 +979,14 @@ def create_model(
     # Convert model to dict and add warnings
     from pydantic import TypeAdapter
     model_dict = ModelCreateResponse.model_validate(model).model_dump()
+    team_id = None
+    if model.owner:
+        team_id = build_lob_team_map(db).get(model.owner.lob_id)
+    if team_id:
+        team = db.query(Team).filter(Team.team_id == team_id).first()
+        model_dict["team"] = {"team_id": team.team_id, "name": team.name} if team else None
+    else:
+        model_dict["team"] = None
     if warnings:
         model_dict['warnings'] = warnings
     return model_dict
@@ -1271,6 +1324,16 @@ def get_model(
 
     # Compute model last updated from latest ACTIVE version
     model_dict['model_last_updated'] = get_model_last_updated(model)
+
+    # Compute effective team from owner's LOB chain
+    team_id = None
+    if model.owner:
+        team_id = build_lob_team_map(db).get(model.owner.lob_id)
+    if team_id:
+        team = db.query(Team).filter(Team.team_id == team_id).first()
+        model_dict["team"] = {"team_id": team.team_id, "name": team.name} if team else None
+    else:
+        model_dict["team"] = None
 
     # Compute open exception count for UI badge
     from sqlalchemy import func

@@ -50,6 +50,7 @@ import ReferenceDataPage from './pages/ReferenceDataPage';
 import ApproverDashboardPage from './pages/ApproverDashboardPage';
 import IRPsPage from './pages/IRPsPage';
 import IRPDetailPage from './pages/IRPDetailPage';
+import TeamsPage from './pages/TeamsPage';
 import MyPortfolioReportPage from './pages/MyPortfolioReportPage';
 import ExceptionsReportPage from './pages/ExceptionsReportPage';
 import ReadyToDeployPage from './pages/ReadyToDeployPage';
@@ -68,6 +69,7 @@ import {
     canManageMonitoringPlans,
     canManageMrsaReviewPolicies,
     canManageRegions,
+    canManageTeams,
     canManageTaxonomy,
     canManageUsers,
     canManageValidationPolicies,
@@ -143,6 +145,7 @@ function App() {
             <Route path="/workflow-config" element={canManageWorkflowConfig(user) ? <WorkflowConfigurationPage /> : <Navigate to="/models" />} />
             <Route path="/batch-delegates" element={canManageDelegates(user) ? <BatchDelegatesPage /> : <Navigate to="/models" />} />
             <Route path="/regions" element={canManageRegions(user) ? <RegionsPage /> : <Navigate to="/models" />} />
+            <Route path="/teams" element={canManageTeams(user) ? <TeamsPage /> : <Navigate to="/models" />} />
             <Route path="/validation-policies" element={canManageValidationPolicies(user) ? <ValidationPoliciesPage /> : <Navigate to="/models" />} />
             <Route path="/mrsa-review-policies" element={canManageMrsaReviewPolicies(user) ? <MRSAReviewPoliciesPage /> : <Navigate to="/models" />} />
             <Route path="/component-definitions" element={<Navigate to="/taxonomy?tab=component-definitions" />} />

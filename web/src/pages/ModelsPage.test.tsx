@@ -45,6 +45,11 @@ const sampleVendors = [
     { vendor_id: 2, name: 'MSCI', contact_info: 'support@msci.com' },
 ];
 
+const sampleTeams = [
+    { team_id: 1, name: 'Credit Risk Team', is_active: true, lob_count: 2, model_count: 5 },
+    { team_id: 2, name: 'Market Risk Team', is_active: true, lob_count: 1, model_count: 3 },
+];
+
 const sampleModels = [
     {
         model_id: 1,
@@ -87,6 +92,7 @@ const setupApiMocks = (models = sampleModels) => {
         if (url === '/auth/users') return Promise.resolve({ data: sampleUsers });
         if (url === '/vendors/') return Promise.resolve({ data: sampleVendors });
         if (url === '/regions/') return Promise.resolve({ data: [] });
+        if (url === '/teams/') return Promise.resolve({ data: sampleTeams });
         if (url.startsWith('/taxonomies/by-names/')) return Promise.resolve({ data: [] });
         if (url === '/model-types/categories') return Promise.resolve({ data: [] });
         if (url === '/export-views/?entity_type=models') return Promise.resolve({ data: [] });
