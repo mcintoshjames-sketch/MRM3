@@ -130,6 +130,7 @@ def add_model_application(
         model_id=model_id,
         application_id=data.application_id,
         relationship_type_id=data.relationship_type_id,
+        relationship_direction=data.relationship_direction,
         description=data.description,
         effective_date=data.effective_date or date.today(),
         created_by_user_id=current_user.user_id
@@ -203,6 +204,9 @@ def update_model_application(
                 detail=f"Invalid relationship type ID: {data.relationship_type_id}"
             )
         relationship.relationship_type_id = data.relationship_type_id
+
+    if data.relationship_direction is not None:
+        relationship.relationship_direction = data.relationship_direction
 
     if data.description is not None:
         relationship.description = data.description

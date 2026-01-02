@@ -1,7 +1,10 @@
 """API endpoints for Model Risk Assessment."""
 from typing import List, Optional
 from decimal import Decimal
+import tempfile
+import os
 from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session, joinedload
 
 from app.core.database import get_db
@@ -13,6 +16,7 @@ from app.core.risk_calculation import (
     map_to_tier_code,
     RATING_SCORES
 )
+from app.core.pdf_generator import RiskAssessmentPDF
 from app.models.user import User
 from app.core.roles import is_admin, is_validator
 from app.models.model import Model
@@ -23,6 +27,13 @@ from app.models.risk_assessment import (
     QualitativeRiskFactor,
     QualitativeFactorAssessment,
 )
+from app.models.validation import (
+    ValidationRequest,
+    ValidationRequestModelVersion,
+)
+from app.models.scorecard import ValidationScorecardResult
+from app.models.model_version import ModelVersion
+from app.models.residual_risk_map import ResidualRiskMapConfig
 from app.schemas.risk_assessment import (
     RiskAssessmentCreate,
     RiskAssessmentUpdate,
@@ -99,7 +110,8 @@ def get_assessment_or_404(
 
 def get_tier_value(db: Session, tier_code: str) -> Optional[TaxonomyValue]:
     """Get the taxonomy value for a tier code (TIER_1, TIER_2, etc.)."""
-    taxonomy = db.query(Taxonomy).filter(Taxonomy.name == "Model Risk Tier").first()
+    taxonomy = db.query(Taxonomy).filter(
+        Taxonomy.name == "Model Risk Tier").first()
     if not taxonomy:
         return None
     return (
@@ -253,7 +265,8 @@ def build_assessment_response(
     return RiskAssessmentResponse(
         assessment_id=assessment.assessment_id,
         model_id=assessment.model_id,
-        region=RegionBrief.model_validate(assessment.region) if assessment.region else None,
+        region=RegionBrief.model_validate(
+            assessment.region) if assessment.region else None,
         qualitative_factors=factor_responses,
         qualitative_calculated_score=(
             float(assessment.qualitative_calculated_score)
@@ -465,7 +478,8 @@ def get_assessment_history(
                 region_id = log.changes.get("new", {}).get("region_id")
 
         if region_id:
-            region = db.query(Region).filter(Region.region_id == region_id).first()
+            region = db.query(Region).filter(
+                Region.region_id == region_id).first()
             if region:
                 region_name = region.name
 
@@ -487,10 +501,14 @@ def get_assessment_history(
                 new_data = log.changes.get("new", {})
                 old_quantitative = old_data.get("quantitative_rating")
                 new_quantitative = new_data.get("quantitative_rating")
-                old_qualitative = old_data.get("qualitative_override") or old_data.get("qualitative_calculated_level")
-                new_qualitative = new_data.get("qualitative_override") or new_data.get("qualitative_calculated_level")
-                old_tier = old_data.get("derived_risk_tier_override") or old_data.get("derived_risk_tier")
-                new_tier = new_data.get("derived_risk_tier_override") or new_data.get("derived_risk_tier")
+                old_qualitative = old_data.get("qualitative_override") or old_data.get(
+                    "qualitative_calculated_level")
+                new_qualitative = new_data.get("qualitative_override") or new_data.get(
+                    "qualitative_calculated_level")
+                old_tier = old_data.get(
+                    "derived_risk_tier_override") or old_data.get("derived_risk_tier")
+                new_tier = new_data.get(
+                    "derived_risk_tier_override") or new_data.get("derived_risk_tier")
             elif log.action == "DELETE":
                 old_tier = log.changes.get("derived_risk_tier_override")
 
@@ -553,11 +571,14 @@ def _build_changes_summary(
     elif action == "UPDATE":
         changes = []
         if old_quantitative != new_quantitative:
-            changes.append(f"Quantitative: {old_quantitative or 'None'} → {new_quantitative or 'None'}")
+            changes.append(
+                f"Quantitative: {old_quantitative or 'None'} → {new_quantitative or 'None'}")
         if old_qualitative != new_qualitative:
-            changes.append(f"Qualitative: {old_qualitative or 'None'} → {new_qualitative or 'None'}")
+            changes.append(
+                f"Qualitative: {old_qualitative or 'None'} → {new_qualitative or 'None'}")
         if old_tier != new_tier:
-            changes.append(f"Tier: {old_tier or 'None'} → {new_tier or 'None'}")
+            changes.append(
+                f"Tier: {old_tier or 'None'} → {new_tier or 'None'}")
 
         if changes:
             return f"Updated {scope}: " + ", ".join(changes)
@@ -697,7 +718,8 @@ def create_assessment(
     tier_code = map_to_tier_code(eff_final)
 
     # Sync model tier (for global assessments) - includes force reset if tier changed
-    sync_model_tier(db, model, assessment, tier_code, user_id=current_user.user_id)
+    sync_model_tier(db, model, assessment, tier_code,
+                    user_id=current_user.user_id)
 
     db.commit()
 
@@ -799,7 +821,8 @@ def update_assessment(
     tier_code = map_to_tier_code(eff_final)
 
     # Sync model tier (for global assessments) - includes force reset if tier changed
-    sync_model_tier(db, model, assessment, tier_code, user_id=current_user.user_id)
+    sync_model_tier(db, model, assessment, tier_code,
+                    user_id=current_user.user_id)
 
     # Create audit log for update
     new_values = {
@@ -861,3 +884,125 @@ def delete_assessment(
 
     db.delete(assessment)
     db.commit()
+
+
+@router.get("/models/{model_id}/risk-assessments/{assessment_id}/pdf", response_class=FileResponse)
+def export_risk_assessment_pdf(
+    model_id: int,
+    assessment_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Export risk assessment as PDF."""
+    assessment = get_assessment_or_404(db, model_id, assessment_id)
+    model = assessment.model
+
+    # Fetch Validation Scorecard
+    # Find latest validation request for this model that has a scorecard result
+    validation_request = (
+        db.query(ValidationRequest)
+        .join(ValidationRequestModelVersion)
+        .join(ModelVersion)
+        .join(ValidationScorecardResult)
+        .filter(ModelVersion.model_id == model_id)
+        .order_by(ValidationRequest.created_at.desc())
+        .first()
+    )
+
+    scorecard_result = None
+    if validation_request:
+        scorecard_result = validation_request.scorecard_result
+
+    # Fetch Residual Risk Matrix
+    residual_matrix_config = (
+        db.query(ResidualRiskMapConfig)
+        .filter(ResidualRiskMapConfig.is_active == True)
+        .first()
+    )
+
+    # Prepare Data
+    data = {
+        "assessment_date": assessment.updated_at.strftime("%d-%b-%Y"),
+        "region": assessment.region.name if assessment.region else "Global",
+        "model": {
+            "name": model.model_name,
+            "id": model.model_id,
+            "project_id": "2072",  # Placeholder
+            "product": model.products_covered or "",
+            "category": model.model_type.category.name if model.model_type and model.model_type.category else "",
+            "subcategory": model.model_type.name if model.model_type else "",
+        },
+        # Section 2
+        "inherent_risk_tier": assessment.derived_risk_tier_override or assessment.derived_risk_tier,
+        "inherent_risk_derived": assessment.derived_risk_tier,
+        "inherent_risk_derived_comment": "As per Materiality Assessment Matrix",
+        "quantitative_rating": assessment.quantitative_rating,
+        "quantitative_comment": assessment.quantitative_comment,
+        "quantitative_override": assessment.quantitative_override,
+        "quantitative_override_comment": assessment.quantitative_override_comment,
+        "qualitative_rating": assessment.qualitative_calculated_level,
+        "qualitative_override": assessment.qualitative_override,
+        "qualitative_override_comment": assessment.qualitative_override_comment,
+        "inherent_risk_override": assessment.derived_risk_tier_override,
+        "inherent_risk_override_comment": assessment.derived_risk_tier_override_comment,
+        "qualitative_factors": [],
+
+        # Section 3
+        "validation_rating": scorecard_result.overall_rating if scorecard_result else "N/A",
+        "validation_comment": scorecard_result.overall_assessment_narrative if scorecard_result else "",
+        "scorecard_sections": [],
+
+        # Section 4
+        "residual_risk": "Low",
+        "residual_risk_derived": "Low",
+        "residual_risk_derived_comment": "As per Model Risk Ranking Matrix",
+        "residual_risk_override": "",
+        "residual_risk_override_comment": "",
+    }
+
+    # Populate Qualitative Factors
+    for fa in assessment.factor_assessments:
+        data["qualitative_factors"].append({
+            "name": fa.factor.name,
+            "rating": fa.rating,
+            "comment": fa.comment
+        })
+
+    # Populate Scorecard Sections
+    if scorecard_result and scorecard_result.section_summaries:
+        # section_summaries is a dict like {"1": {...}, "2": {...}}
+        for key, summary in sorted(scorecard_result.section_summaries.items()):
+            data["scorecard_sections"].append({
+                "name": summary.get("section_name", ""),
+                "rating": summary.get("rating", ""),
+                "comment": ""
+            })
+
+    # Calculate Residual Risk
+    inherent_tier_label = data["inherent_risk_tier"] or "Low"
+    validation_rating = data["validation_rating"]
+
+    if residual_matrix_config and validation_rating and inherent_tier_label:
+        matrix = residual_matrix_config.matrix_config.get("matrix", {})
+        # Normalize keys
+        row_key = inherent_tier_label.title()  # High
+        col_key = validation_rating  # Green, Green-, etc.
+
+        if row_key in matrix:
+            data["residual_risk_derived"] = matrix[row_key].get(col_key, "Low")
+            # Assuming no override for now
+            data["residual_risk"] = data["residual_risk_derived"]
+
+    # Generate PDF
+    pdf = RiskAssessmentPDF(data)
+    pdf.generate_report()
+
+    # Save to temp file
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
+        pdf.output(tmp.name)
+        tmp_path = tmp.name
+
+    return FileResponse(
+        tmp_path,
+        filename=f"Risk_Assessment_{model.model_name}_{assessment.updated_at.strftime('%Y%m%d')}.pdf"
+    )

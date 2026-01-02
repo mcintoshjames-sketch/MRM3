@@ -262,6 +262,29 @@ export async function checkOpenValidationsForModel(
     return response.data;
 }
 
+export const downloadAssessmentPdf = async (modelId: number, assessmentId: number): Promise<void> => {
+    const response = await client.get(`/models/${modelId}/risk-assessments/${assessmentId}/pdf`, {
+        responseType: 'blob',
+    });
+
+    const url = window.URL.createObjectURL(new Blob([response.data]));
+    const link = document.createElement('a');
+    link.href = url;
+
+    const contentDisposition = response.headers['content-disposition'];
+    let filename = `Risk_Assessment_${modelId}.pdf`;
+    if (contentDisposition) {
+        const filenameMatch = contentDisposition.match(/filename="?([^"]+)"?/);
+        if (filenameMatch && filenameMatch.length === 2)
+            filename = filenameMatch[1];
+    }
+
+    link.setAttribute('download', filename);
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+};
+
 export default {
     listAssessments,
     getAssessment,
@@ -271,6 +294,7 @@ export default {
     getAssessmentHistory,
     lookupInherentRisk,
     checkOpenValidationsForModel,
+    downloadAssessmentPdf,
     RATING_SCORES,
     RATING_COLORS,
     TIER_MAP,

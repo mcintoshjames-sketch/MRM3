@@ -166,11 +166,22 @@ class TestModelApplicationsAPI:
                 label="Execution Platform",
                 sort_order=2
             ),
+            TaxonomyValue(
+                taxonomy_id=taxonomy.taxonomy_id,
+                code="OUTPUT_CONSUMER",
+                label="Output Consumer",
+                sort_order=3
+            ),
         ]
         for v in values:
             db_session.add(v)
         db_session.commit()
-        return {"taxonomy": taxonomy, "data_source": values[0], "execution": values[1]}
+        return {
+            "taxonomy": taxonomy,
+            "data_source": values[0],
+            "execution": values[1],
+            "output_consumer": values[2],
+        }
 
     @pytest.fixture
     def test_model_for_apps(self, db_session, admin_user, usage_frequency):
@@ -209,6 +220,7 @@ class TestModelApplicationsAPI:
         payload = {
             "application_id": test_application.application_id,
             "relationship_type_id": relationship_taxonomy["data_source"].value_id,
+            "relationship_direction": "UPSTREAM",
             "description": "Primary data source",
             "effective_date": "2025-01-01"
         }
@@ -222,6 +234,34 @@ class TestModelApplicationsAPI:
         assert data["application"]["application_code"] == "APP-TEST"
         assert data["relationship_type"]["code"] == "DATA_SOURCE"
         assert data["description"] == "Primary data source"
+        assert data["relationship_direction"] == "UPSTREAM"
+
+    def test_add_application_requires_direction(self, client, admin_headers, test_model_for_apps, test_application, relationship_taxonomy):
+        """Test that direction is required when creating a relationship."""
+        payload = {
+            "application_id": test_application.application_id,
+            "relationship_type_id": relationship_taxonomy["data_source"].value_id,
+        }
+        response = client.post(
+            f"/models/{test_model_for_apps.model_id}/applications",
+            json=payload,
+            headers=admin_headers
+        )
+        assert response.status_code == 422
+
+    def test_add_application_rejects_invalid_direction(self, client, admin_headers, test_model_for_apps, test_application, relationship_taxonomy):
+        """Test that invalid directions are rejected."""
+        payload = {
+            "application_id": test_application.application_id,
+            "relationship_type_id": relationship_taxonomy["data_source"].value_id,
+            "relationship_direction": "SIDEWAYS",
+        }
+        response = client.post(
+            f"/models/{test_model_for_apps.model_id}/applications",
+            json=payload,
+            headers=admin_headers
+        )
+        assert response.status_code == 422
 
     def test_add_duplicate_application_fails(self, client, admin_headers, test_model_for_apps, test_application, relationship_taxonomy, db_session):
         """Test that adding duplicate application link fails."""
@@ -229,7 +269,8 @@ class TestModelApplicationsAPI:
         link = ModelApplication(
             model_id=test_model_for_apps.model_id,
             application_id=test_application.application_id,
-            relationship_type_id=relationship_taxonomy["data_source"].value_id
+            relationship_type_id=relationship_taxonomy["data_source"].value_id,
+            relationship_direction="UPSTREAM",
         )
         db_session.add(link)
         db_session.commit()
@@ -237,7 +278,8 @@ class TestModelApplicationsAPI:
         # Try to add again
         payload = {
             "application_id": test_application.application_id,
-            "relationship_type_id": relationship_taxonomy["execution"].value_id
+            "relationship_type_id": relationship_taxonomy["execution"].value_id,
+            "relationship_direction": "DOWNSTREAM",
         }
         response = client.post(
             f"/models/{test_model_for_apps.model_id}/applications",
@@ -253,6 +295,7 @@ class TestModelApplicationsAPI:
             model_id=test_model_for_apps.model_id,
             application_id=test_application.application_id,
             relationship_type_id=relationship_taxonomy["data_source"].value_id,
+            relationship_direction="UPSTREAM",
             effective_date=date(2025, 1, 1)
         )
         db_session.add(link)
@@ -263,13 +306,15 @@ class TestModelApplicationsAPI:
         data = response.json()
         assert len(data) == 1
         assert data[0]["application"]["application_code"] == "APP-TEST"
+        assert data[0]["relationship_direction"] == "UPSTREAM"
 
     def test_remove_application_soft_delete(self, client, admin_headers, test_model_for_apps, test_application, relationship_taxonomy, db_session):
         """Test removing application link uses soft delete."""
         link = ModelApplication(
             model_id=test_model_for_apps.model_id,
             application_id=test_application.application_id,
-            relationship_type_id=relationship_taxonomy["data_source"].value_id
+            relationship_type_id=relationship_taxonomy["data_source"].value_id,
+            relationship_direction="UPSTREAM",
         )
         db_session.add(link)
         db_session.commit()
@@ -290,6 +335,7 @@ class TestModelApplicationsAPI:
             model_id=test_model_for_apps.model_id,
             application_id=test_application.application_id,
             relationship_type_id=relationship_taxonomy["data_source"].value_id,
+            relationship_direction="UPSTREAM",
             end_date=date(2025, 1, 1)  # Already ended
         )
         db_session.add(link)
@@ -323,7 +369,8 @@ class TestModelApplicationsAPI:
 
         payload = {
             "application_id": test_application.application_id,
-            "relationship_type_id": relationship_taxonomy["data_source"].value_id
+            "relationship_type_id": relationship_taxonomy["data_source"].value_id,
+            "relationship_direction": "UPSTREAM",
         }
         response = client.post(
             f"/models/{test_model_for_apps.model_id}/applications",
@@ -336,7 +383,8 @@ class TestModelApplicationsAPI:
         """Test adding application to non-existent model."""
         payload = {
             "application_id": test_application.application_id,
-            "relationship_type_id": relationship_taxonomy["data_source"].value_id
+            "relationship_type_id": relationship_taxonomy["data_source"].value_id,
+            "relationship_direction": "UPSTREAM",
         }
         response = client.post(
             "/models/99999/applications",
@@ -349,7 +397,8 @@ class TestModelApplicationsAPI:
         """Test adding non-existent application to model."""
         payload = {
             "application_id": 99999,
-            "relationship_type_id": relationship_taxonomy["data_source"].value_id
+            "relationship_type_id": relationship_taxonomy["data_source"].value_id,
+            "relationship_direction": "UPSTREAM",
         }
         response = client.post(
             f"/models/{test_model_for_apps.model_id}/applications",
@@ -357,3 +406,26 @@ class TestModelApplicationsAPI:
             headers=admin_headers
         )
         assert response.status_code == 404
+
+    def test_update_application_direction(self, client, admin_headers, test_model_for_apps, test_application, relationship_taxonomy, db_session):
+        """Test updating relationship direction."""
+        link = ModelApplication(
+            model_id=test_model_for_apps.model_id,
+            application_id=test_application.application_id,
+            relationship_type_id=relationship_taxonomy["data_source"].value_id,
+            relationship_direction="UPSTREAM",
+        )
+        db_session.add(link)
+        db_session.commit()
+
+        payload = {
+            "relationship_direction": "DOWNSTREAM",
+        }
+        response = client.patch(
+            f"/models/{test_model_for_apps.model_id}/applications/{test_application.application_id}",
+            json=payload,
+            headers=admin_headers
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["relationship_direction"] == "DOWNSTREAM"

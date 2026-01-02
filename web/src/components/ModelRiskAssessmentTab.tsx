@@ -24,6 +24,7 @@ import {
     lookupInherentRisk,
     TIER_LABELS,
     TIER_MAP,
+    downloadAssessmentPdf,
 } from '../api/riskAssessment';
 import { listFactors, FactorResponse } from '../api/qualitativeFactors';
 import { useAuth } from '../contexts/AuthContext';
@@ -440,6 +441,17 @@ const ModelRiskAssessmentTab: React.FC<Props> = ({ modelId, regions = [] }) => {
                     </p>
                 </div>
                 <div className="flex items-center space-x-4">
+                    {currentAssessment && (
+                        <button
+                            onClick={() => downloadAssessmentPdf(modelId, currentAssessment.assessment_id)}
+                            className="inline-flex items-center px-3 py-2 border border-gray-300 shadow-sm text-sm leading-4 font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                        >
+                            <svg className="-ml-0.5 mr-2 h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                            </svg>
+                            Export PDF
+                        </button>
+                    )}
                     <label className="text-sm font-medium text-gray-700">Region:</label>
                     <select
                         value={selectedRegionId === null ? '' : selectedRegionId}
@@ -499,11 +511,10 @@ const ModelRiskAssessmentTab: React.FC<Props> = ({ modelId, regions = [] }) => {
                     </div>
 
                     {/* Override Panel */}
-                    <div className={`rounded-lg border-2 p-3 transition-colors ${
-                        quantitativeOverride !== null
+                    <div className={`rounded-lg border-2 p-3 transition-colors ${quantitativeOverride !== null
                             ? 'bg-amber-50 border-amber-300'
                             : 'bg-gray-50 border-dashed border-gray-300 hover:border-amber-300 hover:bg-amber-50/50'
-                    }`}>
+                        }`}>
                         <div className="flex items-center gap-4">
                             <label className="flex items-center gap-2 cursor-pointer">
                                 <input
@@ -619,11 +630,10 @@ const ModelRiskAssessmentTab: React.FC<Props> = ({ modelId, regions = [] }) => {
                     </div>
 
                     {/* Override Panel */}
-                    <div className={`rounded-lg border-2 p-3 transition-colors ${
-                        qualitativeOverride !== null
+                    <div className={`rounded-lg border-2 p-3 transition-colors ${qualitativeOverride !== null
                             ? 'bg-amber-50 border-amber-300'
                             : 'bg-gray-50 border-dashed border-gray-300 hover:border-amber-300 hover:bg-amber-50/50'
-                    }`}>
+                        }`}>
                         <div className="flex items-center gap-4">
                             <label className="flex items-center gap-2 cursor-pointer">
                                 <input
@@ -694,9 +704,8 @@ const ModelRiskAssessmentTab: React.FC<Props> = ({ modelId, regions = [] }) => {
                                         return (
                                             <td
                                                 key={qual}
-                                                className={`border p-3 text-center ${colors.bg} ${colors.text} ${
-                                                    isSelected ? 'ring-2 ring-blue-500 ring-inset font-bold' : ''
-                                                }`}
+                                                className={`border p-3 text-center ${colors.bg} ${colors.text} ${isSelected ? 'ring-2 ring-blue-500 ring-inset font-bold' : ''
+                                                    }`}
                                             >
                                                 {result}
                                             </td>
@@ -721,11 +730,10 @@ const ModelRiskAssessmentTab: React.FC<Props> = ({ modelId, regions = [] }) => {
                     </div>
 
                     {/* Override Panel */}
-                    <div className={`rounded-lg border-2 p-3 transition-colors ${
-                        derivedOverride !== null
+                    <div className={`rounded-lg border-2 p-3 transition-colors ${derivedOverride !== null
                             ? 'bg-amber-50 border-amber-300'
                             : 'bg-gray-50 border-dashed border-gray-300 hover:border-amber-300 hover:bg-amber-50/50'
-                    }`}>
+                        }`}>
                         <div className="flex items-center gap-4">
                             <label className="flex items-center gap-2 cursor-pointer">
                                 <input
@@ -776,13 +784,11 @@ const ModelRiskAssessmentTab: React.FC<Props> = ({ modelId, regions = [] }) => {
             </div>
 
             {/* Final Tier Display */}
-            <div className={`border-2 rounded-lg p-6 text-center ${
-                effectiveTier ? RATING_COLORS[effectiveTier].border : 'border-gray-300'
-            } ${effectiveTier ? RATING_COLORS[effectiveTier].bg : 'bg-gray-50'}`}>
+            <div className={`border-2 rounded-lg p-6 text-center ${effectiveTier ? RATING_COLORS[effectiveTier].border : 'border-gray-300'
+                } ${effectiveTier ? RATING_COLORS[effectiveTier].bg : 'bg-gray-50'}`}>
                 <div className="text-sm text-gray-600 mb-2">FINAL MODEL TIER</div>
-                <div className={`text-2xl font-bold ${
-                    effectiveTier ? RATING_COLORS[effectiveTier].text : 'text-gray-400'
-                }`}>
+                <div className={`text-2xl font-bold ${effectiveTier ? RATING_COLORS[effectiveTier].text : 'text-gray-400'
+                    }`}>
                     {effectiveTier ? TIER_LABELS[`TIER_${effectiveTier === 'VERY_LOW' ? '4' : effectiveTier === 'HIGH' ? '1' : effectiveTier === 'MEDIUM' ? '2' : '3'}`] : 'Not Calculated'}
                 </div>
                 {currentAssessment?.assessed_by && currentAssessment?.assessed_at && (
@@ -856,12 +862,11 @@ const ModelRiskAssessmentTab: React.FC<Props> = ({ modelId, regions = [] }) => {
                                                 {item.timestamp.split('T')[0]}
                                             </td>
                                             <td className="px-4 py-2 text-sm whitespace-nowrap">
-                                                <span className={`px-2 py-1 rounded text-xs font-medium ${
-                                                    item.action === 'CREATE' ? 'bg-green-100 text-green-800' :
-                                                    item.action === 'UPDATE' ? 'bg-blue-100 text-blue-800' :
-                                                    item.action === 'DELETE' ? 'bg-red-100 text-red-800' :
-                                                    'bg-gray-100 text-gray-800'
-                                                }`}>
+                                                <span className={`px-2 py-1 rounded text-xs font-medium ${item.action === 'CREATE' ? 'bg-green-100 text-green-800' :
+                                                        item.action === 'UPDATE' ? 'bg-blue-100 text-blue-800' :
+                                                            item.action === 'DELETE' ? 'bg-red-100 text-red-800' :
+                                                                'bg-gray-100 text-gray-800'
+                                                    }`}>
                                                     {item.action}
                                                 </span>
                                             </td>

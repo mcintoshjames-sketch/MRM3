@@ -44,6 +44,7 @@ The Model Inventory provides a centralized repository for tracking all quantitat
 
 - **Identification**: Model name, description, and unique model ID
 - **Ownership**: Model owner, developer, and associated business line
+- **Coverage**: Products, portfolios, or lines of business covered by the model
 - **Risk Profile**: Risk tier, assessment factors, and approval status
 - **Lifecycle Status**: Current validation state and approval history
 - **Relationships**: Connections to parent models and data dependencies
@@ -63,6 +64,7 @@ To register a new model in the inventory:
 |-------|-------------|----------|
 | **Model Name** | A unique, descriptive name for the model | Yes |
 | **Description** | Purpose and functionality of the model | No |
+| **Products Covered** | Products, portfolios, or lines of business covered by the model | No |
 | **Development Type** | "In-House" or "Third-Party" | Yes |
 | **Model Owner** | The business user accountable for the model | Yes |
 | **Model Developer** | The individual or team who built the model | No |
@@ -99,6 +101,7 @@ These fields can be modified by users with appropriate permissions:
 |-------|-------------|
 | Model Name | Display name (changes tracked in history) |
 | Description | Purpose and functionality description |
+| Products Covered | Products, portfolios, or lines of business covered by the model |
 | Development Type | In-House or Third-Party |
 | Owner | User responsible for the model |
 | Developer | User or team who developed the model |
@@ -334,6 +337,27 @@ Understanding dependencies is critical when:
 - Decommissioning a model (downstream impact assessment)
 - Planning changes (impact on dependent models)
 - Investigating issues (tracing data lineage)
+
+---
+
+### Supporting Applications
+
+Supporting Applications link MAP applications that participate in a model's end-to-end process.
+Each relationship includes a **Direction** so lineage and PDF exports can place applications
+on the correct side of the model.
+
+**Direction Options:**
+- **Upstream** - The application provides inputs or data into the model.
+- **Downstream** - The application consumes model outputs or scores.
+
+**To Add a Supporting Application:**
+1. Go to the **Relationships** tab
+2. Select **Supporting Applications**
+3. Click **Add Application**
+4. Search for the application in MAP
+5. Choose **Relationship Type** and **Direction**
+
+> **Tip:** If Direction is missing, the relationship will be flagged and excluded from lineage exports until updated.
 
 ---
 

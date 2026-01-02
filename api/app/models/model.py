@@ -49,6 +49,7 @@ class Model(Base):
     model_id: Mapped[int] = mapped_column(Integer, primary_key=True)
     model_name: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[str] = mapped_column(Text, nullable=True)
+    products_covered: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     development_type: Mapped[DevelopmentType] = mapped_column(
         String(50), nullable=False, default=DevelopmentType.IN_HOUSE)
     owner_id: Mapped[int] = mapped_column(

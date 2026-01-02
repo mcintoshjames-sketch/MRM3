@@ -118,6 +118,7 @@ interface Model {
     model_id: number;
     model_name: string;
     description: string;
+    products_covered: string | null;
     development_type: string;
     owner_id: number;
     developer_id: number | null;
@@ -375,6 +376,7 @@ export default function ModelDetailsPage() {
     const [formData, setFormData] = useState({
         model_name: '',
         description: '',
+        products_covered: '',
         development_type: 'In-House',
         owner_id: 0,
         developer_id: null as number | null,
@@ -521,6 +523,7 @@ export default function ModelDetailsPage() {
             const initialFormData = {
                 model_name: modelData.model_name,
                 description: modelData.description || '',
+                products_covered: modelData.products_covered || '',
                 development_type: modelData.development_type,
                 owner_id: modelData.owner_id,
                 developer_id: modelData.developer_id,
@@ -716,6 +719,9 @@ export default function ModelDetailsPage() {
                 }
                 if (formData.description !== originalFormData.description) {
                     payload.description = formData.description;
+                }
+                if (formData.products_covered !== originalFormData.products_covered) {
+                    payload.products_covered = formData.products_covered;
                 }
                 if (formData.development_type !== originalFormData.development_type) {
                     payload.development_type = formData.development_type;
@@ -2502,6 +2508,19 @@ export default function ModelDetailsPage() {
                                 onChange={(e) => setFormData({ ...formData, description: e.target.value })}
                             />
                         </div>
+                        <div className="mb-4">
+                            <label htmlFor="products_covered" className="block text-sm font-medium mb-2">
+                                Products Covered
+                            </label>
+                            <textarea
+                                id="products_covered"
+                                className="input-field"
+                                rows={2}
+                                placeholder="List products, portfolios, or lines of business covered by this model..."
+                                value={formData.products_covered}
+                                onChange={(e) => setFormData({ ...formData, products_covered: e.target.value })}
+                            />
+                        </div>
 
                         <div className="mb-4">
                             <label className="block text-sm font-medium mb-2">Model Users</label>
@@ -2929,6 +2948,10 @@ export default function ModelDetailsPage() {
                         <div className="col-span-2">
                             <h4 className="text-sm font-medium text-gray-500 mb-1">Description and Purpose</h4>
                             <p className="text-lg">{model.description || 'No description provided'}</p>
+                        </div>
+                        <div className="col-span-2">
+                            <h4 className="text-sm font-medium text-gray-500 mb-1">Products Covered</h4>
+                            <p className="text-lg">{model.products_covered || 'No products covered provided'}</p>
                         </div>
                         <div className="col-span-2">
                             <h4 className="text-sm font-medium text-gray-500 mb-1">Model Users</h4>

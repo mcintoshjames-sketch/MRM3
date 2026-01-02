@@ -72,7 +72,7 @@ router = APIRouter()
 
 def create_audit_log(
     db: Session, entity_type: str, entity_id: int,
-    action: str, user_id: int, changes: dict = None
+    action: str, user_id: int, changes: Optional[dict] = None
 ):
     """Create an audit log entry for scorecard changes."""
     audit_log = AuditLog(
@@ -123,6 +123,7 @@ def get_scorecard_config_from_db(db: Session) -> dict:
 
     criteria = (
         db.query(ScorecardCriterion)
+        .options(joinedload(ScorecardCriterion.section))
         .filter(ScorecardCriterion.is_active == True)
         .order_by(ScorecardCriterion.sort_order)
         .all()
@@ -137,9 +138,7 @@ def get_scorecard_config_from_db(db: Session) -> dict:
         "criteria": [
             {
                 "code": c.code,
-                "section": db.query(ScorecardSection).filter(
-                    ScorecardSection.section_id == c.section_id
-                ).first().code,
+                "section": c.section.code,
                 "name": c.name,
                 "description_prompt": c.description_prompt,
                 "comments_prompt": c.comments_prompt,
@@ -428,6 +427,9 @@ def export_validation_scorecard_pdf(
         .filter(Model.model_id == model.model_id)
         .first()
     )
+
+    if not model:
+        raise HTTPException(status_code=404, detail="Model not found")
 
     # Get scorecard configuration and data
     # Prefer snapshot from result to ensure historical accuracy
@@ -1521,7 +1523,7 @@ def _check_unpublished_changes(db: Session, version: ScorecardConfigVersion) -> 
 
 def _build_version_detail_response(
     version: ScorecardConfigVersion,
-    db: Session = None,
+    db: Optional[Session] = None,
     has_unpublished_changes: bool = False
 ) -> ScorecardConfigVersionDetailResponse:
     """Build the detailed version response with snapshots."""

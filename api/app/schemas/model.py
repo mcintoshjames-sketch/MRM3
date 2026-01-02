@@ -63,6 +63,7 @@ class ModelRolesWithLOB(BaseModel):
 class ModelBase(BaseModel):
     model_name: str
     description: Optional[str] = None
+    products_covered: Optional[str] = None
     development_type: str = "In-House"
     status: str = "In Development"
 
@@ -111,6 +112,7 @@ class ModelCreate(ModelBase):
 class ModelUpdate(BaseModel):
     model_name: Optional[str] = None
     description: Optional[str] = None
+    products_covered: Optional[str] = None
     development_type: Optional[str] = None
     owner_id: Optional[int] = None
     developer_id: Optional[int] = None
@@ -271,6 +273,7 @@ class ModelListResponse(BaseModel):
     model_id: int
     model_name: str
     description: Optional[str] = None
+    products_covered: Optional[str] = None
     development_type: str
     status: str
     created_at: datetime
@@ -391,6 +394,7 @@ class ModelCreateResponse(BaseModel):
     model_id: int
     model_name: str
     description: Optional[str] = None
+    products_covered: Optional[str] = None
     development_type: str
     status: str
     owner_id: int

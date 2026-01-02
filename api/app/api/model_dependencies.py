@@ -9,6 +9,7 @@ from app.core.roles import is_admin
 from app.models.user import User
 from app.models.model import Model
 from app.models.model_feed_dependency import ModelFeedDependency
+from app.models.model_application import ModelApplication
 from app.models.taxonomy import TaxonomyValue
 from app.models.audit_log import AuditLog
 from app.schemas.model_relationships import (
@@ -538,6 +539,50 @@ def get_dependency_lineage(
             detail="Model not found"
         )
 
+    application_cache: dict[int, tuple[list[dict], list[dict]]] = {}
+
+    def load_application_nodes(target_model_id: int) -> tuple[list[dict], list[dict]]:
+        """Load upstream/downstream application nodes for a model, excluding UNKNOWN."""
+        if target_model_id in application_cache:
+            return application_cache[target_model_id]
+
+        query = db.query(ModelApplication).options(
+            joinedload(ModelApplication.application),
+            joinedload(ModelApplication.relationship_type),
+        ).filter(ModelApplication.model_id == target_model_id)
+
+        if not include_inactive:
+            query = query.filter(ModelApplication.end_date.is_(None))
+
+        relationships = query.all()
+
+        upstream_apps: list[dict] = []
+        downstream_apps: list[dict] = []
+        for rel in relationships:
+            direction = (rel.relationship_direction or "UNKNOWN").upper()
+            if direction not in ["UPSTREAM", "DOWNSTREAM"]:
+                continue
+
+            app = rel.application
+            app_node = {
+                "node_type": "application",
+                "application_id": app.application_id,
+                "application_code": app.application_code,
+                "application_name": app.application_name,
+                "owner_name": app.owner_name,
+                "relationship_type": rel.relationship_type.label if rel.relationship_type else "Unknown",
+                "relationship_direction": direction,
+                "description": rel.description,
+            }
+
+            if direction == "UPSTREAM":
+                upstream_apps.append(app_node)
+            else:
+                downstream_apps.append(app_node)
+
+        application_cache[target_model_id] = (upstream_apps, downstream_apps)
+        return application_cache[target_model_id]
+
     def trace_upstream(consumer_id: int, depth: int = 0, visited: Set[int] = None) -> List[dict]:
         """Recursively trace upstream feeders."""
         if visited is None:
@@ -566,13 +611,17 @@ def get_dependency_lineage(
 
         result = []
         for dep in dependencies:
+            upstream_apps, downstream_apps = load_application_nodes(dep.feeder_model.model_id)
             feeder_dict = {
+                "node_type": "model",
                 "model_id": dep.feeder_model.model_id,
                 "model_name": dep.feeder_model.model_name,
                 "owner_name": dep.feeder_model.owner.full_name if dep.feeder_model.owner else "Unknown",
                 "dependency_type": dep.dependency_type.label if dep.dependency_type else "Unknown",
                 "description": dep.description,
                 "depth": depth + 1,
+                "upstream_applications": upstream_apps,
+                "downstream_applications": downstream_apps,
                 "upstream": trace_upstream(dep.feeder_model.model_id, depth + 1, visited)
             }
             result.append(feeder_dict)
@@ -607,13 +656,17 @@ def get_dependency_lineage(
 
         result = []
         for dep in dependencies:
+            upstream_apps, downstream_apps = load_application_nodes(dep.consumer_model.model_id)
             consumer_dict = {
+                "node_type": "model",
                 "model_id": dep.consumer_model.model_id,
                 "model_name": dep.consumer_model.model_name,
                 "owner_name": dep.consumer_model.owner.full_name if dep.consumer_model.owner else "Unknown",
                 "dependency_type": dep.dependency_type.label if dep.dependency_type else "Unknown",
                 "description": dep.description,
                 "depth": depth + 1,
+                "upstream_applications": upstream_apps,
+                "downstream_applications": downstream_apps,
                 "downstream": trace_downstream(dep.consumer_model.model_id, depth + 1, visited)
             }
             result.append(consumer_dict)
@@ -621,11 +674,15 @@ def get_dependency_lineage(
         return result
 
     # Build response
+    root_upstream_apps, root_downstream_apps = load_application_nodes(model.model_id)
     response = {
         "model": {
+            "node_type": "model",
             "model_id": model.model_id,
             "model_name": model.model_name,
-            "owner_name": model.owner.full_name if model.owner else "Unknown"
+            "owner_name": model.owner.full_name if model.owner else "Unknown",
+            "upstream_applications": root_upstream_apps,
+            "downstream_applications": root_downstream_apps,
         }
     }
 
@@ -679,13 +736,18 @@ class LineagePDF(FPDF):
                     self.add_page()
                     y = self.get_y()
 
-            # Determine style based on node type
+            node_type = node.get("node_type", "model")
+            is_application = node_type == "application"
             is_center = node.get('is_center', False)
 
             if is_center:
                 self.set_fill_color(235, 248, 255)  # Blue-50
                 self.set_draw_color(66, 153, 225)   # Blue-500
                 self.set_line_width(0.5)
+            elif is_application:
+                self.set_fill_color(255, 251, 235)  # Amber-50
+                self.set_draw_color(245, 158, 11)   # Amber-500
+                self.set_line_width(0.3)
             elif i < len(path) and not node.get('is_center') and any(n.get('is_center') for n in path[i+1:]):
                 # Upstream (before center)
                 self.set_fill_color(240, 253, 244)  # Green-50
@@ -706,7 +768,7 @@ class LineagePDF(FPDF):
             self.set_text_color(0, 0, 0)
 
             # Truncate name
-            name = node['model_name']
+            name = node.get("model_name") or node.get("application_name") or "Unknown"
             if len(name) > 25:
                 name = name[:22] + "..."
             self.cell(box_w - 2, 5, name, align='C')
@@ -715,13 +777,17 @@ class LineagePDF(FPDF):
             self.set_xy(x + 1, y + 8)
             self.set_font("helvetica", '', 7)
             self.set_text_color(80, 80, 80)
-            dep_type = node.get('dependency_type', 'Center')
+            dep_type = node.get("dependency_type") or node.get("relationship_type") or "Center"
             self.cell(box_w - 2, 4, f"[{dep_type}]", align='C')
 
             # ID & Owner
             self.set_xy(x + 1, y + 13)
             self.set_font("helvetica", '', 6)
-            self.cell(box_w - 2, 3, f"ID: {node['model_id']}", align='C')
+            if is_application:
+                app_code = node.get("application_code") or node.get("application_id") or "-"
+                self.cell(box_w - 2, 3, f"App: {app_code}", align='C')
+            else:
+                self.cell(box_w - 2, 3, f"ID: {node['model_id']}", align='C')
 
             self.set_xy(x + 1, y + 17)
             owner = node.get('owner_name', 'Unknown')
@@ -751,6 +817,80 @@ class LineagePDF(FPDF):
             self.add_page()
 
 
+def _collect_upstream_paths_for_node(node: dict) -> list[list[dict]]:
+    paths: list[list[dict]] = []
+    upstream_nodes = node.get("upstream", [])
+
+    for upstream in upstream_nodes:
+        for path in _collect_upstream_paths_for_node(upstream):
+            paths.append(path + [upstream])
+
+    for app in node.get("upstream_applications", []):
+        paths.append([app, node])
+
+    if not paths:
+        paths.append([node])
+
+    return paths
+
+
+def _collect_upstream_paths(nodes: list[dict]) -> list[list[dict]]:
+    if not nodes:
+        return [[]]
+
+    paths: list[list[dict]] = []
+    for node in nodes:
+        paths.extend(_collect_upstream_paths_for_node(node))
+
+    return paths
+
+
+def _collect_downstream_paths_for_node(node: dict) -> list[list[dict]]:
+    paths: list[list[dict]] = []
+    downstream_nodes = node.get("downstream", [])
+
+    for downstream in downstream_nodes:
+        for path in _collect_downstream_paths_for_node(downstream):
+            paths.append([downstream] + path)
+
+    for app in node.get("downstream_applications", []):
+        paths.append([node, app])
+
+    if not paths:
+        paths.append([node])
+
+    return paths
+
+
+def _collect_downstream_paths(nodes: list[dict]) -> list[list[dict]]:
+    if not nodes:
+        return [[]]
+
+    paths: list[list[dict]] = []
+    for node in nodes:
+        paths.extend(_collect_downstream_paths_for_node(node))
+
+    return paths
+
+
+def build_lineage_paths(lineage_data: dict) -> list[list[dict]]:
+    """Build full lineage paths with application leaf nodes."""
+    center_node = lineage_data["model"].copy()
+    center_node.setdefault("node_type", "model")
+    center_node["is_center"] = True
+    center_node.setdefault("dependency_type", "Center")
+
+    upstream_paths = _collect_upstream_paths(lineage_data.get("upstream", []))
+    downstream_paths = _collect_downstream_paths(lineage_data.get("downstream", []))
+
+    full_paths: list[list[dict]] = []
+    for u_path in upstream_paths:
+        for d_path in downstream_paths:
+            full_paths.append(u_path + [center_node] + d_path)
+
+    return full_paths
+
+
 @router.get("/models/{model_id}/dependencies/lineage/pdf")
 def export_lineage_pdf(
     model_id: int,
@@ -773,45 +913,7 @@ def export_lineage_pdf(
         current_user=current_user
     )
 
-    # Helper to collect upstream paths (from root to parent)
-    def collect_upstream_paths(nodes):
-        if not nodes:
-            return [[]]
-        paths = []
-        for node in nodes:
-            # Recursive call
-            parent_paths = collect_upstream_paths(node.get('upstream', []))
-            for p_path in parent_paths:
-                # Append current node
-                paths.append(p_path + [node])
-        return paths
-
-    # Helper to collect downstream paths (from child to leaf)
-    def collect_downstream_paths(nodes):
-        if not nodes:
-            return [[]]
-        paths = []
-        for node in nodes:
-            # Recursive call
-            child_paths = collect_downstream_paths(node.get('downstream', []))
-            for c_path in child_paths:
-                # Prepend current node
-                paths.append([node] + c_path)
-        return paths
-
-    # Generate all paths
-    u_paths = collect_upstream_paths(lineage_data.get('upstream', []))
-    d_paths = collect_downstream_paths(lineage_data.get('downstream', []))
-
-    # Mark center model
-    center_node = lineage_data['model'].copy()
-    center_node['is_center'] = True
-    center_node['dependency_type'] = 'Center'
-
-    full_paths = []
-    for u in u_paths:
-        for d in d_paths:
-            full_paths.append(u + [center_node] + d)
+    full_paths = build_lineage_paths(lineage_data)
 
     # Create PDF in Landscape
     pdf = LineagePDF(orientation='L', unit='mm', format='A4')

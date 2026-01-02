@@ -108,6 +108,7 @@ interface Model {
     model_id: number;
     model_name: string;
     description: string;
+    products_covered: string | null;
     development_type: string;
     owner_id: number;
     developer_id: number | null;
@@ -215,6 +216,7 @@ export default function ModelsPage() {
     const [formData, setFormData] = useState({
         model_name: '',
         description: '',
+        products_covered: '',
         development_type: 'In-House',
         owner_id: 0,
         developer_id: null as number | null,
@@ -251,6 +253,7 @@ export default function ModelsPage() {
     const formIsDirty = showForm && (
         formData.model_name !== '' ||
         formData.description !== '' ||
+        formData.products_covered !== '' ||
         formData.owner_id !== 0 ||
         formData.developer_id !== null ||
         formData.vendor_id !== null ||
@@ -288,6 +291,7 @@ export default function ModelsPage() {
         setFormData({
             model_name: '',
             description: '',
+            products_covered: '',
             development_type: 'In-House',
             owner_id: 0,
             developer_id: null,
@@ -356,6 +360,7 @@ export default function ModelsPage() {
         { key: 'residual_risk', label: 'Residual Risk', default: false },
         { key: 'approval_status', label: 'Approval Status', default: false },
         { key: 'description', label: 'Description', default: false },
+        { key: 'products_covered', label: 'Products Covered', default: false },
         { key: 'development_type', label: 'Development Type', default: false },
         { key: 'wholly_owned_region', label: 'Wholly Owned Region', default: false },
         { key: 'row_approval_status', label: 'Inventory Acceptance', default: false },
@@ -792,6 +797,7 @@ export default function ModelsPage() {
             setFormData({
                 model_name: '',
                 description: '',
+                products_covered: '',
                 development_type: 'In-House',
                 owner_id: 0,
                 developer_id: null,
@@ -1301,6 +1307,15 @@ export default function ModelsPage() {
                 </span>
             ) : '-',
             csvValue: (model) => model.description || ''
+        },
+        products_covered: {
+            header: 'Products Covered',
+            cell: (model) => model.products_covered ? (
+                <span className="truncate max-w-xs block" title={model.products_covered}>
+                    {model.products_covered.length > 50 ? model.products_covered.slice(0, 50) + '...' : model.products_covered}
+                </span>
+            ) : '-',
+            csvValue: (model) => model.products_covered || ''
         },
         development_type: {
             header: 'Development Type',
@@ -1989,17 +2004,28 @@ export default function ModelsPage() {
                                 </div>
                             </div>
 
-                            <div className="mb-4">
-                                <label htmlFor="description" className="block text-sm font-medium mb-2">Description and Purpose</label>
-                                <textarea
-                                    id="description"
-                                    className="input-field"
-                                    rows={3}
-                                    placeholder="Describe what this model does and its business purpose..."
-                                    value={formData.description}
-                                    onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                                />
-                            </div>
+                        <div className="mb-4">
+                            <label htmlFor="description" className="block text-sm font-medium mb-2">Description and Purpose</label>
+                            <textarea
+                                id="description"
+                                className="input-field"
+                                rows={3}
+                                placeholder="Describe what this model does and its business purpose..."
+                                value={formData.description}
+                                onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                            />
+                        </div>
+                        <div className="mb-4">
+                            <label htmlFor="products_covered" className="block text-sm font-medium mb-2">Products Covered</label>
+                            <textarea
+                                id="products_covered"
+                                className="input-field"
+                                rows={2}
+                                placeholder="List products, portfolios, or lines of business covered by this model..."
+                                value={formData.products_covered}
+                                onChange={(e) => setFormData({ ...formData, products_covered: e.target.value })}
+                            />
+                        </div>
 
                             <div className="mb-4">
                                 <label className="block text-sm font-medium mb-2">

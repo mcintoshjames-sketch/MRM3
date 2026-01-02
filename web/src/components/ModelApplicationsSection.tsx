@@ -27,6 +27,7 @@ interface ModelApplication {
     application_id: number;
     application: MapApplication;
     relationship_type: TaxonomyValue;
+    relationship_direction: string | null;
     description: string | null;
     effective_date: string | null;
     end_date: string | null;
@@ -43,6 +44,7 @@ export default function ModelApplicationsSection({ modelId, canEdit }: Props) {
     const [applications, setApplications] = useState<ModelApplication[]>([]);
     const [loading, setLoading] = useState(true);
     const [showAddModal, setShowAddModal] = useState(false);
+    const [editingRelation, setEditingRelation] = useState<ModelApplication | null>(null);
     const [includeInactive, setIncludeInactive] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
@@ -54,6 +56,7 @@ export default function ModelApplicationsSection({ modelId, canEdit }: Props) {
     const [relationshipTypes, setRelationshipTypes] = useState<TaxonomyValue[]>([]);
     const [formData, setFormData] = useState({
         relationship_type_id: 0,
+        relationship_direction: '',
         description: '',
         effective_date: new Date().toISOString().split('T')[0]
     });
@@ -107,25 +110,53 @@ export default function ModelApplicationsSection({ modelId, canEdit }: Props) {
         }
     };
 
-    const handleAddApplication = async () => {
-        if (!selectedApp || !formData.relationship_type_id) return;
+    const handleSaveApplication = async () => {
+        if (!selectedApp || !formData.relationship_type_id || !formData.relationship_direction) return;
         setSubmitting(true);
         setError(null);
         try {
-            await api.post(`/models/${modelId}/applications`, {
-                application_id: selectedApp.application_id,
-                relationship_type_id: formData.relationship_type_id,
-                description: formData.description || null,
-                effective_date: formData.effective_date || null
-            });
+            if (editingRelation) {
+                await api.patch(`/models/${modelId}/applications/${editingRelation.application_id}`, {
+                    relationship_type_id: formData.relationship_type_id,
+                    relationship_direction: formData.relationship_direction,
+                    description: formData.description || null,
+                });
+            } else {
+                await api.post(`/models/${modelId}/applications`, {
+                    application_id: selectedApp.application_id,
+                    relationship_type_id: formData.relationship_type_id,
+                    relationship_direction: formData.relationship_direction,
+                    description: formData.description || null,
+                    effective_date: formData.effective_date || null
+                });
+            }
             setShowAddModal(false);
             resetAddForm();
             fetchApplications();
         } catch (err: any) {
-            setError(err.response?.data?.detail || 'Failed to add application');
+            setError(err.response?.data?.detail || 'Failed to save application');
         } finally {
             setSubmitting(false);
         }
+    };
+
+    const handleEditApplication = (relation: ModelApplication) => {
+        setEditingRelation(relation);
+        setShowAddModal(true);
+        setError(null);
+        setSelectedApp(relation.application);
+        setSearchResults([]);
+        setSearchTerm('');
+
+        const suggestedDirection = suggestDirectionForType(relation.relationship_type.value_id);
+        setFormData({
+            relationship_type_id: relation.relationship_type.value_id,
+            relationship_direction: !isDirectionMissing(relation.relationship_direction)
+                ? relation.relationship_direction || ''
+                : suggestedDirection,
+            description: relation.description || '',
+            effective_date: relation.effective_date?.split('T')[0] || new Date().toISOString().split('T')[0]
+        });
     };
 
     const handleRemoveApplication = async (applicationId: number) => {
@@ -142,8 +173,10 @@ export default function ModelApplicationsSection({ modelId, canEdit }: Props) {
         setSearchTerm('');
         setSearchResults([]);
         setSelectedApp(null);
+        setEditingRelation(null);
         setFormData({
             relationship_type_id: 0,
+            relationship_direction: '',
             description: '',
             effective_date: new Date().toISOString().split('T')[0]
         });
@@ -157,6 +190,40 @@ export default function ModelApplicationsSection({ modelId, canEdit }: Props) {
             case 'Low': return 'bg-green-100 text-green-800';
             default: return 'bg-gray-100 text-gray-800';
         }
+    };
+
+    const formatDirection = (direction: string | null) => {
+        if (!direction || direction === 'UNKNOWN') return 'Missing Direction';
+        if (direction === 'UPSTREAM') return 'Upstream';
+        if (direction === 'DOWNSTREAM') return 'Downstream';
+        return direction;
+    };
+
+    const isDirectionMissing = (direction: string | null) => !direction || direction === 'UNKNOWN';
+
+    const getDirectionBadgeClass = (direction: string | null) => {
+        if (isDirectionMissing(direction)) return 'bg-yellow-100 text-yellow-800';
+        if (direction === 'UPSTREAM') return 'bg-green-100 text-green-800';
+        if (direction === 'DOWNSTREAM') return 'bg-purple-100 text-purple-800';
+        return 'bg-gray-100 text-gray-800';
+    };
+
+    const suggestDirectionForType = (typeId: number) => {
+        const selected = relationshipTypes.find((rel) => rel.value_id === typeId);
+        if (!selected) return '';
+
+        if (selected.code === 'DATA_SOURCE') return 'UPSTREAM';
+        if (selected.code === 'OUTPUT_CONSUMER' || selected.code === 'REPORTING') return 'DOWNSTREAM';
+        return '';
+    };
+
+    const handleRelationshipTypeChange = (value: number) => {
+        const suggestedDirection = suggestDirectionForType(value);
+        setFormData((prev) => ({
+            ...prev,
+            relationship_type_id: value,
+            relationship_direction: prev.relationship_direction || suggestedDirection,
+        }));
     };
 
     if (loading) {
@@ -188,7 +255,10 @@ export default function ModelApplicationsSection({ modelId, canEdit }: Props) {
                     </label>
                     {canEdit && (
                         <button
-                            onClick={() => setShowAddModal(true)}
+                            onClick={() => {
+                                resetAddForm();
+                                setShowAddModal(true);
+                            }}
                             className="btn-primary text-sm"
                         >
                             + Add Application
@@ -220,6 +290,7 @@ export default function ModelApplicationsSection({ modelId, canEdit }: Props) {
                             <tr>
                                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Application</th>
                                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Relationship</th>
+                                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Direction</th>
                                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Department</th>
                                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Criticality</th>
                                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Effective</th>
@@ -251,6 +322,11 @@ export default function ModelApplicationsSection({ modelId, canEdit }: Props) {
                                             {rel.relationship_type.label}
                                         </span>
                                     </td>
+                                    <td className="px-4 py-3">
+                                        <span className={`px-2 py-1 text-xs rounded ${getDirectionBadgeClass(rel.relationship_direction)}`}>
+                                            {formatDirection(rel.relationship_direction)}
+                                        </span>
+                                    </td>
                                     <td className="px-4 py-3 text-sm text-gray-600">
                                         {rel.application.department || '-'}
                                     </td>
@@ -272,12 +348,20 @@ export default function ModelApplicationsSection({ modelId, canEdit }: Props) {
                                     {canEdit && (
                                         <td className="px-4 py-3">
                                             {!rel.end_date && (
-                                                <button
-                                                    onClick={() => handleRemoveApplication(rel.application_id)}
-                                                    className="text-red-600 hover:text-red-800 text-sm"
-                                                >
-                                                    Remove
-                                                </button>
+                                                <>
+                                                    <button
+                                                        onClick={() => handleEditApplication(rel)}
+                                                        className="text-blue-600 hover:text-blue-800 text-sm mr-3"
+                                                    >
+                                                        Edit
+                                                    </button>
+                                                    <button
+                                                        onClick={() => handleRemoveApplication(rel.application_id)}
+                                                        className="text-red-600 hover:text-red-800 text-sm"
+                                                    >
+                                                        Remove
+                                                    </button>
+                                                </>
                                             )}
                                         </td>
                                     )}
@@ -293,32 +377,36 @@ export default function ModelApplicationsSection({ modelId, canEdit }: Props) {
                 <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
                     <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full mx-4 max-h-[90vh] overflow-y-auto">
                         <div className="p-6">
-                            <h3 className="text-lg font-semibold mb-4">Add Supporting Application</h3>
+                            <h3 className="text-lg font-semibold mb-4">
+                                {editingRelation ? 'Edit Supporting Application' : 'Add Supporting Application'}
+                            </h3>
 
                             {/* Search MAP */}
-                            <div className="mb-4">
-                                <label className="block text-sm font-medium mb-1">Search MAP Inventory</label>
-                                <div className="flex gap-2">
-                                    <input
-                                        type="text"
-                                        className="input-field flex-1"
-                                        placeholder="Search by name, code, or description..."
-                                        value={searchTerm}
-                                        onChange={(e) => setSearchTerm(e.target.value)}
-                                        onKeyPress={(e) => e.key === 'Enter' && searchApplications()}
-                                    />
-                                    <button
-                                        onClick={searchApplications}
-                                        disabled={searching}
-                                        className="btn-secondary"
-                                    >
-                                        {searching ? 'Searching...' : 'Search'}
-                                    </button>
+                            {!editingRelation && (
+                                <div className="mb-4">
+                                    <label className="block text-sm font-medium mb-1">Search MAP Inventory</label>
+                                    <div className="flex gap-2">
+                                        <input
+                                            type="text"
+                                            className="input-field flex-1"
+                                            placeholder="Search by name, code, or description..."
+                                            value={searchTerm}
+                                            onChange={(e) => setSearchTerm(e.target.value)}
+                                            onKeyPress={(e) => e.key === 'Enter' && searchApplications()}
+                                        />
+                                        <button
+                                            onClick={searchApplications}
+                                            disabled={searching}
+                                            className="btn-secondary"
+                                        >
+                                            {searching ? 'Searching...' : 'Search'}
+                                        </button>
+                                    </div>
                                 </div>
-                            </div>
+                            )}
 
                             {/* Search Results */}
-                            {searchResults.length > 0 && !selectedApp && (
+                            {!editingRelation && searchResults.length > 0 && !selectedApp && (
                                 <div className="mb-4 max-h-48 overflow-y-auto border rounded">
                                     {searchResults.map((app) => (
                                         <div
@@ -351,12 +439,14 @@ export default function ModelApplicationsSection({ modelId, canEdit }: Props) {
                                                 {selectedApp.application_code} | {selectedApp.department}
                                             </div>
                                         </div>
-                                        <button
-                                            onClick={() => setSelectedApp(null)}
-                                            className="text-gray-400 hover:text-gray-600"
-                                        >
-                                            ×
-                                        </button>
+                                        {!editingRelation && (
+                                            <button
+                                                onClick={() => setSelectedApp(null)}
+                                                className="text-gray-400 hover:text-gray-600"
+                                            >
+                                                ×
+                                            </button>
+                                        )}
                                     </div>
                                 </div>
                             )}
@@ -369,7 +459,7 @@ export default function ModelApplicationsSection({ modelId, canEdit }: Props) {
                                         <select
                                             className="input-field"
                                             value={formData.relationship_type_id}
-                                            onChange={(e) => setFormData({ ...formData, relationship_type_id: parseInt(e.target.value) })}
+                                            onChange={(e) => handleRelationshipTypeChange(parseInt(e.target.value))}
                                         >
                                             <option value={0}>Select relationship type...</option>
                                             {relationshipTypes.map((rt) => (
@@ -378,6 +468,22 @@ export default function ModelApplicationsSection({ modelId, canEdit }: Props) {
                                                 </option>
                                             ))}
                                         </select>
+                                    </div>
+
+                                    <div className="mb-4">
+                                        <label className="block text-sm font-medium mb-1">Direction *</label>
+                                        <select
+                                            className="input-field"
+                                            value={formData.relationship_direction}
+                                            onChange={(e) => setFormData({ ...formData, relationship_direction: e.target.value })}
+                                        >
+                                            <option value="">Select direction...</option>
+                                            <option value="UPSTREAM">Upstream (Application provides inputs)</option>
+                                            <option value="DOWNSTREAM">Downstream (Application consumes outputs)</option>
+                                        </select>
+                                        <p className="text-xs text-gray-500 mt-1">
+                                            Direction controls where the application appears in lineage exports.
+                                        </p>
                                     </div>
 
                                     <div className="mb-4">
@@ -391,15 +497,17 @@ export default function ModelApplicationsSection({ modelId, canEdit }: Props) {
                                         />
                                     </div>
 
-                                    <div className="mb-4">
-                                        <label className="block text-sm font-medium mb-1">Effective Date</label>
-                                        <input
-                                            type="date"
-                                            className="input-field"
-                                            value={formData.effective_date}
-                                            onChange={(e) => setFormData({ ...formData, effective_date: e.target.value })}
-                                        />
-                                    </div>
+                                    {!editingRelation && (
+                                        <div className="mb-4">
+                                            <label className="block text-sm font-medium mb-1">Effective Date</label>
+                                            <input
+                                                type="date"
+                                                className="input-field"
+                                                value={formData.effective_date}
+                                                onChange={(e) => setFormData({ ...formData, effective_date: e.target.value })}
+                                            />
+                                        </div>
+                                    )}
                                 </>
                             )}
 
@@ -412,11 +520,11 @@ export default function ModelApplicationsSection({ modelId, canEdit }: Props) {
                                     Cancel
                                 </button>
                                 <button
-                                    onClick={handleAddApplication}
-                                    disabled={!selectedApp || !formData.relationship_type_id || submitting}
+                                    onClick={handleSaveApplication}
+                                    disabled={!selectedApp || !formData.relationship_type_id || !formData.relationship_direction || submitting}
                                     className="btn-primary disabled:opacity-50"
                                 >
-                                    {submitting ? 'Adding...' : 'Add Application'}
+                                    {submitting ? 'Saving...' : editingRelation ? 'Update Application' : 'Add Application'}
                                 </button>
                             </div>
                         </div>

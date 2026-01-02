@@ -1,7 +1,7 @@
 """Model-Application relationship model."""
 from datetime import datetime, date
 from typing import Optional, List, TYPE_CHECKING
-from sqlalchemy import String, Integer, Text, DateTime, Date, ForeignKey
+from sqlalchemy import String, Integer, Text, DateTime, Date, ForeignKey, CheckConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.models.base import Base
 from app.core.time import utc_now
@@ -33,6 +33,12 @@ class ModelApplication(Base):
         nullable=False,
         comment="Type of relationship (Data Source, Execution Platform, etc.)"
     )
+    relationship_direction: Mapped[Optional[str]] = mapped_column(
+        String(20),
+        nullable=True,
+        default="UNKNOWN",
+        comment="Direction relative to model: UPSTREAM, DOWNSTREAM, or UNKNOWN"
+    )
     description: Mapped[Optional[str]] = mapped_column(
         Text, nullable=True,
         comment="Notes about this specific relationship"
@@ -61,3 +67,10 @@ class ModelApplication(Base):
     application: Mapped["MapApplication"] = relationship("MapApplication")
     relationship_type: Mapped["TaxonomyValue"] = relationship("TaxonomyValue")
     created_by_user: Mapped[Optional["User"]] = relationship("User")
+
+    __table_args__ = (
+        CheckConstraint(
+            "relationship_direction IN ('UPSTREAM', 'DOWNSTREAM', 'UNKNOWN') OR relationship_direction IS NULL",
+            name="chk_model_application_direction"
+        ),
+    )
