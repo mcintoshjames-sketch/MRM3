@@ -1,7 +1,10 @@
 """FastAPI application entry point."""
-from fastapi import FastAPI
+from fastapi import FastAPI, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy import text
+from sqlalchemy.orm import Session
 from app.api import auth, roles, models, vendors, taxonomies, audit_logs, validation_workflow, validation_policies, workflow_sla, regions, model_regions, model_versions, model_delegates, model_change_taxonomy, model_types, methodology, dashboard, export_views, version_deployment_tasks, regional_compliance_report, analytics, saved_queries, model_hierarchy, model_dependencies, approver_roles, conditional_approval_rules, fry, map_applications, model_applications, overdue_commentary, overdue_revalidation_report, decommissioning, kpm, monitoring, recommendations, risk_assessment, qualitative_factors, scorecard, uat_tools, residual_risk_map, limitations, attestations, lob_units, kpi_report, irp, my_portfolio, exceptions, mrsa_review_policy, teams
+from app.core.database import get_db
 from app.core.config import settings
 
 app = FastAPI(title="QMIS v0.1", version="0.1.0")
@@ -116,3 +119,23 @@ app.include_router(exceptions.router, prefix="/exceptions", tags=["exceptions"])
 @app.get("/")
 def read_root():
     return {"message": "QMIS v0.1 API"}
+
+
+@app.get("/health")
+def healthcheck():
+    """Lightweight liveness probe."""
+    return {"status": "ok"}
+
+
+@app.get("/ready")
+def readiness(db: Session = Depends(get_db)):
+    """Readiness probe with DB connectivity check."""
+    try:
+        db.execute(text("SELECT 1"))
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail="Database unavailable") from exc
+    return {"status": "ok", "checks": {"database": "ok"}}
+
+
+app.get("/healthz")(healthcheck)
+app.get("/readyz")(readiness)
