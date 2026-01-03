@@ -60,7 +60,10 @@ The recommendation existence check in `detect_type1_unmitigated_performance` (li
 - `api/app/core/exception_detection.py` (lines 199-220)
 
 ### Changes
-Replace the recommendation query with metric-specific and status-filtered logic:
+Replace the recommendation query with metric-specific and status-filtered logic.
+
+**Note (Jan 2026 addendum):** This section’s example status filter list is superseded by the
+source-of-truth terminal status codes approach described in “Jan 2026 Addendum: Production Hardening”.
 
 ```python
 # Current broken code (lines 199-204):
@@ -259,6 +262,136 @@ def get_model_exception_count(
 
 ---
 
+## Jan 2026 Addendum: Production Hardening (Final Decisions)
+
+This addendum captures follow-up risks discovered during an adversarial review and defines the final
+remediation approach for exception detection correctness and operational safety.
+
+**Date**: 2026-01-03
+
+### Decisions
+
+1. **Terminal recommendation statuses source-of-truth**
+     - Use `TERMINAL_RECOMMENDATION_STATUS_CODES` (currently defined in `api/app/api/monitoring.py`) as the
+         canonical definition of “terminal” recommendation statuses.
+     - Avoid importing API-layer modules from core detection logic.
+     - **Plan**: move `TERMINAL_RECOMMENDATION_STATUS_CODES` into a shared core module (e.g.
+         `api/app/core/recommendation_status.py`) and import it from both:
+         - `api/app/api/monitoring.py`
+         - `api/app/core/exception_detection.py`
+
+2. **Exception code generation strategy**
+     - Use the “robust enough” approach: **unique constraint + bounded retry** on collision.
+     - Do **not** introduce a counter table/sequence as part of this remediation (see Downsides section below).
+
+### Issue 6: Recommendation Status Taxonomy Alignment (Type 1 correctness)
+
+#### Problem
+Type 1 detection currently treats “active recommendation statuses” as anything not in
+`['CLOSED', 'CANCELLED', 'COMPLETED']`. However, the seeded taxonomy uses `REC_*` codes (e.g., `REC_CLOSED`,
+`REC_DROPPED`). This mismatch can cause **false negatives** (a terminal recommendation suppresses an exception).
+
+#### Files to Modify
+- `api/app/core/exception_detection.py`
+- `api/app/api/monitoring.py` (or shared module if constant moved)
+
+#### Changes
+- Replace the `TaxonomyValue.code.notin_([...])` filter with a filter that excludes the terminal codes from
+    `TERMINAL_RECOMMENDATION_STATUS_CODES`.
+- Ensure both Type 1 paths are updated:
+    - `detect_type1_unmitigated_performance`
+    - `ensure_type1_exception_for_result`
+
+#### Acceptance Criteria
+- A recommendation with terminal status (`REC_CLOSED` or `REC_DROPPED`) does **not** count as active.
+- A RED result with only terminal recommendations for the same metric results in a Type 1 exception.
+
+### Issue 7: Concurrency-Safe `exception_code` Generation (robust enough)
+
+#### Problem
+`generate_exception_code` uses `max(exception_code) + 1`. Under concurrent creation (e.g., two admin users
+triggering detection in parallel), this can generate duplicate codes and fail on the unique index.
+
+#### Files to Modify
+- `api/app/core/exception_detection.py`
+
+#### Changes
+- Keep code format `EXC-YYYY-NNNNN`.
+- On insert/flush of a new exception, if a unique-constraint collision occurs on `exception_code`, retry:
+    - re-query max code for the year
+    - generate next code
+    - re-attempt flush
+    - bounded attempts (e.g., 5) with a clear error if exhausted
+
+#### Acceptance Criteria
+- Concurrent exception creation never fails due to `exception_code` collisions (within reasonable concurrency).
+- On collision, the system retries and succeeds without operator intervention.
+
+### Issue 8: `/exceptions/detect-all` Guardrails
+
+#### Problem
+`POST /exceptions/detect-all` runs detection for every active model in a single request. In larger inventories,
+this risks long transactions/timeouts and is difficult to operate safely.
+
+#### Files to Modify
+- `api/app/api/exceptions.py`
+
+#### Changes (minimal, server-side)
+- Add conservative server-side limits/guardrails (exact thresholds to be agreed):
+    - cap number of models scanned per request, or require an explicit `limit` parameter
+    - ensure audit logging always records `models_scanned` and `exceptions_created`
+- Ensure partial progress is possible (e.g., commit per model or per chunk) to avoid one failure losing all work.
+
+#### Acceptance Criteria
+- Batch detection does not routinely hit request timeouts in UAT-scale environments.
+- Audit logs clearly reflect scope and outcome of each batch run.
+
+### Issue 9: Closure Taxonomy Hard Dependency
+
+#### Problem
+Auto-close relies on closure-reason taxonomy values being present. If seeding is incomplete, auto-close silently
+fails (exception remains open) and only a warning is logged.
+
+#### Files to Modify
+- `api/app/core/exception_detection.py`
+
+#### Changes
+- Add a lightweight preflight check for required taxonomy codes (closure reasons) in contexts where auto-close
+    is expected to occur (startup or first use).
+- Ensure operational visibility: warning should be elevated to a clearly detectable signal (e.g., structured log
+    field or explicit counter).
+
+#### Acceptance Criteria
+- Incomplete taxonomy state is detectable during deployment/UAT (not discovered weeks later via open exceptions).
+
+### Issue 10: Targeted Regression Tests (must-have)
+
+#### Backend Tests (`api/tests/test_exceptions.py`)
+
+Add focused tests that fail under the current mismatch and pass after remediation:
+
+1. **Type 1: terminal recommendation does not suppress exception**
+     - Create an APPROVED cycle with a RED result for metric X.
+     - Create a recommendation for the same model/cycle/metric with status `REC_CLOSED`.
+     - Assert: Type 1 exception is created.
+
+2. **Type 1: active recommendation does suppress exception**
+     - Same setup but recommendation status `REC_OPEN` (or another non-terminal status).
+     - Assert: no exception is created.
+
+3. **Exception code collision retry**
+     - Simulate two creations attempting the same `exception_code` (can be done by forcing generator output or
+         monkeypatching `generate_exception_code`).
+     - Assert: second creation retries and succeeds with a new code.
+
+### Downsides of the “more robust” DB-managed counter/sequence (documented)
+
+We are intentionally not choosing this option in this remediation due to:
+- portability and migration complexity
+- hot-row contention under batch detection
+- year rollover and test isolation complexity
+
+
 ## Testing Plan
 
 ### Backend Tests (`api/tests/test_exceptions.py`)
@@ -374,14 +507,17 @@ puppeteer_screenshot({ name: "e2e-exception-created" })
 
 ## Verification Checklist
 
+**Note (Jan 2026 addendum):** Re-run this checklist after applying the “Production Hardening” changes
+(Issues 6–10), since the definition of “terminal recommendation status” is being standardized.
+
 - [x] **Issue 1**: Approve cycle with 2+ consecutive RED results → Persistent RED exception created
   - ✅ Code verified: `detect_type1_persistent_red_for_model` called at line 3963 in monitoring.py
 - [x] **Issue 2**: RED result WITH active recommendation for same metric → No exception
   - ✅ Code verified: Query filters by `plan_metric_id` at line 231 in exception_detection.py
 - [x] **Issue 2**: RED result WITH recommendation for DIFFERENT metric → Exception created
   - ✅ Code verified: Only same-metric recommendations prevent exception creation
-- [x] **Issue 2**: RED result WITH CLOSED recommendation → Exception created
-  - ✅ Code verified: Status filter excludes CLOSED/CANCELLED/COMPLETED at lines 222-225
+- [x] **Issue 2**: RED result WITH terminal recommendation → Exception created
+    - ✅ Code verified: Terminal statuses are defined by `TERMINAL_RECOMMENDATION_STATUS_CODES` (e.g., `REC_CLOSED`, `REC_DROPPED`)
 - [x] **Issue 3**: Model detail page shows exception count badge on tab
   - ✅ UI verified: "Exceptions" tab shows red badge with count "3" for model 1
   - ✅ API verified: GET /models/1 returns `open_exception_count: 3`

@@ -3,8 +3,8 @@
 Model Risk Management inventory system with a FastAPI backend, React/TypeScript frontend, and PostgreSQL database. Supports model cataloging, validation workflow, recommendations tracking, performance monitoring, regional deployment tracking, configurable taxonomies, compliance reporting, and MRSA (Model Risk-Sensitive Application) classification with IRP (Independent Review Process) governance. Primary user roles: Admin (full control), Validator (workflow execution), Model Owner/Contributor (submit and track models), Regional/Global approvers (deployment approvals).
 
 ## Tech Stack
-- Backend: FastAPI, SQLAlchemy 2.x ORM, Pydantic v2 schemas, Alembic migrations, JWT auth via python-jose, passlib/bcrypt for hashing.
-- Frontend: React 18 + TypeScript + Vite + TailwindCSS, react-router-dom v6, Axios client with auth interceptor.
+- Backend: FastAPI, SQLAlchemy 2.x ORM, Pydantic v2 schemas, Alembic migrations, JWT auth via python-jose, passlib/bcrypt for hashing, matplotlib (charts).
+- Frontend: React 18 + TypeScript + Vite + TailwindCSS, react-router-dom v6, Axios client with auth interceptor, Recharts (visualization), react-markdown (content).
 - Database: PostgreSQL (dockerized). In-memory SQLite used in tests.
 - Testing: pytest for API; vitest + React Testing Library + happy-dom for web.
 
@@ -60,6 +60,8 @@ Model Risk Management inventory system with a FastAPI backend, React/TypeScript 
   - `teams.py`: Team CRUD and LOB assignment endpoints for reporting groupings (includes model lists and LOB tree helpers).
   - `irp.py`: IRP (Independent Review Process) management - CRUD for IRPs, MRSA coverage relationships, review and certification tracking, coverage compliance checks.
   - `mrsa_review_policy.py`: MRSA review policy and exception CRUD plus review status endpoints for independent review tracking.
+  - `roles.py`: Role definition and retrieval.
+  - `uat_tools.py`: **(Dev/Test Only)** Temporary endpoints for data reset and seeding.
 - Core services:
   - DB session management (`core/database.py`), auth dependency (`core/deps.py`), security utilities (`core/security.py`), row-level security filters (`core/rls.py`).
   - PDF/report helpers in `validation_workflow.py` (FPDF) for generated artifacts.
@@ -93,16 +95,17 @@ Model Risk Management inventory system with a FastAPI backend, React/TypeScript 
   - Auth context (`src/contexts/AuthContext.tsx`) manages token/user; Axios client (`src/api/client.ts`) injects Bearer tokens and redirects on 401.
   - Layout (`src/components/Layout.tsx`) provides navigation shell.
   - Hooks/utilities: table sorting (`src/hooks/useTableSort.tsx`), CSV export helpers on pages, column customization.
-- **Column Customization**: ModelsPage supports dynamic column show/hide with persistence via ExportViews API. Users can select which columns to display from a broad set of available columns (including shared_owner, monitoring_manager, business_line_name, risk_tier, methodology, MRSA review status, etc.), save custom views, and export CSV with selected columns. Pattern uses `columnRenderers` object mapping column keys to header/cell/csvValue functions, enabling unified rendering for both table display and CSV export.
-- Pages (`src/pages/`): feature-specific UIs aligned to backend modules. Tables generally support sorting and CSV export; dates rendered via ISO splitting.
-  - **Core**: `ModelsPage.tsx`, `ModelDetailsPage.tsx`, `VendorsPage.tsx`, `VendorDetailsPage.tsx`, `UsersPage.tsx`, `UserDetailsPage.tsx`, `TaxonomyPage.tsx` (with KPM Library tab), `AuditPage.tsx`
-  - **Validation Workflow**: `ValidationWorkflowPage.tsx`, `ValidationRequestDetailPage.tsx`, `ValidationPoliciesPage.tsx`, `MRSAReviewPoliciesPage.tsx`, `WorkflowConfigurationPage.tsx`, `ComponentDefinitionsPage.tsx`, `ConfigurationHistoryPage.tsx`
+- **CoPublic / Static**: `PublicLandingPage.tsx`, `PublicGuidePage.tsx`, `PublicOverviewPage.tsx`, `AboutPage.tsx`, `PrivacyPolicyPage.tsx`
+  - **Core**: `ModelsPage.tsx`, `ModelDetailsPage.tsx`, `VendorsPage.tsx`, `VendorDetailsPage.tsx`, `UsersPage.tsx`, `UserDetailsPage.tsx`, `TaxonomyPage.tsx` (with KPM Library tab), `AuditPage.tsx`, `ReadyToDeployPage.tsx`
+  - **Validation Workflow**: `ValidationWorkflowPage.tsx`, `ValidationRequestDetailPage.tsx`, `ValidationPoliciesPage.tsx`, `MRSAReviewPoliciesPage.tsx`, `WorkflowConfigurationPage.tsx`, `ComponentDefinitionsPage.tsx`, `ConfigurationHistoryPage.tsx`, `ValidationAlertsPage.tsx`
   - **Monitoring**: `MonitoringPlansPage.tsx`, `MonitoringPlanDetailPage.tsx`, `MonitoringCycleDetailPage.tsx`, `MyMonitoringPage.tsx`, `MyMonitoringTasksPage.tsx`
   - **Attestation**: `AttestationCyclesPage.tsx`, `AttestationDetailPage.tsx`, `MyAttestationsPage.tsx`, `BulkAttestationPage.tsx`, `AttestationReviewQueuePage.tsx`
   - **Recommendations**: `RecommendationsPage.tsx`, `RecommendationDetailPage.tsx`
   - **Decommissioning**: `DecommissioningRequestPage.tsx`, `PendingDecommissioningPage.tsx`
   - **Approvals**: `ApproverRolesPage.tsx`, `ConditionalApprovalRulesPage.tsx`
   - **Reports**: `ReportsPage.tsx`, `RegionalComplianceReportPage.tsx`, `DeviationTrendsReportPage.tsx`, `OverdueRevalidationReportPage.tsx`, `CriticalLimitationsReportPage.tsx`, `NameChangesReportPage.tsx`, `KPIReportPage.tsx`
+  - **Dashboards**: `AdminDashboardPage.tsx`, `ValidatorDashboardPage.tsx`, `ModelOwnerDashboardPage.tsx`, `ApproverDashboardPage.tsx`
+  - **IRP Management**: `IRPsPage.tsx` (list with CRUD, table sorting, filtering, CSV export), `IRPDetailPage.tsx` (detail view with covered MRSAs, review history, certification history tabs), `MyMRSAReviewsPage.tsx`ReportPage.tsx`, `KPIReportPage.tsx`
   - **Dashboards**: `AdminDashboardPage.tsx`, `ValidatorDashboardPage.tsx`, `ModelOwnerDashboardPage.tsx`, `ApproverDashboardPage.tsx`
   - **IRP Management**: `IRPsPage.tsx` (list with CRUD, table sorting, filtering, CSV export), `IRPDetailPage.tsx` (detail view with covered MRSAs, review history, certification history tabs)
   - **Other**: `ModelChangeRecordPage.tsx`, `BatchDelegatesPage.tsx`, `RegionsPage.tsx`, `TeamsPage.tsx`, `MyDeploymentTasksPage.tsx`, `MyPendingSubmissionsPage.tsx`, `AnalyticsPage.tsx`, `ReferenceDataPage.tsx`, `FryConfigPage.tsx`
@@ -928,7 +931,8 @@ Model Risk Management inventory system with a FastAPI backend, React/TypeScript 
 - Frontend uses `VITE_API_URL` (defaults to `http://localhost:8001`); token stored in `localStorage`.
 - Docker compose wires service URLs/ports; migrations must run inside the container to reach hostname `db`.
 
-## Testing
+##E2E: Puppeteer (via root package.json) for browser automation tests.
+-  Testing
 - Backend: pytest suite in `api/tests/` with fixtures (`conftest.py`). Run `cd api && python -m pytest`. Additional shell scripts (`test_*.sh`, `test_*.py`) for targeted flows.
 - Frontend: vitest in `web` (`pnpm test`, `pnpm test:run`, `pnpm test:coverage`).
 - Full regression helper: `run_tests.sh` executes backend then frontend suites.
