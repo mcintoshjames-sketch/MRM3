@@ -263,7 +263,8 @@ def _compute_metric_4_2(db: Session, active_models: List[Model]) -> KPIMetric:
         KPIBreakdown(
             category=tier,
             count=count,
-            percentage=_safe_percentage(count, total)
+            percentage=_safe_percentage(count, total),
+            avg_days=None
         )
         for tier, count in sorted(breakdown_dict.items())
     ]
@@ -284,7 +285,8 @@ def _compute_metric_4_3(db: Session, active_models: List[Model]) -> KPIMetric:
         KPIBreakdown(
             category=bl,
             count=count,
-            percentage=_safe_percentage(count, total)
+            percentage=_safe_percentage(count, total),
+            avg_days=None
         )
         for bl, count in sorted(breakdown_dict.items())
     ]
@@ -303,16 +305,17 @@ def _compute_metric_4_29(
 
     for model in active_models:
         team_id = None
-        if model.owner:
+        if model.owner and model.owner.lob_id is not None:
             team_id = lob_team_map.get(model.owner.lob_id)
-        team_name = team_name_map.get(team_id) if team_id else "Unassigned"
+        team_name = team_name_map.get(team_id, "Unassigned") if team_id is not None else "Unassigned"
         breakdown_dict[team_name] = breakdown_dict.get(team_name, 0) + 1
 
     breakdown = [
         KPIBreakdown(
             category=team_name,
             count=count,
-            percentage=_safe_percentage(count, total)
+            percentage=_safe_percentage(count, total),
+            avg_days=None
         )
         for team_name, count in sorted(breakdown_dict.items())
     ]
@@ -512,7 +515,8 @@ def _compute_monitoring_metrics(
             denominator=total_submissions,
             percentage=_safe_percentage(timely_count, total_submissions),
             numerator_label="timely submissions",
-            denominator_label="total required submissions"
+            denominator_label="total required submissions",
+            numerator_model_ids=None
         )),
         "4.11": _create_metric("4.11", ratio_value=KPIDecomposition(
             numerator=len(models_with_red),
@@ -615,7 +619,8 @@ def _compute_recommendation_metrics(
             denominator=open_recs_count,
             percentage=_safe_percentage(past_due_recs, open_recs_count),
             numerator_label="past due",
-            denominator_label="open recommendations"
+            denominator_label="open recommendations",
+            numerator_model_ids=None
         )),
         "4.20": _create_metric("4.20", duration_value=avg_close_days),
         "4.21": _create_metric("4.21", ratio_value=KPIDecomposition(
@@ -642,7 +647,8 @@ def _compute_metric_4_22(db: Session, active_models: List[Model]) -> KPIMetric:
             denominator=0,
             percentage=0.0,
             numerator_label="on time",
-            denominator_label="required attestations"
+            denominator_label="required attestations",
+            numerator_model_ids=None
         ))
 
     # Get all attestation records for this cycle
@@ -663,7 +669,8 @@ def _compute_metric_4_22(db: Session, active_models: List[Model]) -> KPIMetric:
         denominator=total_required,
         percentage=_safe_percentage(on_time_count, total_required),
         numerator_label="on time",
-        denominator_label="required attestations"
+        denominator_label="required attestations",
+        numerator_model_ids=None
     ))
 
 
@@ -702,7 +709,8 @@ def _compute_metric_4_27(db: Session, active_models: List[Model]) -> KPIMetric:
             denominator=0,
             percentage=0.0,
             numerator_label="high residual risk",
-            denominator_label="models with residual risk assessed"
+            denominator_label="models with residual risk assessed",
+            numerator_model_ids=None
         ))
 
     matrix = config.matrix_config.get("matrix", {})

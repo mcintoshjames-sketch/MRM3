@@ -1,6 +1,7 @@
 """Model Limitations API endpoints."""
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status, Query
+from sqlalchemy import select
 from sqlalchemy.orm import Session, joinedload
 
 from app.core.database import get_db
@@ -44,6 +45,8 @@ def _get_limitation_with_relations(db: Session, limitation_id: int) -> ModelLimi
         joinedload(ModelLimitation.created_by),
         joinedload(ModelLimitation.retired_by),
     ).filter(ModelLimitation.limitation_id == limitation_id).first()
+    if not limitation:
+        raise HTTPException(status_code=404, detail="Limitation not found")
     return limitation
 
 
@@ -67,8 +70,8 @@ def _log_audit(
     entity_id: int,
     action: str,
     user_id: int,
-    old_values: dict = None,
-    new_values: dict = None
+    old_values: dict | None = None,
+    new_values: dict | None = None
 ):
     """Create an audit log entry."""
     changes = {}
@@ -439,9 +442,9 @@ def get_critical_limitations_report(
             raise HTTPException(status_code=404, detail="Region not found")
 
         # Get model IDs that are deployed to this region
-        model_ids_in_region = db.query(ModelRegion.model_id).filter(
+        model_ids_in_region = select(ModelRegion.model_id).where(
             ModelRegion.region_id == region_id
-        ).subquery()
+        )
 
         query = query.filter(ModelLimitation.model_id.in_(model_ids_in_region))
 

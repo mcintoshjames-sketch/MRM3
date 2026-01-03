@@ -341,6 +341,12 @@ def create_exception(
         joinedload(ModelException.status_history).joinedload(ModelExceptionStatusHistory.changed_by),
     ).filter(ModelException.exception_id == exception.exception_id).first()
 
+    if not exception:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Exception not found after creation",
+        )
+
     return _build_exception_detail_response(exception)
 
 
@@ -478,6 +484,12 @@ def acknowledge_exception_endpoint(
         joinedload(ModelException.status_history).joinedload(ModelExceptionStatusHistory.changed_by),
     ).filter(ModelException.exception_id == exception_id).first()
 
+    if not exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Exception {exception_id} not found",
+        )
+
     return _build_exception_detail_response(exc)
 
 
@@ -570,6 +582,12 @@ def close_exception_endpoint(
         joinedload(ModelException.closure_reason),
         joinedload(ModelException.status_history).joinedload(ModelExceptionStatusHistory.changed_by),
     ).filter(ModelException.exception_id == exception_id).first()
+
+    if not exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Exception {exception_id} not found",
+        )
 
     return _build_exception_detail_response(exc)
 
@@ -792,4 +810,3 @@ def get_model_exceptions(
     exceptions = query.order_by(ModelException.detected_at.desc()).all()
 
     return [_build_exception_list_response(exc) for exc in exceptions]
-

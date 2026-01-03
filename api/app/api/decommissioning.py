@@ -10,7 +10,7 @@ from app.core.time import utc_now
 from app.core.deps import get_current_user
 from app.core.rls import can_submit_owner_actions
 from app.models import (
-    User, Model, ModelVersion, ModelRegion, Region,
+    User, Model, ModelStatus, ModelVersion, ModelRegion, Region,
     Taxonomy, TaxonomyValue,
     DecommissioningRequest, DecommissioningStatusHistory, DecommissioningApproval,
     AuditLog
@@ -30,8 +30,11 @@ from app.schemas.decommissioning import (
     ReplacementModelInfo,
     DecommissioningApprovalResponse,
     DecommissioningStatusHistoryResponse,
+    RegionBasic,
     REASONS_REQUIRING_REPLACEMENT
 )
+from app.schemas.taxonomy import TaxonomyValueResponse
+from app.schemas.user import UserResponse
 
 router = APIRouter(prefix="/decommissioning", tags=["Decommissioning"])
 
@@ -125,6 +128,11 @@ def check_any_rejection(db: Session, request_id: int) -> bool:
 
 def build_model_info(model: Model) -> DecommissioningModelInfo:
     """Build model info for response."""
+    regions = [
+        RegionBasic.model_validate(mr.region)
+        for mr in (model.model_regions or [])
+        if mr.region
+    ]
     return DecommissioningModelInfo(
         model_id=model.model_id,
         model_name=model.model_name,
@@ -132,10 +140,7 @@ def build_model_info(model: Model) -> DecommissioningModelInfo:
         owner_name=model.owner.full_name if model.owner else None,
         risk_tier=model.risk_tier.label if model.risk_tier else None,
         status=model.status_value.label if model.status_value else model.status,
-        regions=[
-            {"region_id": mr.region.region_id, "code": mr.region.code, "name": mr.region.name}
-            for mr in model.model_regions
-        ]
+        regions=regions
     )
 
 
@@ -165,7 +170,7 @@ def build_request_response(request: DecommissioningRequest, db: Session) -> Deco
         model=build_model_info(request.model) if request.model else None,
         status=request.status,
         reason_id=request.reason_id,
-        reason=request.reason,
+        reason=TaxonomyValueResponse.model_validate(request.reason) if request.reason else None,
         replacement_model_id=request.replacement_model_id,
         replacement_model=build_replacement_info(request.replacement_model, db) if request.replacement_model else None,
         last_production_date=request.last_production_date,
@@ -175,20 +180,34 @@ def build_request_response(request: DecommissioningRequest, db: Session) -> Deco
         downstream_impact_verified=request.downstream_impact_verified,
         created_at=request.created_at,
         created_by_id=request.created_by_id,
-        created_by=request.created_by,
+        created_by=UserResponse.model_validate(request.created_by) if request.created_by else None,
         validator_reviewed_by_id=request.validator_reviewed_by_id,
-        validator_reviewed_by=request.validator_reviewed_by,
+        validator_reviewed_by=(
+            UserResponse.model_validate(request.validator_reviewed_by)
+            if request.validator_reviewed_by
+            else None
+        ),
         validator_reviewed_at=request.validator_reviewed_at,
         validator_comment=request.validator_comment,
         owner_approval_required=request.owner_approval_required,
         owner_reviewed_by_id=request.owner_reviewed_by_id,
-        owner_reviewed_by=request.owner_reviewed_by,
+        owner_reviewed_by=(
+            UserResponse.model_validate(request.owner_reviewed_by)
+            if request.owner_reviewed_by
+            else None
+        ),
         owner_reviewed_at=request.owner_reviewed_at,
         owner_comment=request.owner_comment,
         final_reviewed_at=request.final_reviewed_at,
         rejection_reason=request.rejection_reason,
-        status_history=request.status_history,
-        approvals=request.approvals
+        status_history=[
+            DecommissioningStatusHistoryResponse.model_validate(history)
+            for history in (request.status_history or [])
+        ],
+        approvals=[
+            DecommissioningApprovalResponse.model_validate(approval)
+            for approval in (request.approvals or [])
+        ]
     )
 
 
@@ -327,7 +346,7 @@ def create_decommissioning_request(
     decommissioning_status_id = get_model_status_id(db, "DECOMMISSIONING")
     if decommissioning_status_id:
         model.status_id = decommissioning_status_id
-    model.status = "Pending Decommission"
+    model.status = ModelStatus.PENDING_DECOMMISSION
 
     # Create audit log
     audit_log = AuditLog(
@@ -361,6 +380,9 @@ def create_decommissioning_request(
         joinedload(DecommissioningRequest.status_history).joinedload(DecommissioningStatusHistory.changed_by),
         joinedload(DecommissioningRequest.approvals).joinedload(DecommissioningApproval.region),
     ).filter(DecommissioningRequest.request_id == decom_request.request_id).first()
+
+    if not request_with_rels:
+        raise HTTPException(status_code=404, detail="Decommissioning request not found")
 
     return build_request_response(request_with_rels, db)
 
@@ -475,7 +497,7 @@ def get_my_pending_approvals(
 
     elif is_regional_approver(current_user):
         # Can approve REGIONAL approvals for their regions
-        user_region_ids = [r.region_id for r in current_user.user_region_assignments]
+        user_region_ids = [r.region_id for r in current_user.regions]
         requests = db.query(DecommissioningRequest).join(
             DecommissioningApproval
         ).options(
@@ -753,6 +775,9 @@ def update_decommissioning_request(
         joinedload(DecommissioningRequest.approvals).joinedload(DecommissioningApproval.approved_by),
     ).filter(DecommissioningRequest.request_id == request_id).first()
 
+    if not request_with_rels:
+        raise HTTPException(status_code=404, detail="Decommissioning request not found")
+
     return build_request_response(request_with_rels, db)
 
 
@@ -822,7 +847,7 @@ def submit_validator_review(
         active_status_id = get_model_status_id(db, "ACTIVE")
         if active_status_id:
             model.status_id = active_status_id
-        model.status = "Active"
+        model.status = ModelStatus.ACTIVE
 
     # Create audit log
     audit_log = AuditLog(
@@ -932,7 +957,7 @@ def submit_owner_review(
         active_status_id = get_model_status_id(db, "ACTIVE")
         if active_status_id:
             model.status_id = active_status_id
-        model.status = "Active"
+        model.status = ModelStatus.ACTIVE
 
     # Create audit log
     audit_log = AuditLog(
@@ -1001,7 +1026,7 @@ def submit_approval(
     elif approval.approver_type == "GLOBAL" and is_global_approver(current_user):
         can_approve = True
     elif approval.approver_type == "REGIONAL" and is_regional_approver(current_user):
-        user_region_ids = [r.region_id for r in current_user.user_region_assignments]
+        user_region_ids = [r.region_id for r in current_user.regions]
         can_approve = approval.region_id in user_region_ids
 
     if not can_approve:
@@ -1026,7 +1051,7 @@ def submit_approval(
         active_status_id = get_model_status_id(db, "ACTIVE")
         if active_status_id and model:
             model.status_id = active_status_id
-            model.status = "Active"
+            model.status = ModelStatus.ACTIVE
     else:
         # Check if all approvals are now complete
         if check_all_approvals_complete(db, request_id):
@@ -1041,7 +1066,7 @@ def submit_approval(
             if retired_status_id and model:
                 model.status_id = retired_status_id
             if model:
-                model.status = "Decommissioned"
+                model.status = ModelStatus.RETIRED
 
     # Get model name for audit log
     model_for_audit = db.query(Model).filter(Model.model_id == request.model_id).first()
@@ -1114,7 +1139,7 @@ def withdraw_request(
     active_status_id = get_model_status_id(db, "ACTIVE")
     if active_status_id and model:
         model.status_id = active_status_id
-        model.status = "Active"
+        model.status = ModelStatus.ACTIVE
 
     # Create audit log
     audit_log = AuditLog(

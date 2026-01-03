@@ -1,10 +1,11 @@
 """Validation workflow API endpoints."""
 from datetime import datetime, date, timedelta, timezone
 from dateutil.relativedelta import relativedelta
-from typing import List, Optional, Union, Dict, Tuple, Set
+from typing import List, Optional, Union, Dict, Tuple, Set, Any
 import json
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from fastapi.responses import FileResponse
+from starlette.background import BackgroundTask
 from fastapi.encoders import jsonable_encoder
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import desc, or_, func, nullslast, select
@@ -96,7 +97,14 @@ def check_admin(user: User):
         )
 
 
-def create_audit_log(db: Session, entity_type: str, entity_id: int, action: str, user_id: int, changes: dict = None):
+def create_audit_log(
+    db: Session,
+    entity_type: str,
+    entity_id: int,
+    action: str,
+    user_id: int,
+    changes: Optional[dict] = None
+):
     """Create an audit log entry."""
     audit_log = AuditLog(
         entity_type=entity_type,
@@ -1750,22 +1758,22 @@ def calculate_model_revalidation_status(model: Model, db: Session) -> Dict:
             status = "Pending Full Validation"
     elif active_request:
         if not active_request.submission_received_date:
-            if today > grace_period_end:
+            if grace_period_end and today > grace_period_end:
                 status = "Submission Overdue"
-            elif today > submission_due:
+            elif submission_due and today > submission_due:
                 status = "In Grace Period"
             else:
                 status = "Awaiting Submission"
         else:
-            if today > validation_due:
+            if validation_due and today > validation_due:
                 status = "Validation Overdue"
             else:
                 status = "Validation In Progress"
     else:
         # No active request - standard revalidation lifecycle
-        if today > validation_due:
+        if validation_due and today > validation_due:
             status = "Revalidation Overdue (No Request)"
-        elif today > grace_period_end:
+        elif grace_period_end and today > grace_period_end:
             status = "Should Create Request"
         else:
             status = "Upcoming"
@@ -2807,7 +2815,7 @@ def mark_submission_received(
     validation_request.updated_at = utc_now()
 
     # Create audit log
-    changes = {
+    changes: dict[str, Any] = {
         "submission_received_date": {
             "old": str(old_date) if old_date else None,
             "new": str(submission_data.submission_received_date)
@@ -3321,7 +3329,6 @@ def update_validation_request_status(
             approval.voided_by_id = current_user.user_id
             approval.void_reason = f"Validation sent back to In Progress from Pending Approval: {status_update.change_reason or 'No reason provided'}"
             approval.voided_at = utc_now()
-            approval.updated_at = utc_now()
 
             # Create audit log for each voided approval
             void_audit = AuditLog(
@@ -3433,7 +3440,6 @@ def update_validation_request_status(
                     approval.approval_status = "Pending"
                     approval.approved_at = None
                     approval.comments = None
-                    approval.updated_at = utc_now()
                     reset_approvals.append({
                         "approval_id": approval.approval_id,
                         "approval_type": approval.approval_type,
@@ -5329,6 +5335,8 @@ def get_sla_violations(
 
         # Calculate days since submission, EXCLUDING hold time
         # Team should not be penalized for periods when work was paused
+        if not req.submission_received_date:
+            continue
         raw_days_since_submission = (now.date() - req.submission_received_date).days
         effective_days_since_submission = raw_days_since_submission - req.total_hold_days
 
@@ -5677,12 +5685,14 @@ def get_my_overdue_items(
                     continue
 
                 # Calculate days overdue and urgency
-                if is_past_grace:
+                if is_past_grace and req.submission_grace_period_end:
                     days_overdue = (today - req.submission_grace_period_end).days
                     urgency = "overdue"
-                else:
+                elif req.submission_due_date:
                     days_overdue = (today - req.submission_due_date).days
                     urgency = "in_grace_period"
+                else:
+                    continue
 
                 # Get commentary status
                 commentary = get_commentary_status_for_request(
@@ -5858,13 +5868,15 @@ def get_overdue_submissions(
                 model = model_assoc.model
 
                 # Calculate days overdue and urgency
-                if is_past_grace:
+                if is_past_grace and req.submission_grace_period_end:
                     days_overdue = (
                         today - req.submission_grace_period_end).days
                     urgency = "overdue"  # Past grace period
-                else:
+                elif req.submission_due_date:
                     days_overdue = (today - req.submission_due_date).days
                     urgency = "in_grace_period"  # Past due but in grace
+                else:
+                    continue
 
                 # Get commentary status for pre-submission overdue
                 commentary = get_commentary_status_for_request(
@@ -5973,7 +5985,7 @@ def get_overdue_validations(
 
 
 @router.get("/dashboard/my-overdue-items")
-def get_my_overdue_items(
+def get_dashboard_my_overdue_items(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
@@ -6036,10 +6048,12 @@ def get_my_overdue_items(
                 if req.model_versions_assoc and len(req.model_versions_assoc) > 0:
                     model = req.model_versions_assoc[0].model
 
-                    if is_past_grace:
+                    if is_past_grace and req.submission_grace_period_end:
                         days_overdue = (today - req.submission_grace_period_end).days
-                    else:
+                    elif req.submission_due_date:
                         days_overdue = (today - req.submission_due_date).days
+                    else:
+                        continue
 
                     # Get commentary status
                     commentary = get_commentary_status_for_request(
@@ -7094,6 +7108,8 @@ def get_plan_template_suggestions(
             continue  # No overlapping models, skip
 
         plan = template_request.validation_plan
+        if not plan:
+            continue
 
         # Count deviations
         deviations_count = sum(
@@ -7388,7 +7404,9 @@ def export_validation_plan_pdf(
                     'NotApplicable': 'N/A'
                 }
                 treatment = treatment_map.get(
-                    comp.planned_treatment, comp.planned_treatment)
+                    comp.planned_treatment,
+                    comp.planned_treatment or "N/A"
+                )
                 pdf.cell(30, 6, treatment, 1, 0)
 
                 # Deviation status
@@ -7443,7 +7461,7 @@ def export_validation_plan_pdf(
         media_type='application/pdf',
         filename=filename,
         # Clean up temp file after sending
-        background=lambda: os.unlink(temp_file.name)
+        background=BackgroundTask(os.unlink, temp_file.name)
     )
 
 
@@ -8188,7 +8206,6 @@ def void_approval_requirement(
     approval.voided_by_id = current_user.user_id
     approval.void_reason = void_data.void_reason
     approval.voided_at = utc_now()
-    approval.updated_at = utc_now()
 
     # If model was previously approved, clear the use_approval_date
     # because additional approvals are no longer all complete
@@ -8361,18 +8378,16 @@ def get_recent_approvals(
     # For validators, show models from validations they performed
     if is_validator(current_user):
         # Find validation requests where this user was assigned as validator
-        validator_requests = db.query(ValidationRequest.request_id).join(
+        validator_request_ids = select(ValidationRequest.request_id).join(
             ValidationAssignment
-        ).filter(
+        ).where(
             ValidationAssignment.validator_id == current_user.user_id
-        ).subquery()
+        ).scalar_subquery()
 
         # Get model IDs from those requests
-        validator_model_ids = db.query(Model.model_id).join(
-            ValidationRequestModelVersion
-        ).filter(
-            ValidationRequestModelVersion.request_id.in_(validator_requests)
-        ).subquery()
+        validator_model_ids = select(ValidationRequestModelVersion.model_id).where(
+            ValidationRequestModelVersion.request_id.in_(validator_request_ids)
+        ).scalar_subquery()
 
         # Add to query
         query = query.filter(Model.model_id.in_(validator_model_ids))
@@ -8856,7 +8871,9 @@ def export_effective_challenge_report(
         ("Validation Type", validation_request.validation_type.label if validation_request.validation_type else "N/A"),
         ("Current Status", validation_request.current_status.label if validation_request.current_status else "N/A"),
         ("Total Challenge Rounds", str(len(challenge_rounds))),
-        ("Final Outcome", validation_request.outcome.outcome if validation_request.outcome else "Pending")
+        ("Final Outcome", validation_request.outcome.overall_rating.label
+         if validation_request.outcome and validation_request.outcome.overall_rating
+         else "Pending")
     ]
 
     for label, value in summary_items:

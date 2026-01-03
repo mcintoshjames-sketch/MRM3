@@ -178,7 +178,8 @@ async def get_regional_deployment_compliance_report(
         else:
             results = [
                 row for row in results
-                if model_team_map.get(row.model_id) and model_team_map[row.model_id]["team_id"] == team_id
+                if (team_entry := model_team_map.get(row.model_id))
+                and team_entry.get("team_id") == team_id
             ]
             team = db.query(Team).filter(Team.team_id == team_id).first()
             team_filter_name = team.name if team else f"Team {team_id}"

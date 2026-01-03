@@ -26,7 +26,14 @@ class TeamLOBAssignment(BaseModel):
     lob_id: int
 
 
-def create_audit_log(db: Session, entity_type: str, entity_id: int, action: str, user_id: int, changes: dict = None):
+def create_audit_log(
+    db: Session,
+    entity_type: str,
+    entity_id: int,
+    action: str,
+    user_id: int,
+    changes: dict | None = None
+):
     """Create an audit log entry for team changes."""
     audit_log = AuditLog(
         entity_type=entity_type,
@@ -50,12 +57,16 @@ def list_teams(
 ):
     teams = db.query(Team).order_by(Team.name).all()
 
-    lob_counts = dict(
-        db.query(LOBUnit.team_id, func.count(LOBUnit.lob_id))
+    lob_counts = {
+        team_id: count
+        for team_id, count in db.query(
+            LOBUnit.team_id,
+            func.count(LOBUnit.lob_id)
+        )
         .filter(LOBUnit.team_id.isnot(None))
         .group_by(LOBUnit.team_id)
         .all()
-    )
+    }
 
     lob_team_map = build_lob_team_map(db)
     model_owner_lobs = db.query(Model.model_id, User.lob_id).join(

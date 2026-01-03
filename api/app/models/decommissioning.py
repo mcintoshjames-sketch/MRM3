@@ -1,10 +1,18 @@
 """Decommissioning models for tracking model retirement workflow."""
+from __future__ import annotations
+
 from datetime import datetime, date
-from typing import Optional, List
+from typing import Optional, List, TYPE_CHECKING
 from sqlalchemy import String, Integer, Text, DateTime, Date, ForeignKey, Boolean, CheckConstraint, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.models.base import Base
 from app.core.time import utc_now
+
+if TYPE_CHECKING:
+    from app.models.model import Model
+    from app.models.region import Region
+    from app.models.taxonomy import TaxonomyValue
+    from app.models.user import User
 
 
 class DecommissioningRequest(Base):

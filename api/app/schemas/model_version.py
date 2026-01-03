@@ -73,10 +73,6 @@ class ModelVersionResponse(ModelVersionBase):
     validation_request_id: Optional[int] = None
     change_type_id: Optional[int] = None
 
-    # Regional scope (inherited from Base but including for clarity)
-    scope: VersionScope
-    affected_region_ids: Optional[List[int]] = None
-
     # Point-in-time compliance snapshot
     change_requires_mv_approval: Optional[bool] = Field(
         None,

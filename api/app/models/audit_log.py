@@ -1,9 +1,15 @@
 """Audit log model for tracking changes."""
+from __future__ import annotations
+
 from datetime import datetime
+from typing import TYPE_CHECKING
 from sqlalchemy import String, Integer, Text, DateTime, ForeignKey, JSON
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.models.base import Base
 from app.core.time import utc_now
+
+if TYPE_CHECKING:
+    from app.models.user import User
 
 
 class AuditLog(Base):

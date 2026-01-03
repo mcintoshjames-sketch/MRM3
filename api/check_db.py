@@ -24,7 +24,7 @@ try:
     hierarchies = db.query(ModelHierarchy).all()
     for h in hierarchies:
         print(
-            f"Parent: {h.parent_model_id}, Child: {h.child_model_id}, Type: {h.hierarchy_type_id}")
+            f"Parent: {h.parent_model_id}, Child: {h.child_model_id}, Type: {h.relation_type_id}")
 
 finally:
     db.close()

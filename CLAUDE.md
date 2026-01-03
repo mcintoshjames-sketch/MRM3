@@ -657,3 +657,20 @@ current_time = utc_now()
 
 **Why naive datetime?**
 The database columns use `TIMESTAMP WITHOUT TIME ZONE`. Using timezone-aware datetimes would cause "can't compare offset-naive and offset-aware datetimes" errors. The `utc_now()` function uses the modern `datetime.now(timezone.utc).replace(tzinfo=None)` pattern to get UTC time without the deprecation warning while remaining compatible with existing data.
+
+### TypedDict Import (Backend)
+
+**IMPORTANT**: Always import `TypedDict` from `typing_extensions`, not `typing`.
+
+The backend runs Python 3.11, and Pydantic 2.x requires `typing_extensions.TypedDict` on Python < 3.12. Using `typing.TypedDict` will cause the API to crash on startup with:
+```
+PydanticUserError: Please use `typing_extensions.TypedDict` instead of `typing.TypedDict` on Python < 3.12.
+```
+
+```python
+# ❌ WRONG - causes API crash
+from typing import TypedDict
+
+# ✅ CORRECT
+from typing_extensions import TypedDict
+```

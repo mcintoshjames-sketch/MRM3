@@ -108,7 +108,7 @@ def get_past_due_level_with_notches(
             }
         elif min_days is None:
             # Lower unbounded: matches if days_overdue <= max_days
-            if days_overdue <= max_days:
+            if max_days is not None and days_overdue <= max_days:
                 return {
                     "value_id": value.value_id,
                     "code": value.code,

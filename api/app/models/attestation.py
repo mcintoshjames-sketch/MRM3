@@ -1,7 +1,9 @@
 """Model Risk Attestation entities."""
+from __future__ import annotations
+
 import enum
 from datetime import datetime, date
-from typing import Optional, List
+from typing import Optional, List, TYPE_CHECKING
 from sqlalchemy import (
     String, Integer, Text, Boolean, ForeignKey, DateTime, Date,
     UniqueConstraint, Index, JSON, DECIMAL
@@ -9,6 +11,14 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.models.base import Base
 from app.core.time import utc_now
+
+if TYPE_CHECKING:
+    from app.models.decommissioning import DecommissioningRequest
+    from app.models.model import Model
+    from app.models.model_pending_edit import ModelPendingEdit
+    from app.models.region import Region
+    from app.models.taxonomy import TaxonomyValue
+    from app.models.user import User
 
 
 # ============================================================================

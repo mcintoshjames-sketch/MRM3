@@ -1,12 +1,22 @@
 """Model Exceptions tracking for compliance and risk management."""
+from __future__ import annotations
+
 from datetime import datetime
-from typing import Optional
+from typing import Optional, TYPE_CHECKING
 from sqlalchemy import (
     String, Integer, Text, DateTime, Boolean, ForeignKey, Index, CheckConstraint
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.models.base import Base
 from app.core.time import utc_now
+
+if TYPE_CHECKING:
+    from app.models.attestation import AttestationResponse
+    from app.models.model import Model
+    from app.models.monitoring import MonitoringResult
+    from app.models.taxonomy import TaxonomyValue
+    from app.models.user import User
+    from app.models.version_deployment_task import VersionDeploymentTask
 
 
 class ModelException(Base):

@@ -1,17 +1,42 @@
 """Model model - minimal schema."""
+from __future__ import annotations
+
 import enum
 from datetime import datetime
-from typing import Optional, List
+from typing import Optional, List, TYPE_CHECKING
 from sqlalchemy import String, Integer, Text, DateTime, ForeignKey, Table, Column, Boolean
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.models.base import Base
 from app.core.time import utc_now
+
+if TYPE_CHECKING:
+    from app.models.irp import IRP
+    from app.models.limitation import ModelLimitation
+    from app.models.methodology import Methodology
+    from app.models.model_application import ModelApplication
+    from app.models.model_approval_status_history import ModelApprovalStatusHistory
+    from app.models.model_delegate import ModelDelegate
+    from app.models.model_feed_dependency import ModelFeedDependency
+    from app.models.model_hierarchy import ModelHierarchy
+    from app.models.model_name_history import ModelNameHistory
+    from app.models.model_pending_edit import ModelPendingEdit
+    from app.models.model_region import ModelRegion
+    from app.models.model_submission_comment import ModelSubmissionComment
+    from app.models.model_type_taxonomy import ModelType
+    from app.models.model_version import ModelVersion
+    from app.models.recommendation import Recommendation
+    from app.models.region import Region
+    from app.models.risk_assessment import ModelRiskAssessment
+    from app.models.taxonomy import TaxonomyValue
+    from app.models.user import User
+    from app.models.vendor import Vendor
 
 
 class ModelStatus(str, enum.Enum):
     """Model status."""
     ACTIVE = "Active"
     IN_DEVELOPMENT = "In Development"
+    PENDING_DECOMMISSION = "Pending Decommission"
     RETIRED = "Retired"
 
 

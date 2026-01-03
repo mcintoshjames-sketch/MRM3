@@ -23,7 +23,7 @@ from app.schemas.model_delegate import (
 router = APIRouter()
 
 
-def create_audit_log(db: Session, entity_type: str, entity_id: int, action: str, user_id: int, changes: dict = None):
+def create_audit_log(db: Session, entity_type: str, entity_id: int, action: str, user_id: int, changes: dict | None = None):
     """Create an audit log entry."""
     audit_log = AuditLog(
         entity_type=entity_type,
@@ -74,7 +74,8 @@ def create_delegate(
         )
 
     # Check if user exists
-    delegate_user = db.query(User).filter(User.user_id == delegate_data.user_id).first()
+    delegate_user = db.query(User).filter(
+        User.user_id == delegate_data.user_id).first()
     if not delegate_user:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -206,7 +207,8 @@ def update_delegate(
     current_user: User = Depends(get_current_user)
 ):
     """Update delegation permissions (owner or admin only)."""
-    delegate = db.query(ModelDelegate).filter(ModelDelegate.delegate_id == delegate_id).first()
+    delegate = db.query(ModelDelegate).filter(
+        ModelDelegate.delegate_id == delegate_id).first()
     if not delegate:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -215,6 +217,11 @@ def update_delegate(
 
     # Get model to check permissions
     model = db.query(Model).filter(Model.model_id == delegate.model_id).first()
+    if not model:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Model not found"
+        )
     if not can_manage_delegates(model, current_user):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -233,12 +240,14 @@ def update_delegate(
     if delegate_update.can_submit_changes is not None:
         old_value = delegate.can_submit_changes
         delegate.can_submit_changes = delegate_update.can_submit_changes
-        changes["can_submit_changes"] = {"old": old_value, "new": delegate_update.can_submit_changes}
+        changes["can_submit_changes"] = {
+            "old": old_value, "new": delegate_update.can_submit_changes}
 
     if delegate_update.can_manage_regional is not None:
         old_value = delegate.can_manage_regional
         delegate.can_manage_regional = delegate_update.can_manage_regional
-        changes["can_manage_regional"] = {"old": old_value, "new": delegate_update.can_manage_regional}
+        changes["can_manage_regional"] = {
+            "old": old_value, "new": delegate_update.can_manage_regional}
 
     if changes:
         create_audit_log(
@@ -263,7 +272,8 @@ def revoke_delegate(
     current_user: User = Depends(get_current_user)
 ):
     """Revoke a delegation (owner or admin only, maintains audit trail)."""
-    delegate = db.query(ModelDelegate).filter(ModelDelegate.delegate_id == delegate_id).first()
+    delegate = db.query(ModelDelegate).filter(
+        ModelDelegate.delegate_id == delegate_id).first()
     if not delegate:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -272,6 +282,11 @@ def revoke_delegate(
 
     # Get model to check permissions
     model = db.query(Model).filter(Model.model_id == delegate.model_id).first()
+    if not model:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Model not found"
+        )
     if not can_manage_delegates(model, current_user):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -318,7 +333,8 @@ def delete_delegate(
             detail="Only admins can permanently delete delegations. Use revoke instead."
         )
 
-    delegate = db.query(ModelDelegate).filter(ModelDelegate.delegate_id == delegate_id).first()
+    delegate = db.query(ModelDelegate).filter(
+        ModelDelegate.delegate_id == delegate_id).first()
     if not delegate:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -358,7 +374,8 @@ def batch_add_delegates(
         )
 
     # Verify target user exists
-    target_user = db.query(User).filter(User.user_id == batch_request.target_user_id).first()
+    target_user = db.query(User).filter(
+        User.user_id == batch_request.target_user_id).first()
     if not target_user:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -366,7 +383,8 @@ def batch_add_delegates(
         )
 
     # Verify delegate user exists
-    delegate_user = db.query(User).filter(User.user_id == batch_request.delegate_user_id).first()
+    delegate_user = db.query(User).filter(
+        User.user_id == batch_request.delegate_user_id).first()
     if not delegate_user:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -385,7 +403,8 @@ def batch_add_delegates(
     if batch_request.role == "owner":
         query = query.filter(Model.owner_id == batch_request.target_user_id)
     else:  # developer
-        query = query.filter(Model.developer_id == batch_request.target_user_id)
+        query = query.filter(Model.developer_id ==
+                             batch_request.target_user_id)
 
     models = query.all()
 
@@ -459,7 +478,7 @@ def batch_add_delegates(
 
         model_details.append(ModelDelegateDetail(
             model_id=model.model_id,
-            model_name=model.name,
+            model_name=model.model_name,
             action=action
         ))
 

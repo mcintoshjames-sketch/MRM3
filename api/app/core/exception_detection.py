@@ -796,16 +796,9 @@ def autoclose_type3_on_full_validation_approved(
 
     # Get model IDs from the validation request
     # ValidationRequest can cover multiple models via validation_request_models
-    model_ids = set()
-
-    # Direct model_id if present
-    if hasattr(validation_request, 'model_id') and validation_request.model_id:
-        model_ids.add(validation_request.model_id)
-
-    # Models from the many-to-many relationship
-    if hasattr(validation_request, 'models'):
-        for model in validation_request.models:
-            model_ids.add(model.model_id)
+    model_ids = {assoc.model_id for assoc in validation_request.model_versions_assoc}
+    if validation_request.models:
+        model_ids.update(model.model_id for model in validation_request.models)
 
     if not model_ids:
         return []

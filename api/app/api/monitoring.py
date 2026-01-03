@@ -87,6 +87,7 @@ from app.schemas.monitoring import (
     MonitoringCycleUpdate,
     MonitoringCycleResponse,
     MonitoringCycleListResponse,
+    MonitoringCycleStatusEnum,
     CycleCancelRequest,
     CyclePostponeRequest,
     CycleRequestApprovalRequest,
@@ -118,7 +119,14 @@ logger = logging.getLogger(__name__)
 TERMINAL_RECOMMENDATION_STATUS_CODES = ("REC_DROPPED", "REC_CLOSED")
 
 
-def create_audit_log(db: Session, entity_type: str, entity_id: int, action: str, user_id: int, changes: dict = None):
+def create_audit_log(
+    db: Session,
+    entity_type: str,
+    entity_id: int,
+    action: str,
+    user_id: int,
+    changes: Optional[dict] = None
+):
     """Create an audit log entry for monitoring changes."""
     audit_log = AuditLog(
         entity_type=entity_type,
@@ -336,7 +344,7 @@ def validate_metric_thresholds(
             )
 
 
-def calculate_next_submission_date(frequency: MonitoringFrequency, from_date: date = None) -> date:
+def calculate_next_submission_date(frequency: MonitoringFrequency, from_date: Optional[date] = None) -> date:
     """Calculate the next submission due date based on frequency."""
     if from_date is None:
         from_date = date.today()
@@ -690,19 +698,24 @@ def list_monitoring_plans(
     non_cancelled_cycle_counts = {}
     open_recommendation_counts = {}
     if plan_ids:
-        non_cancelled_cycle_counts = dict(
-            db.query(MonitoringCycle.plan_id, func.count(MonitoringCycle.cycle_id))
+        non_cancelled_cycle_counts = {
+            plan_id: count
+            for plan_id, count in db.query(
+                MonitoringCycle.plan_id,
+                func.count(MonitoringCycle.cycle_id)
+            )
             .filter(
                 MonitoringCycle.plan_id.in_(plan_ids),
                 MonitoringCycle.status != MonitoringCycleStatus.CANCELLED.value
             )
             .group_by(MonitoringCycle.plan_id)
             .all()
-        )
+        }
         non_terminal_status_ids = get_non_terminal_recommendation_status_ids(db)
         if non_terminal_status_ids:
-            open_recommendation_counts = dict(
-                db.query(
+            open_recommendation_counts = {
+                plan_id: count
+                for plan_id, count in db.query(
                     MonitoringCycle.plan_id,
                     func.count(Recommendation.recommendation_id)
                 )
@@ -716,7 +729,7 @@ def list_monitoring_plans(
                 )
                 .group_by(MonitoringCycle.plan_id)
                 .all()
-            )
+            }
 
     result = []
     for plan in plans:
@@ -1068,18 +1081,19 @@ def create_monitoring_plan(
         plan_data.reporting_lead_days
     )
 
+    plan_frequency = MonitoringFrequency(plan_data.frequency.value)
     if plan_data.is_active and plan_data.model_ids:
         conflicts = find_monitoring_plan_frequency_conflicts(
             db,
             plan_data.model_ids,
-            plan_data.frequency
+            plan_frequency
         )
         if conflicts:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=build_monitoring_plan_conflict_message(
                     conflicts,
-                    plan_data.frequency
+                    plan_frequency
                 )
             )
 
@@ -1100,7 +1114,7 @@ def create_monitoring_plan(
     plan = MonitoringPlan(
         name=plan_data.name,
         description=plan_data.description,
-        frequency=plan_data.frequency,
+        frequency=plan_frequency,
         monitoring_team_id=plan_data.monitoring_team_id,
         data_provider_user_id=plan_data.data_provider_user_id,
         data_submission_lead_days=plan_data.data_submission_lead_days,
@@ -1180,8 +1194,18 @@ def update_monitoring_plan(
     ).filter(
         MonitoringPlan.plan_id == plan_id
     ).first()
+    if not plan:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Plan not found"
+        )
 
-    resulting_frequency = update_data.frequency or plan.frequency
+    current_frequency = MonitoringFrequency(plan.frequency)
+    resulting_frequency = (
+        MonitoringFrequency(update_data.frequency.value)
+        if update_data.frequency is not None
+        else current_frequency
+    )
     resulting_model_ids = (
         update_data.model_ids if update_data.model_ids is not None
         else [m.model_id for m in plan.models]
@@ -1246,10 +1270,11 @@ def update_monitoring_plan(
         plan.description = update_data.description
 
     if update_data.frequency is not None:
-        if plan.frequency != update_data.frequency:
+        new_frequency = MonitoringFrequency(update_data.frequency.value)
+        if current_frequency != new_frequency:
             changes["frequency"] = {
-                "old": plan.frequency, "new": update_data.frequency}
-        plan.frequency = update_data.frequency
+                "old": current_frequency.value, "new": new_frequency.value}
+        plan.frequency = new_frequency
         recalculate_dates = True
 
     if update_data.monitoring_team_id is not None:
@@ -1637,6 +1662,11 @@ def publish_plan_version(
             MonitoringPlanMetric.kpm),
         joinedload(MonitoringPlan.models)
     ).filter(MonitoringPlan.plan_id == plan_id).first()
+    if not plan:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Plan not found"
+        )
 
     # Get next version number
     max_version = db.query(func.max(MonitoringPlanVersion.version_number)).filter(
@@ -1944,6 +1974,11 @@ def add_plan_metric(
     metric = db.query(MonitoringPlanMetric).options(
         joinedload(MonitoringPlanMetric.kpm)
     ).filter(MonitoringPlanMetric.metric_id == metric.metric_id).first()
+    if not metric or not metric.kpm:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Metric not found"
+        )
 
     return {
         "metric_id": metric.metric_id,
@@ -2617,7 +2652,7 @@ def get_admin_monitoring_overview(
             period_start_date=cycle.period_start_date,
             period_end_date=cycle.period_end_date,
             due_date=due_date,
-            status=cycle.status,
+            status=MonitoringCycleStatusEnum(cycle.status),
             days_overdue=days_overdue,
             priority=priority,
             team_name=team_name,
@@ -2690,7 +2725,7 @@ def _generate_period_label(start_date: date, end_date: date) -> str:
     return f"{start_date.strftime('%Y-%m')} - {end_date.strftime('%Y-%m')}"
 
 
-def calculate_period_dates(frequency: MonitoringFrequency, from_date: date = None) -> tuple:
+def calculate_period_dates(frequency: MonitoringFrequency, from_date: Optional[date] = None) -> tuple:
     """Calculate period start and end dates based on frequency."""
     if from_date is None:
         from_date = date.today()
@@ -3143,8 +3178,8 @@ def list_plan_cycles(
             1 for a in required_approvals if a.approval_status == "Pending")
 
         # Calculate overdue status (only non-completed cycles can be overdue)
-        status_value = cycle.status.value if hasattr(
-            cycle.status, 'value') else cycle.status
+        status_value = cycle.status.value if isinstance(
+            cycle.status, MonitoringCycleStatus) else cycle.status
         if status_value in ("APPROVED", "CANCELLED", MonitoringCycleStatus.ON_HOLD.value):
             is_overdue = False
             days_overdue = 0
@@ -3537,6 +3572,11 @@ def create_monitoring_result(
         joinedload(MonitoringResult.plan_metric).joinedload(
             MonitoringPlanMetric.kpm)
     ).filter(MonitoringResult.result_id == result.result_id).first()
+    if not result:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Result not found"
+        )
 
     return _build_result_response(result)
 
@@ -3682,10 +3722,15 @@ def update_monitoring_result(
         if is_quantitative:
             if update_data.numeric_value is not None:
                 threshold_source, _ = resolve_threshold_source(db, result.cycle, result.plan_metric)
-                result.calculated_outcome = calculate_outcome(
+                calculated_outcome = calculate_outcome(
                     update_data.numeric_value, threshold_source)
+                result.calculated_outcome = calculated_outcome
                 # Auto-resolve outcome_value_id from calculated outcome (links to taxonomy)
-                result.outcome_value_id = resolve_outcome_value_id(db, result.calculated_outcome)
+                result.outcome_value_id = (
+                    resolve_outcome_value_id(db, calculated_outcome)
+                    if calculated_outcome is not None
+                    else None
+                )
             else:
                 result.calculated_outcome = None
                 result.outcome_value_id = None
@@ -3739,6 +3784,11 @@ def update_monitoring_result(
         joinedload(MonitoringResult.plan_metric).joinedload(
             MonitoringPlanMetric.kpm)
     ).filter(MonitoringResult.result_id == result_id).first()
+    if not result:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Result not found"
+        )
 
     return _build_result_response(result)
 
@@ -3872,14 +3922,14 @@ def import_cycle_results_csv(
             MonitoringPlanMetric.is_active == True
         ).all()
         for metric in metrics:
-            valid_metric_ids.add(metric.plan_metric_id)
-            metric_names[metric.plan_metric_id] = metric.kpm.name if metric.kpm else f"Metric {metric.plan_metric_id}"
+            valid_metric_ids.add(metric.metric_id)
+            metric_names[metric.metric_id] = metric.kpm.name if metric.kpm else f"Metric {metric.metric_id}"
 
     # Build metrics lookup for threshold calculation
     metrics_by_id: dict[int, MonitoringPlanMetric] = {}
     if not cycle.plan_version_id:
         for metric in metrics:
-            metrics_by_id[metric.plan_metric_id] = metric
+            metrics_by_id[metric.metric_id] = metric
 
     # Build outcome_value_id lookup for qualitative metrics
     # Maps outcome code (GREEN, YELLOW, RED) to taxonomy value_id
@@ -4501,11 +4551,11 @@ def list_my_pending_monitoring_approvals(
             report_due_date=cycle.report_due_date,
             cycle_status=cycle.status,
             approval_type=approval.approval_type,
-            region={
-                "region_id": approval.region.region_id,
-                "region_name": approval.region.name,
-                "region_code": approval.region.code
-            } if approval.region else None,
+            region=RegionRef(
+                region_id=approval.region.region_id,
+                region_name=approval.region.name,
+                region_code=approval.region.code
+            ) if approval.region else None,
             is_required=approval.is_required,
             approval_status=approval.approval_status,
             days_pending=days_pending,
@@ -4659,6 +4709,11 @@ def request_cycle_approval(
     plan = db.query(MonitoringPlan).options(
         joinedload(MonitoringPlan.models)
     ).filter(MonitoringPlan.plan_id == cycle.plan_id).first()
+    if not plan:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Plan not found"
+        )
 
     # Collect unique regions from models in the plan scope that require regional approval
     regions_needing_approval = set()
@@ -4982,6 +5037,11 @@ def approve_cycle(
         joinedload(MonitoringCycleApproval.represented_region),
         joinedload(MonitoringCycleApproval.voided_by)
     ).filter(MonitoringCycleApproval.approval_id == approval_id).first()
+    if not approval:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Approval not found"
+        )
 
     return _build_approval_response(approval)
 
@@ -5099,6 +5159,11 @@ def reject_cycle_approval(
         joinedload(MonitoringCycleApproval.represented_region),
         joinedload(MonitoringCycleApproval.voided_by)
     ).filter(MonitoringCycleApproval.approval_id == approval_id).first()
+    if not approval:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Approval not found"
+        )
 
     return _build_approval_response(approval)
 
@@ -5172,6 +5237,11 @@ def void_cycle_approval(
         joinedload(MonitoringCycleApproval.represented_region),
         joinedload(MonitoringCycleApproval.voided_by)
     ).filter(MonitoringCycleApproval.approval_id == approval_id).first()
+    if not approval:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Approval not found"
+        )
 
     return _build_approval_response(approval)
 
@@ -5413,6 +5483,11 @@ def export_cycle_results(
     # Get plan name for filename
     plan = db.query(MonitoringPlan).filter(
         MonitoringPlan.plan_id == plan_id).first()
+    if not plan:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Plan not found"
+        )
 
     # Build CSV
     output = io.StringIO()

@@ -56,10 +56,13 @@ def upgrade() -> None:
             """),
             {"taxonomy_id": taxonomy_id}
         )
-        urgent_id = conn.execute(
+        urgent_row = conn.execute(
             sa.text("SELECT value_id FROM taxonomy_values WHERE taxonomy_id = :taxonomy_id AND code = 'URGENT'"),
             {"taxonomy_id": taxonomy_id}
-        ).fetchone()[0]
+        ).fetchone()
+        if urgent_row is None:
+            raise RuntimeError("Failed to create URGENT validation priority")
+        urgent_id = urgent_row[0]
 
     # Create new STANDARD value (if not exists)
     standard_id = old_value_map.get("STANDARD")
@@ -71,10 +74,13 @@ def upgrade() -> None:
             """),
             {"taxonomy_id": taxonomy_id}
         )
-        standard_id = conn.execute(
+        standard_row = conn.execute(
             sa.text("SELECT value_id FROM taxonomy_values WHERE taxonomy_id = :taxonomy_id AND code = 'STANDARD'"),
             {"taxonomy_id": taxonomy_id}
-        ).fetchone()[0]
+        ).fetchone()
+        if standard_row is None:
+            raise RuntimeError("Failed to create STANDARD validation priority")
+        standard_id = standard_row[0]
 
     # Map HIGH -> URGENT
     high_id = old_value_map.get("HIGH")

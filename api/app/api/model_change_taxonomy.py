@@ -17,7 +17,7 @@ from app.schemas.model_change_taxonomy import (
 router = APIRouter()
 
 
-def create_audit_log(db: Session, entity_type: str, entity_id: int, action: str, user_id: int, changes: dict = None):
+def create_audit_log(db: Session, entity_type: str, entity_id: int, action: str, user_id: int, changes: dict | None = None):
     """Create an audit log entry for taxonomy changes."""
     audit_log = AuditLog(
         entity_type=entity_type,
@@ -166,9 +166,9 @@ def create_category(
 @router.patch("/change-taxonomy/categories/{category_id}", response_model=ModelChangeCategoryResponse)
 def update_category(
     category_id: int,
-    code: str = None,
-    name: str = None,
-    sort_order: int = None,
+    code: str | None = None,
+    name: str | None = None,
+    sort_order: int | None = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_admin)
 ):
@@ -247,8 +247,8 @@ def create_change_type(
     category_id: int,
     code: int,
     name: str,
-    description: str = None,
-    mv_activity: str = None,
+    description: str | None = None,
+    mv_activity: str | None = None,
     requires_mv_approval: bool = False,
     sort_order: int = 0,
     is_active: bool = True,
@@ -346,7 +346,8 @@ def update_change_type(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Category not found"
             )
-        changes["category_id"] = {"old": change_type.category_id, "new": update_data.category_id}
+        changes["category_id"] = {
+            "old": change_type.category_id, "new": update_data.category_id}
         change_type.category_id = update_data.category_id
 
     if update_data.code is not None:
@@ -369,11 +370,13 @@ def update_change_type(
         change_type.name = update_data.name
 
     if update_data.description is not None:
-        changes["description"] = {"old": change_type.description, "new": update_data.description}
+        changes["description"] = {
+            "old": change_type.description, "new": update_data.description}
         change_type.description = update_data.description
 
     if update_data.mv_activity is not None:
-        changes["mv_activity"] = {"old": change_type.mv_activity, "new": update_data.mv_activity}
+        changes["mv_activity"] = {
+            "old": change_type.mv_activity, "new": update_data.mv_activity}
         change_type.mv_activity = update_data.mv_activity
 
     if update_data.requires_mv_approval is not None:
@@ -385,11 +388,13 @@ def update_change_type(
         change_type.requires_mv_approval = update_data.requires_mv_approval
 
     if update_data.sort_order is not None:
-        changes["sort_order"] = {"old": change_type.sort_order, "new": update_data.sort_order}
+        changes["sort_order"] = {
+            "old": change_type.sort_order, "new": update_data.sort_order}
         change_type.sort_order = update_data.sort_order
 
     if update_data.is_active is not None:
-        changes["is_active"] = {"old": change_type.is_active, "new": update_data.is_active}
+        changes["is_active"] = {
+            "old": change_type.is_active, "new": update_data.is_active}
         change_type.is_active = update_data.is_active
 
     # Create audit log if changes were made

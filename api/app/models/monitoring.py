@@ -1,11 +1,20 @@
 """Monitoring Plans and Teams - ongoing performance monitoring."""
+from __future__ import annotations
+
 import enum
 from datetime import datetime, date
-from typing import Optional, List
+from typing import Optional, List, TYPE_CHECKING
 from sqlalchemy import String, Integer, Text, Boolean, ForeignKey, Table, Column, DateTime, Date, Enum as SQLEnum, JSON, Float, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.models.base import Base
 from app.core.time import utc_now
+
+if TYPE_CHECKING:
+    from app.models.user import User
+    from app.models.model import Model
+    from app.models.kpm import Kpm
+    from app.models.region import Region
+    from app.models.taxonomy import TaxonomyValue
 
 
 class MonitoringFrequency(str, enum.Enum):

@@ -60,12 +60,25 @@ def debug_validation_request_46():
                 print(f"\n   Rule #{rule.rule_id}: {rule.rule_name}")
                 print(f"      Description: {rule.description or 'N/A'}")
                 print(f"      Constraints:")
-                if rule.applies_to_all_validations:
-                    print(f"         ✓ Applies to ALL validations")
+                applies_to_all = not any(
+                    value and value.strip()
+                    for value in (
+                        rule.validation_type_ids,
+                        rule.risk_tier_ids,
+                        rule.governance_region_ids,
+                        rule.deployed_region_ids,
+                    )
+                )
+                if applies_to_all:
+                    print("         ✓ Applies to ALL validations")
                 if rule.validation_type_ids:
-                    print(f"         Validation Types: {rule.validation_type_ids}")
+                    print(f"         Validation Types: {rule.get_validation_type_ids()}")
                 if rule.risk_tier_ids:
-                    print(f"         Risk Tiers: {rule.risk_tier_ids}")
+                    print(f"         Risk Tiers: {rule.get_risk_tier_ids()}")
+                if rule.governance_region_ids:
+                    print(f"         Governance Regions: {rule.get_governance_region_ids()}")
+                if rule.deployed_region_ids:
+                    print(f"         Deployed Regions: {rule.get_deployed_region_ids()}")
 
                 # Show required approver roles
                 print(f"      Required Approver Roles: {len(rule.required_approvers)}")

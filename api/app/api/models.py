@@ -3,7 +3,7 @@ import csv
 import io
 import json
 from datetime import datetime, date, timedelta
-from typing import List, Optional, Dict
+from typing import List, Optional, Dict, Any, cast
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from pydantic import BaseModel
 from fastapi.responses import StreamingResponse
@@ -22,7 +22,7 @@ from app.models.vendor import Vendor
 from app.models.region import Region
 from app.models.lob import LOBUnit
 from app.models.audit_log import AuditLog
-from app.models.taxonomy import TaxonomyValue
+from app.models.taxonomy import TaxonomyValue, Taxonomy
 from app.models.model_version import ModelVersion
 from app.models.model_region import ModelRegion
 from app.models.validation_grouping import ValidationGroupingMemory
@@ -53,7 +53,7 @@ from app.api.risk_assessment import get_global_assessment_status
 router = APIRouter()
 
 
-def create_audit_log(db: Session, entity_type: str, entity_id: int, action: str, user_id: int, changes: dict = None):
+def create_audit_log(db: Session, entity_type: str, entity_id: int, action: str, user_id: int, changes: dict | None = None):
     """Create an audit log entry."""
     audit_log = AuditLog(
         entity_type=entity_type,
@@ -282,7 +282,7 @@ def _format_risk_assessment_changes(changes: dict, action: str, db: Session) -> 
     return ", ".join(parts)
 
 
-def _build_user_list_item(user: User) -> dict:
+def _build_user_list_item(user: Optional[User]) -> Optional[dict]:
     """Build lightweight user dict for list views."""
     if not user:
         return None
@@ -350,7 +350,10 @@ def _build_model_list_response(
             })
 
     # Build users list
-    users_list = [_build_user_list_item(u) for u in model.users] if model.users else []
+    users_list = [
+        user_item for user_item in (_build_user_list_item(u) for u in model.users)
+        if user_item
+    ] if model.users else []
 
     # Build regulatory categories list
     reg_cats_list = []
@@ -846,7 +849,6 @@ def create_model(
     warnings = []
     if auto_create_validation and initial_implementation_date:
         # Get validation type to check if it's Interim Review
-        from app.models import TaxonomyValue
         validation_type = db.query(TaxonomyValue).filter(
             TaxonomyValue.value_id == validation_request_data['type_id']
         ).first()
@@ -886,7 +888,7 @@ def create_model(
 
     # Auto-create validation request if requested
     if auto_create_validation and validation_request_data['type_id'] and validation_request_data['priority_id']:
-        from app.models import ValidationRequest, ValidationRequestModelVersion, TaxonomyValue, Taxonomy
+        from app.models import ValidationRequest, ValidationRequestModelVersion
         # datetime is already imported at module level
 
         # Get INTAKE status
@@ -974,6 +976,11 @@ def create_model(
         joinedload(Model.monitoring_manager),
         joinedload(Model.versions)  # For model_last_updated computation
     ).filter(Model.model_id == model.model_id).first()
+    if not model:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Model not found"
+        )
 
     # Return model with warnings if any
     # Convert model to dict and add warnings
@@ -999,8 +1006,8 @@ def create_model(
 
 @router.get("/name-changes/stats", response_model=NameChangeStatistics)
 def get_name_change_statistics(
-    start_date: date = None,
-    end_date: date = None,
+    start_date: Optional[date] = None,
+    end_date: Optional[date] = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
@@ -1389,7 +1396,7 @@ def get_model_roles_with_lob(
             user_id=user.user_id,
             email=user.email,
             full_name=user.full_name,
-            role=user.role_display,
+            role=user.role_display or "Unknown",
             lob_id=user.lob_id,
             lob_name=user.lob.name if user.lob else None,
             lob_rollup_name=get_user_lob_rollup_name(user)
@@ -1428,6 +1435,26 @@ def get_model_revalidation_status(
         )
 
     model = db.query(Model).filter(Model.model_id == model_id).first()
+    if not model:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Model not found"
+        )
+    if not model:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Model not found"
+        )
+    if not model:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Model not found"
+        )
+    if not model:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Model not found"
+        )
 
     if not model:
         raise HTTPException(
@@ -1512,7 +1539,10 @@ def get_validation_grouping_suggestions(
 
     return ValidationGroupingSuggestion(
         suggested_model_ids=grouped_model_ids,
-        suggested_models=suggested_models,
+        suggested_models=[
+            ModelDetailResponse.model_validate(model_item)
+            for model_item in suggested_models
+        ],
         last_validation_request_id=grouping_memory.last_validation_request_id,
         last_grouped_at=grouping_memory.updated_at
     )
@@ -1982,17 +2012,18 @@ def update_model(
     if risk_tier_changed:
         from app.api.validation_workflow import reset_validation_plan_for_tier_change
         new_tier_id = model.risk_tier_id  # Could be None if tier was cleared
-        reset_result = reset_validation_plan_for_tier_change(
-            db=db,
-            model_id=model_id,
-            new_tier_id=new_tier_id,
-            user_id=current_user.user_id,
-            force=True
-        )
-        if reset_result["reset_count"] > 0:
-            changes_made["validation_plans_reset"] = reset_result["reset_count"]
-            changes_made["approvals_voided"] = reset_result["approvals_voided"]
-            db.commit()  # Commit the reset changes
+        if new_tier_id is not None:
+            reset_result = reset_validation_plan_for_tier_change(
+                db=db,
+                model_id=model_id,
+                new_tier_id=new_tier_id,
+                user_id=current_user.user_id,
+                force=True
+            )
+            if reset_result["reset_count"] > 0:
+                changes_made["validation_plans_reset"] = reset_result["reset_count"]
+                changes_made["approvals_voided"] = reset_result["approvals_voided"]
+                db.commit()  # Commit the reset changes
 
     # Reload with relationships
     from app.models import ModelSubmissionComment
@@ -2212,6 +2243,11 @@ def add_submission_comment(
         )
 
     model = db.query(Model).filter(Model.model_id == model_id).first()
+    if not model:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Model not found"
+        )
 
     # Only allow comments on Draft/needs_revision models
     if model.row_approval_status not in ('Draft', 'needs_revision'):
@@ -2312,7 +2348,7 @@ def approve_model_submission(
 
     # Optionally create validation request
     if create_validation and validation_type_id and validation_priority_id:
-        from app.models import ValidationRequest, ValidationRequestModelVersion, Taxonomy
+        from app.models import ValidationRequest, ValidationRequestModelVersion
 
         # Get INTAKE status
         intake_status = db.query(TaxonomyValue).join(Taxonomy).filter(
@@ -2696,8 +2732,9 @@ def get_model_activity_timeline(
 
     for approval in approvals:
         status_icon = "✅" if approval.approval_status == "Approved" else "❌"
+        approved_at = cast(datetime, approval.approved_at)
         activities.append(ActivityTimelineItem(
-            timestamp=approval.approved_at,
+            timestamp=approved_at,
             activity_type="validation_approval",
             title=f"Validation #{approval.request_id} {approval.approval_status.lower()}",
             description=approval.comments,
@@ -2778,8 +2815,9 @@ def get_model_activity_timeline(
 
     for task in deployment_tasks:
         region_text = f" to {task.region.name}" if task.region else ""
+        confirmed_at = cast(datetime, task.confirmed_at)
         activities.append(ActivityTimelineItem(
-            timestamp=task.confirmed_at,
+            timestamp=confirmed_at,
             activity_type="deployment_confirmed",
             title=f"Version {task.version.version_number} deployed{region_text}",
             description=task.confirmation_notes,
@@ -3195,8 +3233,11 @@ def list_all_pending_edits(
 
     pending_edits = query.order_by(ModelPendingEdit.requested_at.desc()).all()
 
-    return [
-        {
+    results = []
+    for pe in pending_edits:
+        requested_at = cast(Optional[datetime], pe.requested_at)
+        reviewed_at = cast(Optional[datetime], pe.reviewed_at)
+        results.append({
             "pending_edit_id": pe.pending_edit_id,
             "model_id": pe.model_id,
             "model_name": pe.model.model_name,
@@ -3210,7 +3251,7 @@ def list_all_pending_edits(
                 "full_name": pe.requested_by.full_name,
                 "email": pe.requested_by.email
             },
-            "requested_at": pe.requested_at.isoformat() if pe.requested_at else None,
+            "requested_at": requested_at.isoformat() if requested_at else None,
             "proposed_changes": pe.proposed_changes,
             "original_values": pe.original_values,
             "status": pe.status,
@@ -3219,11 +3260,10 @@ def list_all_pending_edits(
                 "full_name": pe.reviewed_by.full_name,
                 "email": pe.reviewed_by.email
             } if pe.reviewed_by else None,
-            "reviewed_at": pe.reviewed_at.isoformat() if pe.reviewed_at else None,
+            "reviewed_at": reviewed_at.isoformat() if reviewed_at else None,
             "review_comment": pe.review_comment
-        }
-        for pe in pending_edits
-    ]
+        })
+    return results
 
 
 @router.get("/{model_id}/pending-edits", response_model=List[dict])
@@ -3257,8 +3297,11 @@ def list_model_pending_edits(
 
     pending_edits = query.order_by(ModelPendingEdit.requested_at.desc()).all()
 
-    return [
-        {
+    results = []
+    for pe in pending_edits:
+        requested_at = cast(Optional[datetime], pe.requested_at)
+        reviewed_at = cast(Optional[datetime], pe.reviewed_at)
+        results.append({
             "pending_edit_id": pe.pending_edit_id,
             "model_id": pe.model_id,
             "requested_by": {
@@ -3266,7 +3309,7 @@ def list_model_pending_edits(
                 "full_name": pe.requested_by.full_name,
                 "email": pe.requested_by.email
             },
-            "requested_at": pe.requested_at.isoformat() if pe.requested_at else None,
+            "requested_at": requested_at.isoformat() if requested_at else None,
             "proposed_changes": pe.proposed_changes,
             "original_values": pe.original_values,
             "status": pe.status,
@@ -3275,11 +3318,10 @@ def list_model_pending_edits(
                 "full_name": pe.reviewed_by.full_name,
                 "email": pe.reviewed_by.email
             } if pe.reviewed_by else None,
-            "reviewed_at": pe.reviewed_at.isoformat() if pe.reviewed_at else None,
+            "reviewed_at": reviewed_at.isoformat() if reviewed_at else None,
             "review_comment": pe.review_comment
-        }
-        for pe in pending_edits
-    ]
+        })
+    return results
 
 
 @router.post("/{model_id}/pending-edits/{edit_id}/approve")
@@ -3315,10 +3357,11 @@ def approve_pending_edit(
             detail="Pending edit not found"
         )
 
-    if pending_edit.status != "pending":
+    pending_edit_status = cast(str, pending_edit.status)
+    if pending_edit_status != "pending":
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Cannot approve edit with status '{pending_edit.status}'"
+            detail=f"Cannot approve edit with status '{pending_edit_status}'"
         )
 
     model = db.query(Model).filter(Model.model_id == model_id).first()
@@ -3359,10 +3402,12 @@ def approve_pending_edit(
                 changes_applied[field] = {"old": old_value, "new": value}
 
     # Update pending edit status
-    pending_edit.status = "approved"
-    pending_edit.reviewed_by_id = current_user.user_id
-    pending_edit.reviewed_at = datetime.now(UTC)
-    pending_edit.review_comment = review_data.get("comment") if review_data else None
+    review_comment = review_data.get("comment") if review_data else None
+    pending_edit_any = cast(Any, pending_edit)
+    pending_edit_any.status = "approved"
+    pending_edit_any.reviewed_by_id = current_user.user_id
+    pending_edit_any.reviewed_at = datetime.now(UTC)
+    pending_edit_any.review_comment = review_comment
 
     # Audit log for approval
     create_audit_log(
@@ -3427,17 +3472,20 @@ def reject_pending_edit(
             detail="Pending edit not found"
         )
 
-    if pending_edit.status != "pending":
+    pending_edit_status = cast(str, pending_edit.status)
+    if pending_edit_status != "pending":
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Cannot reject edit with status '{pending_edit.status}'"
+            detail=f"Cannot reject edit with status '{pending_edit_status}'"
         )
 
     # Update pending edit status
-    pending_edit.status = "rejected"
-    pending_edit.reviewed_by_id = current_user.user_id
-    pending_edit.reviewed_at = datetime.now(UTC)
-    pending_edit.review_comment = review_data.get("comment") if review_data else None
+    review_comment = review_data.get("comment") if review_data else None
+    pending_edit_any = cast(Any, pending_edit)
+    pending_edit_any.status = "rejected"
+    pending_edit_any.reviewed_by_id = current_user.user_id
+    pending_edit_any.reviewed_at = datetime.now(UTC)
+    pending_edit_any.review_comment = review_comment
 
     # Audit log for rejection
     create_audit_log(
@@ -3449,7 +3497,7 @@ def reject_pending_edit(
         changes={
             "model_id": model_id,
             "rejected_changes": pending_edit.proposed_changes,
-            "comment": pending_edit.review_comment
+            "comment": review_comment
         }
     )
 
@@ -3562,7 +3610,7 @@ def get_model_approval_status(
         is_model=getattr(model, 'is_model', True),
         approval_status=status_code,
         approval_status_label=get_status_label(status_code),
-        status_determined_at=context.get("computed_at"),
+        status_determined_at=context.get("computed_at") or utc_now(),
         latest_approved_validation_id=context.get("latest_approved_validation_id"),
         latest_approved_validation_date=context.get("latest_approved_date"),
         latest_approved_validation_type=context.get("validation_type_label"),
@@ -3617,7 +3665,7 @@ def get_model_approval_status_history(
             old_status=record.old_status,
             old_status_label=get_status_label(record.old_status),
             new_status=record.new_status,
-            new_status_label=get_status_label(record.new_status),
+            new_status_label=get_status_label(record.new_status) or record.new_status,
             changed_at=record.changed_at,
             trigger_type=record.trigger_type,
             trigger_entity_type=record.trigger_entity_type,

@@ -22,7 +22,7 @@ import matplotlib.pyplot as plt
 import io
 import os
 from datetime import datetime
-from typing import List, Dict, Optional, Any, Tuple
+from typing import List, Dict, Optional, Any, Tuple, Union
 from fpdf import FPDF
 
 # Import matplotlib with Agg backend for server-side rendering
@@ -277,7 +277,7 @@ def generate_trend_chart(
             )
 
     # Tight layout with room on the right for the legend
-    fig.tight_layout(rect=[0.0, 0.02, 0.78, 0.98])
+    fig.tight_layout(rect=(0.0, 0.02, 0.78, 0.98))
 
     # Export to bytes
     buffer = io.BytesIO()
@@ -296,7 +296,7 @@ class MonitoringCycleReportPDF(FPDF):
         plan_data: Dict[str, Any],
         results: List[Dict[str, Any]],
         approvals: List[Dict[str, Any]],
-        trend_data: Optional[Dict[int, List[Dict[str, Any]]]] = None,
+        trend_data: Optional[Dict[Union[int, str], List[Dict[str, Any]]]] = None,
         logo_path: Optional[str] = None
     ):
         """Initialize the PDF report.
@@ -306,7 +306,7 @@ class MonitoringCycleReportPDF(FPDF):
             plan_data: Plan information dict
             results: List of result dicts with metric info
             approvals: List of approval dicts
-            trend_data: Optional dict mapping metric_id to list of historical data points
+            trend_data: Optional dict mapping metric/composite IDs to historical data points
             logo_path: Optional path to logo file
         """
         super().__init__(orientation='P', unit='mm', format='A4')
@@ -314,7 +314,7 @@ class MonitoringCycleReportPDF(FPDF):
         self.plan_data = plan_data
         self.results = results
         self.approvals = approvals
-        self.trend_data = trend_data or {}
+        self.trend_data: Dict[Union[int, str], List[Dict[str, Any]]] = trend_data or {}
         self.logo_path = logo_path
 
         # Page settings
@@ -1492,7 +1492,7 @@ class ValidationScorecardPDF(FPDF):
             if i < len(usage_types):
                 usage = usage_types[i]
                 self.set_x(15)
-                checked = model_category and usage.lower() == model_category.lower()
+                checked = bool(model_category) and usage.lower() == model_category.lower()
 
                 # Append specific model type if checked
                 if checked:

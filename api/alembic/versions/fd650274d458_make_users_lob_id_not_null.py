@@ -30,7 +30,7 @@ def upgrade() -> None:
     result = conn.execute(sa.text(
         "SELECT COUNT(*) FROM users WHERE lob_id IS NULL"
     ))
-    null_count = result.scalar()
+    null_count = result.scalar() or 0
 
     if null_count > 0:
         # Assign any remaining NULL users to the first available LOB unit

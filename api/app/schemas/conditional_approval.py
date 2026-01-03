@@ -50,7 +50,7 @@ class ConditionalApprovalRuleBase(BaseModel):
     risk_tier_ids: Optional[List[int]] = Field(default=None, description="Empty/null = ANY")
     governance_region_ids: Optional[List[int]] = Field(default=None, description="Empty/null = ANY")
     deployed_region_ids: Optional[List[int]] = Field(default=None, description="Empty/null = ANY")
-    required_approver_role_ids: List[int] = Field(..., min_items=1)
+    required_approver_role_ids: List[int] = Field(..., min_length=1)
 
 
 class ConditionalApprovalRuleCreate(ConditionalApprovalRuleBase):
@@ -65,7 +65,7 @@ class ConditionalApprovalRuleUpdate(BaseModel):
     risk_tier_ids: Optional[List[int]] = None
     governance_region_ids: Optional[List[int]] = None
     deployed_region_ids: Optional[List[int]] = None
-    required_approver_role_ids: Optional[List[int]] = Field(None, min_items=1)
+    required_approver_role_ids: Optional[List[int]] = Field(None, min_length=1)
 
 
 class ConditionalApprovalRuleResponse(BaseModel):
@@ -106,7 +106,7 @@ class RuleTranslationPreviewRequest(BaseModel):
     risk_tier_ids: Optional[List[int]] = None
     governance_region_ids: Optional[List[int]] = None
     deployed_region_ids: Optional[List[int]] = None
-    required_approver_role_ids: List[int] = Field(..., min_items=1)
+    required_approver_role_ids: List[int] = Field(..., min_length=1)
 
 
 class RuleTranslationPreviewResponse(BaseModel):

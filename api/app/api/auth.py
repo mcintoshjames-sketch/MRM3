@@ -24,7 +24,14 @@ from app.schemas.model import ModelDetailResponse
 router = APIRouter()
 
 
-def create_audit_log(db: Session, entity_type: str, entity_id: int, action: str, user_id: int, changes: dict = None):
+def create_audit_log(
+    db: Session,
+    entity_type: str,
+    entity_id: int,
+    action: str,
+    user_id: int,
+    changes: dict | None = None
+):
     """Create an audit log entry for user management operations."""
     audit_log = AuditLog(
         entity_type=entity_type,
@@ -115,6 +122,11 @@ def get_me(
         joinedload(User.lob),
         joinedload(User.role_ref)
     ).filter(User.user_id == current_user.user_id).first()
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found"
+        )
     return get_user_with_lob(db, user)
 
 

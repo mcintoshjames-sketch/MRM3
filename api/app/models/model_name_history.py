@@ -1,9 +1,16 @@
 """Model Name History - tracks changes to model names over time."""
+from __future__ import annotations
+
 from datetime import datetime
+from typing import TYPE_CHECKING
 from sqlalchemy import Integer, String, DateTime, ForeignKey, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.models.base import Base
 from app.core.time import utc_now
+
+if TYPE_CHECKING:
+    from app.models.model import Model
+    from app.models.user import User
 
 
 class ModelNameHistory(Base):

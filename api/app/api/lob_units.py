@@ -2,8 +2,8 @@
 import csv
 import io
 import re
-from types import SimpleNamespace
-from typing import List, Dict, Optional, Tuple, Union
+from dataclasses import dataclass
+from typing import List, Dict, Optional, Tuple, Union, Sequence
 from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Query
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session, joinedload
@@ -32,7 +32,21 @@ from app.schemas.lob import (
 router = APIRouter()
 
 
-def create_audit_log(db: Session, entity_type: str, entity_id: int, action: str, user_id: int, changes: dict = None):
+@dataclass
+class LOBPlaceholder:
+    """Lightweight placeholder for dry-run imports."""
+    lob_id: int
+    code: str
+    name: str
+    org_unit: str
+    level: int
+    description: Optional[str] = None
+
+
+LOBEntry = Union[LOBUnit, LOBPlaceholder]
+
+
+def create_audit_log(db: Session, entity_type: str, entity_id: int, action: str, user_id: int, changes: dict | None = None):
     """Create an audit log entry for LOB operations."""
     audit_log = AuditLog(
         entity_type=entity_type,
@@ -295,9 +309,9 @@ def get_lob_tree_with_teams(
             "level": lob.level,
             "is_active": lob.is_active,
             "direct_team_id": direct_team_id,
-            "direct_team_name": team_name_map.get(direct_team_id),
+            "direct_team_name": team_name_map.get(direct_team_id) if direct_team_id is not None else None,
             "effective_team_id": effective_team_id,
-            "effective_team_name": team_name_map.get(effective_team_id),
+            "effective_team_name": team_name_map.get(effective_team_id) if effective_team_id is not None else None,
             "children": [],
         }
 
@@ -616,7 +630,7 @@ def delete_lob_unit(
     return None
 
 
-def is_enterprise_format(headers: List[str]) -> bool:
+def is_enterprise_format(headers: Sequence[str]) -> bool:
     """Detect if CSV is in enterprise format based on columns."""
     headers_upper = [h.upper() for h in headers]
     enterprise_indicators = ['LOB1CODE', 'ORGUNIT', 'SBUCODE']
@@ -658,8 +672,8 @@ async def import_lob_csv(
     lob_by_id = {lob.lob_id: lob for lob in existing_lobs}
 
     # Build existing_by_path, path_to_id, and existing_by_org_unit
-    existing_by_path: Dict[Tuple[str, str], LOBUnit] = {}
-    existing_by_org_unit: Dict[str, LOBUnit] = {}
+    existing_by_path: Dict[Tuple[str, str], LOBEntry] = {}
+    existing_by_org_unit: Dict[str, LOBEntry] = {}
     path_to_id: Dict[str, int] = {}
 
     for lob in existing_lobs:
@@ -828,8 +842,7 @@ async def import_lob_csv(
                         existing_by_org_unit[org_unit] = new_lob
                     else:
                         # For dry_run, create a placeholder to track this node for subsequent rows
-                        # Use a SimpleNamespace as a lightweight object with the same attributes
-                        placeholder = SimpleNamespace(
+                        placeholder = LOBPlaceholder(
                             lob_id=-(len(to_create)),  # Negative ID to indicate not-yet-created
                             code=code,
                             name=name,
@@ -921,7 +934,7 @@ async def import_lob_csv(
                             existing_by_org_unit[leaf_org_unit] = new_leaf
                         else:
                             # For dry_run, track the leaf
-                            placeholder = SimpleNamespace(
+                            placeholder = LOBPlaceholder(
                                 lob_id=-(len(to_create)),
                                 code=leaf_code,
                                 name=leaf_name or leaf_org_unit,

@@ -17,7 +17,7 @@ from app.schemas.model_type_taxonomy import (
 router = APIRouter()
 
 
-def create_audit_log(db: Session, entity_type: str, entity_id: int, action: str, user_id: int, changes: dict = None):
+def create_audit_log(db: Session, entity_type: str, entity_id: int, action: str, user_id: int, changes: dict | None = None):
     """Create an audit log entry for taxonomy changes."""
     audit_log = AuditLog(
         entity_type=entity_type,
@@ -125,7 +125,7 @@ def get_model_type(
 @router.post("/model-types/categories", response_model=ModelTypeCategoryResponse, status_code=status.HTTP_201_CREATED)
 def create_category(
     name: str,
-    description: str = None,
+    description: str | None = None,
     sort_order: int = 0,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_admin)
@@ -163,9 +163,9 @@ def create_category(
 @router.patch("/model-types/categories/{category_id}", response_model=ModelTypeCategoryResponse)
 def update_category(
     category_id: int,
-    name: str = None,
-    description: str = None,
-    sort_order: int = None,
+    name: str | None = None,
+    description: str | None = None,
+    sort_order: int | None = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_admin)
 ):
@@ -243,7 +243,7 @@ def delete_category(
 def create_model_type(
     category_id: int,
     name: str,
-    description: str = None,
+    description: str | None = None,
     sort_order: int = 0,
     is_active: bool = True,
     db: Session = Depends(get_db),

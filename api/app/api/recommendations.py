@@ -5,7 +5,7 @@ including action plan tasks, rebuttals, evidence upload, and multi-stakeholder a
 """
 from dataclasses import dataclass
 from datetime import datetime, date, timedelta
-from typing import List, Optional
+from typing import List, Optional, cast
 from urllib.parse import urlparse
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session, joinedload
@@ -38,7 +38,7 @@ from app.schemas.recommendation import (
     TimeframeCalculationRequest, TimeframeCalculationResponse,
     # Dashboard & Reports
     MyTasksResponse, MyTaskItem, OpenRecommendationsSummary, StatusSummary, PrioritySummary,
-    OverdueRecommendationsReport, OverdueRecommendation, ModelSummary
+    OverdueRecommendationsReport, OverdueRecommendation, ModelSummary, UserSummary
 )
 from app.schemas.taxonomy import TaxonomyValueResponse
 from app.schemas.limitation import LimitationListResponse
@@ -1404,10 +1404,16 @@ def get_open_recommendations_summary(
         TaxonomyValue.code, TaxonomyValue.label
     ).all()
 
-    by_status = [
-        StatusSummary(status_code=s.code, status_label=s.label, count=s.count)
-        for s in status_counts
-    ]
+    by_status = []
+    for s in status_counts:
+        count_value = cast(int, s._mapping["count"])
+        by_status.append(
+            StatusSummary(
+                status_code=s.code,
+                status_label=s.label,
+                count=count_value
+            )
+        )
 
     # Count by priority (only for non-terminal recommendations)
     priority_counts = db.query(
@@ -1422,11 +1428,16 @@ def get_open_recommendations_summary(
         TaxonomyValue.code, TaxonomyValue.label
     ).all()
 
-    by_priority = [
-        PrioritySummary(priority_code=p.code,
-                        priority_label=p.label, count=p.count)
-        for p in priority_counts
-    ]
+    by_priority = []
+    for p in priority_counts:
+        count_value = cast(int, p._mapping["count"])
+        by_priority.append(
+            PrioritySummary(
+                priority_code=p.code,
+                priority_label=p.label,
+                count=count_value
+            )
+        )
 
     total_open = sum(s.count for s in by_status)
 
@@ -1691,6 +1702,11 @@ def update_recommendation(
     current_status = db.query(TaxonomyValue).filter(
         TaxonomyValue.value_id == recommendation.current_status_id
     ).first()
+    if not current_status:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Recommendation status not found"
+        )
 
     # Statuses that allow full editing
     full_edit_statuses = [
@@ -1857,6 +1873,11 @@ def submit_to_developer(
     current_status = db.query(TaxonomyValue).filter(
         TaxonomyValue.value_id == recommendation.current_status_id
     ).first()
+    if not current_status:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Recommendation status not found"
+        )
     if current_status.code != "REC_DRAFT":
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -1907,6 +1928,11 @@ def submit_rebuttal(
     current_status = db.query(TaxonomyValue).filter(
         TaxonomyValue.value_id == recommendation.current_status_id
     ).first()
+    if not current_status:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Recommendation status not found"
+        )
     if current_status.code != "REC_PENDING_RESPONSE":
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -1976,9 +2002,12 @@ def submit_rebuttal(
     db.refresh(rebuttal)
     db.refresh(recommendation)
 
+    recommendation_response = RecommendationResponse.model_validate(
+        recommendation, from_attributes=True
+    )
     return RebuttalSubmissionResponse(
         rebuttal_id=rebuttal.rebuttal_id,
-        recommendation=recommendation
+        recommendation=recommendation_response
     )
 
 
@@ -2050,12 +2079,23 @@ def review_rebuttal(
     db.refresh(rebuttal)
     db.refresh(recommendation)
 
+    recommendation_response = RecommendationResponse.model_validate(
+        recommendation, from_attributes=True
+    )
+    review_decision = rebuttal.review_decision
+    reviewed_at = rebuttal.reviewed_at
+    reviewed_by = rebuttal.reviewed_by
+    if review_decision is None or reviewed_at is None or reviewed_by is None:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Rebuttal review data is incomplete"
+        )
     return RebuttalReviewResponse(
         rebuttal_id=rebuttal.rebuttal_id,
-        review_decision=rebuttal.review_decision,
-        reviewed_by=rebuttal.reviewed_by,
-        reviewed_at=rebuttal.reviewed_at,
-        recommendation=recommendation
+        review_decision=review_decision,
+        reviewed_by=UserSummary.model_validate(reviewed_by, from_attributes=True),
+        reviewed_at=reviewed_at,
+        recommendation=recommendation_response
     )
 
 
@@ -2084,6 +2124,11 @@ def submit_action_plan(
     current_status = db.query(TaxonomyValue).filter(
         TaxonomyValue.value_id == recommendation.current_status_id
     ).first()
+    if not current_status:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Recommendation status not found"
+        )
     allowed_statuses = ["REC_PENDING_RESPONSE", "REC_PENDING_ACTION_PLAN"]
     if current_status.code not in allowed_statuses:
         raise HTTPException(
@@ -2160,6 +2205,11 @@ def skip_action_plan(
     current_status = db.query(TaxonomyValue).filter(
         TaxonomyValue.value_id == recommendation.current_status_id
     ).first()
+    if not current_status:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Recommendation status not found"
+        )
 
     if current_status.code != "REC_PENDING_RESPONSE":
         raise HTTPException(
@@ -2205,6 +2255,11 @@ def can_skip_action_plan(
     current_status = db.query(TaxonomyValue).filter(
         TaxonomyValue.value_id == recommendation.current_status_id
     ).first()
+    if not current_status:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Recommendation status not found"
+        )
 
     can_skip = (
         not requires_action_plan and
@@ -2245,6 +2300,11 @@ def request_action_plan_revisions(
     current_status = db.query(TaxonomyValue).filter(
         TaxonomyValue.value_id == recommendation.current_status_id
     ).first()
+    if not current_status:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Recommendation status not found"
+        )
     if current_status.code != "REC_PENDING_VALIDATOR_REVIEW":
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -2288,6 +2348,11 @@ def finalize_recommendation(
     current_status = db.query(TaxonomyValue).filter(
         TaxonomyValue.value_id == recommendation.current_status_id
     ).first()
+    if not current_status:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Recommendation status not found"
+        )
     if current_status.code != "REC_PENDING_VALIDATOR_REVIEW":
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -2331,6 +2396,11 @@ def acknowledge_recommendation(
     current_status = db.query(TaxonomyValue).filter(
         TaxonomyValue.value_id == recommendation.current_status_id
     ).first()
+    if not current_status:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Recommendation status not found"
+        )
     if current_status.code != "REC_PENDING_ACKNOWLEDGEMENT":
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -2375,6 +2445,11 @@ def decline_acknowledgement(
     current_status = db.query(TaxonomyValue).filter(
         TaxonomyValue.value_id == recommendation.current_status_id
     ).first()
+    if not current_status:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Recommendation status not found"
+        )
     if current_status.code != "REC_PENDING_ACKNOWLEDGEMENT":
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -2486,6 +2561,11 @@ def upload_evidence(
     current_status = db.query(TaxonomyValue).filter(
         TaxonomyValue.value_id == recommendation.current_status_id
     ).first()
+    if not current_status:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Recommendation status not found"
+        )
     allowed_statuses = ["REC_OPEN", "REC_REWORK_REQUIRED"]
     if current_status.code not in allowed_statuses:
         raise HTTPException(
@@ -2559,6 +2639,11 @@ def submit_for_closure(
     current_status = db.query(TaxonomyValue).filter(
         TaxonomyValue.value_id == recommendation.current_status_id
     ).first()
+    if not current_status:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Recommendation status not found"
+        )
     allowed_statuses = ["REC_OPEN", "REC_REWORK_REQUIRED"]
     if current_status.code not in allowed_statuses:
         raise HTTPException(
@@ -2614,6 +2699,11 @@ def review_closure(
     current_status = db.query(TaxonomyValue).filter(
         TaxonomyValue.value_id == recommendation.current_status_id
     ).first()
+    if not current_status:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Recommendation status not found"
+        )
     if current_status.code != "REC_PENDING_CLOSURE_REVIEW":
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,

@@ -127,10 +127,10 @@ def get_all_lob_ids_for_team(db: Session, team_id: int) -> List[int]:
             children_map.setdefault(parent_id, []).append(lob_id)
 
         direct_lobs = [lob_id for lob_id, direct_team_id in team_lookup.items() if direct_team_id == team_id]
-        results: set = set()
+        resolved_lobs: set[int] = set()
 
         def walk(current_id: int) -> None:
-            results.add(current_id)
+            resolved_lobs.add(current_id)
             for child_id in children_map.get(current_id, []):
                 child_team = team_lookup.get(child_id)
                 if child_team is not None and child_team != team_id:
@@ -140,7 +140,7 @@ def get_all_lob_ids_for_team(db: Session, team_id: int) -> List[int]:
         for root_id in direct_lobs:
             walk(root_id)
 
-        return sorted(results)
+        return sorted(resolved_lobs)
 
     sql = text(
         """
@@ -159,5 +159,5 @@ def get_all_lob_ids_for_team(db: Session, team_id: int) -> List[int]:
         SELECT DISTINCT lob_id FROM team_lobs;
         """
     )
-    results = db.execute(sql, {"team_id": team_id}).all()
-    return [row.lob_id for row in results]
+    rows = db.execute(sql, {"team_id": team_id}).all()
+    return [row.lob_id for row in rows]

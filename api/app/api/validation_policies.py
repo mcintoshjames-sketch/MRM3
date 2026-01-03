@@ -15,7 +15,7 @@ from datetime import datetime
 router = APIRouter()
 
 
-def create_audit_log(db: Session, entity_type: str, entity_id: int, action: str, user_id: int, changes: dict = None):
+def create_audit_log(db: Session, entity_type: str, entity_id: int, action: str, user_id: int, changes: dict | None = None):
     """Create an audit log entry for validation policy changes."""
     audit_log = AuditLog(
         entity_type=entity_type,

@@ -145,7 +145,8 @@ def get_my_portfolio(
         else:
             owned_model_ids = [
                 model_id for model_id in owned_model_ids
-                if model_team_map.get(model_id) and model_team_map[model_id]["team_id"] == team_id
+                if (team_entry := model_team_map.get(model_id))
+                and team_entry.get("team_id") == team_id
             ]
             team = db.query(Team).filter(Team.team_id == team_id).first()
             team_name = team.name if team else f"Team {team_id}"

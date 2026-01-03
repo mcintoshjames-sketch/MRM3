@@ -16,7 +16,7 @@ def calculate_mrsa_review_status(
     policy: Optional[MRSAReviewPolicy],
     exception: Optional[MRSAReviewException],
     latest_irp_review_date: Optional[date],
-    today: date = None
+    today: Optional[date] = None
 ) -> Tuple[MRSAReviewStatusEnum, Optional[date], Optional[int]]:
     """Calculate MRSA review status and next due date.
 
@@ -73,7 +73,7 @@ def calculate_mrsa_review_status(
     return (MRSAReviewStatusEnum.CURRENT, next_due_date, days_until_due)
 
 
-def get_mrsa_review_details(mrsa: Model, db: Session, today: date = None) -> dict:
+def get_mrsa_review_details(mrsa: Model, db: Session, today: Optional[date] = None) -> dict:
     """Get comprehensive review status details for a single MRSA.
 
     Args:

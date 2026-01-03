@@ -53,7 +53,7 @@ router = APIRouter()
 
 def create_audit_log(
     db: Session, entity_type: str, entity_id: int,
-    action: str, user_id: int, changes: dict = None
+    action: str, user_id: int, changes: dict | None = None
 ):
     """Create an audit log entry for risk assessment changes."""
     audit_log = AuditLog(
@@ -338,16 +338,6 @@ def sync_model_tier(
     else:
         model.risk_tier_id = None
         assessment.final_tier_id = None
-
-        # Force reset if tier changed to None
-        if old_tier_id is not None and user_id:
-            reset_validation_plan_for_tier_change(
-                db=db,
-                model_id=model.model_id,
-                new_tier_id=None,
-                user_id=user_id,
-                force=True
-            )
 
 
 # ============================================================================

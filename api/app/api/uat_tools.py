@@ -5,8 +5,10 @@ WARNING: These endpoints are for UAT/testing only and should be removed before p
 import json
 import os
 from datetime import date, timedelta, datetime
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, cast
+from typing_extensions import TypedDict
 from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy.engine import CursorResult
 from sqlalchemy.orm import Session
 from sqlalchemy import text, inspect
 from pydantic import BaseModel
@@ -30,6 +32,13 @@ class BackupInfo(BaseModel):
     created_by: str
     table_counts: Dict[str, int]
     size_bytes: int
+
+
+class SeedResults(TypedDict):
+    models_created: List[Dict[str, object]]
+    validations_created: List[Dict[str, object]]
+    errors: List[str]
+    message: Optional[str]
 
 
 # Tables to PRESERVE (configuration/reference data)
@@ -388,7 +397,7 @@ def restore_backup(
                 continue
 
             result = db.execute(text(f'DELETE FROM "{table_name}"'))
-            deleted_counts[table_name] = result.rowcount
+            deleted_counts[table_name] = cast(CursorResult, result).rowcount
             db.commit()
         except Exception:
             db.rollback()
@@ -538,7 +547,7 @@ def reset_transactional_data(
 
             # Use raw SQL to avoid ORM cascade issues
             result = db.execute(text(f'DELETE FROM "{table_name}"'))
-            deleted_counts[table_name] = result.rowcount
+            deleted_counts[table_name] = cast(CursorResult, result).rowcount
             db.commit()  # Commit after each successful deletion
         except Exception as e:
             db.rollback()  # Rollback failed transaction to continue
@@ -576,7 +585,7 @@ def reset_transactional_data(
 def seed_uat_data(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_admin)
-) -> Dict:
+) -> SeedResults:
     """
     Seed UAT data using API-like workflows for internal consistency.
 
@@ -610,15 +619,26 @@ def seed_uat_data(
     from app.models.validation import ValidationRequestModelVersion
     from decimal import Decimal
 
-    results = {"models_created": [], "validations_created": [], "errors": []}
+    results: SeedResults = {
+        "models_created": [],
+        "validations_created": [],
+        "errors": [],
+        "message": None
+    }
 
     try:
         # Get required taxonomy values
         def get_taxonomy_value(taxonomy_name: str, code: str) -> TaxonomyValue:
-            return db.query(TaxonomyValue).join(Taxonomy).filter(
+            value = db.query(TaxonomyValue).join(Taxonomy).filter(
                 Taxonomy.name == taxonomy_name,
                 TaxonomyValue.code == code
             ).first()
+            if not value:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Missing taxonomy value: {taxonomy_name} - {code}"
+                )
+            return value
 
         # Get status values
         status_intake = get_taxonomy_value("Validation Request Status", "INTAKE")
@@ -668,11 +688,20 @@ def seed_uat_data(
         validator_user = db.query(User).filter(User.role_code == RoleCode.VALIDATOR.value).first()
         regular_user = db.query(User).filter(User.role_code == RoleCode.USER.value).first()
 
-        if not all([status_intake, status_approved, tier_1, admin_user, usage_daily]):
+        if not admin_user:
             raise HTTPException(
                 status_code=400,
-                detail="Required taxonomy values or users not found. Run base seed first."
+                detail="Admin user not found. Run base seed first."
             )
+
+        if not region:
+            raise HTTPException(
+                status_code=400,
+                detail="No regions found. Run base seed first."
+            )
+
+        validator_user = validator_user or admin_user
+        regular_user = regular_user or admin_user
 
         # Get qualitative factors for risk assessment
         factors = db.query(QualitativeRiskFactor).filter(

@@ -27,7 +27,7 @@ router = APIRouter()
 COMMENT_STALENESS_DAYS = 45
 
 
-def create_audit_log(db: Session, entity_type: str, entity_id: int, action: str, user_id: int, changes: dict = None):
+def create_audit_log(db: Session, entity_type: str, entity_id: int, action: str, user_id: int, changes: dict | None = None):
     """Create an audit log entry for overdue commentary operations."""
     audit_log = AuditLog(
         entity_type=entity_type,
@@ -39,7 +39,7 @@ def create_audit_log(db: Session, entity_type: str, entity_id: int, action: str,
     db.add(audit_log)
 
 
-def get_stale_reason(comment: OverdueRevalidationComment) -> tuple[bool, Optional[str]]:
+def get_stale_reason(comment: Optional[OverdueRevalidationComment]) -> tuple[bool, Optional[str]]:
     """
     Check if a comment is stale and return the reason.
 
@@ -396,10 +396,15 @@ def get_overdue_commentary_history(
         )
 
     # Get first model (most requests have single model)
-    first_model_version = validation_request.model_versions_assoc[0] if validation_request.model_versions_assoc else None
+    if not validation_request.model_versions_assoc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No models found for this validation request"
+        )
 
-    model_id = first_model_version.model.model_id if first_model_version else None
-    model_name = first_model_version.model.model_name if first_model_version else "Unknown"
+    first_model_version = validation_request.model_versions_assoc[0]
+    model_id = first_model_version.model.model_id
+    model_name = first_model_version.model.model_name
 
     # Get all comments ordered by created_at desc
     comments = db.query(OverdueRevalidationComment).options(

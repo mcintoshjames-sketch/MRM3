@@ -38,7 +38,7 @@ from fpdf import FPDF
 router = APIRouter()
 
 
-def create_audit_log(db: Session, entity_type: str, entity_id: int, action: str, user_id: int, changes: dict = None):
+def create_audit_log(db: Session, entity_type: str, entity_id: int, action: str, user_id: int, changes: dict | None = None):
     """Create an audit log entry."""
     audit_log = AuditLog(
         entity_type=entity_type,
@@ -154,13 +154,17 @@ def check_version_creation_blockers(db: Session, model_id: int) -> dict | None:
     for version in versions:
         # B2: Check if version is in active validation
         # Look for ValidationRequest linked to this version via ValidationRequestModelVersion
-        active_validation = db.query(ValidationRequest).join(
+        active_validation_query = db.query(ValidationRequest).join(
             ValidationRequestModelVersion,
             ValidationRequest.request_id == ValidationRequestModelVersion.request_id
         ).filter(
-            ValidationRequestModelVersion.version_id == version.version_id,
-            ~ValidationRequest.current_status_id.in_(terminal_status_ids) if terminal_status_ids else True
-        ).first()
+            ValidationRequestModelVersion.version_id == version.version_id
+        )
+        if terminal_status_ids:
+            active_validation_query = active_validation_query.filter(
+                ValidationRequest.current_status_id.notin_(terminal_status_ids)
+            )
+        active_validation = active_validation_query.first()
 
         if active_validation:
             return {
@@ -473,93 +477,106 @@ def create_model_version(
             TaxonomyValue.taxonomy.has(name="Validation Type")
         ).first()
 
-        if validation_type:
-            # Get priority
-            priority = db.query(TaxonomyValue).join(
-                TaxonomyValue.taxonomy
-            ).filter(
-                TaxonomyValue.code == priority_code,
-                TaxonomyValue.taxonomy.has(name="Validation Priority")
-            ).first()
+        if not validation_type:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Validation Type '{validation_type_code}' not found."
+            )
 
-            if priority:
-                # Calculate target completion date
-                if target_production_date:
-                    # Target completion should be 5 business days before production (safety buffer)
-                    target_date = target_production_date - \
-                        timedelta(days=5)
+        # Get priority
+        priority = db.query(TaxonomyValue).join(
+            TaxonomyValue.taxonomy
+        ).filter(
+            TaxonomyValue.code == priority_code,
+            TaxonomyValue.taxonomy.has(name="Validation Priority")
+        ).first()
+        if not priority:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Validation Priority '{priority_code}' not found."
+            )
 
-                    # Check if target completion is after production date (out of order)
-                    if target_date > target_production_date:
-                        if validation_warning:
-                            validation_warning += " Target completion date exceeds planned production date."
-                        else:
-                            validation_warning = "WARNING: Validation target completion date exceeds planned production date."
-                else:
-                    # No production date provided, use standard 30 days
-                    target_date = date.today() + timedelta(days=30)
+        # Calculate target completion date
+        if target_production_date:
+            # Target completion should be 5 business days before production (safety buffer)
+            target_date = target_production_date - timedelta(days=5)
 
-                # Build trigger reason
-                trigger_reason = f"Auto-created for model version {version_number} - {version_data.change_description[:100]}"
+            # Check if target completion is after production date (out of order)
+            if target_date > target_production_date:
                 if validation_warning:
-                    trigger_reason = validation_warning + " " + trigger_reason
+                    validation_warning += " Target completion date exceeds planned production date."
+                else:
+                    validation_warning = "WARNING: Validation target completion date exceeds planned production date."
+        else:
+            # No production date provided, use standard 30 days
+            target_date = date.today() + timedelta(days=30)
 
-                # Get initial status (INTAKE)
-                initial_status = db.query(TaxonomyValue).join(
-                    TaxonomyValue.taxonomy
-                ).filter(
-                    TaxonomyValue.code == "INTAKE",
-                    TaxonomyValue.taxonomy.has(
-                        name="Validation Request Status")
-                ).first()
+        # Build trigger reason
+        trigger_reason = f"Auto-created for model version {version_number} - {version_data.change_description[:100]}"
+        if validation_warning:
+            trigger_reason = validation_warning + " " + trigger_reason
 
-                # Create validation request (without model_id - uses association table)
-                validation_request = ValidationRequest(
-                    request_date=date.today(),
-                    requestor_id=current_user.user_id,
-                    validation_type_id=validation_type.value_id,
-                    priority_id=priority.value_id,
-                    current_status_id=initial_status.value_id,
-                    target_completion_date=target_date,
-                    trigger_reason=trigger_reason
-                )
+        # Get initial status (INTAKE)
+        initial_status = db.query(TaxonomyValue).join(
+            TaxonomyValue.taxonomy
+        ).filter(
+            TaxonomyValue.code == "INTAKE",
+            TaxonomyValue.taxonomy.has(
+                name="Validation Request Status")
+        ).first()
+        if not initial_status:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Validation Request Status 'INTAKE' not found."
+            )
 
-                db.add(validation_request)
-                db.flush()  # Get request_id without full commit
+        # Create validation request (without model_id - uses association table)
+        validation_request = ValidationRequest(
+            request_date=date.today(),
+            requestor_id=current_user.user_id,
+            validation_type_id=validation_type.value_id,
+            priority_id=priority.value_id,
+            current_status_id=initial_status.value_id,
+            target_completion_date=target_date,
+            trigger_reason=trigger_reason
+        )
 
-                # Link model and version to validation request via association table
-                from app.models.validation import ValidationRequestModelVersion
-                model_version_link = ValidationRequestModelVersion(
-                    request_id=validation_request.request_id,
-                    model_id=model_id,
-                    version_id=new_version.version_id
-                )
-                db.add(model_version_link)
+        db.add(validation_request)
+        db.flush()  # Get request_id without full commit
 
-                # Link validation request to version
-                new_version.validation_request_id = validation_request.request_id
+        # Link model and version to validation request via association table
+        from app.models.validation import ValidationRequestModelVersion
+        model_version_link = ValidationRequestModelVersion(
+            request_id=validation_request.request_id,
+            model_id=model_id,
+            version_id=new_version.version_id
+        )
+        db.add(model_version_link)
 
-                # Handle regional scope - add regions to validation request
-                # Use the regions from the version's affected_regions relationship
-                if version_data.scope == "REGIONAL" and new_version.affected_regions:
-                    validation_request.regions = new_version.affected_regions
+        # Link validation request to version
+        new_version.validation_request_id = validation_request.request_id
 
-                # Audit log for validation request creation
-                create_audit_log(
-                    db=db,
-                    entity_type="ValidationRequest",
-                    entity_id=validation_request.request_id,
-                    action="CREATE",
-                    user_id=current_user.user_id,
-                    changes={
-                        "auto_created": True,
-                        "model_version_id": new_version.version_id,
-                        "is_interim": is_interim,
-                        "production_date": str(target_production_date) if target_production_date else None,
-                        "scope": version_data.scope,
-                        "affected_region_ids": version_data.affected_region_ids
-                    }
-                )
+        # Handle regional scope - add regions to validation request
+        # Use the regions from the version's affected_regions relationship
+        if version_data.scope == "REGIONAL" and new_version.affected_regions:
+            validation_request.regions = new_version.affected_regions
+
+        # Audit log for validation request creation
+        create_audit_log(
+            db=db,
+            entity_type="ValidationRequest",
+            entity_id=validation_request.request_id,
+            action="CREATE",
+            user_id=current_user.user_id,
+            changes={
+                "auto_created": True,
+                "model_version_id": new_version.version_id,
+                "is_interim": is_interim,
+                "production_date": str(target_production_date) if target_production_date else None,
+                "scope": version_data.scope,
+                "affected_region_ids": version_data.affected_region_ids
+            }
+        )
 
     # Audit log for version creation
     create_audit_log(
@@ -779,6 +796,11 @@ def activate_version(
 
     # Check permissions
     model = db.query(Model).filter(Model.model_id == version.model_id).first()
+    if not model:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Model not found"
+        )
     if not check_version_permission(db, model, current_user):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -847,6 +869,11 @@ def set_production_date(
 
     # Check permissions
     model = db.query(Model).filter(Model.model_id == version.model_id).first()
+    if not model:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Model not found"
+        )
     if not check_version_permission(db, model, current_user):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -889,6 +916,11 @@ def delete_version(
 
     # Check permissions
     model = db.query(Model).filter(Model.model_id == version.model_id).first()
+    if not model:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Model not found"
+        )
     if not check_version_permission(db, model, current_user):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -1195,7 +1227,7 @@ def export_model_versions_pdf(
 # ============================================================================
 @router.get("/versions/ready-to-deploy", response_model=List[ReadyToDeployVersion])
 def get_ready_to_deploy_versions(
-    model_id: int = None,
+    model_id: int | None = None,
     my_models_only: bool = False,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
@@ -1493,6 +1525,11 @@ def update_version(
 
     # Check permissions
     model = db.query(Model).filter(Model.model_id == version.model_id).first()
+    if not model:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Model not found"
+        )
     if not check_version_permission(db, model, current_user):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,

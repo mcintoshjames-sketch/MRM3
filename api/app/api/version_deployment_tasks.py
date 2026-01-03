@@ -1,9 +1,9 @@
 """API endpoints for version deployment tasks."""
 from datetime import date, datetime
-from typing import List, Set
+from typing import List, Optional, Set
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session, joinedload
-from sqlalchemy import or_
+from sqlalchemy import or_, select
 from app.core.database import get_db
 from app.core.time import utc_now
 from app.core.deps import get_current_user
@@ -87,7 +87,7 @@ def ensure_task_model_alignment(task: VersionDeploymentTask):
 
 @router.get("/my-tasks", response_model=List[VersionDeploymentTaskSummary])
 def get_my_deployment_tasks(
-    status: str = None,
+    status: Optional[str] = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
@@ -111,10 +111,10 @@ def get_my_deployment_tasks(
     if not is_admin(current_user):
         # Filter to tasks user can access
         # Get all models where user is delegate
-        delegate_model_ids = db.query(ModelDelegate.model_id).filter(
+        delegate_model_ids = select(ModelDelegate.model_id).where(
             ModelDelegate.user_id == current_user.user_id,
             ModelDelegate.revoked_at == None
-        ).subquery()
+        )
 
         query = query.filter(
             or_(
@@ -181,7 +181,7 @@ def get_my_deployment_tasks(
 
 @router.get("/ready-to-deploy", response_model=list[ReadyToDeployItem])
 def get_ready_to_deploy(
-    model_id: int = None,
+    model_id: Optional[int] = None,
     my_models_only: bool = False,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
@@ -229,25 +229,24 @@ def get_ready_to_deploy(
     )
 
     # Get models user can access for filtering
-    accessible_model_ids = None
     if not is_admin(current_user) or my_models_only:
         # Non-admin: Only owned + delegated models
         # my_models_only: Same filter for admins who want to see only their models
-        owned_model_ids = db.query(Model.model_id).filter(
+        owned_model_ids = select(Model.model_id).where(
             Model.owner_id == current_user.user_id
-        ).subquery()
+        )
 
-        delegate_model_ids = db.query(ModelDelegate.model_id).filter(
+        delegate_model_ids = select(ModelDelegate.model_id).where(
             ModelDelegate.user_id == current_user.user_id,
             ModelDelegate.revoked_at == None
-        ).subquery()
+        )
 
-        accessible_model_ids = db.query(Model.model_id).filter(
+        accessible_model_ids = select(Model.model_id).where(
             or_(
                 Model.model_id.in_(owned_model_ids),
                 Model.model_id.in_(delegate_model_ids)
             )
-        ).subquery()
+        )
 
         query = query.filter(ModelVersion.model_id.in_(accessible_model_ids))
 
@@ -766,8 +765,9 @@ def check_and_update_version_production_date(db: Session, version: ModelVersion)
 
     # Check if all have deployed_at set
     if all(mr.deployed_at is not None for mr in model_regions):
-        # Use max deployed_at date
-        version.actual_production_date = max(mr.deployed_at for mr in model_regions).date()
+        deployed_at_values = [mr.deployed_at for mr in model_regions if mr.deployed_at is not None]
+        if deployed_at_values:
+            version.actual_production_date = max(deployed_at_values).date()
 
 
 def can_deploy_version(version: ModelVersion, model: Model, user: User, db: Session) -> bool:

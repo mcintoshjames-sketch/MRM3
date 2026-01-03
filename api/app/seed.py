@@ -3,7 +3,7 @@ import os
 import re
 import sys
 from datetime import datetime, date, timedelta
-from typing import Dict, List
+from typing import Any, Dict, List, Mapping, Sequence
 from sqlalchemy.orm import Session
 from app.core.database import SessionLocal
 from app.core.time import utc_now
@@ -338,7 +338,7 @@ def _upsert_taxonomy_with_values(
     *,
     name: str,
     description: str,
-    values: List[Dict[str, str]],
+    values: Sequence[Mapping[str, Any]],
     is_system: bool = True,
     taxonomy_type: str = "standard",
 ):

@@ -7,6 +7,7 @@ from app.models.base import Base
 
 if TYPE_CHECKING:
     from app.models.lob import LOBUnit
+    from app.models.region import Region
     from app.models.role import Role
 
 
@@ -72,7 +73,7 @@ class User(Base):
         return self.role_ref.code
 
     @role_code.expression
-    def role_code(cls):
+    def role_code_expression(cls):
         from app.models.role import Role
         return select(Role.code).where(Role.role_id == cls.role_id).scalar_subquery()
 

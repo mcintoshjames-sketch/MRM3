@@ -352,7 +352,7 @@ def compute_scorecard(
 # Configuration Loading
 # ============================================================================
 
-def load_scorecard_config(config_path: Optional[str] = None) -> dict:
+def load_scorecard_config(config_path: Optional[Path | str] = None) -> dict:
     """
     Load scorecard configuration from JSON file.
 
@@ -367,6 +367,9 @@ def load_scorecard_config(config_path: Optional[str] = None) -> dict:
         FileNotFoundError: If config file doesn't exist.
         json.JSONDecodeError: If config file is invalid JSON.
     """
+    if config_path is not None and not isinstance(config_path, Path):
+        config_path = Path(config_path)
+
     if config_path is None:
         # Default to SCORE_CRITERIA.json in repo root (/app in Docker).
         # In local dev, this file may live one level above /api.
@@ -382,6 +385,7 @@ def load_scorecard_config(config_path: Optional[str] = None) -> dict:
         else:
             config_path = candidate_paths[0]
 
+    assert config_path is not None
     with open(config_path, "r") as f:
         return json.load(f)
 

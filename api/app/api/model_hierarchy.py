@@ -1,5 +1,5 @@
 """Model hierarchy routes - parent-child relationships."""
-from typing import List
+from typing import List, Optional, Set
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import func
 from sqlalchemy.orm import Session, joinedload
@@ -23,7 +23,7 @@ from app.schemas.model_relationships import (
 router = APIRouter()
 
 
-def create_audit_log(db: Session, entity_type: str, entity_id: int, action: str, user_id: int, changes: dict = None):
+def create_audit_log(db: Session, entity_type: str, entity_id: int, action: str, user_id: int, changes: dict | None = None):
     """Create an audit log entry for model hierarchy changes."""
     audit_log = AuditLog(
         entity_type=entity_type,
@@ -197,9 +197,16 @@ def create_hierarchy(
         existing_parent_model = db.query(Model).filter(
             Model.model_id == existing_parent.parent_model_id
         ).first()
+        existing_parent_name = (
+            existing_parent_model.model_name if existing_parent_model else "Unknown"
+        )
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Model '{child_model.model_name}' already has a parent model ('{existing_parent_model.model_name}'). A model can only have one parent for clear ownership and governance. Use dependencies to model data flow relationships."
+            detail=(
+                f"Model '{child_model.model_name}' already has a parent model "
+                f"('{existing_parent_name}'). A model can only have one parent for clear "
+                "ownership and governance. Use dependencies to model data flow relationships."
+            )
         )
 
     # Verify relation type exists
@@ -449,7 +456,10 @@ def get_all_descendants(
             detail="Model not found"
         )
 
-    def get_descendants_recursive(parent_id: int, visited: set = None) -> List[ModelHierarchySummary]:
+    def get_descendants_recursive(
+        parent_id: int,
+        visited: Optional[Set[int]] = None
+    ) -> List[ModelHierarchySummary]:
         """Recursively fetch descendants, avoiding cycles."""
         if visited is None:
             visited = set()

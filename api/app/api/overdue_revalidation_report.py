@@ -84,7 +84,7 @@ def get_past_due_level(days_overdue: int, db: Session) -> Optional[Dict[str, Any
             }
         elif min_days is None:
             # Lower unbounded: matches if days_overdue <= max_days
-            if days_overdue <= max_days:
+            if max_days is not None and days_overdue <= max_days:
                 return {
                     "value_id": value.value_id,
                     "code": value.code,
@@ -412,12 +412,14 @@ def get_overdue_revalidation_report(
                     continue
 
             # Calculate days overdue and urgency
-            if is_past_grace:
+            if is_past_grace and req.submission_grace_period_end:
                 days_overdue = (today - req.submission_grace_period_end).days
                 urgency = "overdue"
-            else:
+            elif req.submission_due_date:
                 days_overdue = (today - req.submission_due_date).days
                 urgency = "in_grace_period"
+            else:
+                continue
 
             if days_overdue_min and days_overdue < days_overdue_min:
                 continue

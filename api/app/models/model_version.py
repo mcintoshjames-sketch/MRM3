@@ -1,10 +1,20 @@
 """Model Version model for tracking model changes and versioning."""
+from __future__ import annotations
+
 from datetime import datetime, date
-from typing import Optional, List
+from typing import Optional, List, TYPE_CHECKING
 from sqlalchemy import String, Integer, Text, DateTime, Date, ForeignKey, Boolean, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.models.base import Base
 from app.core.time import utc_now
+
+if TYPE_CHECKING:
+    from app.models.model import Model
+    from app.models.model_change_taxonomy import ModelChangeType
+    from app.models.model_version_region import ModelVersionRegion
+    from app.models.region import Region
+    from app.models.user import User
+    from app.models.validation import ValidationRequest
 
 
 class ModelVersion(Base):

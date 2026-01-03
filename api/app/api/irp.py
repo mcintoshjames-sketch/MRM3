@@ -21,7 +21,7 @@ from app.schemas.irp import (
     MRSASummary, IRPCoverageStatus
 )
 from app.schemas.mrsa_review_policy import (
-    MRSAReviewStatus, MRSAReviewStatusEnum
+    MRSAReviewStatus, MRSAReviewStatusEnum, MRSAReviewStatusOwnerSummary
 )
 
 router = APIRouter()
@@ -47,7 +47,14 @@ def _require_irp_access(irp: IRP, accessible_mrsa_ids: set[int] | None) -> None:
         )
 
 
-def create_audit_log(db: Session, entity_type: str, entity_id: int, action: str, user_id: int, changes: dict = None):
+def create_audit_log(
+    db: Session,
+    entity_type: str,
+    entity_id: int,
+    action: str,
+    user_id: int,
+    changes: Optional[dict] = None
+):
     """Create an audit log entry for IRP operations."""
     audit_log = AuditLog(
         entity_type=entity_type,
@@ -257,6 +264,12 @@ def create_irp(
         joinedload(IRP.certifications).joinedload(IRPCertification.certified_by),
     ).filter(IRP.irp_id == irp.irp_id).first()
 
+    if not irp:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="IRP not found after creation"
+        )
+
     return _build_irp_detail_response(irp)
 
 
@@ -436,6 +449,12 @@ def update_irp(
         joinedload(IRP.reviews).joinedload(IRPReview.reviewed_by),
         joinedload(IRP.certifications).joinedload(IRPCertification.certified_by),
     ).filter(IRP.irp_id == irp.irp_id).first()
+
+    if not irp:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="IRP not found after update"
+        )
 
     return _build_irp_detail_response(irp)
 
@@ -872,11 +891,7 @@ def get_mrsa_review_status(
             next_due_date=next_due_date,
             status=status,
             days_until_due=days_until_due,
-            owner={
-                "user_id": mrsa.owner.user_id,
-                "full_name": mrsa.owner.full_name,
-                "email": mrsa.owner.email
-            } if mrsa.owner else None,
+            owner=MRSAReviewStatusOwnerSummary.model_validate(mrsa.owner) if mrsa.owner else None,
             has_exception=exception is not None,
             exception_due_date=exception.override_due_date if exception else None
         ))

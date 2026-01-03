@@ -1,5 +1,5 @@
 """Model dependency routes - feeder-consumer data flow relationships with cycle detection."""
-from typing import List, Set
+from typing import List, Optional, Set
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import func
 from sqlalchemy.orm import Session, joinedload
@@ -27,7 +27,7 @@ from fpdf import FPDF
 router = APIRouter()
 
 
-def create_audit_log(db: Session, entity_type: str, entity_id: int, action: str, user_id: int, changes: dict = None):
+def create_audit_log(db: Session, entity_type: str, entity_id: int, action: str, user_id: int, changes: dict | None = None):
     """Create an audit log entry for model dependency changes."""
     audit_log = AuditLog(
         entity_type=entity_type,
@@ -52,7 +52,7 @@ def detect_cycle(
     db: Session,
     feeder_model_id: int,
     consumer_model_id: int,
-    exclude_dependency_id: int = None
+    exclude_dependency_id: Optional[int] = None
 ) -> tuple[bool, List[int]]:
     """
     Detect if adding this dependency would create a cycle in the dependency graph.
@@ -583,7 +583,11 @@ def get_dependency_lineage(
         application_cache[target_model_id] = (upstream_apps, downstream_apps)
         return application_cache[target_model_id]
 
-    def trace_upstream(consumer_id: int, depth: int = 0, visited: Set[int] = None) -> List[dict]:
+    def trace_upstream(
+        consumer_id: int,
+        depth: int = 0,
+        visited: Optional[Set[int]] = None
+    ) -> List[dict]:
         """Recursively trace upstream feeders."""
         if visited is None:
             visited = set()
@@ -628,7 +632,11 @@ def get_dependency_lineage(
 
         return result
 
-    def trace_downstream(feeder_id: int, depth: int = 0, visited: Set[int] = None) -> List[dict]:
+    def trace_downstream(
+        feeder_id: int,
+        depth: int = 0,
+        visited: Optional[Set[int]] = None
+    ) -> List[dict]:
         """Recursively trace downstream consumers."""
         if visited is None:
             visited = set()
@@ -675,7 +683,7 @@ def get_dependency_lineage(
 
     # Build response
     root_upstream_apps, root_downstream_apps = load_application_nodes(model.model_id)
-    response = {
+    response: dict[str, object] = {
         "model": {
             "node_type": "model",
             "model_id": model.model_id,

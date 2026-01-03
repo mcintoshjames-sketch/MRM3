@@ -1,0 +1,559 @@
+/Users/jamesmcintosh/Desktop/mrm_inv_3/api/app/models/model_version.py
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/app/models/model_version.py:72:42 - error: "ModelVersionRegion" is not defined (reportUndefinedVariable)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/app/models/model_version.py:76:36 - error: "Region" is not defined (reportUndefinedVariable)
+/Users/jamesmcintosh/Desktop/mrm_inv_3/api/app/models/saved_query.py
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/app/models/saved_query.py:29:19 - error: "User" is not defined (reportUndefinedVariable)
+/Users/jamesmcintosh/Desktop/mrm_inv_3/api/app/models/user.py
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/app/models/user.py:64:27 - error: "Region" is not defined (reportUndefinedVariable)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/app/models/user.py:69:9 - error: Method declaration "role_code" is obscured by a declaration of the same name (reportRedeclaration)
+/Users/jamesmcintosh/Desktop/mrm_inv_3/api/app/models/validation.py
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/app/models/validation.py:222:26 - error: "Model" is not defined (reportUndefinedVariable)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/app/models/validation.py:225:27 - error: "Region" is not defined (reportUndefinedVariable)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/app/models/validation.py:282:36 - error: "OverdueRevalidationComment" is not defined (reportUndefinedVariable)
+/Users/jamesmcintosh/Desktop/mrm_inv_3/api/app/models/version_deployment_task.py
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/app/models/version_deployment_task.py:79:22 - error: "ModelVersion" is not defined (reportUndefinedVariable)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/app/models/version_deployment_task.py:80:20 - error: "Model" is not defined (reportUndefinedVariable)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/app/models/version_deployment_task.py:81:30 - error: "Region" is not defined (reportUndefinedVariable)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/app/models/version_deployment_task.py:82:26 - error: "User" is not defined (reportUndefinedVariable)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/app/models/version_deployment_task.py:83:36 - error: "User" is not defined (reportUndefinedVariable)
+/Users/jamesmcintosh/Desktop/mrm_inv_3/api/app/schemas/conditional_approval.py
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/app/schemas/conditional_approval.py:53:45 - error: No overloads for "Field" match the provided arguments
+    Argument types: (EllipsisType, Literal[1]) (reportCallIssue)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/app/schemas/conditional_approval.py:68:55 - error: No overloads for "Field" match the provided arguments
+    Argument types: (None, Literal[1]) (reportCallIssue)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/app/schemas/conditional_approval.py:109:45 - error: No overloads for "Field" match the provided arguments
+    Argument types: (EllipsisType, Literal[1]) (reportCallIssue)
+/Users/jamesmcintosh/Desktop/mrm_inv_3/api/app/schemas/model_version.py
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/app/schemas/model_version.py:77:5 - error: "scope" overrides a field of the same name but is missing a default value (reportGeneralTypeIssues)
+/Users/jamesmcintosh/Desktop/mrm_inv_3/api/app/seed.py
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/app/seed.py:443:16 - error: Argument of type "list[dict[str, str | int | None] | dict[str, str | int]]" cannot be assigned to parameter "values" of type "List[Dict[str, str]]" in function "_upsert_taxonomy_with_values"
+    "None" is not assignable to "str"
+    "Literal[0]" is not assignable to "str"
+    "Literal[0]" is not assignable to "str"
+    "Literal[1]" is not assignable to "str"
+    "Literal[365]" is not assignable to "str"
+    "Literal[1]" is not assignable to "str"
+    "Literal[366]" is not assignable to "str"
+    "Literal[730]" is not assignable to "str" (reportArgumentType)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/app/seed.py:568:16 - error: Argument of type "list[dict[str, str | bool]]" cannot be assigned to parameter "values" of type "List[Dict[str, str]]" in function "_upsert_taxonomy_with_values"
+    "Literal[True]" is not assignable to "str"
+    "Literal[False]" is not assignable to "str" (reportArgumentType)
+/Users/jamesmcintosh/Desktop/mrm_inv_3/api/check_db.py
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/check_db.py:27:80 - error: Cannot access attribute "hierarchy_type_id" for class "ModelHierarchy"
+    Attribute "hierarchy_type_id" is unknown (reportAttributeAccessIssue)
+/Users/jamesmcintosh/Desktop/mrm_inv_3/api/debug_conditional_approvals.py
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/debug_conditional_approvals.py:63:25 - error: Cannot access attribute "applies_to_all_validations" for class "ConditionalApprovalRule"
+    Attribute "applies_to_all_validations" is unknown (reportAttributeAccessIssue)
+/Users/jamesmcintosh/Desktop/mrm_inv_3/api/seed_banner_tests.py
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/seed_banner_tests.py:67:28 - error: "user_id" is not a known attribute of "None" (reportOptionalMemberAccess)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/seed_banner_tests.py:68:33 - error: "value_id" is not a known attribute of "None" (reportOptionalMemberAccess)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/seed_banner_tests.py:76:32 - error: "user_id" is not a known attribute of "None" (reportOptionalMemberAccess)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/seed_banner_tests.py:77:46 - error: "value_id" is not a known attribute of "None" (reportOptionalMemberAccess)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/seed_banner_tests.py:80:23 - error: "value_id" is not a known attribute of "None" (reportOptionalMemberAccess)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/seed_banner_tests.py:82:40 - error: "value_id" is not a known attribute of "None" (reportOptionalMemberAccess)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/seed_banner_tests.py:97:32 - error: "user_id" is not a known attribute of "None" (reportOptionalMemberAccess)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/seed_banner_tests.py:98:46 - error: "value_id" is not a known attribute of "None" (reportOptionalMemberAccess)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/seed_banner_tests.py:101:23 - error: "value_id" is not a known attribute of "None" (reportOptionalMemberAccess)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/seed_banner_tests.py:103:43 - error: "value_id" is not a known attribute of "None" (reportOptionalMemberAccess)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/seed_banner_tests.py:140:28 - error: "user_id" is not a known attribute of "None" (reportOptionalMemberAccess)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/seed_banner_tests.py:141:33 - error: "value_id" is not a known attribute of "None" (reportOptionalMemberAccess)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/seed_banner_tests.py:149:32 - error: "user_id" is not a known attribute of "None" (reportOptionalMemberAccess)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/seed_banner_tests.py:150:46 - error: "value_id" is not a known attribute of "None" (reportOptionalMemberAccess)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/seed_banner_tests.py:153:23 - error: "value_id" is not a known attribute of "None" (reportOptionalMemberAccess)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/seed_banner_tests.py:155:40 - error: "value_id" is not a known attribute of "None" (reportOptionalMemberAccess)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/seed_banner_tests.py:170:32 - error: "user_id" is not a known attribute of "None" (reportOptionalMemberAccess)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/seed_banner_tests.py:171:46 - error: "value_id" is not a known attribute of "None" (reportOptionalMemberAccess)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/seed_banner_tests.py:174:23 - error: "value_id" is not a known attribute of "None" (reportOptionalMemberAccess)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/seed_banner_tests.py:176:43 - error: "value_id" is not a known attribute of "None" (reportOptionalMemberAccess)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/seed_banner_tests.py:213:28 - error: "user_id" is not a known attribute of "None" (reportOptionalMemberAccess)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/seed_banner_tests.py:214:33 - error: "value_id" is not a known attribute of "None" (reportOptionalMemberAccess)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/seed_banner_tests.py:222:32 - error: "user_id" is not a known attribute of "None" (reportOptionalMemberAccess)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/seed_banner_tests.py:223:46 - error: "value_id" is not a known attribute of "None" (reportOptionalMemberAccess)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/seed_banner_tests.py:226:23 - error: "value_id" is not a known attribute of "None" (reportOptionalMemberAccess)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/seed_banner_tests.py:228:40 - error: "value_id" is not a known attribute of "None" (reportOptionalMemberAccess)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/seed_banner_tests.py:243:32 - error: "user_id" is not a known attribute of "None" (reportOptionalMemberAccess)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/seed_banner_tests.py:244:46 - error: "value_id" is not a known attribute of "None" (reportOptionalMemberAccess)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/seed_banner_tests.py:247:23 - error: "value_id" is not a known attribute of "None" (reportOptionalMemberAccess)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/seed_banner_tests.py:251:23 - error: "value_id" is not a known attribute of "None" (reportOptionalMemberAccess)
+/Users/jamesmcintosh/Desktop/mrm_inv_3/api/seed_grace_period_example.py
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/seed_grace_period_example.py:55:28 - error: "user_id" is not a known attribute of "None" (reportOptionalMemberAccess)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/seed_grace_period_example.py:56:33 - error: "value_id" is not a known attribute of "None" (reportOptionalMemberAccess)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/seed_grace_period_example.py:64:32 - error: "user_id" is not a known attribute of "None" (reportOptionalMemberAccess)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/seed_grace_period_example.py:65:46 - error: "value_id" is not a known attribute of "None" (reportOptionalMemberAccess)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/seed_grace_period_example.py:68:23 - error: "value_id" is not a known attribute of "None" (reportOptionalMemberAccess)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/seed_grace_period_example.py:70:40 - error: "value_id" is not a known attribute of "None" (reportOptionalMemberAccess)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/seed_grace_period_example.py:88:32 - error: "user_id" is not a known attribute of "None" (reportOptionalMemberAccess)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/seed_grace_period_example.py:89:46 - error: "value_id" is not a known attribute of "None" (reportOptionalMemberAccess)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/seed_grace_period_example.py:92:23 - error: "value_id" is not a known attribute of "None" (reportOptionalMemberAccess)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/seed_grace_period_example.py:94:38 - error: "value_id" is not a known attribute of "None" (reportOptionalMemberAccess)
+/Users/jamesmcintosh/Desktop/mrm_inv_3/api/seed_monitoring_demo.py
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/seed_monitoring_demo.py:134:46 - error: "user_id" is not a known attribute of "None" (reportOptionalMemberAccess)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/seed_monitoring_demo.py:186:50 - error: "user_id" is not a known attribute of "None" (reportOptionalMemberAccess)
+/Users/jamesmcintosh/Desktop/mrm_inv_3/api/seed_monitoring_results.py
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/seed_monitoring_results.py:243:84 - error: "category_id" is not a known attribute of "None" (reportOptionalMemberAccess)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/seed_monitoring_results.py:248:30 - error: "name" is not a known attribute of "None" (reportOptionalMemberAccess)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/seed_monitoring_results.py:250:37 - error: "evaluation_type" is not a known attribute of "None" (reportOptionalMemberAccess)
+/Users/jamesmcintosh/Desktop/mrm_inv_3/api/seed_overdue_monitoring.py
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/seed_overdue_monitoring.py:196:49 - error: Cannot access attribute "value" for class "str"
+    Attribute "value" is unknown (reportAttributeAccessIssue)
+/Users/jamesmcintosh/Desktop/mrm_inv_3/api/seed_regional_compliance_demo.py
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/seed_regional_compliance_demo.py:79:32 - error: "user_id" is not a known attribute of "None" (reportOptionalMemberAccess)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/seed_regional_compliance_demo.py:80:40 - error: "user_id" is not a known attribute of "None" (reportOptionalMemberAccess)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/seed_regional_compliance_demo.py:127:41 - error: "user_id" is not a known attribute of "None" (reportOptionalMemberAccess)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/seed_regional_compliance_demo.py:130:37 - error: "region_id" is not a known attribute of "None" (reportOptionalMemberAccess)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/seed_regional_compliance_demo.py:140:41 - error: "user_id" is not a known attribute of "None" (reportOptionalMemberAccess)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/seed_regional_compliance_demo.py:143:37 - error: "region_id" is not a known attribute of "None" (reportOptionalMemberAccess)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/seed_regional_compliance_demo.py:160:48 - error: "region_id" is not a known attribute of "None" (reportOptionalMemberAccess)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/seed_regional_compliance_demo.py:166:37 - error: "region_id" is not a known attribute of "None" (reportOptionalMemberAccess)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/seed_regional_compliance_demo.py:181:48 - error: "region_id" is not a known attribute of "None" (reportOptionalMemberAccess)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/seed_regional_compliance_demo.py:187:37 - error: "region_id" is not a known attribute of "None" (reportOptionalMemberAccess)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/seed_regional_compliance_demo.py:214:32 - error: "user_id" is not a known attribute of "None" (reportOptionalMemberAccess)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/seed_regional_compliance_demo.py:215:40 - error: "user_id" is not a known attribute of "None" (reportOptionalMemberAccess)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/seed_regional_compliance_demo.py:262:41 - error: "user_id" is not a known attribute of "None" (reportOptionalMemberAccess)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/seed_regional_compliance_demo.py:265:37 - error: "region_id" is not a known attribute of "None" (reportOptionalMemberAccess)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/seed_regional_compliance_demo.py:275:41 - error: "user_id" is not a known attribute of "None" (reportOptionalMemberAccess)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/seed_regional_compliance_demo.py:278:37 - error: "region_id" is not a known attribute of "None" (reportOptionalMemberAccess)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/seed_regional_compliance_demo.py:294:48 - error: "region_id" is not a known attribute of "None" (reportOptionalMemberAccess)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/seed_regional_compliance_demo.py:300:37 - error: "region_id" is not a known attribute of "None" (reportOptionalMemberAccess)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/seed_regional_compliance_demo.py:315:48 - error: "region_id" is not a known attribute of "None" (reportOptionalMemberAccess)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/seed_regional_compliance_demo.py:321:37 - error: "region_id" is not a known attribute of "None" (reportOptionalMemberAccess)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/seed_regional_compliance_demo.py:343:32 - error: "user_id" is not a known attribute of "None" (reportOptionalMemberAccess)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/seed_regional_compliance_demo.py:344:40 - error: "user_id" is not a known attribute of "None" (reportOptionalMemberAccess)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/seed_regional_compliance_demo.py:426:41 - error: "user_id" is not a known attribute of "None" (reportOptionalMemberAccess)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/seed_regional_compliance_demo.py:429:37 - error: "region_id" is not a known attribute of "None" (reportOptionalMemberAccess)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/seed_regional_compliance_demo.py:441:48 - error: "region_id" is not a known attribute of "None" (reportOptionalMemberAccess)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/seed_regional_compliance_demo.py:447:37 - error: "region_id" is not a known attribute of "None" (reportOptionalMemberAccess)
+/Users/jamesmcintosh/Desktop/mrm_inv_3/api/seed_regional_demo.py
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/seed_regional_demo.py:36:43 - error: Argument of type "bool" cannot be assigned to parameter "criterion" of type "_ColumnExpressionArgument[bool]" in function "filter"
+    Type "bool" is not assignable to type "_ColumnExpressionArgument[bool]"
+      "bool" is not assignable to "ColumnElement[bool]"
+      "bool" is incompatible with protocol "_HasClauseElement[bool]"
+        "__clause_element__" is not present
+      "bool" is not assignable to "SQLCoreOperations[bool]"
+      "bool" is not assignable to "ExpressionElementRole[bool]"
+      "bool" is not assignable to "TypedColumnsClauseRole[bool]"
+      Type "bool" is not assignable to type "() -> ColumnElement[bool]"
+    ... (reportArgumentType)
+/Users/jamesmcintosh/Desktop/mrm_inv_3/api/seed_regional_demo_simple.py
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/seed_regional_demo_simple.py:61:28 - error: "user_id" is not a known attribute of "None" (reportOptionalMemberAccess)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/seed_regional_demo_simple.py:62:36 - error: "user_id" is not a known attribute of "None" (reportOptionalMemberAccess)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/seed_regional_demo_simple.py:72:28 - error: "user_id" is not a known attribute of "None" (reportOptionalMemberAccess)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/seed_regional_demo_simple.py:73:45 - error: "value_id" is not a known attribute of "None" (reportOptionalMemberAccess)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/seed_regional_demo_simple.py:74:35 - error: "value_id" is not a known attribute of "None" (reportOptionalMemberAccess)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/seed_regional_demo_simple.py:76:43 - error: "value_id" is not a known attribute of "None" (reportOptionalMemberAccess)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/seed_regional_demo_simple.py:108:33 - error: "user_id" is not a known attribute of "None" (reportOptionalMemberAccess)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/seed_regional_demo_simple.py:111:29 - error: "region_id" is not a known attribute of "None" (reportOptionalMemberAccess)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/seed_regional_demo_simple.py:121:33 - error: "user_id" is not a known attribute of "None" (reportOptionalMemberAccess)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/seed_regional_demo_simple.py:124:29 - error: "region_id" is not a known attribute of "None" (reportOptionalMemberAccess)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/seed_regional_demo_simple.py:135:29 - error: "region_id" is not a known attribute of "None" (reportOptionalMemberAccess)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/seed_regional_demo_simple.py:145:29 - error: "region_id" is not a known attribute of "None" (reportOptionalMemberAccess)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/seed_regional_demo_simple.py:169:24 - error: "user_id" is not a known attribute of "None" (reportOptionalMemberAccess)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/seed_regional_demo_simple.py:170:32 - error: "user_id" is not a known attribute of "None" (reportOptionalMemberAccess)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/seed_regional_demo_simple.py:180:28 - error: "user_id" is not a known attribute of "None" (reportOptionalMemberAccess)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/seed_regional_demo_simple.py:181:45 - error: "value_id" is not a known attribute of "None" (reportOptionalMemberAccess)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/seed_regional_demo_simple.py:182:35 - error: "value_id" is not a known attribute of "None" (reportOptionalMemberAccess)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/seed_regional_demo_simple.py:184:42 - error: "value_id" is not a known attribute of "None" (reportOptionalMemberAccess)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/seed_regional_demo_simple.py:216:33 - error: "user_id" is not a known attribute of "None" (reportOptionalMemberAccess)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/seed_regional_demo_simple.py:219:29 - error: "region_id" is not a known attribute of "None" (reportOptionalMemberAccess)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/seed_regional_demo_simple.py:229:33 - error: "user_id" is not a known attribute of "None" (reportOptionalMemberAccess)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/seed_regional_demo_simple.py:232:29 - error: "region_id" is not a known attribute of "None" (reportOptionalMemberAccess)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/seed_regional_demo_simple.py:242:29 - error: "region_id" is not a known attribute of "None" (reportOptionalMemberAccess)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/seed_regional_demo_simple.py:252:29 - error: "region_id" is not a known attribute of "None" (reportOptionalMemberAccess)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/seed_regional_demo_simple.py:275:24 - error: "user_id" is not a known attribute of "None" (reportOptionalMemberAccess)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/seed_regional_demo_simple.py:276:32 - error: "user_id" is not a known attribute of "None" (reportOptionalMemberAccess)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/seed_regional_demo_simple.py:286:28 - error: "user_id" is not a known attribute of "None" (reportOptionalMemberAccess)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/seed_regional_demo_simple.py:287:45 - error: "value_id" is not a known attribute of "None" (reportOptionalMemberAccess)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/seed_regional_demo_simple.py:288:35 - error: "value_id" is not a known attribute of "None" (reportOptionalMemberAccess)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/seed_regional_demo_simple.py:290:43 - error: "value_id" is not a known attribute of "None" (reportOptionalMemberAccess)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/seed_regional_demo_simple.py:317:33 - error: "user_id" is not a known attribute of "None" (reportOptionalMemberAccess)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/seed_regional_demo_simple.py:320:29 - error: "region_id" is not a known attribute of "None" (reportOptionalMemberAccess)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/seed_regional_demo_simple.py:330:29 - error: "region_id" is not a known attribute of "None" (reportOptionalMemberAccess)
+/Users/jamesmcintosh/Desktop/mrm_inv_3/api/seed_relationships.py
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/seed_relationships.py:69:47 - error: Argument of type "bool" cannot be assigned to parameter "criterion" of type "_ColumnExpressionArgument[bool]" in function "filter"
+    Type "bool" is not assignable to type "_ColumnExpressionArgument[bool]"
+      "bool" is not assignable to "ColumnElement[bool]"
+      "bool" is incompatible with protocol "_HasClauseElement[bool]"
+        "__clause_element__" is not present
+      "bool" is not assignable to "SQLCoreOperations[bool]"
+      "bool" is not assignable to "ExpressionElementRole[bool]"
+      "bool" is not assignable to "TypedColumnsClauseRole[bool]"
+      Type "bool" is not assignable to type "() -> ColumnElement[bool]"
+    ... (reportArgumentType)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/seed_relationships.py:78:36 - error: "user_id" is not a known attribute of "None" (reportOptionalMemberAccess)
+/Users/jamesmcintosh/Desktop/mrm_inv_3/api/seed_reviewer_sendback_demo.py
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/seed_reviewer_sendback_demo.py:36:12 - error: Type "TaxonomyValue | None" is not assignable to return type "TaxonomyValue"
+    Type "TaxonomyValue | None" is not assignable to type "TaxonomyValue"
+      "None" is not assignable to "TaxonomyValue" (reportReturnType)
+/Users/jamesmcintosh/Desktop/mrm_inv_3/api/seed_sla_test_data.py
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/seed_sla_test_data.py:70:39 - error: Argument of type "bool" cannot be assigned to parameter "criterion" of type "_ColumnExpressionArgument[bool]" in function "filter"
+    Type "bool" is not assignable to type "_ColumnExpressionArgument[bool]"
+      "bool" is not assignable to "ColumnElement[bool]"
+      "bool" is incompatible with protocol "_HasClauseElement[bool]"
+        "__clause_element__" is not present
+      "bool" is not assignable to "SQLCoreOperations[bool]"
+      "bool" is not assignable to "ExpressionElementRole[bool]"
+      "bool" is not assignable to "TypedColumnsClauseRole[bool]"
+      Type "bool" is not assignable to type "() -> ColumnElement[bool]"
+    ... (reportArgumentType)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/seed_sla_test_data.py:71:43 - error: Argument of type "bool" cannot be assigned to parameter "criterion" of type "_ColumnExpressionArgument[bool]" in function "filter"
+    Type "bool" is not assignable to type "_ColumnExpressionArgument[bool]"
+      "bool" is not assignable to "ColumnElement[bool]"
+      "bool" is incompatible with protocol "_HasClauseElement[bool]"
+        "__clause_element__" is not present
+      "bool" is not assignable to "SQLCoreOperations[bool]"
+      "bool" is not assignable to "ExpressionElementRole[bool]"
+      "bool" is not assignable to "TypedColumnsClauseRole[bool]"
+      Type "bool" is not assignable to type "() -> ColumnElement[bool]"
+    ... (reportArgumentType)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/seed_sla_test_data.py:87:28 - error: "model_id" is not a known attribute of "None" (reportOptionalMemberAccess)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/seed_sla_test_data.py:88:32 - error: "user_id" is not a known attribute of "None" (reportOptionalMemberAccess)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/seed_sla_test_data.py:89:48 - error: "value_id" is not a known attribute of "None" (reportOptionalMemberAccess)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/seed_sla_test_data.py:90:43 - error: "value_id" is not a known attribute of "None" (reportOptionalMemberAccess)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/seed_sla_test_data.py:94:45 - error: "value_id" is not a known attribute of "None" (reportOptionalMemberAccess)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/seed_sla_test_data.py:105:41 - error: "value_id" is not a known attribute of "None" (reportOptionalMemberAccess)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/seed_sla_test_data.py:106:33 - error: "user_id" is not a known attribute of "None" (reportOptionalMemberAccess)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/seed_sla_test_data.py:116:28 - error: "model_id" is not a known attribute of "None" (reportOptionalMemberAccess)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/seed_sla_test_data.py:117:32 - error: "user_id" is not a known attribute of "None" (reportOptionalMemberAccess)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/seed_sla_test_data.py:118:48 - error: "value_id" is not a known attribute of "None" (reportOptionalMemberAccess)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/seed_sla_test_data.py:119:39 - error: "value_id" is not a known attribute of "None" (reportOptionalMemberAccess)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/seed_sla_test_data.py:123:47 - error: "value_id" is not a known attribute of "None" (reportOptionalMemberAccess)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/seed_sla_test_data.py:133:36 - error: "user_id" is not a known attribute of "None" (reportOptionalMemberAccess)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/seed_sla_test_data.py:147:41 - error: "value_id" is not a known attribute of "None" (reportOptionalMemberAccess)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/seed_sla_test_data.py:148:33 - error: "user_id" is not a known attribute of "None" (reportOptionalMemberAccess)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/seed_sla_test_data.py:156:41 - error: "value_id" is not a known attribute of "None" (reportOptionalMemberAccess)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/seed_sla_test_data.py:157:43 - error: "value_id" is not a known attribute of "None" (reportOptionalMemberAccess)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/seed_sla_test_data.py:158:37 - error: "user_id" is not a known attribute of "None" (reportOptionalMemberAccess)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/seed_sla_test_data.py:168:28 - error: "model_id" is not a known attribute of "None" (reportOptionalMemberAccess)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/seed_sla_test_data.py:169:32 - error: "user_id" is not a known attribute of "None" (reportOptionalMemberAccess)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/seed_sla_test_data.py:170:48 - error: "value_id" is not a known attribute of "None" (reportOptionalMemberAccess)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/seed_sla_test_data.py:171:41 - error: "value_id" is not a known attribute of "None" (reportOptionalMemberAccess)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/seed_sla_test_data.py:175:50 - error: "value_id" is not a known attribute of "None" (reportOptionalMemberAccess)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/seed_sla_test_data.py:185:36 - error: "user_id" is not a known attribute of "None" (reportOptionalMemberAccess)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/seed_sla_test_data.py:199:41 - error: "value_id" is not a known attribute of "None" (reportOptionalMemberAccess)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/seed_sla_test_data.py:200:33 - error: "user_id" is not a known attribute of "None" (reportOptionalMemberAccess)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/seed_sla_test_data.py:208:41 - error: "value_id" is not a known attribute of "None" (reportOptionalMemberAccess)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/seed_sla_test_data.py:209:43 - error: "value_id" is not a known attribute of "None" (reportOptionalMemberAccess)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/seed_sla_test_data.py:210:37 - error: "user_id" is not a known attribute of "None" (reportOptionalMemberAccess)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/seed_sla_test_data.py:218:43 - error: "value_id" is not a known attribute of "None" (reportOptionalMemberAccess)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/seed_sla_test_data.py:219:46 - error: "value_id" is not a known attribute of "None" (reportOptionalMemberAccess)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/seed_sla_test_data.py:220:37 - error: "user_id" is not a known attribute of "None" (reportOptionalMemberAccess)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/seed_sla_test_data.py:230:28 - error: "model_id" is not a known attribute of "None" (reportOptionalMemberAccess)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/seed_sla_test_data.py:231:32 - error: "user_id" is not a known attribute of "None" (reportOptionalMemberAccess)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/seed_sla_test_data.py:232:48 - error: "value_id" is not a known attribute of "None" (reportOptionalMemberAccess)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/seed_sla_test_data.py:233:43 - error: "value_id" is not a known attribute of "None" (reportOptionalMemberAccess)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/seed_sla_test_data.py:237:55 - error: "value_id" is not a known attribute of "None" (reportOptionalMemberAccess)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/seed_sla_test_data.py:247:36 - error: "user_id" is not a known attribute of "None" (reportOptionalMemberAccess)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/seed_sla_test_data.py:260:46 - error: "value_id" is not a known attribute of "None" (reportOptionalMemberAccess)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/seed_sla_test_data.py:261:51 - error: "value_id" is not a known attribute of "None" (reportOptionalMemberAccess)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/seed_sla_test_data.py:262:37 - error: "user_id" is not a known attribute of "None" (reportOptionalMemberAccess)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/seed_sla_test_data.py:272:28 - error: "model_id" is not a known attribute of "None" (reportOptionalMemberAccess)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/seed_sla_test_data.py:273:32 - error: "user_id" is not a known attribute of "None" (reportOptionalMemberAccess)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/seed_sla_test_data.py:274:48 - error: "value_id" is not a known attribute of "None" (reportOptionalMemberAccess)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/seed_sla_test_data.py:275:41 - error: "value_id" is not a known attribute of "None" (reportOptionalMemberAccess)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/seed_sla_test_data.py:279:50 - error: "value_id" is not a known attribute of "None" (reportOptionalMemberAccess)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/seed_sla_test_data.py:289:36 - error: "user_id" is not a known attribute of "None" (reportOptionalMemberAccess)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/seed_sla_test_data.py:302:43 - error: "value_id" is not a known attribute of "None" (reportOptionalMemberAccess)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/seed_sla_test_data.py:303:46 - error: "value_id" is not a known attribute of "None" (reportOptionalMemberAccess)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/seed_sla_test_data.py:304:37 - error: "user_id" is not a known attribute of "None" (reportOptionalMemberAccess)
+/Users/jamesmcintosh/Desktop/mrm_inv_3/api/test_api_endpoint.py
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/test_api_endpoint.py:14:64 - error: Expression of type "None" cannot be assigned to parameter of type "timedelta"
+    "None" is not assignable to "timedelta" (reportArgumentType)
+/Users/jamesmcintosh/Desktop/mrm_inv_3/api/test_progress_29.py
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/test_progress_29.py:12:6 - error: Import "app.core.validation_plan" could not be resolved (reportMissingImports)
+/Users/jamesmcintosh/Desktop/mrm_inv_3/api/tests/test_bucket_validation.py
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/tests/test_bucket_validation.py:35:59 - error: Argument of type "list[MagicMock]" cannot be assigned to parameter "values" of type "List[TaxonomyValue]" in function "validate_bucket_taxonomy_values"
+    "list[MagicMock]" is not assignable to "List[TaxonomyValue]"
+      Type parameter "_T@list" is invariant, but "MagicMock" is not the same as "TaxonomyValue"
+      Consider switching from "list" to "Sequence" which is covariant (reportArgumentType)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/tests/test_bucket_validation.py:45:59 - error: Argument of type "list[MagicMock]" cannot be assigned to parameter "values" of type "List[TaxonomyValue]" in function "validate_bucket_taxonomy_values"
+    "list[MagicMock]" is not assignable to "List[TaxonomyValue]"
+      Type parameter "_T@list" is invariant, but "MagicMock" is not the same as "TaxonomyValue"
+      Consider switching from "list" to "Sequence" which is covariant (reportArgumentType)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/tests/test_bucket_validation.py:59:59 - error: Argument of type "list[MagicMock]" cannot be assigned to parameter "values" of type "List[TaxonomyValue]" in function "validate_bucket_taxonomy_values"
+    "list[MagicMock]" is not assignable to "List[TaxonomyValue]"
+      Type parameter "_T@list" is invariant, but "MagicMock" is not the same as "TaxonomyValue"
+      Consider switching from "list" to "Sequence" which is covariant (reportArgumentType)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/tests/test_bucket_validation.py:70:59 - error: Argument of type "list[MagicMock]" cannot be assigned to parameter "values" of type "List[TaxonomyValue]" in function "validate_bucket_taxonomy_values"
+    "list[MagicMock]" is not assignable to "List[TaxonomyValue]"
+      Type parameter "_T@list" is invariant, but "MagicMock" is not the same as "TaxonomyValue"
+      Consider switching from "list" to "Sequence" which is covariant (reportArgumentType)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/tests/test_bucket_validation.py:84:59 - error: Argument of type "list[MagicMock]" cannot be assigned to parameter "values" of type "List[TaxonomyValue]" in function "validate_bucket_taxonomy_values"
+    "list[MagicMock]" is not assignable to "List[TaxonomyValue]"
+      Type parameter "_T@list" is invariant, but "MagicMock" is not the same as "TaxonomyValue"
+      Consider switching from "list" to "Sequence" which is covariant (reportArgumentType)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/tests/test_bucket_validation.py:86:16 - error: Operator "in" not supported for types "Literal['Gap detected']" and "str | None"
+    Operator "in" not supported for types "Literal['Gap detected']" and "None" (reportOperatorIssue)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/tests/test_bucket_validation.py:87:16 - error: Operator "in" not supported for types "Literal['11']" and "str | None"
+    Operator "in" not supported for types "Literal['11']" and "None" (reportOperatorIssue)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/tests/test_bucket_validation.py:97:59 - error: Argument of type "list[MagicMock]" cannot be assigned to parameter "values" of type "List[TaxonomyValue]" in function "validate_bucket_taxonomy_values"
+    "list[MagicMock]" is not assignable to "List[TaxonomyValue]"
+      Type parameter "_T@list" is invariant, but "MagicMock" is not the same as "TaxonomyValue"
+      Consider switching from "list" to "Sequence" which is covariant (reportArgumentType)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/tests/test_bucket_validation.py:99:16 - error: Operator "in" not supported for types "Literal['Gap detected']" and "str | None"
+    Operator "in" not supported for types "Literal['Gap detected']" and "None" (reportOperatorIssue)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/tests/test_bucket_validation.py:107:59 - error: Argument of type "list[MagicMock]" cannot be assigned to parameter "values" of type "List[TaxonomyValue]" in function "validate_bucket_taxonomy_values"
+    "list[MagicMock]" is not assignable to "List[TaxonomyValue]"
+      Type parameter "_T@list" is invariant, but "MagicMock" is not the same as "TaxonomyValue"
+      Consider switching from "list" to "Sequence" which is covariant (reportArgumentType)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/tests/test_bucket_validation.py:109:16 - error: Operator "in" not supported for types "Literal['Gap detected']" and "str | None"
+    Operator "in" not supported for types "Literal['Gap detected']" and "None" (reportOperatorIssue)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/tests/test_bucket_validation.py:121:59 - error: Argument of type "list[MagicMock]" cannot be assigned to parameter "values" of type "List[TaxonomyValue]" in function "validate_bucket_taxonomy_values"
+    "list[MagicMock]" is not assignable to "List[TaxonomyValue]"
+      Type parameter "_T@list" is invariant, but "MagicMock" is not the same as "TaxonomyValue"
+      Consider switching from "list" to "Sequence" which is covariant (reportArgumentType)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/tests/test_bucket_validation.py:123:16 - error: Operator "in" not supported for types "Literal['Overlap detected']" and "str | None"
+    Operator "in" not supported for types "Literal['Overlap detected']" and "None" (reportOperatorIssue)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/tests/test_bucket_validation.py:131:59 - error: Argument of type "list[MagicMock]" cannot be assigned to parameter "values" of type "List[TaxonomyValue]" in function "validate_bucket_taxonomy_values"
+    "list[MagicMock]" is not assignable to "List[TaxonomyValue]"
+      Type parameter "_T@list" is invariant, but "MagicMock" is not the same as "TaxonomyValue"
+      Consider switching from "list" to "Sequence" which is covariant (reportArgumentType)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/tests/test_bucket_validation.py:133:16 - error: Operator "in" not supported for types "Literal['Overlap detected']" and "str | None"
+    Operator "in" not supported for types "Literal['Overlap detected']" and "None" (reportOperatorIssue)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/tests/test_bucket_validation.py:141:59 - error: Argument of type "list[MagicMock]" cannot be assigned to parameter "values" of type "List[TaxonomyValue]" in function "validate_bucket_taxonomy_values"
+    "list[MagicMock]" is not assignable to "List[TaxonomyValue]"
+      Type parameter "_T@list" is invariant, but "MagicMock" is not the same as "TaxonomyValue"
+      Consider switching from "list" to "Sequence" which is covariant (reportArgumentType)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/tests/test_bucket_validation.py:144:42 - error: "lower" is not a known attribute of "None" (reportOptionalMemberAccess)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/tests/test_bucket_validation.py:144:72 - error: "lower" is not a known attribute of "None" (reportOptionalMemberAccess)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/tests/test_bucket_validation.py:156:59 - error: Argument of type "list[MagicMock]" cannot be assigned to parameter "values" of type "List[TaxonomyValue]" in function "validate_bucket_taxonomy_values"
+    "list[MagicMock]" is not assignable to "List[TaxonomyValue]"
+      Type parameter "_T@list" is invariant, but "MagicMock" is not the same as "TaxonomyValue"
+      Consider switching from "list" to "Sequence" which is covariant (reportArgumentType)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/tests/test_bucket_validation.py:158:41 - error: "lower" is not a known attribute of "None" (reportOptionalMemberAccess)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/tests/test_bucket_validation.py:158:77 - error: "lower" is not a known attribute of "None" (reportOptionalMemberAccess)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/tests/test_bucket_validation.py:166:59 - error: Argument of type "list[MagicMock]" cannot be assigned to parameter "values" of type "List[TaxonomyValue]" in function "validate_bucket_taxonomy_values"
+    "list[MagicMock]" is not assignable to "List[TaxonomyValue]"
+      Type parameter "_T@list" is invariant, but "MagicMock" is not the same as "TaxonomyValue"
+      Consider switching from "list" to "Sequence" which is covariant (reportArgumentType)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/tests/test_bucket_validation.py:168:41 - error: "lower" is not a known attribute of "None" (reportOptionalMemberAccess)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/tests/test_bucket_validation.py:168:78 - error: "lower" is not a known attribute of "None" (reportOptionalMemberAccess)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/tests/test_bucket_validation.py:177:59 - error: Argument of type "list[MagicMock]" cannot be assigned to parameter "values" of type "List[TaxonomyValue]" in function "validate_bucket_taxonomy_values"
+    "list[MagicMock]" is not assignable to "List[TaxonomyValue]"
+      Type parameter "_T@list" is invariant, but "MagicMock" is not the same as "TaxonomyValue"
+      Consider switching from "list" to "Sequence" which is covariant (reportArgumentType)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/tests/test_bucket_validation.py:179:16 - error: Operator "in" not supported for types "Literal['Only the lowest bucket']" and "str | None"
+    Operator "in" not supported for types "Literal['Only the lowest bucket']" and "None" (reportOperatorIssue)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/tests/test_bucket_validation.py:179:78 - error: "lower" is not a known attribute of "None" (reportOptionalMemberAccess)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/tests/test_bucket_validation.py:188:59 - error: Argument of type "list[MagicMock]" cannot be assigned to parameter "values" of type "List[TaxonomyValue]" in function "validate_bucket_taxonomy_values"
+    "list[MagicMock]" is not assignable to "List[TaxonomyValue]"
+      Type parameter "_T@list" is invariant, but "MagicMock" is not the same as "TaxonomyValue"
+      Consider switching from "list" to "Sequence" which is covariant (reportArgumentType)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/tests/test_bucket_validation.py:190:16 - error: Operator "in" not supported for types "Literal['Only the highest bucket']" and "str | None"
+    Operator "in" not supported for types "Literal['Only the highest bucket']" and "None" (reportOperatorIssue)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/tests/test_bucket_validation.py:190:79 - error: "lower" is not a known attribute of "None" (reportOptionalMemberAccess)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/tests/test_bucket_validation.py:195:59 - error: Argument of type "list[MagicMock]" cannot be assigned to parameter "values" of type "List[TaxonomyValue]" in function "validate_bucket_taxonomy_values"
+    "list[MagicMock]" is not assignable to "List[TaxonomyValue]"
+      Type parameter "_T@list" is invariant, but "MagicMock" is not the same as "TaxonomyValue"
+      Consider switching from "list" to "Sequence" which is covariant (reportArgumentType)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/tests/test_bucket_validation.py:197:41 - error: "lower" is not a known attribute of "None" (reportOptionalMemberAccess)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/tests/test_bucket_validation.py:202:59 - error: Argument of type "list[MagicMock]" cannot be assigned to parameter "values" of type "List[TaxonomyValue]" in function "validate_bucket_taxonomy_values"
+    "list[MagicMock]" is not assignable to "List[TaxonomyValue]"
+      Type parameter "_T@list" is invariant, but "MagicMock" is not the same as "TaxonomyValue"
+      Consider switching from "list" to "Sequence" which is covariant (reportArgumentType)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/tests/test_bucket_validation.py:204:41 - error: "lower" is not a known attribute of "None" (reportOptionalMemberAccess)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/tests/test_bucket_validation.py:209:59 - error: Argument of type "list[MagicMock]" cannot be assigned to parameter "values" of type "List[TaxonomyValue]" in function "validate_bucket_taxonomy_values"
+    "list[MagicMock]" is not assignable to "List[TaxonomyValue]"
+      Type parameter "_T@list" is invariant, but "MagicMock" is not the same as "TaxonomyValue"
+      Consider switching from "list" to "Sequence" which is covariant (reportArgumentType)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/tests/test_bucket_validation.py:211:41 - error: "lower" is not a known attribute of "None" (reportOptionalMemberAccess)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/tests/test_bucket_validation.py:224:59 - error: Argument of type "list[MagicMock]" cannot be assigned to parameter "values" of type "List[TaxonomyValue]" in function "validate_bucket_taxonomy_values"
+    "list[MagicMock]" is not assignable to "List[TaxonomyValue]"
+      Type parameter "_T@list" is invariant, but "MagicMock" is not the same as "TaxonomyValue"
+      Consider switching from "list" to "Sequence" which is covariant (reportArgumentType)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/tests/test_bucket_validation.py:235:59 - error: Argument of type "list[MagicMock]" cannot be assigned to parameter "values" of type "List[TaxonomyValue]" in function "validate_bucket_taxonomy_values"
+    "list[MagicMock]" is not assignable to "List[TaxonomyValue]"
+      Type parameter "_T@list" is invariant, but "MagicMock" is not the same as "TaxonomyValue"
+      Consider switching from "list" to "Sequence" which is covariant (reportArgumentType)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/tests/test_bucket_validation.py:245:59 - error: Argument of type "list[MagicMock]" cannot be assigned to parameter "values" of type "List[TaxonomyValue]" in function "validate_bucket_taxonomy_values"
+    "list[MagicMock]" is not assignable to "List[TaxonomyValue]"
+      Type parameter "_T@list" is invariant, but "MagicMock" is not the same as "TaxonomyValue"
+      Consider switching from "list" to "Sequence" which is covariant (reportArgumentType)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/tests/test_bucket_validation.py:257:59 - error: Argument of type "list[MagicMock]" cannot be assigned to parameter "values" of type "List[TaxonomyValue]" in function "validate_bucket_taxonomy_values"
+    "list[MagicMock]" is not assignable to "List[TaxonomyValue]"
+      Type parameter "_T@list" is invariant, but "MagicMock" is not the same as "TaxonomyValue"
+      Consider switching from "list" to "Sequence" which is covariant (reportArgumentType)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/tests/test_bucket_validation.py:280:59 - error: Argument of type "list[MagicMock]" cannot be assigned to parameter "values" of type "List[TaxonomyValue]" in function "validate_bucket_taxonomy_values"
+    "list[MagicMock]" is not assignable to "List[TaxonomyValue]"
+      Type parameter "_T@list" is invariant, but "MagicMock" is not the same as "TaxonomyValue"
+      Consider switching from "list" to "Sequence" which is covariant (reportArgumentType)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/tests/test_bucket_validation.py:296:59 - error: Argument of type "list[MagicMock]" cannot be assigned to parameter "values" of type "List[TaxonomyValue]" in function "validate_bucket_taxonomy_values"
+    "list[MagicMock]" is not assignable to "List[TaxonomyValue]"
+      Type parameter "_T@list" is invariant, but "MagicMock" is not the same as "TaxonomyValue"
+      Consider switching from "list" to "Sequence" which is covariant (reportArgumentType)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/tests/test_bucket_validation.py:311:59 - error: Argument of type "list[MagicMock]" cannot be assigned to parameter "values" of type "List[TaxonomyValue]" in function "validate_bucket_taxonomy_values"
+    "list[MagicMock]" is not assignable to "List[TaxonomyValue]"
+      Type parameter "_T@list" is invariant, but "MagicMock" is not the same as "TaxonomyValue"
+      Consider switching from "list" to "Sequence" which is covariant (reportArgumentType)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/tests/test_bucket_validation.py:327:13 - error: Argument of type "list[MagicMock]" cannot be assigned to parameter "values" of type "List[TaxonomyValue]" in function "validate_bucket_taxonomy_values"
+    "list[MagicMock]" is not assignable to "List[TaxonomyValue]"
+      Type parameter "_T@list" is invariant, but "MagicMock" is not the same as "TaxonomyValue"
+      Consider switching from "list" to "Sequence" which is covariant (reportArgumentType)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/tests/test_bucket_validation.py:333:16 - error: Operator "in" not supported for types "Literal['Overlap detected']" and "str | None"
+    Operator "in" not supported for types "Literal['Overlap detected']" and "None" (reportOperatorIssue)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/tests/test_bucket_validation.py:344:13 - error: Argument of type "list[MagicMock]" cannot be assigned to parameter "values" of type "List[TaxonomyValue]" in function "validate_bucket_taxonomy_values"
+    "list[MagicMock]" is not assignable to "List[TaxonomyValue]"
+      Type parameter "_T@list" is invariant, but "MagicMock" is not the same as "TaxonomyValue"
+      Consider switching from "list" to "Sequence" which is covariant (reportArgumentType)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/tests/test_bucket_validation.py:360:13 - error: Argument of type "list[MagicMock]" cannot be assigned to parameter "values" of type "List[TaxonomyValue]" in function "validate_bucket_taxonomy_values"
+    "list[MagicMock]" is not assignable to "List[TaxonomyValue]"
+      Type parameter "_T@list" is invariant, but "MagicMock" is not the same as "TaxonomyValue"
+      Consider switching from "list" to "Sequence" which is covariant (reportArgumentType)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/tests/test_bucket_validation.py:366:16 - error: Operator "in" not supported for types "Literal['Gap detected']" and "str | None"
+    Operator "in" not supported for types "Literal['Gap detected']" and "None" (reportOperatorIssue)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/tests/test_bucket_validation.py:378:59 - error: Argument of type "list[MagicMock]" cannot be assigned to parameter "values" of type "List[TaxonomyValue]" in function "validate_bucket_taxonomy_values"
+    "list[MagicMock]" is not assignable to "List[TaxonomyValue]"
+      Type parameter "_T@list" is invariant, but "MagicMock" is not the same as "TaxonomyValue"
+      Consider switching from "list" to "Sequence" which is covariant (reportArgumentType)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/tests/test_bucket_validation.py:380:16 - error: Operator "in" not supported for types "Literal['First Bucket']" and "str | None"
+    Operator "in" not supported for types "Literal['First Bucket']" and "None" (reportOperatorIssue)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/tests/test_bucket_validation.py:381:16 - error: Operator "in" not supported for types "Literal['Second Bucket']" and "str | None"
+    Operator "in" not supported for types "Literal['Second Bucket']" and "None" (reportOperatorIssue)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/tests/test_bucket_validation.py:389:59 - error: Argument of type "list[MagicMock]" cannot be assigned to parameter "values" of type "List[TaxonomyValue]" in function "validate_bucket_taxonomy_values"
+    "list[MagicMock]" is not assignable to "List[TaxonomyValue]"
+      Type parameter "_T@list" is invariant, but "MagicMock" is not the same as "TaxonomyValue"
+      Consider switching from "list" to "Sequence" which is covariant (reportArgumentType)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/tests/test_bucket_validation.py:391:16 - error: Operator "in" not supported for types "Literal['Alpha']" and "str | None"
+    Operator "in" not supported for types "Literal['Alpha']" and "None" (reportOperatorIssue)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/tests/test_bucket_validation.py:392:16 - error: Operator "in" not supported for types "Literal['Beta']" and "str | None"
+    Operator "in" not supported for types "Literal['Beta']" and "None" (reportOperatorIssue)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/tests/test_bucket_validation.py:400:59 - error: Argument of type "list[MagicMock]" cannot be assigned to parameter "values" of type "List[TaxonomyValue]" in function "validate_bucket_taxonomy_values"
+    "list[MagicMock]" is not assignable to "List[TaxonomyValue]"
+      Type parameter "_T@list" is invariant, but "MagicMock" is not the same as "TaxonomyValue"
+      Consider switching from "list" to "Sequence" which is covariant (reportArgumentType)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/tests/test_bucket_validation.py:402:16 - error: Operator "in" not supported for types "Literal['My Special Bucket']" and "str | None"
+    Operator "in" not supported for types "Literal['My Special Bucket']" and "None" (reportOperatorIssue)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/tests/test_bucket_validation.py:402:73 - error: "lower" is not a known attribute of "None" (reportOptionalMemberAccess)
+/Users/jamesmcintosh/Desktop/mrm_inv_3/api/tests/test_model_approval_status.py
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/tests/test_model_approval_status.py:617:27 - error: "old_status" is not a known attribute of "None" (reportOptionalMemberAccess)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/tests/test_model_approval_status.py:618:27 - error: "new_status" is not a known attribute of "None" (reportOptionalMemberAccess)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/tests/test_model_approval_status.py:642:27 - error: "old_status" is not a known attribute of "None" (reportOptionalMemberAccess)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/tests/test_model_approval_status.py:643:27 - error: "new_status" is not a known attribute of "None" (reportOptionalMemberAccess)
+/Users/jamesmcintosh/Desktop/mrm_inv_3/api/tests/test_model_submission_workflow.py
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/tests/test_model_submission_workflow.py:164:12 - error: Invalid conditional operand of type "ColumnElement[bool]"
+    Method __bool__ for type "ColumnElement[bool]" returns type "NoReturn" rather than "bool" (reportGeneralTypeIssues)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/tests/test_model_submission_workflow.py:206:12 - error: Invalid conditional operand of type "ColumnElement[bool]"
+    Method __bool__ for type "ColumnElement[bool]" returns type "NoReturn" rather than "bool" (reportGeneralTypeIssues)
+/Users/jamesmcintosh/Desktop/mrm_inv_3/api/tests/test_monitoring.py
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/tests/test_monitoring.py:3080:16 - error: Object of type "None" is not subscriptable (reportOptionalSubscript)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/tests/test_monitoring.py:3081:16 - error: Object of type "None" is not subscriptable (reportOptionalSubscript)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/tests/test_monitoring.py:3299:16 - error: Object of type "None" is not subscriptable (reportOptionalSubscript)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/tests/test_monitoring.py:3300:37 - error: Object of type "None" is not subscriptable (reportOptionalSubscript)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/tests/test_monitoring.py:3367:16 - error: Object of type "None" is not subscriptable (reportOptionalSubscript)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/tests/test_monitoring.py:3368:16 - error: Object of type "None" is not subscriptable (reportOptionalSubscript)
+/Users/jamesmcintosh/Desktop/mrm_inv_3/api/tests/test_risk_calculation.py
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/tests/test_risk_calculation.py:161:46 - error: Argument of type "None" cannot be assigned to parameter "rating" of type "str" in function "_create_factor_assessment"
+    "None" is not assignable to "str" (reportArgumentType)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/tests/test_risk_calculation.py:162:46 - error: Argument of type "None" cannot be assigned to parameter "rating" of type "str" in function "_create_factor_assessment"
+    "None" is not assignable to "str" (reportArgumentType)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/tests/test_risk_calculation.py:172:46 - error: Argument of type "None" cannot be assigned to parameter "rating" of type "str" in function "_create_factor_assessment"
+    "None" is not assignable to "str" (reportArgumentType)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/tests/test_risk_calculation.py:173:46 - error: Argument of type "None" cannot be assigned to parameter "rating" of type "str" in function "_create_factor_assessment"
+    "None" is not assignable to "str" (reportArgumentType)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/tests/test_risk_calculation.py:174:46 - error: Argument of type "None" cannot be assigned to parameter "rating" of type "str" in function "_create_factor_assessment"
+    "None" is not assignable to "str" (reportArgumentType)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/tests/test_risk_calculation.py:175:46 - error: Argument of type "None" cannot be assigned to parameter "rating" of type "str" in function "_create_factor_assessment"
+    "None" is not assignable to "str" (reportArgumentType)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/tests/test_risk_calculation.py:264:35 - error: Argument of type "None" cannot be assigned to parameter "quantitative_override" of type "str" in function "_create_assessment"
+    "None" is not assignable to "str" (reportArgumentType)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/tests/test_risk_calculation.py:266:34 - error: Argument of type "None" cannot be assigned to parameter "qualitative_override" of type "str" in function "_create_assessment"
+    "None" is not assignable to "str" (reportArgumentType)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/tests/test_risk_calculation.py:267:40 - error: Argument of type "None" cannot be assigned to parameter "derived_risk_tier_override" of type "str" in function "_create_assessment"
+    "None" is not assignable to "str" (reportArgumentType)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/tests/test_risk_calculation.py:282:34 - error: Argument of type "None" cannot be assigned to parameter "qualitative_override" of type "str" in function "_create_assessment"
+    "None" is not assignable to "str" (reportArgumentType)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/tests/test_risk_calculation.py:283:40 - error: Argument of type "None" cannot be assigned to parameter "derived_risk_tier_override" of type "str" in function "_create_assessment"
+    "None" is not assignable to "str" (reportArgumentType)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/tests/test_risk_calculation.py:296:35 - error: Argument of type "None" cannot be assigned to parameter "quantitative_override" of type "str" in function "_create_assessment"
+    "None" is not assignable to "str" (reportArgumentType)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/tests/test_risk_calculation.py:299:40 - error: Argument of type "None" cannot be assigned to parameter "derived_risk_tier_override" of type "str" in function "_create_assessment"
+    "None" is not assignable to "str" (reportArgumentType)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/tests/test_risk_calculation.py:312:35 - error: Argument of type "None" cannot be assigned to parameter "quantitative_override" of type "str" in function "_create_assessment"
+    "None" is not assignable to "str" (reportArgumentType)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/tests/test_risk_calculation.py:314:34 - error: Argument of type "None" cannot be assigned to parameter "qualitative_override" of type "str" in function "_create_assessment"
+    "None" is not assignable to "str" (reportArgumentType)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/tests/test_risk_calculation.py:343:33 - error: Argument of type "None" cannot be assigned to parameter "quantitative_rating" of type "str" in function "_create_assessment"
+    "None" is not assignable to "str" (reportArgumentType)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/tests/test_risk_calculation.py:344:35 - error: Argument of type "None" cannot be assigned to parameter "quantitative_override" of type "str" in function "_create_assessment"
+    "None" is not assignable to "str" (reportArgumentType)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/tests/test_risk_calculation.py:346:34 - error: Argument of type "None" cannot be assigned to parameter "qualitative_override" of type "str" in function "_create_assessment"
+    "None" is not assignable to "str" (reportArgumentType)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/tests/test_risk_calculation.py:347:40 - error: Argument of type "None" cannot be assigned to parameter "derived_risk_tier_override" of type "str" in function "_create_assessment"
+    "None" is not assignable to "str" (reportArgumentType)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/tests/test_risk_calculation.py:360:35 - error: Argument of type "None" cannot be assigned to parameter "quantitative_override" of type "str" in function "_create_assessment"
+    "None" is not assignable to "str" (reportArgumentType)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/tests/test_risk_calculation.py:361:42 - error: Argument of type "None" cannot be assigned to parameter "qualitative_calculated_level" of type "str" in function "_create_assessment"
+    "None" is not assignable to "str" (reportArgumentType)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/tests/test_risk_calculation.py:362:34 - error: Argument of type "None" cannot be assigned to parameter "qualitative_override" of type "str" in function "_create_assessment"
+    "None" is not assignable to "str" (reportArgumentType)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/tests/test_risk_calculation.py:363:40 - error: Argument of type "None" cannot be assigned to parameter "derived_risk_tier_override" of type "str" in function "_create_assessment"
+    "None" is not assignable to "str" (reportArgumentType)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/tests/test_risk_calculation.py:375:45 - error: Expression of type "None" cannot be assigned to parameter of type "str"
+    "None" is not assignable to "str" (reportArgumentType)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/tests/test_risk_calculation.py:384:32 - error: Expression of type "None" cannot be assigned to parameter of type "str"
+    "None" is not assignable to "str" (reportArgumentType)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/tests/test_risk_calculation.py:385:34 - error: Expression of type "None" cannot be assigned to parameter of type "str"
+    "None" is not assignable to "str" (reportArgumentType)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/tests/test_risk_calculation.py:386:41 - error: Expression of type "None" cannot be assigned to parameter of type "str"
+    "None" is not assignable to "str" (reportArgumentType)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/tests/test_risk_calculation.py:387:33 - error: Expression of type "None" cannot be assigned to parameter of type "str"
+    "None" is not assignable to "str" (reportArgumentType)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/tests/test_risk_calculation.py:388:39 - error: Expression of type "None" cannot be assigned to parameter of type "str"
+    "None" is not assignable to "str" (reportArgumentType)
+/Users/jamesmcintosh/Desktop/mrm_inv_3/api/tests/test_scorecard.py
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/tests/test_scorecard.py:168:47 - error: Argument of type "dict[str, str]" cannot be assigned to parameter "criteria_ratings" of type "dict[str, str | None]" in function "compute_section_summary"
+    "dict[str, str]" is not assignable to "dict[str, str | None]"
+      Type parameter "_VT@dict" is invariant, but "str" is not the same as "str | None"
+      Consider switching from "dict" to "Mapping" which is covariant in the value type (reportArgumentType)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/tests/test_scorecard.py:177:47 - error: Argument of type "dict[str, str]" cannot be assigned to parameter "criteria_ratings" of type "dict[str, str | None]" in function "compute_section_summary"
+    "dict[str, str]" is not assignable to "dict[str, str | None]"
+      Type parameter "_VT@dict" is invariant, but "str" is not the same as "str | None"
+      Consider switching from "dict" to "Mapping" which is covariant in the value type (reportArgumentType)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/tests/test_scorecard.py:214:47 - error: Argument of type "dict[str, str]" cannot be assigned to parameter "criteria_ratings" of type "dict[str, str | None]" in function "compute_section_summary"
+    "dict[str, str]" is not assignable to "dict[str, str | None]"
+      Type parameter "_VT@dict" is invariant, but "str" is not the same as "str | None"
+      Consider switching from "dict" to "Mapping" which is covariant in the value type (reportArgumentType)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/tests/test_scorecard.py:230:47 - error: Argument of type "dict[str, str]" cannot be assigned to parameter "criteria_ratings" of type "dict[str, str | None]" in function "compute_section_summary"
+    "dict[str, str]" is not assignable to "dict[str, str | None]"
+      Type parameter "_VT@dict" is invariant, but "str" is not the same as "str | None"
+      Consider switching from "dict" to "Mapping" which is covariant in the value type (reportArgumentType)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/tests/test_scorecard.py:257:47 - error: Argument of type "dict[str, str]" cannot be assigned to parameter "criteria_ratings" of type "dict[str, str | None]" in function "compute_section_summary"
+    "dict[str, str]" is not assignable to "dict[str, str | None]"
+      Type parameter "_VT@dict" is invariant, but "str" is not the same as "str | None"
+      Consider switching from "dict" to "Mapping" which is covariant in the value type (reportArgumentType)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/tests/test_scorecard.py:377:36 - error: Argument of type "dict[str, str]" cannot be assigned to parameter "criteria_ratings" of type "dict[str, str | None]" in function "compute_scorecard"
+    "dict[str, str]" is not assignable to "dict[str, str | None]"
+      Type parameter "_VT@dict" is invariant, but "str" is not the same as "str | None"
+      Consider switching from "dict" to "Mapping" which is covariant in the value type (reportArgumentType)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/tests/test_scorecard.py:395:36 - error: Argument of type "dict[str, str]" cannot be assigned to parameter "criteria_ratings" of type "dict[str, str | None]" in function "compute_scorecard"
+    "dict[str, str]" is not assignable to "dict[str, str | None]"
+      Type parameter "_VT@dict" is invariant, but "str" is not the same as "str | None"
+      Consider switching from "dict" to "Mapping" which is covariant in the value type (reportArgumentType)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/tests/test_scorecard.py:484:47 - error: Argument of type "dict[str, str]" cannot be assigned to parameter "criteria_ratings" of type "dict[str, str | None]" in function "compute_section_summary"
+    "dict[str, str]" is not assignable to "dict[str, str | None]"
+      Type parameter "_VT@dict" is invariant, but "str" is not the same as "str | None"
+      Consider switching from "dict" to "Mapping" which is covariant in the value type (reportArgumentType)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/tests/test_scorecard.py:499:47 - error: Argument of type "dict[str, str]" cannot be assigned to parameter "criteria_ratings" of type "dict[str, str | None]" in function "compute_section_summary"
+    "dict[str, str]" is not assignable to "dict[str, str | None]"
+      Type parameter "_VT@dict" is invariant, but "str" is not the same as "str | None"
+      Consider switching from "dict" to "Mapping" which is covariant in the value type (reportArgumentType)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/tests/test_scorecard.py:511:47 - error: Argument of type "dict[str, str]" cannot be assigned to parameter "criteria_ratings" of type "dict[str, str | None]" in function "compute_section_summary"
+    "dict[str, str]" is not assignable to "dict[str, str | None]"
+      Type parameter "_VT@dict" is invariant, but "str" is not the same as "str | None"
+      Consider switching from "dict" to "Mapping" which is covariant in the value type (reportArgumentType)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/tests/test_scorecard.py:520:48 - error: Argument of type "dict[str, str]" cannot be assigned to parameter "criteria_ratings" of type "dict[str, str | None]" in function "compute_section_summary"
+    "dict[str, str]" is not assignable to "dict[str, str | None]"
+      Type parameter "_VT@dict" is invariant, but "str" is not the same as "str | None"
+      Consider switching from "dict" to "Mapping" which is covariant in the value type (reportArgumentType)
+/Users/jamesmcintosh/Desktop/mrm_inv_3/api/tests/test_validation_warnings.py
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/tests/test_validation_warnings.py:362:49 - error: Cannot access attribute "insert" for class "FromClause"
+    Attribute "insert" is unknown (reportAttributeAccessIssue)
+/Users/jamesmcintosh/Desktop/mrm_inv_3/api/tests/test_validation_workflow.py
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/api/tests/test_validation_workflow.py:5699:24 - error: "model_id" is not a known attribute of "None" (reportOptionalMemberAccess)
+/Users/jamesmcintosh/Desktop/mrm_inv_3/documentation_audit.py
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/documentation_audit.py:7:6 - error: Import "playwright.sync_api" could not be resolved (reportMissingImports)
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/documentation_audit.py:42:16 - error: Import "pdfplumber" could not be resolved (reportMissingImports)
+/Users/jamesmcintosh/Desktop/mrm_inv_3/e2e_tests/conftest.py
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/e2e_tests/conftest.py:3:6 - error: Import "playwright.sync_api" could not be resolved (reportMissingImports)
+/Users/jamesmcintosh/Desktop/mrm_inv_3/e2e_tests/test_smoke.py
+  /Users/jamesmcintosh/Desktop/mrm_inv_3/e2e_tests/test_smoke.py:2:6 - error: Import "playwright.sync_api" could not be resolved (reportMissingImports)
+299 errors, 0 warnings, 0 informations

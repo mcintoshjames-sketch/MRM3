@@ -5,7 +5,7 @@ Revises: f36f4f06ec65
 Create Date: 2025-11-30 13:10:28.779189
 
 """
-from typing import Sequence, Union
+from typing import Sequence, Union, cast
 from alembic import op
 import sqlalchemy as sa
 
@@ -259,7 +259,7 @@ def downgrade() -> None:
     op.drop_index(op.f('ix_overdue_revalidation_comments_is_current'), table_name='overdue_revalidation_comments')
     op.create_index('ix_overdue_comments_request_current', 'overdue_revalidation_comments', ['validation_request_id', 'is_current'], unique=False)
     op.create_index('ix_overdue_comments_created_by', 'overdue_revalidation_comments', ['created_by_user_id'], unique=False)
-    op.drop_constraint(None, 'monitoring_results', type_='foreignkey')
+    op.drop_constraint(cast(str, None), 'monitoring_results', type_='foreignkey')
     op.create_foreign_key('monitoring_results_entered_by_user_id_fkey', 'monitoring_results', 'users', ['entered_by_user_id'], ['user_id'], ondelete='RESTRICT')
     op.drop_index(op.f('ix_monitoring_results_plan_metric_id'), table_name='monitoring_results')
     op.drop_index(op.f('ix_monitoring_results_model_id'), table_name='monitoring_results')

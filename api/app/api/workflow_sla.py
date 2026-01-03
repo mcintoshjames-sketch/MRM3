@@ -14,7 +14,7 @@ from app.schemas.workflow_sla import WorkflowSLAResponse, WorkflowSLAUpdate
 router = APIRouter()
 
 
-def create_audit_log(db: Session, entity_type: str, entity_id: int, action: str, user_id: int, changes: dict = None):
+def create_audit_log(db: Session, entity_type: str, entity_id: int, action: str, user_id: int, changes: dict | None = None):
     """Create an audit log entry for workflow SLA configuration changes."""
     audit_log = AuditLog(
         entity_type=entity_type,

@@ -1,5 +1,5 @@
 """API endpoints for approver roles management."""
-from typing import List
+from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from sqlalchemy import func
@@ -20,7 +20,7 @@ router = APIRouter(prefix="/approver-roles", tags=["Approver Roles"])
 
 @router.get("/", response_model=List[ApproverRoleListResponse])
 def list_approver_roles(
-    is_active: bool = None,
+    is_active: Optional[bool] = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):

@@ -1,6 +1,7 @@
 """Attestation routes - Model Risk Attestation workflow."""
-from typing import List, Optional
+from typing import List, Optional, cast
 from datetime import date, datetime, timedelta
+from decimal import Decimal
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import func, or_, and_
@@ -46,6 +47,7 @@ from app.schemas.attestation import (
     AttestationRecordResponse,
     AttestationRecordListResponse,
     MyAttestationResponse,
+    AttestationResponseResponse,
     # Question schemas
     AttestationQuestionResponse,
     AttestationQuestionUpdate,
@@ -73,11 +75,19 @@ from app.schemas.attestation import (
     CycleReminderResponse,
     OwnerAttestationWidgetResponse,
     CurrentCycleInfo,
+    ModelRef,
+    RegionRef,
+    TaxonomyValueRef,
+    UserRef,
     # Enums
     AttestationCycleStatusEnum,
     AttestationRecordStatusEnum,
     AttestationFrequencyEnum,
+    AttestationQuestionFrequencyEnum,
     AttestationDecisionEnum,
+    AttestationEvidenceTypeEnum,
+    AttestationSchedulingRuleTypeEnum,
+    AttestationChangeTypeEnum,
     # Bulk attestation schemas
     BulkAttestationStateResponse,
     BulkAttestationCycleInfo,
@@ -98,7 +108,14 @@ router = APIRouter()
 # HELPERS
 # ============================================================================
 
-def create_audit_log(db: Session, entity_type: str, entity_id: int, action: str, user_id: int, changes: dict = None):
+def create_audit_log(
+    db: Session,
+    entity_type: str,
+    entity_id: int,
+    action: str,
+    user_id: int,
+    changes: dict | None = None
+):
     """Create an audit log entry for attestation changes."""
     audit_log = AuditLog(
         entity_type=entity_type,
@@ -191,7 +208,7 @@ def get_attestation_questions(db: Session, frequency: Optional[str] = None) -> L
         query = query.filter(
             or_(
                 AttestationQuestionConfig.frequency_scope == frequency,
-                AttestationQuestionConfig.frequency_scope == "BOTH"
+                AttestationQuestionConfig.frequency_scope == AttestationQuestionFrequencyEnum.BOTH.value
             )
         )
 
@@ -199,6 +216,10 @@ def get_attestation_questions(db: Session, frequency: Optional[str] = None) -> L
 
     questions = []
     for value, config in results:
+        frequency_scope = AttestationQuestionFrequencyEnum.BOTH
+        if config and config.frequency_scope:
+            frequency_scope = AttestationQuestionFrequencyEnum(config.frequency_scope)
+
         questions.append(AttestationQuestionResponse(
             value_id=value.value_id,
             code=value.code,
@@ -206,7 +227,7 @@ def get_attestation_questions(db: Session, frequency: Optional[str] = None) -> L
             description=value.description,
             sort_order=value.sort_order,
             is_active=value.is_active,
-            frequency_scope=config.frequency_scope if config else "BOTH",
+            frequency_scope=frequency_scope,
             requires_comment_if_no=config.requires_comment_if_no if config else False
         ))
 
@@ -554,13 +575,13 @@ def _build_cycle_response(cycle: AttestationCycle, db: Session) -> AttestationCy
     if cycle.opened_by_user_id:
         user = db.query(User).filter(User.user_id == cycle.opened_by_user_id).first()
         if user:
-            opened_by = {"user_id": user.user_id, "email": user.email, "full_name": user.full_name}
+            opened_by = UserRef.model_validate(user)
 
     closed_by = None
     if cycle.closed_by_user_id:
         user = db.query(User).filter(User.user_id == cycle.closed_by_user_id).first()
         if user:
-            closed_by = {"user_id": user.user_id, "email": user.email, "full_name": user.full_name}
+            closed_by = UserRef.model_validate(user)
 
     return AttestationCycleResponse(
         cycle_id=cycle.cycle_id,
@@ -724,7 +745,7 @@ def get_my_upcoming_attestations(
                 cycle_id=cycle.cycle_id,
                 cycle_name=cycle.cycle_name,
                 submission_due_date=cycle.submission_due_date,
-                status=cycle.status.value if hasattr(cycle.status, 'value') else str(cycle.status)
+                status=str(cycle.status)
             )
 
     # Calculate days until due (use first pending attestation's due date)
@@ -808,6 +829,13 @@ def list_records(
             if tier:
                 risk_tier_code = tier.code
 
+        decision = None
+        if record.decision:
+            try:
+                decision = AttestationDecisionEnum(record.decision)
+            except ValueError:
+                decision = None
+
         result.append(AttestationRecordListResponse(
             attestation_id=record.attestation_id,
             cycle_id=cycle.cycle_id,
@@ -819,7 +847,7 @@ def list_records(
             attesting_user_name=attesting_user.full_name,
             due_date=record.due_date,
             status=AttestationRecordStatusEnum(record.status),
-            decision=record.decision,
+            decision=decision,
             attested_at=record.attested_at,
             is_overdue=is_overdue,
             days_overdue=days_overdue
@@ -1187,14 +1215,18 @@ def add_evidence(
     db.refresh(evidence)
 
     added_by = db.query(User).filter(User.user_id == evidence.added_by_user_id).first()
+    if not added_by:
+        raise HTTPException(status_code=500, detail="Evidence added_by user not found")
+
+    added_by_ref = UserRef.model_validate(added_by)
 
     return AttestationEvidenceResponse(
         evidence_id=evidence.evidence_id,
         attestation_id=evidence.attestation_id,
-        evidence_type=evidence.evidence_type,
+        evidence_type=AttestationEvidenceTypeEnum(evidence.evidence_type),
         url=evidence.url,
         description=evidence.description,
-        added_by={"user_id": added_by.user_id, "email": added_by.email, "full_name": added_by.full_name} if added_by else None,
+        added_by=added_by_ref,
         added_at=evidence.added_at
     )
 
@@ -1270,20 +1302,16 @@ def _build_record_response(record: AttestationRecord, db: Session) -> Attestatio
             risk_tier_code = tier.code
             risk_tier_label = tier.label
 
-    model_ref = {
-        "model_id": model.model_id,
-        "model_name": model.model_name,
-        "risk_tier_code": risk_tier_code,
-        "risk_tier_label": risk_tier_label,
-        "owner_id": model.owner_id,
-        "owner_name": owner.full_name if owner else None
-    }
+    model_ref = ModelRef(
+        model_id=model.model_id,
+        model_name=model.model_name,
+        risk_tier_code=risk_tier_code,
+        risk_tier_label=risk_tier_label,
+        owner_id=model.owner_id,
+        owner_name=owner.full_name if owner else None
+    )
 
-    attesting_user_ref = {
-        "user_id": attesting_user.user_id,
-        "email": attesting_user.email,
-        "full_name": attesting_user.full_name
-    }
+    attesting_user_ref = UserRef.model_validate(attesting_user)
 
     applied_frequency = record.applied_frequency
     applied_rule_id = record.applied_rule_id
@@ -1293,15 +1321,18 @@ def _build_record_response(record: AttestationRecord, db: Session) -> Attestatio
         if applied_rule and not applied_rule_id:
             applied_rule_id = applied_rule.rule_id
 
+    applied_frequency_enum = None
+    if applied_frequency:
+        try:
+            applied_frequency_enum = AttestationFrequencyEnum(applied_frequency)
+        except ValueError:
+            applied_frequency_enum = None
+
     reviewed_by_ref = None
     if record.reviewed_by_user_id:
         reviewer = db.query(User).filter(User.user_id == record.reviewed_by_user_id).first()
         if reviewer:
-            reviewed_by_ref = {
-                "user_id": reviewer.user_id,
-                "email": reviewer.email,
-                "full_name": reviewer.full_name
-            }
+            reviewed_by_ref = UserRef.model_validate(reviewer)
 
     # Build responses
     responses = []
@@ -1313,42 +1344,51 @@ def _build_record_response(record: AttestationRecord, db: Session) -> Attestatio
             AttestationQuestionConfig.question_value_id == resp.question_id
         ).first()
 
-        responses.append({
-            "response_id": resp.response_id,
-            "attestation_id": resp.attestation_id,
-            "question_id": resp.question_id,
-            "answer": resp.answer,
-            "comment": resp.comment,
-            "created_at": resp.created_at,
-            "question": {
-                "value_id": question.value_id,
-                "code": question.code,
-                "label": question.label,
-                "description": question.description,
-                "sort_order": question.sort_order,
-                "is_active": question.is_active,
-                "frequency_scope": config.frequency_scope if config else "BOTH",
-                "requires_comment_if_no": config.requires_comment_if_no if config else False
-            } if question else None
-        })
+        question_ref = None
+        if question:
+            frequency_scope = AttestationQuestionFrequencyEnum.BOTH
+            if config and config.frequency_scope:
+                frequency_scope = AttestationQuestionFrequencyEnum(config.frequency_scope)
+
+            question_ref = AttestationQuestionResponse(
+                value_id=question.value_id,
+                code=question.code,
+                label=question.label,
+                description=question.description,
+                sort_order=question.sort_order,
+                is_active=question.is_active,
+                frequency_scope=frequency_scope,
+                requires_comment_if_no=config.requires_comment_if_no if config else False
+            )
+
+        responses.append(AttestationResponseResponse(
+            response_id=resp.response_id,
+            attestation_id=resp.attestation_id,
+            question_id=resp.question_id,
+            answer=resp.answer,
+            comment=resp.comment,
+            created_at=resp.created_at,
+            question=question_ref
+        ))
 
     # Build evidence
     evidence = []
     for ev in record.evidence:
         added_by = db.query(User).filter(User.user_id == ev.added_by_user_id).first()
-        evidence.append({
-            "evidence_id": ev.evidence_id,
-            "attestation_id": ev.attestation_id,
-            "evidence_type": ev.evidence_type,
-            "url": ev.url,
-            "description": ev.description,
-            "added_by": {
-                "user_id": added_by.user_id,
-                "email": added_by.email,
-                "full_name": added_by.full_name
-            } if added_by else None,
-            "added_at": ev.added_at
-        })
+        if not added_by:
+            raise HTTPException(status_code=500, detail="Evidence added_by user not found")
+
+        added_by_ref = UserRef.model_validate(added_by)
+
+        evidence.append(AttestationEvidenceResponse(
+            evidence_id=ev.evidence_id,
+            attestation_id=ev.attestation_id,
+            evidence_type=AttestationEvidenceTypeEnum(ev.evidence_type),
+            url=ev.url,
+            description=ev.description,
+            added_by=added_by_ref,
+            added_at=ev.added_at
+        ))
 
     # Build change links
     change_links = []
@@ -1357,21 +1397,28 @@ def _build_record_response(record: AttestationRecord, db: Session) -> Attestatio
         if link.model_id:
             target_model = db.query(Model).filter(Model.model_id == link.model_id).first()
             if target_model:
-                link_model_ref = {
-                    "model_id": target_model.model_id,
-                    "model_name": target_model.model_name
-                }
+                link_model_ref = ModelRef(
+                    model_id=target_model.model_id,
+                    model_name=target_model.model_name
+                )
 
-        change_links.append({
-            "link_id": link.link_id,
-            "attestation_id": link.attestation_id,
-            "pending_edit_id": link.pending_edit_id,
-            "change_type": link.change_type,
-            "model_id": link.model_id,
-            "decommissioning_request_id": link.decommissioning_request_id,
-            "created_at": link.created_at,
-            "model": link_model_ref
-        })
+        change_links.append(AttestationChangeLinkResponse(
+            link_id=link.link_id,
+            attestation_id=link.attestation_id,
+            change_type=AttestationChangeTypeEnum(link.change_type),
+            pending_edit_id=link.pending_edit_id,
+            model_id=link.model_id,
+            decommissioning_request_id=link.decommissioning_request_id,
+            created_at=link.created_at,
+            model=link_model_ref
+        ))
+
+    decision = None
+    if record.decision:
+        try:
+            decision = AttestationDecisionEnum(record.decision)
+        except ValueError:
+            decision = None
 
     return AttestationRecordResponse(
         attestation_id=record.attestation_id,
@@ -1380,10 +1427,10 @@ def _build_record_response(record: AttestationRecord, db: Session) -> Attestatio
         attesting_user=attesting_user_ref,
         due_date=record.due_date,
         applied_rule_id=applied_rule_id,
-        applied_frequency=applied_frequency,
+        applied_frequency=applied_frequency_enum,
         status=AttestationRecordStatusEnum(record.status),
         attested_at=record.attested_at,
-        decision=record.decision,
+        decision=decision,
         decision_comment=record.decision_comment,
         reviewed_by=reviewed_by_ref,
         reviewed_at=record.reviewed_at,
@@ -1436,6 +1483,10 @@ def list_all_questions(
 
     questions = []
     for value, config in results:
+        frequency_scope = AttestationQuestionFrequencyEnum.BOTH
+        if config and config.frequency_scope:
+            frequency_scope = AttestationQuestionFrequencyEnum(config.frequency_scope)
+
         questions.append(AttestationQuestionResponse(
             value_id=value.value_id,
             code=value.code,
@@ -1443,7 +1494,7 @@ def list_all_questions(
             description=value.description,
             sort_order=value.sort_order,
             is_active=value.is_active,
-            frequency_scope=config.frequency_scope if config else "BOTH",
+            frequency_scope=frequency_scope,
             requires_comment_if_no=config.requires_comment_if_no if config else False
         ))
 
@@ -1492,6 +1543,8 @@ def update_question(
 
     config_fields = ['frequency_scope', 'requires_comment_if_no']
     config_updates = {k: v for k, v in update_data.items() if k in config_fields}
+    if "frequency_scope" in config_updates and isinstance(config_updates["frequency_scope"], AttestationQuestionFrequencyEnum):
+        config_updates["frequency_scope"] = config_updates["frequency_scope"].value
 
     if config_updates:
         if config:
@@ -1503,7 +1556,7 @@ def update_question(
             # Create new config with defaults
             config = AttestationQuestionConfig(
                 question_value_id=value_id,
-                frequency_scope=config_updates.get('frequency_scope', 'BOTH'),
+                frequency_scope=config_updates.get('frequency_scope', AttestationQuestionFrequencyEnum.BOTH.value),
                 requires_comment_if_no=config_updates.get('requires_comment_if_no', False)
             )
             db.add(config)
@@ -1523,6 +1576,10 @@ def update_question(
     if config:
         db.refresh(config)
 
+    frequency_scope = AttestationQuestionFrequencyEnum.BOTH
+    if config and config.frequency_scope:
+        frequency_scope = AttestationQuestionFrequencyEnum(config.frequency_scope)
+
     return AttestationQuestionResponse(
         value_id=value.value_id,
         code=value.code,
@@ -1530,7 +1587,7 @@ def update_question(
         description=value.description,
         sort_order=value.sort_order,
         is_active=value.is_active,
-        frequency_scope=config.frequency_scope if config else "BOTH",
+        frequency_scope=frequency_scope,
         requires_comment_if_no=config.requires_comment_if_no if config else False
     )
 
@@ -1893,24 +1950,33 @@ def _build_rule_response(rule: AttestationSchedulingRule, db: Session) -> Attest
     if rule.model_id:
         model = db.query(Model).filter(Model.model_id == rule.model_id).first()
         if model:
-            model_ref = {"model_id": model.model_id, "model_name": model.model_name}
+            model_ref = ModelRef(model_id=model.model_id, model_name=model.model_name)
 
     region_ref = None
     if rule.region_id:
         region = db.query(Region).filter(Region.region_id == rule.region_id).first()
         if region:
-            region_ref = {"region_id": region.region_id, "region_name": region.name, "region_code": region.code}
+            region_ref = RegionRef(
+                region_id=region.region_id,
+                region_name=region.name,
+                region_code=region.code
+            )
 
     created_by = db.query(User).filter(User.user_id == rule.created_by_user_id).first()
+    if not created_by:
+        raise HTTPException(status_code=500, detail="Rule created_by user not found")
     updated_by = None
     if rule.updated_by_user_id:
         updated_by = db.query(User).filter(User.user_id == rule.updated_by_user_id).first()
 
+    created_by_ref = UserRef.model_validate(created_by)
+    updated_by_ref = UserRef.model_validate(updated_by) if updated_by else None
+
     return AttestationSchedulingRuleResponse(
         rule_id=rule.rule_id,
         rule_name=rule.rule_name,
-        rule_type=rule.rule_type,
-        frequency=rule.frequency,
+        rule_type=AttestationSchedulingRuleTypeEnum(rule.rule_type),
+        frequency=AttestationFrequencyEnum(rule.frequency),
         priority=rule.priority,
         is_active=rule.is_active,
         owner_model_count_min=rule.owner_model_count_min,
@@ -1921,8 +1987,8 @@ def _build_rule_response(rule: AttestationSchedulingRule, db: Session) -> Attest
         end_date=rule.end_date,
         model=model_ref,
         region=region_ref,
-        created_by={"user_id": created_by.user_id, "email": created_by.email, "full_name": created_by.full_name} if created_by else None,
-        updated_by={"user_id": updated_by.user_id, "email": updated_by.email, "full_name": updated_by.full_name} if updated_by else None,
+        created_by=created_by_ref,
+        updated_by=updated_by_ref,
         created_at=rule.created_at,
         updated_at=rule.updated_at
     )
@@ -1987,16 +2053,28 @@ def _build_target_response(target: CoverageTarget, db: Session) -> CoverageTarge
     ).first()
 
     created_by = db.query(User).filter(User.user_id == target.created_by_user_id).first()
+    if not tier:
+        raise HTTPException(status_code=500, detail="Target risk tier not found")
+    if not created_by:
+        raise HTTPException(status_code=500, detail="Target created_by user not found")
+
+    risk_tier_ref = TaxonomyValueRef(
+        value_id=tier.value_id,
+        code=tier.code,
+        label=tier.label
+    )
+
+    created_by_ref = UserRef.model_validate(created_by)
 
     return CoverageTargetResponse(
         target_id=target.target_id,
         risk_tier_id=target.risk_tier_id,
-        target_percentage=target.target_percentage,
+        target_percentage=Decimal(str(target.target_percentage)),
         is_blocking=target.is_blocking,
         effective_date=target.effective_date,
         end_date=target.end_date,
-        risk_tier={"value_id": tier.value_id, "code": tier.code, "label": tier.label} if tier else None,
-        created_by={"user_id": created_by.user_id, "email": created_by.email, "full_name": created_by.full_name} if created_by else None,
+        risk_tier=risk_tier_ref,
+        created_by=created_by_ref,
         created_at=target.created_at,
         updated_at=target.updated_at
     )
@@ -2076,12 +2154,14 @@ def get_coverage_report(
             if record.status == AttestationRecordStatus.PENDING.value:
                 model = record.model
                 owner = db.query(User).filter(User.user_id == model.owner_id).first()
-                models_not_attested.append({
-                    "model_id": model.model_id,
-                    "model_name": model.model_name,
-                    "risk_tier_code": tier.code,
-                    "owner_name": owner.full_name if owner else "Unknown"
-                })
+                models_not_attested.append(ModelRef(
+                    model_id=model.model_id,
+                    model_name=model.model_name,
+                    risk_tier_code=tier.code,
+                    risk_tier_label=tier.label,
+                    owner_id=model.owner_id,
+                    owner_name=owner.full_name if owner else "Unknown"
+                ))
 
         coverage_by_tier.append(CoverageByTierResponse(
             risk_tier_code=tier.code,
@@ -2516,7 +2596,7 @@ def link_change_to_attestation(
             if not pending_edit:
                 raise HTTPException(status_code=404, detail="Pending edit not found")
             # Verify pending edit belongs to the same model
-            if pending_edit.model_id != link_in.model_id:
+            if cast(int, pending_edit.model_id) != cast(int, link_in.model_id):
                 raise HTTPException(
                     status_code=400,
                     detail="Pending edit does not belong to the specified model"
@@ -2660,12 +2740,12 @@ def _build_link_response(link: AttestationChangeLink, db: Session) -> Attestatio
     if link.model_id:
         target_model = db.query(Model).filter(Model.model_id == link.model_id).first()
         if target_model:
-            model_ref = {"model_id": target_model.model_id, "model_name": target_model.model_name}
+            model_ref = ModelRef(model_id=target_model.model_id, model_name=target_model.model_name)
 
     return AttestationChangeLinkResponse(
         link_id=link.link_id,
         attestation_id=link.attestation_id,
-        change_type=link.change_type,
+        change_type=AttestationChangeTypeEnum(link.change_type),
         pending_edit_id=link.pending_edit_id,
         model_id=link.model_id,
         decommissioning_request_id=link.decommissioning_request_id,
@@ -2688,6 +2768,8 @@ def get_all_linked_changes(
     """
     if not (is_admin(current_user) or is_validator(current_user)):
         raise HTTPException(status_code=403, detail="Admin or Validator access required")
+
+    from app.models.decommissioning import DecommissioningRequest
 
     # Query all linked changes with joins
     query = db.query(AttestationChangeLink).join(
@@ -2712,6 +2794,8 @@ def get_all_linked_changes(
         record = db.query(AttestationRecord).filter(
             AttestationRecord.attestation_id == link.attestation_id
         ).first()
+        if not record:
+            continue
         model = db.query(Model).filter(Model.model_id == record.model_id).first()
         owner = db.query(User).filter(User.user_id == model.owner_id).first() if model else None
         cycle = db.query(AttestationCycle).filter(

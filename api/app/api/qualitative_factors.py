@@ -45,7 +45,7 @@ def require_admin(current_user: User = Depends(get_current_user)) -> User:
 
 def create_audit_log(
     db: Session, entity_type: str, entity_id: int,
-    action: str, user_id: int, changes: dict = None
+    action: str, user_id: int, changes: dict | None = None
 ):
     """Create an audit log entry for factor/guidance changes."""
     audit_log = AuditLog(

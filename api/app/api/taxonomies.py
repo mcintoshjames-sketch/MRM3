@@ -39,7 +39,7 @@ def is_system_protected_override(value: TaxonomyValue) -> bool:
     return value.code in protected_codes
 
 
-def create_audit_log(db: Session, entity_type: str, entity_id: int, action: str, user_id: int, changes: dict = None):
+def create_audit_log(db: Session, entity_type: str, entity_id: int, action: str, user_id: int, changes: dict | None = None):
     """Create an audit log entry for taxonomy operations."""
     audit_log = AuditLog(
         entity_type=entity_type,

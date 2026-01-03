@@ -150,6 +150,8 @@ def upgrade() -> None:
                 }
             )
             lob_id = result.scalar()
+            if lob_id is None:
+                raise RuntimeError(f"Failed to insert LOB unit {item['code']}")
             code_to_id[item['code']] = lob_id
 
     # 3. Add lob_id column to users table (nullable initially)

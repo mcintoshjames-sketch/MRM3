@@ -91,6 +91,8 @@ def backfill_monitoring_results_outcomes(
             summary["skipped_no_snapshot"] += 1
             continue
 
+        if result.numeric_value is None:
+            continue
         new_outcome = calculate_outcome(result.numeric_value, snapshot)
         old_outcome = result.calculated_outcome
 
