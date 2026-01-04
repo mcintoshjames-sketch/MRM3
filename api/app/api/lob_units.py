@@ -33,6 +33,48 @@ router = APIRouter()
 MAX_LOB_IMPORT_BYTES = 10 * 1024 * 1024
 
 
+class LimitedStream:
+    """File-like wrapper that enforces a max byte read limit."""
+
+    def __init__(self, raw, max_bytes: int):
+        self.raw = raw
+        self.max_bytes = max_bytes
+        self.bytes_read = 0
+
+    def read(self, size=-1):
+        data = self.raw.read(size)
+        self._track(len(data))
+        return data
+
+    def read1(self, size=-1):
+        data = self.raw.read1(size) if hasattr(self.raw, "read1") else self.raw.read(size)
+        self._track(len(data))
+        return data
+
+    def readline(self, size=-1):
+        data = self.raw.readline(size)
+        self._track(len(data))
+        return data
+
+    def readinto(self, b):
+        length = self.raw.readinto(b)
+        if length is None:
+            return length
+        self._track(length)
+        return length
+
+    def _track(self, length: int) -> None:
+        self.bytes_read += length
+        if self.bytes_read > self.max_bytes:
+            raise HTTPException(
+                status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                detail=f"CSV too large. Max size is {self.max_bytes} bytes."
+            )
+
+    def __getattr__(self, name):
+        return getattr(self.raw, name)
+
+
 @dataclass
 class LOBPlaceholder:
     """Lightweight placeholder for dry-run imports."""
@@ -657,20 +699,28 @@ async def import_lob_csv(
     """
     check_admin(current_user)
 
-    # Read and parse CSV (enforce max size)
-    content = await file.read(MAX_LOB_IMPORT_BYTES + 1)
-    if len(content) > MAX_LOB_IMPORT_BYTES:
-        raise HTTPException(
-            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-            detail=f"CSV too large. Max size is {MAX_LOB_IMPORT_BYTES} bytes."
-        )
+    # Read and parse CSV (streaming with size enforcement)
     try:
-        text_content = content.decode('utf-8')
-    except UnicodeDecodeError:
-        text_content = content.decode('latin-1')
+        file.file.seek(0)
+        sample = file.file.read(4096)
+        file.file.seek(0)
+        try:
+            sample.decode('utf-8')
+            encoding = 'utf-8'
+        except UnicodeDecodeError:
+            encoding = 'latin-1'
 
-    reader = csv.DictReader(io.StringIO(text_content))
-    headers = reader.fieldnames or []
+        limited_stream = LimitedStream(file.file, MAX_LOB_IMPORT_BYTES)
+        text_stream = io.TextIOWrapper(limited_stream, encoding=encoding)
+        reader = csv.DictReader(text_stream)
+        headers = reader.fieldnames or []
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Failed to parse CSV: {str(e)}"
+        )
 
     # Build lookup for existing LOB units
     existing_lobs = db.query(LOBUnit).all()

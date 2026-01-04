@@ -20,7 +20,7 @@ Key Features:
 from typing import List, Optional
 from datetime import datetime
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy import select, func, case
+from sqlalchemy import select, func, case, desc
 from sqlalchemy.orm import Session, joinedload, aliased
 from pydantic import BaseModel, Field
 
@@ -184,6 +184,38 @@ async def get_regional_deployment_compliance_report(
             team = db.query(Team).filter(Team.team_id == team_id).first()
             team_filter_name = team.name if team else f"Team {team_id}"
 
+    # Pre-fetch region-specific approvals in a single query
+    approval_map = {}
+    approval_pairs = {
+        (row.validation_request_id, row.region_id)
+        for row in results
+        if row.validation_request_id and row.requires_regional_approval
+    }
+    if approval_pairs:
+        request_ids = {pair[0] for pair in approval_pairs}
+        region_ids = {pair[1] for pair in approval_pairs}
+        approvals = db.execute(
+            select(
+                ValidationApproval.request_id,
+                ValidationApproval.region_id,
+                ValidationApproval.approval_status,
+                User.full_name.label('approver_name'),
+                ValidationApproval.approver_role,
+                ValidationApproval.approved_at,
+            )
+            .select_from(ValidationApproval)
+            .join(User, ValidationApproval.approver_id == User.user_id)
+            .where(ValidationApproval.request_id.in_(request_ids))
+            .where(ValidationApproval.region_id.in_(region_ids))
+            .where(ValidationApproval.approval_type == 'Regional')
+            .order_by(desc(ValidationApproval.approved_at))
+        ).all()
+
+        for approval in approvals:
+            key = (approval.request_id, approval.region_id)
+            if key not in approval_map:
+                approval_map[key] = approval
+
     # Now we need to get region-specific approval information
     records = []
     for row in results:
@@ -195,23 +227,7 @@ async def get_regional_deployment_compliance_report(
         regional_approval_date = None
 
         if row.validation_request_id and row.requires_regional_approval:
-            # Query for regional approval specific to THIS region
-            approval_query = (
-                select(
-                    ValidationApproval.approval_status,
-                    User.full_name.label('approver_name'),
-                    ValidationApproval.approver_role,
-                    ValidationApproval.approved_at,
-                )
-                .select_from(ValidationApproval)
-                .join(User, ValidationApproval.approver_id == User.user_id)
-                .where(ValidationApproval.request_id == row.validation_request_id)
-                .where(ValidationApproval.approval_type == 'Regional')
-                .where(ValidationApproval.region_id == row.region_id)  # ✅ NOW POSSIBLE!
-            )
-
-            approval = db.execute(approval_query).first()
-
+            approval = approval_map.get((row.validation_request_id, row.region_id))
             if approval:
                 has_regional_approval = True
                 regional_approver_name = approval.approver_name

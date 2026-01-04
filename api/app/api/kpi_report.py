@@ -1,8 +1,10 @@
 """KPI Report API endpoint - computes model risk management metrics."""
 from datetime import date, datetime, timedelta
+import time
 from typing import Optional, List, Dict, Any
 from fastapi import APIRouter, Depends, Query, HTTPException
-from sqlalchemy.orm import Session, joinedload
+from dateutil.relativedelta import relativedelta
+from sqlalchemy.orm import Session, joinedload, aliased
 from sqlalchemy import func, and_, or_, case
 
 from app.core.database import get_db
@@ -13,6 +15,9 @@ from app.models import (
     User,
     ValidationRequest,
     ValidationRequestModelVersion,
+    ValidationPolicy,
+    ValidationWorkflowSLA,
+    ValidationOutcome,
     TaxonomyValue,
     Recommendation,
     DecommissioningRequest,
@@ -41,6 +46,8 @@ from app.schemas.kpi_report import (
 )
 
 router = APIRouter(prefix="/kpi-report", tags=["reports"])
+KPI_CACHE_TTL_SECONDS = 600
+_KPI_CACHE: Dict[tuple[Optional[int], Optional[int]], Dict[str, Any]] = {}
 
 
 # Metric definitions from METRICS.json (excluding 4.13, 4.15, 4.26; merging 4.7/4.28)
@@ -243,6 +250,20 @@ def _safe_percentage(numerator: int, denominator: int) -> float:
     return round((numerator / denominator) * 100, 2)
 
 
+def _get_cached_report(key: tuple[Optional[int], Optional[int]]) -> Optional[KPIReportResponse]:
+    entry = _KPI_CACHE.get(key)
+    if not entry:
+        return None
+    if entry["expires_at"] <= time.time():
+        _KPI_CACHE.pop(key, None)
+        return None
+    return entry["value"]
+
+
+def _set_cached_report(key: tuple[Optional[int], Optional[int]], value: KPIReportResponse) -> None:
+    _KPI_CACHE[key] = {"value": value, "expires_at": time.time() + KPI_CACHE_TTL_SECONDS}
+
+
 def _compute_metric_4_1(db: Session, active_models: List[Model]) -> KPIMetric:
     """4.1 - Total Number of Active Models"""
     return _create_metric("4.1", count_value=len(active_models))
@@ -360,9 +381,6 @@ def _compute_validation_metrics(
     active_models: List[Model]
 ) -> Dict[str, Any]:
     """Compute validation-related metrics (4.6, 4.7, 4.8, 4.9)."""
-    from app.api.validation_workflow import calculate_model_revalidation_status
-    from app.core.model_approval_status import compute_model_approval_status, ApprovalStatus
-
     total_models = len(active_models)
     on_time_count = 0
     overdue_count = 0
@@ -370,10 +388,170 @@ def _compute_validation_metrics(
     on_time_model_ids: List[int] = []
     overdue_model_ids: List[int] = []
 
-    for model in active_models:
-        # Revalidation status for 4.6 and 4.7
-        reval_status = calculate_model_revalidation_status(model, db)
-        status_str = reval_status.get("status", "")
+    model_ids = [model.model_id for model in active_models]
+    if model_ids:
+        # Preload policy and workflow SLA
+        policy_by_tier: Dict[int, ValidationPolicy] = {}
+        tier_ids = {model.risk_tier_id for model in active_models if model.risk_tier_id}
+        if tier_ids:
+            policies = db.query(ValidationPolicy).filter(
+                ValidationPolicy.risk_tier_id.in_(tier_ids)
+            ).all()
+            policy_by_tier = {policy.risk_tier_id: policy for policy in policies}
+
+        workflow_sla = db.query(ValidationWorkflowSLA).filter(
+            ValidationWorkflowSLA.workflow_type == "Validation"
+        ).first()
+        sla_days = 0
+        if workflow_sla:
+            sla_days = (workflow_sla.assignment_days or 0) + \
+                       (workflow_sla.begin_work_days or 0) + \
+                       (workflow_sla.approval_days or 0)
+
+        # Latest approved validation per model
+        status_value = aliased(TaxonomyValue)
+        last_subq = db.query(
+            ValidationRequestModelVersion.model_id.label("model_id"),
+            ValidationRequest.request_id.label("request_id"),
+            ValidationRequest.completion_date.label("completion_date"),
+            ValidationRequest.updated_at.label("updated_at"),
+            ValidationRequest.validation_type_id.label("validation_type_id"),
+            func.row_number().over(
+                partition_by=ValidationRequestModelVersion.model_id,
+                order_by=ValidationRequest.updated_at.desc()
+            ).label("rn"),
+        ).join(
+            ValidationRequest,
+            ValidationRequest.request_id == ValidationRequestModelVersion.request_id
+        ).join(
+            status_value,
+            status_value.value_id == ValidationRequest.current_status_id
+        ).filter(
+            ValidationRequestModelVersion.model_id.in_(model_ids),
+            status_value.code == "APPROVED"
+        ).subquery()
+
+        last_rows = db.query(last_subq).filter(last_subq.c.rn == 1).all()
+        last_by_model = {row.model_id: row for row in last_rows}
+        last_request_ids = [row.request_id for row in last_rows]
+
+        # Validation type code lookup (for INTERIM detection)
+        type_code_by_id: Dict[int, str] = {}
+        type_ids = {row.validation_type_id for row in last_rows if row.validation_type_id}
+        if type_ids:
+            type_rows = db.query(
+                TaxonomyValue.value_id,
+                TaxonomyValue.code
+            ).filter(TaxonomyValue.value_id.in_(type_ids)).all()
+            type_code_by_id = {value_id: code for value_id, code in type_rows}
+
+        # Models with approved full validations (INITIAL/COMPREHENSIVE)
+        full_status = aliased(TaxonomyValue)
+        full_type = aliased(TaxonomyValue)
+        full_rows = db.query(
+            ValidationRequestModelVersion.model_id
+        ).join(
+            ValidationRequest,
+            ValidationRequest.request_id == ValidationRequestModelVersion.request_id
+        ).join(
+            full_status,
+            full_status.value_id == ValidationRequest.current_status_id
+        ).join(
+            full_type,
+            full_type.value_id == ValidationRequest.validation_type_id
+        ).filter(
+            ValidationRequestModelVersion.model_id.in_(model_ids),
+            full_status.code == "APPROVED",
+            full_type.code.in_(["INITIAL", "COMPREHENSIVE"])
+        ).distinct().all()
+        full_model_ids = {row.model_id for row in full_rows}
+
+        # Interim expiration per model
+        interim_status = aliased(TaxonomyValue)
+        interim_type = aliased(TaxonomyValue)
+        interim_rows = db.query(
+            ValidationRequestModelVersion.model_id.label("model_id"),
+            func.max(ValidationOutcome.expiration_date).label("expiration_date")
+        ).join(
+            ValidationRequest,
+            ValidationRequest.request_id == ValidationRequestModelVersion.request_id
+        ).join(
+            interim_status,
+            interim_status.value_id == ValidationRequest.current_status_id
+        ).join(
+            interim_type,
+            interim_type.value_id == ValidationRequest.validation_type_id
+        ).join(
+            ValidationOutcome,
+            ValidationOutcome.request_id == ValidationRequest.request_id
+        ).filter(
+            ValidationRequestModelVersion.model_id.in_(model_ids),
+            interim_status.code == "APPROVED",
+            interim_type.code == "INTERIM",
+            ValidationOutcome.expiration_date.isnot(None)
+        ).group_by(
+            ValidationRequestModelVersion.model_id
+        ).all()
+        interim_exp_map = {row.model_id: row.expiration_date for row in interim_rows}
+
+        # Active revalidation requests per model
+        active_requests_by_model: Dict[int, Any] = {}
+        lead_time_by_request: Dict[int, int] = {}
+        if last_request_ids:
+            active_status = aliased(TaxonomyValue)
+            active_type = aliased(TaxonomyValue)
+            active_subq = db.query(
+                ValidationRequestModelVersion.model_id.label("model_id"),
+                ValidationRequest.request_id.label("request_id"),
+                ValidationRequest.submission_received_date.label("submission_received_date"),
+                ValidationRequest.created_at.label("created_at"),
+                func.row_number().over(
+                    partition_by=ValidationRequestModelVersion.model_id,
+                    order_by=ValidationRequest.created_at.desc()
+                ).label("rn"),
+            ).join(
+                ValidationRequest,
+                ValidationRequest.request_id == ValidationRequestModelVersion.request_id
+            ).join(
+                active_status,
+                active_status.value_id == ValidationRequest.current_status_id
+            ).join(
+                active_type,
+                active_type.value_id == ValidationRequest.validation_type_id
+            ).filter(
+                ValidationRequestModelVersion.model_id.in_(model_ids),
+                ValidationRequest.prior_validation_request_id.in_(last_request_ids),
+                active_type.code == "COMPREHENSIVE",
+                active_status.code.notin_(["APPROVED", "CANCELLED"])
+            ).subquery()
+
+            active_rows = db.query(active_subq).filter(active_subq.c.rn == 1).all()
+
+            active_request_ids = {row.request_id for row in active_rows if row.request_id}
+            if active_request_ids:
+                lead_time_rows = db.query(
+                    ValidationRequestModelVersion.request_id.label("request_id"),
+                    func.coalesce(func.max(ValidationPolicy.model_change_lead_time_days), 90).label(
+                        "applicable_lead_time_days"
+                    ),
+                ).join(
+                    Model,
+                    Model.model_id == ValidationRequestModelVersion.model_id,
+                ).outerjoin(
+                    ValidationPolicy,
+                    ValidationPolicy.risk_tier_id == Model.risk_tier_id,
+                ).filter(
+                    ValidationRequestModelVersion.request_id.in_(active_request_ids),
+                ).group_by(
+                    ValidationRequestModelVersion.request_id,
+                ).all()
+
+                lead_time_by_request = {
+                    row.request_id: int(row.applicable_lead_time_days) for row in lead_time_rows
+                }
+
+            for row in active_rows:
+                active_requests_by_model[row.model_id] = row
 
         overdue_statuses = [
             "Submission Overdue",
@@ -382,18 +560,95 @@ def _compute_validation_metrics(
             "Should Create Request",
             "INTERIM Expired",
         ]
+        approval_overdue_statuses = [
+            "Submission Overdue",
+            "Validation Overdue",
+            "Revalidation Overdue (No Request)",
+            "Should Create Request",
+            "INTERIM Expired - Full Validation Required",
+            "Submission Overdue (INTERIM)",
+        ]
+        today = date.today()
 
-        if any(s in status_str for s in overdue_statuses):
-            overdue_count += 1
-            overdue_model_ids.append(model.model_id)
-        elif "On Track" in status_str or status_str == "Approved":
-            on_time_count += 1
-            on_time_model_ids.append(model.model_id)
+        for model in active_models:
+            model_id = model.model_id
+            policy = policy_by_tier.get(model.risk_tier_id)
+            last_validation = last_by_model.get(model_id)
+            has_full = model_id in full_model_ids
+            interim_expiration = None if has_full else interim_exp_map.get(model_id)
+            status_str = ""
+            validation_due = None
 
-        # Approval status for 4.9
-        approval_status, _ = compute_model_approval_status(model, db)
-        if approval_status == ApprovalStatus.INTERIM_APPROVED:
-            interim_count += 1
+            if not last_validation:
+                status_str = "Pending Full Validation" if interim_expiration else "Never Validated"
+                validation_due = interim_expiration
+            else:
+                approval_date = last_validation.completion_date.date() if last_validation.completion_date else last_validation.updated_at.date()
+
+                if not policy:
+                    status_str = "No Policy Configured"
+                    validation_due = interim_expiration
+                elif interim_expiration and not has_full:
+                    lead_time_days = policy.model_change_lead_time_days
+                    submission_due = interim_expiration - timedelta(days=lead_time_days)
+                    validation_due = interim_expiration
+                    if today > validation_due:
+                        status_str = "INTERIM Expired - Full Validation Required"
+                    elif today > submission_due:
+                        status_str = "Submission Overdue (INTERIM)"
+                    else:
+                        status_str = "Pending Full Validation"
+                else:
+                    submission_due = approval_date + relativedelta(months=policy.frequency_months)
+                    grace_period_end = submission_due + relativedelta(months=policy.grace_period_months)
+                    active_request = active_requests_by_model.get(model_id)
+
+                    if active_request:
+                        completion_lead_time = lead_time_by_request.get(
+                            active_request.request_id
+                        ) or policy.model_change_lead_time_days
+                    else:
+                        completion_lead_time = policy.model_change_lead_time_days
+
+                    validation_due = grace_period_end + timedelta(days=completion_lead_time + sla_days)
+
+                    if active_request:
+                        if not active_request.submission_received_date:
+                            if grace_period_end and today > grace_period_end:
+                                status_str = "Submission Overdue"
+                            elif submission_due and today > submission_due:
+                                status_str = "In Grace Period"
+                            else:
+                                status_str = "Awaiting Submission"
+                        else:
+                            if validation_due and today > validation_due:
+                                status_str = "Validation Overdue"
+                            else:
+                                status_str = "Validation In Progress"
+                    else:
+                        if validation_due and today > validation_due:
+                            status_str = "Revalidation Overdue (No Request)"
+                        elif grace_period_end and today > grace_period_end:
+                            status_str = "Should Create Request"
+                        else:
+                            status_str = "Upcoming"
+
+            if any(s in status_str for s in overdue_statuses):
+                overdue_count += 1
+                overdue_model_ids.append(model_id)
+            else:
+                on_time_count += 1
+                on_time_model_ids.append(model_id)
+
+            last_type_code = None
+            if last_validation:
+                last_type_code = type_code_by_id.get(last_validation.validation_type_id)
+            if last_type_code == "INTERIM":
+                is_overdue = status_str in approval_overdue_statuses or (
+                    validation_due is not None and today > validation_due
+                )
+                if not is_overdue:
+                    interim_count += 1
 
     # Metric 4.8 - Average time to complete validation BY RISK TIER
     completed_validations = db.query(ValidationRequest).options(
@@ -827,6 +1082,11 @@ def get_kpi_report(
             ModelRegion.region_id == region_id
         ).distinct().scalar_subquery()
 
+    cache_key = (region_id, team_id)
+    cached_report = _get_cached_report(cache_key)
+    if cached_report:
+        return cached_report
+
     # Get all active models with necessary relationships
     active_models_query = db.query(Model).options(
         joinedload(Model.risk_tier),
@@ -920,7 +1180,7 @@ def get_kpi_report(
     # Key Risk Indicator (4.28) - Models with Open Exceptions
     metrics.append(_compute_metric_4_28(db, active_models))
 
-    return KPIReportResponse(
+    report = KPIReportResponse(
         report_generated_at=utc_now(),
         as_of_date=date.today(),
         metrics=metrics,
@@ -930,3 +1190,5 @@ def get_kpi_report(
         team_id=team_id,
         team_name=team_name,
     )
+    _set_cached_report(cache_key, report)
+    return report

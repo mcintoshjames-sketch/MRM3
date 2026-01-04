@@ -4,7 +4,7 @@ from datetime import date, datetime, timedelta
 from decimal import Decimal
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session, joinedload
-from sqlalchemy import func, or_, and_
+from sqlalchemy import func, or_, and_, case
 from app.core.database import get_db
 from app.core.time import utc_now
 from app.core.deps import get_current_user
@@ -241,29 +241,39 @@ def get_attestation_questions(db: Session, frequency: Optional[str] = None) -> L
 @router.get("/cycles", response_model=List[AttestationCycleListResponse])
 def list_cycles(
     status: Optional[AttestationCycleStatusEnum] = None,
+    limit: int = Query(100, ge=1, le=500),
+    offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
     """List attestation cycles. Admin/Validator can see all."""
-    query = db.query(AttestationCycle)
+    query = db.query(
+        AttestationCycle,
+        func.count(AttestationRecord.record_id).label("total_records"),
+        func.sum(
+            case((AttestationRecord.status == AttestationRecordStatus.PENDING.value, 1), else_=0)
+        ).label("pending_count"),
+        func.sum(
+            case((AttestationRecord.status == AttestationRecordStatus.SUBMITTED.value, 1), else_=0)
+        ).label("submitted_count"),
+        func.sum(
+            case((AttestationRecord.status == AttestationRecordStatus.ACCEPTED.value, 1), else_=0)
+        ).label("accepted_count"),
+    ).outerjoin(AttestationRecord, AttestationRecord.cycle_id == AttestationCycle.cycle_id)
 
     if status:
         query = query.filter(AttestationCycle.status == status.value)
 
-    cycles = query.order_by(AttestationCycle.period_start_date.desc()).all()
+    cycles = query.group_by(AttestationCycle.cycle_id).order_by(
+        AttestationCycle.period_start_date.desc()
+    ).offset(offset).limit(limit).all()
 
     result = []
-    for cycle in cycles:
-        # Count records by status
-        records = db.query(AttestationRecord).filter(
-            AttestationRecord.cycle_id == cycle.cycle_id
-        ).all()
-
-        total = len(records)
-        pending = len([r for r in records if r.status == AttestationRecordStatus.PENDING.value])
-        submitted = len([r for r in records if r.status == AttestationRecordStatus.SUBMITTED.value])
-        accepted = len([r for r in records if r.status == AttestationRecordStatus.ACCEPTED.value])
-
+    for cycle, total, pending, submitted, accepted in cycles:
+        total = total or 0
+        pending = pending or 0
+        submitted = submitted or 0
+        accepted = accepted or 0
         coverage_pct = (accepted / total * 100) if total > 0 else 0
 
         result.append(AttestationCycleListResponse(

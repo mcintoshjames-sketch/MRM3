@@ -120,6 +120,48 @@ logger = logging.getLogger(__name__)
 MAX_MONITORING_IMPORT_BYTES = 5 * 1024 * 1024
 
 
+class LimitedStream:
+    """File-like wrapper that enforces a max byte read limit."""
+
+    def __init__(self, raw, max_bytes: int):
+        self.raw = raw
+        self.max_bytes = max_bytes
+        self.bytes_read = 0
+
+    def read(self, size=-1):
+        data = self.raw.read(size)
+        self._track(len(data))
+        return data
+
+    def read1(self, size=-1):
+        data = self.raw.read1(size) if hasattr(self.raw, "read1") else self.raw.read(size)
+        self._track(len(data))
+        return data
+
+    def readline(self, size=-1):
+        data = self.raw.readline(size)
+        self._track(len(data))
+        return data
+
+    def readinto(self, b):
+        length = self.raw.readinto(b)
+        if length is None:
+            return length
+        self._track(length)
+        return length
+
+    def _track(self, length: int) -> None:
+        self.bytes_read += length
+        if self.bytes_read > self.max_bytes:
+            raise HTTPException(
+                status_code=413,
+                detail=f"CSV too large. Max size is {self.max_bytes} bytes."
+            )
+
+    def __getattr__(self, name):
+        return getattr(self.raw, name)
+
+
 def create_audit_log(
     db: Session,
     entity_type: str,
@@ -4110,21 +4152,14 @@ def import_cycle_results_csv(
     # Valid outcome codes (VALID_OUTCOME_CODES + empty string for blank values)
     valid_outcomes = VALID_OUTCOME_CODES | {''}  # Union with empty string
 
-    # Read and parse CSV (enforce max size)
+    # Read and parse CSV (streaming with size enforcement)
     try:
-        raw_content = file.file.read(MAX_MONITORING_IMPORT_BYTES + 1)
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Failed to read CSV: {str(e)}")
-
-    if len(raw_content) > MAX_MONITORING_IMPORT_BYTES:
-        raise HTTPException(
-            status_code=413,
-            detail=f"CSV too large. Max size is {MAX_MONITORING_IMPORT_BYTES} bytes."
-        )
-
-    try:
-        content = raw_content.decode('utf-8')
-        reader = csv.DictReader(io.StringIO(content))
+        file.file.seek(0)
+        limited_stream = LimitedStream(file.file, MAX_MONITORING_IMPORT_BYTES)
+        text_stream = io.TextIOWrapper(limited_stream, encoding='utf-8')
+        reader = csv.DictReader(text_stream)
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Failed to parse CSV: {str(e)}")
 
