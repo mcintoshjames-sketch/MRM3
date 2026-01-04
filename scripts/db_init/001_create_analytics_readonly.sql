@@ -11,33 +11,18 @@
 \set app_user ''
 \endif
 
-DO $$
-DECLARE
-  role_name text := :'analytics_role';
-BEGIN
-  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = role_name) THEN
-    EXECUTE format('CREATE ROLE %I NOLOGIN', role_name);
-  END IF;
-END
-$$;
+SELECT format('CREATE ROLE %I NOLOGIN', :'analytics_role')
+WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = :'analytics_role')
+\gexec
 
-DO $$
-DECLARE
-  role_name text := :'analytics_role';
-BEGIN
-  EXECUTE format('GRANT USAGE ON SCHEMA public TO %I', role_name);
-  EXECUTE format('GRANT SELECT ON ALL TABLES IN SCHEMA public TO %I', role_name);
-  EXECUTE format('ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON TABLES TO %I', role_name);
-END
-$$;
+SELECT format('GRANT USAGE ON SCHEMA public TO %I', :'analytics_role')
+\gexec
+SELECT format('GRANT SELECT ON ALL TABLES IN SCHEMA public TO %I', :'analytics_role')
+\gexec
+SELECT format('ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON TABLES TO %I', :'analytics_role')
+\gexec
 
-DO $$
-DECLARE
-  role_name text := :'analytics_role';
-  target_user text := :'app_user';
-BEGIN
-  IF target_user IS NOT NULL AND target_user <> '' THEN
-    EXECUTE format('GRANT %I TO %I', role_name, target_user);
-  END IF;
-END
-$$;
+\if :'app_user' <> ''
+SELECT format('GRANT %I TO %I', :'analytics_role', :'app_user')
+\gexec
+\endif

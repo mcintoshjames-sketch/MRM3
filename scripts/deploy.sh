@@ -303,8 +303,60 @@ deploy_to_prod() {
         echo "Rebuilding and restarting services..."
         sudo docker compose -f docker-compose.prod.yml up -d --build
 
+        echo "Waiting for database..."
+        sudo docker compose -f docker-compose.prod.yml exec -T db sh -c "until pg_isready -U \"$db_admin_user\" -d \"$db_name\"; do sleep 1; done" < /dev/null
+
+        echo "Running database migrations..."
+        sudo docker compose -f docker-compose.prod.yml exec -T api alembic upgrade head < /dev/null
+
+        echo "Verifying migration state..."
+        heads_file=$(mktemp)
+        current_file=$(mktemp)
+        sudo docker compose -f docker-compose.prod.yml exec -T api alembic heads < /dev/null > "$heads_file"
+        sudo docker compose -f docker-compose.prod.yml exec -T api alembic current < /dev/null > "$current_file"
+        python3 - "$heads_file" "$current_file" <<'PY'
+import sys
+
+heads_path, current_path = sys.argv[1], sys.argv[2]
+
+
+def extract_revisions(path: str) -> set[str]:
+    revisions: set[str] = set()
+    with open(path, "r", encoding="utf-8") as handle:
+        for line in handle:
+            line = line.strip()
+            if not line:
+                continue
+            if line.startswith("Current revision"):
+                parts = line.split(":", 1)
+                if len(parts) > 1:
+                    for rev in parts[-1].split(","):
+                        rev = rev.strip()
+                        if rev:
+                            revisions.add(rev)
+                continue
+            if line.startswith("Rev:"):
+                rev = line.split(":", 1)[1].strip().split()[0]
+                if rev:
+                    revisions.add(rev)
+                continue
+            if line[0].isalnum():
+                revisions.add(line.split()[0])
+    return revisions
+
+
+heads = extract_revisions(heads_path)
+current = extract_revisions(current_path)
+
+if heads != current:
+    print("ERROR: Alembic revision mismatch after migration.")
+    print(f"Heads: {sorted(heads)}")
+    print(f"Current: {sorted(current)}")
+    sys.exit(1)
+PY
+        rm -f "$heads_file" "$current_file"
+
         echo "Ensuring analytics role exists..."
-        sudo docker compose -f docker-compose.prod.yml exec -T db sh -c "until pg_isready -U \"$db_admin_user\" -d \"$db_name\"; do sleep 1; done"
         sudo docker compose -f docker-compose.prod.yml exec -T db psql -U "$db_admin_user" -d "$db_name" -v analytics_role="$analytics_role" -v app_user="$app_db_user" -f /dev/stdin < scripts/db_init/001_create_analytics_readonly.sql
 
         echo "Checking service health..."
