@@ -1,7 +1,7 @@
 """My Portfolio Report schemas for model owner dashboard."""
 from datetime import datetime, date
 from typing import Optional, List
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class PortfolioSummary(BaseModel):
@@ -45,6 +45,7 @@ class ActionItem(BaseModel):
     link: str = Field(..., description="Navigation path to the item")
 
 
+    model_config = ConfigDict(protected_namespaces=())
 class MonitoringAlert(BaseModel):
     """A monitoring result with yellow or red outcome."""
     model_id: int = Field(..., description="ID of the model")
@@ -61,6 +62,7 @@ class MonitoringAlert(BaseModel):
     result_date: date = Field(..., description="Date the result was recorded")
 
 
+    model_config = ConfigDict(protected_namespaces=())
 class ExceptionItem(BaseModel):
     """An open model exception requiring attention."""
     exception_id: int = Field(..., description="Exception ID")
@@ -81,6 +83,7 @@ class ExceptionItem(BaseModel):
     link: str = Field(..., description="Navigation path to the model")
 
 
+    model_config = ConfigDict(protected_namespaces=())
 class CalendarItem(BaseModel):
     """A deadline item for calendar view."""
     due_date: date = Field(..., description="Due date")
@@ -95,6 +98,7 @@ class CalendarItem(BaseModel):
     is_overdue: bool = Field(..., description="Whether the item is past due")
 
 
+    model_config = ConfigDict(protected_namespaces=())
 class PortfolioModel(BaseModel):
     """A model in the user's portfolio."""
     model_id: int = Field(..., description="Model ID")
@@ -131,6 +135,7 @@ class PortfolioModel(BaseModel):
         ..., description="How user owns: primary, shared, developer, delegate")
 
 
+    model_config = ConfigDict(protected_namespaces=())
 class MyPortfolioResponse(BaseModel):
     """Complete portfolio report response."""
     report_generated_at: datetime = Field(...,

@@ -1,6 +1,6 @@
 """Model type taxonomy schemas."""
 from typing import Optional, List
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 
 class ModelTypeBase(BaseModel):
@@ -25,8 +25,7 @@ class ModelTypeResponse(ModelTypeBase):
     type_id: int
     category_id: int
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True, protected_namespaces=())
 
 
 class ModelTypeCategoryBase(BaseModel):
@@ -41,5 +40,4 @@ class ModelTypeCategoryResponse(ModelTypeCategoryBase):
     category_id: int
     model_types: List[ModelTypeResponse] = []
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True, protected_namespaces=())

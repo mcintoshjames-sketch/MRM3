@@ -1,7 +1,7 @@
 """KPM (Key Performance Metrics) schemas."""
 from enum import Enum
 from typing import Optional, List
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 
 class KpmEvaluationTypeEnum(str, Enum):
@@ -57,8 +57,7 @@ class KpmResponse(BaseModel):
     is_active: bool = True
     evaluation_type: str  # Return as string for flexibility
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True, protected_namespaces=())
 
 
 class KpmCategoryBase(BaseModel):
@@ -94,5 +93,4 @@ class KpmCategoryResponse(BaseModel):
     category_type: str  # Return as string for flexibility
     kpms: List[KpmResponse] = []
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True, protected_namespaces=())

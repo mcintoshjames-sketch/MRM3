@@ -1,7 +1,7 @@
 """Schemas for model activity timeline."""
 from datetime import datetime
 from typing import Optional, List
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 
 class ActivityTimelineItem(BaseModel):
@@ -16,8 +16,7 @@ class ActivityTimelineItem(BaseModel):
     entity_id: Optional[int] = None  # Reference to related entity
     icon: str  # Icon identifier for frontend
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True, protected_namespaces=())
 
 
 class ActivityTimelineResponse(BaseModel):
@@ -26,3 +25,4 @@ class ActivityTimelineResponse(BaseModel):
     model_name: str
     activities: List[ActivityTimelineItem]
     total_count: int
+    model_config = ConfigDict(protected_namespaces=())

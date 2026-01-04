@@ -1,7 +1,7 @@
 """Pydantic schemas for Model Exceptions API."""
 from datetime import datetime
 from typing import Optional, List
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 # =============================================================================
@@ -31,8 +31,7 @@ class UserBrief(BaseModel):
     email: str
     full_name: Optional[str] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True, protected_namespaces=())
 
 
 class ModelBrief(BaseModel):
@@ -41,8 +40,7 @@ class ModelBrief(BaseModel):
     model_name: str
     model_code: Optional[str] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True, protected_namespaces=())
 
 
 class TaxonomyValueBrief(BaseModel):
@@ -51,8 +49,7 @@ class TaxonomyValueBrief(BaseModel):
     code: str
     label: str
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True, protected_namespaces=())
 
 
 # =============================================================================
@@ -70,8 +67,7 @@ class ModelExceptionStatusHistoryResponse(BaseModel):
     changed_at: datetime
     notes: Optional[str] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True, protected_namespaces=())
 
 
 # =============================================================================
@@ -94,8 +90,7 @@ class ModelExceptionListResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True, protected_namespaces=())
 
 
 class ModelExceptionDetailResponse(BaseModel):
@@ -136,8 +131,7 @@ class ModelExceptionDetailResponse(BaseModel):
     # Status history
     status_history: List[ModelExceptionStatusHistoryResponse] = []
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True, protected_namespaces=())
 
 
 # =============================================================================
@@ -194,6 +188,7 @@ class CreateExceptionRequest(BaseModel):
     )
 
 
+    model_config = ConfigDict(protected_namespaces=())
 # =============================================================================
 # Detection Request/Response Schemas
 # =============================================================================

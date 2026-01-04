@@ -1,7 +1,7 @@
 """Model delegate schemas."""
 from datetime import datetime
 from typing import Optional, List, Literal
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class ModelDelegateBase(BaseModel):
@@ -37,8 +37,7 @@ class ModelDelegateResponse(ModelDelegateBase):
     delegated_by_name: Optional[str] = None
     revoked_by_name: Optional[str] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True, protected_namespaces=())
 
 
 class BatchDelegateRequest(BaseModel):
@@ -58,6 +57,7 @@ class ModelDelegateDetail(BaseModel):
     action: Literal["created", "updated", "replaced"]
 
 
+    model_config = ConfigDict(protected_namespaces=())
 class BatchDelegateResponse(BaseModel):
     """Response for batch delegate operations."""
     models_affected: int = Field(..., description="Number of models where delegation was added/updated")
@@ -65,3 +65,4 @@ class BatchDelegateResponse(BaseModel):
     delegations_created: int = Field(..., description="Number of new delegations created")
     delegations_updated: int = Field(..., description="Number of existing delegations updated")
     delegations_revoked: int = Field(0, description="Number of delegations revoked (when replacing)")
+    model_config = ConfigDict(protected_namespaces=())

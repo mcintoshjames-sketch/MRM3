@@ -1,5 +1,5 @@
 """Model Limitations schemas."""
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 from datetime import datetime
 from typing import Optional, List, Any, Literal
 from app.schemas.taxonomy import TaxonomyValueResponse
@@ -13,8 +13,7 @@ class UserSummary(BaseModel):
     full_name: str
     email: str
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True, protected_namespaces=())
 
 
 class ModelSummary(BaseModel):
@@ -23,8 +22,7 @@ class ModelSummary(BaseModel):
     model_name: str
     status: str
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True, protected_namespaces=())
 
 
 class ValidationRequestSummary(BaseModel):
@@ -32,8 +30,7 @@ class ValidationRequestSummary(BaseModel):
     request_id: int
     validation_type: Optional[str] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True, protected_namespaces=())
 
     @model_validator(mode='before')
     @classmethod
@@ -57,8 +54,7 @@ class ModelVersionSummary(BaseModel):
     version_id: int
     version_number: str
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True, protected_namespaces=())
 
 
 class RecommendationSummary(BaseModel):
@@ -67,8 +63,7 @@ class RecommendationSummary(BaseModel):
     recommendation_code: str
     title: str
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True, protected_namespaces=())
 
 
 class RegionSummary(BaseModel):
@@ -77,8 +72,7 @@ class RegionSummary(BaseModel):
     code: str
     name: str
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True, protected_namespaces=())
 
 
 # ==================== LIMITATION SCHEMAS ====================
@@ -104,6 +98,7 @@ class LimitationBase(BaseModel):
         return self
 
 
+    model_config = ConfigDict(protected_namespaces=())
 class LimitationCreate(LimitationBase):
     """Schema for creating a limitation."""
     pass
@@ -123,6 +118,7 @@ class LimitationUpdate(BaseModel):
     recommendation_id: Optional[int] = None
 
 
+    model_config = ConfigDict(protected_namespaces=())
 class LimitationRetire(BaseModel):
     """Schema for retiring a limitation."""
     retirement_reason: str = Field(..., min_length=1)
@@ -155,8 +151,7 @@ class LimitationResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True, protected_namespaces=())
 
 
 class LimitationListResponse(BaseModel):
@@ -171,8 +166,7 @@ class LimitationListResponse(BaseModel):
     is_retired: bool
     created_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True, protected_namespaces=())
 
 
 # ==================== REPORT SCHEMAS ====================
@@ -193,6 +187,7 @@ class CriticalLimitationReportItem(BaseModel):
     created_at: datetime
 
 
+    model_config = ConfigDict(protected_namespaces=())
 class CriticalLimitationsReportResponse(BaseModel):
     """Response for critical limitations report."""
     filters_applied: dict

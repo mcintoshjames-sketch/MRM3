@@ -1,6 +1,6 @@
 """LOB (Line of Business) unit schemas."""
 from __future__ import annotations
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from typing import List, Optional
 from datetime import datetime
 import re
@@ -119,8 +119,7 @@ class LOBUnitResponse(LOBUnitBase):
     created_at: datetime
     updated_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True, protected_namespaces=())
 
 
 class LOBUnitTreeNode(BaseModel):
@@ -146,8 +145,7 @@ class LOBUnitTreeNode(BaseModel):
     tier: Optional[str] = None
     children: List[LOBUnitTreeNode] = Field(default_factory=list)
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True, protected_namespaces=())
 
 
 # Enable self-referential model
@@ -169,8 +167,7 @@ class LOBUnitTeamTreeNode(BaseModel):
     effective_team_name: Optional[str] = None
     children: List["LOBUnitTeamTreeNode"] = Field(default_factory=list)
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True, protected_namespaces=())
 
 
 LOBUnitTeamTreeNode.model_rebuild()

@@ -1,6 +1,6 @@
 """Model change taxonomy schemas."""
 from typing import Optional, List
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 
 class ModelChangeTypeBase(BaseModel):
@@ -31,8 +31,7 @@ class ModelChangeTypeResponse(ModelChangeTypeBase):
     change_type_id: int
     category_id: int
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True, protected_namespaces=())
 
 
 class ModelChangeCategoryBase(BaseModel):
@@ -47,5 +46,4 @@ class ModelChangeCategoryResponse(ModelChangeCategoryBase):
     category_id: int
     change_types: List[ModelChangeTypeResponse] = []
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True, protected_namespaces=())

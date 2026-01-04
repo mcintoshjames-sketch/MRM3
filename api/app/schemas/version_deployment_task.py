@@ -1,7 +1,7 @@
 """Pydantic schemas for version deployment tasks."""
 from datetime import date, datetime
 from typing import Optional
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class VersionDeploymentTaskBase(BaseModel):
@@ -37,6 +37,7 @@ class ModelInfo(BaseModel):
     model_name: str
 
 
+    model_config = ConfigDict(protected_namespaces=())
 class VersionInfo(BaseModel):
     """Minimal version info for task display."""
     version_id: int
@@ -102,8 +103,7 @@ class VersionDeploymentTaskResponse(BaseModel):
     # Optional validation info
     validation_request: Optional[ValidationRequestInfo] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True, protected_namespaces=())
 
 
 class VersionDeploymentTaskSummary(BaseModel):
@@ -122,8 +122,7 @@ class VersionDeploymentTaskSummary(BaseModel):
     validation_status: Optional[str] = None
     requires_regional_approval: bool = False  # Lock icon indicator
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True, protected_namespaces=())
 
 
 # =============================================================================
@@ -185,8 +184,7 @@ class ReadyToDeployItem(BaseModel):
         description="ID of pending deployment task for this region, if exists"
     )
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True, protected_namespaces=())
 
 
 class ReadyToDeployResponse(BaseModel):

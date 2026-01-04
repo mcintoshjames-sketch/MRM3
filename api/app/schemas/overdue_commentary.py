@@ -1,5 +1,5 @@
 """Overdue Revalidation Commentary schemas."""
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from datetime import datetime, date
 from typing import Optional, Literal
 from app.schemas.user import UserResponse
@@ -30,8 +30,7 @@ class OverdueCommentaryResponse(OverdueCommentaryBase):
     superseded_at: Optional[datetime] = None
     superseded_by_comment_id: Optional[int] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True, protected_namespaces=())
 
 
 class CurrentOverdueCommentaryResponse(BaseModel):
@@ -46,8 +45,7 @@ class CurrentOverdueCommentaryResponse(BaseModel):
     stale_reason: Optional[str] = None
     computed_completion_date: Optional[date] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True, protected_namespaces=())
 
 
 class OverdueCommentaryHistoryResponse(BaseModel):
@@ -58,5 +56,4 @@ class OverdueCommentaryHistoryResponse(BaseModel):
     current_comment: Optional[OverdueCommentaryResponse] = None
     comment_history: list[OverdueCommentaryResponse] = []
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True, protected_namespaces=())

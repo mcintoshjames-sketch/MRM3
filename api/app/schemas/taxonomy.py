@@ -1,5 +1,5 @@
 """Taxonomy schemas."""
-from pydantic import BaseModel, model_validator
+from pydantic import BaseModel, ConfigDict, model_validator
 from datetime import datetime
 from typing import Optional
 
@@ -42,8 +42,7 @@ class TaxonomyValueResponse(TaxonomyValueBase):
     is_system_protected: bool = False
     created_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True, protected_namespaces=())
 
 
 class TaxonomyBase(BaseModel):
@@ -72,8 +71,7 @@ class TaxonomyResponse(TaxonomyBase):
     created_at: datetime
     values: list[TaxonomyValueResponse] = []
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True, protected_namespaces=())
 
 
 class TaxonomyListResponse(TaxonomyBase):
@@ -82,5 +80,4 @@ class TaxonomyListResponse(TaxonomyBase):
     is_system: bool
     created_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True, protected_namespaces=())

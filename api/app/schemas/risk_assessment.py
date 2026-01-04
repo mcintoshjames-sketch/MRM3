@@ -113,7 +113,7 @@ class TaxonomyValueBrief(BaseModel):
 
 class RiskAssessmentResponse(BaseModel):
     """Full response schema for a risk assessment."""
-    model_config = ConfigDict(from_attributes=True)
+    model_config = ConfigDict(from_attributes=True, protected_namespaces=())
 
     assessment_id: int
     model_id: int
@@ -193,3 +193,4 @@ class GlobalAssessmentStatusResponse(BaseModel):
     assessed_at: Optional[datetime] = None
     final_tier_id: Optional[int] = None
     assessment_id: Optional[int] = None
+    model_config = ConfigDict(protected_namespaces=())

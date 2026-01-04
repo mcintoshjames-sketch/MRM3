@@ -1,7 +1,7 @@
 """Application configuration."""
 import sys
 from urllib.parse import urlparse
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
@@ -24,8 +24,7 @@ class Settings(BaseSettings):
     ALLOW_UAT_TOOLS_IN_PROD: bool = False
     UAT_TOOLS_BREAK_GLASS_TICKET: str | None = None
 
-    class Config:
-        env_file = ".env"
+    model_config = SettingsConfigDict(env_file=".env")
 
     def get_cors_origins(self) -> list[str]:
         """Parse CORS_ORIGINS into a list."""

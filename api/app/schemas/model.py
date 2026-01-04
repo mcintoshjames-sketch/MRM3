@@ -1,5 +1,5 @@
 """Model schemas."""
-from pydantic import BaseModel, field_validator, field_serializer
+from pydantic import BaseModel, ConfigDict, field_serializer, field_validator
 from datetime import datetime, date
 from typing import Optional, List, Any, TYPE_CHECKING
 from app.schemas.user import UserResponse
@@ -21,8 +21,7 @@ class IRPContactUser(BaseModel):
     email: str
     full_name: str
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True, protected_namespaces=())
 
 
 class IRPSummary(BaseModel):
@@ -34,8 +33,7 @@ class IRPSummary(BaseModel):
     contact_user_id: int
     contact_user: Optional[IRPContactUser] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True, protected_namespaces=())
 
 
 class UserWithLOBRollup(BaseModel):
@@ -48,8 +46,7 @@ class UserWithLOBRollup(BaseModel):
     lob_name: Optional[str] = None  # User's actual LOB name
     lob_rollup_name: Optional[str] = None  # LOB name rolled up to LOB4
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True, protected_namespaces=())
 
 
 class ModelRolesWithLOB(BaseModel):
@@ -69,6 +66,7 @@ class ModelBase(BaseModel):
     status: str = "In Development"
 
 
+    model_config = ConfigDict(protected_namespaces=())
 class ModelCreate(ModelBase):
     owner_id: int
     usage_frequency_id: int  # Required field
@@ -110,6 +108,7 @@ class ModelCreate(ModelBase):
         return v
 
 
+    model_config = ConfigDict(protected_namespaces=())
 class ModelUpdate(BaseModel):
     model_name: Optional[str] = None
     description: Optional[str] = None
@@ -141,6 +140,7 @@ class ModelUpdate(BaseModel):
     irp_ids: Optional[List[int]] = None  # IRPs covering this MRSA
 
 
+    model_config = ConfigDict(protected_namespaces=())
 class ModelResponse(ModelBase):
     model_id: int
     owner_id: int
@@ -176,8 +176,7 @@ class ModelResponse(ModelBase):
     # Computed field: Production date of latest ACTIVE version
     model_last_updated: Optional[date] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True, protected_namespaces=())
 
 
 class ModelRegionListItem(BaseModel):
@@ -186,8 +185,7 @@ class ModelRegionListItem(BaseModel):
     region_code: str
     region_name: str
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True, protected_namespaces=())
 
 
 # Lightweight schemas for list view performance
@@ -196,8 +194,7 @@ class LOBListItem(BaseModel):
     lob_id: int
     name: str
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True, protected_namespaces=())
 
 
 class UserListItem(BaseModel):
@@ -207,8 +204,7 @@ class UserListItem(BaseModel):
     email: str
     lob: Optional[LOBListItem] = None  # Nested for frontend compatibility
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True, protected_namespaces=())
 
 
 class VendorListItem(BaseModel):
@@ -216,8 +212,7 @@ class VendorListItem(BaseModel):
     vendor_id: int
     name: str
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True, protected_namespaces=())
 
 
 class TaxonomyListItem(BaseModel):
@@ -226,8 +221,7 @@ class TaxonomyListItem(BaseModel):
     label: str
     code: Optional[str] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True, protected_namespaces=())
 
 
 class MethodologyListItem(BaseModel):
@@ -235,8 +229,7 @@ class MethodologyListItem(BaseModel):
     methodology_id: int
     name: str
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True, protected_namespaces=())
 
 
 class ModelTypeListItem(BaseModel):
@@ -244,8 +237,7 @@ class ModelTypeListItem(BaseModel):
     type_id: int
     name: str
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True, protected_namespaces=())
 
 
 class IRPContactUserListItem(BaseModel):
@@ -254,8 +246,7 @@ class IRPContactUserListItem(BaseModel):
     email: str
     full_name: str
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True, protected_namespaces=())
 
 
 class IRPListItem(BaseModel):
@@ -267,8 +258,7 @@ class IRPListItem(BaseModel):
     contact_user_id: int
     contact_user: Optional[IRPContactUserListItem] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True, protected_namespaces=())
 
 
 class ModelListResponse(BaseModel):
@@ -335,8 +325,7 @@ class ModelListResponse(BaseModel):
     penalty_notches: Optional[int] = None
     adjusted_scorecard_outcome: Optional[str] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True, protected_namespaces=())
 
 
 class ModelDetailResponse(ModelResponse):
@@ -372,8 +361,7 @@ class ModelDetailResponse(ModelResponse):
     # Computed exception count for UI badge
     open_exception_count: int = 0
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True, protected_namespaces=())
 
 
 class ValidationGroupingSuggestion(BaseModel):
@@ -383,8 +371,7 @@ class ValidationGroupingSuggestion(BaseModel):
     last_validation_request_id: Optional[int] = None
     last_grouped_at: Optional[datetime] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True, protected_namespaces=())
 
 
 class ModelCreateWarning(BaseModel):
@@ -454,8 +441,7 @@ class ModelCreateResponse(BaseModel):
     irps: List[IRPSummary] = []  # IRPs covering this MRSA
     warnings: Optional[List[ModelCreateWarning]] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True, protected_namespaces=())
 
 
 # Model Name History Schemas
@@ -470,8 +456,7 @@ class ModelNameHistoryItem(BaseModel):
     changed_at: datetime
     change_reason: Optional[str] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True, protected_namespaces=())
 
 
 class ModelNameHistoryResponse(BaseModel):
@@ -482,6 +467,7 @@ class ModelNameHistoryResponse(BaseModel):
     total_changes: int
 
 
+    model_config = ConfigDict(protected_namespaces=())
 class NameChangeStatistics(BaseModel):
     """Response schema for name change statistics."""
     total_models_with_changes: int
@@ -505,8 +491,7 @@ class ModelPendingEditResponse(BaseModel):
     reviewed_at: Optional[datetime] = None
     review_comment: Optional[str] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True, protected_namespaces=())
 
 
 class ModelPendingEditWithModel(ModelPendingEditResponse):
@@ -514,8 +499,7 @@ class ModelPendingEditWithModel(ModelPendingEditResponse):
     model_name: str
     model_owner: UserResponse
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True, protected_namespaces=())
 
 
 class PendingEditReviewRequest(BaseModel):
@@ -532,6 +516,7 @@ class ModelUpdateWithPendingResponse(BaseModel):
     model_id: int
 
 
+    model_config = ConfigDict(protected_namespaces=())
 # Model Approval Status Schemas
 class ModelApprovalStatusResponse(BaseModel):
     """Response schema for a model's current approval status."""
@@ -562,6 +547,7 @@ class ModelApprovalStatusResponse(BaseModel):
     is_overdue: bool = False
 
 
+    model_config = ConfigDict(protected_namespaces=())
 class ModelApprovalStatusHistoryItem(BaseModel):
     """Response schema for a single approval status change record."""
     history_id: int
@@ -575,8 +561,7 @@ class ModelApprovalStatusHistoryItem(BaseModel):
     trigger_entity_id: Optional[int] = None
     notes: Optional[str] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True, protected_namespaces=())
 
 
 class ModelApprovalStatusHistoryResponse(BaseModel):
@@ -587,11 +572,13 @@ class ModelApprovalStatusHistoryResponse(BaseModel):
     history: List[ModelApprovalStatusHistoryItem]
 
 
+    model_config = ConfigDict(protected_namespaces=())
 class BulkApprovalStatusRequest(BaseModel):
     """Request schema for bulk approval status computation."""
     model_ids: List[int]
 
 
+    model_config = ConfigDict(protected_namespaces=())
 class BulkApprovalStatusItem(BaseModel):
     """Response schema for a single model in bulk approval status computation."""
     model_id: int
@@ -604,6 +591,7 @@ class BulkApprovalStatusItem(BaseModel):
     error: Optional[str] = None  # Set if model not found or error occurred
 
 
+    model_config = ConfigDict(protected_namespaces=())
 class BulkApprovalStatusResponse(BaseModel):
     """Response schema for bulk approval status computation."""
     total_requested: int

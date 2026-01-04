@@ -1,5 +1,5 @@
 """IRP (Independent Review Process) schemas."""
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from datetime import datetime, date
 from typing import Optional, List
 from app.schemas.user import UserResponse
@@ -22,8 +22,7 @@ class MRSASummary(BaseModel):
     owner_id: int
     owner_name: Optional[str] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True, protected_namespaces=())
 
 
 # ============================================================================
@@ -49,8 +48,7 @@ class IRPReviewResponse(BaseModel):
     reviewed_by: Optional[UserResponse] = None
     created_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True, protected_namespaces=())
 
 
 # ============================================================================
@@ -73,8 +71,7 @@ class IRPCertificationResponse(BaseModel):
     conclusion_summary: str
     created_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True, protected_namespaces=())
 
 
 # ============================================================================
@@ -115,8 +112,7 @@ class IRPResponse(IRPBase):
     latest_review_outcome: Optional[str] = None
     latest_certification_date: Optional[date] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True, protected_namespaces=())
 
 
 class IRPDetailResponse(IRPBase):
@@ -139,8 +135,7 @@ class IRPDetailResponse(IRPBase):
     certifications: List[IRPCertificationResponse] = []
     latest_certification: Optional[IRPCertificationResponse] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True, protected_namespaces=())
 
 
 # ============================================================================
@@ -160,5 +155,4 @@ class IRPCoverageStatus(BaseModel):
     irp_ids: List[int] = []
     irp_names: List[str] = []
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True, protected_namespaces=())

@@ -1,7 +1,7 @@
 """Schemas for deploy modal and version deployment operations."""
 from datetime import date, datetime
 from typing import List, Optional
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class RegionDeploymentStatus(BaseModel):
@@ -33,7 +33,7 @@ class DeployModalDataResponse(BaseModel):
     regions: List[RegionDeploymentStatus]
     can_deploy: bool = True
 
-    model_config = {"from_attributes": True}
+    model_config = ConfigDict(from_attributes=True, protected_namespaces=())
 
 
 class RegionDeploymentSpec(BaseModel):

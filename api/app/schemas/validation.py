@@ -1,5 +1,5 @@
 """Validation workflow schemas."""
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from datetime import datetime, date
 from typing import Optional, List, Dict
 from app.schemas.user import UserResponse
@@ -20,6 +20,7 @@ class ValidationPolicyBase(BaseModel):
     monitoring_plan_review_description: Optional[str] = None
 
 
+    model_config = ConfigDict(protected_namespaces=())
 class ValidationPolicyCreate(ValidationPolicyBase):
     """Schema for creating a validation policy."""
     pass
@@ -35,6 +36,7 @@ class ValidationPolicyUpdate(BaseModel):
     monitoring_plan_review_description: Optional[str] = None
 
 
+    model_config = ConfigDict(protected_namespaces=())
 class ValidationPolicyResponse(ValidationPolicyBase):
     """Response schema for validation policy."""
     policy_id: int
@@ -42,8 +44,7 @@ class ValidationPolicyResponse(ValidationPolicyBase):
     created_at: datetime
     updated_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True, protected_namespaces=())
 
 
 # ==================== HELPER SCHEMAS ====================
@@ -54,8 +55,7 @@ class ModelSummary(BaseModel):
     model_name: str
     status: str
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True, protected_namespaces=())
 
 
 class UserSummary(BaseModel):
@@ -65,8 +65,7 @@ class UserSummary(BaseModel):
     email: str
     role: str
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True, protected_namespaces=())
 
 
 # ==================== VALIDATION REQUEST SCHEMAS ====================
@@ -82,6 +81,7 @@ class ValidationRequestBase(BaseModel):
     prior_validation_request_id: Optional[int] = None  # Link to previous validation for revalidations
 
 
+    model_config = ConfigDict(protected_namespaces=())
 class ValidationRequestCreate(ValidationRequestBase):
     """Schema for creating a validation request."""
     model_versions: Optional[Dict[int, Optional[int]]] = None  # {model_id: version_id or None}
@@ -89,6 +89,7 @@ class ValidationRequestCreate(ValidationRequestBase):
     force_create: bool = False  # If True, proceed despite warnings (but not errors)
 
 
+    model_config = ConfigDict(protected_namespaces=())
 class ValidationWarning(BaseModel):
     """Individual warning about target completion date."""
     warning_type: str  # 'LEAD_TIME', 'IMPLEMENTATION_DATE', 'REVALIDATION_OVERDUE'
@@ -100,6 +101,7 @@ class ValidationWarning(BaseModel):
     details: Optional[Dict] = None  # Additional contextual information
 
 
+    model_config = ConfigDict(protected_namespaces=())
 class ValidationRequestWarningsResponse(BaseModel):
     """Response with warnings about target completion date issues."""
     has_warnings: bool
@@ -150,6 +152,7 @@ class VersionBlocker(BaseModel):
     )
 
 
+    model_config = ConfigDict(protected_namespaces=())
 class ValidationCreationBlockedResponse(BaseModel):
     """
     Response when CHANGE validation creation is blocked.
@@ -182,6 +185,7 @@ class ModelVersionEntry(BaseModel):
     version_id: Optional[int] = None  # Required for CHANGE type validations
 
 
+    model_config = ConfigDict(protected_namespaces=())
 class ValidationRequestModelUpdate(BaseModel):
     """Schema for adding/removing models from a validation request."""
     add_models: Optional[List[ModelVersionEntry]] = None
@@ -259,6 +263,7 @@ class ValidationRequestMarkSubmission(BaseModel):
     model_documentation_id: Optional[str] = None  # External document ID (e.g., DMS reference)
 
 
+    model_config = ConfigDict(protected_namespaces=())
 class ValidationApprovalUnlink(BaseModel):
     """Schema for admin unlinking a regional approval."""
     unlink_reason: str
@@ -309,8 +314,7 @@ class ValidationAssignmentResponse(BaseModel):
     reviewer_sign_off_comments: Optional[str] = None
     created_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True, protected_namespaces=())
 
 
 # ==================== VALIDATION WORK COMPONENT SCHEMAS ====================
@@ -348,8 +352,7 @@ class ValidationWorkComponentResponse(BaseModel):
     notes: Optional[str] = None
     updated_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True, protected_namespaces=())
 
 
 # ==================== VALIDATION OUTCOME SCHEMAS ====================
@@ -386,8 +389,7 @@ class ValidationOutcomeResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True, protected_namespaces=())
 
 
 # ==================== VALIDATION REVIEW OUTCOME SCHEMAS ====================
@@ -423,8 +425,7 @@ class ValidationReviewOutcomeResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True, protected_namespaces=())
 
 
 # ==================== VALIDATION APPROVAL SCHEMAS ====================
@@ -486,8 +487,7 @@ class ValidationApprovalResponse(BaseModel):
     voided_at: Optional[datetime] = None
     void_reason: Optional[str] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True, protected_namespaces=())
 
 
 # ==================== VALIDATION STATUS HISTORY SCHEMAS ====================
@@ -502,8 +502,7 @@ class ValidationStatusHistoryResponse(BaseModel):
     change_reason: Optional[str] = None
     changed_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True, protected_namespaces=())
 
 
 # ==================== FULL VALIDATION REQUEST RESPONSES ====================
@@ -577,8 +576,7 @@ class ValidationRequestResponse(BaseModel):
         description="Team SLA due date adjusted for hold time (extends by hold days)"
     )
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True, protected_namespaces=())
 
 
 class ValidationRequestDetailResponse(ValidationRequestResponse):
@@ -590,8 +588,7 @@ class ValidationRequestDetailResponse(ValidationRequestResponse):
     outcome: Optional[ValidationOutcomeResponse] = None
     review_outcome: Optional[ValidationReviewOutcomeResponse] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True, protected_namespaces=())
 
 
 class ValidationRequestListResponse(BaseModel):
@@ -618,8 +615,7 @@ class ValidationRequestListResponse(BaseModel):
         description="Risk-tier-specific completion lead time in days from ValidationPolicy"
     )
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True, protected_namespaces=())
 
 
 # ==================== LEGACY VALIDATION SCHEMAS (for backwards compatibility) ====================
@@ -637,6 +633,7 @@ class ValidationBase(BaseModel):
     report_reference: Optional[str] = None
 
 
+    model_config = ConfigDict(protected_namespaces=())
 class ValidationCreate(ValidationBase):
     """DEPRECATED: Schema for creating a legacy validation."""
     pass
@@ -666,8 +663,7 @@ class ValidationResponse(ValidationBase):
     created_at: datetime
     updated_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True, protected_namespaces=())
 
 
 class ValidationListResponse(BaseModel):
@@ -682,8 +678,7 @@ class ValidationListResponse(BaseModel):
     scope: Optional[str] = None
     created_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True, protected_namespaces=())
 
 
 # ==================== VALIDATION PLAN SCHEMAS ====================
@@ -703,8 +698,7 @@ class ValidationComponentDefinitionResponse(BaseModel):
     sort_order: int
     is_active: bool
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True, protected_namespaces=())
 
 
 class ValidationPlanComponentBase(BaseModel):
@@ -746,8 +740,7 @@ class ValidationPlanComponentResponse(ValidationPlanComponentBase):
     monitoring_plan_version_id: Optional[int] = None
     monitoring_review_notes: Optional[str] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True, protected_namespaces=())
 
 
 class ValidationPlanBase(BaseModel):
@@ -794,8 +787,7 @@ class ValidationPlanResponse(ValidationPlanBase):
     is_scope_only: bool = False
     validation_type_code: Optional[str] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True, protected_namespaces=())
 
 
 class PlanTemplateSuggestion(BaseModel):
@@ -813,6 +805,7 @@ class PlanTemplateSuggestion(BaseModel):
     is_different_config: bool  # True if template uses different requirements version
 
 
+    model_config = ConfigDict(protected_namespaces=())
 class PlanTemplateSuggestionsResponse(BaseModel):
     """Response with template plan suggestions."""
     has_suggestions: bool
@@ -852,8 +845,7 @@ class ConfigurationItemResponse(BaseModel):
     sort_order: int
     is_active: bool
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True, protected_namespaces=())
 
 
 class ConfigurationResponse(BaseModel):
@@ -866,8 +858,7 @@ class ConfigurationResponse(BaseModel):
     created_at: datetime
     is_active: bool
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True, protected_namespaces=())
 
 
 class ConfigurationDetailResponse(ConfigurationResponse):
@@ -907,6 +898,7 @@ class OpenValidationsCheckResponse(BaseModel):
     requires_confirmation: bool = False
 
 
+    model_config = ConfigDict(protected_namespaces=())
 class ForceResetRequest(BaseModel):
     """Request to force reset validation plans after risk tier change."""
     model_id: int
@@ -914,6 +906,7 @@ class ForceResetRequest(BaseModel):
     confirm_reset: bool = False  # Must be True to proceed
 
 
+    model_config = ConfigDict(protected_namespaces=())
 class ForceResetResponse(BaseModel):
     """Response after force resetting validation plans."""
     success: bool
@@ -942,6 +935,7 @@ class RiskMismatchItem(BaseModel):
     requires_revalidation: bool
 
 
+    model_config = ConfigDict(protected_namespaces=())
 class RiskMismatchReportResponse(BaseModel):
     """Response for risk mismatch audit report."""
     total_models_checked: int
@@ -986,6 +980,7 @@ class PreTransitionWarning(BaseModel):
     )
 
 
+    model_config = ConfigDict(protected_namespaces=())
 class PreTransitionWarningsResponse(BaseModel):
     """
     Response for pre-transition warnings check.

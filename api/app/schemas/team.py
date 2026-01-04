@@ -1,7 +1,7 @@
 """Team schemas."""
 from datetime import datetime
 from typing import List, Optional
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class TeamBase(BaseModel):
@@ -28,8 +28,7 @@ class TeamBasic(BaseModel):
     team_id: int
     name: str
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True, protected_namespaces=())
 
 
 class LOBUnitBasic(BaseModel):
@@ -42,8 +41,7 @@ class LOBUnitBasic(BaseModel):
     full_path: Optional[str] = None
     is_active: bool
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True, protected_namespaces=())
 
 
 class TeamRead(TeamBase):
@@ -54,8 +52,7 @@ class TeamRead(TeamBase):
     lob_count: int = 0
     model_count: int = 0
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True, protected_namespaces=())
 
 
 class TeamWithLOBs(TeamRead):

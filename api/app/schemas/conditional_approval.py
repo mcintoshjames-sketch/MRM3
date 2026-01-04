@@ -1,6 +1,6 @@
 """Pydantic schemas for conditional model use approvals."""
 from typing import Optional, List
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from datetime import datetime
 
 
@@ -26,8 +26,7 @@ class ApproverRoleResponse(ApproverRoleBase):
     created_at: datetime
     updated_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True, protected_namespaces=())
 
 
 class ApproverRoleListResponse(BaseModel):
@@ -37,8 +36,7 @@ class ApproverRoleListResponse(BaseModel):
     is_active: bool
     rules_count: int = 0  # Number of rules using this role
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True, protected_namespaces=())
 
 
 # ConditionalApprovalRule schemas
@@ -83,8 +81,7 @@ class ConditionalApprovalRuleResponse(BaseModel):
     # English translation of the rule
     rule_translation: str
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True, protected_namespaces=())
 
 
 class ConditionalApprovalRuleListResponse(BaseModel):
@@ -96,8 +93,7 @@ class ConditionalApprovalRuleListResponse(BaseModel):
     required_approver_names: str  # Comma-separated role names
     created_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True, protected_namespaces=())
 
 
 # Rule translation preview

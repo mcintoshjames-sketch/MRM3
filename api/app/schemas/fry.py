@@ -5,7 +5,7 @@ Pydantic models for FRY 14 reporting API requests and responses.
 """
 from datetime import datetime
 from typing import List, Optional
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 # ============================================================================
@@ -36,8 +36,7 @@ class FryLineItemResponse(FryLineItemBase):
     created_at: datetime
     updated_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True, protected_namespaces=())
 
 
 # ============================================================================
@@ -52,6 +51,7 @@ class FryMetricGroupBase(BaseModel):
     is_active: bool = True
 
 
+    model_config = ConfigDict(protected_namespaces=())
 class FryMetricGroupCreate(FryMetricGroupBase):
     """Schema for creating a FRY metric group."""
     pass
@@ -65,6 +65,7 @@ class FryMetricGroupUpdate(BaseModel):
     is_active: Optional[bool] = None
 
 
+    model_config = ConfigDict(protected_namespaces=())
 class FryMetricGroupResponse(FryMetricGroupBase):
     """Response schema for FRY metric group."""
     metric_group_id: int
@@ -72,16 +73,14 @@ class FryMetricGroupResponse(FryMetricGroupBase):
     created_at: datetime
     updated_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True, protected_namespaces=())
 
 
 class FryMetricGroupWithLineItems(FryMetricGroupResponse):
     """Response schema for FRY metric group with line items."""
     line_items: List[FryLineItemResponse] = []
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True, protected_namespaces=())
 
 
 # ============================================================================
@@ -114,16 +113,14 @@ class FryScheduleResponse(FryScheduleBase):
     created_at: datetime
     updated_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True, protected_namespaces=())
 
 
 class FryScheduleWithMetricGroups(FryScheduleResponse):
     """Response schema for FRY schedule with metric groups."""
     metric_groups: List[FryMetricGroupWithLineItems] = []
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True, protected_namespaces=())
 
 
 # ============================================================================
@@ -155,16 +152,14 @@ class FryReportResponse(FryReportBase):
     created_at: datetime
     updated_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True, protected_namespaces=())
 
 
 class FryReportWithSchedules(FryReportResponse):
     """Response schema for FRY report with schedules."""
     schedules: List[FryScheduleWithMetricGroups] = []
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True, protected_namespaces=())
 
 
 # ============================================================================
@@ -179,8 +174,7 @@ class FryMetricGroupSummary(BaseModel):
     is_active: bool
     line_item_count: int
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True, protected_namespaces=())
 
 
 class FryScheduleSummary(BaseModel):
@@ -190,8 +184,7 @@ class FryScheduleSummary(BaseModel):
     is_active: bool
     metric_group_count: int
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True, protected_namespaces=())
 
 
 class FryReportSummary(BaseModel):
@@ -201,5 +194,4 @@ class FryReportSummary(BaseModel):
     is_active: bool
     schedule_count: int
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True, protected_namespaces=())

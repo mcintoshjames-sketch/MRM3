@@ -21,7 +21,7 @@ from statistics import median
 from fastapi import APIRouter, Depends, Query, HTTPException, status
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import func
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from app.core.database import get_db
 from app.core.deps import get_current_user
@@ -130,8 +130,7 @@ class RegionInfo(BaseModel):
     region_code: str
     region_name: str
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True, protected_namespaces=())
 
 
 class OverdueRevalidationRecord(BaseModel):
@@ -203,8 +202,7 @@ class OverdueRevalidationRecord(BaseModel):
         None, description="Past due level code (e.g., 'MINIMAL', 'CRITICAL')"
     )
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True, protected_namespaces=())
 
 
 class EnhancedSummary(BaseModel):

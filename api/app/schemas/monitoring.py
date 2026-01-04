@@ -1,7 +1,7 @@
 """Monitoring Plans and Teams schemas."""
 from typing import Optional, List
 from datetime import date, datetime
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from enum import Enum
 
 
@@ -23,8 +23,7 @@ class UserRef(BaseModel):
     email: str
     full_name: str
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True, protected_namespaces=())
 
 
 # ============================================================================
@@ -36,8 +35,7 @@ class ModelRef(BaseModel):
     model_id: int
     model_name: str
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True, protected_namespaces=())
 
 
 # ============================================================================
@@ -52,8 +50,7 @@ class KpmRef(BaseModel):
     category_name: Optional[str] = None
     evaluation_type: Optional[str] = "Quantitative"
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True, protected_namespaces=())
 
 
 # ============================================================================
@@ -87,8 +84,7 @@ class MonitoringTeamResponse(MonitoringTeamBase):
     created_at: datetime
     updated_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True, protected_namespaces=())
 
 
 class MonitoringTeamListResponse(BaseModel):
@@ -100,8 +96,7 @@ class MonitoringTeamListResponse(BaseModel):
     member_count: int = 0
     plan_count: int = 0
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True, protected_namespaces=())
 
 
 class MonitoringTeamWithMembersResponse(BaseModel):
@@ -114,8 +109,7 @@ class MonitoringTeamWithMembersResponse(BaseModel):
     plan_count: int = 0
     members: List[UserRef] = []
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True, protected_namespaces=())
 
 
 class UserPermissions(BaseModel):
@@ -168,8 +162,7 @@ class MonitoringPlanMetricResponse(MonitoringPlanMetricBase):
     plan_id: int
     kpm: KpmRef
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True, protected_namespaces=())
 
 
 # ============================================================================
@@ -198,6 +191,7 @@ class MonitoringPlanCreate(MonitoringPlanBase):
     next_submission_due_date: Optional[date] = None
 
 
+    model_config = ConfigDict(protected_namespaces=())
 class MonitoringPlanUpdate(BaseModel):
     """Update schema for monitoring plan (all fields optional)."""
     name: Optional[str] = None
@@ -212,6 +206,7 @@ class MonitoringPlanUpdate(BaseModel):
     model_ids: Optional[List[int]] = None
 
 
+    model_config = ConfigDict(protected_namespaces=())
 class MonitoringPlanResponse(MonitoringPlanBase):
     """Response schema for monitoring plan."""
     plan_id: int
@@ -227,8 +222,7 @@ class MonitoringPlanResponse(MonitoringPlanBase):
     created_at: datetime
     updated_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True, protected_namespaces=())
 
 
 class MonitoringPlanListResponse(BaseModel):
@@ -251,8 +245,7 @@ class MonitoringPlanListResponse(BaseModel):
     non_cancelled_cycle_count: int = 0
     open_recommendation_count: int = 0
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True, protected_namespaces=())
 
 
 class MonitoringPlanDeactivationSummary(BaseModel):
@@ -294,8 +287,7 @@ class MetricSnapshotResponse(BaseModel):
     qualitative_guidance: Optional[str] = None
     sort_order: int
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True, protected_namespaces=())
 
 
 class ModelSnapshotResponse(BaseModel):
@@ -304,8 +296,7 @@ class ModelSnapshotResponse(BaseModel):
     model_id: int
     model_name: str
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True, protected_namespaces=())
 
 
 class MonitoringPlanVersionResponse(BaseModel):
@@ -323,8 +314,7 @@ class MonitoringPlanVersionResponse(BaseModel):
     models_count: int = 0
     cycles_count: int = 0
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True, protected_namespaces=())
 
 
 class MonitoringPlanVersionDetailResponse(MonitoringPlanVersionResponse):
@@ -333,6 +323,7 @@ class MonitoringPlanVersionDetailResponse(MonitoringPlanVersionResponse):
     model_snapshots: List[ModelSnapshotResponse] = []
 
 
+    model_config = ConfigDict(protected_namespaces=())
 class MonitoringPlanVersionListResponse(BaseModel):
     """List response for monitoring plan versions."""
     version_id: int
@@ -346,8 +337,7 @@ class MonitoringPlanVersionListResponse(BaseModel):
     models_count: int = 0
     cycles_count: int = 0
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True, protected_namespaces=())
 
 
 class ModelMonitoringPlanResponse(BaseModel):
@@ -421,8 +411,7 @@ class MonitoringCycleVersionRef(BaseModel):
     version_number: int
     version_name: Optional[str] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True, protected_namespaces=())
 
 
 class MonitoringCycleResponse(BaseModel):
@@ -461,8 +450,7 @@ class MonitoringCycleResponse(BaseModel):
     # Embedded approvals (with can_approve computed for current user)
     approvals: Optional[List["MonitoringCycleApprovalResponse"]] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True, protected_namespaces=())
 
 
 class MonitoringCycleListResponse(BaseModel):
@@ -497,8 +485,7 @@ class MonitoringCycleListResponse(BaseModel):
     is_overdue: bool = False
     days_overdue: int = 0  # Positive if overdue, negative if days remaining
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True, protected_namespaces=())
 
 
 # ============================================================================
@@ -511,8 +498,7 @@ class RegionRef(BaseModel):
     region_name: str
     region_code: str
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True, protected_namespaces=())
 
 
 class MonitoringCycleApprovalBase(BaseModel):
@@ -547,8 +533,7 @@ class MonitoringCycleApprovalResponse(BaseModel):
     can_approve: bool = False  # Whether current user can approve this
     is_proxy_approval: bool = False  # Whether this was Admin approving on behalf
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True, protected_namespaces=())
 
 
 class MonitoringApprovalQueueItem(BaseModel):
@@ -570,8 +555,7 @@ class MonitoringApprovalQueueItem(BaseModel):
     created_at: datetime
     can_approve: bool = False
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True, protected_namespaces=())
 
 
 class ApproveRequest(BaseModel):
@@ -612,6 +596,7 @@ class MonitoringResultBase(BaseModel):
     supporting_data: Optional[dict] = None
 
 
+    model_config = ConfigDict(protected_namespaces=())
 class MonitoringResultCreate(MonitoringResultBase):
     """Create schema for monitoring result."""
     pass
@@ -631,8 +616,7 @@ class OutcomeValueRef(BaseModel):
     code: str
     label: str
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True, protected_namespaces=())
 
 
 class MonitoringResultResponse(BaseModel):
@@ -652,8 +636,7 @@ class MonitoringResultResponse(BaseModel):
     # Include metric info for context
     metric: Optional[MonitoringPlanMetricResponse] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True, protected_namespaces=())
 
 
 class MonitoringResultListResponse(BaseModel):
@@ -671,8 +654,7 @@ class MonitoringResultListResponse(BaseModel):
     entered_by_name: str
     entered_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True, protected_namespaces=())
 
 
 # ============================================================================
@@ -727,6 +709,7 @@ class MetricTrendPoint(BaseModel):
     red_max: Optional[float] = None
 
 
+    model_config = ConfigDict(protected_namespaces=())
 class MetricTrendResponse(BaseModel):
     """Response schema for metric trend data."""
     plan_metric_id: int
@@ -780,8 +763,7 @@ class MyMonitoringTaskResponse(BaseModel):
     is_overdue: bool = False
     days_until_due: Optional[int] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True, protected_namespaces=())
 
 
 # ============================================================================
@@ -812,8 +794,7 @@ class AdminMonitoringCycleSummary(BaseModel):
     yellow_count: int = 0
     red_count: int = 0
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True, protected_namespaces=())
 
 
 class AdminMonitoringOverviewSummary(BaseModel):
@@ -832,8 +813,7 @@ class AdminMonitoringOverviewResponse(BaseModel):
     summary: AdminMonitoringOverviewSummary
     cycles: List[AdminMonitoringCycleSummary] = []
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True, protected_namespaces=())
 
 
 # ============================================================================
@@ -854,6 +834,7 @@ class CSVImportPreviewRow(BaseModel):
     error: Optional[str] = None
 
 
+    model_config = ConfigDict(protected_namespaces=())
 class CSVImportPreviewSummary(BaseModel):
     """Summary for CSV import preview."""
     total_rows: int

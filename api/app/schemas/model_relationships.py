@@ -1,7 +1,7 @@
 """Model relationship schemas - hierarchy and dependencies."""
 from datetime import date
 from typing import Optional
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 # ============================================================================
@@ -39,6 +39,7 @@ class ModelInfo(BaseModel):
     model_name: str
 
 
+    model_config = ConfigDict(protected_namespaces=())
 class RelationTypeInfo(BaseModel):
     """Nested relation type information."""
     value_id: int
@@ -57,8 +58,7 @@ class ModelHierarchyResponse(ModelHierarchyBase):
     child_model: Optional[ModelInfo] = None
     relation_type: Optional[RelationTypeInfo] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True, protected_namespaces=())
 
 
 # ============================================================================
@@ -112,8 +112,7 @@ class ModelFeedDependencyResponse(ModelFeedDependencyBase):
     consumer_model: Optional[ModelInfo] = None
     dependency_type: Optional[DependencyTypeInfo] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True, protected_namespaces=())
 
 
 # ============================================================================
@@ -132,6 +131,7 @@ class ModelHierarchySummary(BaseModel):
     notes: Optional[str] = None
 
 
+    model_config = ConfigDict(protected_namespaces=())
 class ModelDependencySummary(BaseModel):
     """Simplified dependency info for list views."""
     id: int
@@ -143,3 +143,4 @@ class ModelDependencySummary(BaseModel):
     is_active: bool
     effective_date: Optional[date]
     end_date: Optional[date]
+    model_config = ConfigDict(protected_namespaces=())

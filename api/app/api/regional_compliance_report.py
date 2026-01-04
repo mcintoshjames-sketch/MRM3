@@ -22,7 +22,7 @@ from datetime import datetime
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy import select, func, case, desc
 from sqlalchemy.orm import Session, joinedload, aliased
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from app.core.database import get_db
 from app.core.time import utc_now
@@ -74,8 +74,7 @@ class RegionalDeploymentRecord(BaseModel):
     is_validation_pending: bool = Field(False, description="Validation in progress")
     is_validation_approved: bool = Field(False, description="Validation fully approved")
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True, protected_namespaces=())
 
 
 class RegionalComplianceReportResponse(BaseModel):

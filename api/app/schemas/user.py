@@ -1,5 +1,5 @@
 """User schemas."""
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, ConfigDict, EmailStr
 from typing import List, Optional
 from app.schemas.region import Region
 
@@ -12,8 +12,7 @@ class LOBUnitBrief(BaseModel):
     level: int
     full_path: str
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True, protected_namespaces=())
 
 
 class UserBase(BaseModel):
@@ -56,8 +55,7 @@ class UserResponse(UserBase):
     lob_id: int  # User's LOB assignment (required)
     lob: Optional[LOBUnitBrief] = None  # Nested LOB info with full path
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True, protected_namespaces=())
 
 
 class Token(BaseModel):

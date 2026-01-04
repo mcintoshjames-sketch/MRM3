@@ -3,7 +3,7 @@ import re
 from typing import Optional, List
 from datetime import date, datetime
 from decimal import Decimal
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from enum import Enum
 
 
@@ -83,8 +83,7 @@ class UserRef(BaseModel):
     email: str
     full_name: str
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True, protected_namespaces=())
 
 
 class ModelRef(BaseModel):
@@ -96,8 +95,7 @@ class ModelRef(BaseModel):
     owner_id: Optional[int] = None
     owner_name: Optional[str] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True, protected_namespaces=())
 
 
 class RegionRef(BaseModel):
@@ -106,8 +104,7 @@ class RegionRef(BaseModel):
     region_name: str
     region_code: str
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True, protected_namespaces=())
 
 
 class TaxonomyValueRef(BaseModel):
@@ -116,8 +113,7 @@ class TaxonomyValueRef(BaseModel):
     code: str
     label: str
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True, protected_namespaces=())
 
 
 # ============================================================================
@@ -164,8 +160,7 @@ class AttestationQuestionResponse(BaseModel):
     frequency_scope: AttestationQuestionFrequencyEnum
     requires_comment_if_no: bool
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True, protected_namespaces=())
 
 
 # ============================================================================
@@ -212,8 +207,7 @@ class AttestationCycleResponse(AttestationCycleBase):
     accepted_count: int = 0
     rejected_count: int = 0
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True, protected_namespaces=())
 
 
 class AttestationCycleListResponse(BaseModel):
@@ -231,8 +225,7 @@ class AttestationCycleListResponse(BaseModel):
     # Coverage info
     coverage_pct: float = 0.0
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True, protected_namespaces=())
 
 
 # ============================================================================
@@ -258,8 +251,7 @@ class AttestationResponseResponse(AttestationResponseBase):
     question: Optional[AttestationQuestionResponse] = None
     created_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True, protected_namespaces=())
 
 
 # ============================================================================
@@ -295,8 +287,7 @@ class AttestationEvidenceResponse(AttestationEvidenceBase):
     added_by: UserRef
     added_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True, protected_namespaces=())
 
 
 # ============================================================================
@@ -346,8 +337,7 @@ class AttestationRecordResponse(BaseModel):
     days_overdue: int = 0
     is_overdue: bool = False
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True, protected_namespaces=())
 
 
 class AttestationRecordListResponse(BaseModel):
@@ -367,8 +357,7 @@ class AttestationRecordListResponse(BaseModel):
     is_overdue: bool = False
     days_overdue: int = 0
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True, protected_namespaces=())
 
 
 class MyAttestationResponse(BaseModel):
@@ -390,8 +379,7 @@ class MyAttestationResponse(BaseModel):
     can_submit: bool  # Whether current user can submit
     is_excluded: bool = False  # True if excluded from bulk attestation
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True, protected_namespaces=())
 
 
 # ============================================================================
@@ -413,6 +401,7 @@ class AttestationSchedulingRuleBase(BaseModel):
     end_date: Optional[date] = None
 
 
+    model_config = ConfigDict(protected_namespaces=())
 class AttestationSchedulingRuleCreate(AttestationSchedulingRuleBase):
     """Create schema for attestation scheduling rule."""
     pass
@@ -439,8 +428,7 @@ class AttestationSchedulingRuleResponse(AttestationSchedulingRuleBase):
     created_at: datetime
     updated_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True, protected_namespaces=())
 
 
 # ============================================================================
@@ -455,6 +443,7 @@ class AttestationChangeLinkBase(BaseModel):
     decommissioning_request_id: Optional[int] = None
 
 
+    model_config = ConfigDict(protected_namespaces=())
 class AttestationChangeLinkCreate(AttestationChangeLinkBase):
     """Create schema for attestation change link."""
     pass
@@ -468,8 +457,7 @@ class AttestationChangeLinkResponse(AttestationChangeLinkBase):
     # Model info if MODEL_EDIT or DECOMMISSION
     model: Optional[ModelRef] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True, protected_namespaces=())
 
 
 # ============================================================================
@@ -505,8 +493,7 @@ class CoverageTargetResponse(CoverageTargetBase):
     created_at: datetime
     updated_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True, protected_namespaces=())
 
 
 # ============================================================================
@@ -551,6 +538,7 @@ class TimelinessItemResponse(BaseModel):
     risk_tier: str
 
 
+    model_config = ConfigDict(protected_namespaces=())
 class TimelinessReportResponse(BaseModel):
     """Timeliness report for a cycle."""
     cycle: AttestationCycleListResponse
@@ -623,8 +611,7 @@ class BulkAttestationCycleInfo(BaseModel):
     status: AttestationCycleStatusEnum
     days_until_due: int
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True, protected_namespaces=())
 
 
 class BulkAttestationModel(BaseModel):
@@ -639,8 +626,7 @@ class BulkAttestationModel(BaseModel):
     attestation_status: AttestationRecordStatusEnum
     is_excluded: bool = False
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True, protected_namespaces=())
 
 
 class BulkAttestationDraftInfo(BaseModel):

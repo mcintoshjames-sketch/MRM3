@@ -1,5 +1,5 @@
 """Residual Risk Map schemas."""
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from datetime import datetime
 from typing import Optional
 
@@ -104,8 +104,7 @@ class ResidualRiskMapResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True, protected_namespaces=())
 
 
 class ResidualRiskMapListResponse(BaseModel):
@@ -118,8 +117,7 @@ class ResidualRiskMapListResponse(BaseModel):
     created_by_name: Optional[str] = None
     created_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True, protected_namespaces=())
 
 
 class ResidualRiskCalculateRequest(BaseModel):

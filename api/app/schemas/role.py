@@ -1,5 +1,5 @@
 """Role schemas."""
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 
 class RoleResponse(BaseModel):
@@ -9,5 +9,4 @@ class RoleResponse(BaseModel):
     is_system: bool
     is_active: bool
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True, protected_namespaces=())

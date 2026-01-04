@@ -1,7 +1,7 @@
 """Model version schemas."""
 from datetime import datetime, date
 from typing import Optional, List
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from enum import Enum
 
 
@@ -95,8 +95,7 @@ class ModelVersionResponse(ModelVersionBase):
         description="Current status code of linked validation request (e.g., INTAKE, PLANNING, IN_PROGRESS, REVIEW)"
     )
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True, protected_namespaces=())
 
 
 class ReadyToDeployVersion(BaseModel):
@@ -123,8 +122,7 @@ class ReadyToDeployVersion(BaseModel):
     owner_name: str
     days_since_approval: int
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True, protected_namespaces=())
 
 
 class ReadyToDeploySummary(BaseModel):

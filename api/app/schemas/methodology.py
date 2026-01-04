@@ -1,6 +1,6 @@
 """Methodology library schemas."""
 from typing import Optional, List
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 
 class MethodologyBase(BaseModel):
@@ -32,8 +32,7 @@ class MethodologyResponse(MethodologyBase):
     methodology_id: int
     category_id: int
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True, protected_namespaces=())
 
 
 class MethodologyCategoryBase(BaseModel):
@@ -62,13 +61,11 @@ class MethodologyCategoryResponse(MethodologyCategoryBase):
     category_id: int
     methodologies: List[MethodologyResponse] = []
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True, protected_namespaces=())
 
 
 class MethodologyCategoryListResponse(MethodologyCategoryBase):
     """Response schema for methodology category list (without methodologies)."""
     category_id: int
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True, protected_namespaces=())

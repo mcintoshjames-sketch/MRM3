@@ -82,7 +82,7 @@ class MRSAReviewExceptionMRSASummary(BaseModel):
     model_name: str
     mrsa_id: Optional[int] = None
 
-    model_config = ConfigDict(from_attributes=True)
+    model_config = ConfigDict(from_attributes=True, protected_namespaces=())
 
 
 class MRSAReviewExceptionResponse(BaseModel):

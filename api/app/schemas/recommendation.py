@@ -1,5 +1,5 @@
 """Model Recommendations schemas."""
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 from datetime import datetime, date
 from typing import Optional, List, Any
 from app.schemas.taxonomy import TaxonomyValueResponse
@@ -15,8 +15,7 @@ class UserSummary(BaseModel):
     email: str
     role: str
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True, protected_namespaces=())
 
 
 class ModelSummary(BaseModel):
@@ -25,8 +24,7 @@ class ModelSummary(BaseModel):
     model_name: str
     status: str
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True, protected_namespaces=())
 
 
 class ValidationRequestSummary(BaseModel):
@@ -34,8 +32,7 @@ class ValidationRequestSummary(BaseModel):
     request_id: int
     validation_type: Optional[str] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True, protected_namespaces=())
 
     @model_validator(mode='before')
     @classmethod
@@ -62,8 +59,7 @@ class MonitoringCycleSummary(BaseModel):
     period_end: date
     plan_name: Optional[str] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True, protected_namespaces=())
 
     @model_validator(mode='before')
     @classmethod
@@ -123,8 +119,7 @@ class ActionPlanTaskResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True, protected_namespaces=())
 
 
 # ==================== REBUTTAL SCHEMAS ====================
@@ -155,8 +150,7 @@ class RebuttalResponse(BaseModel):
     review_comments: Optional[str] = None
     is_current: bool
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True, protected_namespaces=())
 
 
 class RebuttalReviewResponse(BaseModel):
@@ -167,8 +161,7 @@ class RebuttalReviewResponse(BaseModel):
     reviewed_at: datetime
     recommendation: "RecommendationResponse"
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True, protected_namespaces=())
 
 
 # ==================== CLOSURE EVIDENCE SCHEMAS ====================
@@ -194,8 +187,7 @@ class ClosureEvidenceResponse(BaseModel):
     uploaded_by: UserSummary
     uploaded_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True, protected_namespaces=())
 
 
 # ==================== STATUS HISTORY SCHEMAS ====================
@@ -211,8 +203,7 @@ class StatusHistoryResponse(BaseModel):
     change_reason: Optional[str] = None
     additional_context: Optional[str] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True, protected_namespaces=())
 
 
 # ==================== APPROVAL SCHEMAS ====================
@@ -235,8 +226,7 @@ class ApprovalResponse(BaseModel):
     voided_at: Optional[datetime] = None
     created_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True, protected_namespaces=())
 
 
 class ApprovalRequest(BaseModel):
@@ -279,8 +269,7 @@ class PriorityConfigResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True, protected_namespaces=())
 
 
 # ==================== REGIONAL OVERRIDE SCHEMAS ====================
@@ -309,8 +298,7 @@ class RegionSummary(BaseModel):
     code: str
     name: str
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True, protected_namespaces=())
 
 
 class RegionalOverrideResponse(BaseModel):
@@ -325,8 +313,7 @@ class RegionalOverrideResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True, protected_namespaces=())
 
 
 # ==================== TIMEFRAME CONFIG SCHEMAS ====================
@@ -348,8 +335,7 @@ class TimeframeConfigResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True, protected_namespaces=())
 
 
 class TimeframeCalculationRequest(BaseModel):
@@ -358,6 +344,7 @@ class TimeframeCalculationRequest(BaseModel):
     model_id: int
 
 
+    model_config = ConfigDict(protected_namespaces=())
 class TimeframeCalculationResponse(BaseModel):
     """Response schema for calculated timeframe information."""
     priority_code: str
@@ -386,6 +373,7 @@ class RecommendationBase(BaseModel):
     original_target_date: date
 
 
+    model_config = ConfigDict(protected_namespaces=())
 class RecommendationCreate(RecommendationBase):
     """Schema for creating a recommendation."""
     target_date_change_reason: Optional[str] = None
@@ -448,8 +436,7 @@ class RecommendationResponse(BaseModel):
     status_history: List[StatusHistoryResponse] = []
     approvals: List[ApprovalResponse] = []
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True, protected_namespaces=())
 
 
 class RecommendationListResponse(BaseModel):
@@ -472,8 +459,7 @@ class RecommendationListResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True, protected_namespaces=())
 
 
 # ==================== ACTION PLAN SUBMISSION SCHEMAS ====================
@@ -509,8 +495,7 @@ class RebuttalSubmissionResponse(BaseModel):
     rebuttal_id: int
     recommendation: RecommendationResponse
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True, protected_namespaces=())
 
 
 # ==================== DASHBOARD & REPORTS SCHEMAS ====================
@@ -529,8 +514,7 @@ class MyTaskItem(BaseModel):
     days_until_due: Optional[int] = None
     is_overdue: bool = False
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True, protected_namespaces=())
 
 
 class MyTasksResponse(BaseModel):
@@ -573,8 +557,7 @@ class OverdueRecommendation(BaseModel):
     current_target_date: date
     days_overdue: int
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True, protected_namespaces=())
 
 
 class OverdueRecommendationsReport(BaseModel):

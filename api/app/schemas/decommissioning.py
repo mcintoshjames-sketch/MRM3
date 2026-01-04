@@ -1,7 +1,7 @@
 """Pydantic schemas for decommissioning workflow."""
 from datetime import datetime, date
 from typing import Optional, List
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, ConfigDict, field_validator
 
 from app.schemas.user import UserResponse
 from app.schemas.taxonomy import TaxonomyValueResponse
@@ -16,8 +16,7 @@ class RegionBasic(BaseModel):
     code: str
     name: str
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True, protected_namespaces=())
 
 
 # --- Request/Input Schemas ---
@@ -41,6 +40,7 @@ class DecommissioningRequestCreate(BaseModel):
         return v.strip()
 
 
+    model_config = ConfigDict(protected_namespaces=())
 class ValidatorReviewRequest(BaseModel):
     """Schema for validator review (Stage 1)."""
     approved: bool
@@ -116,8 +116,7 @@ class DecommissioningApprovalResponse(BaseModel):
     is_approved: Optional[bool] = None  # NULL=pending
     comment: Optional[str] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True, protected_namespaces=())
 
 
 class DecommissioningStatusHistoryResponse(BaseModel):
@@ -131,8 +130,7 @@ class DecommissioningStatusHistoryResponse(BaseModel):
     changed_at: datetime
     notes: Optional[str] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True, protected_namespaces=())
 
 
 class ReplacementModelInfo(BaseModel):
@@ -142,8 +140,7 @@ class ReplacementModelInfo(BaseModel):
     implementation_date: Optional[date] = None
     status: Optional[str] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True, protected_namespaces=())
 
 
 class DecommissioningModelInfo(BaseModel):
@@ -156,8 +153,7 @@ class DecommissioningModelInfo(BaseModel):
     status: Optional[str] = None
     regions: List[RegionBasic] = []
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True, protected_namespaces=())
 
 
 class DecommissioningRequestResponse(BaseModel):
@@ -202,8 +198,7 @@ class DecommissioningRequestResponse(BaseModel):
     status_history: List[DecommissioningStatusHistoryResponse] = []
     approvals: List[DecommissioningApprovalResponse] = []
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True, protected_namespaces=())
 
 
 class DecommissioningRequestListItem(BaseModel):
@@ -219,8 +214,7 @@ class DecommissioningRequestListItem(BaseModel):
     created_at: datetime
     created_by_name: Optional[str] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True, protected_namespaces=())
 
 
 class ModelImplementationDateResponse(BaseModel):
@@ -232,8 +226,7 @@ class ModelImplementationDateResponse(BaseModel):
     latest_version_id: Optional[int] = None
     latest_version_status: Optional[str] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True, protected_namespaces=())
 
 
 # --- Constants for reason codes that require replacement ---

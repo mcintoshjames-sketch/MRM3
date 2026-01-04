@@ -1,5 +1,5 @@
 """Model-Application relationship schemas."""
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from datetime import datetime, date
 from typing import Optional, Literal
 from app.schemas.map_application import MapApplicationListResponse
@@ -38,5 +38,4 @@ class ModelApplicationResponse(BaseModel):
     created_by_user: Optional[UserResponse] = None
     updated_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True, protected_namespaces=())

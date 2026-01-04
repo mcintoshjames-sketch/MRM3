@@ -1,5 +1,5 @@
 """Entra user schemas."""
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, ConfigDict, EmailStr
 
 
 class EntraUserResponse(BaseModel):
@@ -16,8 +16,7 @@ class EntraUserResponse(BaseModel):
     mobile_phone: str | None = None
     account_enabled: bool
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True, protected_namespaces=())
 
 
 class EntraUserProvisionRequest(BaseModel):
