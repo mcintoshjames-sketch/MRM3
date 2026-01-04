@@ -8,7 +8,7 @@ from fastapi.responses import FileResponse
 from starlette.background import BackgroundTask
 from fastapi.encoders import jsonable_encoder
 from sqlalchemy.orm import Session, joinedload
-from sqlalchemy import desc, or_, func, nullslast, select
+from sqlalchemy import desc, or_, func, nullslast, select, text
 from fpdf import FPDF
 import tempfile
 import os
@@ -1908,6 +1908,18 @@ def check_validation_request_warnings(
     )
 
 
+VALIDATION_LOCK_NAMESPACE = 42
+
+
+def _acquire_validation_locks(db: Session, model_ids: List[int]) -> None:
+    """Acquire advisory locks for validation creation in a deterministic order."""
+    for model_id in sorted(model_ids):
+        db.execute(
+            text("SELECT pg_advisory_xact_lock(:namespace, :model_id)"),
+            {"namespace": VALIDATION_LOCK_NAMESPACE, "model_id": model_id},
+        )
+
+
 @router.post("/requests/", response_model=Union[ValidationRequestResponse, ValidationRequestWarningsResponse], status_code=status.HTTP_201_CREATED)
 def create_validation_request(
     request_data: ValidationRequestCreate,
@@ -2004,6 +2016,21 @@ def create_validation_request(
                 "message": "Cannot create CHANGE validation without linking to model versions",
                 "blockers": change_blockers
             }
+        )
+
+    # Acquire advisory locks to prevent concurrent conflicting requests
+    _acquire_validation_locks(db, request_data.model_ids)
+
+    # Re-check conflicts under lock to prevent races
+    conflicts = find_active_validation_conflicts(
+        db,
+        request_data.model_ids,
+        validation_type.code
+    )
+    if conflicts:
+        raise HTTPException(
+            status_code=400,
+            detail=build_validation_conflict_message(conflicts, validation_type.code)
         )
 
     # Verify priority exists

@@ -1,5 +1,6 @@
 """Application configuration."""
 import sys
+from urllib.parse import urlparse
 from pydantic_settings import BaseSettings
 
 
@@ -47,6 +48,26 @@ class Settings(BaseSettings):
                 print("FATAL: SECRET_KEY must be at least 32 characters in production!", file=sys.stderr)
                 print("Set a secure random SECRET_KEY environment variable.", file=sys.stderr)
                 sys.exit(1)
+
+            db_url = self.DATABASE_URL.strip()
+            default_db_url = "postgresql://mrm_user:mrm_pass@db:5432/mrm_db"
+            if not db_url or db_url == default_db_url:
+                print("FATAL: DATABASE_URL must be set to a non-default value in production!", file=sys.stderr)
+                print("Set DATABASE_URL to a production database connection string.", file=sys.stderr)
+                sys.exit(1)
+
+            parsed_db_url = urlparse(db_url)
+            if parsed_db_url.username == "mrm_user" and parsed_db_url.password == "mrm_pass":
+                print("FATAL: DATABASE_URL must not use default dev credentials in production!", file=sys.stderr)
+                print("Set DATABASE_URL with production credentials.", file=sys.stderr)
+                sys.exit(1)
+
+            if parsed_db_url.hostname in {"localhost", "127.0.0.1"}:
+                print(
+                    "WARNING: DATABASE_URL points to localhost/127.0.0.1 in production. "
+                    "Confirm this is intentional (sidecar/proxy pattern).",
+                    file=sys.stderr,
+                )
 
             if not self.JWT_ISSUER or not self.JWT_ISSUER.strip() or not self.JWT_AUDIENCE or not self.JWT_AUDIENCE.strip():
                 print("FATAL: JWT_ISSUER and JWT_AUDIENCE must be set in production!", file=sys.stderr)

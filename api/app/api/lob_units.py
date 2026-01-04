@@ -30,6 +30,7 @@ from app.schemas.lob import (
 )
 
 router = APIRouter()
+MAX_LOB_IMPORT_BYTES = 10 * 1024 * 1024
 
 
 @dataclass
@@ -656,8 +657,13 @@ async def import_lob_csv(
     """
     check_admin(current_user)
 
-    # Read and parse CSV
-    content = await file.read()
+    # Read and parse CSV (enforce max size)
+    content = await file.read(MAX_LOB_IMPORT_BYTES + 1)
+    if len(content) > MAX_LOB_IMPORT_BYTES:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail=f"CSV too large. Max size is {MAX_LOB_IMPORT_BYTES} bytes."
+        )
     try:
         text_content = content.decode('utf-8')
     except UnicodeDecodeError:

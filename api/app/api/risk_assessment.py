@@ -5,6 +5,7 @@ import tempfile
 import os
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import FileResponse
+from starlette.background import BackgroundTask
 from sqlalchemy.orm import Session, joinedload
 
 from app.core.database import get_db
@@ -994,5 +995,6 @@ def export_risk_assessment_pdf(
 
     return FileResponse(
         tmp_path,
-        filename=f"Risk_Assessment_{model.model_name}_{assessment.updated_at.strftime('%Y%m%d')}.pdf"
+        filename=f"Risk_Assessment_{model.model_name}_{assessment.updated_at.strftime('%Y%m%d')}.pdf",
+        background=BackgroundTask(os.unlink, tmp_path)
     )

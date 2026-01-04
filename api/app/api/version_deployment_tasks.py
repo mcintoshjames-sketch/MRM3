@@ -1153,58 +1153,61 @@ def bulk_confirm_deployments(
                             continue
                         deployed_before_validation = True
 
-            # Confirm the task
-            task.status = "CONFIRMED"
-            task.actual_production_date = request.actual_production_date
-            task.confirmation_notes = request.confirmation_notes
-            task.deployed_before_validation_approved = deployed_before_validation
-            task.validation_override_reason = request.validation_override_reason if deployed_before_validation else None
-            task.confirmed_at = utc_now()
-            task.confirmed_by_id = current_user.user_id
+            with db.begin_nested():
+                # Confirm the task
+                task.status = "CONFIRMED"
+                task.actual_production_date = request.actual_production_date
+                task.confirmation_notes = request.confirmation_notes
+                task.deployed_before_validation_approved = deployed_before_validation
+                task.validation_override_reason = request.validation_override_reason if deployed_before_validation else None
+                task.confirmed_at = utc_now()
+                task.confirmed_by_id = current_user.user_id
 
-            # Update ModelRegion
-            if task.region_id:
-                model_region = db.query(ModelRegion).filter(
-                    ModelRegion.model_id == task.model_id,
-                    ModelRegion.region_id == task.region_id
-                ).first()
+                # Update ModelRegion
+                if task.region_id:
+                    model_region = db.query(ModelRegion).filter(
+                        ModelRegion.model_id == task.model_id,
+                        ModelRegion.region_id == task.region_id
+                    ).first()
 
-                if model_region:
-                    model_region.version_id = task.version_id
-                    # Issue 1 fix: Use user-provided date, not server timestamp
-                    model_region.deployed_at = datetime.combine(
-                        request.actual_production_date, datetime.min.time()
-                    )
-                    if request.confirmation_notes:
-                        model_region.deployment_notes = request.confirmation_notes
+                    if model_region:
+                        model_region.version_id = task.version_id
+                        # Issue 1 fix: Use user-provided date, not server timestamp
+                        model_region.deployed_at = datetime.combine(
+                            request.actual_production_date, datetime.min.time()
+                        )
+                        if request.confirmation_notes:
+                            model_region.deployment_notes = request.confirmation_notes
 
-            # Issue 2 fix: Only update version.actual_production_date when ALL regions deployed
-            if version:
-                check_and_update_version_production_date(db, version)
+                # Issue 2 fix: Only update version.actual_production_date when ALL regions deployed
+                if version:
+                    check_and_update_version_production_date(db, version)
 
-            # Auto-create regional approval if required (lock icon region)
-            if version and version.validation_request_id and task.region_id:
-                create_regional_approval_if_required(db, task, version.validation_request_id)
+                # Auto-create regional approval if required (lock icon region)
+                if version and version.validation_request_id and task.region_id:
+                    create_regional_approval_if_required(db, task, version.validation_request_id)
 
-            # Detect Type 3 exception
-            if deployed_before_validation:
-                detect_type3_for_deployment_task(db, task)
+                # Detect Type 3 exception
+                if deployed_before_validation:
+                    detect_type3_for_deployment_task(db, task)
 
-            # Issue 3 fix: Add audit logging for bulk confirmation
-            db.add(AuditLog(
-                entity_type="VersionDeploymentTask",
-                entity_id=task.task_id,
-                action="DEPLOYMENT_CONFIRMED",
-                user_id=current_user.user_id,
-                changes={
-                    "status": task.status,
-                    "actual_production_date": str(task.actual_production_date),
-                    "region_id": task.region_id,
-                    "version_id": task.version_id,
-                    "model_id": task.model_id,
-                    "deployed_before_validation_approved": task.deployed_before_validation_approved
-                }
-            ))
+                # Issue 3 fix: Add audit logging for bulk confirmation
+                db.add(AuditLog(
+                    entity_type="VersionDeploymentTask",
+                    entity_id=task.task_id,
+                    action="DEPLOYMENT_CONFIRMED",
+                    user_id=current_user.user_id,
+                    changes={
+                        "status": task.status,
+                        "actual_production_date": str(task.actual_production_date),
+                        "region_id": task.region_id,
+                        "version_id": task.version_id,
+                        "model_id": task.model_id,
+                        "deployed_before_validation_approved": task.deployed_before_validation_approved
+                    }
+                ))
+
+                db.flush()
 
             succeeded.append(task_id)
 

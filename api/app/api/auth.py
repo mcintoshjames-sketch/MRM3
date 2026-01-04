@@ -16,7 +16,14 @@ from app.models.entra_user import EntraUser
 from app.models.region import Region
 from app.models.lob import LOBUnit
 from app.models.audit_log import AuditLog
-from app.core.roles import RoleCode, resolve_role_code, get_user_role_code, build_capabilities, get_role_display
+from app.core.roles import (
+    RoleCode,
+    resolve_role_code,
+    get_user_role_code,
+    build_capabilities,
+    get_role_display,
+    is_admin,
+)
 from app.schemas.user import LoginRequest, Token, UserResponse, UserCreate, UserUpdate, LOBUnitBrief
 from app.schemas.entra_user import EntraUserResponse, EntraUserProvisionRequest
 from app.schemas.model import ModelDetailResponse
@@ -95,6 +102,15 @@ def resolve_role_for_write(db: Session, role_code: str | None, role_display: str
     return role
 
 
+def require_admin_user(current_user: User) -> None:
+    """Ensure the current user is an admin."""
+    if not is_admin(current_user):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin access required"
+        )
+
+
 @router.post("/login", response_model=Token)
 def login(login_data: LoginRequest, db: Session = Depends(get_db)):
     """Login endpoint."""
@@ -136,6 +152,7 @@ def list_users(
     current_user: User = Depends(get_current_user)
 ):
     """List all users."""
+    require_admin_user(current_user)
     users = db.query(User).options(
         joinedload(User.regions),
         joinedload(User.lob),
@@ -151,6 +168,7 @@ def get_user(
     current_user: User = Depends(get_current_user)
 ):
     """Get a specific user by ID."""
+    require_admin_user(current_user)
     user = db.query(User).options(
         joinedload(User.regions),
         joinedload(User.lob),
@@ -220,8 +238,8 @@ def register(user_data: UserCreate, db: Session = Depends(get_db)):
             detail="Invalid or inactive LOB unit"
         )
 
-    # Resolve role (role_code preferred, role display fallback)
-    role = resolve_role_for_write(db, user_data.role_code, user_data.role)
+    # Force self-registration to USER role regardless of client input
+    role = resolve_role_for_write(db, RoleCode.USER.value, None)
 
     # Create user
     user = User(
@@ -232,10 +250,7 @@ def register(user_data: UserCreate, db: Session = Depends(get_db)):
         lob_id=user_data.lob_id
     )
 
-    # Handle region associations for Regional Approvers
-    if user_data.region_ids:
-        regions = db.query(Region).filter(Region.region_id.in_(user_data.region_ids)).all()
-        user.regions.extend(regions)
+    # Ignore region_ids for self-registration to prevent orphaned associations
 
     db.add(user)
     db.flush()  # Get user_id before creating audit log
@@ -252,7 +267,7 @@ def register(user_data: UserCreate, db: Session = Depends(get_db)):
             "email": user_data.email,
             "full_name": user_data.full_name,
             "role": role.display_name,
-            "region_ids": user_data.region_ids or [],
+            "region_ids": [],
             "lob_id": user_data.lob_id
         }
     )
@@ -271,6 +286,7 @@ def update_user(
     current_user: User = Depends(get_current_user)
 ):
     """Update a user."""
+    require_admin_user(current_user)
     user = db.query(User).options(
         joinedload(User.regions),
         joinedload(User.lob)
@@ -388,6 +404,7 @@ def delete_user(
     current_user: User = Depends(get_current_user)
 ):
     """Delete a user."""
+    require_admin_user(current_user)
     user = db.query(User).filter(User.user_id == user_id).first()
     if not user:
         raise HTTPException(

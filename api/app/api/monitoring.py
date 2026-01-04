@@ -117,6 +117,7 @@ from app.core.exception_detection import (
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+MAX_MONITORING_IMPORT_BYTES = 5 * 1024 * 1024
 
 
 def create_audit_log(
@@ -4109,9 +4110,20 @@ def import_cycle_results_csv(
     # Valid outcome codes (VALID_OUTCOME_CODES + empty string for blank values)
     valid_outcomes = VALID_OUTCOME_CODES | {''}  # Union with empty string
 
-    # Read and parse CSV
+    # Read and parse CSV (enforce max size)
     try:
-        content = file.file.read().decode('utf-8')
+        raw_content = file.file.read(MAX_MONITORING_IMPORT_BYTES + 1)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Failed to read CSV: {str(e)}")
+
+    if len(raw_content) > MAX_MONITORING_IMPORT_BYTES:
+        raise HTTPException(
+            status_code=413,
+            detail=f"CSV too large. Max size is {MAX_MONITORING_IMPORT_BYTES} bytes."
+        )
+
+    try:
+        content = raw_content.decode('utf-8')
         reader = csv.DictReader(io.StringIO(content))
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Failed to parse CSV: {str(e)}")
@@ -4335,9 +4347,7 @@ def import_cycle_results_csv(
             error_messages.append(f"Row {row.row_number}: {str(e)}")
             skipped += 1
 
-    db.commit()
-
-    # Create audit log for bulk import
+    # Create audit log for bulk import (same transaction)
     create_audit_log(
         db=db,
         entity_type="MonitoringCycle",
@@ -4352,6 +4362,7 @@ def import_cycle_results_csv(
         }
     )
 
+    db.commit()
     return CSVImportResultResponse(
         success=len(error_messages) == 0,
         created=created,
