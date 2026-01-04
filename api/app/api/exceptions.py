@@ -42,6 +42,8 @@ from app.schemas.model_exception import (
 
 router = APIRouter()
 
+MAX_DETECT_ALL_MODELS = 200
+
 
 # =============================================================================
 # Helper Functions
@@ -677,6 +679,8 @@ def detect_exceptions_for_model(
 
 @router.post("/detect-all", response_model=DetectionResponse)
 def detect_exceptions_all_models(
+    limit: int = Query(MAX_DETECT_ALL_MODELS, ge=1, le=MAX_DETECT_ALL_MODELS),
+    offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -688,52 +692,82 @@ def detect_exceptions_all_models(
     """
     _require_admin(current_user)
 
-    # Get all active models
-    models = db.query(Model).filter(Model.status == "Active").all()
+    models = db.query(Model).filter(
+        Model.status == "Active"
+    ).order_by(Model.model_id).offset(offset).limit(limit).all()
 
-    all_created = []
+    all_created: List[ModelException] = []
+    type1_count = 0
+    type2_count = 0
+    type3_count = 0
+    models_scanned = 0
+    current_model_id: Optional[int] = None
 
-    for model in models:
-        model_id = model.model_id
+    try:
+        for model in models:
+            current_model_id = model.model_id
 
-        # Type 1: Unmitigated Performance
-        type1_no_rec = detect_type1_unmitigated_performance(db, model_id)
-        all_created.extend(type1_no_rec)
+            # Type 1: Unmitigated Performance
+            type1_no_rec = detect_type1_unmitigated_performance(db, current_model_id)
+            type1_persistent = detect_type1_persistent_red_for_model(db, current_model_id)
 
-        type1_persistent = detect_type1_persistent_red_for_model(db, model_id)
-        all_created.extend(type1_persistent)
+            # Type 2: Outside Intended Purpose
+            type2 = detect_type2_outside_intended_purpose(db, current_model_id)
 
-        # Type 2: Outside Intended Purpose
-        type2 = detect_type2_outside_intended_purpose(db, model_id)
-        all_created.extend(type2)
+            # Type 3: Use Prior to Validation
+            type3 = detect_type3_use_prior_to_validation(db, current_model_id)
 
-        # Type 3: Use Prior to Validation
-        type3 = detect_type3_use_prior_to_validation(db, model_id)
-        all_created.extend(type3)
+            model_created = type1_no_rec + type1_persistent + type2 + type3
+            db.commit()
 
-    db.commit()
-
-    # Categorize counts
-    type1_count = sum(1 for e in all_created if e.exception_type == "UNMITIGATED_PERFORMANCE")
-    type2_count = sum(1 for e in all_created if e.exception_type == "OUTSIDE_INTENDED_PURPOSE")
-    type3_count = sum(1 for e in all_created if e.exception_type == "USE_PRIOR_TO_VALIDATION")
-
-    # Log audit for batch detection run
-    if all_created:
+            models_scanned += 1
+            for exc in model_created:
+                if exc.exception_type == "UNMITIGATED_PERFORMANCE":
+                    type1_count += 1
+                elif exc.exception_type == "OUTSIDE_INTENDED_PURPOSE":
+                    type2_count += 1
+                elif exc.exception_type == "USE_PRIOR_TO_VALIDATION":
+                    type3_count += 1
+            all_created.extend(model_created)
+    except Exception as exc:
+        db.rollback()
         db.add(AuditLog(
             entity_type="ModelException",
-            entity_id=0,  # Batch operation, no specific entity
+            entity_id=0,
             action="BATCH_DETECTION_RUN",
             user_id=current_user.user_id,
             changes={
-                "models_scanned": len(models),
+                "models_scanned": models_scanned,
                 "exceptions_created": len(all_created),
                 "type1_count": type1_count,
                 "type2_count": type2_count,
                 "type3_count": type3_count,
+                "limit": limit,
+                "offset": offset,
+                "failed_model_id": current_model_id,
+                "error": str(exc),
             },
         ))
         db.commit()
+        raise
+
+    # Log audit for batch detection run (always, for traceability)
+    db.add(AuditLog(
+        entity_type="ModelException",
+        entity_id=0,  # Batch operation, no specific entity
+        action="BATCH_DETECTION_RUN",
+        user_id=current_user.user_id,
+        changes={
+            "models_scanned": models_scanned,
+            "exceptions_created": len(all_created),
+            "type1_count": type1_count,
+            "type2_count": type2_count,
+            "type3_count": type3_count,
+            "limit": limit,
+            "offset": offset,
+        },
+    ))
+    db.commit()
 
     # Build response (limit to first 100 for performance)
     exception_responses = []

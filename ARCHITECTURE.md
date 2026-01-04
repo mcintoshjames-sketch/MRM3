@@ -3,20 +3,21 @@
 Model Risk Management inventory system with a FastAPI backend, React/TypeScript frontend, and PostgreSQL database. Supports model cataloging, validation workflow, recommendations tracking, performance monitoring, regional deployment tracking, configurable taxonomies, compliance reporting, and MRSA (Model Risk-Sensitive Application) classification with IRP (Independent Review Process) governance. Primary user roles: Admin (full control), Validator (workflow execution), Model Owner/Contributor (submit and track models), Regional/Global approvers (deployment approvals).
 
 ## Tech Stack
-- Backend: FastAPI, SQLAlchemy 2.x ORM, Pydantic v2 schemas, Alembic migrations, JWT auth via python-jose, passlib/bcrypt for hashing, matplotlib (charts).
+- Backend: FastAPI, SQLAlchemy 2.x ORM, Pydantic v2 schemas, Alembic migrations, JWT auth via python-jose, bcrypt for hashing, matplotlib (charts).
 - Frontend: React 18 + TypeScript + Vite + TailwindCSS, react-router-dom v6, Axios client with auth interceptor, Recharts (visualization), react-markdown (content).
 - Database: PostgreSQL (dockerized). In-memory SQLite used in tests.
 - Testing: pytest for API; vitest + React Testing Library + happy-dom for web.
 
 ## Runtime & Deployment
 - Local/dev via `docker compose up --build` (see `docker-compose.yml`). Services: `db` (Postgres on 5433), `api` (Uvicorn on 8001), `web` (Vite dev server on 5174).
-- API entrypoint: `api/app/main.py` with CORS for localhost frontends.
-- Env/config: `api/app/core/config.py` (DATABASE_URL, SECRET_KEY, algorithm, token expiry) loaded via `.env`; frontend uses `VITE_API_URL`.
+- API entrypoint: `api/app/main.py` with CORS origins from `CORS_ORIGINS` (comma-separated; defaults to `http://localhost:5173,http://localhost:5174`).
+- Env/config: `api/app/core/config.py` (DATABASE_URL, SECRET_KEY, algorithm, token expiry, `JWT_ISSUER`, `JWT_AUDIENCE`) loaded via `.env`; production requires issuer/audience and a strong SECRET_KEY; UAT tools require explicit break-glass (`ALLOW_UAT_TOOLS_IN_PROD` + `UAT_TOOLS_BREAK_GLASS_TICKET`); frontend uses `VITE_API_URL`.
+- Health probes: `/health` + `/healthz` for liveness, `/ready` + `/readyz` for readiness (DB connectivity plus Exception Closure Reason taxonomy check; readiness fails if required closure reason codes are missing).
 - Migrations: Alembic in `api/alembic`; run inside container against hostname `db`.
-- Seeding: `python -m app.seed` invoked at container start to create admin user, taxonomy values, regions, validation policies, component definitions, and demo directory data.
+- Seeding (dev compose): `docker-compose.yml` runs `python -m app.seed` at container start (after `alembic upgrade head`) to create admin user and seed reference data.
 
 ## Backend Architecture
-- Entry & middleware: `app/main.py` registers routers and CORS.
+- Entry & middleware: `app/main.py` registers routers and CORS; exposes liveness/readiness probes.
 - Routing modules (`app/api/`):
   - `auth.py`: login, user CRUD, mock Microsoft Entra directory search/provisioning.
   - `models.py`: model CRUD, regulatory metadata, cross-references to vendors, owners/developers, regulatory categories; RLS helpers in `app/core/rls.py`.
@@ -39,14 +40,16 @@ Model Risk Management inventory system with a FastAPI backend, React/TypeScript 
   - `overdue_commentary.py`: overdue revalidation commentary CRUD (create, supersede, get history) for tracking explanations on overdue validations.
   - `decommissioning.py`: model decommissioning workflow with two-stage approval (validator review → global/regional approvals), replacement model handling, gap analysis, withdrawal support, PATCH updates (PENDING only with audit logging), and role-based dashboard endpoints (`pending-validator-review` for validators, `my-pending-owner-reviews` for model owners).
   - `audit_logs.py`: audit log search/filter.
-  - `dashboard.py`: aging and workload summaries.
+  - `dashboard.py`: dashboard news feed plus MRSA review summary/upcoming/overdue endpoints.
   - `export_views.py`: CSV/export-friendly endpoints.
   - `regional_compliance_report.py`: region-wise deployment & approval report.
-  - `kpi_report.py`: KPI Report computing 21 model risk management metrics across categories (inventory, validation, monitoring, recommendations, governance, lifecycle, KRIs).
+  - `kpi_report.py`: KPI Report computing 23 model risk management metrics across categories (inventory, validation, monitoring, recommendations, governance, lifecycle, KRIs).
+  - `my_portfolio.py`: My Portfolio report endpoints + PDF export for model owners.
   - `analytics.py`, `saved_queries.py`: analytics aggregations and saved-query storage.
   - `kpm.py`: KPM (Key Performance Metrics) library management - categories and individual metrics for ongoing model monitoring.
-  - `monitoring.py`: Performance monitoring teams, plans, and plan metrics configuration with scheduling logic for submission/report due dates.
+  - `monitoring.py`: Performance monitoring teams, plans, cycles, approvals, and PDF report generation with scheduling logic for submission/report due dates; read access to cycle-scoped endpoints uses cycle/plan view gates (RLS + eligible approvers).
   - `recommendations.py`: Validation/monitoring findings lifecycle - action plans, rebuttals, closure workflow, approvals, and priority configuration with regional overrides.
+  - `exceptions.py`: Model exceptions detection and workflow endpoints.
   - `risk_assessment.py`: Model risk assessment CRUD with qualitative/quantitative scoring, inherent risk matrix calculation, overrides at three levels, per-region assessments, and automatic tier sync.
   - `qualitative_factors.py`: Admin-configurable qualitative risk factor management (CRUD for factors and rating guidance with weighted scoring).
   - `scorecard.py`: Validation scorecard configuration (sections, criteria, weights), ratings per validation request, computed results, and configuration versioning with publish workflow.
@@ -64,13 +67,14 @@ Model Risk Management inventory system with a FastAPI backend, React/TypeScript 
   - `uat_tools.py`: **(Dev/Test Only)** Temporary endpoints for data reset and seeding.
 - Core services:
   - DB session management (`core/database.py`), auth dependency (`core/deps.py`), security utilities (`core/security.py`), row-level security filters (`core/rls.py`).
-  - PDF/report helpers in `validation_workflow.py` (FPDF) for generated artifacts.
+  - PDF/report helpers live in `core/pdf_reports.py` (monitoring cycle + scorecard) and `core/pdf_generator.py` (risk assessment), with module-local FPDF exports in `validation_workflow.py`, `model_versions.py`, `model_dependencies.py`, and `my_portfolio.py`.
 - Models (`app/models/`):
   - Users & directory: `user.py`, `entra_user.py`, `lob.py` (LOBUnit hierarchy with levels 1-6: SBU→LOB1→LOB2→LOB3→LOB4→LOB5+), `team.py` (reporting teams assigned to LOB units), roles include Admin/Validator/Global Approver/Regional Approver/User. **LOB Rollup**: `core/lob_utils.py` provides `get_lob_rollup_name()` to roll up deep LOB levels (LOB5+) to LOB4 for display purposes.
-  - Catalog: `model.py`, `vendor.py`, `taxonomy.py`, `region.py`, `model_version.py`, `model_region.py`, `model_delegate.py`, `model_change_taxonomy.py`, `model_version_region.py`, `model_type.py` (ModelType, ModelTypeCategory), `methodology.py` (MethodologyCategory, Methodology).
+  - Catalog: `model.py`, `vendor.py`, `taxonomy.py`, `region.py`, `model_version.py`, `model_region.py`, `model_delegate.py`, `model_change_taxonomy.py`, `model_version_region.py`, `model_type_taxonomy.py` (ModelType, ModelTypeCategory), `methodology.py` (MethodologyCategory, Methodology).
+  - Model audit/support: `model_name_history.py` (name change history), `model_submission_comment.py` (submission review thread).
   - Model relationships: `model_hierarchy.py` (parent-child links with effective/end dates), `model_feed_dependency.py` (feeder-consumer data flows with active status tracking), `model_dependency_metadata.py` (extended metadata for dependencies, not yet exposed in UI).
   - Validation workflow: `validation.py` (ValidationRequest, ValidationStatusHistory, ValidationAssignment, ValidationOutcome, ValidationApproval, ValidationReviewOutcome, ValidationPlan, ValidationPlanComponent, ValidationComponentDefinition, ComponentDefinitionConfiguration/ConfigItem, ValidationPolicy, ValidationWorkflowSLA).
-  - Overdue commentary: `overdue_revalidation_comment.py` (OverdueRevalidationComment - tracks explanations for overdue submissions/validations with supersession chain).
+- Overdue commentary: `overdue_comment.py` (OverdueRevalidationComment - tracks explanations for overdue submissions/validations with supersession chain).
   - Decommissioning: `decommissioning.py` (DecommissioningRequest, DecommissioningStatusHistory, DecommissioningApproval - model retirement workflow with replacement tracking and gap analysis).
 - Additional approvals: `conditional_approval.py` (ApproverRole, ConditionalApprovalRule, RuleRequiredApprover).
   - MAP Applications: `map_application.py` (mock application inventory), `model_application.py` (model-application links with relationship types).
@@ -84,18 +88,20 @@ Model Risk Management inventory system with a FastAPI backend, React/TypeScript 
   - IRP (Independent Review Process): `irp.py` (IRP, IRPReview, IRPCertification, mrsa_irp association table for many-to-many MRSA coverage).
   - MRSA review scheduling: `mrsa_review_policy.py` (MRSAReviewPolicy, MRSAReviewException) for risk-based review frequencies and approved due date overrides.
 - Schemas: mirrored Pydantic models in `app/schemas/` for requests/responses.
-- Authn/z: HTTP Bearer JWT tokens; `/auth/me` returns `role_code` + `capabilities` for UI gating; `get_current_user` enforces auth; backend still uses role checks and RLS utilities to narrow visibility for non-privileged users.
+- Authn/z: HTTP Bearer JWT tokens; `/auth/me` returns `role_code` + `capabilities` for UI gating; `get_current_user` enforces auth with issuer/audience validation when configured; backend still uses role checks and RLS utilities to narrow visibility for non-privileged users.
 - Audit logging: `AuditLog` persisted on key workflows (model changes, approvals, component config publishes, etc.).
-- Reporting: Dedicated routers plus endpoints in `validation_workflow.py` for dashboard metrics and compliance reports (aging, workload, deviation trends).
+- Reporting: Dedicated routers plus endpoints in `validation_workflow.py` for dashboard metrics and compliance reports (aging, workload, deviation trends), plus risk-mismatch reporting and effective-challenge PDF exports.
 
 ## Frontend Architecture
 - Entry: `src/main.tsx` mounts App within `AuthProvider` and `BrowserRouter`.
-- Routing (`src/App.tsx`): guarded routes for login, role-specific dashboards (`/dashboard` Admin, `/validator-dashboard`, `/my-dashboard` Model Owner, `/approver-dashboard`), models (list/detail/change records/decommissioning), validation workflow (list/detail/new), recommendations (list/detail), monitoring (plans/cycles/my-tasks), attestation (cycles/my-attestations/bulk), vendors (list/detail), users (list/detail), taxonomy (with KPM Library tab), audit logs, workflow configuration, batch delegates, regions, teams, validation policies, MRSA review policies, component definitions, configuration history, approver roles, additional approval rules, reports hub (`/reports`), report detail pages (regional compliance, deviation trends, overdue revalidation, critical limitations, name changes, KPI report), analytics, deployment tasks, pending submissions, reference data, FR Y-14 config.
+- Routing (`src/App.tsx`): guarded routes for login, role-specific dashboards (`/dashboard` Admin, `/validator-dashboard`, `/my-dashboard` Model Owner, `/approver-dashboard`), models (list/detail/change records/decommissioning), validation workflow (list/detail/new), recommendations (list/detail), monitoring (plans/cycles/my-tasks), attestation (cycles/my-attestations/bulk), vendors (list/detail), users (list/detail), taxonomy (with KPM Library tab), audit logs, workflow configuration, batch delegates, regions, teams, validation policies, MRSA review policies, component definitions, configuration history, approver roles, additional approval rules, reports hub (`/reports`), report detail pages (regional compliance, deviation trends, overdue revalidation, critical limitations, name changes, KPI report, exceptions, my portfolio), analytics, deployment tasks, pending submissions, reference data, FR Y-14 config.
 - Shared pieces:
   - Auth context (`src/contexts/AuthContext.tsx`) manages token/user; Axios client (`src/api/client.ts`) injects Bearer tokens and redirects on 401.
   - Layout (`src/components/Layout.tsx`) provides navigation shell.
   - Hooks/utilities: table sorting (`src/hooks/useTableSort.tsx`), CSV export helpers on pages, column customization.
-- **CoPublic / Static**: `PublicLandingPage.tsx`, `PublicGuidePage.tsx`, `PublicOverviewPage.tsx`, `AboutPage.tsx`, `PrivacyPolicyPage.tsx`
+- **Public / Static**: `PublicLandingPage.tsx`, `PublicGuidesIndexPage.tsx`, `PublicGuidePage.tsx`, `PublicOverviewPage.tsx`, `AboutPage.tsx`, `PrivacyPolicyPage.tsx`
+  - **Auth**: `LoginPage.tsx`
+  - **Dashboards**: `AdminDashboardPage.tsx`, `ValidatorDashboardPage.tsx`, `ModelOwnerDashboardPage.tsx`, `ApproverDashboardPage.tsx`
   - **Core**: `ModelsPage.tsx`, `ModelDetailsPage.tsx`, `VendorsPage.tsx`, `VendorDetailsPage.tsx`, `UsersPage.tsx`, `UserDetailsPage.tsx`, `TaxonomyPage.tsx` (with KPM Library tab), `AuditPage.tsx`, `ReadyToDeployPage.tsx`
   - **Validation Workflow**: `ValidationWorkflowPage.tsx`, `ValidationRequestDetailPage.tsx`, `ValidationPoliciesPage.tsx`, `MRSAReviewPoliciesPage.tsx`, `WorkflowConfigurationPage.tsx`, `ComponentDefinitionsPage.tsx`, `ConfigurationHistoryPage.tsx`, `ValidationAlertsPage.tsx`
   - **Monitoring**: `MonitoringPlansPage.tsx`, `MonitoringPlanDetailPage.tsx`, `MonitoringCycleDetailPage.tsx`, `MyMonitoringPage.tsx`, `MyMonitoringTasksPage.tsx`
@@ -103,11 +109,8 @@ Model Risk Management inventory system with a FastAPI backend, React/TypeScript 
   - **Recommendations**: `RecommendationsPage.tsx`, `RecommendationDetailPage.tsx`
   - **Decommissioning**: `DecommissioningRequestPage.tsx`, `PendingDecommissioningPage.tsx`
   - **Approvals**: `ApproverRolesPage.tsx`, `ConditionalApprovalRulesPage.tsx`
-  - **Reports**: `ReportsPage.tsx`, `RegionalComplianceReportPage.tsx`, `DeviationTrendsReportPage.tsx`, `OverdueRevalidationReportPage.tsx`, `CriticalLimitationsReportPage.tsx`, `NameChangesReportPage.tsx`, `KPIReportPage.tsx`
-  - **Dashboards**: `AdminDashboardPage.tsx`, `ValidatorDashboardPage.tsx`, `ModelOwnerDashboardPage.tsx`, `ApproverDashboardPage.tsx`
-  - **IRP Management**: `IRPsPage.tsx` (list with CRUD, table sorting, filtering, CSV export), `IRPDetailPage.tsx` (detail view with covered MRSAs, review history, certification history tabs), `MyMRSAReviewsPage.tsx`ReportPage.tsx`, `KPIReportPage.tsx`
-  - **Dashboards**: `AdminDashboardPage.tsx`, `ValidatorDashboardPage.tsx`, `ModelOwnerDashboardPage.tsx`, `ApproverDashboardPage.tsx`
-  - **IRP Management**: `IRPsPage.tsx` (list with CRUD, table sorting, filtering, CSV export), `IRPDetailPage.tsx` (detail view with covered MRSAs, review history, certification history tabs)
+  - **Reports**: `ReportsPage.tsx`, `RegionalComplianceReportPage.tsx`, `DeviationTrendsReportPage.tsx`, `OverdueRevalidationReportPage.tsx`, `CriticalLimitationsReportPage.tsx`, `NameChangesReportPage.tsx`, `KPIReportPage.tsx`, `ExceptionsReportPage.tsx`, `MyPortfolioReportPage.tsx`
+  - **IRP Management**: `IRPsPage.tsx`, `IRPDetailPage.tsx`, `MyMRSAReviewsPage.tsx`
   - **Other**: `ModelChangeRecordPage.tsx`, `BatchDelegatesPage.tsx`, `RegionsPage.tsx`, `TeamsPage.tsx`, `MyDeploymentTasksPage.tsx`, `MyPendingSubmissionsPage.tsx`, `AnalyticsPage.tsx`, `ReferenceDataPage.tsx`, `FryConfigPage.tsx`
   - **DecommissioningRequestPage**: Includes downstream dependency warning (fetches outbound dependencies from model relationships API and displays amber warning banner listing consumer models before submission).
   - **ModelDetailsPage**: Decommissioning tab always visible with "Initiate Decommissioning" button (shown when model not retired and no active request exists).
@@ -135,36 +138,49 @@ Model Risk Management inventory system with a FastAPI backend, React/TypeScript 
 - MapApplication (mock MAP inventory) and ModelApplication (model-application links with relationship type, effective/end dates for soft delete).
 - **Model Decommissioning**: DecommissioningRequest (model retirement workflow with status PENDING → VALIDATOR_APPROVED → APPROVED/REJECTED/WITHDRAWN), DecommissioningStatusHistory (audit trail), DecommissioningApproval (GLOBAL and REGIONAL approvals). Tracks reason (from Model Decommission Reason taxonomy), replacement model (required for REPLACEMENT/CONSOLIDATION reasons), last production date, gap analysis with justification, archive location. **Stage 1 Dual Approval**: When requestor is NOT the model owner, both Validator AND Owner approval are required before Stage 2 (tracked via `owner_approval_required`, `owner_reviewed_by_id`, `owner_reviewed_at`, `owner_comment`). Either can approve first; status stays PENDING until both complete. **Update Support**: PATCH endpoint allows creator or Admin to update requests while in PENDING status (with audit logging for all field changes).
 - Region and VersionDeploymentTask for regional deployment approvals.
-- **KPM Library**: KpmCategory (groupings like "Discriminatory Performance", "Calibration") and Kpm (individual metrics like "AUC", "Brier Score" with description, calculation, interpretation). Pre-seeded with 8 categories and ~30 KPMs covering model validation and ongoing monitoring metrics.
-- **Performance Monitoring**: MonitoringTeam (groups of users responsible for monitoring), MonitoringPlan (recurring monitoring schedules for model sets with frequency: Monthly/Quarterly/Semi-Annual/Annual), MonitoringPlanMetric (KPM with yellow/red thresholds and qualitative guidance), MonitoringPlanVersion (immutable snapshots of metric configurations), MonitoringPlanMetricSnapshot (point-in-time metric config at version publish). Automatic due date calculation based on frequency and reporting lead days. **Version binding**: cycles lock to active plan version at DATA_COLLECTION start.
+- **KPM Library**: KpmCategory (metric groupings) and Kpm (individual metrics). Seeded via `KPM_DATA` in `app/seed.py`.
+- **Performance Monitoring**: MonitoringTeam (groups of users responsible for monitoring), MonitoringPlan (recurring monitoring schedules for model sets with frequency: Monthly/Quarterly/Semi-Annual/Annual), MonitoringPlanMetric (KPM with yellow/red thresholds and qualitative guidance), MonitoringPlanVersion (immutable snapshots of metric configurations), MonitoringPlanMetricSnapshot (point-in-time metric config at version publish). Automatic due date calculation based on frequency, `data_submission_lead_days` (period end → submission due), and `reporting_lead_days` (submission → report due). **Version binding**: cycles lock to active plan version at DATA_COLLECTION start.
 - **Component 9b (Performance Monitoring Plan Review)**: Validation plan component for assessing model's monitoring plan. ValidationPlanComponent extended with `monitoring_plan_version_id` and `monitoring_review_notes`. Required for Tier 1/2, IfApplicable for Tier 3. Validation enforced before Review/Pending Approval transitions.
 - AuditLog captures actions across entities including relationship changes and conditional approval actions.
 - SavedQuery/ExportView for analytics/reporting reuse.
 
 ## Request & Data Flow
-1. Frontend calls Axios client -> FastAPI routes under `/auth`, `/models`, `/validation-workflow`, `/decommissioning`, `/vendors`, `/taxonomies`, `/model-types`, `/audit-logs`, `/regions`, `/teams`, `/lob-units`, `/model-versions`, `/model-change-taxonomy`, `/analytics`, `/saved-queries`, `/regional-compliance-report`, `/validation-workflow/compliance-report/*`, `/models/{id}/hierarchy/*`, `/models/{id}/dependencies/*`, `/scorecard/*`, etc.
+1. Frontend calls Axios client -> FastAPI routes under `/auth`, `/models`, `/validation-workflow`, `/decommissioning`, `/vendors`, `/taxonomies`, `/model-types`, `/audit-logs`, `/regions`, `/teams`, `/lob-units`, `/models/{id}/versions`, `/change-taxonomy`, `/analytics`, `/saved-queries`, `/regional-compliance-report`, `/validation-workflow/compliance-report/*`, `/models/{id}/hierarchy/*`, `/models/{id}/dependencies/*`, `/scorecard/*`, etc.
 2. `get_current_user` decodes JWT, routes apply role checks and RLS filters.
 3. SQLAlchemy ORM persists/fetches entities; Alembic manages schema migrations. **Model relationships enforce business rules**: cycle detection prevents circular dependencies, self-reference constraints prevent invalid links, date range validation ensures data integrity.
 4. Responses serialized via Pydantic schemas; frontend renders tables/cards with sorting/export.
 
 ## Reporting & Analytics
-- Reports hub (`/reports`) lists available reports; detail pages for Regional Compliance, Deviation Trends, Overdue Revalidation, Name Changes, Critical Limitations, and KPI Report (CSV export, refresh).
+- Reports hub (`/reports`) lists available reports; detail pages for Regional Compliance, Deviation Trends, Overdue Revalidation, Name Changes, Critical Limitations, KPI Report, Exceptions, and My Portfolio (CSV export, refresh).
 - Backend report endpoints:
   - `GET /regional-compliance-report/` - Regional deployment and compliance
   - `GET /validation-workflow/compliance-report/deviation-trends` - Deviation trends
   - `GET /overdue-revalidation-report/` - Overdue items with commentary status (supports filters: overdue_type, comment_status, risk_tier, days_overdue_min, needs_update_only)
+  - `GET /overdue-revalidation-report/regions` - Region list for report filtering
   - `GET /reports/critical-limitations` - Critical model limitations report with region filtering
-  - `GET /kpi-report/` - KPI Report with 21 model risk management metrics (optional region_id, team_id filters)
+  - `GET /kpi-report/` - KPI Report with 23 model risk management metrics (optional region_id, team_id filters)
+  - `GET /reports/my-portfolio` and `GET /reports/my-portfolio/pdf` - My Portfolio report and PDF export
+  - `GET /exceptions` and `GET /exceptions/summary` - Exceptions reporting and summary stats
+  - `GET /models/name-changes/stats` and `GET /models/{id}/name-history` - Name changes report data
+  - `GET /validation-workflow/reports/risk-mismatch` - Risk mismatch report
+  - `GET /validation-workflow/requests/{id}/effective-challenge-report` - Effective challenge PDF export
   - Dashboard reports (`/validation-workflow/dashboard/*`) and analytics aggregations (`/analytics`, saved queries)
+- Additional PDF exports (outside /reports):
+  - `GET /validation-workflow/requests/{id}/plan/pdf` - Validation plan PDF export
+  - `GET /scorecard/validation/{request_id}/export-pdf` - Validation scorecard PDF export
+  - `GET /monitoring/cycles/{cycle_id}/report/pdf` - Monitoring cycle report PDF export
+  - `GET /models/{model_id}/versions/export/pdf` - Model version changelog PDF export
+  - `GET /models/{model_id}/dependencies/lineage/pdf` - Model lineage PDF export
+  - `GET /models/{model_id}/risk-assessments/{assessment_id}/pdf` - Risk assessment PDF export
 - Team filtering: Regional Compliance, Overdue Revalidation, KPI Report, and My Portfolio accept `team_id` (0 = Unassigned) to scope results by effective team.
 - Export views in `export_views.py` provide CSV-friendly datasets.
 
 ## KPI Report
 - **Purpose**: Centralized KPI reporting for model risk management metrics, providing executive-level visibility into inventory, validation, monitoring, recommendations, and risk indicators.
-- **Metrics** (21 total, organized by category):
+- **Metrics** (23 total, organized by category):
   - **Model Inventory** (4.1-4.5, 4.29): Total active models, breakdown by risk tier, breakdown by business line, breakdown by team, % vendor models, % AI/ML models
   - **Validation** (4.6, 4.8, 4.9): % validated on time, average time to complete by risk tier, models with interim approval
-  - **Key Risk Indicators** (4.7, 4.27): % overdue for validation (KRI), % high residual risk (KRI) - flagged with `is_kri: true`
+  - **Key Risk Indicators** (4.7, 4.27, 4.28): % overdue for validation (KRI), % high residual risk (KRI), % models with open exceptions (KRI) - flagged with `is_kri: true`
   - **Monitoring** (4.10-4.12): % timely monitoring submissions, % breaching thresholds (RED), % with open performance issues
   - **Model Risk** (4.14): % models with critical limitations
   - **Recommendations** (4.18-4.21): Total open, % past due, average close time, % with high-priority open recs
@@ -250,9 +266,10 @@ Model Risk Management inventory system with a FastAPI backend, React/TypeScript 
   - `GET /map/departments` - List available departments
   - `GET /models/{id}/applications` - List model's linked applications (optional include_inactive)
   - `POST /models/{id}/applications` - Add application link
+  - `PATCH /models/{id}/applications/{app_id}` - Update application link metadata
   - `DELETE /models/{id}/applications/{app_id}` - Soft delete application link
 - **Frontend**: "Applications" tab on Model Details page with search modal and relationship management.
-- **Testing**: 20 tests in `tests/test_map_applications.py` covering MAP search, model-application CRUD, permissions, and soft delete.
+- **Testing**: See `api/tests/test_map_applications.py` for coverage of MAP search, model-application CRUD, permissions, and soft delete.
 
 ## Overdue Revalidation Commentary
 - **Purpose**: Track and explain delays in model revalidation submissions and validation completion. Enables MRM teams to monitor overdue items with documented explanations and target dates.
@@ -290,7 +307,7 @@ Model Risk Management inventory system with a FastAPI backend, React/TypeScript 
     - Color-coded badges: Current (green), Stale (yellow), Missing (red)
     - "Add Commentary" buttons for items needing updates
     - Commentary modal integration for quick updates without leaving dashboard
-- **Testing**: 36 tests total (23 core in `test_overdue_commentary.py`, 13 dashboard integration in `test_dashboard_commentary.py`)
+  - **Testing**: See `api/tests/test_overdue_commentary.py` and `api/tests/test_dashboard_commentary.py` for coverage of core commentary logic and dashboard integration.
 
 ## KPM Library (Key Performance Metrics)
 - **Purpose**: Standardized library of metrics for ongoing model performance monitoring, used in monitoring plans.
@@ -301,9 +318,7 @@ Model Risk Management inventory system with a FastAPI backend, React/TypeScript 
   - **Quantitative**: Numerical results with configurable thresholds (yellow_min/max, red_min/max). Used for metrics like AUC, PSI, Brier Score.
   - **Qualitative**: Judgment-based assessments where SMEs apply rules/algorithms to determine R/Y/G outcome. Used for governance alignment, methodology assessments.
   - **Outcome Only**: Direct Red/Yellow/Green selection with supporting notes. Used for attestations and expert panel ratings.
-- **Pre-seeded Data**: 13 categories with 47 KPMs:
-  - 8 quantitative categories: Model calibration, Model performance, Model input data monitoring, Model stability, Global interpretability, Local interpretability, LLM monitoring, Fairness and governance.
-  - 5 qualitative categories (from QUALCAT.json): Attestation-based (Outcome Only), Governance and usage alignment (Qualitative), Expert-judgment assessments (Qualitative), Model conditions and exception compliance (Qualitative), Algorithmic multi-step qualitative classification (mixed).
+- **Pre-seeded Data**: Categories and KPMs are seeded via `KPM_DATA` in `app/seed.py`.
 - **Qualitative Outcome Taxonomy**: "Qualitative Outcome" taxonomy with values: Green, Yellow, Red - used for recording qualitative KPM assessments.
 - **API Endpoints**:
   - `GET /kpm/categories` - List all categories with their KPMs (optional active_only filter)
@@ -321,7 +336,7 @@ Model Risk Management inventory system with a FastAPI backend, React/TypeScript 
 - **Purpose**: Define recurring monitoring schedules for model performance review with configurable metrics and thresholds.
 - **Data Model**:
   - **MonitoringTeam**: Groups of users responsible for monitoring. Fields: team_id, name, description, is_active, members (many-to-many via monitoring_team_members).
-  - **MonitoringPlan**: Recurring monitoring schedule. Fields: plan_id, name, description, frequency (Monthly/Quarterly/Semi-Annual/Annual), monitoring_team_id, data_provider_user_id, reporting_lead_days, next_submission_due_date, next_report_due_date, is_active, models (many-to-many via monitoring_plan_models).
+  - **MonitoringPlan**: Recurring monitoring schedule. Fields: plan_id, name, description, frequency (Monthly/Quarterly/Semi-Annual/Annual), monitoring_team_id, data_provider_user_id, reporting_lead_days, data_submission_lead_days, next_submission_due_date, next_report_due_date, is_active, is_dirty, models (many-to-many via monitoring_plan_models).
   - **MonitoringPlanMetric**: KPM configuration for a plan with thresholds. Fields: metric_id, plan_id, kpm_id, yellow_min/max, red_min/max, qualitative_guidance, sort_order, is_active.
   - **MonitoringPlanVersion**: Version snapshots of plan metric configurations. Fields: version_id, plan_id, version_number, version_name, description, effective_date, published_by_user_id, published_at, is_active.
   - **MonitoringPlanMetricSnapshot**: Point-in-time capture of metric configuration at version publish. Fields: snapshot_id, version_id, original_metric_id, kpm_id, yellow_min/max, red_min/max, qualitative_guidance, sort_order, is_active, kpm_name, kpm_category_name, evaluation_type.
@@ -330,7 +345,7 @@ Model Risk Management inventory system with a FastAPI backend, React/TypeScript 
   - Qualitative KPMs: Configure assessment guidance text; outcomes determined by SME judgment at monitoring time.
   - Outcome Only KPMs: Direct R/Y/G selection with notes (e.g., attestations).
 - **Scheduling Logic**:
-  - next_submission_due_date auto-calculated based on frequency (1/3/6/12 months from creation or last cycle)
+  - next_submission_due_date = (period_end_date advanced by frequency) + data_submission_lead_days
   - next_report_due_date = next_submission_due_date + reporting_lead_days
   - "Advance Cycle" endpoint to manually progress to next period
 - **Version Management**:
@@ -345,12 +360,14 @@ Model Risk Management inventory system with a FastAPI backend, React/TypeScript 
   - **Plan Creation**: Admin only
   - **Plan Editing**: Admin OR members of the assigned monitoring team
     - Team members can update plan properties, add/update/remove metrics, and advance the plan cycle
-    - Non-team members (except Admins) receive 403 Forbidden
+    - Non-team members (except Admins) are rejected with 403 Forbidden
   - **Version Publishing**: Admin or team member
   - **Audit Logging**: All plan/team/metric/version changes are logged with user attribution
 - **API Endpoints** (prefix: `/monitoring`):
+  - Admin overview: `GET /admin-overview` (Admin)
   - Teams: `GET /teams`, `GET /teams/{id}`, `POST /teams` (Admin), `PATCH /teams/{id}` (Admin), `DELETE /teams/{id}` (Admin)
-  - Plans: `GET /plans`, `GET /plans/{id}`, `POST /plans` (Admin), `PATCH /plans/{id}` (Admin or team member), `DELETE /plans/{id}` (Admin or team member), `POST /plans/{id}/advance-cycle` (Admin or team member)
+  - Plans: `GET /plans`, `GET /plans/{id}`, `POST /plans` (Admin), `PATCH /plans/{id}` (Admin or team member), `DELETE /plans/{id}` (Admin or team member)
+  - Plan lifecycle: `POST /plans/{id}/advance-cycle` (Admin or team member), `POST /plans/{id}/deactivate`, `GET /plans/{id}/deactivation-summary`, `GET /plans/{id}/active-cycles-warning`
   - Metrics: `POST /plans/{id}/metrics` (Admin or team member), `PATCH /plans/{id}/metrics/{metric_id}` (Admin or team member), `DELETE /plans/{id}/metrics/{metric_id}` (Admin or team member)
   - Versions: `GET /plans/{id}/versions`, `GET /plans/{id}/versions/{version_id}`, `POST /plans/{id}/versions/publish`, `GET /plans/{id}/versions/{version_id}/export`
   - Model lookup: `GET /models/{model_id}/monitoring-plans` (for component 9b)
@@ -359,16 +376,17 @@ Model Risk Management inventory system with a FastAPI backend, React/TypeScript 
 ## Monitoring Cycles & Results (with Approval Workflow)
 - **Purpose**: Capture periodic monitoring results with Red/Yellow/Green outcome calculation and formal approval workflow similar to validation projects.
 - **Data Model**:
-  - **MonitoringCycle**: Represents one monitoring period for a plan. Fields: cycle_id, plan_id, period_start_date, period_end_date, submission_due_date, report_due_date, status, assigned_to_user_id, submitted_at, submitted_by_user_id, completed_at, completed_by_user_id, notes, **plan_version_id** (locked at DATA_COLLECTION), **version_locked_at**, **version_locked_by_user_id**.
-  - **MonitoringCycleApproval**: Approval records for cycles (Global + Regional). Fields: approval_id, cycle_id, approver_id, approval_type (Global/Regional), region_id, represented_region_id, is_required, approval_status (Pending/Approved/Rejected/Voided), comments, approved_at, voided_by_id, void_reason, voided_at.
+  - **MonitoringCycle**: Represents one monitoring period for a plan. Fields: cycle_id, plan_id, period_start_date, period_end_date, submission_due_date, report_due_date, status, hold_reason, hold_start_date, original_due_date, postponed_due_date, postponement_count, assigned_to_user_id, submitted_at, submitted_by_user_id, completed_at, completed_by_user_id, notes, report_url, **plan_version_id** (locked at DATA_COLLECTION), **version_locked_at**, **version_locked_by_user_id**.
+  - **MonitoringCycleApproval**: Approval records for cycles (Global + Regional). Fields: approval_id, cycle_id, approver_id, approval_type (Global/Regional), region_id, represented_region_id, is_required, approval_status (Pending/Approved/Rejected/Voided), comments, approved_at, approval_evidence, voided_by_id, void_reason, voided_at.
   - **MonitoringResult**: Individual metric result for a cycle. Fields: result_id, cycle_id, plan_metric_id, model_id (optional for multi-model plans), numeric_value, outcome_value_id, calculated_outcome (GREEN/YELLOW/RED/N/A), narrative, supporting_data (JSON), entered_by_user_id.
 - **Cycle Status Workflow**:
   ```
   PENDING → DATA_COLLECTION → UNDER_REVIEW → PENDING_APPROVAL → APPROVED
-                                          ↘ CANCELLED          ↗
+             ↘ ON_HOLD ↗              ↘ CANCELLED          ↗
   ```
   - **PENDING**: Cycle created, awaiting start
   - **DATA_COLLECTION**: Active data entry period (results can be added)
+  - **ON_HOLD**: Cycle paused via postpone/hold (resume returns to DATA_COLLECTION)
   - **UNDER_REVIEW**: All results submitted, team reviewing quality
   - **PENDING_APPROVAL**: Awaiting required approvals (Global + Regional)
   - **APPROVED**: All approvals obtained, cycle complete and locked
@@ -389,8 +407,8 @@ Model Risk Management inventory system with a FastAPI backend, React/TypeScript 
   - **Qualitative/Outcome Only metrics**: User directly selects outcome via outcome_value_id (taxonomy reference)
 - **API Endpoints** (prefix: `/monitoring`):
   - Cycles: `POST /plans/{id}/cycles`, `GET /plans/{id}/cycles`, `GET /cycles/{id}`, `PATCH /cycles/{id}`, `DELETE /cycles/{id}`
-  - Workflow: `POST /cycles/{id}/start`, `POST /cycles/{id}/submit`, `POST /cycles/{id}/cancel`, `POST /cycles/{id}/request-approval`
-  - Results: `POST /cycles/{id}/results`, `GET /cycles/{id}/results`, `PATCH /results/{id}`, `DELETE /results/{id}`
+  - Workflow: `POST /cycles/{id}/start`, `POST /cycles/{id}/submit`, `POST /cycles/{id}/cancel`, `POST /cycles/{id}/request-approval`, `POST /cycles/{id}/postpone`, `POST /cycles/{id}/resume`
+  - Results: `POST /cycles/{id}/results`, `POST /cycles/{id}/results/import`, `GET /cycles/{id}/results`, `PATCH /results/{id}`, `DELETE /results/{id}`
   - Approvals: `GET /cycles/{id}/approvals`, `GET /approvals/my-pending`, `POST /cycles/{id}/approvals/{approval_id}/approve`, `POST /cycles/{id}/approvals/{approval_id}/reject`, `POST /cycles/{id}/approvals/{approval_id}/void`
 - **Permission Model**:
   | Role | Cycles | Results | Approvals |
@@ -454,7 +472,7 @@ Model Risk Management inventory system with a FastAPI backend, React/TypeScript 
                                                 → WITHDRAWN (if accepted)
   ```
 - **API Validation Rules**:
-  - **Target Date**: `original_target_date` cannot be in the past (returns 400: "Target date cannot be before the creation date")
+  - **Target Date**: On create, `original_target_date` cannot be before the create date (API uses `date.today()` as the create date and returns 400 when the target date is earlier). When updating `current_target_date`, the API validates relative to `original_target_date` and requires a `target_date_change_reason`.
 - **Key Workflow Features**:
   - **Finalization**: Validator finalizes draft → moves to PENDING_RESPONSE
   - **Developer Response**: Submit action plan OR skip (if priority allows)
@@ -463,16 +481,19 @@ Model Risk Management inventory system with a FastAPI backend, React/TypeScript 
   - **Closure**: Submit evidence → validator reviews → approval workflow (if required)
   - **Approvals**: Global + Regional (per model deployment regions) approval requirements
 - **API Endpoints** (prefix: `/recommendations`):
-  - CRUD: `POST /`, `GET /`, `GET /{id}`, `PATCH /{id}`
-  - Workflow: `/finalize`, `/acknowledge`, `/decline-acknowledgement`, `/skip-action-plan`
-  - Action Plan: `/action-plan`, `/action-plan/approve`, `/action-plan/reject`, `/action-plan/request-revisions`
-  - Rebuttal: `/rebuttal`, `/rebuttal/{id}/review`
-  - Closure: `/submit-closure`, `/review-closure`, `/evidence`
-  - Approvals: `/approvals/{id}/approve`, `/approvals/{id}/reject`, `/approvals/{id}/void`
-  - Priority Config: `GET/PATCH /priority-config/`, `/priority-config/{id}`, `/priority-config/regional-overrides/` (CRUD)
-  - Dashboard: `/my-tasks`, `/open-summary`, `/overdue`
+  - CRUD: `POST /`, `GET /`, `GET /{recommendation_id}`, `PATCH /{recommendation_id}`
+  - Workflow: `POST /{recommendation_id}/finalize`, `POST /{recommendation_id}/submit`, `POST /{recommendation_id}/acknowledge`, `POST /{recommendation_id}/decline-acknowledgement`, `POST /{recommendation_id}/skip-action-plan`
+  - Action Plan: `POST /{recommendation_id}/action-plan`, `POST /{recommendation_id}/action-plan/request-revisions`, `GET /{recommendation_id}/can-skip-action-plan`
+  - Rebuttal: `POST /{recommendation_id}/rebuttal`, `POST /{recommendation_id}/rebuttal/{rebuttal_id}/review`
+  - Closure: `POST /{recommendation_id}/submit-closure`, `POST /{recommendation_id}/closure-review`, `POST /{recommendation_id}/evidence`
+  - Approvals: `GET /{recommendation_id}/approvals`, `POST /{recommendation_id}/approvals/{approval_id}/approve`, `POST /{recommendation_id}/approvals/{approval_id}/reject`, `POST /{recommendation_id}/approvals/{approval_id}/void`
+  - Tasks: `PATCH /{recommendation_id}/tasks/{task_id}`
+  - Dashboard: `GET /my-tasks`, `GET /dashboard/open`, `GET /dashboard/overdue`, `GET /dashboard/by-model/{model_id}`
+  - Priority Config: `GET /priority-config/`, `PATCH /priority-config/{priority_id}`, `GET /priority-config/regional-overrides/`, `POST /priority-config/regional-overrides/`, `PATCH /priority-config/regional-overrides/{override_id}`, `DELETE /priority-config/regional-overrides/{override_id}`, `GET /priority-config/{priority_id}/regional-overrides/`
+  - Timeframe Config: `GET /timeframe-config/`, `GET /timeframe-config/{config_id}`, `PATCH /timeframe-config/{config_id}`, `POST /timeframe-config/calculate`
+  - Related data: `GET /{recommendation_id}/limitations`
 - **Frontend**: RecommendationsPage (list), RecommendationDetailPage (detail with workflow actions), TaxonomyPage "Recommendation Priority" tab (admin config with expandable regional overrides).
-- **Testing**: 82 tests in `tests/test_recommendations.py` covering workflow, rebuttals, action plans, approvals, and regional overrides.
+- **Testing**: See `api/tests/test_recommendations.py` for coverage of workflow, rebuttals, action plans, approvals, and regional overrides.
 
 ## Model Limitations
 - **Purpose**: Track inherent constraints, weaknesses, and boundaries of models that users and stakeholders need to be aware of. Limitations are discovered during validation but persist at the model level.
@@ -503,10 +524,11 @@ Model Risk Management inventory system with a FastAPI backend, React/TypeScript 
   - `PATCH /limitations/{id}` - Update limitation (requires Validator/Admin, not retired)
   - `POST /limitations/{id}/retire` - Retire limitation with reason (requires Validator/Admin)
   - `GET /reports/critical-limitations` - Critical limitations report (filter by region)
+  - `GET /validation-requests/{id}/limitations` - List limitations for a validation request
 - **Frontend**:
   - **ModelLimitationsTab**: "Limitations" tab on Model Details page with table view, filters (show retired, significance), and CRUD modals
   - **CriticalLimitationsReportPage**: Report page under `/reports/critical-limitations` with summary cards, category breakdown, and CSV export
-- **Testing**: 27 tests in `tests/test_limitations.py` covering CRUD, authorization, retirement workflow, and critical limitations report.
+- **Testing**: See `api/tests/test_limitations.py` for coverage of CRUD, authorization, retirement workflow, and critical limitations report.
 
 ## Validation Scorecard System
 - **Purpose**: Standardized framework for validators to assess and rate validation criteria across multiple sections, producing computed section and overall scores.
@@ -545,7 +567,7 @@ Model Risk Management inventory system with a FastAPI backend, React/TypeScript 
   - Publish button conditionally shown in UI only when unpublished changes exist
 - **API Endpoints** (prefix: `/scorecard`):
   - Configuration: `GET /config` - Get current scorecard configuration (sections with nested criteria)
-  - Ratings: `GET /validation/{request_id}`, `POST /validation/{request_id}`, `PATCH /validation/{request_id}/ratings/{criterion_code}`
+  - Ratings: `GET /validation/{request_id}`, `POST /validation/{request_id}`, `PATCH /validation/{request_id}/ratings/{criterion_code}`, `PATCH /validation/{request_id}/overall-narrative`
   - Admin Section CRUD: `GET /sections`, `GET /sections/{id}`, `POST /sections`, `PATCH /sections/{id}`, `DELETE /sections/{id}`
   - Admin Criterion CRUD: `GET /criteria`, `GET /criteria/{id}`, `POST /criteria`, `PATCH /criteria/{id}`, `DELETE /criteria/{id}`
   - Versioning: `GET /versions` (list all), `GET /versions/active` (current with has_unpublished_changes), `GET /versions/{id}` (detail with snapshots), `POST /versions/publish` (Admin)
@@ -557,7 +579,7 @@ Model Risk Management inventory system with a FastAPI backend, React/TypeScript 
     - "Publish New Version" button conditionally shown when changes exist
     - Version list with active indicator and usage counts
 - **Audit Logging**: CREATE and UPDATE actions logged with rating counts and overall score
-- **Testing**: 56 unit tests covering rating conversions, score computations, section summaries, overall assessment, config loading, and edge cases
+- **Testing**: See `api/tests/test_scorecard.py` for coverage of rating conversions, score computations, config loading, and edge cases.
 
 ## Residual Risk Map
 - **Purpose**: Compute Residual (Final) Risk from the combination of Inherent Risk Tier and Validation Scorecard Outcome using a configurable matrix.
@@ -582,6 +604,7 @@ Model Risk Management inventory system with a FastAPI backend, React/TypeScript 
   - `GET /` - Get active configuration
   - `GET /versions` - List all versions
   - `GET /versions/{id}` - Get specific version
+  - `POST /` - Create a new configuration version
   - `PATCH /` - Update configuration (creates new version, sets as active)
   - `POST /calculate` - Calculate residual risk for given inputs
 - **Frontend Components**:
@@ -662,7 +685,37 @@ Model Risk Management inventory system with a FastAPI backend, React/TypeScript 
   - `record_status_change()` - Record changes to history
   - `update_model_approval_status_if_changed()` - Check and record if status changed
   - `backfill_model_approval_status()` - Create initial records for existing models
-- **Testing**: 29 tests in `tests/test_model_approval_status.py` covering status computation, helper functions, history recording, integration hooks, backfill utilities, and API endpoints.
+- **Testing**: See `api/tests/test_model_approval_status.py` for coverage of status computation, history recording, backfill utilities, and API endpoints.
+
+## Model Submission Workflow (Row-Level Approval)
+- **Purpose**: Admin review gate for models created by non-admin users before they become fully approved inventory.
+- **Data Model**:
+  - **Model**: `row_approval_status` (Draft/needs_revision/NULL approved), `submitted_by_user_id`, `submitted_at`
+  - **ModelSubmissionComment**: comment_text, action_taken (submitted, sent_back, resubmitted, approved), created_at, user_id
+- **Workflow**:
+  - Non-admin create → status=Draft + initial "submitted" comment
+  - Admin approves (`POST /models/{id}/approve`) → status cleared; optional validation request can be created
+  - Admin sends back (`POST /models/{id}/send-back`) → status=needs_revision; submitter resubmits (`POST /models/{id}/resubmit`) → status=Draft
+  - Comments allowed only while status is Draft/needs_revision
+- **API Endpoints**:
+  - `GET /models/pending-submissions` (Admin)
+  - `GET /models/my-submissions`
+  - `GET /models/{id}/submission-thread`
+  - `POST /models/{id}/comments`
+  - `POST /models/{id}/approve`
+  - `POST /models/{id}/send-back`
+  - `POST /models/{id}/resubmit`
+  - `GET /models/{id}/activity-timeline`
+
+## Model Name Change Tracking
+- **Purpose**: Audit trail for model name changes and data source for the Name Changes report.
+- **Data Model**:
+  - **ModelNameHistory**: history_id, model_id, old_name, new_name, changed_by_id, changed_at, change_reason.
+- **API Endpoints**:
+  - `GET /models/name-changes/stats` - Summary stats + recent changes (date filters)
+  - `GET /models/{id}/name-history` - Per-model name change history
+- **Frontend**:
+  - **NameChangesReportPage** uses `/models/name-changes/stats`
 
 ## Model Risk Assessment System
 - **Purpose**: Derive model inherent risk tier from qualitative and quantitative factors using a standardized matrix approach with optional overrides at three levels.
@@ -696,12 +749,12 @@ Model Risk Management inventory system with a FastAPI backend, React/TypeScript 
 - **API Endpoints**:
   - Factor Config (Admin): `GET/POST /risk-assessment/factors/`, `PUT/DELETE /risk-assessment/factors/{id}`, `PATCH /risk-assessment/factors/{id}/weight`, `POST /risk-assessment/factors/validate-weights`, `POST /risk-assessment/factors/reorder`
   - Guidance: `POST /risk-assessment/factors/{id}/guidance`, `PUT/DELETE /risk-assessment/factors/guidance/{id}`
-  - Assessments: `GET/POST /models/{id}/risk-assessments/`, `GET/PUT/DELETE /models/{id}/risk-assessments/{assessment_id}`, `GET /models/{id}/risk-assessments/status` (check global assessment existence/completion)
+  - Assessments: `GET/POST /models/{id}/risk-assessments/`, `GET/PUT/DELETE /models/{id}/risk-assessments/{assessment_id}`, `GET /models/{id}/risk-assessments/status` (check global assessment existence/completion), `GET /models/{id}/risk-assessments/history`
 - **Frontend**:
   - ModelDetailsPage "Risk Assessment" tab with assessment form and results display
   - TaxonomyPage "Risk Factors" tab for admin factor configuration with weighted guidance
 - **Audit Logging**: All factor changes, guidance updates, and assessment modifications are logged.
-- **Testing**: 54 tests in `tests/test_risk_assessment_audit.py` covering factor CRUD, guidance management, weight validation, assessment workflow, scoring logic, and override handling.
+- **Testing**: See `api/tests/test_risk_assessment_audit.py` for coverage of factor CRUD, guidance management, weight validation, assessment workflow, scoring logic, and override handling.
 
 ## Model Risk Attestations
 - **Purpose**: Annual/quarterly compliance attestation process where model owners affirm adherence to Model Risk and Validation Policy.
@@ -751,13 +804,15 @@ Model Risk Management inventory system with a FastAPI backend, React/TypeScript 
   5. Rejected attestations returned to owner with comments
   6. Admin closes cycle when coverage targets met (blocking targets enforced)
 - **API Endpoints** (prefix: `/attestations`):
-  - Cycles: `GET /cycles`, `POST /cycles`, `GET /cycles/{id}`, `PATCH /cycles/{id}`, `POST /cycles/{id}/open`, `POST /cycles/{id}/close`
+  - Cycles: `GET /cycles`, `POST /cycles`, `GET /cycles/{id}`, `PATCH /cycles/{id}`, `POST /cycles/{id}/open`, `POST /cycles/{id}/close`, `GET /cycles/reminder`
   - Records: `GET /records`, `GET /records/{id}`, `POST /records/{id}/submit`, `POST /records/{id}/accept`, `POST /records/{id}/reject`
-  - Questions: `GET /questions` (with optional frequency filter)
+  - Questions: `GET /questions` (with optional frequency filter), `GET /questions/all`, `PATCH /questions/{value_id}`
   - Evidence: `POST /records/{id}/evidence`, `DELETE /evidence/{id}`
   - Change Links: `POST /records/{id}/link-change` (create link), `GET /records/{id}/linked-changes` (list links)
   - Rules: `GET /rules`, `POST /rules`, `PATCH /rules/{id}`, `DELETE /rules/{id}`
   - Targets: `GET /targets`, `PATCH /targets/{tier_id}`
+  - Bulk: `GET /bulk/{cycle_id}`, `POST /bulk/{cycle_id}/draft`, `DELETE /bulk/{cycle_id}/draft`, `POST /bulk/{cycle_id}/submit`
+  - Admin: `GET /admin/linked-changes`
   - User Dashboard: `GET /my-attestations`, `GET /my-upcoming`
   - Reports: `GET /reports/coverage`, `GET /reports/timeliness`
   - Stats: `GET /dashboard/stats`
@@ -778,7 +833,7 @@ Model Risk Management inventory system with a FastAPI backend, React/TypeScript 
   - **AttestationReviewQueuePage** (Admin/Validator): Queue of submitted attestations awaiting review
 - **Navigation**: "My Attestations" link for all users with pending count badge, "Attestation Cycles" in Admin section
 - **UI Enhancements**: When submitting with "No" answers but no linked changes, prompt modal guides users to make inventory changes via the navigation buttons
-- **Testing**: 32 tests in `tests/test_attestations.py` covering cycles, questions, evidence, submission, review, scheduling rules, dashboard stats, and linked changes.
+- **Testing**: See `api/tests/test_attestations.py` for coverage of cycles, questions, evidence, submission/review workflows, scheduling rules, dashboard stats, and linked changes.
 
 ## LOB (Line of Business) Hierarchy
 - **Purpose**: Organizational hierarchy for assigning users to business units, enabling LOB-based filtering and reporting.
@@ -818,6 +873,7 @@ Model Risk Management inventory system with a FastAPI backend, React/TypeScript 
 - **API Endpoints** (prefix: `/lob-units`):
   - `GET /` - List all LOB units (flat, optional include_inactive)
   - `GET /tree` - Get LOB units as nested tree structure with metadata fields (optional include_inactive)
+  - `GET /tree-with-teams` - Get LOB tree with reporting team assignments
   - `GET /{id}` - Get single LOB unit with user_count and metadata
   - `POST /` - Create LOB unit (Admin)
   - `PATCH /{id}` - Update LOB unit (Admin)
@@ -855,6 +911,7 @@ Model Risk Management inventory system with a FastAPI backend, React/TypeScript 
   - Reviews: `GET /{id}/reviews`, `POST /{id}/reviews`
   - Certifications: `GET /{id}/certifications`, `POST /{id}/certifications` (Admin)
   - Coverage: `GET /coverage/check` - Check IRP coverage compliance for MRSAs
+  - MRSA Review Status: `GET /mrsa-review-status` - Aggregated review status for MRSAs
 - **Frontend**:
   - **IRPsPage** (`/irps`): Admin-only list with CRUD, filtering (active only toggle), table sorting, CSV export
   - **IRPDetailPage** (`/irps/{id}`): Detail view with tabs for Overview, Covered MRSAs, Review History, Certification History
@@ -864,7 +921,7 @@ Model Risk Management inventory system with a FastAPI backend, React/TypeScript 
   - High-risk MRSAs (mrsa_risk_level with requires_irp=true) must have IRP coverage
   - IRP coverage compliance reported via `/coverage/check` endpoint
   - Reviews can be created by any authenticated user; certifications require Admin role
-- **Testing**: IRP tests in `tests/test_irp.py` covering CRUD, reviews, certifications, coverage check, and permissions.
+- **Testing**: See `api/tests/test_irp.py` for coverage of CRUD, reviews, certifications, coverage checks, and permissions.
 
 ## Model Exceptions System
 - **Purpose**: Track and manage regulatory exception conditions requiring acknowledgment and resolution. Exceptions represent compliance gaps that must be formally documented and remediated.
@@ -901,23 +958,23 @@ Model Risk Management inventory system with a FastAPI backend, React/TypeScript 
   - **My Portfolio Integration**: Open exception count displayed in My Portfolio dashboard
 - **Taxonomies**:
   - **Exception Closure Reason**: Configurable closure reason values (e.g., "Recommendation Implemented", "Validation Completed", "Scope Clarified")
-- **Testing**: 56 tests in `tests/test_exceptions.py` covering detection logic, CRUD, workflow transitions, authorization, and edge cases.
+- **Testing**: Tests in `api/tests/test_exceptions.py` cover detection logic, CRUD, workflow transitions, authorization, and edge cases.
 
 ## My Portfolio Report
 - **Purpose**: Consolidated dashboard for model owners showing all their responsibilities and action items across the system.
 - **API Endpoints** (prefix: `/reports`):
-  - `GET /my-portfolio` - Returns comprehensive portfolio data including:
+  - `GET /reports/my-portfolio` - Returns comprehensive portfolio data including:
     - **Action Items**: Pending attestations, recommendations requiring response, validation submissions awaiting action
     - **Monitoring Alerts**: RED/YELLOW outcomes from monitoring cycles in the last 90 days
     - **Open Exceptions**: Count and details of unresolved exceptions on owned models
     - **Calendar Items**: Upcoming due dates for validations, attestations, and recommendations
     - **Model Portfolio**: Complete list of models with status details, risk tier, and compliance indicators
-  - `GET /my-portfolio/pdf` - PDF export of the complete portfolio report
-- **Authorization**: Available to all authenticated users. Results are filtered by row-level security to show only models where the user is owner, developer, or delegate.
+  - `GET /reports/my-portfolio/pdf` - PDF export of the complete portfolio report
+- **Authorization**: Available to all authenticated users. Results are limited to primary/shared owners and delegates with `can_submit_changes` (developers are not included).
 - **Frontend**:
   - **MyPortfolioReportPage** (`/reports/my-portfolio`): Dashboard with action items summary, alerts panel, calendar view, and model portfolio table
   - Accessible from Reports gallery and "My Portfolio" link in navigation
-- **PDF Generation**: Uses `MyPortfolioPDF` class with ReportLab for formatted PDF output including all dashboard sections.
+- **PDF Generation**: Uses `MyPortfolioPDF` class (FPDF/`fpdf2`) for formatted PDF output including all dashboard sections.
 
 ## Security, Error Handling, Logging
 - JWT auth with token expiry; passwords hashed with bcrypt.
@@ -931,14 +988,19 @@ Model Risk Management inventory system with a FastAPI backend, React/TypeScript 
 - Frontend uses `VITE_API_URL` (defaults to `http://localhost:8001`); token stored in `localStorage`.
 - Docker compose wires service URLs/ports; migrations must run inside the container to reach hostname `db`.
 
-##E2E: Puppeteer (via root package.json) for browser automation tests.
--  Testing
+## E2E
+- Puppeteer (via root `package.json`) for browser automation tests.
+
+## Testing
 - Backend: pytest suite in `api/tests/` with fixtures (`conftest.py`). Run `cd api && python -m pytest`. Additional shell scripts (`test_*.sh`, `test_*.py`) for targeted flows.
-- Frontend: vitest in `web` (`pnpm test`, `pnpm test:run`, `pnpm test:coverage`).
+- Frontend: vitest in `web` (`npm run test`, `npm run test:run`, `npm run test:coverage`).
 - Full regression helper: `run_tests.sh` executes backend then frontend suites.
+
+## API Endpoints
+- Full router-by-router listing moved to `API_ENDPOINTS.md` (generated from code).
 
 ## Known Limitations & Technical Debt
 - No real SSO; Microsoft Entra integration is mocked via `auth.py`/`entra_user.py`.
 - Email/notification workflows are not implemented; approvals/assignments are in-app only.
-- Reporting is limited to currently implemented endpoints (regional compliance, deviation trends, dashboards); additional reports referenced in design docs are not yet present.
+- Reporting is implemented for regional compliance, deviation trends, overdue revalidation, critical limitations, name changes, KPI, exceptions, my portfolio, plus validation risk-mismatch reporting and effective-challenge PDFs; additional reports referenced in design docs are not yet present.
 - Background jobs/async tasks are absent; long-running work (PDF generation, exports) runs inline on request.

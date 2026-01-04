@@ -28,8 +28,10 @@ from app.models.kpm import Kpm, KpmCategory
 from app.models.version_deployment_task import VersionDeploymentTask
 from app.models.model_version import ModelVersion
 from app.models.region import Region
+from app.models.recommendation import Recommendation
 from app.models.validation import ValidationRequest, ValidationRequestModelVersion
 from app.core.time import utc_now
+import app.core.exception_detection as exception_detection
 from app.core.exception_detection import (
     generate_exception_code,
     detect_type1_unmitigated_performance,
@@ -52,6 +54,71 @@ from app.core.exception_detection import (
 # =============================================================================
 # Fixtures for Exception Testing
 # =============================================================================
+
+def _ensure_taxonomy_value(
+    db_session,
+    taxonomy_name: str,
+    code: str,
+    label: str,
+    sort_order: int,
+):
+    taxonomy = db_session.query(Taxonomy).filter(
+        Taxonomy.name == taxonomy_name
+    ).first()
+    if not taxonomy:
+        taxonomy = Taxonomy(name=taxonomy_name, is_system=True)
+        db_session.add(taxonomy)
+        db_session.flush()
+
+    value = db_session.query(TaxonomyValue).filter(
+        TaxonomyValue.taxonomy_id == taxonomy.taxonomy_id,
+        TaxonomyValue.code == code,
+    ).first()
+    if not value:
+        value = TaxonomyValue(
+            taxonomy_id=taxonomy.taxonomy_id,
+            code=code,
+            label=label,
+            sort_order=sort_order,
+        )
+        db_session.add(value)
+        db_session.flush()
+
+    return value
+
+
+@pytest.fixture
+def recommendation_taxonomies(db_session):
+    """Create minimal recommendation taxonomy values needed for exceptions tests."""
+    open_status = _ensure_taxonomy_value(
+        db_session,
+        taxonomy_name="Recommendation Status",
+        code="REC_OPEN",
+        label="Open",
+        sort_order=1,
+    )
+    closed_status = _ensure_taxonomy_value(
+        db_session,
+        taxonomy_name="Recommendation Status",
+        code="REC_CLOSED",
+        label="Closed",
+        sort_order=2,
+    )
+    priority = _ensure_taxonomy_value(
+        db_session,
+        taxonomy_name="Recommendation Priority",
+        code="REC_PRIORITY_HIGH",
+        label="High",
+        sort_order=1,
+    )
+    db_session.commit()
+
+    return {
+        "open_status": open_status,
+        "closed_status": closed_status,
+        "priority": priority,
+    }
+
 
 @pytest.fixture
 def exception_closure_reason_taxonomy(db_session):
@@ -418,6 +485,51 @@ class TestModelExceptionModel:
         assert seq2 == seq1 + 1
 
 
+class TestExceptionCodeCollisionRetry:
+    """Tests for exception code collision retry logic."""
+
+    def test_exception_code_collision_retry(
+        self, db_session, sample_model, monitoring_setup, admin_user, monkeypatch
+    ):
+        """Retries and succeeds on exception_code collision."""
+        monitoring_setup["cycle"].status = "APPROVED"
+        db_session.flush()
+
+        result = MonitoringResult(
+            cycle_id=monitoring_setup["cycle"].cycle_id,
+            plan_metric_id=monitoring_setup["metric"].metric_id,
+            model_id=sample_model.model_id,
+            numeric_value=0.5,
+            calculated_outcome="RED",
+            entered_by_user_id=admin_user.user_id,
+        )
+        db_session.add(result)
+        db_session.commit()
+
+        existing = ModelException(
+            exception_code="EXC-2025-00001",
+            model_id=sample_model.model_id,
+            exception_type=EXCEPTION_TYPE_UNMITIGATED_PERFORMANCE,
+            status=STATUS_OPEN,
+            description="Existing exception",
+            detected_at=utc_now(),
+        )
+        db_session.add(existing)
+        db_session.commit()
+
+        codes = iter(["EXC-2025-00001", "EXC-2025-00002"])
+
+        def fake_generate_exception_code(_db):
+            return next(codes)
+
+        monkeypatch.setattr(exception_detection, "generate_exception_code", fake_generate_exception_code)
+
+        exceptions = detect_type1_unmitigated_performance(db_session, sample_model.model_id)
+
+        assert len(exceptions) == 1
+        assert exceptions[0].exception_code == "EXC-2025-00002"
+
+
 class TestModelExceptionStatusHistory:
     """Tests for ModelExceptionStatusHistory ORM model."""
 
@@ -517,6 +629,85 @@ class TestType1DetectionUnmitigatedPerformance:
         assert exceptions[0].model_id == sample_model.model_id
         assert exceptions[0].monitoring_result_id == result.result_id
         assert exceptions[0].status == STATUS_OPEN
+
+    def test_terminal_recommendation_does_not_suppress_exception(
+        self, db_session, sample_model, monitoring_setup, recommendation_taxonomies, admin_user
+    ):
+        """Terminal recommendation status should not suppress Type 1 exception."""
+        monitoring_setup["cycle"].status = "APPROVED"
+        db_session.flush()
+
+        result = MonitoringResult(
+            cycle_id=monitoring_setup["cycle"].cycle_id,
+            plan_metric_id=monitoring_setup["metric"].metric_id,
+            model_id=sample_model.model_id,
+            numeric_value=0.5,
+            calculated_outcome="RED",
+            entered_by_user_id=admin_user.user_id,
+        )
+        db_session.add(result)
+        db_session.flush()
+
+        recommendation = Recommendation(
+            recommendation_code="REC-2025-00001",
+            model_id=sample_model.model_id,
+            monitoring_cycle_id=monitoring_setup["cycle"].cycle_id,
+            plan_metric_id=monitoring_setup["metric"].metric_id,
+            title="Closed recommendation",
+            description="Already addressed",
+            priority_id=recommendation_taxonomies["priority"].value_id,
+            current_status_id=recommendation_taxonomies["closed_status"].value_id,
+            created_by_id=admin_user.user_id,
+            assigned_to_id=admin_user.user_id,
+            original_target_date=date.today(),
+            current_target_date=date.today(),
+        )
+        db_session.add(recommendation)
+        db_session.commit()
+
+        exceptions = detect_type1_unmitigated_performance(db_session, sample_model.model_id)
+
+        assert len(exceptions) == 1
+        assert exceptions[0].monitoring_result_id == result.result_id
+
+    def test_active_recommendation_suppresses_exception(
+        self, db_session, sample_model, monitoring_setup, recommendation_taxonomies, admin_user
+    ):
+        """Active recommendation for the same metric suppresses Type 1 exception."""
+        monitoring_setup["cycle"].status = "APPROVED"
+        db_session.flush()
+
+        result = MonitoringResult(
+            cycle_id=monitoring_setup["cycle"].cycle_id,
+            plan_metric_id=monitoring_setup["metric"].metric_id,
+            model_id=sample_model.model_id,
+            numeric_value=0.5,
+            calculated_outcome="RED",
+            entered_by_user_id=admin_user.user_id,
+        )
+        db_session.add(result)
+        db_session.flush()
+
+        recommendation = Recommendation(
+            recommendation_code="REC-2025-00002",
+            model_id=sample_model.model_id,
+            monitoring_cycle_id=monitoring_setup["cycle"].cycle_id,
+            plan_metric_id=monitoring_setup["metric"].metric_id,
+            title="Open recommendation",
+            description="In progress",
+            priority_id=recommendation_taxonomies["priority"].value_id,
+            current_status_id=recommendation_taxonomies["open_status"].value_id,
+            created_by_id=admin_user.user_id,
+            assigned_to_id=admin_user.user_id,
+            original_target_date=date.today(),
+            current_target_date=date.today(),
+        )
+        db_session.add(recommendation)
+        db_session.commit()
+
+        exceptions = detect_type1_unmitigated_performance(db_session, sample_model.model_id)
+
+        assert len(exceptions) == 0
 
     def test_no_exception_when_result_is_green(
         self, db_session, sample_model, monitoring_setup

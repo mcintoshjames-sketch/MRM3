@@ -54,7 +54,7 @@ from app.core.exception_detection import (
 ### Problem
 The recommendation existence check in `detect_type1_unmitigated_performance` (lines 199-204) queries for ANY recommendation for the model/cycle, ignoring:
 1. Whether the recommendation is for the specific metric that has RED outcome
-2. Whether the recommendation is in an actionable status (not CLOSED/CANCELLED)
+2. Whether the recommendation is in an actionable status (not in `TERMINAL_RECOMMENDATION_STATUS_CODES`)
 
 ### Files to Modify
 - `api/app/core/exception_detection.py` (lines 199-220)
@@ -85,7 +85,7 @@ has_active_recommendation = db.query(exists().where(
                 TaxonomyValue.taxonomy_id == db.query(Taxonomy.taxonomy_id).filter(
                     Taxonomy.name == "Recommendation Status"
                 ).scalar_subquery(),
-                TaxonomyValue.code.notin_(['CLOSED', 'CANCELLED', 'COMPLETED'])
+                TaxonomyValue.code.notin_(TERMINAL_RECOMMENDATION_STATUS_CODES)
             )
         )
     )
@@ -272,13 +272,9 @@ remediation approach for exception detection correctness and operational safety.
 ### Decisions
 
 1. **Terminal recommendation statuses source-of-truth**
-     - Use `TERMINAL_RECOMMENDATION_STATUS_CODES` (currently defined in `api/app/api/monitoring.py`) as the
+     - Use `TERMINAL_RECOMMENDATION_STATUS_CODES` (defined in `api/app/core/recommendation_status.py`) as the
          canonical definition of “terminal” recommendation statuses.
-     - Avoid importing API-layer modules from core detection logic.
-     - **Plan**: move `TERMINAL_RECOMMENDATION_STATUS_CODES` into a shared core module (e.g.
-         `api/app/core/recommendation_status.py`) and import it from both:
-         - `api/app/api/monitoring.py`
-         - `api/app/core/exception_detection.py`
+     - Avoid importing API-layer modules from core detection logic; import the shared core constant instead.
 
 2. **Exception code generation strategy**
      - Use the “robust enough” approach: **unique constraint + bounded retry** on collision.
@@ -287,9 +283,10 @@ remediation approach for exception detection correctness and operational safety.
 ### Issue 6: Recommendation Status Taxonomy Alignment (Type 1 correctness)
 
 #### Problem
-Type 1 detection currently treats “active recommendation statuses” as anything not in
-`['CLOSED', 'CANCELLED', 'COMPLETED']`. However, the seeded taxonomy uses `REC_*` codes (e.g., `REC_CLOSED`,
-`REC_DROPPED`). This mismatch can cause **false negatives** (a terminal recommendation suppresses an exception).
+Type 1 detection previously treated “active recommendation statuses” as anything not in
+legacy `['CLOSED', 'CANCELLED', 'COMPLETED']` values (pre-`REC_*`). The seeded taxonomy uses `REC_*` codes
+(e.g., `REC_CLOSED`, `REC_DROPPED`), so this mismatch can cause **false negatives** (a terminal recommendation
+suppresses an exception).
 
 #### Files to Modify
 - `api/app/core/exception_detection.py`
@@ -303,7 +300,8 @@ Type 1 detection currently treats “active recommendation statuses” as anythi
     - `ensure_type1_exception_for_result`
 
 #### Acceptance Criteria
-- A recommendation with terminal status (`REC_CLOSED` or `REC_DROPPED`) does **not** count as active.
+- A recommendation with any terminal status in `TERMINAL_RECOMMENDATION_STATUS_CODES` does **not** count as active
+  (e.g., `REC_CLOSED`, `REC_DROPPED`).
 - A RED result with only terminal recommendations for the same metric results in a Type 1 exception.
 
 ### Issue 7: Concurrency-Safe `exception_code` Generation (robust enough)
@@ -345,6 +343,14 @@ this risks long transactions/timeouts and is difficult to operate safely.
 #### Acceptance Criteria
 - Batch detection does not routinely hit request timeouts in UAT-scale environments.
 - Audit logs clearly reflect scope and outcome of each batch run.
+
+#### Operational Runbook (Production)
+- Run manually as Admin during low-traffic windows; avoid concurrent runs.
+- Use paging with `limit`/`offset` (max `limit` is 200). Start with 50-100 and adjust based on runtime.
+- Iterate `offset` by `limit` until a batch returns fewer models than `limit`.
+- Confirm each batch via `AuditLog` entries with `action="BATCH_DETECTION_RUN"` (includes `models_scanned`, `exceptions_created`, `limit`, `offset`).
+- On failure, use the audit log `failed_model_id` + `models_scanned` to resume with `offset + models_scanned`, or run `POST /exceptions/detect/{model_id}` after investigating.
+- If scheduling is required, use an external job runner to page sequentially and persist the last successful offset (no parallel runs).
 
 ### Issue 9: Closure Taxonomy Hard Dependency
 

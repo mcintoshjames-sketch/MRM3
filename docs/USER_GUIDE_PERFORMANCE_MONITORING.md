@@ -565,7 +565,8 @@ Type 1 (Unmitigated Performance) exceptions are created when:
 A recommendation is considered "active" if:
 - It is linked to the **same metric** (`plan_metric_id`) as the RED result
 - It is linked to the **same monitoring cycle**
-- Its status is NOT `CLOSED`, `CANCELLED`, or `COMPLETED`
+- Its status is not in terminal recommendation statuses (e.g., `REC_CLOSED`, `REC_DROPPED`, `REC_CANCELLED`,
+  `REC_COMPLETED`, `REC_VOIDED`, `REC_WITHDRAWN`)
 
 **Example Scenarios**:
 

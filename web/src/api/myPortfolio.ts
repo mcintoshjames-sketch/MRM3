@@ -163,6 +163,8 @@ export function getOwnershipLabel(type: string): string {
             return 'Owner';
         case 'shared':
             return 'Shared Owner';
+        case 'developer':
+            return 'Developer';
         case 'delegate':
             return 'Delegate';
         default:

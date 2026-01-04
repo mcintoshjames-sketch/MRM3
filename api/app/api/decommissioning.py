@@ -8,7 +8,7 @@ from sqlalchemy import func, or_
 from app.core.database import get_db
 from app.core.time import utc_now
 from app.core.deps import get_current_user
-from app.core.rls import can_submit_owner_actions
+from app.core.rls import apply_model_rls, can_access_model, can_submit_owner_actions
 from app.models import (
     User, Model, ModelStatus, ModelVersion, ModelRegion, Region,
     Taxonomy, TaxonomyValue,
@@ -395,12 +395,15 @@ def list_decommissioning_requests(
     current_user: User = Depends(get_current_user)
 ):
     """List all decommissioning requests with optional filters."""
-    query = db.query(DecommissioningRequest).options(
+    query = db.query(DecommissioningRequest).join(
+        Model, DecommissioningRequest.model_id == Model.model_id
+    ).options(
         joinedload(DecommissioningRequest.model),
         joinedload(DecommissioningRequest.replacement_model),
         joinedload(DecommissioningRequest.reason),
         joinedload(DecommissioningRequest.created_by)
     )
+    query = apply_model_rls(query, current_user, db)
 
     if status:
         query = query.filter(DecommissioningRequest.status == status)
@@ -598,6 +601,9 @@ def get_decommissioning_request(
     ).filter(DecommissioningRequest.request_id == request_id).first()
 
     if not request:
+        raise HTTPException(status_code=404, detail="Decommissioning request not found")
+
+    if not can_access_model(request.model_id, current_user, db):
         raise HTTPException(status_code=404, detail="Decommissioning request not found")
 
     return build_request_response(request, db)

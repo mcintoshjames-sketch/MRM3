@@ -11,6 +11,7 @@ from sqlalchemy import func, or_, case
 from app.core.database import get_db
 from app.core.time import utc_now
 from app.core.deps import get_current_user
+from app.core.rls import apply_model_rls, can_access_model
 from app.core.monitoring_plan_conflicts import (
     build_monitoring_plan_conflict_message,
     find_monitoring_plan_frequency_conflicts,
@@ -24,6 +25,7 @@ from app.core.monitoring_constants import (
     OUTCOME_UNCONFIGURED,
     VALID_OUTCOME_CODES,
 )
+from app.core.recommendation_status import TERMINAL_RECOMMENDATION_STATUS_CODES
 from app.models.user import User
 from app.core.roles import is_admin, is_global_approver, is_regional_approver, is_validator
 from app.models.model import Model
@@ -115,8 +117,6 @@ from app.core.exception_detection import (
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
-
-TERMINAL_RECOMMENDATION_STATUS_CODES = ("REC_DROPPED", "REC_CLOSED")
 
 
 def create_audit_log(
@@ -279,6 +279,102 @@ def check_plan_edit_permission(db: Session, plan_id: int, current_user: User) ->
         status_code=status.HTTP_403_FORBIDDEN,
         detail="You must be an Admin or a member of the assigned monitoring team to edit this plan"
     )
+
+
+def _get_accessible_model_ids(db: Session, current_user: User) -> Optional[set[int]]:
+    """Return model IDs the user can access; None for admin/validator (full access)."""
+    if is_admin(current_user) or is_validator(current_user):
+        return None
+    query = db.query(Model.model_id)
+    query = apply_model_rls(query, current_user, db)
+    return {row[0] for row in query.all()}
+
+
+def _can_view_plan(
+    plan: MonitoringPlan,
+    current_user: User,
+    accessible_model_ids: Optional[set[int]]
+) -> bool:
+    """Check if user can view a monitoring plan."""
+    if is_admin(current_user) or is_validator(current_user):
+        return True
+    if plan.data_provider_user_id == current_user.user_id:
+        return True
+    if plan.team and any(m.user_id == current_user.user_id for m in plan.team.members):
+        return True
+    if accessible_model_ids:
+        return any(m.model_id in accessible_model_ids for m in plan.models)
+    return False
+
+
+def _require_plan_view_access(
+    plan: MonitoringPlan,
+    current_user: User,
+    accessible_model_ids: Optional[set[int]]
+) -> None:
+    if not _can_view_plan(plan, current_user, accessible_model_ids):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Plan not found")
+
+
+def _can_view_cycle_as_approver(
+    cycle: MonitoringCycle,
+    current_user: User
+) -> bool:
+    if not (is_global_approver(current_user) or is_regional_approver(current_user)):
+        return False
+
+    approvals = cycle.approvals or []
+    for approval in approvals:
+        if approval.approver_id == current_user.user_id:
+            return True
+
+    if is_global_approver(current_user):
+        return any(
+            approval.approval_type == "Global"
+            and approval.is_required
+            and approval.approval_status == "Pending"
+            and not approval.voided_at
+            for approval in approvals
+        )
+
+    if is_regional_approver(current_user):
+        user_region_ids = {region.region_id for region in current_user.regions}
+        if not user_region_ids:
+            return False
+        return any(
+            approval.approval_type == "Regional"
+            and approval.is_required
+            and approval.approval_status == "Pending"
+            and not approval.voided_at
+            and approval.region_id in user_region_ids
+            for approval in approvals
+        )
+
+    return False
+
+
+def _can_view_cycle(
+    cycle: MonitoringCycle,
+    current_user: User,
+    accessible_model_ids: Optional[set[int]]
+) -> bool:
+    """Check if user can view a monitoring cycle."""
+    if cycle.assigned_to_user_id == current_user.user_id:
+        return True
+    if cycle.plan and _can_view_plan(cycle.plan, current_user, accessible_model_ids):
+        return True
+    if _can_view_cycle_as_approver(cycle, current_user):
+        return True
+    return False
+
+
+def _require_cycle_view_access(
+    cycle: MonitoringCycle,
+    current_user: User,
+    accessible_model_ids: Optional[set[int]]
+) -> None:
+    if not _can_view_cycle(cycle, current_user, accessible_model_ids):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Cycle not found")
 
 
 def set_plan_dirty(db: Session, plan_id: int) -> None:
@@ -674,7 +770,7 @@ def list_monitoring_plans(
 ):
     """List all monitoring plans with summary info."""
     query = db.query(MonitoringPlan).options(
-        joinedload(MonitoringPlan.team),
+        joinedload(MonitoringPlan.team).joinedload(MonitoringTeam.members),
         joinedload(MonitoringPlan.data_provider),
         joinedload(MonitoringPlan.models),
         joinedload(MonitoringPlan.metrics),
@@ -688,6 +784,10 @@ def list_monitoring_plans(
         query = query.filter(MonitoringPlan.monitoring_team_id == team_id)
 
     plans = query.order_by(MonitoringPlan.name).all()
+
+    accessible_model_ids = _get_accessible_model_ids(db, current_user)
+    if accessible_model_ids is not None:
+        plans = [p for p in plans if _can_view_plan(p, current_user, accessible_model_ids)]
 
     # Filter by model if specified
     if model_id:
@@ -963,6 +1063,9 @@ def get_monitoring_plan(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Plan not found"
         )
+
+    accessible_model_ids = _get_accessible_model_ids(db, current_user)
+    _require_plan_view_access(plan, current_user, accessible_model_ids)
 
     # Query for active version
     active_version = db.query(MonitoringPlanVersion).filter(
@@ -1449,6 +1552,12 @@ def get_model_monitoring_plans(
             detail="Model not found"
         )
 
+    if not can_access_model(model_id, current_user, db):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Model not found"
+        )
+
     # Find monitoring plans that include this model
     plans = db.query(MonitoringPlan).options(
         joinedload(MonitoringPlan.versions).joinedload(
@@ -1537,13 +1646,18 @@ def list_plan_versions(
 ):
     """List all versions for a monitoring plan."""
     # Verify plan exists
-    plan = db.query(MonitoringPlan).filter(
-        MonitoringPlan.plan_id == plan_id).first()
+    plan = db.query(MonitoringPlan).options(
+        joinedload(MonitoringPlan.team).joinedload(MonitoringTeam.members),
+        joinedload(MonitoringPlan.models)
+    ).filter(MonitoringPlan.plan_id == plan_id).first()
     if not plan:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Plan not found"
         )
+
+    accessible_model_ids = _get_accessible_model_ids(db, current_user)
+    _require_plan_view_access(plan, current_user, accessible_model_ids)
 
     versions = db.query(MonitoringPlanVersion).options(
         joinedload(MonitoringPlanVersion.published_by),
@@ -1580,6 +1694,19 @@ def get_plan_version(
     current_user: User = Depends(get_current_user)
 ):
     """Get a specific version with its metric and model snapshots."""
+    plan = db.query(MonitoringPlan).options(
+        joinedload(MonitoringPlan.team).joinedload(MonitoringTeam.members),
+        joinedload(MonitoringPlan.models)
+    ).filter(MonitoringPlan.plan_id == plan_id).first()
+    if not plan:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Plan not found"
+        )
+
+    accessible_model_ids = _get_accessible_model_ids(db, current_user)
+    _require_plan_view_access(plan, current_user, accessible_model_ids)
+
     version = db.query(MonitoringPlanVersion).options(
         joinedload(MonitoringPlanVersion.published_by),
         joinedload(MonitoringPlanVersion.metric_snapshots),
@@ -1791,7 +1918,8 @@ def export_version_metrics(
 
     version = db.query(MonitoringPlanVersion).options(
         joinedload(MonitoringPlanVersion.metric_snapshots),
-        joinedload(MonitoringPlanVersion.plan)
+        joinedload(MonitoringPlanVersion.plan).joinedload(MonitoringPlan.team).joinedload(MonitoringTeam.members),
+        joinedload(MonitoringPlanVersion.plan).joinedload(MonitoringPlan.models)
     ).filter(
         MonitoringPlanVersion.version_id == version_id,
         MonitoringPlanVersion.plan_id == plan_id
@@ -1802,6 +1930,10 @@ def export_version_metrics(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Version not found"
         )
+
+    accessible_model_ids = _get_accessible_model_ids(db, current_user)
+    if version.plan:
+        _require_plan_view_access(version.plan, current_user, accessible_model_ids)
 
     # Create CSV in memory
     output = io.StringIO()
@@ -1855,13 +1987,18 @@ def check_active_cycles_warning(
     from app.models.monitoring import MonitoringCycle, MonitoringCycleStatus
 
     # Verify plan exists
-    plan = db.query(MonitoringPlan).filter(
-        MonitoringPlan.plan_id == plan_id).first()
+    plan = db.query(MonitoringPlan).options(
+        joinedload(MonitoringPlan.team).joinedload(MonitoringTeam.members),
+        joinedload(MonitoringPlan.models)
+    ).filter(MonitoringPlan.plan_id == plan_id).first()
     if not plan:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Plan not found"
         )
+
+    accessible_model_ids = _get_accessible_model_ids(db, current_user)
+    _require_plan_view_access(plan, current_user, accessible_model_ids)
 
     active_statuses = [
         MonitoringCycleStatus.DATA_COLLECTION.value,
@@ -3141,11 +3278,16 @@ def list_plan_cycles(
 ):
     """List all cycles for a monitoring plan."""
     # Verify plan exists
-    plan = db.query(MonitoringPlan).filter(
-        MonitoringPlan.plan_id == plan_id).first()
+    plan = db.query(MonitoringPlan).options(
+        joinedload(MonitoringPlan.team).joinedload(MonitoringTeam.members),
+        joinedload(MonitoringPlan.models)
+    ).filter(MonitoringPlan.plan_id == plan_id).first()
     if not plan:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Plan not found")
+
+    accessible_model_ids = _get_accessible_model_ids(db, current_user)
+    _require_plan_view_access(plan, current_user, accessible_model_ids)
 
     query = db.query(MonitoringCycle).options(
         joinedload(MonitoringCycle.assigned_to),
@@ -3230,6 +3372,8 @@ def get_monitoring_cycle(
         joinedload(MonitoringCycle.submitted_by),
         joinedload(MonitoringCycle.completed_by),
         joinedload(MonitoringCycle.results),
+        joinedload(MonitoringCycle.plan).joinedload(MonitoringPlan.team).joinedload(MonitoringTeam.members),
+        joinedload(MonitoringCycle.plan).joinedload(MonitoringPlan.models),
         joinedload(MonitoringCycle.approvals).joinedload(MonitoringCycleApproval.approver),
         joinedload(MonitoringCycle.approvals).joinedload(MonitoringCycleApproval.region),
         joinedload(MonitoringCycle.approvals).joinedload(MonitoringCycleApproval.represented_region),
@@ -3241,6 +3385,9 @@ def get_monitoring_cycle(
     if not cycle:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Cycle not found")
+
+    accessible_model_ids = _get_accessible_model_ids(db, current_user)
+    _require_cycle_view_access(cycle, current_user, accessible_model_ids)
 
     # Count pending approvals
     pending_approvals = sum(
@@ -3635,11 +3782,16 @@ def list_cycle_results(
     current_user: User = Depends(get_current_user)
 ):
     """Get all results for a cycle."""
-    cycle = db.query(MonitoringCycle).filter(
-        MonitoringCycle.cycle_id == cycle_id).first()
+    cycle = db.query(MonitoringCycle).options(
+        joinedload(MonitoringCycle.plan).joinedload(MonitoringPlan.team).joinedload(MonitoringTeam.members),
+        joinedload(MonitoringCycle.plan).joinedload(MonitoringPlan.models),
+    ).filter(MonitoringCycle.cycle_id == cycle_id).first()
     if not cycle:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Cycle not found")
+
+    accessible_model_ids = _get_accessible_model_ids(db, current_user)
+    _require_cycle_view_access(cycle, current_user, accessible_model_ids)
 
     results = db.query(MonitoringResult).options(
         joinedload(MonitoringResult.model),
@@ -4804,11 +4956,17 @@ def list_cycle_approvals(
     current_user: User = Depends(get_current_user)
 ):
     """List all approval requirements for a cycle with can_approve permissions."""
-    cycle = db.query(MonitoringCycle).filter(
-        MonitoringCycle.cycle_id == cycle_id).first()
+    cycle = db.query(MonitoringCycle).options(
+        joinedload(MonitoringCycle.plan).joinedload(MonitoringPlan.team).joinedload(MonitoringTeam.members),
+        joinedload(MonitoringCycle.plan).joinedload(MonitoringPlan.models),
+        joinedload(MonitoringCycle.approvals)
+    ).filter(MonitoringCycle.cycle_id == cycle_id).first()
     if not cycle:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Cycle not found")
+
+    accessible_model_ids = _get_accessible_model_ids(db, current_user)
+    _require_cycle_view_access(cycle, current_user, accessible_model_ids)
 
     approvals = db.query(MonitoringCycleApproval).options(
         joinedload(MonitoringCycleApproval.approver),
@@ -4827,10 +4985,7 @@ def list_cycle_approvals(
         return [_build_approval_response(a, can_approve=False) for a in approvals]
 
     # Get team member IDs for Global approval permission check
-    plan = db.query(MonitoringPlan).options(
-        joinedload(MonitoringPlan.team).joinedload(MonitoringTeam.members)
-    ).filter(MonitoringPlan.plan_id == cycle.plan_id).first()
-
+    plan = cycle.plan
     team_member_ids = []
     if plan and plan.team:
         team_member_ids = [m.user_id for m in plan.team.members]
@@ -5266,12 +5421,18 @@ def get_metric_trend(
     """
     # Get the metric with KPM info
     metric = db.query(MonitoringPlanMetric).options(
-        joinedload(MonitoringPlanMetric.kpm).joinedload(Kpm.category)
+        joinedload(MonitoringPlanMetric.kpm).joinedload(Kpm.category),
+        joinedload(MonitoringPlanMetric.plan).joinedload(MonitoringPlan.team).joinedload(MonitoringTeam.members),
+        joinedload(MonitoringPlanMetric.plan).joinedload(MonitoringPlan.models),
     ).filter(MonitoringPlanMetric.metric_id == plan_metric_id).first()
 
     if not metric:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Metric not found")
+
+    accessible_model_ids = _get_accessible_model_ids(db, current_user)
+    if metric.plan:
+        _require_plan_view_access(metric.plan, current_user, accessible_model_ids)
 
     # Build query for results
     query = db.query(MonitoringResult).join(
@@ -5359,11 +5520,16 @@ def get_performance_summary(
     Provides outcome distribution (GREEN/YELLOW/RED) for the last N cycles.
     """
     # Verify plan exists
-    plan = db.query(MonitoringPlan).filter(
-        MonitoringPlan.plan_id == plan_id).first()
+    plan = db.query(MonitoringPlan).options(
+        joinedload(MonitoringPlan.team).joinedload(MonitoringTeam.members),
+        joinedload(MonitoringPlan.models),
+    ).filter(MonitoringPlan.plan_id == plan_id).first()
     if not plan:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Plan not found")
+
+    accessible_model_ids = _get_accessible_model_ids(db, current_user)
+    _require_plan_view_access(plan, current_user, accessible_model_ids)
 
     # Get recent completed/in-review cycles
     recent_cycles = db.query(MonitoringCycle).filter(
@@ -5461,7 +5627,10 @@ def export_cycle_results(
     import io
 
     # Verify cycle belongs to plan
-    cycle = db.query(MonitoringCycle).filter(
+    cycle = db.query(MonitoringCycle).options(
+        joinedload(MonitoringCycle.plan).joinedload(MonitoringPlan.team).joinedload(MonitoringTeam.members),
+        joinedload(MonitoringCycle.plan).joinedload(MonitoringPlan.models),
+    ).filter(
         MonitoringCycle.cycle_id == cycle_id,
         MonitoringCycle.plan_id == plan_id
     ).first()
@@ -5469,6 +5638,9 @@ def export_cycle_results(
     if not cycle:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Cycle not found")
+
+    accessible_model_ids = _get_accessible_model_ids(db, current_user)
+    _require_cycle_view_access(cycle, current_user, accessible_model_ids)
 
     # Get all results with metric and model info
     results = db.query(MonitoringResult).options(
@@ -5481,8 +5653,7 @@ def export_cycle_results(
     ).order_by(MonitoringResult.plan_metric_id).all()
 
     # Get plan name for filename
-    plan = db.query(MonitoringPlan).filter(
-        MonitoringPlan.plan_id == plan_id).first()
+    plan = cycle.plan
     if not plan:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -5553,11 +5724,8 @@ def generate_cycle_report_pdf(
     - Time-series trend charts (for YELLOW/RED quantitative metrics)
     - Approvals section
 
-    Access is restricted to:
-    - Admin users
-    - Validator users
-    - Global or Regional Approvers assigned to the cycle
-    - Members of the plan's Monitoring Team
+    Access is restricted to cycle viewers (Admin/Validator, monitoring team,
+    data provider, model owners/delegates via RLS, cycle assignee, or eligible approvers).
 
     Args:
         cycle_id: The ID of the cycle to generate report for
@@ -5587,31 +5755,8 @@ def generate_cycle_report_pdf(
             detail="Monitoring cycle not found"
         )
 
-    # Check access permissions
-    has_access = False
-
-    # Admin or Validator
-    if is_admin(current_user) or is_validator(current_user):
-        has_access = True
-
-    # Global or Regional Approver on this cycle
-    if not has_access:
-        for approval in cycle.approvals:
-            if approval.approver_id == current_user.user_id:
-                has_access = True
-                break
-
-    # Member of the Monitoring Team
-    if not has_access and cycle.plan and cycle.plan.team:
-        team_member_ids = [member.user_id for member in cycle.plan.team.members]
-        if current_user.user_id in team_member_ids:
-            has_access = True
-
-    if not has_access:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="You don't have permission to access this report. Access is limited to Admins, Validators, cycle Approvers, and Monitoring Team members."
-        )
+    accessible_model_ids = _get_accessible_model_ids(db, current_user)
+    _require_cycle_view_access(cycle, current_user, accessible_model_ids)
 
     # Verify cycle is approved or pending approval
     allowed_statuses = {

@@ -2221,6 +2221,42 @@ class TestMonitoringPlanVersioning(MonitoringPlanVersioningHelpers):
 class TestMonitoringReportPDF(MonitoringPlanVersioningHelpers):
     """Tests for monitoring cycle PDF report generation."""
 
+    def test_pdf_generation_pending_approval(self, client, admin_headers):
+        """Generate a full PDF for a PENDING_APPROVAL cycle (no monkeypatch)."""
+        plan_id, _, metric_id = self._create_plan_with_metrics(
+            client, admin_headers, "Pending Approval PDF"
+        )
+        client.post(f"/monitoring/plans/{plan_id}/versions/publish", headers=admin_headers, json={})
+
+        cycle_resp = client.post(f"/monitoring/plans/{plan_id}/cycles", headers=admin_headers, json={})
+        cycle_id = cycle_resp.json()["cycle_id"]
+        client.post(f"/monitoring/cycles/{cycle_id}/start", headers=admin_headers)
+
+        result_resp = client.post(
+            f"/monitoring/cycles/{cycle_id}/results",
+            headers=admin_headers,
+            json={"plan_metric_id": metric_id, "numeric_value": 0.85},
+        )
+        assert result_resp.status_code == 201
+
+        submit_resp = client.post(f"/monitoring/cycles/{cycle_id}/submit", headers=admin_headers)
+        assert submit_resp.status_code == 200
+
+        request_resp = client.post(
+            f"/monitoring/cycles/{cycle_id}/request-approval",
+            headers=admin_headers,
+            json={"report_url": "https://example.com/report.pdf"},
+        )
+        assert request_resp.status_code == 200
+
+        response = client.get(
+            f"/monitoring/cycles/{cycle_id}/report/pdf?include_trends=false",
+            headers=admin_headers,
+        )
+        assert response.status_code == 200
+        assert response.headers.get("content-type", "").startswith("application/pdf")
+        assert response.content[:4] == b"%PDF"
+
     def test_pdf_uses_snapshot_thresholds(self, client, admin_headers, db_session, monkeypatch):
         """PDF report uses thresholds from the locked plan version."""
         cat_resp = client.post("/kpm/categories", headers=admin_headers, json={

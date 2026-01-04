@@ -254,21 +254,19 @@ const MyPortfolioReportPage: React.FC = () => {
                         <div className="flex rounded-lg border border-gray-300 overflow-hidden">
                             <button
                                 onClick={() => setViewMode('list')}
-                                className={`px-4 py-2 text-sm font-medium ${
-                                    viewMode === 'list'
+                                className={`px-4 py-2 text-sm font-medium ${viewMode === 'list'
                                         ? 'bg-blue-600 text-white'
                                         : 'bg-white text-gray-700 hover:bg-gray-50'
-                                }`}
+                                    }`}
                             >
                                 List
                             </button>
                             <button
                                 onClick={() => setViewMode('calendar')}
-                                className={`px-4 py-2 text-sm font-medium ${
-                                    viewMode === 'calendar'
+                                className={`px-4 py-2 text-sm font-medium ${viewMode === 'calendar'
                                         ? 'bg-blue-600 text-white'
                                         : 'bg-white text-gray-700 hover:bg-gray-50'
-                                }`}
+                                    }`}
                             >
                                 Calendar
                             </button>
@@ -448,10 +446,9 @@ const MyPortfolioReportPage: React.FC = () => {
                                     return (
                                         <div
                                             key={date.toISOString()}
-                                            className={`p-2 min-h-[60px] border rounded ${
-                                                isToday ? 'bg-blue-50 border-blue-300' :
-                                                hasOverdue ? 'bg-red-50 border-red-200' : 'border-gray-200'
-                                            }`}
+                                            className={`p-2 min-h-[60px] border rounded ${isToday ? 'bg-blue-50 border-blue-300' :
+                                                    hasOverdue ? 'bg-red-50 border-red-200' : 'border-gray-200'
+                                                }`}
                                         >
                                             <div className={`text-sm ${isToday ? 'font-bold text-blue-600' : 'text-gray-700'}`}>
                                                 {date.getDate()}
@@ -641,9 +638,8 @@ const MonitoringAlertRow: React.FC<{ alert: MonitoringAlert }> = ({ alert }) => 
                 <span className="text-xl">{isRed ? '🔴' : '🟡'}</span>
                 <div>
                     <div className="flex items-center gap-2">
-                        <span className={`px-2 py-0.5 rounded text-xs font-medium ${
-                            isRed ? 'bg-red-100 text-red-800' : 'bg-yellow-100 text-yellow-800'
-                        }`}>
+                        <span className={`px-2 py-0.5 rounded text-xs font-medium ${isRed ? 'bg-red-100 text-red-800' : 'bg-yellow-100 text-yellow-800'
+                            }`}>
                             {alert.outcome}
                         </span>
                         <span className="font-medium text-gray-900">{alert.metric_name}</span>
@@ -683,11 +679,10 @@ const ModelRow: React.FC<{ model: PortfolioModel }> = ({ model }) => {
             </td>
             <td className="px-4 py-3 text-sm">
                 {model.risk_tier ? (
-                    <span className={`px-2 py-1 rounded text-xs font-medium ${
-                        model.risk_tier_code === 'TIER_1' ? 'bg-red-100 text-red-800' :
-                        model.risk_tier_code === 'TIER_2' ? 'bg-yellow-100 text-yellow-800' :
-                        'bg-green-100 text-green-800'
-                    }`}>
+                    <span className={`px-2 py-1 rounded text-xs font-medium ${model.risk_tier_code === 'TIER_1' ? 'bg-red-100 text-red-800' :
+                            model.risk_tier_code === 'TIER_2' ? 'bg-yellow-100 text-yellow-800' :
+                                'bg-green-100 text-green-800'
+                        }`}>
                         {model.risk_tier}
                     </span>
                 ) : (
@@ -696,14 +691,13 @@ const ModelRow: React.FC<{ model: PortfolioModel }> = ({ model }) => {
             </td>
             <td className="px-4 py-3 text-sm">
                 {model.approval_status ? (
-                    <span className={`px-2 py-1 rounded text-xs font-medium ${
-                        model.approval_status_code === 'APPROVED' ? 'bg-green-100 text-green-800' :
-                        model.approval_status_code === 'INTERIM_APPROVED' ? 'bg-blue-100 text-blue-800' :
-                        model.approval_status_code === 'VALIDATION_IN_PROGRESS' ? 'bg-yellow-100 text-yellow-800' :
-                        model.approval_status_code === 'EXPIRED' ? 'bg-red-100 text-red-800' :
-                        model.approval_status_code === 'NEVER_VALIDATED' ? 'bg-gray-100 text-gray-600' :
-                        'bg-gray-100 text-gray-600'
-                    }`}>
+                    <span className={`px-2 py-1 rounded text-xs font-medium ${model.approval_status_code === 'APPROVED' ? 'bg-green-100 text-green-800' :
+                            model.approval_status_code === 'INTERIM_APPROVED' ? 'bg-blue-100 text-blue-800' :
+                                model.approval_status_code === 'VALIDATION_IN_PROGRESS' ? 'bg-yellow-100 text-yellow-800' :
+                                    model.approval_status_code === 'EXPIRED' ? 'bg-red-100 text-red-800' :
+                                        model.approval_status_code === 'NEVER_VALIDATED' ? 'bg-gray-100 text-gray-600' :
+                                            'bg-gray-100 text-gray-600'
+                        }`}>
                         {model.approval_status}
                     </span>
                 ) : (
@@ -746,11 +740,11 @@ const ModelRow: React.FC<{ model: PortfolioModel }> = ({ model }) => {
                 )}
             </td>
             <td className="px-4 py-3 text-sm">
-                <span className={`px-2 py-1 rounded text-xs ${
-                    model.ownership_type === 'primary' ? 'bg-blue-100 text-blue-800' :
-                    model.ownership_type === 'shared' ? 'bg-purple-100 text-purple-800' :
-                    'bg-gray-100 text-gray-800'
-                }`}>
+                <span className={`px-2 py-1 rounded text-xs ${model.ownership_type === 'primary' ? 'bg-blue-100 text-blue-800' :
+                        model.ownership_type === 'shared' ? 'bg-purple-100 text-purple-800' :
+                            model.ownership_type === 'developer' ? 'bg-teal-100 text-teal-800' :
+                                'bg-gray-100 text-gray-800'
+                    }`}>
                     {getOwnershipLabel(model.ownership_type)}
                 </span>
             </td>

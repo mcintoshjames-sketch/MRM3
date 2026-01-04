@@ -12,10 +12,12 @@ from datetime import datetime
 from typing import Optional, List, Tuple
 from sqlalchemy.orm import Session
 from sqlalchemy import and_, or_, func, exists, select
+from sqlalchemy.exc import IntegrityError
 
 logger = logging.getLogger(__name__)
 
 from app.core.time import utc_now
+from app.core.recommendation_status import TERMINAL_RECOMMENDATION_STATUS_CODES
 from app.models.model_exception import ModelException, ModelExceptionStatusHistory
 from app.models.monitoring import MonitoringResult, MonitoringCycle, MonitoringPlanMetric
 from app.models.attestation import AttestationResponse, AttestationRecord
@@ -39,6 +41,16 @@ STATUS_CLOSED = "CLOSED"
 CLOSURE_REASON_NO_LONGER_EXCEPTION = "NO_LONGER_EXCEPTION"
 CLOSURE_REASON_EXCEPTION_OVERRIDDEN = "EXCEPTION_OVERRIDDEN"
 CLOSURE_REASON_OTHER = "OTHER"
+CLOSURE_REASON_CODES = (
+    CLOSURE_REASON_NO_LONGER_EXCEPTION,
+    CLOSURE_REASON_EXCEPTION_OVERRIDDEN,
+    CLOSURE_REASON_OTHER,
+)
+
+MAX_EXCEPTION_CODE_RETRIES = 5
+
+_CLOSURE_REASON_CHECKED = False
+_CLOSURE_REASON_MISSING_CODES: set[str] = set()
 
 # Attestation question code for use restrictions
 ATT_Q10_USE_RESTRICTIONS_CODE = "ATT_Q10_USE_RESTRICTIONS"
@@ -79,6 +91,78 @@ def get_closure_reason_value_id(db: Session, code: str) -> Optional[int]:
     return result
 
 
+def ensure_closure_reason_taxonomy(db: Session) -> bool:
+    """Verify required closure reason codes exist and log if missing."""
+    global _CLOSURE_REASON_CHECKED, _CLOSURE_REASON_MISSING_CODES
+    taxonomy = db.query(Taxonomy).filter(
+        Taxonomy.name == "Exception Closure Reason"
+    ).first()
+
+    missing_codes: list[str]
+    if not taxonomy:
+        missing_codes = list(CLOSURE_REASON_CODES)
+    else:
+        existing_codes = {
+            code for (code,) in db.query(TaxonomyValue.code).filter(
+                TaxonomyValue.taxonomy_id == taxonomy.taxonomy_id,
+                TaxonomyValue.code.in_(CLOSURE_REASON_CODES)
+            ).all()
+        }
+        missing_codes = [code for code in CLOSURE_REASON_CODES if code not in existing_codes]
+
+    if missing_codes:
+        if not _CLOSURE_REASON_CHECKED or _CLOSURE_REASON_MISSING_CODES != set(missing_codes):
+            logger.warning(
+                "Exception closure reason taxonomy missing required codes",
+                extra={
+                    "event": "exception_closure_reason_missing",
+                    "missing_codes": missing_codes,
+                },
+            )
+        _CLOSURE_REASON_MISSING_CODES = set(missing_codes)
+        _CLOSURE_REASON_CHECKED = True
+        return False
+
+    _CLOSURE_REASON_MISSING_CODES = set()
+    _CLOSURE_REASON_CHECKED = True
+    return True
+
+
+def get_missing_closure_reason_codes(db: Session) -> list[str]:
+    """Return missing closure reason codes (empty if all present)."""
+    ensure_closure_reason_taxonomy(db)
+    return sorted(_CLOSURE_REASON_MISSING_CODES)
+
+
+def _is_exception_code_collision(
+    db: Session,
+    exception_code: str,
+    error: IntegrityError,
+) -> bool:
+    """Return True if the IntegrityError is for an exception_code collision."""
+    if exception_code:
+        existing = db.query(ModelException.exception_id).filter(
+            ModelException.exception_code == exception_code
+        ).first()
+        if existing:
+            return True
+
+    orig = getattr(error, "orig", None)
+    constraint_name = getattr(getattr(orig, "diag", None), "constraint_name", None)
+    if constraint_name and "exception_code" in constraint_name:
+        return True
+
+    return False
+
+
+def _active_recommendation_status_ids_subquery(db: Session):
+    """Subquery for non-terminal recommendation status IDs."""
+    return db.query(TaxonomyValue.value_id).join(Taxonomy).filter(
+        Taxonomy.name == "Recommendation Status",
+        ~TaxonomyValue.code.in_(TERMINAL_RECOMMENDATION_STATUS_CODES),
+    ).subquery()
+
+
 def _create_exception(
     db: Session,
     model_id: int,
@@ -89,19 +173,46 @@ def _create_exception(
     deployment_task_id: Optional[int] = None,
 ) -> ModelException:
     """Create a new exception and add initial status history."""
-    exception = ModelException(
-        exception_code=generate_exception_code(db),
-        model_id=model_id,
-        exception_type=exception_type,
-        description=description,
-        status=STATUS_OPEN,
-        detected_at=utc_now(),
-        monitoring_result_id=monitoring_result_id,
-        attestation_response_id=attestation_response_id,
-        deployment_task_id=deployment_task_id,
-    )
-    db.add(exception)
-    db.flush()  # Get the exception_id
+    exception = None
+    for attempt in range(1, MAX_EXCEPTION_CODE_RETRIES + 1):
+        exception = ModelException(
+            exception_code=generate_exception_code(db),
+            model_id=model_id,
+            exception_type=exception_type,
+            description=description,
+            status=STATUS_OPEN,
+            detected_at=utc_now(),
+            monitoring_result_id=monitoring_result_id,
+            attestation_response_id=attestation_response_id,
+            deployment_task_id=deployment_task_id,
+        )
+        db.add(exception)
+
+        try:
+            with db.begin_nested():
+                db.flush()  # Get the exception_id
+        except IntegrityError as err:
+            db.rollback()
+            if not _is_exception_code_collision(db, exception.exception_code, err):
+                raise
+            logger.warning(
+                "Exception code collision detected; retrying",
+                extra={
+                    "event": "exception_code_collision",
+                    "attempt": attempt,
+                    "exception_type": exception_type,
+                    "model_id": model_id,
+                },
+            )
+            db.expunge(exception)
+            exception = None
+            continue
+        break
+
+    if exception is None:
+        raise RuntimeError(
+            f"Failed to generate unique exception code after {MAX_EXCEPTION_CODE_RETRIES} attempts."
+        )
 
     # Add initial status history
     history = ModelExceptionStatusHistory(
@@ -129,6 +240,7 @@ def _close_exception(
 
     Returns True if closed successfully, False if closure reason lookup failed.
     """
+    ensure_closure_reason_taxonomy(db)
     closure_reason_id = get_closure_reason_value_id(db, closure_reason_code)
 
     # Validate closure reason lookup succeeded
@@ -219,10 +331,7 @@ def detect_type1_unmitigated_performance(
         # Check if there's an ACTIVE recommendation for this model from this cycle
         # AND for the same metric (plan_metric_id).
         # A recommendation must be linked to the specific metric to count as addressing the issue.
-        active_rec_statuses_subq = db.query(TaxonomyValue.value_id).join(Taxonomy).filter(
-            Taxonomy.name == "Recommendation Status",
-            TaxonomyValue.code.notin_(['CLOSED', 'CANCELLED', 'COMPLETED'])
-        ).subquery()
+        active_rec_statuses_subq = _active_recommendation_status_ids_subquery(db)
 
         has_active_recommendation = db.query(exists().where(
             and_(
@@ -496,10 +605,7 @@ def ensure_type1_exception_for_result(
     if existing:
         return None
 
-    active_rec_statuses_subq = db.query(TaxonomyValue.value_id).join(Taxonomy).filter(
-        Taxonomy.name == "Recommendation Status",
-        TaxonomyValue.code.notin_(['CLOSED', 'CANCELLED', 'COMPLETED'])
-    ).subquery()
+    active_rec_statuses_subq = _active_recommendation_status_ids_subquery(db)
 
     has_active_recommendation = db.query(exists().where(
         and_(

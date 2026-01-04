@@ -35,6 +35,9 @@ This document defines the architecture for the **Model Recommendations** feature
 
 ### 3.1 Complete Lifecycle States
 
+**Note**: Recommendation taxonomy status codes are prefixed with `REC_` (e.g., `REC_DRAFT`). The diagram below
+uses shorthand labels without the prefix for readability.
+
 ```
 ┌─────────────────────────────────────────────────────────────────────────────────────────────┐
 │                          RECOMMENDATION LIFECYCLE STATE MACHINE                              │
@@ -105,34 +108,34 @@ This document defines the architecture for the **Model Recommendations** feature
 
 | Status Code | Display Name | Description |
 |-------------|--------------|-------------|
-| `DRAFT` | Draft | Validator is composing the recommendation (not yet visible to developer) |
-| `PENDING_RESPONSE` | Pending Response | Issued to developer; awaiting rebuttal or action plan submission |
-| `IN_REBUTTAL` | In Rebuttal | Developer has submitted a rebuttal; awaiting validator review |
-| `DROPPED` | Dropped | Validator accepted rebuttal; recommendation invalidated (terminal state) |
-| `PENDING_ACTION_PLAN` | Pending Action Plan | Rebuttal was overridden; developer must submit an action plan |
-| `PENDING_VALIDATOR_REVIEW` | Pending Validator Review | Action plan submitted; awaiting validator review |
-| `PENDING_ACKNOWLEDGEMENT` | Pending Acknowledgement | Validator finalized recommendation & action plan; awaiting developer sign-off |
-| `OPEN` | Open | Acknowledged; remediation in progress |
-| `PENDING_CLOSURE_REVIEW` | Pending Closure Review | Developer submitted closure evidence; awaiting validator review |
-| `REWORK_REQUIRED` | Rework Required | Validator returned closure for additional work |
-| `PENDING_FINAL_APPROVAL` | Pending Final Approval | Validator approved closure (Med/High priority); awaiting Global + Regional approvals |
-| `CLOSED` | Closed | Remediation verified and approved (terminal state) |
+| `REC_DRAFT` | Draft | Validator is composing the recommendation (not yet visible to developer) |
+| `REC_PENDING_RESPONSE` | Pending Response | Issued to developer; awaiting rebuttal or action plan submission |
+| `REC_IN_REBUTTAL` | In Rebuttal | Developer has submitted a rebuttal; awaiting validator review |
+| `REC_DROPPED` | Dropped | Validator accepted rebuttal; recommendation invalidated (terminal state) |
+| `REC_PENDING_ACTION_PLAN` | Pending Action Plan | Rebuttal was overridden; developer must submit an action plan |
+| `REC_PENDING_VALIDATOR_REVIEW` | Pending Validator Review | Action plan submitted; awaiting validator review |
+| `REC_PENDING_ACKNOWLEDGEMENT` | Pending Acknowledgement | Validator finalized recommendation & action plan; awaiting developer sign-off |
+| `REC_OPEN` | Open | Acknowledged; remediation in progress |
+| `REC_PENDING_CLOSURE_REVIEW` | Pending Closure Review | Developer submitted closure evidence; awaiting validator review |
+| `REC_REWORK_REQUIRED` | Rework Required | Validator returned closure for additional work |
+| `REC_PENDING_FINAL_APPROVAL` | Pending Final Approval | Validator approved closure (Med/High priority); awaiting Global + Regional approvals |
+| `REC_CLOSED` | Closed | Remediation verified and approved (terminal state) |
 
 ### 3.3 Valid State Transitions
 
 ```
-DRAFT                     → PENDING_RESPONSE
-PENDING_RESPONSE          → IN_REBUTTAL, PENDING_VALIDATOR_REVIEW
-IN_REBUTTAL               → DROPPED, PENDING_ACTION_PLAN
-PENDING_ACTION_PLAN       → PENDING_VALIDATOR_REVIEW
-PENDING_VALIDATOR_REVIEW  → PENDING_RESPONSE, PENDING_ACKNOWLEDGEMENT
-PENDING_ACKNOWLEDGEMENT   → PENDING_VALIDATOR_REVIEW, OPEN
-OPEN                      → PENDING_CLOSURE_REVIEW
-PENDING_CLOSURE_REVIEW    → OPEN, REWORK_REQUIRED, PENDING_FINAL_APPROVAL, CLOSED
-REWORK_REQUIRED           → PENDING_CLOSURE_REVIEW
-PENDING_FINAL_APPROVAL    → PENDING_CLOSURE_REVIEW, CLOSED
-DROPPED                   → (terminal)
-CLOSED                    → (terminal)
+REC_DRAFT                     → REC_PENDING_RESPONSE
+REC_PENDING_RESPONSE          → REC_IN_REBUTTAL, REC_PENDING_VALIDATOR_REVIEW
+REC_IN_REBUTTAL               → REC_DROPPED, REC_PENDING_ACTION_PLAN
+REC_PENDING_ACTION_PLAN       → REC_PENDING_VALIDATOR_REVIEW
+REC_PENDING_VALIDATOR_REVIEW  → REC_PENDING_RESPONSE, REC_PENDING_ACKNOWLEDGEMENT
+REC_PENDING_ACKNOWLEDGEMENT   → REC_PENDING_VALIDATOR_REVIEW, REC_OPEN
+REC_OPEN                      → REC_PENDING_CLOSURE_REVIEW
+REC_PENDING_CLOSURE_REVIEW    → REC_OPEN, REC_REWORK_REQUIRED, REC_PENDING_FINAL_APPROVAL, REC_CLOSED
+REC_REWORK_REQUIRED           → REC_PENDING_CLOSURE_REVIEW
+REC_PENDING_FINAL_APPROVAL    → REC_PENDING_CLOSURE_REVIEW, REC_CLOSED
+REC_DROPPED                   → (terminal)
+REC_CLOSED                    → (terminal)
 ```
 
 ---
@@ -1215,7 +1218,7 @@ RecommendationDetailPage
 
 1. **Submit to developer** endpoint
 2. **Rebuttal submission** endpoint
-   - **IMPORTANT**: Enforce one-strike rule - reject if status is `PENDING_ACTION_PLAN`
+   - **IMPORTANT**: Enforce one-strike rule - reject if status is `REC_PENDING_ACTION_PLAN`
 3. **Rebuttal review** endpoint (accept/override)
 4. **Action plan submission** endpoint
 5. **Finalize/Acknowledge** endpoints
@@ -1238,8 +1241,8 @@ RecommendationDetailPage
 2. **Submit for closure** endpoint (task completion check)
 3. **Validator closure review** endpoint
    - Query `RecommendationPriorityConfig` to determine next status
-   - If `requires_final_approval=false`: transition directly to `CLOSED`
-   - If `requires_final_approval=true`: transition to `PENDING_FINAL_APPROVAL` and create approval records
+   - If `requires_final_approval=false`: transition directly to `REC_CLOSED`
+   - If `requires_final_approval=true`: transition to `REC_PENDING_FINAL_APPROVAL` and create approval records
 4. **Global/Regional approval endpoints** (approve, reject, void)
 5. **Configurable priority-based routing** logic
 6. **Approval record management**
@@ -1400,12 +1403,12 @@ When a Validator approves closure for a Medium or High priority recommendation:
    - **Admin** can approve any requirement (must provide approval_evidence)
 
 3. **Rejection handling**:
-   - If ANY approval is rejected, status returns to `PENDING_CLOSURE_REVIEW`
+   - If ANY approval is rejected, status returns to `REC_PENDING_CLOSURE_REVIEW`
    - Rejection comments are preserved
    - Other pending approvals are reset (remain pending for next submission)
 
 4. **Completion**:
-   - When ALL required approvals are `APPROVED`, status auto-transitions to `CLOSED`
+   - When ALL required approvals are `APPROVED`, status auto-transitions to `REC_CLOSED`
    - Closure timestamp and closing user recorded
 
 ### 13.2 Approval Role Enforcement
@@ -1469,7 +1472,7 @@ This section documents key design decisions and their rationale for future refer
 1. **Prevents Infinite Loops**: Without this rule, negotiation could continue indefinitely
 2. **Forces Resolution**: After one unsuccessful rebuttal, the Developer must commit to remediation
 3. **Clear Escalation Path**: Validators have final authority on issue validity after review
-4. **Enforcement**: API rejects rebuttal submission when status is `PENDING_ACTION_PLAN`
+4. **Enforcement**: API rejects rebuttal submission when status is `REC_PENDING_ACTION_PLAN`
 
 ### 14.4 Role Terminology Standardization
 
@@ -1554,11 +1557,11 @@ These tests are scoped to API-level unit/functional tests (pytest + SQLite) unle
 - Model reassignments: assigned_to changes reflected in subsequent permission checks for developer actions.
 
 ### 15.11 Negative & Edge Cases
-- Cannot transition from terminal states (DROPPED/CLOSED) to any other status.
+- Cannot transition from terminal states (REC_DROPPED/REC_CLOSED) to any other status.
 - Cannot submit action plan or rebuttal twice; duplicate submissions rejected.
 - Closure submission blocked if tasks incomplete (if business rule adopted); add test if enforced.
 - Concurrent approval handling: approving already-approved or voided approval returns 400.
-- Request approval twice when already in PENDING_FINAL_APPROVAL/CLOSED returns 400.
+- Request approval twice when already in REC_PENDING_FINAL_APPROVAL/REC_CLOSED returns 400.
 
 ### 15.12 Frontend Stubs (optional smoke)
 - Component tests to ensure action buttons render by status/role and hide when forbidden (happy-dom). Use mocks for API responses; verify blocking UI states for forbidden actions surface server 403/400 messages.

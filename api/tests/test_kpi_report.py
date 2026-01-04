@@ -4,6 +4,7 @@ These tests use real in-memory SQLite database with actual data fixtures.
 NO MOCKING - tests the actual endpoint logic end-to-end.
 """
 import pytest
+from app.api.kpi_report import METRIC_DEFINITIONS
 from app.models import Model, ModelVersion
 from app.models.region import Region
 from app.models.model_region import ModelRegion
@@ -199,7 +200,7 @@ class TestKPIReportRegionFiltering:
         metric_4_1 = next(m for m in data["metrics"] if m["metric_id"] == "4.1")
         assert metric_4_1["count_value"] == data["total_active_models"]
 
-    def test_all_19_metrics_present(
+    def test_all_metrics_present(
         self, client, admin_headers, kpi_regions, kpi_models_with_regions
     ):
         """All metrics are returned regardless of region filter."""
@@ -209,7 +210,7 @@ class TestKPIReportRegionFiltering:
         )
 
         data = response.json()
-        assert len(data["metrics"]) == 22  # Actual count of metrics in the system
+        assert len(data["metrics"]) == len(METRIC_DEFINITIONS)
 
     def test_region_response_includes_region_info(
         self, client, admin_headers, kpi_regions, kpi_models_with_regions

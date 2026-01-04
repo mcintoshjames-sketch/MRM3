@@ -13,6 +13,7 @@ from sqlalchemy import desc, func, or_, exists
 
 from app.core.database import get_db
 from app.core.time import utc_now
+from app.core.recommendation_status import TERMINAL_RECOMMENDATION_STATUS_CODES
 from app.core.deps import get_current_user
 from app.core.roles import is_admin, is_validator, is_global_approver, is_regional_approver
 from app.core.rls import can_see_all_data, can_see_recommendation
@@ -221,8 +222,8 @@ def create_audit_log(
 
 
 def is_terminal_status(code: str) -> bool:
-    """Check if status is terminal (DROPPED or CLOSED)."""
-    return code in ("REC_DROPPED", "REC_CLOSED")
+    """Check if status is terminal."""
+    return code in TERMINAL_RECOMMENDATION_STATUS_CODES
 
 
 def check_not_terminal(recommendation: Recommendation, db: Session):
@@ -1181,9 +1182,6 @@ def list_recommendations(
 # ==================== DASHBOARD & REPORTS ENDPOINTS ====================
 # NOTE: These must be defined BEFORE /{recommendation_id} to avoid route conflicts
 
-# Terminal status codes
-TERMINAL_STATUS_CODES = ("REC_DROPPED", "REC_CLOSED")
-
 
 @router.get("/my-tasks", response_model=MyTasksResponse)
 def get_my_tasks(
@@ -1387,7 +1385,7 @@ def get_open_recommendations_summary(
     # Get all non-terminal statuses
     non_terminal_statuses = db.query(TaxonomyValue).filter(
         TaxonomyValue.taxonomy_id == status_taxonomy.taxonomy_id,
-        ~TaxonomyValue.code.in_(TERMINAL_STATUS_CODES)
+        ~TaxonomyValue.code.in_(TERMINAL_RECOMMENDATION_STATUS_CODES)
     ).all()
     non_terminal_status_ids = [s.value_id for s in non_terminal_statuses]
 
@@ -1469,7 +1467,7 @@ def get_overdue_recommendations(
     # Get non-terminal status IDs
     non_terminal_statuses = db.query(TaxonomyValue).filter(
         TaxonomyValue.taxonomy_id == status_taxonomy.taxonomy_id,
-        ~TaxonomyValue.code.in_(TERMINAL_STATUS_CODES)
+        ~TaxonomyValue.code.in_(TERMINAL_RECOMMENDATION_STATUS_CODES)
     ).all()
     non_terminal_status_ids = [s.value_id for s in non_terminal_statuses]
 
@@ -1557,7 +1555,7 @@ def get_recommendations_by_model(
         if status_taxonomy:
             non_terminal_statuses = db.query(TaxonomyValue).filter(
                 TaxonomyValue.taxonomy_id == status_taxonomy.taxonomy_id,
-                ~TaxonomyValue.code.in_(TERMINAL_STATUS_CODES)
+                ~TaxonomyValue.code.in_(TERMINAL_RECOMMENDATION_STATUS_CODES)
             ).all()
             non_terminal_status_ids = [
                 s.value_id for s in non_terminal_statuses]

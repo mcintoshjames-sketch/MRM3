@@ -73,7 +73,7 @@ class User(Base):
         return self.role_ref.code
 
     @role_code.expression
-    def role_code_expression(cls):
+    def role_code(cls):
         from app.models.role import Role
         return select(Role.code).where(Role.role_id == cls.role_id).scalar_subquery()
 

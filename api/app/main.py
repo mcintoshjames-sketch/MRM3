@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 from app.api import auth, roles, models, vendors, taxonomies, audit_logs, validation_workflow, validation_policies, workflow_sla, regions, model_regions, model_versions, model_delegates, model_change_taxonomy, model_types, methodology, dashboard, export_views, version_deployment_tasks, regional_compliance_report, analytics, saved_queries, model_hierarchy, model_dependencies, approver_roles, conditional_approval_rules, fry, map_applications, model_applications, overdue_commentary, overdue_revalidation_report, decommissioning, kpm, monitoring, recommendations, risk_assessment, qualitative_factors, scorecard, uat_tools, residual_risk_map, limitations, attestations, lob_units, kpi_report, irp, my_portfolio, exceptions, mrsa_review_policy, teams
 from app.core.database import get_db
 from app.core.config import settings
+from app.core.exception_detection import get_missing_closure_reason_codes
 
 app = FastAPI(title="QMIS v0.1", version="0.1.0")
 
@@ -134,7 +135,16 @@ def readiness(db: Session = Depends(get_db)):
         db.execute(text("SELECT 1"))
     except Exception as exc:
         raise HTTPException(status_code=503, detail="Database unavailable") from exc
-    return {"status": "ok", "checks": {"database": "ok"}}
+    missing_codes = get_missing_closure_reason_codes(db)
+    if missing_codes:
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "message": "Exception closure reasons missing",
+                "missing_codes": missing_codes,
+            },
+        )
+    return {"status": "ok", "checks": {"database": "ok", "exception_closure_reasons": "ok"}}
 
 
 app.get("/healthz")(healthcheck)

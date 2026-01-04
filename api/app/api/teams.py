@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session, joinedload, selectinload
 from app.core.database import get_db
 from app.core.deps import get_current_user
 from app.core.roles import is_admin
+from app.core.rls import apply_model_rls
 from app.core.team_utils import build_lob_team_map, get_all_lob_ids_for_team, get_models_team_map
 from app.models.team import Team
 from app.models.audit_log import AuditLog
@@ -388,7 +389,8 @@ def get_team_models(
         selectinload(Model.irps).joinedload(IRP.contact_user)
     ).join(User, Model.owner_id == User.user_id).filter(
         User.lob_id.in_(lob_ids)
-    ).all()
+    )
+    models = apply_model_rls(models, current_user, db).all()
 
     results = [_build_model_list_response(m, False, db) for m in models]
     team_map = get_models_team_map(db, [m.model_id for m in models])

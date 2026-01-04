@@ -44,7 +44,7 @@ router = APIRouter()
 
 
 def get_owned_model_ids(db: Session, user: User) -> List[int]:
-    """Get IDs of models the user owns (primary, shared, or delegated with can_submit_changes)."""
+    """Get IDs of models the user owns (primary, shared, developer, or delegated with can_submit_changes)."""
     # Primary owner
     primary_ids = db.query(Model.model_id).filter(
         Model.owner_id == user.user_id
@@ -53,6 +53,11 @@ def get_owned_model_ids(db: Session, user: User) -> List[int]:
     # Shared owner
     shared_ids = db.query(Model.model_id).filter(
         Model.shared_owner_id == user.user_id
+    ).all()
+
+    # Developer
+    developer_ids = db.query(Model.model_id).filter(
+        Model.developer_id == user.user_id
     ).all()
 
     # Delegate with can_submit_changes permission
@@ -68,6 +73,8 @@ def get_owned_model_ids(db: Session, user: User) -> List[int]:
         all_ids.add(model_id)
     for (model_id,) in shared_ids:
         all_ids.add(model_id)
+    for (model_id,) in developer_ids:
+        all_ids.add(model_id)
     for (model_id,) in delegate_ids:
         all_ids.add(model_id)
 
@@ -75,11 +82,16 @@ def get_owned_model_ids(db: Session, user: User) -> List[int]:
 
 
 def get_ownership_type(model: Model, user: User, db: Session) -> str:
-    """Determine how the user owns this model."""
+    """Determine how the user owns this model.
+
+    Returns: primary, shared, developer, delegate, or unknown
+    """
     if model.owner_id == user.user_id:
         return "primary"
     if model.shared_owner_id == user.user_id:
         return "shared"
+    if model.developer_id == user.user_id:
+        return "developer"
     # Check delegation
     delegate = db.query(ModelDelegate).filter(
         ModelDelegate.model_id == model.model_id,
@@ -112,7 +124,8 @@ def calculate_urgency(due_date: Optional[date], grace_end: Optional[date] = None
 
 @router.get("/reports/my-portfolio", response_model=MyPortfolioResponse)
 def get_my_portfolio(
-    team_id: Optional[int] = Query(None, description="Filter portfolio by team ID (0 = Unassigned)"),
+    team_id: Optional[int] = Query(
+        None, description="Filter portfolio by team ID (0 = Unassigned)"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
@@ -316,9 +329,11 @@ def get_my_portfolio(
         Model
     ).filter(
         Model.model_id.in_(owned_model_ids),
-        ValidationRequest.validation_type.has(TaxonomyValue.code == "COMPREHENSIVE"),
+        ValidationRequest.validation_type.has(
+            TaxonomyValue.code == "COMPREHENSIVE"),
         ValidationRequest.submission_received_date.is_(None),
-        ValidationRequest.current_status.has(TaxonomyValue.code.in_(["INTAKE", "PLANNING"]))
+        ValidationRequest.current_status.has(
+            TaxonomyValue.code.in_(["INTAKE", "PLANNING"]))
     ).all()
 
     for req in pending_requests:
@@ -383,7 +398,8 @@ def get_my_portfolio(
     ).options(
         joinedload(MonitoringResult.model),
         joinedload(MonitoringResult.cycle),
-        joinedload(MonitoringResult.plan_metric).joinedload(MonitoringPlanMetric.kpm),
+        joinedload(MonitoringResult.plan_metric).joinedload(
+            MonitoringPlanMetric.kpm),
         joinedload(MonitoringResult.outcome_value),
     ).order_by(
         MonitoringResult.calculated_outcome.desc(),  # RED first
@@ -444,7 +460,8 @@ def get_my_portfolio(
             exception_id=exc.exception_id,
             exception_code=exc.exception_code,
             exception_type=exc.exception_type,
-            exception_type_label=exception_type_labels.get(exc.exception_type, exc.exception_type),
+            exception_type_label=exception_type_labels.get(
+                exc.exception_type, exc.exception_type),
             model_id=model.model_id,
             model_name=model.model_name,
             status=exc.status,
@@ -458,14 +475,16 @@ def get_my_portfolio(
     all_action_items = attestation_items + recommendation_items + validation_items
 
     # Sort by urgency (overdue first, then in_grace_period, due_soon, upcoming)
-    urgency_order = {"overdue": 0, "in_grace_period": 1, "due_soon": 2, "upcoming": 3, "unknown": 4}
+    urgency_order = {"overdue": 0, "in_grace_period": 1,
+                     "due_soon": 2, "upcoming": 3, "unknown": 4}
     all_action_items.sort(key=lambda x: (
         urgency_order.get(x.urgency, 4),
         x.days_until_due if x.days_until_due is not None else 9999
     ))
 
     # --- COMBINE CALENDAR ITEMS ---
-    all_calendar_items = attestation_calendar + recommendation_calendar + validation_calendar
+    all_calendar_items = attestation_calendar + \
+        recommendation_calendar + validation_calendar
     all_calendar_items.sort(key=lambda x: x.due_date)
 
     # --- BUILD MODEL PORTFOLIO ---
@@ -477,14 +496,17 @@ def get_my_portfolio(
     # Count alerts per model
     for alert in monitoring_alerts:
         if alert.outcome == OUTCOME_YELLOW:
-            model_yellow_map[alert.model_id] = model_yellow_map.get(alert.model_id, 0) + 1
+            model_yellow_map[alert.model_id] = model_yellow_map.get(
+                alert.model_id, 0) + 1
         elif alert.outcome == OUTCOME_RED:
-            model_red_map[alert.model_id] = model_red_map.get(alert.model_id, 0) + 1
+            model_red_map[alert.model_id] = model_red_map.get(
+                alert.model_id, 0) + 1
 
     # Count open exceptions per model
     model_exceptions_map = {}
     for exc in open_exception_items:
-        model_exceptions_map[exc.model_id] = model_exceptions_map.get(exc.model_id, 0) + 1
+        model_exceptions_map[exc.model_id] = model_exceptions_map.get(
+            exc.model_id, 0) + 1
 
     # Track overdue items per model
     for item in all_action_items:
@@ -530,8 +552,10 @@ def get_my_portfolio(
             attestation_status = pending_att.status.capitalize() if pending_att.status else None
 
         # Compute model approval status (validation-based)
-        model_approval_status_code, _ = compute_model_approval_status(model, db)
-        model_approval_status_label = get_status_label(model_approval_status_code)
+        model_approval_status_code, _ = compute_model_approval_status(
+            model, db)
+        model_approval_status_label = get_status_label(
+            model_approval_status_code)
 
         model_portfolio.append(PortfolioModel(
             model_id=model.model_id,
@@ -559,7 +583,8 @@ def get_my_portfolio(
 
     # --- CALCULATE SUMMARY ---
     total_models = len(owned_models)
-    overdue_count = sum(1 for item in all_action_items if item.urgency == "overdue")
+    overdue_count = sum(
+        1 for item in all_action_items if item.urgency == "overdue")
     action_items_count = len(all_action_items)
 
     # Compliance: model is compliant if no overdue items and approved (or interim approved)
@@ -568,9 +593,11 @@ def get_my_portfolio(
         if not m.has_overdue_items and m.approval_status_code in (ApprovalStatus.APPROVED, ApprovalStatus.INTERIM_APPROVED)
     )
     non_compliant_count = total_models - compliant_count
-    compliant_percentage = (compliant_count / total_models * 100) if total_models > 0 else 100.0
+    compliant_percentage = (
+        compliant_count / total_models * 100) if total_models > 0 else 100.0
 
-    yellow_count = sum(1 for a in monitoring_alerts if a.outcome == OUTCOME_YELLOW)
+    yellow_count = sum(
+        1 for a in monitoring_alerts if a.outcome == OUTCOME_YELLOW)
     red_count = sum(1 for a in monitoring_alerts if a.outcome == OUTCOME_RED)
 
     summary = PortfolioSummary(
@@ -684,7 +711,8 @@ class MyPortfolioPDF(FPDF):
         cards = [
             ('Models in Scope', str(summary.get('total_models', 0)), BG_BLUE),
             ('Action Items', str(summary.get('action_items_count', 0)), BG_YELLOW),
-            ('Compliant', f"{summary.get('compliant_percentage', 0):.0f}%", BG_GREEN),
+            ('Compliant',
+             f"{summary.get('compliant_percentage', 0):.0f}%", BG_GREEN),
             ('Overdue Items', str(summary.get('overdue_count', 0)), BG_RED),
         ]
 
@@ -718,7 +746,8 @@ class MyPortfolioPDF(FPDF):
         yellow = summary.get('yellow_alerts', 0)
         red = summary.get('red_alerts', 0)
         self.set_font('helvetica', '', 10)
-        self.cell(0, 6, f'Monitoring Alerts: {yellow} Yellow, {red} Red', align='C', ln=True)
+        self.cell(
+            0, 6, f'Monitoring Alerts: {yellow} Yellow, {red} Red', align='C', ln=True)
 
     def add_action_items(self):
         """Add action items section."""
@@ -728,7 +757,8 @@ class MyPortfolioPDF(FPDF):
             self.add_section_header('ACTION ITEMS')
             self.set_font('helvetica', 'I', 10)
             self.set_text_color(100, 100, 100)
-            self.cell(0, 8, 'No action items pending - you\'re all caught up!', ln=True)
+            self.cell(
+                0, 8, 'No action items pending - you\'re all caught up!', ln=True)
             self.ln(5)
             return
 
@@ -805,13 +835,15 @@ class MyPortfolioPDF(FPDF):
         yellow = summary.get('yellow_alerts', 0)
         red = summary.get('red_alerts', 0)
         self.set_font('helvetica', '', 9)
-        self.cell(0, 5, f'Yellow: {yellow}  |  Red: {red}  |  (Last 90 days)', ln=True)
+        self.cell(
+            0, 5, f'Yellow: {yellow}  |  Red: {red}  |  (Last 90 days)', ln=True)
         self.ln(2)
 
         if not alerts:
             self.set_font('helvetica', 'I', 10)
             self.set_text_color(100, 100, 100)
-            self.cell(0, 8, 'No yellow or red monitoring alerts in the last 90 days', ln=True)
+            self.cell(
+                0, 8, 'No yellow or red monitoring alerts in the last 90 days', ln=True)
             self.set_text_color(*SECTION_TEXT)
             return
 
@@ -856,7 +888,8 @@ class MyPortfolioPDF(FPDF):
 
             value = alert.get('metric_value')
             if value is not None:
-                value_str = f"{value:.3f}" if isinstance(value, float) else str(value)
+                value_str = f"{value:.3f}" if isinstance(
+                    value, float) else str(value)
             else:
                 value_str = alert.get('qualitative_outcome', '-') or '-'
             self.cell(25, 5, value_str[:12], 1, 0, 'R')
@@ -928,11 +961,15 @@ class MyPortfolioPDF(FPDF):
                 self.cell(col_widths['name'], 6, 'Model', 1, 0, 'C', True)
                 self.cell(col_widths['tier'], 6, 'Risk Tier', 1, 0, 'C', True)
                 self.cell(col_widths['status'], 6, 'Status', 1, 0, 'C', True)
-                self.cell(col_widths['last_val'], 6, 'Last Val', 1, 0, 'C', True)
-                self.cell(col_widths['sub_due'], 6, 'Next Sub Due', 1, 0, 'C', True)
-                self.cell(col_widths['val_due'], 6, 'Next Val Due', 1, 0, 'C', True)
+                self.cell(col_widths['last_val'], 6,
+                          'Last Val', 1, 0, 'C', True)
+                self.cell(col_widths['sub_due'], 6,
+                          'Next Sub Due', 1, 0, 'C', True)
+                self.cell(col_widths['val_due'], 6,
+                          'Next Val Due', 1, 0, 'C', True)
                 self.cell(col_widths['recs'], 6, 'Recs', 1, 0, 'C', True)
-                self.cell(col_widths['alerts'], 6, 'Mon. Alerts', 1, 0, 'C', True)
+                self.cell(col_widths['alerts'], 6,
+                          'Mon. Alerts', 1, 0, 'C', True)
                 self.cell(col_widths['role'], 6, 'Role', 1, 1, 'C', True)
                 self.set_font('helvetica', '', 7)
                 self.set_text_color(*SECTION_TEXT)
@@ -949,10 +986,12 @@ class MyPortfolioPDF(FPDF):
 
             # Model ID
             model_id = model.get('model_id', '')
-            self.cell(col_widths['id'], 5, str(model_id), 1, 0, 'C', fill=model.get('has_overdue_items', False))
+            self.cell(col_widths['id'], 5, str(model_id), 1, 0,
+                      'C', fill=model.get('has_overdue_items', False))
 
             # Model Name
-            self.cell(col_widths['name'], 5, model_name, 1, 0, fill=model.get('has_overdue_items', False))
+            self.cell(col_widths['name'], 5, model_name, 1,
+                      0, fill=model.get('has_overdue_items', False))
 
             # Risk tier with color
             tier_code = model.get('risk_tier_code', '')
@@ -966,21 +1005,26 @@ class MyPortfolioPDF(FPDF):
             self.cell(col_widths['tier'], 5, tier_label[:10], 1, 0, 'C', True)
             self.set_fill_color(255, 255, 255)
 
-            self.cell(col_widths['status'], 5, (model.get('approval_status', '-') or '-')[:14], 1, 0, 'C')
+            self.cell(col_widths['status'], 5, (model.get(
+                'approval_status', '-') or '-')[:14], 1, 0, 'C')
 
             last_val = model.get('last_validation_date', '')
-            self.cell(col_widths['last_val'], 5, str(last_val)[:10] if last_val else '-', 1, 0, 'C')
+            self.cell(col_widths['last_val'], 5, str(last_val)[
+                      :10] if last_val else '-', 1, 0, 'C')
 
             # Next Submission Due
             next_sub = model.get('next_submission_due', '')
-            self.cell(col_widths['sub_due'], 5, str(next_sub)[:10] if next_sub else '-', 1, 0, 'C')
+            self.cell(col_widths['sub_due'], 5, str(next_sub)[
+                      :10] if next_sub else '-', 1, 0, 'C')
 
             # Next Validation Due
             next_val = model.get('next_validation_due', '')
-            self.cell(col_widths['val_due'], 5, str(next_val)[:10] if next_val else '-', 1, 0, 'C')
+            self.cell(col_widths['val_due'], 5, str(next_val)[
+                      :10] if next_val else '-', 1, 0, 'C')
 
             open_recs = model.get('open_recommendations', 0)
-            self.cell(col_widths['recs'], 5, str(open_recs) if open_recs else '-', 1, 0, 'C')
+            self.cell(col_widths['recs'], 5, str(open_recs)
+                      if open_recs else '-', 1, 0, 'C')
 
             # Monitoring Alerts
             yellow = model.get('yellow_alerts', 0)
