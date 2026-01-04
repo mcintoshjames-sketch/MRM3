@@ -22,7 +22,6 @@ SELECT format('GRANT SELECT ON ALL TABLES IN SCHEMA public TO %I', :'analytics_r
 SELECT format('ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON TABLES TO %I', :'analytics_role')
 \gexec
 
-\if :'app_user' <> ''
 SELECT format('GRANT %I TO %I', :'analytics_role', :'app_user')
+WHERE :'app_user' <> ''
 \gexec
-\endif
