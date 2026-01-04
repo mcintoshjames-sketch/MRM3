@@ -24,7 +24,15 @@ from app.core.roles import (
     get_role_display,
     is_admin,
 )
-from app.schemas.user import LoginRequest, Token, UserResponse, UserCreate, UserUpdate, LOBUnitBrief
+from app.schemas.user import (
+    LoginRequest,
+    Token,
+    UserResponse,
+    UserCreate,
+    UserUpdate,
+    UserSelfUpdate,
+    LOBUnitBrief,
+)
 from app.schemas.entra_user import EntraUserResponse, EntraUserProvisionRequest
 from app.schemas.model import ModelDetailResponse
 
@@ -143,6 +151,72 @@ def get_me(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="User not found"
         )
+    return get_user_with_lob(db, user)
+
+
+@router.patch("/users/me", response_model=UserResponse)
+def update_me(
+    user_data: UserSelfUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Allow users to update their own safe fields."""
+    user = db.query(User).options(
+        joinedload(User.regions),
+        joinedload(User.lob),
+        joinedload(User.role_ref),
+    ).filter(User.user_id == current_user.user_id).first()
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found"
+        )
+
+    update_data = user_data.model_dump(exclude_unset=True)
+    if not update_data:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No fields provided"
+        )
+
+    changes = {}
+
+    if "password" in update_data:
+        current_password = update_data.get("current_password")
+        if not current_password or not verify_password(current_password, user.password_hash):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Current password is incorrect"
+            )
+        user.password_hash = get_password_hash(update_data["password"])
+        changes["password"] = "changed"
+
+    if "full_name" in update_data:
+        new_name = update_data["full_name"]
+        if new_name != user.full_name:
+            changes["full_name"] = {
+                "old": user.full_name,
+                "new": new_name
+            }
+            user.full_name = new_name
+
+    if not changes:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No updatable fields provided"
+        )
+
+    create_audit_log(
+        db=db,
+        entity_type="User",
+        entity_id=user.user_id,
+        action="UPDATE_SELF",
+        user_id=current_user.user_id,
+        changes=changes
+    )
+
+    db.commit()
+    db.refresh(user)
     return get_user_with_lob(db, user)
 
 

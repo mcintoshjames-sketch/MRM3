@@ -40,6 +40,12 @@ class UserUpdate(BaseModel):
     lob_id: Optional[int] = None  # User's LOB assignment
 
 
+class UserSelfUpdate(BaseModel):
+    full_name: str | None = None
+    password: str | None = None
+    current_password: str | None = None
+
+
 class UserResponse(UserBase):
     user_id: int
     role: str

@@ -116,6 +116,46 @@ if statement_type not in {"SELECT", "WITH", "EXPLAIN", "SHOW", "VALUES", "TABLE"
 
 ---
 
+## SEC-01 Addendum — Additional Hardening (Low False-Positive)
+
+**Goal:** Reduce impact of costly/sensitive operations without breaking legitimate read-only queries (especially CTEs).
+
+### Engineering Steps
+1. **Least-privilege DB role or replica**
+   - Create `analytics_readonly` DB role with `GRANT SELECT` only on approved schemas/views.
+   - Optionally `SET LOCAL ROLE analytics_readonly` and `SET LOCAL search_path` to a safe schema.
+2. **Function denylist (token-aware, not string-based)**
+   - Use sqlparse to detect **function calls** (Function tokens or Name/Builtin followed by `(`).
+   - Block only if a denylisted function is actually invoked (not mentioned in strings/comments).
+   - Denylist: `pg_sleep`, `pg_terminate_backend`, `pg_cancel_backend`, `pg_read_file`, `pg_write_file`, `lo_*`, `dblink` (if extension enabled).
+3. **EXPLAIN constraints**
+   - Allow `EXPLAIN` but reject `ANALYZE` and `BUFFERS` keywords.
+   - Keep this keyword check case-insensitive and token-aware.
+4. **SQL-level row limiting (conservative)**
+   - Apply only to statement types `SELECT`, `VALUES`, `TABLE`.
+   - Skip `WITH` and `EXPLAIN` to avoid false positives from complex rewrites.
+   - If no LIMIT is present, wrap: `SELECT * FROM (<query>) AS limited LIMIT :max_rows`.
+   - Keep existing `fetchmany` cap for all queries as a backstop.
+5. **Extra timeouts**
+   - Add `SET LOCAL lock_timeout` and `SET LOCAL idle_in_transaction_session_timeout` with conservative defaults.
+   - Keep `statement_timeout` unchanged.
+6. **Audit rejections**
+   - Log blocked attempts with query hash + reason, without storing raw SQL.
+
+### Acceptance Criteria
+- Read-only CTEs execute without false positives.
+- Data-modifying CTEs, denylisted functions, and EXPLAIN ANALYZE/BUFFERS are rejected.
+- Row limiting only applies to simple statement types; complex CTEs are unaffected.
+- Rejected queries are auditable with reason + hash.
+
+### Tests
+- `WITH ... SELECT ...` passes; `WITH ... INSERT ...` fails.
+- `SELECT pg_sleep(1)` fails; `SELECT 'pg_sleep(1)'` passes.
+- `EXPLAIN SELECT ...` passes; `EXPLAIN ANALYZE SELECT ...` fails.
+- `SELECT ...` with no LIMIT is wrapped and capped; query with LIMIT is unchanged.
+
+---
+
 ## SEC-04 — Secrets Management Cleanup
 
 **Goal:** Remove hardcoded default secrets and require explicit configuration via environment variables.

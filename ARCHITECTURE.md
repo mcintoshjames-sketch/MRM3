@@ -3,7 +3,7 @@
 Model Risk Management inventory system with a FastAPI backend, React/TypeScript frontend, and PostgreSQL database. Supports model cataloging, validation workflow, recommendations tracking, performance monitoring, regional deployment tracking, configurable taxonomies, compliance reporting, and MRSA (Model Risk-Sensitive Application) classification with IRP (Independent Review Process) governance. Primary user roles: Admin (full control), Validator (workflow execution), Model Owner/Contributor (submit and track models), Regional/Global approvers (deployment approvals).
 
 ## Tech Stack
-- Backend: FastAPI, SQLAlchemy 2.x ORM, Pydantic v2 schemas, Alembic migrations, JWT auth via python-jose, bcrypt for hashing, matplotlib (charts).
+- Backend: FastAPI, SQLAlchemy 2.x ORM, Pydantic v2 schemas, Alembic migrations, JWT auth via python-jose, bcrypt for hashing, sqlparse for analytics validation, matplotlib (charts).
 - Frontend: React 18 + TypeScript + Vite + TailwindCSS, react-router-dom v6, Axios client with auth interceptor, Recharts (visualization), react-markdown (content).
 - Database: PostgreSQL (dockerized). In-memory SQLite used in tests.
 - Testing: pytest for API; vitest + React Testing Library + happy-dom for web.
@@ -11,7 +11,7 @@ Model Risk Management inventory system with a FastAPI backend, React/TypeScript 
 ## Runtime & Deployment
 - Local/dev via `docker compose up --build` (see `docker-compose.yml`). Services: `db` (Postgres on 5433), `api` (Uvicorn on 8001), `web` (Vite dev server on 5174).
 - API entrypoint: `api/app/main.py` with CORS origins from `CORS_ORIGINS` (comma-separated; defaults to `http://localhost:5173,http://localhost:5174`).
-- Env/config: `api/app/core/config.py` (DATABASE_URL, SECRET_KEY, algorithm, token expiry, `JWT_ISSUER`, `JWT_AUDIENCE`) loaded via `.env`; production requires issuer/audience and a strong SECRET_KEY; UAT tools require explicit break-glass (`ALLOW_UAT_TOOLS_IN_PROD` + `UAT_TOOLS_BREAK_GLASS_TICKET`); frontend uses `VITE_API_URL`.
+- Env/config: `api/app/core/config.py` (DATABASE_URL, SECRET_KEY, algorithm, token expiry, `JWT_ISSUER`, `JWT_AUDIENCE`) loaded via `.env`; production requires issuer/audience and a strong SECRET_KEY; UAT tools require explicit break-glass (`ALLOW_UAT_TOOLS_IN_PROD` + `UAT_TOOLS_BREAK_GLASS_TICKET`); analytics hardening supports `ANALYTICS_DB_ROLE`, `ANALYTICS_SEARCH_PATH`, `ANALYTICS_LOCK_TIMEOUT`, `ANALYTICS_IDLE_IN_TRANSACTION_TIMEOUT`; frontend uses `VITE_API_URL`.
 - Health probes: `/health` + `/healthz` for liveness, `/ready` + `/readyz` for readiness (DB connectivity plus Exception Closure Reason taxonomy check; readiness fails if required closure reason codes are missing).
 - Migrations: Alembic in `api/alembic`; run inside container against hostname `db`.
 - Seeding (dev compose): `docker-compose.yml` runs `python -m app.seed` at container start (after `alembic upgrade head`) to create admin user and seed reference data.
@@ -19,7 +19,7 @@ Model Risk Management inventory system with a FastAPI backend, React/TypeScript 
 ## Backend Architecture
 - Entry & middleware: `app/main.py` registers routers and CORS; exposes liveness/readiness probes.
 - Routing modules (`app/api/`):
-  - `auth.py`: login, user CRUD, mock Microsoft Entra directory search/provisioning.
+  - `auth.py`: login, user CRUD, mock Microsoft Entra directory search/provisioning, self-service update (`PATCH /auth/users/me`) for safe fields.
   - `models.py`: model CRUD, regulatory metadata, cross-references to vendors, owners/developers, regulatory categories; RLS helpers in `app/core/rls.py`.
   - `model_versions.py`, `model_change_taxonomy.py`: versioning, change type taxonomy, change history.
   - `model_regions.py`, `regions.py`: normalized regions and model-region assignments.
@@ -45,7 +45,7 @@ Model Risk Management inventory system with a FastAPI backend, React/TypeScript 
   - `regional_compliance_report.py`: region-wise deployment & approval report.
   - `kpi_report.py`: KPI Report computing 23 model risk management metrics across categories (inventory, validation, monitoring, recommendations, governance, lifecycle, KRIs).
   - `my_portfolio.py`: My Portfolio report endpoints + PDF export for model owners.
-  - `analytics.py`, `saved_queries.py`: analytics aggregations and saved-query storage.
+  - `analytics.py`, `saved_queries.py`: analytics aggregations and saved-query storage with strict read-only, single-statement sqlparse validation, function denylist, EXPLAIN ANALYZE blocking, and optional read-only role switching.
   - `kpm.py`: KPM (Key Performance Metrics) library management - categories and individual metrics for ongoing model monitoring.
   - `monitoring.py`: Performance monitoring teams, plans, cycles, approvals, and PDF report generation with scheduling logic for submission/report due dates; read access to cycle-scoped endpoints uses cycle/plan view gates (RLS + eligible approvers).
   - `recommendations.py`: Validation/monitoring findings lifecycle - action plans, rebuttals, closure workflow, approvals, and priority configuration with regional overrides.

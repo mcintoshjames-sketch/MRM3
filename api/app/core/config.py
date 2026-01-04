@@ -5,8 +5,8 @@ from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
-    DATABASE_URL: str = "postgresql://mrm_user:mrm_pass@db:5432/mrm_db"
-    SECRET_KEY: str = "dev-secret-key-change-in-production"
+    DATABASE_URL: str
+    SECRET_KEY: str
     ALGORITHM: str = "HS256"
     JWT_ISSUER: str | None = None
     JWT_AUDIENCE: str | None = None

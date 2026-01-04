@@ -12,6 +12,7 @@ services:
       - "5433:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+      - ./scripts/db_init:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: [ "CMD-SHELL", "pg_isready -U mrm_user -d mrm_db" ]
       interval: 5s
@@ -28,6 +29,7 @@ services:
       SECRET_KEY: dev-secret-key-change-in-production-min-32-chars
       ALGORITHM: HS256
       ACCESS_TOKEN_EXPIRE_MINUTES: 1440
+      ANALYTICS_DB_ROLE: analytics_readonly
     depends_on:
       db:
         condition: service_healthy
