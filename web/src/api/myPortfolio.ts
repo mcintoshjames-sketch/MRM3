@@ -67,7 +67,7 @@ export interface PortfolioModel {
     yellow_alerts: number;
     red_alerts: number;
     has_overdue_items: boolean;
-    ownership_type: 'primary' | 'shared' | 'delegate';
+    ownership_type: 'primary' | 'shared' | 'developer' | 'delegate' | 'unknown';
 }
 
 export interface MyPortfolioResponse {
