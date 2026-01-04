@@ -238,7 +238,7 @@ deploy_to_prod() {
         fi
 
         # Enforce production config in .env.prod.
-        env_value=$(grep -E '^ENVIRONMENT=' .env.prod | tail -n 1 | cut -d= -f2-)
+        env_value=$(sudo awk -F= '/^ENVIRONMENT=/{sub(/^ENVIRONMENT=/, ""); print}' .env.prod | tail -n 1)
         if [ -z "$env_value" ]; then
             echo "ERROR: ENVIRONMENT is missing in .env.prod"
             exit 1
@@ -249,19 +249,19 @@ deploy_to_prod() {
         fi
 
         # Analytics hardening requires a dedicated read-only role in production.
-        analytics_role=$(grep -E '^ANALYTICS_DB_ROLE=' .env.prod | tail -n 1 | cut -d= -f2-)
+        analytics_role=$(sudo awk -F= '/^ANALYTICS_DB_ROLE=/{sub(/^ANALYTICS_DB_ROLE=/, ""); print}' .env.prod | tail -n 1)
         if [ -z "$analytics_role" ]; then
             echo "ERROR: ANALYTICS_DB_ROLE is missing or empty in .env.prod"
             echo "Set ANALYTICS_DB_ROLE to the read-only analytics role before deploying."
             exit 1
         fi
 
-        if ! grep -q '^ANALYTICS_SEARCH_PATH=' .env.prod; then
+        if ! sudo grep -q '^ANALYTICS_SEARCH_PATH=' .env.prod; then
             echo "WARNING: ANALYTICS_SEARCH_PATH is not set in .env.prod"
             echo "Set ANALYTICS_SEARCH_PATH if schema isolation is required."
         fi
 
-        db_url=$(grep -E '^DATABASE_URL=' .env.prod | tail -n 1 | cut -d= -f2-)
+        db_url=$(sudo awk -F= '/^DATABASE_URL=/{sub(/^DATABASE_URL=/, ""); print}' .env.prod | tail -n 1)
         if [ -z "$db_url" ]; then
             echo "ERROR: DATABASE_URL is missing in .env.prod"
             exit 1
@@ -272,11 +272,11 @@ deploy_to_prod() {
             exit 1
         fi
 
-        db_admin_user=$(grep -E '^POSTGRES_USER=' .env.prod | tail -n 1 | cut -d= -f2-)
+        db_admin_user=$(sudo awk -F= '/^POSTGRES_USER=/{sub(/^POSTGRES_USER=/, ""); print}' .env.prod | tail -n 1)
         if [ -z "$db_admin_user" ]; then
             db_admin_user="postgres"
         fi
-        db_name=$(grep -E '^POSTGRES_DB=' .env.prod | tail -n 1 | cut -d= -f2-)
+        db_name=$(sudo awk -F= '/^POSTGRES_DB=/{sub(/^POSTGRES_DB=/, ""); print}' .env.prod | tail -n 1)
         if [ -z "$db_name" ]; then
             db_name=$(echo "$db_url" | sed -E 's|^.*/([^/?]+).*|\1|')
         fi
