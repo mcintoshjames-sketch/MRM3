@@ -1,0 +1,17 @@
+SEC-04 negative validation evidence
+Sun Jan  4 21:38:51 UTC 2026
+
+Case A: Missing SECRET_KEY
+FATAL: SECRET_KEY must be changed in production!
+Set a secure random SECRET_KEY environment variable.
+exit=1
+
+Case B: Short SECRET_KEY
+FATAL: SECRET_KEY must be at least 32 characters in production!
+Set a secure random SECRET_KEY environment variable.
+exit=1
+
+Case C: Default dev DATABASE_URL
+FATAL: DATABASE_URL must be set to a non-default value in production!
+Set DATABASE_URL to a production database connection string.
+exit=1

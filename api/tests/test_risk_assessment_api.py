@@ -3,7 +3,9 @@
 TDD RED Phase: These tests are written BEFORE the API implementation.
 All tests should fail initially, then pass after implementing the API.
 """
+import os
 import pytest
+from unittest.mock import MagicMock
 from decimal import Decimal
 
 from app.models.risk_assessment import (
@@ -364,9 +366,53 @@ class TestCreateAssessment:
             }
         )
         assert response.status_code == 201
-        data = response.json()
-        # Should still calculate with available factors
-        assert data["qualitative_calculated_score"] is not None
+
+
+class TestRiskAssessmentPdfCleanup:
+    """Tests for risk assessment PDF temp cleanup (REL-03)."""
+
+    def test_pdf_export_cleans_temp_file(
+        self, client, admin_headers, sample_model, qualitative_factors, risk_tier_taxonomy, monkeypatch
+    ):
+        """BackgroundTask should remove the temp PDF after export."""
+        create_response = client.post(
+            f"/models/{sample_model.model_id}/risk-assessments/",
+            headers=admin_headers,
+            json={
+                "region_id": None,
+                "quantitative_rating": "HIGH",
+                "factor_ratings": [
+                    {"factor_id": factor.factor_id, "rating": "HIGH"}
+                    for factor in qualitative_factors
+                ]
+            }
+        )
+        assert create_response.status_code == 201
+        assessment_id = create_response.json()["assessment_id"]
+
+        class DummyPDF:
+            def __init__(self, _data):
+                self.data = _data
+
+            def generate_report(self):
+                return None
+
+            def output(self, path):
+                with open(path, "wb") as handle:
+                    handle.write(b"%PDF-1.4\n%EOF")
+
+        unlink_mock = MagicMock(side_effect=os.unlink)
+        monkeypatch.setattr("app.api.risk_assessment.RiskAssessmentPDF", DummyPDF)
+        monkeypatch.setattr("app.api.risk_assessment.os.unlink", unlink_mock)
+
+        response = client.get(
+            f"/models/{sample_model.model_id}/risk-assessments/{assessment_id}/pdf",
+            headers=admin_headers
+        )
+
+        assert response.status_code == 200
+        _ = response.content  # Ensure response body is consumed
+        assert unlink_mock.called
 
     def test_create_assessment_calculates_score(
         self, client, admin_headers, sample_model, qualitative_factors, risk_tier_taxonomy

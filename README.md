@@ -20,6 +20,12 @@ docker compose up --build
 # API docs: http://localhost:8001/docs
 ```
 
+## Isolated Test Database
+
+For Postgres-backed concurrency tests and performance benchmarks, use the
+separate test container defined in `docker-compose.test.yml`.
+See `docs/TESTING_POSTGRES.md` for setup, verification, and teardown steps.
+
 ## Default Login
 
 - **Admin:** `admin@example.com` / `admin123`

@@ -1,0 +1,26 @@
+# Isolated Postgres for testing - SAFE TO DROP/CREATE
+# Completely separate from dev DB (docker-compose.yml)
+version: '3.8'
+
+services:
+  test_db:
+    image: postgres:15-alpine
+    container_name: mrm3_test_db
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres_admin
+      POSTGRES_DB: postgres
+    ports:
+      - "5434:5432"
+    volumes:
+      - postgres_test_data:/var/lib/postgresql/data
+      - ./scripts/test_db_init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres_test_data:
+    name: mrm3_postgres_test_data

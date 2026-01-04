@@ -1,7 +1,10 @@
 """Pytest fixtures for API testing."""
+import os
+import uuid
+
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
@@ -48,6 +51,53 @@ def db_session():
     yield db
     db.close()
     Base.metadata.drop_all(bind=engine)
+
+
+@pytest.fixture(scope="session")
+def postgres_engine():
+    """Create a dedicated Postgres schema for integration tests (if configured)."""
+    url = os.getenv("TEST_DATABASE_URL")
+    if not url:
+        pytest.skip("TEST_DATABASE_URL is not set")
+
+    schema = f"test_{uuid.uuid4().hex}"
+    base_engine = create_engine(url)
+    with base_engine.connect() as conn:
+        conn.execute(text(f'CREATE SCHEMA "{schema}"'))
+        conn.execute(text(f'SET search_path TO "{schema}"'))
+        conn.commit()
+
+    pg_engine = create_engine(url, connect_args={"options": f"-csearch_path={schema}"})
+    Base.metadata.create_all(bind=pg_engine)
+
+    yield pg_engine
+
+    pg_engine.dispose()
+    with base_engine.connect() as conn:
+        conn.execute(text(f'DROP SCHEMA IF EXISTS "{schema}" CASCADE'))
+        conn.commit()
+    base_engine.dispose()
+
+
+@pytest.fixture(scope="function")
+def postgres_db_session(postgres_engine):
+    """Fresh Postgres database session per test (schema-local)."""
+    SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=postgres_engine)
+    db = SessionLocal()
+
+    table_names = [table.name for table in Base.metadata.tables.values()]
+    if table_names:
+        quoted = ", ".join(f'"{name}"' for name in table_names)
+        db.execute(text(f"TRUNCATE {quoted} RESTART IDENTITY CASCADE"))
+        db.commit()
+
+    for code, display_name in ROLE_CODE_TO_DISPLAY.items():
+        db.add(Role(code=code, display_name=display_name, is_system=True, is_active=True))
+    db.commit()
+
+    yield db
+
+    db.close()
 
 
 @pytest.fixture(scope="function")

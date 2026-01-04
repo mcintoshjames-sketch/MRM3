@@ -1,6 +1,7 @@
 """Tests for version deployment tasks functionality."""
 import pytest
 from datetime import date, timedelta
+from unittest.mock import patch
 from app.models.region import Region
 from app.models.model_version import ModelVersion
 from app.models.version_deployment_task import VersionDeploymentTask
@@ -233,3 +234,81 @@ class TestDeploymentTaskPermissions:
             }
         )
         assert response.status_code == 403
+
+
+class TestBulkDeploymentConfirmation:
+    """Test bulk confirmation reliability with savepoints."""
+
+    def test_bulk_confirm_partial_success(self, client, admin_headers, db_session, sample_model, admin_user):
+        """One failing task should not rollback successful confirmations."""
+        future_date = date.today() + timedelta(days=30)
+
+        ok_version = ModelVersion(
+            model_id=sample_model.model_id,
+            version_number="2.0.0",
+            change_type="MAJOR",
+            change_description="OK version",
+            planned_production_date=future_date,
+            scope="GLOBAL",
+            created_by_id=admin_user.user_id
+        )
+        bad_version = ModelVersion(
+            model_id=sample_model.model_id,
+            version_number="3.0.0",
+            change_type="MAJOR",
+            change_description="Bad version",
+            planned_production_date=future_date,
+            scope="GLOBAL",
+            created_by_id=admin_user.user_id
+        )
+        db_session.add_all([ok_version, bad_version])
+        db_session.commit()
+
+        ok_task = VersionDeploymentTask(
+            version_id=ok_version.version_id,
+            model_id=sample_model.model_id,
+            region_id=None,
+            planned_production_date=future_date,
+            assigned_to_id=admin_user.user_id,
+            status="PENDING"
+        )
+        bad_task = VersionDeploymentTask(
+            version_id=bad_version.version_id,
+            model_id=sample_model.model_id,
+            region_id=None,
+            planned_production_date=future_date,
+            assigned_to_id=admin_user.user_id,
+            status="PENDING"
+        )
+        db_session.add_all([ok_task, bad_task])
+        db_session.commit()
+
+        def guard_update_version(db, version):
+            if version.version_id == bad_version.version_id:
+                raise RuntimeError("forced failure")
+            return None
+
+        with patch(
+            "app.api.version_deployment_tasks.check_and_update_version_production_date",
+            side_effect=guard_update_version
+        ):
+            response = client.post(
+                "/deployment-tasks/bulk/confirm",
+                headers=admin_headers,
+                json={
+                    "task_ids": [ok_task.task_id, bad_task.task_id],
+                    "actual_production_date": date.today().isoformat(),
+                    "confirmation_notes": "Bulk confirm test"
+                }
+            )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert ok_task.task_id in data["succeeded"]
+        assert any(item["task_id"] == bad_task.task_id for item in data["failed"])
+
+        db_session.expire_all()
+        refreshed_ok = db_session.query(VersionDeploymentTask).get(ok_task.task_id)
+        refreshed_bad = db_session.query(VersionDeploymentTask).get(bad_task.task_id)
+        assert refreshed_ok.status == "CONFIRMED"
+        assert refreshed_bad.status == "PENDING"

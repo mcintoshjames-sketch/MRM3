@@ -5,6 +5,8 @@ from fastapi.testclient import TestClient
 from app.core.config import Settings
 from app.models.user import User
 from app.core.security import verify_password
+from app.models.audit_log import AuditLog
+import app.api.analytics as analytics
 
 class MockAnalyticsSession:
     def __init__(self, real_session):
@@ -94,6 +96,43 @@ class TestAnalyticsSecurity:
             json={"query": "SELECT 1"}
         )
         assert response.status_code == 403
+
+    def test_analytics_audit_log_on_success(self, client, admin_headers, db_session):
+        """Audit log entry recorded for successful analytics query."""
+        mock_session_cls = MagicMock()
+        mock_session_cls.return_value = MockAnalyticsSession(db_session)
+
+        with patch("app.api.analytics.SessionLocal", mock_session_cls):
+            response = client.post(
+                "/analytics/query",
+                headers=admin_headers,
+                json={"query": "SELECT 1"}
+            )
+
+        assert response.status_code == 200
+        audit_row = db_session.query(AuditLog).filter(
+            AuditLog.entity_type == "AnalyticsQuery"
+        ).order_by(AuditLog.log_id.desc()).first()
+        assert audit_row is not None
+        assert audit_row.changes.get("outcome") == "success"
+
+    def test_analytics_audit_log_on_block(self, client, admin_headers, db_session, monkeypatch):
+        """Audit log entry recorded for blocked analytics query."""
+        monkeypatch.setattr(analytics, "ANALYTICS_DB_ROLE", "analytics_readonly")
+        monkeypatch.setattr(analytics, "ANALYTICS_SEARCH_PATH", "public")
+
+        response = client.post(
+            "/analytics/query",
+            headers=admin_headers,
+            json={"query": "SELECT 1; SELECT 2"}
+        )
+
+        assert response.status_code == 400
+        audit_row = db_session.query(AuditLog).filter(
+            AuditLog.entity_type == "AnalyticsQuery"
+        ).order_by(AuditLog.log_id.desc()).first()
+        assert audit_row is not None
+        assert audit_row.changes.get("outcome") == "blocked"
 
 
 class TestUserSelfUpdate:
@@ -205,3 +244,14 @@ class TestConfigValidation:
         )
         with pytest.raises(SystemExit):
             settings.validate_production_settings()
+
+    def test_validate_prod_settings_pass(self):
+        """Test production with valid settings passes validation."""
+        settings = Settings(
+            ENVIRONMENT="production",
+            SECRET_KEY="very-long-secure-secret-key-for-production-use",
+            DATABASE_URL="postgresql://prod_user:prod_pass@db.prod.internal:5432/prod_db",
+            JWT_ISSUER="mrm-prod",
+            JWT_AUDIENCE="mrm-prod"
+        )
+        settings.validate_production_settings()

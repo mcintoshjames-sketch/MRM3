@@ -2,6 +2,8 @@
 import pytest
 from datetime import date, timedelta
 from dateutil.relativedelta import relativedelta
+from app.models.audit_log import AuditLog
+from app.api.monitoring import MAX_MONITORING_IMPORT_BYTES
 
 
 class TestKpmCategories:
@@ -3547,6 +3549,47 @@ class TestCSVImport:
         results = results_resp.json()
         assert len(results) >= 1
         assert results[0]["numeric_value"] == 0.05
+
+    def test_csv_import_creates_audit_log(self, client, admin_headers, db_session, usage_frequency):
+        """CSV import with dry_run=false creates a MonitoringCycle audit log."""
+        setup = self._setup_plan_with_metrics(client, admin_headers, db_session, usage_frequency)
+
+        csv_content = f"model_id,metric_id,value,outcome,narrative\n{setup['model_id']},{setup['metric_id']},0.05,,Audit log test"
+
+        from io import BytesIO
+        response = client.post(
+            f"/monitoring/cycles/{setup['cycle_id']}/results/import?dry_run=false",
+            headers=admin_headers,
+            files={"file": ("results.csv", BytesIO(csv_content.encode()), "text/csv")}
+        )
+
+        assert response.status_code == 200
+        audit_row = db_session.query(AuditLog).filter(
+            AuditLog.entity_type == "MonitoringCycle",
+            AuditLog.entity_id == setup["cycle_id"],
+            AuditLog.action == "BULK_IMPORT"
+        ).order_by(AuditLog.log_id.desc()).first()
+        assert audit_row is not None
+        assert audit_row.changes.get("created", 0) >= 1
+
+    def test_csv_import_rejects_oversized_file(self, client, admin_headers, db_session, usage_frequency):
+        """Oversized monitoring CSV should fail with 413 while streaming."""
+        setup = self._setup_plan_with_metrics(client, admin_headers, db_session, usage_frequency)
+
+        header = "model_id,metric_id,value,outcome,narrative\n"
+        row = f"{setup['model_id']},{setup['metric_id']},0.05,,Oversized\n"
+        row_bytes = row.encode()
+        repeats = (MAX_MONITORING_IMPORT_BYTES // len(row_bytes)) + 2
+        payload = header.encode() + (row_bytes * repeats)
+
+        from io import BytesIO
+        response = client.post(
+            f"/monitoring/cycles/{setup['cycle_id']}/results/import?dry_run=true",
+            headers=admin_headers,
+            files={"file": ("results.csv", BytesIO(payload), "text/csv")}
+        )
+
+        assert response.status_code == 413
 
     def test_csv_import_calculates_outcome_green(self, client, admin_headers, db_session, usage_frequency):
         """CSV import correctly calculates GREEN outcome for value within acceptable range."""

@@ -249,7 +249,7 @@ def list_cycles(
     """List attestation cycles. Admin/Validator can see all."""
     query = db.query(
         AttestationCycle,
-        func.count(AttestationRecord.record_id).label("total_records"),
+        func.count(AttestationRecord.attestation_id).label("total_records"),
         func.sum(
             case((AttestationRecord.status == AttestationRecordStatus.PENDING.value, 1), else_=0)
         ).label("pending_count"),

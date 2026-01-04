@@ -2,6 +2,7 @@
 import pytest
 import io
 from fastapi.testclient import TestClient
+from app.api.lob_units import MAX_LOB_IMPORT_BYTES
 
 
 class TestLOBTree:
@@ -275,6 +276,22 @@ class TestLOBImport:
             files=files
         )
         assert response.status_code == 403
+
+    def test_import_rejects_oversized_csv(self, client: TestClient, admin_headers):
+        """Oversized LOB CSV should fail with 413 while streaming."""
+        header = "SBU,LOB1\n"
+        row = "Corporate,New Unit\n"
+        row_bytes = row.encode()
+        repeats = (MAX_LOB_IMPORT_BYTES // len(row_bytes)) + 2
+        payload = header.encode() + (row_bytes * repeats)
+        files = {"file": ("oversize.csv", io.BytesIO(payload), "text/csv")}
+
+        response = client.post(
+            "/lob-units/import-csv?dry_run=true",
+            headers=admin_headers,
+            files=files
+        )
+        assert response.status_code == 413
 
 
 class TestUserLOBAssignment:

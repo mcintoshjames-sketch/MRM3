@@ -1913,6 +1913,9 @@ VALIDATION_LOCK_NAMESPACE = 42
 
 def _acquire_validation_locks(db: Session, model_ids: List[int]) -> None:
     """Acquire advisory locks for validation creation in a deterministic order."""
+    bind = db.get_bind()
+    if not bind or bind.dialect.name != "postgresql":
+        return
     for model_id in sorted(model_ids):
         db.execute(
             text("SELECT pg_advisory_xact_lock(:namespace, :model_id)"),
