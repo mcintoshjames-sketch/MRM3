@@ -68,6 +68,7 @@ class ModelBase(BaseModel):
 
     model_config = ConfigDict(protected_namespaces=())
 class ModelCreate(ModelBase):
+    description: str
     owner_id: int
     usage_frequency_id: int  # Required field
     developer_id: Optional[int] = None
@@ -86,7 +87,7 @@ class ModelCreate(ModelBase):
     regulatory_category_ids: Optional[List[int]] = None
     region_ids: Optional[List[int]] = None
     initial_version_number: Optional[str] = None
-    initial_implementation_date: Optional[date] = None
+    initial_implementation_date: date
     is_model: bool = True  # True for models, False for non-models
     # MRSA (Model Risk-Sensitive Application) fields
     is_mrsa: bool = False  # True for MRSAs requiring IRP oversight
@@ -99,6 +100,20 @@ class ModelCreate(ModelBase):
     validation_request_priority_id: Optional[int] = None
     validation_request_target_date: Optional[date] = None
     validation_request_trigger_reason: Optional[str] = None
+
+    @field_validator('description')
+    @classmethod
+    def validate_description_required(cls, v):
+        if not v or not v.strip():
+            raise ValueError('Description is required')
+        return v
+
+    @field_validator('developer_id')
+    @classmethod
+    def validate_developer_required_for_in_house(cls, v, info):
+        if info.data.get('development_type') == 'In-House' and v is None:
+            raise ValueError('Developer is required for in-house models')
+        return v
 
     @field_validator('vendor_id')
     @classmethod
@@ -126,6 +141,7 @@ class ModelUpdate(BaseModel):
     methodology_id: Optional[int] = None
     ownership_type_id: Optional[int] = None
     usage_frequency_id: Optional[int] = None
+    initial_implementation_date: Optional[date] = None
     status_id: Optional[int] = None
     wholly_owned_region_id: Optional[int] = None
     status: Optional[str] = None  # Deprecated, use status_id

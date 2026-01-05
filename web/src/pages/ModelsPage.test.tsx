@@ -50,6 +50,16 @@ const sampleTeams = [
     { team_id: 2, name: 'Market Risk Team', is_active: true, lob_count: 1, model_count: 3 },
 ];
 
+const sampleTaxonomies = [
+    {
+        name: 'Model Usage Frequency',
+        values: [{ value_id: 1, label: 'Daily', is_active: true, sort_order: 1 }],
+    },
+    { name: 'Validation Type', values: [] },
+    { name: 'Validation Priority', values: [] },
+    { name: 'MRSA Risk Level', values: [] },
+];
+
 const sampleModels = [
     {
         model_id: 1,
@@ -93,7 +103,7 @@ const setupApiMocks = (models = sampleModels) => {
         if (url === '/vendors/') return Promise.resolve({ data: sampleVendors });
         if (url === '/regions/') return Promise.resolve({ data: [] });
         if (url === '/teams/') return Promise.resolve({ data: sampleTeams });
-        if (url.startsWith('/taxonomies/by-names/')) return Promise.resolve({ data: [] });
+        if (url.startsWith('/taxonomies/by-names/')) return Promise.resolve({ data: sampleTaxonomies });
         if (url === '/model-types/categories') return Promise.resolve({ data: [] });
         if (url === '/export-views/?entity_type=models') return Promise.resolve({ data: [] });
         if (url === '/validation-workflow/my-pending-submissions') return Promise.resolve({ data: [] });
@@ -173,7 +183,7 @@ describe('ModelsPage', () => {
         expect(screen.getByLabelText('Model Name')).toBeInTheDocument();
         expect(screen.getByLabelText('Development Type')).toBeInTheDocument();
         expect(screen.getByLabelText('Owner (Required)')).toBeInTheDocument();
-        expect(screen.getByLabelText('Developer (Optional)')).toBeInTheDocument();
+        expect(screen.getByLabelText('Developer (Required for In-House)')).toBeInTheDocument();
     });
 
     it('closes form when Cancel clicked', async () => {
@@ -198,16 +208,32 @@ describe('ModelsPage', () => {
         fireEvent.change(screen.getByLabelText('Model Name'), {
             target: { value: 'New Model' }
         });
+        fireEvent.change(screen.getByLabelText(/Description and Purpose/), {
+            target: { value: 'New model description' }
+        });
         fireEvent.change(screen.getByLabelText('Owner (Required)'), {
             target: { value: '1' }
+        });
+        fireEvent.change(screen.getByLabelText('Developer (Required for In-House)'), {
+            target: { value: '2' }
+        });
+        fireEvent.change(screen.getByLabelText(/Typical Usage Frequency/), {
+            target: { value: '1' }
+        });
+        fireEvent.change(screen.getByLabelText('Implementation Date (Required)'), {
+            target: { value: '2024-01-01' }
         });
         fireEvent.click(screen.getByRole('button', { name: 'Create' }));
 
         await waitFor(() => {
             expect(mockPost).toHaveBeenCalledWith('/models/', expect.objectContaining({
                 model_name: 'New Model',
+                description: 'New model description',
                 owner_id: 1,
+                developer_id: 2,
                 development_type: 'In-House',
+                usage_frequency_id: 1,
+                initial_implementation_date: '2024-01-01',
             }));
         });
     });

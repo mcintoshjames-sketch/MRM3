@@ -705,6 +705,19 @@ export default function ModelDetailsPage() {
         setEditError(null);
         setPendingEditSuccess(null);
         try {
+            if (originalFormData?.description?.trim() && !formData.description.trim()) {
+                setEditError('Description cannot be cleared once set.');
+                return;
+            }
+            if (originalFormData?.developer_id && !formData.developer_id) {
+                setEditError('Developer cannot be cleared once set.');
+                return;
+            }
+            if (originalFormData?.usage_frequency_id && !formData.usage_frequency_id) {
+                setEditError('Usage frequency cannot be cleared once set.');
+                return;
+            }
+
             // Compute only the fields that actually changed (for proper pending edit tracking)
             const payload: Record<string, unknown> = {};
 

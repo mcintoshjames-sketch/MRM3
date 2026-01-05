@@ -2886,9 +2886,12 @@ class TestModelMonitoringPlansLookup:
         # Create a model without any monitoring plans
         model_resp = client.post("/models/", headers=admin_headers, json={
             "model_name": "Model Without Plans",
+            "description": "Model Without Plans",
             "owner_id": 1,
+            "developer_id": 1,
             "status": "Draft",
-            "usage_frequency_id": usage_frequency["daily"].value_id
+            "usage_frequency_id": usage_frequency["daily"].value_id,
+            "initial_implementation_date": date.today().isoformat()
         })
         assert model_resp.status_code == 201
         model_id = model_resp.json()["model_id"]
@@ -2903,9 +2906,12 @@ class TestModelMonitoringPlansLookup:
         # Create a model
         model_resp = client.post("/models/", headers=admin_headers, json={
             "model_name": "Model With Plan",
+            "description": "Model With Plan",
             "owner_id": 1,
+            "developer_id": 1,
             "status": "Draft",
-            "usage_frequency_id": usage_frequency["daily"].value_id
+            "usage_frequency_id": usage_frequency["daily"].value_id,
+            "initial_implementation_date": date.today().isoformat()
         })
         model_id = model_resp.json()["model_id"]
 
@@ -2932,9 +2938,12 @@ class TestModelMonitoringPlansLookup:
         # Create model
         model_resp = client.post("/models/", headers=admin_headers, json={
             "model_name": "Model With Versioned Plan",
+            "description": "Model With Versioned Plan",
             "owner_id": 1,
+            "developer_id": 1,
             "status": "Draft",
-            "usage_frequency_id": usage_frequency["daily"].value_id
+            "usage_frequency_id": usage_frequency["daily"].value_id,
+            "initial_implementation_date": date.today().isoformat()
         })
         model_id = model_resp.json()["model_id"]
 
@@ -2976,9 +2985,12 @@ class TestModelMonitoringPlansLookup:
         # Create model
         model_resp = client.post("/models/", headers=admin_headers, json={
             "model_name": "Model With Inactive Plan",
+            "description": "Model With Inactive Plan",
             "owner_id": 1,
+            "developer_id": 1,
             "status": "Draft",
-            "usage_frequency_id": usage_frequency["daily"].value_id
+            "usage_frequency_id": usage_frequency["daily"].value_id,
+            "initial_implementation_date": date.today().isoformat()
         })
         model_id = model_resp.json()["model_id"]
 
@@ -3056,10 +3068,13 @@ class TestComponent9bFields:
         # Create model with risk tier
         model_resp = client.post("/models/", headers=admin_headers, json={
             "model_name": "Model For 9b Test",
+            "description": "Model For 9b Test",
             "owner_id": 1,
+            "developer_id": 1,
             "status": "Draft",
             "risk_tier_id": taxonomy_values["tier1"].value_id,
-            "usage_frequency_id": usage_frequency["daily"].value_id
+            "usage_frequency_id": usage_frequency["daily"].value_id,
+            "initial_implementation_date": date.today().isoformat()
         })
         assert model_resp.status_code == 201, f"Failed to create model: {model_resp.json()}"
         model_id = model_resp.json()["model_id"]
@@ -3123,10 +3138,13 @@ class TestComponent9bFields:
         # Create model with risk tier
         model_resp = client.post("/models/", headers=admin_headers, json={
             "model_name": "Model For Invalid 9b",
+            "description": "Model For Invalid 9b",
             "owner_id": 1,
+            "developer_id": 1,
             "status": "Draft",
             "risk_tier_id": taxonomy_values["tier1"].value_id,
-            "usage_frequency_id": usage_frequency["daily"].value_id
+            "usage_frequency_id": usage_frequency["daily"].value_id,
+            "initial_implementation_date": date.today().isoformat()
         })
         assert model_resp.status_code == 201, f"Failed to create model: {model_resp.json()}"
         model_id = model_resp.json()["model_id"]
@@ -3181,10 +3199,13 @@ class TestComponent9bFields:
         # Create model with Tier 1 risk (9b is Required) - owned by admin (id=1)
         model_resp = client.post("/models/", headers=admin_headers, json={
             "model_name": "Model For 9b Validation Test",
+            "description": "Model For 9b Validation Test",
             "owner_id": 1,
+            "developer_id": 1,
             "status": "Draft",
             "risk_tier_id": taxonomy_values["tier1"].value_id,
-            "usage_frequency_id": usage_frequency["daily"].value_id
+            "usage_frequency_id": usage_frequency["daily"].value_id,
+            "initial_implementation_date": date.today().isoformat()
         })
         assert model_resp.status_code == 201
         model_id = model_resp.json()["model_id"]
@@ -3253,10 +3274,13 @@ class TestComponent9bFields:
         # Create model with Tier 1 risk (9b is Required)
         model_resp = client.post("/models/", headers=admin_headers, json={
             "model_name": "Model For 9b NotPlanned Test",
+            "description": "Model For 9b NotPlanned Test",
             "owner_id": 1,
+            "developer_id": 1,
             "status": "Draft",
             "risk_tier_id": taxonomy_values["tier1"].value_id,
-            "usage_frequency_id": usage_frequency["daily"].value_id
+            "usage_frequency_id": usage_frequency["daily"].value_id,
+            "initial_implementation_date": date.today().isoformat()
         })
         assert model_resp.status_code == 201
         model_id = model_resp.json()["model_id"]
@@ -3296,10 +3320,13 @@ class TestComponent9bFields:
         # Create model with Tier 1 risk (9b is Required)
         model_resp = client.post("/models/", headers=admin_headers, json={
             "model_name": "Model For 9b NotPlanned With Rationale",
+            "description": "Model For 9b NotPlanned With Rationale",
             "owner_id": 1,
+            "developer_id": 1,
             "status": "Draft",
             "risk_tier_id": taxonomy_values["tier1"].value_id,
-            "usage_frequency_id": usage_frequency["daily"].value_id
+            "usage_frequency_id": usage_frequency["daily"].value_id,
+            "initial_implementation_date": date.today().isoformat()
         })
         assert model_resp.status_code == 201
         model_id = model_resp.json()["model_id"]
@@ -3344,10 +3371,13 @@ class TestComponent9bFields:
         # Create model with Tier 1 risk
         model_resp = client.post("/models/", headers=admin_headers, json={
             "model_name": "Model For 9b Pass Test",
+            "description": "Model For 9b Pass Test",
             "owner_id": 1,
+            "developer_id": 1,
             "status": "Draft",
             "risk_tier_id": taxonomy_values["tier1"].value_id,
-            "usage_frequency_id": usage_frequency["daily"].value_id
+            "usage_frequency_id": usage_frequency["daily"].value_id,
+            "initial_implementation_date": date.today().isoformat()
         })
         assert model_resp.status_code == 201
         model_id = model_resp.json()["model_id"]

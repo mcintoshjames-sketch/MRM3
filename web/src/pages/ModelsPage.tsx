@@ -749,6 +749,18 @@ export default function ModelsPage() {
             alert('Please select a Usage Frequency.');
             return;
         }
+        if (!formData.description || formData.description.trim() === '') {
+            alert('Please provide a Description and Purpose.');
+            return;
+        }
+        if (!formData.initial_implementation_date) {
+            alert('Please select an Implementation Date.');
+            return;
+        }
+        if (formData.development_type === 'In-House' && !formData.developer_id) {
+            alert('Please select a Developer for In-House models.');
+            return;
+        }
 
         // Validate MRSA fields if is_mrsa is checked
         if (formData.is_mrsa) {
@@ -1848,7 +1860,11 @@ export default function ModelsPage() {
                                 </div>
 
                                 <div className="mb-4">
-                                    <label htmlFor="developer_id" className="block text-sm font-medium mb-2">Developer (Optional)</label>
+                                    <label htmlFor="developer_id" className="block text-sm font-medium mb-2">
+                                        {formData.development_type === 'In-House'
+                                            ? 'Developer (Required for In-House)'
+                                            : 'Developer (Optional)'}
+                                    </label>
                                     <select
                                         id="developer_id"
                                         className="input-field"
@@ -1857,6 +1873,7 @@ export default function ModelsPage() {
                                             ...formData,
                                             developer_id: e.target.value ? parseInt(e.target.value) : null
                                         })}
+                                        required={formData.development_type === 'In-House'}
                                     >
                                         <option value="">None</option>
                                         {users.map(u => (
@@ -2017,7 +2034,7 @@ export default function ModelsPage() {
 
                                 <div className="mb-4">
                                     <label htmlFor="initial_implementation_date" className="block text-sm font-medium mb-2">
-                                        Implementation Date (Optional)
+                                        Implementation Date (Required)
                                     </label>
                                     <input
                                         id="initial_implementation_date"
@@ -2025,6 +2042,7 @@ export default function ModelsPage() {
                                         className="input-field"
                                         value={formData.initial_implementation_date}
                                         onChange={(e) => setFormData({ ...formData, initial_implementation_date: e.target.value })}
+                                        required
                                     />
                                     <p className="text-xs text-gray-500 mt-1">
                                         Date when this model was (or will be) implemented in production
@@ -2033,7 +2051,9 @@ export default function ModelsPage() {
                             </div>
 
                             <div className="mb-4">
-                                <label htmlFor="description" className="block text-sm font-medium mb-2">Description and Purpose</label>
+                                <label htmlFor="description" className="block text-sm font-medium mb-2">
+                                    Description and Purpose (Required)
+                                </label>
                                 <textarea
                                     id="description"
                                     className="input-field"
@@ -2041,6 +2061,7 @@ export default function ModelsPage() {
                                     placeholder="Describe what this model does and its business purpose..."
                                     value={formData.description}
                                     onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                                    required
                                 />
                             </div>
                             <div className="mb-4">

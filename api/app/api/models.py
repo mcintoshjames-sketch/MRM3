@@ -66,6 +66,104 @@ def create_audit_log(db: Session, entity_type: str, entity_id: int, action: str,
     # Note: commit happens with the main transaction
 
 
+def _get_initial_version(db: Session, model_id: int) -> Optional[ModelVersion]:
+    """Get the initial model version (change_type_id=1) with a fallback to earliest version."""
+    initial_version = db.query(ModelVersion).filter(
+        ModelVersion.model_id == model_id,
+        ModelVersion.change_type_id == 1
+    ).order_by(ModelVersion.created_at.asc()).first()
+    if initial_version:
+        return initial_version
+    return db.query(ModelVersion).filter(
+        ModelVersion.model_id == model_id
+    ).order_by(ModelVersion.created_at.asc()).first()
+
+
+def _get_initial_implementation_date(version: ModelVersion) -> Optional[date]:
+    """Return the stored initial implementation date from the version fields."""
+    return version.production_date or version.actual_production_date or version.planned_production_date
+
+
+def _get_or_create_initial_version(
+    db: Session,
+    model: Model,
+    created_by_id: int,
+    initial_date: Optional[date]
+) -> tuple[Optional[ModelVersion], bool]:
+    """Get the initial version, creating a placeholder when missing."""
+    initial_version = _get_initial_version(db, model.model_id)
+    if initial_version:
+        return initial_version, False
+    if initial_date is None:
+        return None, False
+
+    is_active_model = model.status == "Active"
+    planned_production_date = None if is_active_model else initial_date
+    actual_production_date = initial_date if is_active_model else None
+
+    initial_version = ModelVersion(
+        model_id=model.model_id,
+        version_number="1.0",
+        change_type="MAJOR",
+        change_type_id=1,
+        change_description="Auto-created initial version",
+        created_by_id=created_by_id,
+        planned_production_date=planned_production_date,
+        actual_production_date=actual_production_date,
+        production_date=initial_date,
+        status="ACTIVE" if is_active_model else "DRAFT"
+    )
+    db.add(initial_version)
+    db.flush()
+    create_audit_log(
+        db=db,
+        entity_type="ModelVersion",
+        entity_id=initial_version.version_id,
+        action="CREATE",
+        user_id=created_by_id,
+        changes={"version_number": "1.0", "change_type_id": 1, "auto_created": True}
+    )
+    return initial_version, True
+
+
+def _apply_initial_implementation_date(
+    model: Model,
+    version: ModelVersion,
+    new_date: date
+) -> dict[str, dict[str, Optional[str]]]:
+    """Update initial version dates and return audit-friendly change details."""
+    changes: dict[str, dict[str, Optional[str]]] = {}
+
+    def record_change(field: str, old_value: Optional[date], updated_value: Optional[date]) -> None:
+        if old_value != updated_value:
+            changes[field] = {
+                "old": str(old_value) if old_value else None,
+                "new": str(updated_value) if updated_value else None
+            }
+
+    old_production = version.production_date
+    version.production_date = new_date
+    record_change("production_date", old_production, version.production_date)
+
+    if version.actual_production_date is not None:
+        old_actual = version.actual_production_date
+        version.actual_production_date = new_date
+        record_change("actual_production_date", old_actual, version.actual_production_date)
+    elif version.planned_production_date is not None:
+        old_planned = version.planned_production_date
+        version.planned_production_date = new_date
+        record_change("planned_production_date", old_planned, version.planned_production_date)
+    else:
+        if model.status == "Active" or version.status == "ACTIVE":
+            record_change("actual_production_date", version.actual_production_date, new_date)
+            version.actual_production_date = new_date
+        else:
+            record_change("planned_production_date", version.planned_production_date, new_date)
+            version.planned_production_date = new_date
+
+    return changes
+
+
 def get_model_last_updated(model: Model) -> Optional[date]:
     """Get actual production date from model's latest ACTIVE version.
 
@@ -630,6 +728,13 @@ def create_model(
             detail="Vendor is required for third-party models"
         )
 
+    # Validate developer requirement for in-house models
+    if model_data.development_type == "In-House" and not model_data.developer_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Developer is required for in-house models"
+        )
+
     # Validate vendor exists if provided
     if model_data.vendor_id:
         vendor = db.query(Vendor).filter(
@@ -793,8 +898,11 @@ def create_model(
 
     # Create initial version with change_type_id = 1 (New Model Development)
     # Use custom version number if provided, otherwise default to "1.0"
-    # Use implementation date if provided, otherwise DRAFT status with no date
-    version_status = "ACTIVE" if initial_implementation_date else "DRAFT"
+    # Use implementation date as planned or actual based on model status
+    is_active_model = model_data.status == "Active"
+    version_status = "ACTIVE" if is_active_model else "DRAFT"
+    planned_production_date = None if is_active_model else initial_implementation_date
+    actual_production_date = initial_implementation_date if is_active_model else None
     initial_version = ModelVersion(
         model_id=model.model_id,
         version_number=initial_version_number,
@@ -802,6 +910,8 @@ def create_model(
         change_type_id=1,  # Code 1 = "New Model Development"
         change_description="Initial model version",
         created_by_id=current_user.user_id,
+        planned_production_date=planned_production_date,
+        actual_production_date=actual_production_date,
         production_date=initial_implementation_date,
         status=version_status
     )
@@ -1717,16 +1827,59 @@ def update_model(
         )
 
     is_admin_user = is_admin(current_user)
+    update_data = model_data.model_dump(exclude_unset=True)
+    initial_version = None
+    initial_version_created = False
+    current_initial_date = None
+    if "initial_implementation_date" in update_data:
+        initial_version = _get_initial_version(db, model_id)
+        if initial_version:
+            current_initial_date = _get_initial_implementation_date(initial_version)
+
+    if "description" in update_data and model.description:
+        new_description = update_data.get("description")
+        if new_description is None or not str(new_description).strip():
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Description cannot be cleared once set"
+            )
+
+    if "developer_id" in update_data and model.developer_id is not None:
+        new_developer_id = update_data.get("developer_id")
+        if not new_developer_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Developer cannot be cleared once set"
+            )
+
+    if "usage_frequency_id" in update_data and model.usage_frequency_id is not None:
+        new_usage_frequency = update_data.get("usage_frequency_id")
+        if new_usage_frequency is None or new_usage_frequency == 0:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Usage frequency cannot be cleared once set"
+            )
+
+    if "initial_implementation_date" in update_data and current_initial_date is not None:
+        new_initial_date = update_data.get("initial_implementation_date")
+        if new_initial_date is None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Initial implementation date cannot be cleared once set"
+            )
 
     # For non-admins editing APPROVED models, create a pending edit instead
     if not is_admin_user and model.row_approval_status is None:
-        update_data = model_data.model_dump(exclude_unset=True)
-
         if not update_data:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="No changes provided"
             )
+
+        if "initial_implementation_date" in update_data:
+            pending_date = update_data.get("initial_implementation_date")
+            if isinstance(pending_date, date):
+                update_data["initial_implementation_date"] = pending_date.isoformat()
 
         # Capture original values for the fields being changed
         original_values = {}
@@ -1735,6 +1888,8 @@ def update_model(
                 original_values[field] = [u.user_id for u in model.users]
             elif field == 'regulatory_category_ids':
                 original_values[field] = [c.value_id for c in model.regulatory_categories]
+            elif field == 'initial_implementation_date':
+                original_values[field] = current_initial_date.isoformat() if current_initial_date else None
             else:
                 original_values[field] = getattr(model, field, None)
 
@@ -1782,7 +1937,7 @@ def update_model(
             detail="You do not have permission to modify this model"
         )
 
-    update_data = model_data.model_dump(exclude_unset=True)
+    initial_implementation_date = update_data.pop("initial_implementation_date", None)
 
     # Block direct risk_tier_id changes if a global risk assessment exists
     # Users should update the risk assessment instead of directly changing the tier
@@ -1963,6 +2118,32 @@ def update_model(
                 name_changed = True
         setattr(model, field, value)
 
+    version_changes = {}
+    if initial_implementation_date is not None:
+        if not initial_version:
+            initial_version, initial_version_created = _get_or_create_initial_version(
+                db, model, current_user.user_id, initial_implementation_date
+            )
+        if not initial_version:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Initial model version not found for implementation date update"
+            )
+        current_initial_date = _get_initial_implementation_date(initial_version)
+        if initial_version_created:
+            changes_made["initial_implementation_date"] = {
+                "old": None,
+                "new": str(initial_implementation_date)
+            }
+        elif current_initial_date != initial_implementation_date:
+            version_changes = _apply_initial_implementation_date(
+                model, initial_version, initial_implementation_date
+            )
+            changes_made["initial_implementation_date"] = {
+                "old": str(current_initial_date) if current_initial_date else None,
+                "new": str(initial_implementation_date)
+            }
+
     if user_ids_changed:
         changes_made["user_ids"] = "modified"
 
@@ -2004,6 +2185,16 @@ def update_model(
             action="UPDATE",
             user_id=current_user.user_id,
             changes=changes_made
+        )
+
+    if version_changes and initial_version:
+        create_audit_log(
+            db=db,
+            entity_type="ModelVersion",
+            entity_id=initial_version.version_id,
+            action="UPDATE",
+            user_id=current_user.user_id,
+            changes=version_changes
         )
 
     # Create name history record if name changed
@@ -3386,6 +3577,9 @@ def approve_pending_edit(
     # Apply the proposed changes to the model
     proposed_changes = pending_edit.proposed_changes
     changes_applied = {}
+    version_changes = {}
+    initial_version = None
+    initial_version_created = False
 
     for field, value in proposed_changes.items():
         if field == 'user_ids':
@@ -3407,6 +3601,41 @@ def approve_pending_edit(
                         TaxonomyValue.value_id.in_(value)).all()
                     model.regulatory_categories = categories
                     changes_applied[field] = {"old": old_category_ids, "new": new_category_ids}
+        elif field == 'initial_implementation_date':
+            if isinstance(value, str):
+                value = date.fromisoformat(value)
+            if value is None:
+                if not initial_version:
+                    initial_version = _get_initial_version(db, model_id)
+                current_initial_date = _get_initial_implementation_date(initial_version) if initial_version else None
+                if current_initial_date is not None:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail="Initial implementation date cannot be cleared once set"
+                    )
+                continue
+
+            if not initial_version:
+                initial_version, initial_version_created = _get_or_create_initial_version(
+                    db, model, current_user.user_id, value
+                )
+            if not initial_version:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Initial model version not found for implementation date update"
+                )
+            current_initial_date = _get_initial_implementation_date(initial_version)
+            if initial_version_created:
+                changes_applied[field] = {
+                    "old": None,
+                    "new": str(value)
+                }
+            elif current_initial_date != value:
+                version_changes = _apply_initial_implementation_date(model, initial_version, value)
+                changes_applied[field] = {
+                    "old": str(current_initial_date) if current_initial_date else None,
+                    "new": str(value)
+                }
         else:
             old_value = getattr(model, field, None)
             if old_value != value:
@@ -3440,6 +3669,16 @@ def approve_pending_edit(
         user_id=current_user.user_id,
         changes={"approved_pending_edit_id": edit_id, **changes_applied}
     )
+
+    if version_changes and initial_version:
+        create_audit_log(
+            db=db,
+            entity_type="ModelVersion",
+            entity_id=initial_version.version_id,
+            action="UPDATE",
+            user_id=current_user.user_id,
+            changes=version_changes
+        )
 
     db.commit()
 

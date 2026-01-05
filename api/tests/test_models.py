@@ -1,4 +1,5 @@
 """Tests for models CRUD endpoints."""
+from datetime import date
 import pytest
 
 
@@ -39,7 +40,9 @@ class TestCreateModel:
                 "development_type": "In-House",
                 "status": "In Development",
                 "owner_id": test_user.user_id,
+                "developer_id": test_user.user_id,
                 "usage_frequency_id": usage_frequency["daily"].value_id,
+                "initial_implementation_date": date.today().isoformat(),
                 "user_ids": [test_user.user_id]  # Must include self as model user
             }
         )
@@ -59,9 +62,12 @@ class TestCreateModel:
             headers=auth_headers,
             json={
                 "model_name": "Minimal Model",
+                "description": "Minimal model description",
                 "development_type": "In-House",
                 "owner_id": test_user.user_id,
+                "developer_id": test_user.user_id,
                 "usage_frequency_id": usage_frequency["daily"].value_id,
+                "initial_implementation_date": date.today().isoformat(),
                 "user_ids": [test_user.user_id]  # Must include self as model user
             }
         )
@@ -87,6 +93,57 @@ class TestCreateModel:
             "/models/",
             headers=auth_headers,
             json={"description": "No name"}
+        )
+        assert response.status_code == 422
+
+    def test_create_model_missing_description(self, client, auth_headers, test_user, usage_frequency):
+        """Test creating model without description fails."""
+        response = client.post(
+            "/models/",
+            headers=auth_headers,
+            json={
+                "model_name": "No Description Model",
+                "development_type": "In-House",
+                "owner_id": test_user.user_id,
+                "developer_id": test_user.user_id,
+                "usage_frequency_id": usage_frequency["daily"].value_id,
+                "initial_implementation_date": date.today().isoformat(),
+                "user_ids": [test_user.user_id]
+            }
+        )
+        assert response.status_code == 422
+
+    def test_create_model_missing_initial_implementation_date(self, client, auth_headers, test_user, usage_frequency):
+        """Test creating model without implementation date fails."""
+        response = client.post(
+            "/models/",
+            headers=auth_headers,
+            json={
+                "model_name": "No Implementation Date Model",
+                "description": "Missing implementation date",
+                "development_type": "In-House",
+                "owner_id": test_user.user_id,
+                "developer_id": test_user.user_id,
+                "usage_frequency_id": usage_frequency["daily"].value_id,
+                "user_ids": [test_user.user_id]
+            }
+        )
+        assert response.status_code == 422
+
+    def test_create_model_missing_developer_for_in_house(self, client, auth_headers, test_user, usage_frequency):
+        """Test creating in-house model without developer fails."""
+        response = client.post(
+            "/models/",
+            headers=auth_headers,
+            json={
+                "model_name": "No Developer Model",
+                "description": "Missing developer",
+                "development_type": "In-House",
+                "owner_id": test_user.user_id,
+                "usage_frequency_id": usage_frequency["daily"].value_id,
+                "initial_implementation_date": date.today().isoformat(),
+                "user_ids": [test_user.user_id]
+            }
         )
         assert response.status_code == 422
 
@@ -165,6 +222,40 @@ class TestUpdateModel:
             json={"model_name": "Hacked"}
         )
         assert response.status_code == 403  # FastAPI OAuth2 returns 403 for missing token
+
+    def test_update_model_cannot_clear_description(self, client, auth_headers, sample_model):
+        """Test that description cannot be cleared once set."""
+        response = client.patch(
+            f"/models/{sample_model.model_id}",
+            headers=auth_headers,
+            json={"description": ""}
+        )
+        assert response.status_code == 400
+
+    def test_update_model_cannot_clear_developer(self, client, auth_headers, sample_model, second_user):
+        """Test that developer cannot be cleared once set."""
+        set_resp = client.patch(
+            f"/models/{sample_model.model_id}",
+            headers=auth_headers,
+            json={"developer_id": second_user.user_id}
+        )
+        assert set_resp.status_code == 200
+
+        clear_resp = client.patch(
+            f"/models/{sample_model.model_id}",
+            headers=auth_headers,
+            json={"developer_id": None}
+        )
+        assert clear_resp.status_code == 400
+
+    def test_update_model_cannot_clear_usage_frequency(self, client, auth_headers, sample_model):
+        """Test that usage frequency cannot be cleared once set."""
+        response = client.patch(
+            f"/models/{sample_model.model_id}",
+            headers=auth_headers,
+            json={"usage_frequency_id": None}
+        )
+        assert response.status_code == 400
 
 
 class TestDeleteModel:

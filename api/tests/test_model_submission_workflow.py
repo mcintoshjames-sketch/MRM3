@@ -1,5 +1,5 @@
 import pytest
-from datetime import datetime
+from datetime import date, datetime
 from app.models.model import Model, ModelStatus
 from app.core.time import utc_now
 from app.models.model_submission_comment import ModelSubmissionComment
@@ -15,9 +15,11 @@ def test_create_model_as_admin_auto_approved(client, admin_headers, admin_user, 
             "description": "Created by admin",
             "development_type": "In-House",
             "owner_id": admin_user.user_id,
+            "developer_id": admin_user.user_id,
             "status": "In Development",
             "user_ids": [admin_user.user_id],
             "usage_frequency_id": usage_frequency["daily"].value_id,
+            "initial_implementation_date": date.today().isoformat(),
             "auto_create_validation": False
         }
     )
@@ -37,9 +39,11 @@ def test_create_model_as_user_pending_approval(client, auth_headers, test_user, 
             "description": "Created by user",
             "development_type": "In-House",
             "owner_id": test_user.user_id,
+            "developer_id": test_user.user_id,
             "status": "In Development",
             "user_ids": [test_user.user_id],
             "usage_frequency_id": usage_frequency["daily"].value_id,
+            "initial_implementation_date": date.today().isoformat(),
             "auto_create_validation": False
         }
     )
@@ -348,9 +352,11 @@ def test_full_submission_workflow_integration(client, auth_headers, admin_header
             "description": "Initial description",
             "development_type": "In-House",
             "owner_id": test_user.user_id,
+            "developer_id": test_user.user_id,
             "status": "In Development",
             "user_ids": [test_user.user_id],
             "usage_frequency_id": usage_frequency["daily"].value_id,
+            "initial_implementation_date": date.today().isoformat(),
             "auto_create_validation": False
         }
     )
@@ -459,9 +465,11 @@ def test_create_model_enforces_user_inclusion(client, auth_headers, second_user,
             "description": "Created by user",
             "development_type": "In-House",
             "owner_id": second_user.user_id,  # Different user as owner
+            "developer_id": second_user.user_id,
             "status": "In Development",
             "user_ids": [second_user.user_id],  # Only other user, not current user
             "usage_frequency_id": usage_frequency["daily"].value_id,
+            "initial_implementation_date": date.today().isoformat(),
             "auto_create_validation": False
         }
     )
