@@ -1185,11 +1185,23 @@ def bulk_compute_approval_status(
     """
     from app.core.model_approval_status import compute_model_approval_status, get_status_label
 
+    max_model_ids = 200
+    if len(request.model_ids) > max_model_ids:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Too many model_ids (max {max_model_ids})."
+        )
+
+    models = db.query(Model).filter(
+        Model.model_id.in_(request.model_ids)
+    ).all()
+    models_by_id = {model.model_id: model for model in models}
+
     results = []
     found_count = 0
 
     for model_id in request.model_ids:
-        model = db.query(Model).filter(Model.model_id == model_id).first()
+        model = models_by_id.get(model_id)
 
         if not model:
             results.append(BulkApprovalStatusItem(

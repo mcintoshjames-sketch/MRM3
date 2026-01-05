@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, Query
 from fastapi.responses import FileResponse
 from starlette.background import BackgroundTask
 from fastapi.encoders import jsonable_encoder
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.orm import Session, joinedload, aliased
 from sqlalchemy import desc, or_, func, nullslast, select, text
 from fpdf import FPDF
 import tempfile
@@ -3025,7 +3025,9 @@ def update_validation_request_status(
         joinedload(ValidationRequest.regions),
         joinedload(ValidationRequest.validation_plan),
         joinedload(ValidationRequest.scorecard_result)  # Needed for REVISION resubmission comparison
-    ).filter(ValidationRequest.request_id == request_id).first()
+    ).with_for_update(of=ValidationRequest).filter(
+        ValidationRequest.request_id == request_id
+    ).first()
 
     if not validation_request:
         raise HTTPException(
@@ -5255,7 +5257,7 @@ def get_workload_report(
         ).with_entities(
             db.query(ValidationAssignment.estimated_hours).filter(
                 ValidationAssignment.validator_id == validator.user_id
-            ).as_scalar()
+            ).scalar_subquery()
         )
 
         workload_data.append({
@@ -8148,7 +8150,7 @@ def submit_conditional_approval(
         from sqlalchemy.orm import joinedload
         validation_request = db.query(ValidationRequest).options(
             joinedload(ValidationRequest.models)
-        ).filter(
+        ).with_for_update(of=ValidationRequest).filter(
             ValidationRequest.request_id == approval.request_id
         ).first()
 
@@ -8242,7 +8244,7 @@ def void_approval_requirement(
     from sqlalchemy.orm import joinedload
     validation_request = db.query(ValidationRequest).options(
         joinedload(ValidationRequest.models)
-    ).filter(
+    ).with_for_update(of=ValidationRequest).filter(
         ValidationRequest.request_id == approval.request_id
     ).first()
 
@@ -8719,69 +8721,92 @@ def get_risk_mismatch_report(
         TaxonomyValue.code == "ACTIVE"
     ).first()
 
-    # Find all active models
-    active_models_query = db.query(Model).filter(
+    # Count active models without loading them all into memory
+    total_checked_query = db.query(func.count(Model.model_id)).filter(
         Model.risk_tier_id.isnot(None)
     )
-
     if active_status:
-        active_models_query = active_models_query.filter(
+        total_checked_query = total_checked_query.filter(
+            Model.status_id == active_status.value_id
+        )
+    total_checked = total_checked_query.scalar() or 0
+
+    # Find most recent approved validation per model (skip NULL risk tier snapshots)
+    latest_approved_subq = db.query(
+        ValidationRequestModelVersion.model_id.label("model_id"),
+        ValidationRequest.request_id.label("request_id"),
+        ValidationRequest.validated_risk_tier_id.label("validated_risk_tier_id"),
+        ValidationRequest.completion_date.label("completion_date"),
+        func.row_number().over(
+            partition_by=ValidationRequestModelVersion.model_id,
+            order_by=nullslast(desc(ValidationRequest.completion_date))
+        ).label("rn"),
+    ).join(
+        ValidationRequest,
+        ValidationRequest.request_id == ValidationRequestModelVersion.request_id
+    ).filter(
+        ValidationRequest.current_status_id == approved_status.value_id,
+        ValidationRequest.validated_risk_tier_id.isnot(None)
+    ).subquery()
+
+    current_tier = aliased(TaxonomyValue)
+    validated_tier = aliased(TaxonomyValue)
+
+    mismatch_query = db.query(
+        Model,
+        latest_approved_subq.c.request_id,
+        latest_approved_subq.c.validated_risk_tier_id,
+        latest_approved_subq.c.completion_date,
+        current_tier,
+        validated_tier,
+    ).join(
+        latest_approved_subq,
+        latest_approved_subq.c.model_id == Model.model_id
+    ).outerjoin(
+        current_tier,
+        current_tier.value_id == Model.risk_tier_id
+    ).outerjoin(
+        validated_tier,
+        validated_tier.value_id == latest_approved_subq.c.validated_risk_tier_id
+    ).filter(
+        latest_approved_subq.c.rn == 1,
+        Model.risk_tier_id.isnot(None),
+        Model.risk_tier_id != latest_approved_subq.c.validated_risk_tier_id
+    )
+    if active_status:
+        mismatch_query = mismatch_query.filter(
             Model.status_id == active_status.value_id
         )
 
-    active_models = active_models_query.all()
-    total_checked = len(active_models)
-
     mismatch_items = []
+    for model, request_id, validated_tier_id, completion_date, current_tier_value, validated_tier_value in mismatch_query.all():
+        current_sort = current_tier_value.sort_order if current_tier_value else 99
+        validated_sort = validated_tier_value.sort_order if validated_tier_value else 99
 
-    for model in active_models:
-        # Find the most recent approved validation request for this model
-        latest_approved = db.query(ValidationRequest).join(
-            ValidationRequestModelVersion,
-            ValidationRequest.request_id == ValidationRequestModelVersion.request_id
-        ).filter(
-            ValidationRequestModelVersion.model_id == model.model_id,
-            ValidationRequest.current_status_id == approved_status.value_id,
-            ValidationRequest.validated_risk_tier_id.isnot(None)
-        ).order_by(desc(ValidationRequest.completion_date)).first()
+        if current_sort < validated_sort:
+            direction = "INCREASED"  # Lower sort_order = higher risk
+            requires_reval = True
+        elif current_sort > validated_sort:
+            direction = "DECREASED"
+            requires_reval = False  # May not need revalidation for lower risk
+        else:
+            direction = "CHANGED"
+            requires_reval = True
 
-        if not latest_approved:
-            continue  # No approved validation with risk tier snapshot
-
-        # Check for mismatch
-        if model.risk_tier_id != latest_approved.validated_risk_tier_id:
-            # Get tier details
-            current_tier = model.risk_tier
-            validated_tier = latest_approved.validated_risk_tier
-
-            # Determine direction of change
-            current_sort = current_tier.sort_order if current_tier else 99
-            validated_sort = validated_tier.sort_order if validated_tier else 99
-
-            if current_sort < validated_sort:
-                direction = "INCREASED"  # Lower sort_order = higher risk
-                requires_reval = True
-            elif current_sort > validated_sort:
-                direction = "DECREASED"
-                requires_reval = False  # May not need revalidation for lower risk
-            else:
-                direction = "CHANGED"
-                requires_reval = True
-
-            mismatch_items.append(RiskMismatchItem(
-                model_id=model.model_id,
-                model_name=model.model_name,
-                current_risk_tier_id=model.risk_tier_id,
-                current_risk_tier_code=current_tier.code if current_tier else None,
-                current_risk_tier_label=current_tier.label if current_tier else None,
-                validated_risk_tier_id=latest_approved.validated_risk_tier_id,
-                validated_risk_tier_code=validated_tier.code if validated_tier else None,
-                validated_risk_tier_label=validated_tier.label if validated_tier else None,
-                last_validation_request_id=latest_approved.request_id,
-                last_validation_date=latest_approved.completion_date.date() if latest_approved.completion_date else None,
-                tier_change_direction=direction,
-                requires_revalidation=requires_reval
-            ))
+        mismatch_items.append(RiskMismatchItem(
+            model_id=model.model_id,
+            model_name=model.model_name,
+            current_risk_tier_id=model.risk_tier_id,
+            current_risk_tier_code=current_tier_value.code if current_tier_value else None,
+            current_risk_tier_label=current_tier_value.label if current_tier_value else None,
+            validated_risk_tier_id=validated_tier_id,
+            validated_risk_tier_code=validated_tier_value.code if validated_tier_value else None,
+            validated_risk_tier_label=validated_tier_value.label if validated_tier_value else None,
+            last_validation_request_id=request_id,
+            last_validation_date=completion_date.date() if completion_date else None,
+            tier_change_direction=direction,
+            requires_revalidation=requires_reval
+        ))
 
     return RiskMismatchReportResponse(
         total_models_checked=total_checked,
@@ -8806,7 +8831,7 @@ def export_effective_challenge_report(
     This report captures the history of approver send-backs and validator responses,
     demonstrating the "effective challenge" process for audit and compliance purposes.
     """
-    from fpdf import FPDF
+    from fpdf import FPDF, XPos, YPos
     import io
     from fastapi.responses import StreamingResponse
 
@@ -8875,7 +8900,7 @@ def export_effective_challenge_report(
 
     # Title
     pdf.set_font('Helvetica', 'B', 18)
-    pdf.cell(0, 10, 'Effective Challenge Report', ln=True, align='C')
+    pdf.cell(0, 10, 'Effective Challenge Report', new_x=XPos.LMARGIN, new_y=YPos.NEXT, align='C')
     pdf.ln(5)
 
     # Subtitle with request info
@@ -8883,15 +8908,15 @@ def export_effective_challenge_report(
     model_names = ", ".join([m.model_name for m in validation_request.models[:3]])
     if len(validation_request.models) > 3:
         model_names += f" (+{len(validation_request.models) - 3} more)"
-    pdf.cell(0, 6, f'Validation Request #{request_id}: {model_names}', ln=True, align='C')
+    pdf.cell(0, 6, f'Validation Request #{request_id}: {model_names}', new_x=XPos.LMARGIN, new_y=YPos.NEXT, align='C')
 
     pdf.set_font('Helvetica', '', 10)
-    pdf.cell(0, 6, f'Generated: {utc_now().strftime("%Y-%m-%d %H:%M UTC")}', ln=True, align='C')
+    pdf.cell(0, 6, f'Generated: {utc_now().strftime("%Y-%m-%d %H:%M UTC")}', new_x=XPos.LMARGIN, new_y=YPos.NEXT, align='C')
     pdf.ln(10)
 
     # Summary section
     pdf.set_font('Helvetica', 'B', 14)
-    pdf.cell(0, 8, 'Summary', ln=True)
+    pdf.cell(0, 8, 'Summary', new_x=XPos.LMARGIN, new_y=YPos.NEXT)
     pdf.set_font('Helvetica', '', 10)
     pdf.ln(2)
 
@@ -8908,14 +8933,14 @@ def export_effective_challenge_report(
 
     for label, value in summary_items:
         pdf.cell(60, 7, label + ":", border=1, fill=True)
-        pdf.cell(0, 7, value, border=1, ln=True)
+        pdf.cell(0, 7, value, border=1, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
 
     pdf.ln(10)
 
     # Challenge rounds section
     if challenge_rounds:
         pdf.set_font('Helvetica', 'B', 14)
-        pdf.cell(0, 8, 'Challenge Rounds', ln=True)
+        pdf.cell(0, 8, 'Challenge Rounds', new_x=XPos.LMARGIN, new_y=YPos.NEXT)
         pdf.ln(5)
 
         for round_data in challenge_rounds:
@@ -8923,21 +8948,21 @@ def export_effective_challenge_report(
             pdf.set_font('Helvetica', 'B', 12)
             pdf.set_fill_color(66, 133, 244)  # Blue
             pdf.set_text_color(255, 255, 255)
-            pdf.cell(0, 8, f'Round {round_data["round_number"]}', ln=True, fill=True)
+            pdf.cell(0, 8, f'Round {round_data["round_number"]}', new_x=XPos.LMARGIN, new_y=YPos.NEXT, fill=True)
             pdf.set_text_color(0, 0, 0)
             pdf.ln(3)
 
             # Send-back details
             pdf.set_font('Helvetica', 'B', 10)
             pdf.set_fill_color(255, 235, 205)  # Light orange
-            pdf.cell(0, 7, 'SEND-BACK', ln=True, fill=True)
+            pdf.cell(0, 7, 'SEND-BACK', new_x=XPos.LMARGIN, new_y=YPos.NEXT, fill=True)
 
             pdf.set_font('Helvetica', '', 10)
             pdf.cell(35, 6, 'Date:')
-            pdf.cell(0, 6, round_data["sent_back_at"].strftime("%Y-%m-%d %H:%M UTC") if round_data["sent_back_at"] else "N/A", ln=True)
+            pdf.cell(0, 6, round_data["sent_back_at"].strftime("%Y-%m-%d %H:%M UTC") if round_data["sent_back_at"] else "N/A", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
 
             pdf.cell(35, 6, 'Approver:')
-            pdf.cell(0, 6, f'{round_data["sent_back_by"]} ({round_data.get("approver_role", "Unknown")})', ln=True)
+            pdf.cell(0, 6, f'{round_data["sent_back_by"]} ({round_data.get("approver_role", "Unknown")})', new_x=XPos.LMARGIN, new_y=YPos.NEXT)
 
             pdf.cell(35, 6, 'Feedback:')
             # Multi-line for long feedback
@@ -8948,32 +8973,32 @@ def export_effective_challenge_report(
             if round_data["response"]:
                 pdf.set_font('Helvetica', 'B', 10)
                 pdf.set_fill_color(209, 250, 229)  # Light green
-                pdf.cell(0, 7, 'RESPONSE', ln=True, fill=True)
+                pdf.cell(0, 7, 'RESPONSE', new_x=XPos.LMARGIN, new_y=YPos.NEXT, fill=True)
 
                 pdf.set_font('Helvetica', '', 10)
                 pdf.cell(35, 6, 'Date:')
-                pdf.cell(0, 6, round_data["response_at"].strftime("%Y-%m-%d %H:%M UTC") if round_data["response_at"] else "N/A", ln=True)
+                pdf.cell(0, 6, round_data["response_at"].strftime("%Y-%m-%d %H:%M UTC") if round_data["response_at"] else "N/A", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
 
                 pdf.cell(35, 6, 'Responder:')
-                pdf.cell(0, 6, round_data["responded_by"] or "N/A", ln=True)
+                pdf.cell(0, 6, round_data["responded_by"] or "N/A", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
 
                 pdf.cell(35, 6, 'Response:')
                 pdf.multi_cell(0, 6, round_data["response"])
             else:
                 pdf.set_font('Helvetica', 'I', 10)
                 pdf.set_text_color(128, 128, 128)
-                pdf.cell(0, 6, 'Awaiting response...', ln=True)
+                pdf.cell(0, 6, 'Awaiting response...', new_x=XPos.LMARGIN, new_y=YPos.NEXT)
                 pdf.set_text_color(0, 0, 0)
 
             pdf.ln(8)
     else:
         pdf.set_font('Helvetica', 'I', 11)
-        pdf.cell(0, 10, 'No challenge rounds recorded for this validation request.', ln=True)
+        pdf.cell(0, 10, 'No challenge rounds recorded for this validation request.', new_x=XPos.LMARGIN, new_y=YPos.NEXT)
 
     # Approval status section
     pdf.add_page()
     pdf.set_font('Helvetica', 'B', 14)
-    pdf.cell(0, 8, 'Current Approval Status', ln=True)
+    pdf.cell(0, 8, 'Current Approval Status', new_x=XPos.LMARGIN, new_y=YPos.NEXT)
     pdf.ln(5)
 
     approvals = [a for a in validation_request.approvals if a.voided_by_id is None]
@@ -8984,7 +9009,7 @@ def export_effective_challenge_report(
         pdf.cell(50, 7, 'Approver Role', border=1, fill=True)
         pdf.cell(30, 7, 'Type', border=1, fill=True)
         pdf.cell(30, 7, 'Status', border=1, fill=True)
-        pdf.cell(0, 7, 'Comments', border=1, ln=True, fill=True)
+        pdf.cell(0, 7, 'Comments', border=1, new_x=XPos.LMARGIN, new_y=YPos.NEXT, fill=True)
 
         pdf.set_font('Helvetica', '', 9)
         for approval in approvals:
@@ -8994,17 +9019,17 @@ def export_effective_challenge_report(
             comments = (approval.comments or "")[:50]
             if len(approval.comments or "") > 50:
                 comments += "..."
-            pdf.cell(0, 7, comments, border=1, ln=True)
+            pdf.cell(0, 7, comments, border=1, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
     else:
         pdf.set_font('Helvetica', 'I', 10)
-        pdf.cell(0, 7, 'No approvals configured.', ln=True)
+        pdf.cell(0, 7, 'No approvals configured.', new_x=XPos.LMARGIN, new_y=YPos.NEXT)
 
     # Footer
     pdf.ln(15)
     pdf.set_font('Helvetica', 'I', 8)
     pdf.set_text_color(128, 128, 128)
-    pdf.cell(0, 5, 'This report was auto-generated for compliance and audit purposes.', ln=True, align='C')
-    pdf.cell(0, 5, f'Request ID: {request_id} | User: {current_user.email}', ln=True, align='C')
+    pdf.cell(0, 5, 'This report was auto-generated for compliance and audit purposes.', new_x=XPos.LMARGIN, new_y=YPos.NEXT, align='C')
+    pdf.cell(0, 5, f'Request ID: {request_id} | User: {current_user.email}', new_x=XPos.LMARGIN, new_y=YPos.NEXT, align='C')
 
     # Output PDF
     pdf_bytes = bytes(pdf.output())

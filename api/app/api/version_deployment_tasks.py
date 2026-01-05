@@ -145,11 +145,13 @@ def get_my_deployment_tasks(
         validation_status = None
         validation_region_ids: Set[int] = set()
         if task.version.validation_request_id:
-            val_request = db.query(ValidationRequest).options(
-                joinedload(ValidationRequest.regions)
-            ).get(task.version.validation_request_id)
+            val_request = db.get(
+                ValidationRequest,
+                task.version.validation_request_id,
+                options=[joinedload(ValidationRequest.regions)]
+            )
             if val_request:
-                status_value = db.query(TaxonomyValue).get(val_request.current_status_id)
+                status_value = db.get(TaxonomyValue, val_request.current_status_id)
                 validation_status = status_value.label if status_value else None
                 # Get validation scope region IDs
                 validation_region_ids = {r.region_id for r in val_request.regions}
@@ -295,7 +297,7 @@ def get_ready_to_deploy(
         version_source = val_request.version_source if val_request.version_source else "explicit"
 
         # Get owner info
-        owner = db.query(User).get(model.owner_id)
+        owner = db.get(User, model.owner_id)
         owner_name = owner.full_name if owner else "Unknown"
 
         # Calculate days since approval
@@ -306,7 +308,7 @@ def get_ready_to_deploy(
             days_since_approval = (today - val_request.completion_date).days
 
         # Get validation status label
-        status_value = db.query(TaxonomyValue).get(val_request.current_status_id)
+        status_value = db.get(TaxonomyValue, val_request.current_status_id)
         validation_status = status_value.label if status_value else "Unknown"
 
         # Create a row for each region that is NOT fully deployed
@@ -385,9 +387,9 @@ def get_deployment_task(
     # Get validation info if exists
     validation_request = None
     if task.version.validation_request_id:
-        val_request = db.query(ValidationRequest).get(task.version.validation_request_id)
+        val_request = db.get(ValidationRequest, task.version.validation_request_id)
         if val_request:
-            status_value = db.query(TaxonomyValue).get(val_request.current_status_id)
+            status_value = db.get(TaxonomyValue, val_request.current_status_id)
             validation_request = ValidationRequestInfo(
                 request_id=val_request.request_id,
                 current_status=status_value.label if status_value else "Unknown",
@@ -483,11 +485,11 @@ def confirm_deployment(
     deployed_before_validation = False
     validation_override_reason = None
 
-    version = db.query(ModelVersion).get(task.version_id)
+    version = db.get(ModelVersion, task.version_id)
     if version and version.validation_request_id:
-        val_request = db.query(ValidationRequest).get(version.validation_request_id)
+        val_request = db.get(ValidationRequest, version.validation_request_id)
         if val_request:
-            status_value = db.query(TaxonomyValue).get(val_request.current_status_id)
+            status_value = db.get(TaxonomyValue, val_request.current_status_id)
 
             # Check if validation is approved
             if status_value and status_value.code != "APPROVED":
@@ -707,12 +709,12 @@ def create_regional_approval_if_required(
         return False  # Global deployment doesn't create regional approvals
 
     # Get the region
-    region = db.query(Region).get(task.region_id)
+    region = db.get(Region, task.region_id)
     if not region:
         return False
 
     # Get validation request to check scope
-    val_request = db.query(ValidationRequest).get(validation_request_id)
+    val_request = db.get(ValidationRequest, validation_request_id)
     if not val_request:
         return False
 
@@ -844,7 +846,7 @@ def get_deploy_modal_data(
 
         if val_request:
             validation_request_id = val_request.request_id
-            status_value = db.query(TaxonomyValue).get(val_request.current_status_id)
+            status_value = db.get(TaxonomyValue, val_request.current_status_id)
             if status_value:
                 validation_status = status_value.label
                 validation_approved = status_value.code == "APPROVED"
@@ -955,7 +957,7 @@ def deploy_version(
         ).filter(ValidationRequest.request_id == version.validation_request_id).first()
 
         if val_request:
-            status_value = db.query(TaxonomyValue).get(val_request.current_status_id)
+            status_value = db.get(TaxonomyValue, val_request.current_status_id)
             validation_approved = status_value and status_value.code == "APPROVED"
             validation_region_ids = {r.region_id for r in val_request.regions}
 
@@ -991,7 +993,7 @@ def deploy_version(
     # Get regions requiring approval
     regions_requiring_approval = []
     for deployment in deploy_request.deployments:
-        region = db.query(Region).get(deployment.region_id)
+        region = db.get(Region, deployment.region_id)
         if region and compute_requires_regional_approval(region, validation_region_ids):
             regions_requiring_approval.append(region.code)
 
@@ -1138,12 +1140,12 @@ def bulk_confirm_deployments(
 
             # Check validation status
             deployed_before_validation = False
-            version = db.query(ModelVersion).get(task.version_id)
+            version = db.get(ModelVersion, task.version_id)
 
             if version and version.validation_request_id:
-                val_request = db.query(ValidationRequest).get(version.validation_request_id)
+                val_request = db.get(ValidationRequest, version.validation_request_id)
                 if val_request:
-                    status_value = db.query(TaxonomyValue).get(val_request.current_status_id)
+                    status_value = db.get(TaxonomyValue, val_request.current_status_id)
                     if status_value and status_value.code != "APPROVED":
                         if not request.validation_override_reason:
                             failed.append({

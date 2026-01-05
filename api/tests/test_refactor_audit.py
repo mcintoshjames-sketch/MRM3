@@ -129,7 +129,7 @@ def test_submission_due_date_calculation_comprehensive(client, admin_headers, wo
 
     # Verify is_periodic_revalidation logic (indirectly tested by submission_due_date being present)
     # But let's check the property directly via DB object
-    req = db_session.query(ValidationRequest).get(data["request_id"])
+    req = db_session.get(ValidationRequest, data["request_id"])
     assert req.is_periodic_revalidation is True
 
 

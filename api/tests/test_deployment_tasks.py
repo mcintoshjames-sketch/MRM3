@@ -308,7 +308,7 @@ class TestBulkDeploymentConfirmation:
         assert any(item["task_id"] == bad_task.task_id for item in data["failed"])
 
         db_session.expire_all()
-        refreshed_ok = db_session.query(VersionDeploymentTask).get(ok_task.task_id)
-        refreshed_bad = db_session.query(VersionDeploymentTask).get(bad_task.task_id)
+        refreshed_ok = db_session.get(VersionDeploymentTask, ok_task.task_id)
+        refreshed_bad = db_session.get(VersionDeploymentTask, bad_task.task_id)
         assert refreshed_ok.status == "CONFIRMED"
         assert refreshed_bad.status == "PENDING"
